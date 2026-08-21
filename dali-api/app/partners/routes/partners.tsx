@@ -19,8 +19,10 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
-import { FileText, LayoutGrid } from "lucide-react";
+import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const handle = { areaPills: true };
 
@@ -127,6 +129,10 @@ export default function PartnersOrganizations() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:partners", "list");
+  // Same dress the dali.os projects hub and people directory wear — scaled
+  // title, pill toolbar, the design's plus button. Chrome only; both views
+  // and every control stay exactly as they are.
+  const os = useFeatureFlag("os-redesign");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -144,7 +150,12 @@ export default function PartnersOrganizations() {
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-4xl font-medium" : "text-2xl font-bold",
+            )}
+          >
             Partners
           </h1>
         </div>
@@ -152,9 +163,16 @@ export default function PartnersOrganizations() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={buttonClasses("primary", "sm")}
+            className={os ? "os-add-btn" : buttonClasses("primary", "sm")}
           >
-            + New organization
+            {os ? (
+              <>
+                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+                New organization
+              </>
+            ) : (
+              "+ New organization"
+            )}
           </button>
         )}
       </header>
@@ -206,24 +224,32 @@ export default function PartnersOrganizations() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className={buttonClasses("ghost", "sm")}
+              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button type="submit" className={buttonClasses("primary", "sm")}>
+            <button
+              type="submit"
+              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+            >
               Create
             </button>
           </div>
         </Form>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by organization name"
-          className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+            os
+              ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+              : "max-w-sm px-3 py-2 rounded-md bg-background",
+          )}
         />
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">

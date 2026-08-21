@@ -9,27 +9,30 @@ import { Plus, Mail, ChevronRight } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
 import type { loader } from '~/admin/routes/admin.email-templates'
+import { useOsChrome } from '~/components/os-chrome'
+import { cn } from '~/lib/cn'
 
 export function EmailTemplatesPage() {
   const { templates, isAdmin } = useLoaderData<typeof loader>()
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
+  const { os, pageTitle, card } = useOsChrome()
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>
-          <p className="mt-1 text-muted-foreground">
-            Shared library of email templates and their versions. Bind a
-            template where it's used — e.g. a hiring cycle's Setup tab or an
-            education offering's decision emails.
-          </p>
-        </div>
-        <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-          <Plus className="w-4 h-4" />
-          New Template
-        </Button>
+        <h1 className={pageTitle}>Email Templates</h1>
+        {os ? (
+          <button type="button" className="os-add-btn" onClick={() => setShowModal(true)}>
+            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            New Template
+          </button>
+        ) : (
+          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+            <Plus className="w-4 h-4" />
+            New Template
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
@@ -39,15 +42,32 @@ export function EmailTemplatesPage() {
             <Link
               key={template.id}
               to={`/admin/email-templates/${template.id}`}
-              className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
+              className={cn(
+                'group block p-6',
+                os
+                  ? 'rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover'
+                  : 'bg-card rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow',
+              )}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg shrink-0">
+                  <div
+                    className={cn(
+                      'p-2 shrink-0',
+                      os
+                        ? 'rounded-os-item bg-os-container text-os-accent'
+                        : 'rounded-lg bg-blue-100 text-blue-600',
+                    )}
+                  >
                     <Mail className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors truncate">
+                    <h3
+                      className={cn(
+                        'font-bold text-foreground transition-colors truncate',
+                        os ? 'group-hover:text-os-accent' : 'group-hover:text-blue-600',
+                      )}
+                    >
                       {template.name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
@@ -62,7 +82,12 @@ export function EmailTemplatesPage() {
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 shrink-0" />
+                <ChevronRight
+                  className={cn(
+                    'w-5 h-5 text-muted-foreground/70 shrink-0',
+                    os ? 'group-hover:text-os-accent' : 'group-hover:text-blue-500',
+                  )}
+                />
               </div>
               {latest && (
                 <p className="mt-3 text-sm text-muted-foreground line-clamp-2">

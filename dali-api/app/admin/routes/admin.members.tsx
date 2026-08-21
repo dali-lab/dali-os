@@ -13,6 +13,8 @@ import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { Users, Shield, Briefcase, Crown, Compass } from "lucide-react";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import {
   AdminToggle,
   StaffToggle,
@@ -251,6 +253,7 @@ type RoleFilter = "all" | "admin" | "core";
 
 export default function AdminConsoleMembers() {
   const { members, domains, viewerIsAdmin } = useLoaderData<typeof loader>();
+  const { os, pageTitle, panel } = useOsChrome();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -277,15 +280,15 @@ export default function AdminConsoleMembers() {
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
-            <Users className="h-4.5 w-4.5" />
-          </span>
+          {/* The os pages lead with the title alone; the brand shell keeps its
+              coral glyph plate. */}
+          {!os && (
+            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
+              <Users className="h-4.5 w-4.5" />
+            </span>
+          )}
           <div className="min-w-0">
-            <h1 className="font-heading text-xl font-bold text-foreground">Roles &amp; permissions</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Who holds Admin, Staff, Core and Domain Lead this term. Changes take effect
-              immediately.
-            </p>
+            <h1 className={pageTitle}>Roles &amp; permissions</h1>
           </div>
         </div>
 
@@ -306,7 +309,9 @@ export default function AdminConsoleMembers() {
                 type="button"
                 onClick={() => setRoleFilter(key)}
                 aria-pressed={active}
-                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  os ? "rounded-full" : "rounded-lg"
+                } ${
                   active
                     ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
                     : "border-border bg-card text-muted-foreground hover:bg-muted"
@@ -335,7 +340,10 @@ export default function AdminConsoleMembers() {
             placeholder="Search by name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm sm:text-sm"
+            className={cn(
+              "w-full border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm sm:text-sm",
+              os ? "rounded-full" : "rounded-lg",
+            )}
           />
         </div>
       </header>
@@ -344,7 +352,7 @@ export default function AdminConsoleMembers() {
           controls the table needed 860px and scrolled sideways on every laptop.
           Identity on the left, the permissions that person actually holds on the
           right, wrapping instead of scrolling. */}
-      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-brand-1">
+      <div className={cn("overflow-hidden", panel)}>
         {filtered.length === 0 ? (
           <p className="px-4 py-12 text-center text-sm text-muted-foreground">
             {search || roleFilter !== "all"

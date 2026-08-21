@@ -14,6 +14,8 @@
 //     context menu, keyboard navigation, details pane, breadcrumb, sort.
 
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -69,7 +71,30 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PageIcon } from "~/components/PageIcon";
 import { Menu, ContextMenu } from "~/components/ui/floating";
 import { relativeTime } from "~/lib/relative-time";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
+
+/* Drive's type scale. It was written a step below the rest of the app — rows at
+   text-sm, metadata at text-xs, column headers at 11px — which reads as a
+   different product next to the design, where a list row is text-base (the rail
+   rows, the project cards). A context rather than a prop threaded through
+   fourteen sub-components, and one place to change if the scale moves again. */
+const DriveScale = createContext(false);
+
+function useDriveText() {
+  const os = useContext(DriveScale);
+  return {
+    /** A list/column row. */
+    row: os ? "text-base" : "text-sm",
+    /** Secondary metadata beside a row — modified, size, path, kind. */
+    meta: os ? "text-sm" : "text-xs",
+    /** Column headers and other all-caps micro-labels. */
+    label: os ? "text-xs" : "text-[11px]",
+    /** The "Core only" / "Project" row badges. */
+    badge: os ? "text-xs" : "text-[10px]",
+  };
+}
 
 export type RowActions = {
   onRename: (item: DriveItem) => void;
@@ -104,6 +129,14 @@ export type DriveBrowserProps = {
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
   newMenu?: ReactNode;
+  /** Tag chip row, rendered under the toolbar. Owned by the hub. */
+  tagChips?: ReactNode;
+  /**
+   * Keep only items carrying a selected tag. Its *presence* means the filter is
+   * on — the hub passes undefined when nothing is selected — so there is no
+   * second "active" flag to keep in step with it.
+   */
+  tagFilter?: (item: DriveItem) => boolean;
 };
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -184,14 +217,18 @@ export function searchAll(
   scopes: DriveTreeScope[],
   q: string,
   typeFilter: DriveBrowserProps["typeFilter"],
+  tagFilter?: (item: DriveItem) => boolean,
 ): SearchHit[] {
   const needle = q.trim().toLowerCase();
-  if (!needle) return [];
+  // Tags alone are a valid query: "everything tagged X, anywhere in the Drive"
+  // is the thing the old documents hub could answer and the tree can't.
+  if (!needle && !tagFilter) return [];
   const hits: SearchHit[] = [];
   for (const scope of scopes) {
     for (const item of scope.items) {
       if (typeFilter !== "all" && item.type !== typeFilter) continue;
-      if (!(item.title || "").toLowerCase().includes(needle)) continue;
+      if (needle && !(item.title || "").toLowerCase().includes(needle)) continue;
+      if (tagFilter && !tagFilter(item)) continue;
       const crumbs = crumbsFor(scope.items, item.parentFolderId);
       const path = [scope.label, ...crumbs.map((c) => c.title)].join(" › ");
       hits.push({ scope, item, path });
@@ -472,6 +509,8 @@ export function DriveBrowser({
   onUploadFiles,
   filterControl,
   newMenu,
+  tagChips,
+  tagFilter,
 }: DriveBrowserProps) {
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
@@ -536,13 +575,17 @@ export function DriveBrowser({
     setActiveId(null);
   }, [currentScopeId, currentFolderId, search]);
 
+  const os = useFeatureFlag("os-redesign");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const suppressClickRef = useRef(false);
 
-  const searching = search.trim().length > 0;
+  // "searching" is really "showing flat results across every drive", which a
+  // tag selection does just as much as a text query — the tree can't express
+  // "tagged X" the way a folder path expresses location.
+  const searching = search.trim().length > 0 || !!tagFilter;
   const hits = useMemo(
-    () => (searching ? searchAll(scopes, search, typeFilter) : []),
-    [searching, scopes, search, typeFilter],
+    () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
+    [searching, scopes, search, typeFilter, tagFilter],
   );
 
   const folderCrumbs = currentScope ? crumbsFor(currentScope.items, currentFolderId) : [];
@@ -564,6 +607,14 @@ export function DriveBrowser({
   // Items backing the current selection. In column view the selectable pool is
   // the union of items across the open columns; in list/grid it's the listing.
   const selectedItems = useMemo(() => {
+    if (searching) {
+      // In search the selectable pool is the flat hit list (across scopes), so
+      // the bulk bar and details pane act on the matched items — not the folder
+      // the viewer happened to be in when they started searching.
+      const pool = new Map<string, DriveItem>();
+      for (const h of hits) pool.set(h.item.id, h.item);
+      return [...pool.values()].filter((i) => selected.has(i.id));
+    }
     if (viewMode === "columns") {
       const pool = new Map<string, DriveItem>();
       for (const level of colSel.levels) {
@@ -573,7 +624,7 @@ export function DriveBrowser({
     }
     return listing.filter((i) => selected.has(i.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, colSel, listing, selected]);
+  }, [searching, hits, viewMode, colSel, listing, selected]);
 
   // ── List/Grid Selection ────────────────────────────────────────────────────
   function selectOnly(id: string) {
@@ -659,9 +710,16 @@ export function DriveBrowser({
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
       setSelected(new Set(orderedIds));
-    } else if (e.key === "F2" && currentScope && activeId) {
-      const item = listing.find((i) => i.id === activeId);
-      if (item) getScopeActions(currentScope.id).onRename(item);
+    } else if (e.key === "F2" && activeId) {
+      // Rename the active row — resolve from the search hit (with its own scope)
+      // when searching, else from the current scope's listing.
+      if (searching) {
+        const hit = hits.find((h) => h.item.id === activeId);
+        if (hit) getScopeActions(hit.scope.id).onRename(hit.item);
+      } else if (currentScope) {
+        const item = listing.find((i) => i.id === activeId);
+        if (item) getScopeActions(currentScope.id).onRename(item);
+      }
     }
   }
 
@@ -727,7 +785,9 @@ export function DriveBrowser({
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
   }
 
-  const showBulk = !searching && !!currentScope && selected.size > 1;
+  // Bulk actions apply to a scope's listing AND to multi-selected search results
+  // (search offers the same interactions as browsing).
+  const showBulk = selected.size > 1 && (searching || !!currentScope);
 
   // ── Miller column handlers ─────────────────────────────────────────────────
 
@@ -882,6 +942,7 @@ export function DriveBrowser({
   const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
 
   return (
+    <DriveScale.Provider value={os}>
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={() => setSelected(new Set())}>
         {/* ── Toolbar row: breadcrumb · filter · search · view · details · New ── */}
@@ -896,7 +957,12 @@ export function DriveBrowser({
           {filterControl}
 
           <div className="relative w-full sm:w-56 shrink-0">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search
+              className={cn(
+                "pointer-events-none absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground",
+                os ? "left-3.5" : "left-2.5",
+              )}
+            />
             <input
               type="search"
               value={search}
@@ -905,7 +971,10 @@ export function DriveBrowser({
               onKeyDown={(e) => e.stopPropagation()}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search Drive"
-              className="w-full rounded-md border border-border bg-card pl-8 pr-8 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+              className={cn(
+                "w-full border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40",
+                os ? "rounded-full pl-9 pr-9 py-2.5" : "rounded-md pl-8 pr-8 py-1.5",
+              )}
             />
             {search && (
               <button
@@ -915,7 +984,10 @@ export function DriveBrowser({
                   e.stopPropagation();
                   onSearchChange("");
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground",
+                  os ? "right-3" : "right-2",
+                )}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -923,7 +995,12 @@ export function DriveBrowser({
           </div>
 
           {/* View toggle — columns / list / grid */}
-          <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
+          <div
+            className={cn(
+              "inline-flex border border-border overflow-hidden shrink-0",
+              os ? "rounded-full bg-card" : "rounded-md",
+            )}
+          >
             <button
               type="button"
               data-testid="drive-view-columns"
@@ -933,7 +1010,14 @@ export function DriveBrowser({
                 e.stopPropagation();
                 changeView("columns");
               }}
-              className={`p-1.5 ${viewMode === "columns" ? "bg-accent-coral/10 text-accent-coral" : "text-muted-foreground hover:bg-muted/50"}`}
+              className={cn(
+                os ? "px-3.5 py-2.5" : "p-1.5",
+                viewMode === "columns"
+                  ? os
+                    ? "bg-os-container text-white"
+                    : "bg-accent-coral/10 text-accent-coral"
+                  : "text-muted-foreground hover:bg-muted/50",
+              )}
             >
               <Columns className="w-4 h-4" />
             </button>
@@ -946,7 +1030,14 @@ export function DriveBrowser({
                 e.stopPropagation();
                 changeView("list");
               }}
-              className={`p-1.5 ${viewMode === "list" ? "bg-accent-coral/10 text-accent-coral" : "text-muted-foreground hover:bg-muted/50"}`}
+              className={cn(
+                os ? "px-3.5 py-2.5" : "p-1.5",
+                viewMode === "list"
+                  ? os
+                    ? "bg-os-container text-white"
+                    : "bg-accent-coral/10 text-accent-coral"
+                  : "text-muted-foreground hover:bg-muted/50",
+              )}
             >
               <ListIcon className="w-4 h-4" />
             </button>
@@ -959,7 +1050,14 @@ export function DriveBrowser({
                 e.stopPropagation();
                 changeView("grid");
               }}
-              className={`p-1.5 ${viewMode === "grid" ? "bg-accent-coral/10 text-accent-coral" : "text-muted-foreground hover:bg-muted/50"}`}
+              className={cn(
+                os ? "px-3.5 py-2.5" : "p-1.5",
+                viewMode === "grid"
+                  ? os
+                    ? "bg-os-container text-white"
+                    : "bg-accent-coral/10 text-accent-coral"
+                  : "text-muted-foreground hover:bg-muted/50",
+              )}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -974,7 +1072,15 @@ export function DriveBrowser({
               e.stopPropagation();
               setDetailsOpen((v) => !v);
             }}
-            className={`shrink-0 rounded-md border border-border p-1.5 ${detailsOpen ? "bg-accent-coral/10 text-accent-coral" : "text-muted-foreground hover:bg-muted/50"}`}
+            className={cn(
+              "shrink-0 border border-border",
+              os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
+              detailsOpen
+                ? os
+                  ? "bg-os-container text-white"
+                  : "bg-accent-coral/10 text-accent-coral"
+                : "text-muted-foreground hover:bg-muted/50",
+            )}
           >
             <PanelRight className="w-4 h-4" />
           </button>
@@ -982,10 +1088,15 @@ export function DriveBrowser({
           {newMenu}
         </div>
 
+        {tagChips}
+
         {/* ── Bulk action bar (multi-select, all views) ── */}
         {showBulk && (
           <div
-            className="flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5 text-sm"
+            className={cn(
+              "flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5",
+              os ? "text-base" : "text-sm",
+            )}
             data-testid="drive-bulk-bar"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1022,14 +1133,19 @@ export function DriveBrowser({
         {/* ── Column-view leaf toolbar (shown above columns when a leaf is selected) ── */}
         {viewMode === "columns" && !searching && selectedLeaf && leafActions && (
           <div
-            className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm"
+            className={cn(
+              "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5",
+              os ? "text-base" : "text-sm",
+            )}
             data-testid="drive-leaf-toolbar"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="flex items-center gap-1.5 min-w-0 flex-1">
               {itemIcon(selectedLeaf)}
               <span className="font-medium text-foreground truncate">{selectedLeaf.title || "Untitled"}</span>
-              <span className="text-xs text-muted-foreground shrink-0">{kindLabel(selectedLeaf)}</span>
+              <span className={cn("text-muted-foreground shrink-0", os ? "text-sm" : "text-xs")}>
+                {kindLabel(selectedLeaf)}
+              </span>
             </span>
             <div className="flex items-center gap-1 shrink-0">
               {canLeafDownload && selectedLeaf.href && (
@@ -1038,7 +1154,10 @@ export function DriveBrowser({
                   download
                   data-testid="drive-leaf-download"
                   onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    os ? "text-sm" : "text-xs",
+                  )}
                 >
                   <Download className="w-3.5 h-3.5" /> Download
                 </a>
@@ -1051,7 +1170,10 @@ export function DriveBrowser({
                     e.stopPropagation();
                     leafActions.onRename(selectedLeaf);
                   }}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    os ? "text-sm" : "text-xs",
+                  )}
                 >
                   <Pencil className="w-3.5 h-3.5" /> Rename
                 </button>
@@ -1064,7 +1186,10 @@ export function DriveBrowser({
                     e.stopPropagation();
                     leafActions.onRequestMove(selectedLeaf);
                   }}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    os ? "text-sm" : "text-xs",
+                  )}
                 >
                   <FolderInput className="w-3.5 h-3.5" /> Move
                 </button>
@@ -1075,7 +1200,10 @@ export function DriveBrowser({
                   href={selectedLeaf.href}
                   data-testid="drive-leaf-share"
                   onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    os ? "text-sm" : "text-xs",
+                  )}
                 >
                   <Share2 className="w-3.5 h-3.5" /> Share
                 </a>
@@ -1088,7 +1216,10 @@ export function DriveBrowser({
                     e.stopPropagation();
                     leafActions.onDelete(selectedLeaf);
                   }}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/10",
+                    os ? "text-sm" : "text-xs",
+                  )}
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>
@@ -1104,7 +1235,6 @@ export function DriveBrowser({
             <div
               ref={columnsContainerRef}
               className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-x-auto"
-              style={{ height: "calc(100vh - 14rem)" }}
               onDragEnter={onFileDragEnter}
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
@@ -1121,7 +1251,10 @@ export function DriveBrowser({
                   </span>
                 </div>
               )}
-              <div className="flex h-full divide-x divide-border/60">
+              {/* No height of its own: the row is as tall as its tallest
+                  column, which caps itself (see MillerColumn), so a shallow
+                  Drive doesn't paint an empty panel down to the fold. */}
+              <div className="flex divide-x divide-border/60">
                 {/* Column 0: scope list */}
                 <MillerColumn
                   testid="drive-col-root"
@@ -1265,13 +1398,19 @@ export function DriveBrowser({
 
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm shadow-lg">
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-lg",
+              os ? "text-base" : "text-sm",
+            )}
+          >
             {itemIcon(activeDrag)}
             <span className="font-medium text-foreground">{activeDrag.title || "Untitled"}</span>
           </div>
         )}
       </DragOverlay>
     </DndContext>
+    </DriveScale.Provider>
   );
 }
 
@@ -1290,6 +1429,7 @@ function ColumnScopeRow({
   onClick: () => void;
   onDoubleClick: () => void;
 }) {
+  const t = useDriveText();
   const isCore = scope.id === "core";
   const isHiring = scope.id === "hiring";
   // Synthetic group scopes ("projects"/"education") are not valid drop targets —
@@ -1321,7 +1461,7 @@ function ColumnScopeRow({
       data-testid={`drive-scope-${scope.id}`}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+      className={`group flex items-center gap-2 px-3 py-2 ${t.row} cursor-default select-none ${
         drop.isOver
           ? "ring-2 ring-accent-coral ring-inset bg-accent-coral/10 text-accent-coral"
           : isHighlighted
@@ -1360,6 +1500,7 @@ function ColumnItemRow({
   onDoubleClick: () => void;
   onOpen: () => void;
 }) {
+  const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
   // Signal ①: system-managed folders (systemKey set) are also non-draggable.
@@ -1379,7 +1520,7 @@ function ColumnItemRow({
       data-testid={`drive-item-${item.type}-${item.id}`}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+      className={`group flex items-center gap-2 px-3 py-2 ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         isHighlighted || isSelected
@@ -1448,16 +1589,21 @@ function MillerColumn({
   isEmpty: boolean;
   emptyMessage: string;
 }) {
+  const t = useDriveText();
   return (
     <div
       data-testid={testid}
       // flex-1 so the open columns expand to fill the width (and share it as
       // more open); min-width keeps each readable and lets the row scroll
       // horizontally once it's deep enough to overflow.
-      className="flex flex-1 flex-col overflow-y-auto min-w-[14rem]"
+      // The cap is a column's own, not the frame's: it leaves the page chrome
+      // above visible and scrolls this column past it, while a column with
+      // little in it stays as short as its rows. Columns stretch to the tallest
+      // of them, so the frame ends where the content does.
+      className="flex flex-1 flex-col overflow-y-auto min-w-[14rem] max-h-[calc(100vh-14rem)]"
     >
       {isEmpty ? (
-        <p className="px-3 py-6 text-center text-xs text-muted-foreground italic">{emptyMessage}</p>
+        <p className={`px-3 py-6 text-center ${t.meta} text-muted-foreground italic`}>{emptyMessage}</p>
       ) : (
         <div className="flex flex-col divide-y divide-border/50">{children}</div>
       )}
@@ -1478,6 +1624,10 @@ function Breadcrumb({
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   dragging: boolean;
 }) {
+  const t = useDriveText();
+  // Under the redesign the page renders its own "Drive" h1, so the root crumb
+  // drops to the icon alone rather than repeating the word right beneath it.
+  const os = useContext(DriveScale);
   const collapse = folderCrumbs.length > 3;
   const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
   const shown = collapse ? folderCrumbs.slice(folderCrumbs.length - 2) : folderCrumbs;
@@ -1486,11 +1636,13 @@ function Breadcrumb({
     <nav
       aria-label="Breadcrumb"
       data-testid="drive-breadcrumb"
-      className="flex items-center gap-1 min-w-0 flex-1 text-sm"
+      className={`flex items-center gap-1 min-w-0 flex-1 ${t.row}`}
     >
       <button
         type="button"
         data-testid="drive-crumb-root"
+        aria-label="Drive"
+        title="Drive"
         onClick={(e) => {
           e.stopPropagation();
           onNavigate(null, null);
@@ -1498,7 +1650,7 @@ function Breadcrumb({
         className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-muted/50"
       >
         <HardDrive className="w-4 h-4 text-accent-coral" />
-        Drive
+        {!os && "Drive"}
       </button>
       {currentScope && (
         <Crumb
@@ -1603,6 +1755,7 @@ function ScopeList({
   onRowClick: (id: string, e: ReactMouseEvent) => void;
   onOpen: (id: string) => void;
 }) {
+  const t = useDriveText();
   if (scopes.length === 0) return <EmptyLine>Your Drive is empty.</EmptyLine>;
   return (
     <div className="flex flex-col divide-y divide-border/50 p-1">
@@ -1618,7 +1771,7 @@ function ScopeList({
             data-testid={`drive-scope-${scope.id}`}
             onClick={(e) => onRowClick(scope.id, e)}
             onDoubleClick={() => onOpen(scope.id)}
-            className={`group flex items-center gap-3 px-3 py-2.5 text-sm cursor-default select-none rounded-md ${
+            className={`group flex items-center gap-3 px-3 py-2.5 ${t.row} cursor-default select-none rounded-md ${
               selected.has(scope.id) ? "bg-accent-coral/10" : "hover:bg-muted/50"
             }`}
           >
@@ -1626,7 +1779,9 @@ function ScopeList({
             <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{label}</span>
             {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
             {scope.scopeAudience ? (
-              <span className="shrink-0 text-[10px] tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <span
+                className={`shrink-0 ${t.badge} tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+              >
                 {scope.scopeAudience}
               </span>
             ) : null}
@@ -1671,6 +1826,7 @@ function ScopeContents({
   dragging: boolean;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
+  const t = useDriveText();
   if (listing.length === 0) return <EmptyLine>This folder is empty. Drop files here to upload.</EmptyLine>;
 
   if (viewMode === "grid") {
@@ -1698,7 +1854,7 @@ function ScopeContents({
     <div data-testid="drive-listing">
       {/* Column header (sortable) */}
       <div
-        className="grid items-center gap-2 border-b border-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+        className={`grid items-center gap-2 border-b border-border px-3 py-1.5 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}
         style={{ gridTemplateColumns: GRID_COLUMNS }}
       >
         <SortHeader label="Name" active={sort.key === "name"} dir={sort.dir} onClick={() => onToggleSort("name")} testid="drive-sort-name" />
@@ -1778,6 +1934,7 @@ function ListRow({
   onToggleFavorite?: (item: DriveItem) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
+  const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
   // Signal ①: system-managed folders are also non-draggable.
@@ -1810,7 +1967,7 @@ function ListRow({
         gridTemplateColumns: GRID_COLUMNS,
         ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
       }}
-      className={`group grid items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+      className={`group grid items-center gap-2 px-3 py-2 ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && isFolder
@@ -1836,8 +1993,8 @@ function ListRow({
           </span>
         )}
       </span>
-      <span className="text-xs text-muted-foreground tabular-nums truncate">{relativeTime(item.updatedAt as unknown as string)}</span>
-      <span className="text-xs text-muted-foreground tabular-nums text-right">{formatSize(item.sizeBytes)}</span>
+      <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
+      <span className={`${t.meta} text-muted-foreground tabular-nums text-right`}>{formatSize(item.sizeBytes)}</span>
       <span className="flex items-center justify-end">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
         <RowActionsMenu
@@ -1881,6 +2038,7 @@ function GridTile({
   onToggleFavorite?: (item: DriveItem) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
+  const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
   // Signal ①: system-managed folders are also non-draggable.
@@ -1932,14 +2090,16 @@ function GridTile({
         />
       </div>
       {itemIcon(item, true)}
-      <span className="w-full truncate text-xs font-medium text-foreground">{item.title || "Untitled"}</span>
+      <span className={`w-full truncate ${t.meta} font-medium text-foreground`}>{item.title || "Untitled"}</span>
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
       )}
       {/* Signal ①: "Managed" chip on hover for system-keyed folders. */}
       {isSystemManaged && (
-        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <span
+          className={`shrink-0 rounded-sm bg-muted px-1.5 py-0.5 ${t.badge} font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+        >
           Managed
         </span>
       )}
@@ -1973,6 +2133,7 @@ function SearchResults({
   getScopeActions: (scopeId: string) => RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
 }) {
+  const t = useDriveText();
   if (hits.length === 0) return <EmptyLine>No matches.</EmptyLine>;
   return (
     <div className="flex flex-col divide-y divide-border/50 p-1" data-testid="drive-search-results">
@@ -1982,14 +2143,14 @@ function SearchResults({
           data-testid={`drive-search-hit-${hit.item.id}`}
           onClick={(e) => onRowClick(hit.item.id, e)}
           onDoubleClick={() => onOpen(hit.item.id)}
-          className={`group flex items-center gap-3 px-3 py-2 text-sm cursor-default select-none rounded-md ${
+          className={`group flex items-center gap-3 px-3 py-2 ${t.row} cursor-default select-none rounded-md ${
             selected.has(hit.item.id) ? "bg-accent-coral/10" : "hover:bg-muted/50"
           }`}
         >
           {itemIcon(hit.item)}
           <span className="min-w-0 flex-1 truncate">
             <span className="font-medium text-foreground">{hit.item.title || "Untitled"}</span>
-            <span className="ml-2 text-xs text-muted-foreground truncate">{hit.path}</span>
+            <span className={`ml-2 ${t.meta} text-muted-foreground truncate`}>{hit.path}</span>
           </span>
           {/* Signal ②: process linkage pill in search results. */}
           {hit.item.linkedProcess && (
@@ -2022,6 +2183,7 @@ function DetailsPane({
   selectedItems: DriveItem[];
   onOpen: (item: DriveItem) => void;
 }) {
+  const t = useDriveText();
   const one = selectedItems.length === 1 ? selectedItems[0] : null;
   const path = currentScope
     ? [currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label, ...crumbsFor(currentScope.items, currentFolderId).map((c) => c.title)].join(" › ")
@@ -2029,7 +2191,7 @@ function DetailsPane({
 
   return (
     <aside
-      className="w-64 shrink-0 rounded-lg border border-border bg-card p-4 text-sm"
+      className={`w-64 shrink-0 rounded-lg border border-border bg-card p-4 ${t.row}`}
       data-testid="drive-details"
       onClick={(e) => e.stopPropagation()}
     >
@@ -2041,7 +2203,7 @@ function DetailsPane({
             {itemIcon(one, true)}
             <p className="text-center font-semibold text-foreground break-words">{one.title || "Untitled"}</p>
           </div>
-          <dl className="flex flex-col gap-1.5 text-xs">
+          <dl className={`flex flex-col gap-1.5 ${t.meta}`}>
             <Row label="Kind" value={kindLabel(one)} />
             <Row label="Modified" value={relativeTime(one.updatedAt as unknown as string)} />
             {one.type === "file" && <Row label="Size" value={formatSize(one.sizeBytes) || "—"} />}
@@ -2050,14 +2212,14 @@ function DetailsPane({
           <button
             type="button"
             onClick={() => onOpen(one)}
-            className="mt-1 inline-flex items-center justify-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90"
+            className={`mt-1 inline-flex items-center justify-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 ${t.meta} font-medium text-white hover:bg-accent-coral/90`}
           >
             <FolderOpen className="w-3.5 h-3.5" /> Open
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-1.5 text-xs">
-          <p className="font-medium text-foreground text-sm">{path}</p>
+        <div className={`flex flex-col gap-1.5 ${t.meta}`}>
+          <p className={`font-medium text-foreground ${t.row}`}>{path}</p>
           <p className="text-muted-foreground">{listing.length} item{listing.length === 1 ? "" : "s"}</p>
           <p className="text-muted-foreground mt-2">Select an item to see its details.</p>
         </div>
@@ -2076,5 +2238,6 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function EmptyLine({ children }: { children: ReactNode }) {
-  return <p className="px-3 py-8 text-center text-sm text-muted-foreground italic">{children}</p>;
+  const t = useDriveText();
+  return <p className={`px-3 py-8 text-center ${t.row} text-muted-foreground italic`}>{children}</p>;
 }

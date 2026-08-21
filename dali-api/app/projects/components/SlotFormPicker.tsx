@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 type SelectableForm = { id: string; name: string; published: boolean };
 
@@ -127,10 +128,14 @@ export function SlotFormPicker({
           {fillUrl ? (
             <>
               Members fill this at{" "}
+              {/* Not target="_blank": the desktop shell has no second window
+                  to open into, so the click did nothing. */}
               <a
                 href={fillUrl}
-                target="_blank"
-                rel="noreferrer"
+                onClick={(e) => {
+                  if (requestOpenTabIfEmbedded(fillUrl, binding.formName))
+                    e.preventDefault();
+                }}
                 className="text-accent-coral hover:underline"
               >
                 {fillUrl}

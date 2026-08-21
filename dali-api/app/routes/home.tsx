@@ -35,7 +35,7 @@ import { getHomeEducationSummary } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
-import { resolveHomeSurface } from "~/lib/feature-flags.server";
+import { isFeatureEnabled, resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
@@ -84,6 +84,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const surface = await resolveHomeSurface(auth.user.sub, roles, request);
   if (surface === "calendar") return redirect("/calendar");
   const redesign = surface === "search";
+  // The dali.os home is the search-first home in the design's dress, so it
+  // wins over both other surfaces wherever the shell it belongs to is on.
+  const osRedesign = await isFeatureEnabled("os-redesign", auth.user.sub, roles, request);
 
   // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
   // both to build the day columns and to window the calendar fetch. The shell
@@ -223,8 +226,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart;
   if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
+  // Time-of-day greeting, resolved server-side in the viewer's own zone: the
+  // browser's clock would disagree with every other time on the page (all of
+  // which are formatted in `tz`) and would differ between render and hydration.
+  const greetingHour = getZonedHourFraction(new Date(), tz);
+  const greeting =
+    greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
+
   return {
     redesign,
+    osRedesign,
+    greeting,
     user: auth.user,
     notifications,
     tasks,
@@ -273,7 +285,157 @@ type MyProjectTask = {
 
 export default function Home() {
   const data = useLoaderData<typeof loader>();
+  if (data.osRedesign) return <HomeOS />;
   return data.redesign ? <HomeRedesign /> : <HomeClassic />;
+}
+
+/* ------------------------------------------------------------------ */
+/* dali.os home (behind `os-redesign`). The design's front door: a       */
+/* time-of-day greeting, one wide search field, and the pages you were   */
+/* last in as cards. The attention surfaces the search-first home already */
+/* carries (milestones, tasks/invites needing an answer, your project     */
+/* tasks, your courses) keep their place underneath — the design has no   */
+/* panel for them, but they are the reason home is worth opening.         */
+/* ------------------------------------------------------------------ */
+
+function HomeOS() {
+  const { user, greeting, notifications, tasks, myProjectTasks, education, pages } =
+    useLoaderData<typeof loader>();
+  const fullName =
+    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
+
+  const compactBlocks = [
+    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
+    hasEducationContent(education) && <EducationPanel education={education} />,
+  ].filter(Boolean);
+
+  return (
+    <div className="mx-auto flex w-full max-w-[750px] flex-col gap-12 pt-6">
+      <div className="flex flex-col items-center gap-8">
+        <h1 className="text-center text-3xl font-medium text-white">
+          {greeting}, {fullName}.
+        </h1>
+        <HomeSearch />
+      </div>
+
+      <RecentGrid pages={pages} />
+
+      <div className="flex flex-col gap-6">
+        <MilestonesBanner />
+        <AttentionBanner tasks={tasks} notifications={notifications} />
+        {compactBlocks.length > 1 ? (
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            {[0, 1].map((col) => (
+              <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
+                {compactBlocks
+                  .filter((_, i) => i % 2 === col)
+                  .map((block, i) => (
+                    <div key={i} className="min-w-0">
+                      {block}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="min-w-0">{compactBlocks[0]}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Where a shortcut lives, as the design's small-caps caption under the title.
+   FavoritePage carries no breadcrumb, but its workspace is the same answer at
+   the altitude a caption wants. */
+const OS_WORKSPACE_CAPTION: Record<string, string> = {
+  Project: "Projects",
+  Lab: "Lab",
+  EducationOffering: "Education",
+  Member: "My space",
+  Route: "Navigation",
+};
+
+function RecentGrid({
+  pages,
+}: {
+  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
+}) {
+  const revalidator = useRevalidator();
+  const onChanged = () => revalidator.revalidate();
+  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
+
+  // A brand-new account: nothing starred, nothing opened. The search field
+  // above is the only thing to do here, and a caption over an empty row of
+  // cards just crowds it.
+  if (shortcuts.length === 0) return null;
+
+  // The row is one merged list, so name only the halves that survived the
+  // slice — captioning "recently visited" over nothing but favorites lies.
+  const shownFavorites = Math.min(pages.favorites.length, shortcuts.length);
+  const caption =
+    shownFavorites === 0
+      ? "Recently visited"
+      : shownFavorites === shortcuts.length
+        ? "Favorites"
+        : "Favorites & recently visited";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-sm tracking-wider text-white uppercase">{caption}</p>
+      {/* Wrapping row rather than a grid: the row rarely divides evenly into
+          columns (six shortcuts, four across), and a grid pins the remainder
+          flush left under a centered search box. */}
+      <div className="flex flex-wrap justify-center gap-5">
+        {shortcuts.map((p) => (
+          <RecentCard key={p.id} page={p} onChanged={onChanged} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
+  return (
+    // Link + star are siblings: the star must not navigate.
+    // The widths keep the old grid's 2-up/4-up rhythm — a wrapping row has no
+    // columns to inherit it from, so each card subtracts its share of the gaps.
+    <div className="group relative w-[calc((100%_-_1.25rem)/2)] sm:w-[calc((100%_-_3.75rem)/4)]">
+      <a
+        href={page.href}
+        className="flex h-full flex-col items-center gap-3 rounded-os-card bg-os-card p-4 text-center transition-colors hover:bg-os-card-hover"
+      >
+        <span className="flex items-center justify-center">
+          <FavoriteIcon page={page} size="lg" />
+        </span>
+        <span className="w-full truncate text-base text-white">{page.title || "Untitled"}</span>
+        <span className="w-full truncate text-xs font-semibold tracking-wide text-os-grey uppercase">
+          {OS_WORKSPACE_CAPTION[page.workspaceType] ?? page.workspaceType}
+        </span>
+      </a>
+      {/* Recents show a hollow star on hover — a way to keep the page without
+          hunting for it — while a favorite always shows its filled one. */}
+      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
+        <span
+          className={`absolute right-2 top-2 ${
+            page.favorited ? "" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+          }`}
+        >
+          {page.isRoute ? (
+            <FavoriteRouteButton
+              href={page.href}
+              label={page.title}
+              favorited={page.favorited}
+              onToggled={onChanged}
+              compact
+            />
+          ) : (
+            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+          )}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */

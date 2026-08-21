@@ -27,9 +27,12 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
-import { LayoutGrid, UsersRound } from "lucide-react";
+import { LayoutGrid, Plus, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const handle = { areaPills: true };
 
@@ -291,6 +294,10 @@ export default function MembersList() {
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
+  // Same dress the dali.os projects hub wears: the title scales up, the
+  // toolbar controls become pills and the add control takes the design's
+  // plus button. Behaviour is untouched — this is chrome only.
+  const os = useFeatureFlag("os-redesign");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -312,7 +319,12 @@ export default function MembersList() {
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-4xl font-medium" : "text-2xl font-bold",
+            )}
+          >
             People
           </h1>
         </div>
@@ -320,9 +332,16 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={buttonClasses("primary", "sm")}
+            className={os ? "os-add-btn" : buttonClasses("primary", "sm")}
           >
-            + New member
+            {os ? (
+              <>
+                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+                New member
+              </>
+            ) : (
+              "+ New member"
+            )}
           </button>
         )}
       </header>
@@ -366,26 +385,38 @@ export default function MembersList() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className={buttonClasses("ghost", "sm")}
+              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button type="submit" className={buttonClasses("primary", "sm")}>
+            <button
+              type="submit"
+              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+            >
               Create
             </button>
           </div>
         </Form>
       )}
 
-      <StatusTabs status={status} />
-
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Active/Alumni is a scope switch, not a filter, but it belongs with the
+          rest of the controls rather than on a row of its own — a lone segmented
+          control above the toolbar read as a second, competing tab bar, which is
+          exactly what the design does away with. Leading the row keeps it first
+          in reading order and first in the tab order. */}
+      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
+        <StatusTabs status={status} os={os} />
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
-          className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+            os
+              ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+              : "max-w-sm px-3 py-2 rounded-md bg-background",
+          )}
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />
@@ -422,7 +453,7 @@ export default function MembersList() {
 // Active ↔ Alumni segmented tab. Drives the loader via `?status=`. Switching to
 // Alumni drops the `?term=` filter (term doesn't apply post-grad) and scopes the
 // list to members whose stored membershipStatus is Alumni.
-function StatusTabs({ status }: { status: MemberStatus }) {
+function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   function set(next: MemberStatus) {
     const params = new URLSearchParams(searchParams);
@@ -439,18 +470,27 @@ function StatusTabs({ status }: { status: MemberStatus }) {
     { key: "alumni", label: "Alumni" },
   ];
   return (
-    <div className="inline-flex items-center gap-1 border border-border rounded-md p-1 bg-muted/30 w-fit">
+    <div
+      className={cn(
+        "inline-flex items-center gap-1 border border-border p-1 w-fit",
+        os ? "rounded-full bg-os-card" : "rounded-md bg-muted/30",
+      )}
+    >
       {tabs.map((t) => (
         <button
           key={t.key}
           type="button"
           onClick={() => set(t.key)}
           aria-pressed={status === t.key}
-          className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+          className={cn(
+            "text-xs font-medium transition-colors",
+            os ? "rounded-full px-4 py-1.5" : "rounded-sm px-3 py-1",
             status === t.key
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+              ? os
+                ? "bg-os-container text-white"
+                : "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
           {t.label}
         </button>
@@ -503,6 +543,7 @@ function DomainFilter({
   selected: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const os = useFeatureFlag("os-redesign");
   const options: SelectOption<string>[] = [
     { value: "", label: "All domains" },
     ...domains.map((d) => ({ value: d.id, label: d.displayName })),
@@ -512,7 +553,7 @@ function DomainFilter({
       value={selected}
       options={options}
       ariaLabel="Filter by domain"
-      buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-44"
+      buttonClassName={cn(filterPillClass(os), "w-full sm:w-44")}
       onChange={(value) => {
         const next = new URLSearchParams(searchParams);
         if (value) next.set("domain", value);

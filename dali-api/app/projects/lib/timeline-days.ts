@@ -101,3 +101,26 @@ export function sprintBands(
   }
   return out;
 }
+
+/**
+ * The fixed one-week bands a [startIso, endIso] span sits in.
+ *
+ * A record doesn't pick a sprint — a sprint is a week, so which ones a record
+ * is in falls out of its dates. Labels are positional (a band's letter counts
+ * weeks from the start of its term), so the grid has to be walked from the
+ * terms' own beginning and then narrowed to the span; tiling only the span
+ * would relabel its first week as that term's "A".
+ */
+export function sprintBandsForSpan(
+  startIso: string,
+  endIso: string,
+  terms: TimelineTermSpan[],
+  fmtDay: (d: Date) => string,
+): SprintBand[] {
+  const from = utcDayOf(startIso);
+  const to = utcDayOf(endIso);
+  if (to < from) return [];
+  const starts = terms.map((t) => utcDayOf(t.startsAt));
+  const min = starts.length ? Math.min(from, ...starts) : from;
+  return sprintBands(min, to, terms, fmtDay).filter((b) => b.end >= from);
+}

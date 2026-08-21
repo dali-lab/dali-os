@@ -34,7 +34,10 @@ import { ALL_TERMS } from "~/lib/terms.shared";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
-import { Globe } from "lucide-react";
+import { Globe, Plus } from "lucide-react";
+import { cn } from "~/lib/cn";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   matchesShowcaseFilter,
   SHOWCASE_FILTER_ALL,
@@ -157,19 +160,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
   // round-trip — no second hit even though canViewStaffing delegates to isCore.
-  const [roles, partnerOrgs, myAssignments, totalProjects] =
+  const [roles, partnerOrgs, totalProjects] =
     await timed(request, 'hub.meta', () => Promise.all([
       getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
-      }),
-      // Which projects the viewer has (or had) an assignment on, any term —
-      // drives the "My projects" toggle chip.
-      prisma.projectAssignment.findMany({
-        where: { userId: auth.user.sub },
-        select: { projectId: true },
-        distinct: ["projectId"],
       }),
       // Only needed to tell "the term filter hid everything" apart from "no
       // projects at all"; with the filter off, rows already is everything.
@@ -195,7 +191,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     partnerOrgs,
     canEdit,
     canStaff,
-    myProjectIds: myAssignments.map((a) => a.projectId),
     hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
     templatesEnabled,
     projectTemplates,
@@ -325,7 +320,6 @@ export default function ProjectsListPage() {
     partnerOrgs,
     canEdit,
     canStaff,
-    myProjectIds,
     hiddenByTermFilter,
     templatesEnabled,
     projectTemplates,
@@ -335,15 +329,20 @@ export default function ProjectsListPage() {
   const [creating, setCreating] = useState(false);
   const [newIconEmoji, setNewIconEmoji] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [mineOnly, setMineOnly] = useState(false);
   // In the URL (like ?term=) rather than component state, so "show me every
   // project still needing a write-up" is a link someone can share.
   const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
+  // The dali.os hub is this same page in the design's dress — the title scales
+  // up, the toolbar controls become pills, and the card view takes the cover-led
+  // layout. Every control keeps its behaviour; nothing here is flag-only.
+  const os = useFeatureFlag("os-redesign");
+  // Only consulted with the flag off — the os hub has one view. Left on the
+  // shared "dali:view:projects" key so a member's list/card choice survives
+  // being shown the design and taken back off it.
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   const filtered = useMemo(() => {
-    const mine = new Set(myProjectIds);
-    let base = mineOnly ? rows.filter((r) => mine.has(r.id)) : rows;
+    let base = rows;
     if (showcaseFilter !== SHOWCASE_FILTER_ALL) {
       base = base.filter((r) =>
         matchesShowcaseFilter(r.showcaseStatus, showcaseFilter),
@@ -355,14 +354,19 @@ export default function ProjectsListPage() {
       if (r.name.toLowerCase().includes(q)) return true;
       return r.partners.some((p) => p.name.toLowerCase().includes(q));
     });
-  }, [rows, query, mineOnly, myProjectIds, showcaseFilter]);
+  }, [rows, query, showcaseFilter]);
 
   return (
     <div className="flex flex-col gap-4">
       <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-[40px] font-medium" : "text-2xl font-bold",
+            )}
+          >
             Projects
           </h1>
         </div>
@@ -373,9 +377,16 @@ export default function ProjectsListPage() {
               setNewIconEmoji(null);
               setCreating(true);
             }}
-            className={buttonClasses("primary", "sm")}
+            className={os ? "os-add-btn" : buttonClasses("primary", "sm")}
           >
-            + New project
+            {os ? (
+              <>
+                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+                New project
+              </>
+            ) : (
+              "+ New project"
+            )}
           </button>
         )}
       </header>
@@ -487,37 +498,33 @@ export default function ProjectsListPage() {
                 setNewIconEmoji(null);
                 setCreating(false);
               }}
-              className={buttonClasses("ghost", "sm")}
+              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button type="submit" className={buttonClasses("primary", "sm")}>
+            <button
+              type="submit"
+              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+            >
               Create
             </button>
           </div>
         </Form>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by project or partner name"
-          className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "flex-1 min-w-[200px] border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+            os
+              ? "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card"
+              : "max-w-sm px-3 py-2 rounded-md bg-background",
+          )}
         />
-        <button
-          type="button"
-          onClick={() => setMineOnly((v) => !v)}
-          aria-pressed={mineOnly}
-          className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border transition-colors ${
-            mineOnly
-              ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
-              : "border-border text-muted-foreground hover:bg-muted/30"
-          }`}
-        >
-          My projects
-        </button>
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           Term
           <TermFilter terms={terms} selected={selectedTerm} />
@@ -534,13 +541,16 @@ export default function ProjectsListPage() {
             }}
             ariaLabel="Filter by status on dali.website"
             options={SHOWCASE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
           />
         </label>
-        <ViewToggle value={view} onChange={setView} />
-        <span className="text-xs text-muted-foreground ml-auto">
+        {/* The design has one view of this page, the card grid — so the
+            list/card toggle is gone with it. The table view and the toggle
+            are still what the current hub renders with the flag off. */}
+        {!os && <ViewToggle value={view} onChange={setView} />}
+        <span className={cn("ml-auto text-muted-foreground", os ? "text-base" : "text-xs")}>
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-          {(query || mineOnly || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
+          {(query || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
           filtered.length !== rows.length
             ? ` of ${rows.length}`
             : ""}
@@ -551,8 +561,6 @@ export default function ProjectsListPage() {
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           {query ? (
             "No projects match this search."
-          ) : mineOnly && rows.length > 0 ? (
-            "You're not on any of these projects."
           ) : showcaseFilter !== SHOWCASE_FILTER_ALL && rows.length > 0 ? (
             <>
               No projects have that public status.{" "}
@@ -589,10 +597,10 @@ export default function ProjectsListPage() {
             "No projects yet."
           )}
         </div>
-      ) : view === "list" ? (
+      ) : !os && view === "list" ? (
         <ProjectsTable rows={filtered} />
       ) : (
-        <ProjectsCards rows={filtered} />
+        <ProjectsCards rows={filtered} os={os} />
       )}
     </div>
   );
@@ -659,13 +667,113 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   );
 }
 
-function ProjectsCards({ rows }: { rows: ProjectRow[] }) {
+function ProjectsCards({ rows, os = false }: { rows: ProjectRow[]; os?: boolean }) {
+  if (os) {
+    return (
+      // auto-fill rather than fixed columns: the design's cards hold their
+      // 280px minimum and the row simply fits fewer of them as the pane
+      // narrows, which is what a split-screen workspace tab needs.
+      <div className="grid max-w-[1080px] grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
+        {rows.map((p) => (
+          <OsProjectCard key={p.id} project={p} />
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {rows.map((p) => (
         <ProjectCard key={p.id} project={p} />
       ))}
     </div>
+  );
+}
+
+/* The design's project card: cover-led, with the status riding the image and
+   the term and partner reduced to one line each. Same fields as ProjectCard —
+   status, publication state, term, partners — so nothing the list view can tell
+   you is missing here; only the emphasis changes. */
+function OsProjectCard({ project }: { project: ProjectRow }) {
+  const [first, ...restPartners] = project.partners;
+  return (
+    // Hover: lift and shadow move together so the card reads as rising rather
+    // than sliding, and the cover scales on a slower curve than the frame so
+    // the two don't land on the same beat. Hover-in is quicker (200ms) than
+    // the settle back out (300ms), which is what keeps it from feeling stepped.
+    <Link
+      to={`/projects/${project.id}`}
+      className="group flex flex-col overflow-hidden rounded-os-card bg-os-card transition-[background-color,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:bg-os-card-hover hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.6)] hover:duration-200 motion-safe:hover:-translate-y-1"
+    >
+      <div className="relative overflow-hidden">
+        <ProjectCoverImage
+          name={project.name}
+          imageUrl={project.imageUrl}
+          className="h-[183px] w-full object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
+          placeholderClassName="h-[183px] w-full transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
+        />
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          <PublicPill status={project.showcaseStatus} />
+          <OsStatusTag status={project.status} />
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-[17px]">
+        <span className="flex min-w-0 items-center gap-1.5 text-xl text-white">
+          <ProjectIcon iconEmoji={project.iconEmoji} size="inherit" />
+          <span className="truncate">{project.name}</span>
+        </span>
+        {project.firstTermCode && (
+          <span className="flex items-center gap-2">
+            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-white">
+              {project.firstTermCode}
+            </span>
+            <span className="text-xs text-os-grey">Start term</span>
+          </span>
+        )}
+        <span className="mt-auto flex min-w-0 items-center gap-2.5 text-sm text-os-grey">
+          {first ? (
+            <>
+              {first.logoUrl ? (
+                <img
+                  src={first.logoUrl}
+                  alt=""
+                  className="h-5 w-5 flex-shrink-0 rounded-full object-contain"
+                />
+              ) : (
+                <span className="h-5 w-5 flex-shrink-0 rounded-full bg-os-container" />
+              )}
+              <span className="truncate">{first.name}</span>
+              {restPartners.length > 0 && (
+                <span
+                  className="flex-shrink-0 text-xs"
+                  title={restPartners.map((p) => p.name).join(", ")}
+                >
+                  +{restPartners.length}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-os-muted">No partners</span>
+          )}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+// The design's status tag: a translucent plate over the cover so it reads on
+// any photo, tinted per status the same way StatusPill is.
+function OsStatusTag({ status }: { status: ProjectStatus }) {
+  const palette: Record<ProjectStatus, string> = {
+    Active: "text-os-green border-os-green/35",
+    Archived: "text-os-grey border-os-grey/35",
+    Paused: "text-os-amber border-os-amber/35",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border bg-os-bg/85 px-3 py-[5px] text-xs font-semibold ${palette[status]}`}
+    >
+      {status}
+    </span>
   );
 }
 

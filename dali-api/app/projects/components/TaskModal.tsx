@@ -5,11 +5,11 @@
 // the save fails. In create mode there's no task yet, so it collects the full
 // set of fields and hands them to onCreate on submit.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { X } from "lucide-react";
+import { X, Pencil } from "lucide-react";
 import { Modal } from "~/components/Modal";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
 import { Markdown } from "~/components/Markdown";
@@ -26,6 +26,9 @@ import {
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, Priority, TaskStatus } from "../lib/task-board";
 import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
+import { sprintBandsForSpan } from "../lib/timeline-days";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
 
@@ -104,6 +107,12 @@ export function TaskModal({
 }) {
   const dialog = useDialog();
   const isCreate = !task;
+  const os = useFeatureFlag("os-redesign");
+  // The design opens a detail modal as a record — labels over plain values,
+  // no footer — and the pencil turns it into a form. Creating is always a
+  // form; there is no record yet to read.
+  const [editing, setEditing] = useState(false);
+  const readOnly = os && !isCreate && !editing;
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "Normal");
@@ -135,6 +144,27 @@ export function TaskModal({
   // Stories always belong to an epic, so with no epic picked there's nothing
   // to choose from.
   const epicStories = epicId ? options.stories.filter((s) => s.epicId === epicId) : [];
+  // Why a picker has nothing in it, said once under the field. Inside the
+  // control it read as a value you could choose; the design's .field-hint is
+  // where an explanation belongs.
+  const sprintHint = epicSprints.length
+    ? undefined
+    : epicId
+      ? "This epic has no sprints yet."
+      : "Pick an epic first.";
+  // A sprint is a fixed week, so which ones a task is in is a fact about its
+  // dates, not a choice — read off the same grid the timeline draws.
+  const taskSprints = useMemo(() => {
+    if (!startDate || !dueDate) return [];
+    return sprintBandsForSpan(startDate, dueDate, options.termSpans, (d) =>
+      d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+    );
+  }, [startDate, dueDate, options.termSpans]);
+  const storyHint = epicStories.length
+    ? undefined
+    : epicId
+      ? "This epic has no user stories yet."
+      : "Pick an epic first.";
   function changeEpic(next: string) {
     setEpicId(next);
     const stillValid = options.sprints.some(
@@ -623,33 +653,87 @@ export function TaskModal({
       onClose={guardedClose}
       labelledBy="task-modal-title"
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 w-full max-w-4xl my-8 max-h-[85vh] flex flex-col"
+      containerClassName={cn(
+        "w-full my-8 max-h-[85vh] flex flex-col",
+        os
+          ? // .modal-card: 560px, one column. The wide two-pane layout below is
+            // the classic modal; the design puts the checklist under the task
+            // rather than beside it.
+            "max-w-[560px] os-modal-card os-form !p-0"
+          : "max-w-4xl bg-card rounded-2xl shadow-brand-2",
+      )}
     >
-      <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-border flex-shrink-0">
-        <textarea
-          id="task-modal-title"
-          ref={titleRef}
-          rows={1}
-          autoFocus={isCreate}
-          value={title}
-          disabled={!canManage}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            // Titles stay single-line logically; Enter just shouldn't
-            // insert a newline (this textarea only wraps for visibility).
-            if (e.key === "Enter") e.preventDefault();
-          }}
-          className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100 resize-none overflow-hidden"
-          placeholder={isCreate ? "New task title" : "Task title"}
-        />
-        <button
-          type="button"
-          onClick={guardedClose}
-          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-          aria-label="Close"
-        >
-          <X className="w-5 h-5" aria-hidden />
-        </button>
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3 flex-shrink-0",
+          os ? "px-6 pt-6 pb-0" : "px-5 sm:px-6 py-4 border-b border-border",
+        )}
+      >
+        {/* The design names which of epic / story / task you have open, in
+            that level's own colours, before the title. */}
+        {os && (
+          <span className="os-type-badge os-type-badge--task mt-1.5 flex-shrink-0">Task</span>
+        )}
+        {os && isCreate ? (
+          // Creating, the header names the dialog and the task's own name
+          // moves into the first field below — which is where the design puts
+          // it, and the only place a required mark can sit on it.
+          <h2 id="task-modal-title" className="os-modal-title min-w-0 flex-1">
+            New task
+          </h2>
+        ) : readOnly ? (
+          // A record's title is text, not a field with a box around it.
+          <h2
+            id="task-modal-title"
+            className="os-record-name os-modal-title min-w-0 flex-1 break-words"
+          >
+            {title}
+          </h2>
+        ) : (
+          <textarea
+            id="task-modal-title"
+            ref={titleRef}
+            rows={1}
+            autoFocus={isCreate}
+            value={title}
+            disabled={!canManage}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              // Titles stay single-line logically; Enter just shouldn't
+              // insert a newline (this textarea only wraps for visibility).
+              if (e.key === "Enter") e.preventDefault();
+            }}
+            className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100 resize-none overflow-hidden"
+            placeholder={isCreate ? "New task title" : "Task title"}
+          />
+        )}
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {/* The design's .modal-edit-btn — only where there's a record to
+              switch out of, and only for someone who may change it. */}
+          {readOnly && canManage && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="os-icon-btn"
+              aria-label="Edit task"
+              title="Edit"
+            >
+              <Pencil className="w-4 h-4" aria-hidden />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={guardedClose}
+            className={
+              os
+                ? "os-icon-btn"
+                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            }
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" aria-hidden />
+          </button>
+        </div>
       </div>
 
       {/* Two columns once there's room: the task itself on the left —
@@ -658,9 +742,37 @@ export function TaskModal({
           subtasks off doesn't mean scrolling past every property. Each
           side scrolls independently past lg, so a long comment thread
           doesn't push the description out of view. */}
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 p-5 sm:p-6">
-        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
-        <Field label="Description">
+      <div
+        className={cn(
+          "flex-1 min-h-0 overflow-y-auto",
+          os
+            ? // No column gap: a .os-field-group carries its own 20px bottom
+              // margin, and a gap here would space the paired fields twice.
+              "px-6 pb-6 pt-6"
+            : "lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 p-5 sm:p-6",
+          readOnly && "os-form-readonly",
+        )}
+      >
+        <div className={cn("min-h-0 lg:overflow-y-auto pr-1", !os && "flex flex-col gap-4")}>
+        {os && isCreate && (
+          <div className="os-field-group">
+            <label htmlFor="task-title-field" className="os-field-label">
+              Title<span className="os-required-mark">*</span>
+            </label>
+            <input
+              id="task-title-field"
+              type="text"
+              autoFocus
+              value={title}
+              disabled={!canManage}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="What needs doing?"
+              className="w-full"
+            />
+          </div>
+        )}
+
+        <Field label="Description" hint="Markdown supported.">
           {/* Plain Markdown on Task.description, the same shape as the
               project's own Description block. Descriptions written back when
               this was a collab doc were already mirrored to this column as
@@ -670,7 +782,7 @@ export function TaskModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={isCreate ? 3 : 6}
-              placeholder="What does this task involve? (Markdown supported)"
+              placeholder="What does this task involve?"
               className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           ) : description ? (
@@ -684,10 +796,12 @@ export function TaskModal({
           )}
         </Field>
 
-        {/* Details — one tidy property panel (label · control rows) instead of
-            a grid of boxed inputs, so the metadata reads as scannable
-            properties rather than a wall of fields. */}
-        <div className="rounded-lg border border-border divide-y divide-border">
+        {/* The task's properties. The design pairs the fields that answer one
+            question — status with priority, the two ends of a span — so the
+            panel reads as a few decisions rather than a ladder of one-line
+            rows, and fences the linked records off under their own heading. */}
+        <div className={cn(!os && "rounded-lg border border-border divide-y divide-border")}>
+          <FieldPair os={os}>
           <PropRow label="Status">
             <Select
               value={status}
@@ -697,7 +811,6 @@ export function TaskModal({
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
-
           <PropRow label="Priority">
             <Select
               value={priority}
@@ -707,80 +820,32 @@ export function TaskModal({
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
+          </FieldPair>
 
-          <PropRow label="Epic">
-            <Select
-              value={epicId}
+          <FieldPair os={os}>
+          <PropRow label="Starts">
+            <DateField
+              mode="date"
+              value={startDate}
               disabled={!canManage}
-              onChange={(value) => changeEpic(value)}
-              placeholder="No epic"
-              options={[
-                { value: "", label: "No epic" },
-                ...options.epics.map((e) => ({ value: e.id, label: e.title })),
-              ]}
-              buttonClassName={PROP_CONTROL}
+              onChange={(value) => setStartDate(value)}
+              className="w-full"
+              ariaLabel="Start date"
             />
           </PropRow>
-
-          <PropRow label="Sprint">
-            <Select
-              value={sprintId}
-              disabled={!canManage || epicSprints.length === 0}
-              onChange={(value) => setSprintId(value)}
-              placeholder={
-                epicSprints.length === 0
-                  ? epicId
-                    ? "No sprints in this epic"
-                    : "Pick an epic first"
-                  : "None"
-              }
-              options={[
-                {
-                  value: "",
-                  label:
-                    epicSprints.length === 0
-                      ? epicId
-                        ? "No sprints in this epic"
-                        : "Pick an epic first"
-                      : "None",
-                },
-                ...epicSprints.map((s) => ({
-                  value: s.id,
-                  label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
-                })),
-              ]}
-              buttonClassName={PROP_CONTROL}
+          <PropRow label="Deadline">
+            <DateField
+              mode="date"
+              value={dueDate}
+              disabled={!canManage}
+              onChange={(value) => setDueDate(value)}
+              className="w-full"
+              ariaLabel="Deadline"
             />
           </PropRow>
+          </FieldPair>
 
-          <PropRow label="User story">
-            <Select
-              value={storyId}
-              disabled={!canManage || epicStories.length === 0}
-              onChange={(value) => setStoryId(value)}
-              placeholder={
-                epicStories.length === 0
-                  ? epicId
-                    ? "No stories in this epic"
-                    : "Pick an epic first"
-                  : "None"
-              }
-              options={[
-                {
-                  value: "",
-                  label:
-                    epicStories.length === 0
-                      ? epicId
-                        ? "No stories in this epic"
-                        : "Pick an epic first"
-                      : "None",
-                },
-                ...epicStories.map((s) => ({ value: s.id, label: s.title })),
-              ]}
-              buttonClassName={PROP_CONTROL}
-            />
-          </PropRow>
-
+          <FieldPair os={os}>
           <PropRow label="Domain">
             <Select
               value={domainId}
@@ -794,29 +859,6 @@ export function TaskModal({
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
-
-          <PropRow label="Starts">
-            <DateField
-              mode="date"
-              value={startDate}
-              disabled={!canManage}
-              onChange={(value) => setStartDate(value)}
-              className="w-full"
-              ariaLabel="Start date"
-            />
-          </PropRow>
-
-          <PropRow label="Deadline">
-            <DateField
-              mode="date"
-              value={dueDate}
-              disabled={!canManage}
-              onChange={(value) => setDueDate(value)}
-              className="w-full"
-              ariaLabel="Deadline"
-            />
-          </PropRow>
-
           <PropRow label="Assignees" align="start">
             <AssigneePicker
               all={options.members}
@@ -825,10 +867,82 @@ export function TaskModal({
               onChange={setAssigneeIds}
             />
           </PropRow>
+          </FieldPair>
+
+          {os && (
+            <>
+              <div className="os-modal-divider" aria-hidden />
+              <h3 className="os-section-header">Links</h3>
+            </>
+          )}
+
+          <FieldPair os={os}>
+          <PropRow label="Epic">
+            <Select
+              value={epicId}
+              disabled={!canManage}
+              onChange={(value) => changeEpic(value)}
+              placeholder="No epic"
+              options={[
+                { value: "", label: "No epic" },
+                ...options.epics.map((e) => ({ value: e.id, label: e.title })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+          {!os && (
+          <PropRow label="Sprint" hint={sprintHint}>
+            <Select
+              value={sprintId}
+              disabled={!canManage || epicSprints.length === 0}
+              onChange={(value) => setSprintId(value)}
+              placeholder="None"
+              options={[
+                { value: "", label: "None" },
+                ...epicSprints.map((s) => ({
+                  value: s.id,
+                  label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
+                })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+          )}
+          </FieldPair>
+
+          {os && (
+            <PropRow label="Sprints">
+              {taskSprints.length > 0 ? (
+                <div className="os-sprint-chip-row">
+                  {taskSprints.map((b) => (
+                    <span key={b.key} className="os-sprint-chip os-sprint-chip--active">
+                      {b.label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-os-grey">Set a start and deadline.</p>
+              )}
+            </PropRow>
+          )}
+
+          <PropRow label="User story" hint={storyHint}>
+            <Select
+              value={storyId}
+              disabled={!canManage || epicStories.length === 0}
+              onChange={(value) => setStoryId(value)}
+              placeholder="None"
+              options={[
+                { value: "", label: "None" },
+                ...epicStories.map((s) => ({ value: s.id, label: s.title })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (
-          <div className="flex flex-col gap-2 pt-2 border-t border-border">
+          <ModalSection os={os} title="GitHub" className="gap-2">
             <Checkbox
               label="Create GitHub issue"
               checked={githubEnabled}
@@ -843,11 +957,11 @@ export function TaskModal({
                 buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
               />
             )}
-          </div>
+          </ModalSection>
         )}
 
         {!isCreate && task && (github.url || (canManage && githubRepos.length > 0)) && (
-          <div className="flex flex-col gap-2 pt-2 border-t border-border text-xs">
+          <ModalSection os={os} title="GitHub" className="gap-2 text-xs">
             {github.url ? (
               <div className="flex items-center justify-between gap-2">
                 <a
@@ -927,15 +1041,20 @@ export function TaskModal({
               </button>
             )}
             {linkError && <p className="text-accent-coral">{linkError}</p>}
-          </div>
+          </ModalSection>
         )}
 
         {!isCreate && task && (canManage || artifacts.length > 0) && (
-          <div className="flex flex-col gap-2 pt-2 border-t border-border text-xs">
-            <span className="text-muted-foreground font-medium uppercase tracking-wide">
-              Work files
-              {artifacts.length > 0 && ` (${artifacts.length})`}
-            </span>
+          <ModalSection
+            os={os}
+            className="gap-2 text-xs"
+            title={
+              <>
+                Work files
+                {artifacts.length > 0 && ` (${artifacts.length})`}
+              </>
+            }
+          >
             {artifacts.map((a) => (
               <div key={a.id} className="flex items-center justify-between gap-2">
                 <Link
@@ -1024,15 +1143,20 @@ export function TaskModal({
               </div>
             )}
             {artifactError && <p className="text-accent-coral">{artifactError}</p>}
-          </div>
+          </ModalSection>
         )}
 
         {!isCreate && task && (
-          <div className="flex flex-col gap-3 pt-4 mt-1 border-t border-border">
-            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-              Comments
-              {comments !== null && ` (${comments.length})`}
-            </span>
+          <ModalSection
+            os={os}
+            className="gap-3"
+            title={
+              <>
+                Comments
+                {comments !== null && ` (${comments.length})`}
+              </>
+            }
+          >
             {comments === null ? (
               <p className="text-xs text-muted-foreground italic">Loading comments…</p>
             ) : (
@@ -1095,17 +1219,25 @@ export function TaskModal({
                 </div>
               </div>
             )}
-          </div>
+          </ModalSection>
         )}
         </div>
 
-        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
+        <div className={cn("min-h-0 lg:overflow-y-auto pr-1", !os && "flex flex-col gap-4")}>
         {!isCreate && (
-          <div className="flex flex-col gap-1.5 text-xs">
-            <span className="text-muted-foreground font-medium uppercase tracking-wide">
-              Checklist
-              {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
-            </span>
+          <ModalSection
+            os={os}
+            // Top of the classic modal's right column, so it takes no rule of
+            // its own there; under os the columns stack and it needs one.
+            bordered={false}
+            className="gap-1.5 text-xs"
+            title={
+              <>
+                Checklist
+                {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
+              </>
+            }
+          >
             {checklist.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
                 <Checkbox
@@ -1149,7 +1281,7 @@ export function TaskModal({
                 className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
               />
             )}
-          </div>
+          </ModalSection>
         )}
         </div>
       </div>
@@ -1189,11 +1321,11 @@ export function TaskModal({
                 Delete
               </button>
             ))}
-          <div className="ml-auto flex gap-2">
+          <div className={cn("ml-auto flex gap-2", readOnly && "hidden")}>
             <button
               type="button"
               onClick={guardedClose}
-              className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={buttonClasses("secondary", "sm")}
             >
               Cancel
             </button>
@@ -1211,7 +1343,10 @@ export function TaskModal({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => void handleSave()}
+                  onClick={() => {
+                    setEditing(false);
+                    void handleSave();
+                  }}
                   disabled={saving}
                 >
                   {saving ? "Saving…" : "Save"}
@@ -1232,31 +1367,100 @@ export function TaskModal({
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  // The design's .field-hint: what the field means or why it's empty, under
+  // the control rather than inside it.
+  hint?: string;
   children: React.ReactNode;
 }) {
+  const os = useFeatureFlag("os-redesign");
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground font-medium uppercase tracking-wide">
+    <label className={cn(os ? "os-field-group" : "flex flex-col gap-1 text-xs")}>
+      <span
+        className={cn(
+          os ? "os-field-label" : "text-muted-foreground font-medium uppercase tracking-wide",
+        )}
+      >
         {label}
       </span>
       {children}
+      {hint && (
+        <span className={cn(os ? "os-field-hint" : "text-[11px] text-muted-foreground")}>
+          {hint}
+        </span>
+      )}
     </label>
   );
 }
 
-// One row in the Details property panel: a fixed-width label and its control.
+// Two fields on one line (the design's .field-row). The classic panel doesn't
+// pair — its rows are ruled, so they have to stay direct children of it.
+function FieldPair({ os, children }: { os: boolean; children: React.ReactNode }) {
+  return os ? <div className="os-field-row">{children}</div> : <>{children}</>;
+}
+
+// A block below the fields — links, attachments, comments. The design fences
+// each with a rule and names it in caps; the classic modal uses a hairline and
+// a quiet caption.
+function ModalSection({
+  os,
+  title,
+  className,
+  bordered = true,
+  children,
+}: {
+  os: boolean;
+  title: React.ReactNode;
+  className?: string;
+  bordered?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      {os && <div className="os-modal-divider" aria-hidden />}
+      <div className={cn(!os && bordered && "pt-2 border-t border-border")}>
+        <span
+          className={cn(
+            "block",
+            os
+              ? "os-section-header"
+              : "mb-2 text-xs text-muted-foreground font-medium uppercase tracking-wide",
+          )}
+        >
+          {title}
+        </span>
+        <div className={cn("flex flex-col", className)}>{children}</div>
+      </div>
+    </>
+  );
+}
+
+// One field in the Details panel: the design stacks a caption over its value
+// full width; the classic panel is a ruled two-column table.
 function PropRow({
   label,
+  hint,
   children,
   align = "center",
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
   align?: "center" | "start";
 }) {
+  const os = useFeatureFlag("os-redesign");
+  if (os) {
+    return (
+      <div className="os-field-group min-w-0">
+        <span className="os-field-label">{label}</span>
+        <div className="min-w-0">{children}</div>
+        {hint && <span className="os-field-hint">{hint}</span>}
+      </div>
+    );
+  }
   return (
     <div
       className={`flex gap-3 px-3 py-2 ${
@@ -1270,7 +1474,10 @@ function PropRow({
       >
         {label}
       </span>
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0">
+        {children}
+        {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
+      </div>
     </div>
   );
 }

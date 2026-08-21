@@ -15,7 +15,10 @@ import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
  * - `?term=all` → the "All terms" view (termId is null, isAll true).
  * - `?term=<id>` → that term, if it exists; otherwise falls back to current.
  *
- * Always returns the full term list (newest first) for the dropdown options.
+ * Always returns the full term list (newest first) for the dropdown options,
+ * with the current term flagged `isCurrent` — TermFilter hoists it for display
+ * while callers that index the list (education.compliance's "newest" fallback)
+ * keep seeing sortKey order.
  */
 export async function resolveTermFilter(request: Request): Promise<{
   terms: TermOption[];
@@ -26,13 +29,17 @@ export async function resolveTermFilter(request: Request): Promise<{
   const url = new URL(request.url);
   const param = url.searchParams.get("term");
 
-  const [terms, current] = await Promise.all([
+  const [allTerms, current] = await Promise.all([
     prisma.term.findMany({
       orderBy: { sortKey: "desc" },
       select: { id: true, code: true },
     }),
     currentTerm(),
   ]);
+  const terms: TermOption[] = allTerms.map((t) => ({
+    ...t,
+    isCurrent: t.id === current?.id,
+  }));
 
   if (param === ALL_TERMS) {
     return { terms, selected: ALL_TERMS, termId: null, isAll: true };

@@ -164,8 +164,8 @@ test.describe('project hub share toggle (member)', () => {
       .getByRole('button', { name: title, exact: true })
       .locator('xpath=following::button[@aria-label="Document actions"][1]');
 
-  test('overview shows the Partners section and share states', async ({ page }) => {
-    await page.goto('/projects/project-tuck-alumni?embed=1');
+  test('project details shows the Partners section and share states', async ({ page }) => {
+    await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
     await expect(page.getByText('Pat Tuck (Program Sponsor)')).toBeVisible();
     // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
@@ -184,7 +184,7 @@ test.describe('project hub share toggle (member)', () => {
   });
 
   test('toggling share flips the badge and back', async ({ page }) => {
-    await page.goto('/projects/project-tuck-alumni?embed=1');
+    await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
     await docMenu(page, 'Internal Retro Notes').click();
     await page.getByRole('menuitem', { name: 'Share with partner' }).click();
     await expect(

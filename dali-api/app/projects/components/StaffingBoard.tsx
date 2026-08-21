@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams, useRevalidator } from "react-router";
+import { Link, useSearchParams, useRevalidator } from "react-router";
 import { Select } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
+  matchesBoardSearch,
   resolveAssignmentDomains,
   UNASSIGNED,
   type MemberCardModel,
@@ -12,15 +13,17 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { CheckCircle2, Plus, UserPlus } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { useOsChrome } from "~/components/os-chrome";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
-import { AddMemberControl } from "./AddMemberControl";
-import { AddExternalMentorModal } from "./AddExternalMentorModal";
+import { AddMemberFlow } from "./AddMemberFlow";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
 import type { Level } from "~/lib/level";
@@ -35,12 +38,6 @@ type ProjectMeta = {
   githubTeamSlug?: string | null;
   slackChannelName?: string | null;
 };
-
-// Expected headcount per (project, domain) for this term — already summed
-// across levels and sorted by domain name in the loader. Keyed by projectId.
-// Absent / empty entries render as no demand chips (a project with no
-// ProjectRoleRequest rows this term).
-export type DomainDemand = { domainId: string; domainName: string; slots: number };
 
 type Props = {
   cycleId: string;
@@ -62,7 +59,6 @@ type Props = {
   // ranked that aren't board columns, so cards/modal never show a raw id.
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
-  demandByProject: Record<string, DomainDemand[]>;
   /** Staffing leads can drag. Members get a read-only board. */
   canManage: boolean;
 };
@@ -79,9 +75,9 @@ export function StaffingBoard({
   cardOrder,
   projectNames,
   domainNames,
-  demandByProject,
   canManage,
 }: Props) {
+  const { os } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
@@ -89,6 +85,10 @@ export function StaffingBoard({
   // the persist+revalidate reconciles. Same lifecycle as `assignments`.
   const [order, setOrder] = useState(cardOrder);
   const [error, setError] = useState<string | null>(null);
+  // Board text search. Filters visible cards by name/email, eligibility domain,
+  // and full application text (bid answers + preference notes) — see
+  // matchesBoardSearch. Client-side only; every field is already loaded.
+  const [boardQuery, setBoardQuery] = useState("");
   // Member + column whose bid modal is open (column highlights their current
   // project among the bids), or null.
   const [openBid, setOpenBid] = useState<{ userId: string; columnKey: string } | null>(null);
@@ -269,9 +269,6 @@ export function StaffingBoard({
     }
   }, []);
 
-  // Project id whose "add external mentor" modal is open, or null.
-  const [externalMentorProjectId, setExternalMentorProjectId] = useState<string | null>(null);
-
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
   // optimistic move mid-drag. Once our save lands it revalidates and this clears.
@@ -313,9 +310,29 @@ export function StaffingBoard({
 
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
+  // Board search narrows which members render. memberById stays UNfiltered so
+  // drag / placement / add-member still see the whole roster.
+  const visibleMembers = useMemo(
+    () => membersForBoard.filter((m) => matchesBoardSearch(m, boardQuery)),
+    [membersForBoard, boardQuery],
+  );
+
+  // External-mentor cards aren't roster members (no MemberInput), so filter them
+  // with the same tokens over their name + mentoring domain.
+  const externalCardVisible = useCallback(
+    (c: MemberCardModel) => {
+      const tokens = boardQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return true;
+      const hay =
+        `${c.firstName} ${c.lastName} ${c.domainLevels.map((d) => d.domainName).join(" ")}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    },
+    [boardQuery],
+  );
+
   const board = useMemo(
-    () => buildBoard({ projectIds, members: membersForBoard, assignments, cardOrder: order }),
-    [projectIds, membersForBoard, assignments, order],
+    () => buildBoard({ projectIds, members: visibleMembers, assignments, cardOrder: order }),
+    [projectIds, visibleMembers, assignments, order],
   );
 
   const memberById = useMemo(
@@ -546,22 +563,35 @@ export function StaffingBoard({
   }
 
   const openBidMember = openBid ? memberById.get(openBid.userId) ?? null : null;
-  const openBidColumnId =
-    openBid && openBid.columnKey !== UNASSIGNED ? openBid.columnKey : null;
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
-  // Per-column tone (kept from the original): the Unassigned column is muted,
-  // active projects get the teal wash, paused/archived projects read as dim.
-  const toneClasses: Record<"muted" | "active" | "dim", string> = {
-    muted: "border-border bg-muted/20",
-    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
-    dim: "border-border bg-card",
-  };
+  // Per-column tone. The brand shell washes an active project's column in
+  // teal; the os design has no such wash — its columns are all the one card
+  // fill, and the states separate by weight instead: the staging column sits
+  // in the darker well, a paused or archived project fades back.
+  const toneClasses: Record<"muted" | "active" | "dim", string> = os
+    ? {
+        muted: "border-transparent bg-os-well",
+        active: "border-transparent bg-os-card",
+        dim: "border-transparent bg-os-card opacity-60",
+      }
+    : {
+        muted: "border-border bg-muted/20",
+        active: "border-accent-teal/40 bg-accent-teal/[0.04]",
+        dim: "border-border bg-card",
+      };
   // pt-1/px on the row (the primitive's default row layout) keeps each column's
   // top + side borders off the scroll-clip edge so they stay visible.
   const shell = (tone: "muted" | "active" | "dim") =>
-    `flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} flex flex-col max-h-[calc(100vh-12rem)]`;
+    cn(
+      "flex-shrink-0 w-64 border flex flex-col max-h-[calc(100vh-12rem)]",
+      // A column is a tall container, not a card: the design's 24px card
+      // corner curves away from its own contents at this height, so it takes
+      // the 12px item radius instead.
+      os ? "rounded-os-item" : "rounded-lg",
+      toneClasses[tone],
+    );
   // Only the card list scrolls; the header stays pinned. flex-1 + min-h-0 lets
   // it shrink within the column's max-height so overflow-y kicks in.
   const listClass = "flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto";
@@ -572,30 +602,11 @@ export function StaffingBoard({
     </div>
   );
 
-  const columnSubtitle = (countLabel: string, demand?: DomainDemand[]) => (
-    <>
-      <div>{countLabel}</div>
-      {demand && demand.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {demand.map((d) => (
-            <span
-              key={d.domainId}
-              className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
-              title={`Expected ${d.slots} ${d.domainName} this term`}
-            >
-              {d.domainName} · {d.slots}
-            </span>
-          ))}
-        </div>
-      )}
-    </>
-  );
-
   const columns: KanbanColumn<MemberCardModel>[] = [
     {
       id: UNASSIGNED,
       title: "Unassigned",
-      subtitle: columnSubtitle(`${board[UNASSIGNED]?.length ?? 0} bidding`),
+      subtitle: `${board[UNASSIGNED]?.length ?? 0} bidding`,
       cards: board[UNASSIGNED] ?? [],
       className: shell("muted"),
       listClassName: listClass,
@@ -605,50 +616,57 @@ export function StaffingBoard({
     ...projects.map<KanbanColumn<MemberCardModel>>((p) => {
       const tone = p.status === "Active" ? "active" : "dim";
       // Roster cards first, then external-mentor cards pinned at the end.
-      const cards = [...(board[p.id] ?? []), ...(externalCardsByProject.get(p.id) ?? [])];
+      const cards = [
+        ...(board[p.id] ?? []),
+        ...(externalCardsByProject.get(p.id) ?? []).filter(externalCardVisible),
+      ];
       return {
         id: p.id,
         title: (
           <span className="flex items-center gap-1.5 min-w-0">
             <ProjectIcon iconEmoji={p.iconEmoji} />
             <span className="truncate">{p.name}</span>
+            {/* Straight through to the project. The column header is part of a
+                drag surface, so the press must not reach it. */}
+            <Link
+              to={`/projects/${p.id}`}
+              prefetch="intent"
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              title={`Open ${p.name}`}
+              aria-label={`Open ${p.name}`}
+              className={cn(
+                "shrink-0 rounded p-0.5 transition-colors",
+                os
+                  ? "text-os-muted hover:text-white"
+                  : "text-muted-foreground/70 hover:text-accent-coral",
+              )}
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
           </span>
         ),
-        subtitle: columnSubtitle(
-          `${board[p.id]?.length ?? 0} assigned`,
-          demandByProject[p.id],
-        ),
+        subtitle: `${board[p.id]?.length ?? 0} assigned`,
         cards,
         className: shell(tone),
         listClassName: listClass,
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
-          <div className="flex-shrink-0 flex items-center gap-1.5">
-            <AddMemberToProjectControl
-              projectName={p.name}
-              members={membersForBoard}
-              assignedUserIds={new Set((board[p.id] ?? []).map((c) => c.userId))}
-              onAdd={(userId) => void addMemberToProject(userId, p.id)}
-            />
-            <button
-              type="button"
-              onClick={() => setExternalMentorProjectId(p.id)}
-              title={`Add external mentor to ${p.name}`}
-              aria-label={`Add external mentor to ${p.name}`}
-              className="text-muted-foreground hover:text-accent-teal transition-colors"
-            >
-              <UserPlus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setFinalizeProjectId(p.id)}
-              title={`Finalize ${p.name}`}
-              aria-label={`Finalize ${p.name}`}
-              className="text-muted-foreground hover:text-accent-coral transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setFinalizeProjectId(p.id)}
+            title={`Finalize ${p.name}`}
+            aria-label={`Finalize ${p.name}`}
+            className={cn(
+              "flex-shrink-0 transition-colors",
+              os
+                ? "text-os-muted hover:text-os-accent"
+                : "text-muted-foreground hover:text-accent-coral",
+            )}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+          </button>
         ) : (
           <span />
         ),
@@ -659,38 +677,84 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
-      <div className="flex items-center justify-end gap-3 flex-wrap">
-        {canManage && <AddMemberControl cycleId={cycleId} />}
-        <DomainFilter
-          domains={domains}
-          value={selectedDomainId}
-          onChange={(id) => {
-            setSearchParams(
-              (prev) => {
-                if (id) prev.set("domain", id);
-                else prev.delete("domain");
-                return prev;
-              },
-              { replace: true },
-            );
-          }}
-        />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <Select
-            value={termId}
-            options={terms.map((t) => ({ value: t.id, label: t.code }))}
-            ariaLabel="Term"
-            buttonClassName="inline-flex items-center justify-between gap-1 text-sm px-2 py-1 border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40"
-            onChange={(value) => {
+          <div className="relative">
+            <Search
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
+              aria-hidden
+            />
+            <input
+              type="text"
+              value={boardQuery}
+              onChange={(e) => setBoardQuery(e.target.value)}
+              placeholder="Search people, domains, application…"
+              aria-label="Search the board"
+              className={cn(
+                "w-56 sm:w-72 text-sm pl-7 pr-7 py-1 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
+                os ? "rounded-os-item focus:ring-os-accent/40" : "rounded-md focus:ring-accent-coral/30",
+              )}
+            />
+            {boardQuery && (
+              <button
+                type="button"
+                onClick={() => setBoardQuery("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground rounded p-0.5"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden />
+              </button>
+            )}
+          </div>
+          {boardQuery.trim() && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {visibleMembers.length} of {membersForBoard.length} shown
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {canManage && (
+            <AddMemberFlow
+              cycleId={cycleId}
+              projects={projects.map((p) => ({ id: p.id, name: p.name, iconEmoji: p.iconEmoji }))}
+              members={membersForBoard}
+              assignments={assignments}
+              domains={domains}
+              onStaffToProject={(userId, projectId) => void addMemberToProject(userId, projectId)}
+              onExternalMentorAdded={() => loadExternalMentorsRef.current()}
+            />
+          )}
+          <DomainFilter
+            domains={domains}
+            value={selectedDomainId}
+            onChange={(id) => {
               setSearchParams(
                 (prev) => {
-                  prev.set("term", value);
+                  if (id) prev.set("domain", id);
+                  else prev.delete("domain");
                   return prev;
                 },
                 { replace: true },
               );
             }}
           />
+          <div className="flex items-center gap-2">
+            <Select
+              value={termId}
+              options={terms.map((t) => ({ value: t.id, label: t.code }))}
+              ariaLabel="Term"
+              buttonClassName={cn(filterPillClass(os), "w-full sm:w-32")}
+              onChange={(value) => {
+                setSearchParams(
+                  (prev) => {
+                    prev.set("term", value);
+                    return prev;
+                  },
+                  { replace: true },
+                );
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -787,8 +851,19 @@ export function StaffingBoard({
           preferences={openBidMember.preferences}
           bidFields={openBidMember.bidFields ?? []}
           projectNames={projectNames}
-          domainNames={domainNames}
-          currentProjectId={openBidColumnId}
+          boardProjects={projects.map((p) => ({ id: p.id, name: p.name, iconEmoji: p.iconEmoji }))}
+          assignedProjectIds={Array.from(
+            new Set(
+              assignments
+                .filter((a) => a.userId === openBidMember.userId)
+                .map((a) => a.projectId),
+            ),
+          )}
+          canManage={canManage}
+          onPlace={(projectId) => {
+            void addMemberToProject(openBidMember.userId, projectId);
+            setOpenBid(null);
+          }}
         />
       )}
 
@@ -809,17 +884,6 @@ export function StaffingBoard({
         />
       )}
 
-      {externalMentorProjectId && (
-        <AddExternalMentorModal
-          open={true}
-          onClose={() => setExternalMentorProjectId(null)}
-          cycleId={cycleId}
-          projectId={externalMentorProjectId}
-          projectName={projectNames[externalMentorProjectId] ?? "project"}
-          domains={domains}
-          onAdded={() => loadExternalMentorsRef.current()}
-        />
-      )}
     </div>
   );
 }
@@ -828,6 +892,7 @@ export function StaffingBoard({
 // invite all current-term Core + Admin/staff + everyone assigned to a project
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const { os } = useOsChrome();
   const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -863,17 +928,25 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   }
 
   return (
-    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn(
+        "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+        os
+          ? "rounded-os-card bg-os-card"
+          : "rounded-lg border border-accent-coral/30 bg-accent-coral/10",
+      )}
+    >
       <div className="min-w-0">
         <p className="text-sm font-heading font-semibold text-foreground">
           Term Slack channel{termCode ? ` for ${termCode}` : ""}
         </p>
-        <p className="text-xs text-muted-foreground">
-          Get-or-create a channel and invite all Core, staff, and everyone assigned to a project
-          this term.
-        </p>
         {result && (
-          <p className={`text-xs mt-1 ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+          <p
+            className={cn(
+              "text-xs mt-1",
+              result.ok ? (os ? "text-os-green" : "text-accent-teal") : "text-destructive",
+            )}
+          >
             {result.ok ? "✓ " : "✗ "}
             {result.message}
           </p>
@@ -888,7 +961,12 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           onChange={(e) => setChannel(e.target.value)}
           placeholder="26x"
           aria-label="Term channel name"
-          className="w-32 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "w-32 px-2 py-1 text-sm border border-border bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2",
+            os
+              ? "rounded-os-item focus:ring-os-accent/40"
+              : "rounded-md focus:ring-accent-coral/30",
+          )}
         />
         <Button
           variant="primary"
@@ -900,99 +978,6 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           {running ? "Creating…" : "Create + invite"}
         </Button>
       </div>
-    </div>
-  );
-}
-
-// Per-project "add member" search. Unlike the board-wide AddMemberControl (which
-// adds a non-bidder to the Unassigned pool), this staffs an existing board member
-// onto ONE project additively — the way to put someone on a second project.
-// Search is client-side over the already-loaded members; members already on this
-// project are excluded, but those staffed elsewhere are included.
-function AddMemberToProjectControl({
-  projectName,
-  members,
-  assignedUserIds,
-  onAdd,
-}: {
-  projectName: string;
-  members: MemberInput[];
-  assignedUserIds: Set<string>;
-  onAdd: (userId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const query = q.trim().toLowerCase();
-  const results =
-    query.length < 2
-      ? []
-      : members
-          .filter((m) => !assignedUserIds.has(m.userId))
-          .filter((m) => {
-            const name = `${m.firstName} ${m.lastName}`.toLowerCase();
-            return name.includes(query) || (m.email ?? "").toLowerCase().includes(query);
-          })
-          .slice(0, 20);
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={`Add member to ${projectName}`}
-        aria-label={`Add member to ${projectName}`}
-        className="text-muted-foreground hover:text-accent-teal transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-50 p-2">
-          <input
-            autoFocus
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search members…"
-            className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-teal/30"
-          />
-          <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
-            {query.length >= 2 && results.length === 0 && (
-              <p className="text-xs text-muted-foreground px-1 py-1">No members found.</p>
-            )}
-            {results.map((m) => (
-              <button
-                key={m.userId}
-                type="button"
-                onClick={() => {
-                  onAdd(m.userId);
-                  setOpen(false);
-                  setQ("");
-                }}
-                className="text-left px-2 py-1.5 rounded hover:bg-muted flex flex-col"
-              >
-                <span className="text-sm text-foreground">
-                  {m.firstName} {m.lastName}
-                </span>
-                {m.email && <span className="text-[11px] text-muted-foreground">{m.email}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

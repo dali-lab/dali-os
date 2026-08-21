@@ -21,7 +21,7 @@ import {
   FloatingFocusManager,
   FloatingPortal,
 } from "@floating-ui/react";
-import { PANEL_CLASS } from "./styles";
+import { usePanelClass } from "./os-styles";
 
 // Generic anchored popover: a trigger + a portaled panel of ARBITRARY content
 // (an emoji grid, a tag list + create form, a filter panel). Owns positioning
@@ -46,6 +46,7 @@ export function Popover({
   ariaLabel?: string;
   panelClassName?: string;
 }) {
+  const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
 
   const { refs, floatingStyles, context } = useFloating({
@@ -96,7 +97,7 @@ export function Popover({
               ref={refs.setFloating}
               style={floatingStyles}
               aria-label={ariaLabel}
-              className={panelClassName ?? `${PANEL_CLASS} p-2`}
+              className={panelClassName ?? `${panelClass} p-2`}
               {...getFloatingProps()}
             >
               {typeof children === "function" ? children(close) : children}

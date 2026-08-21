@@ -154,7 +154,19 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
   const withPage = <T extends { page: unknown }>(rows: T[]) =>
     rows.filter((r): r is T & { page: PageShape } => r.page != null);
 
-  const routeFavHrefs = routeRows.map((r) => r.href!).filter((h) => !isNavbarRoute(h));
+  // Canonicalize on the way out too: rows written before hrefs were
+  // canonicalized can point at one project under several tab queries, and the
+  // panel should list it once (most recently pinned wins, since routeRows is
+  // already ordered by favoritedAt).
+  const routeFavRows: { href: string; label: string | null }[] = [];
+  const seenRouteFavs = new Set<string>();
+  for (const row of routeRows) {
+    const href = canonicalRouteHref(row.href!);
+    if (isNavbarRoute(href) || seenRouteFavs.has(href)) continue;
+    seenRouteFavs.add(href);
+    routeFavRows.push({ href, label: row.label });
+  }
+  const routeFavHrefs = routeFavRows.map((r) => r.href);
   const routeRecentHrefs = routeRecentRows.map((r) => r.href!);
 
   const [favorites, pageRecents, resolved] = await Promise.all([
@@ -209,11 +221,8 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     };
   };
 
-  const routeFavorites = routeFavHrefs
-    .map((h) => {
-      const row = routeRows.find((r) => r.href === h)!;
-      return shapeRoute(h, row.label, true, false);
-    })
+  const routeFavorites = routeFavRows
+    .map((r) => shapeRoute(r.href, r.label, true, false))
     .filter((f): f is FavoritePage => f != null);
 
   // Merge page + route recents by visit recency, then cap.
@@ -266,6 +275,34 @@ function parseRouteHref(href: string): RouteRef | null {
   if (m[1] === "projects") return { kind: "project", id };
   if (m[1] === "members") return { kind: "person", id };
   return { kind: "org", id };
+}
+
+/**
+ * The stored identity of a route favorite. Entity detail pages keep view state
+ * in the query — a project hub writes `?tab=progress`, then `?task=…` — so the
+ * URL as typed would star the same project once per tab, and the star would
+ * read unlit (and re-star) the moment you moved to another tab. Hubs and
+ * sub-tabs keep their query, where the filter is part of what's being pinned
+ * (`/education?term=25F`).
+ */
+export function canonicalRouteHref(href: string): string {
+  if (!parseRouteHref(href)) return href;
+  try {
+    return new URL(href, "http://local").pathname;
+  } catch {
+    return href;
+  }
+}
+
+// Rows pointing at the same destination as `canonical` but stored with view
+// state still attached, from before hrefs were canonicalized. Matched by prefix
+// so today's star can clear a star set on `/projects/p1?tab=board`.
+function staleVariantFilters(canonical: string) {
+  if (!parseRouteHref(canonical)) return [];
+  return [
+    { href: { startsWith: `${canonical}?` } },
+    { href: { startsWith: `${canonical}#` } },
+  ];
 }
 
 // Routes that get a kind-specific glyph but no entity fetch — their name comes
@@ -386,7 +423,7 @@ export async function favoriteHrefs(userId: string): Promise<Set<string>> {
     where: { userId, favoritedAt: { not: null }, href: { not: null } },
     select: { href: true },
   });
-  return new Set(rows.map((r) => r.href!));
+  return new Set(rows.map((r) => canonicalRouteHref(r.href!)));
 }
 
 /**
@@ -399,9 +436,21 @@ export async function setRouteFavorite(
   label: string,
   favorited: boolean,
 ): Promise<void> {
+  const canonical = canonicalRouteHref(href);
   const favoritedAt = favorited ? new Date() : null;
+  // Toggling the star has to reach every row for this destination, not just the
+  // canonical one: a project starred before this from one of its tabs left a
+  // `?tab=` row behind, and leaving it pinned would keep a duplicate in the
+  // panel that no star on the page can clear.
+  const stale = staleVariantFilters(canonical);
+  if (stale.length > 0) {
+    await prisma.userFavorite.updateMany({
+      where: { userId, favoritedAt: { not: null }, OR: stale },
+      data: { favoritedAt: null },
+    });
+  }
   const existing = await prisma.userFavorite.findFirst({
-    where: { userId, href },
+    where: { userId, href: canonical },
     select: { id: true },
   });
   if (existing) {
@@ -411,7 +460,7 @@ export async function setRouteFavorite(
     });
     return;
   }
-  await prisma.userFavorite.create({ data: { userId, href, label, favoritedAt } });
+  await prisma.userFavorite.create({ data: { userId, href: canonical, label, favoritedAt } });
 }
 
 /**

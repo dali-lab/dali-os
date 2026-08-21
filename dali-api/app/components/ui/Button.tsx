@@ -33,7 +33,11 @@ export function buttonClasses(
   size: ButtonSize = "md",
   className?: string,
 ): string {
-  return cn(BASE, VARIANTS[variant], SIZES[size], className);
+  // The `dali-btn--*` marker carries the button's *role* in the markup, which
+  // the utility classes above only encode as colours. The dali.os shell
+  // restyles buttons off it (see app.css), so one theme lands on every button
+  // in the app — dialog footers included — instead of each caller opting in.
+  return cn(BASE, `dali-btn dali-btn--${variant}`, VARIANTS[variant], SIZES[size], className);
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

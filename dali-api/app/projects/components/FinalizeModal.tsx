@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 
@@ -65,6 +68,7 @@ export function FinalizeModal({
   defaultSlackChannel?: string;
   defaultGithubSlug?: string;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const revalidator = useRevalidator();
   const [selected, setSelected] = useState<Set<Automation>>(
     () => new Set(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id)),
@@ -217,7 +221,7 @@ export function FinalizeModal({
       open={open}
       onClose={onClose}
       labelledBy="finalize-modal-title"
-      containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full p-5 sm:p-6 my-auto"
+      containerClassName={modalCardClass(os, "max-w-lg")}
       disableEscape={running}
     >
       <ModalHeader
@@ -272,7 +276,10 @@ export function FinalizeModal({
           return (
             <li
               key={a.id}
-              className="border border-border rounded-md p-3 flex items-start gap-3"
+              className={cn(
+                "p-3 flex items-start gap-3",
+                os ? "rounded-os-item bg-os-well" : "border border-border rounded-md",
+              )}
             >
               <Checkbox
                 checked={selected.has(a.id)}

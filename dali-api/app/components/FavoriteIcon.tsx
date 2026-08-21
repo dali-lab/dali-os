@@ -25,23 +25,30 @@ import type { FavoritePage } from "~/lib/user-pages.server";
 export function FavoriteIcon({
   page,
   glyphClassName = "text-muted-foreground",
+  size = "sm",
 }: {
   page: FavoritePage;
   glyphClassName?: string;
+  // "lg" is the dali.os recents card, where the icon is the card's 24px
+  // subject rather than a 20px marker in front of a row of text.
+  size?: "sm" | "lg";
 }) {
-  const glyph = `h-4 w-4 ${glyphClassName}`;
-  const slot =
-    "flex h-5 w-5 flex-shrink-0 items-center justify-center leading-none";
+  const lg = size === "lg";
+  const glyph = `${lg ? "h-6 w-6" : "h-4 w-4"} ${glyphClassName}`;
+  const slot = `flex flex-shrink-0 items-center justify-center leading-none ${
+    lg ? "h-7 w-7" : "h-5 w-5"
+  }`;
+  const emoji = lg ? "text-2xl" : "text-sm";
 
   switch (page.iconKind) {
     case "person":
-      return <Avatar photoUrl={page.photoUrl} name={page.title || "?"} size="xs" />;
+      return <Avatar photoUrl={page.photoUrl} name={page.title || "?"} size={lg ? "sm" : "xs"} />;
     case "org":
       return page.photoUrl ? (
         <img
           src={page.photoUrl}
           alt=""
-          className="h-5 w-5 flex-shrink-0 rounded object-cover"
+          className={`flex-shrink-0 rounded object-cover ${lg ? "h-7 w-7" : "h-5 w-5"}`}
         />
       ) : (
         <span className={slot} aria-hidden>
@@ -52,7 +59,7 @@ export function FavoriteIcon({
       return (
         <span className={slot} aria-hidden>
           {page.iconEmoji ? (
-            <span className="text-sm">{page.iconEmoji}</span>
+            <span className={emoji}>{page.iconEmoji}</span>
           ) : (
             <FolderKanban className={glyph} />
           )}
@@ -62,7 +69,7 @@ export function FavoriteIcon({
       return (
         <span className={slot} aria-hidden>
           {page.iconEmoji ? (
-            <span className="text-sm">{page.iconEmoji}</span>
+            <span className={emoji}>{page.iconEmoji}</span>
           ) : (
             <FileText className={glyph} />
           )}

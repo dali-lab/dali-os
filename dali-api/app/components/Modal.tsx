@@ -1,5 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { cn } from "~/lib/cn";
+import { modalCardClass } from "~/components/os-chrome";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -46,6 +49,7 @@ export interface ModalProps {
   /** Disable Escape-to-close (e.g. while a request is mid-flight). */
   disableEscape?: boolean;
   className?: string;
+  /** Overrides the dialog card entirely. Omit to take the shell's own. */
   containerClassName?: string;
 }
 
@@ -57,8 +61,10 @@ export function Modal({
   initialFocusRef,
   disableEscape = false,
   className = "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto",
-  containerClassName = "bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto",
+  containerClassName,
 }: ModalProps) {
+  const os = useFeatureFlag("os-redesign");
+  const container = containerClassName ?? modalCardClass(os, "max-w-md");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -115,7 +121,7 @@ export function Modal({
 
   return (
     <div
-      className={className}
+      className={cn(className, "os-modal-overlay")}
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelledBy}
@@ -123,7 +129,7 @@ export function Modal({
         if (e.target === e.currentTarget && !disableEscape) onClose();
       }}
     >
-      <div ref={dialogRef} className={containerClassName} tabIndex={-1}>
+      <div ref={dialogRef} className={container} tabIndex={-1}>
         {children}
       </div>
     </div>
@@ -155,13 +161,24 @@ export function ModalHeader({
   actions,
   className = "",
 }: ModalHeaderProps) {
+  const os = useFeatureFlag("os-redesign");
   return (
-    <div className={`flex items-start justify-between gap-4 mb-4 ${className}`}>
+    <div className={cn("flex items-start justify-between gap-4", os ? "mb-6" : "mb-4", className)}>
       <div className="min-w-0">
-        <h2 id={titleId} className="font-heading text-lg font-bold text-foreground">
+        <h2
+          id={titleId}
+          className={cn(
+            "font-heading text-foreground",
+            os ? "text-xl font-medium" : "text-lg font-bold",
+          )}
+        >
           {title}
         </h2>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        {subtitle && (
+          <p className={cn("text-muted-foreground", os ? "mt-1 text-sm" : "mt-0.5 text-xs")}>
+            {subtitle}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {actions}
@@ -170,7 +187,11 @@ export function ModalHeader({
             type="button"
             onClick={onClose}
             aria-label={closeLabel}
-            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            className={
+              os
+                ? "os-icon-btn"
+                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            }
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
@@ -194,12 +215,15 @@ export function ModalFooter({
   children,
   className = "",
 }: ModalFooterProps) {
+  const os = useFeatureFlag("os-redesign");
   return (
-    <div className={`mt-6 flex items-center justify-end gap-2 ${className}`}>
+    <div className={cn("mt-6 flex items-center justify-end gap-2", className)}>
       <button
         type="button"
         onClick={onCancel}
-        className="px-3 py-1.5 text-sm rounded-lg text-foreground/80 hover:bg-muted"
+        className={
+          os ? "os-btn-ghost" : "px-3 py-1.5 text-sm rounded-lg text-foreground/80 hover:bg-muted"
+        }
       >
         {cancelLabel}
       </button>

@@ -7,6 +7,7 @@ import {
   dayOffset,
   daySpan,
   sprintBands,
+  sprintBandsForSpan,
   SPRINT_DAYS,
 } from "../timeline-days";
 
@@ -171,5 +172,48 @@ describe("sprintBands", () => {
     const max = day(2026, 8, 17); // mid-week
     const bands = sprintBands(day(2026, 8, 14), max, [fallTerm], fmt);
     expect(bands.at(-1)!.end).toBe(max);
+  });
+});
+
+describe("sprintBandsForSpan", () => {
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+  const fallTerm = {
+    code: "26F",
+    startsAt: "2026-09-14T00:00:00.000Z", // a Monday
+    endsAt: "2026-11-22T00:00:00.000Z",
+  };
+  const iso = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString();
+
+  it("keeps the term-positional label rather than restarting at A", () => {
+    // Sep 28 opens the term's third week, so it must read C — tiling from the
+    // span alone would call it A.
+    const bands = sprintBandsForSpan(iso(2026, 8, 28), iso(2026, 9, 6), [fallTerm], fmt);
+    expect(bands.map((b) => b.label)).toEqual(["Sprint 26FC", "Sprint 26FD"]);
+  });
+
+  it("returns the single band a span inside one week sits in", () => {
+    const bands = sprintBandsForSpan(iso(2026, 8, 15), iso(2026, 8, 17), [fallTerm], fmt);
+    expect(bands.map((b) => b.label)).toEqual(["Sprint 26FA"]);
+  });
+
+  it("covers every week a long span touches", () => {
+    const bands = sprintBandsForSpan(iso(2026, 8, 14), iso(2026, 9, 5), [fallTerm], fmt);
+    expect(bands).toHaveLength(4);
+    expect(bands[0]!.label).toBe("Sprint 26FA");
+    expect(bands.at(-1)!.label).toBe("Sprint 26FD");
+  });
+
+  it("is empty when the span runs backwards", () => {
+    expect(sprintBandsForSpan(iso(2026, 8, 20), iso(2026, 8, 14), [fallTerm], fmt)).toEqual(
+      [],
+    );
+  });
+
+  it("falls back to week-of labels outside every term", () => {
+    const bands = sprintBandsForSpan(iso(2026, 5, 1), iso(2026, 5, 3), [fallTerm], fmt);
+    expect(bands).toHaveLength(1);
+    expect(bands[0]!.label).toMatch(/^Wk of /);
   });
 });

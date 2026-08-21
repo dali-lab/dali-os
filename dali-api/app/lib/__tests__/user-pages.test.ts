@@ -17,7 +17,12 @@ vi.mock("~/lib/pageAccess.server", () => {
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { listFavoritesAndRecents, setFavorite, setRouteFavorite } from "~/lib/user-pages.server";
+import {
+  favoriteHrefs,
+  listFavoritesAndRecents,
+  setFavorite,
+  setRouteFavorite,
+} from "~/lib/user-pages.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const mockAccess = getPageAccess as unknown as ReturnType<typeof vi.fn>;
@@ -232,6 +237,55 @@ describe("route favorites", () => {
     mockPrisma.userFavorite.findFirst.mockResolvedValue(null);
     await setRouteFavorite(USER, "/projects/p1", "Hood", true);
     expect(mockPrisma.userFavorite.create.mock.calls[0][0].data.href).toBe("/projects/p1");
+  });
+
+  it("stores a detail route by path, so its tab query can't star the same project twice", async () => {
+    mockPrisma.userFavorite.findFirst.mockResolvedValue(null);
+    await setRouteFavorite(USER, "/projects/p1?tab=progress&task=t9", "Hood", true);
+    expect(mockPrisma.userFavorite.findFirst.mock.calls[0][0].where.href).toBe("/projects/p1");
+    expect(mockPrisma.userFavorite.create.mock.calls[0][0].data.href).toBe("/projects/p1");
+  });
+
+  it("keeps a hub's query — there the filter is what's being pinned", async () => {
+    mockPrisma.userFavorite.findFirst.mockResolvedValue(null);
+    await setRouteFavorite(USER, "/education?term=25F", "25F courses", true);
+    expect(mockPrisma.userFavorite.create.mock.calls[0][0].data.href).toBe("/education?term=25F");
+    expect(mockPrisma.userFavorite.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("clears rows starred from a tab before hrefs were canonicalized", async () => {
+    mockPrisma.userFavorite.findFirst.mockResolvedValue({ id: "row-1" });
+    await setRouteFavorite(USER, "/projects/p1", "Hood", false);
+    const where = mockPrisma.userFavorite.updateMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([
+      { href: { startsWith: "/projects/p1?" } },
+      { href: { startsWith: "/projects/p1#" } },
+    ]);
+    expect(mockPrisma.userFavorite.updateMany.mock.calls[0][0].data.favoritedAt).toBeNull();
+  });
+
+  it("reports a project starred from one tab as starred on every tab", async () => {
+    mockPrisma.userFavorite.findMany.mockResolvedValueOnce([
+      { href: "/projects/p1?tab=progress" },
+      { href: "/education?term=25F" },
+    ]);
+    const hrefs = await favoriteHrefs(USER);
+    expect(hrefs.has("/projects/p1")).toBe(true);
+    expect(hrefs.has("/education?term=25F")).toBe(true);
+  });
+
+  it("lists a project once when old rows starred it under several tabs", async () => {
+    rows(
+      [],
+      [],
+      [
+        { href: "/projects/p1?tab=progress", label: "Hood Museum AR" },
+        { href: "/projects/p1?tab=team", label: "Hood Museum AR" },
+        { href: "/projects/p1", label: "Hood Museum AR" },
+      ],
+    );
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites.map((f) => f.href)).toEqual(["/projects/p1"]);
   });
 });
 

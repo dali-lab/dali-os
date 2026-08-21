@@ -326,6 +326,63 @@ export function resolveAssignmentDomains(
   return null;
 }
 
+/**
+ * Does this member belong on the board while it's filtered to one domain?
+ *
+ * The question the filter answers is "who works in this domain", so the answer
+ * comes from DomainEligibility (the member's hired role) — NOT from their bids.
+ * A bid's domainId is not a claim about the bidder: bid-validation assigns one
+ * per ranked project purely to satisfy the row's unique key, falling back to the
+ * project's first declared domain when the member is eligible in none of them.
+ * Matching on it meant ranking a project was enough to appear under that
+ * project's domain, which with a handful of bids each let nearly everyone
+ * through every filter.
+ *
+ * A live assignment still counts. That one IS a domain decision — a lead put
+ * them there — and dropping it would make a real placement vanish from the
+ * column it's sitting in.
+ */
+export function matchesDomainFilter(
+  member: MemberInput,
+  domainId: string,
+  assignedUserIds: ReadonlySet<string>,
+): boolean {
+  return (
+    member.domainLevels.some((d) => d.domainId === domainId) ||
+    assignedUserIds.has(member.userId)
+  );
+}
+
+/**
+ * Client-side board search predicate. The board loads every member's full data
+ * (name, email, eligibility domains, and the complete Project Bids answers +
+ * preference notes), so filtering is a pure in-memory match — no server call.
+ *
+ * Token-AND, case-insensitive: the query is split on whitespace and EVERY token
+ * must appear in at least one searchable field, so "ada design" narrows to Ada
+ * in the Design domain. Mirrors the server board-member search's token behaviour.
+ *
+ * Searchable fields: full name, email, every eligibility domain name, and the
+ * full application text (each bid answer's label + value, and every preference
+ * note). Role/status labels are deliberately excluded. Empty query matches all.
+ */
+export function matchesBoardSearch(member: MemberInput, query: string): boolean {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const haystack: string = [
+    `${member.firstName} ${member.lastName}`,
+    member.email ?? "",
+    ...member.domainLevels.map((d) => d.domainName),
+    ...member.bidFields.flatMap((f) => [f.label, f.value]),
+    ...member.preferences.map((p) => p.notes ?? ""),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  return tokens.every((t) => haystack.includes(t));
+}
+
 /** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */
 export function resolveAssignmentInputs(
   member: MemberInput,

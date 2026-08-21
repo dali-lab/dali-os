@@ -307,6 +307,7 @@ export const prisma = {
     upsert: vi.fn().mockResolvedValue({}),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   projectFile: {
     findUnique: vi.fn(),

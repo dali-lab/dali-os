@@ -24,11 +24,12 @@ import type { Locator, Page } from '@playwright/test';
 // selectable text); a sub-threshold press still counts as the click that
 // opens the task modal.
 
-// The task-board column shell: `flex-shrink-0 w-64 border rounded-lg ...`.
-const COLUMN = 'div.w-64.rounded-lg';
-// The card container: `border border-border rounded-md bg-background` shell in
-// TaskBoard.tsx (the sortable wrapper spreads the drag listeners onto it).
-const CARD = 'div.rounded-md.bg-background';
+// Test ids, not Tailwind classes: both shells dress the column and the card
+// differently (radius, fill), and the selectors silently stopped matching when
+// the dali.os design landed.
+const COLUMN = '[data-testid="board-column"]';
+// The card container — the sortable wrapper spreads the drag listeners onto it.
+const CARD = '[data-testid="task-card"]';
 
 const column = (page: Page, label: string): Locator =>
   page.locator(COLUMN).filter({ hasText: label }).first();

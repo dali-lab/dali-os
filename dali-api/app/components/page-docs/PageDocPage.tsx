@@ -20,6 +20,8 @@ import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 // schema package here doesn't drag BlockNote into any route's initial chunk.
 import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
 import { Tooltip } from "~/components/ui/IconButton";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 type Maintainer = { id: string; name: string; handle: string | null };
 
@@ -59,9 +61,17 @@ type DraftSection = {
 
 const SECTION_LABEL_CLASS =
   "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+// The dali.os eyebrow: wider tracking on the design's secondary grey, as on the
+// project page's section labels.
+const OS_SECTION_LABEL_CLASS =
+  "text-xs font-semibold uppercase tracking-widest text-os-grey";
 const EMPTY_CLASS = "py-2 text-sm text-muted-foreground";
 
 const TITLE_ID = "page-doc-page-title";
+
+function useOsLabelClass() {
+  return useFeatureFlag("os-redesign") ? OS_SECTION_LABEL_CLASS : SECTION_LABEL_CLASS;
+}
 
 function newClientSectionId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -94,6 +104,10 @@ export function PageDocPage({
   focusCommentId?: string;
   onClose: () => void;
 }) {
+  // Under the dali.os shell the guide wears that design instead of the brand
+  // shell's: a large light title, pill buttons on the pale-blue accent, and the
+  // rail's own active-row marker on the section list. Content is untouched.
+  const os = useFeatureFlag("os-redesign");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<DocData | null>(null);
   const [editing, setEditing] = useState(false);
@@ -218,7 +232,12 @@ export function PageDocPage({
             type="button"
             onClick={cancelEditing}
             disabled={saving}
-            className="px-2.5 py-1 text-sm rounded-md text-foreground/80 hover:bg-muted disabled:opacity-50"
+            className={cn(
+              "disabled:opacity-50",
+              os
+                ? "os-btn-ghost"
+                : "px-2.5 py-1 text-sm rounded-md text-foreground/80 hover:bg-muted",
+            )}
           >
             Cancel
           </button>
@@ -226,11 +245,21 @@ export function PageDocPage({
             type="button"
             onClick={() => void save()}
             disabled={saving || uploading || !draftTitle.trim()}
-            className={buttonClasses("primary", "sm")}
+            className={cn(
+              os ? "os-btn-primary" : buttonClasses("primary", "sm"),
+              "disabled:opacity-50",
+            )}
           >
             {saving ? "Saving…" : "Save"}
           </button>
         </>
+      ) : os ? (
+        // The design labels its secondary actions rather than reducing them to
+        // a bare glyph, so the pill carries the word and needs no tooltip.
+        <button type="button" onClick={startEditing} className="os-edit-btn os-add-btn--sm">
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+          Edit
+        </button>
       ) : (
         <Tooltip label="Edit guide">
           <button
@@ -246,20 +275,42 @@ export function PageDocPage({
     ) : null;
 
   return (
-    <div className="flex min-h-[70vh] flex-col gap-5" aria-labelledby={TITLE_ID}>
-      <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
+    <div
+      className={cn("flex min-h-[70vh] flex-col", os ? "gap-8" : "gap-5")}
+      aria-labelledby={TITLE_ID}
+    >
+      <header
+        className={cn(
+          "flex items-start justify-between gap-4",
+          // The os pages separate the title from the page with space, not a
+          // rule — the only rules that design draws are structural (the rail
+          // divider, the tab bar).
+          os ? "pb-1" : "border-b border-border pb-4",
+        )}
+      >
         <div className="min-w-0 flex-1">
           {/* The input lives inside the h1 so the heading — and the
               aria-labelledby that points at it — survives edit mode; a text
               input's value carries into the accessible name. */}
-          <h1 id={TITLE_ID} className="font-heading text-xl font-bold text-foreground sm:text-2xl">
+          <h1
+            id={TITLE_ID}
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-4xl font-medium" : "text-xl font-bold sm:text-2xl",
+            )}
+          >
             {editing ? (
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
                 placeholder={fallbackTitle}
                 aria-label="Guide title"
-                className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-xl font-bold text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-2xl"
+                className={cn(
+                  "w-full border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2",
+                  os
+                    ? "rounded-os-item text-4xl font-medium focus:ring-os-accent/40"
+                    : "rounded-md text-xl font-bold focus:ring-accent-coral/30 sm:text-2xl",
+                )}
               />
             ) : (
               (data?.doc.title ?? fallbackTitle)
@@ -276,7 +327,12 @@ export function PageDocPage({
               />
             </div>
           ) : (
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p
+              className={cn(
+                "text-muted-foreground",
+                os ? "mt-2 text-sm" : "mt-0.5 text-xs",
+              )}
+            >
               {data?.maintainer
                 ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
                 : "No maintainer assigned yet"}
@@ -289,7 +345,11 @@ export function PageDocPage({
             type="button"
             onClick={onClose}
             aria-label="Close guide"
-            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            className={
+              os
+                ? "flex h-10 w-10 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-container hover:text-white"
+                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            }
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
@@ -307,8 +367,13 @@ export function PageDocPage({
       )}
 
       {status === "ready" && data && (
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className={cn("flex flex-col", os ? "gap-8" : "gap-5")}>
+          <div
+            className={cn(
+              "flex flex-col sm:flex-row sm:items-start",
+              os ? "gap-6" : "gap-4",
+            )}
+          >
             <SectionSidebar
               sections={sections.map((s) => ({ id: s.id, title: s.title }))}
               activeId={active?.id ?? null}
@@ -357,7 +422,7 @@ export function PageDocPage({
               }}
             />
 
-            <div className="min-w-0 flex-1 flex flex-col gap-4">
+            <div className={cn("min-w-0 flex-1 flex flex-col", os ? "gap-6" : "gap-4")}>
               {active ? (
                 editing ? (
                   <SectionEditPanel
@@ -381,7 +446,12 @@ export function PageDocPage({
 
           {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-          <section className="flex flex-col gap-2 border-t border-border pt-5">
+          <section
+            className={cn(
+              "flex flex-col gap-2 border-t border-border",
+              os ? "pt-8" : "pt-5",
+            )}
+          >
             <CommentsRail
               targetType="pagedoc"
               targetId={data.doc.id}
@@ -417,17 +487,32 @@ function SectionSidebar({
   onMove: (id: string, dir: "up" | "down") => void;
   onDelete: (id: string) => void;
 }) {
+  const os = useFeatureFlag("os-redesign");
+  const labelClass = useOsLabelClass();
   return (
-    <aside className="w-full shrink-0 sm:w-52 sm:border-r sm:border-border sm:pr-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className={SECTION_LABEL_CLASS}>Sections</h3>
+    <aside
+      className={cn(
+        "w-full shrink-0 sm:border-r sm:border-border",
+        os ? "sm:w-60 sm:pr-5" : "sm:w-52 sm:pr-4",
+      )}
+    >
+      <div className={cn("flex items-center justify-between gap-2", os ? "mb-3" : "mb-2")}>
+        <h3 className={labelClass}>Sections</h3>
         {editing && (
           <button
             type="button"
             onClick={onAdd}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+            className={
+              os
+                ? "os-add-btn os-add-btn--sm"
+                : "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+            }
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
+            <Plus
+              className={os ? "h-3 w-3" : "h-3.5 w-3.5"}
+              strokeWidth={os ? 3 : undefined}
+              aria-hidden
+            />
             Add
           </button>
         )}
@@ -438,15 +523,26 @@ function SectionSidebar({
           return (
             <div
               key={s.id}
-              // Selection follows the app's active-nav convention (accent-coral
-              // edge + text, as in AreaPillNav) rather than a muted tint, which
-              // was too faint to read as selected in light mode. The
-              // transparent edge on unselected rows keeps the text aligned.
-              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md border-l-2 sm:min-w-0 ${
-                selected
-                  ? "border-accent-coral bg-accent-coral/10"
-                  : "border-transparent hover:bg-muted/40"
-              }`}
+              // Selection follows whichever shell this is in: the brand shell's
+              // active-nav convention (accent-coral edge + text, as in
+              // AreaPillNav) rather than a muted tint, which was too faint to
+              // read as selected in light mode; under dali.os, the sidebar's own
+              // marker (.os-subtab-active) — a filled well whose left border is
+              // the accent stripe. Either way the unselected rows carry a
+              // transparent edge of the same width, so the labels stay aligned.
+              className={cn(
+                "group flex min-w-[8rem] flex-col gap-1 sm:min-w-0",
+                os
+                  ? selected
+                    ? "os-subtab-active"
+                    : "rounded-os-item border-l-2 border-transparent hover:bg-white/[0.03]"
+                  : cn(
+                      "rounded-md border-l-2",
+                      selected
+                        ? "border-accent-coral bg-accent-coral/10"
+                        : "border-transparent hover:bg-muted/40",
+                    ),
+              )}
             >
               {editing ? (
                 <div className="flex items-center gap-0.5 p-1">
@@ -491,9 +587,17 @@ function SectionSidebar({
                 <button
                   type="button"
                   onClick={() => onSelect(s.id)}
-                  className={`w-full truncate px-2.5 py-1.5 text-left text-sm ${
-                    selected ? "font-semibold text-accent-coral" : "text-foreground/80"
-                  }`}
+                  className={cn(
+                    "w-full truncate text-left",
+                    os ? "px-3 py-2 text-base" : "px-2.5 py-1.5 text-sm",
+                    os
+                      ? selected
+                        ? "font-medium text-white"
+                        : "text-os-grey hover:text-white"
+                      : selected
+                        ? "font-semibold text-accent-coral"
+                        : "text-foreground/80",
+                  )}
                 >
                   {s.title}
                 </button>
@@ -507,17 +611,27 @@ function SectionSidebar({
 }
 
 function SectionReadPanel({ section }: { section: SectionData }) {
+  const os = useFeatureFlag("os-redesign");
   const emptyBody = isEmptyBlocks(section.body);
   return (
     <div className="flex flex-col gap-4">
-      {/* One step below the guide's own h1 (text-xl/2xl), so the section you're
-          reading is legible as the heading of this pane rather than sitting at
-          body size. */}
-      <h3 className="font-heading text-lg font-bold text-foreground sm:text-xl">
+      {/* One step below the guide's own h1, so the section you're reading is
+          legible as the heading of this pane rather than sitting at body
+          size. */}
+      <h3
+        className={cn(
+          "font-heading text-foreground",
+          os ? "text-2xl font-medium" : "text-lg font-bold sm:text-xl",
+        )}
+      >
         {section.title}
       </h3>
       {section.videoUrl && (
-        <video src={section.videoUrl} controls className="w-full rounded-lg bg-black" />
+        <video
+          src={section.videoUrl}
+          controls
+          className={cn("w-full bg-black", os ? "rounded-os-card" : "rounded-lg")}
+        />
       )}
       {emptyBody ? (
         <p className={EMPTY_CLASS}>No guide written for this section yet.</p>
@@ -547,6 +661,8 @@ function SectionEditPanel({
   onUploading: (v: boolean) => void;
   onChange: (patch: Partial<DraftSection>) => void;
 }) {
+  const os = useFeatureFlag("os-redesign");
+  const labelClass = useOsLabelClass();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -581,13 +697,18 @@ function SectionEditPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className={SECTION_LABEL_CLASS}>Walkthrough video</span>
+        <span className={labelClass}>Walkthrough video</span>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50"
+            className={cn(
+              "disabled:opacity-50",
+              os
+                ? "os-edit-btn"
+                : "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50",
+            )}
           >
             {uploading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -627,12 +748,16 @@ function SectionEditPanel({
         </div>
         <span className="text-xs text-muted-foreground">Up to {MAX_UPLOAD_LABEL}</span>
         {section.videoUrl && section.videoKeyChange === undefined && (
-          <video src={section.videoUrl} controls className="mt-1 w-full rounded-lg bg-black" />
+          <video
+            src={section.videoUrl}
+            controls
+            className={cn("mt-1 w-full bg-black", os ? "rounded-os-card" : "rounded-lg")}
+          />
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className={SECTION_LABEL_CLASS}>Guide</span>
+        <span className={labelClass}>Guide</span>
         {/* Section bodies save as BlockNote block JSON (the API converts
             legacy ProseMirror on read, so initialContent is always blocks). */}
         <DocEditor
@@ -642,7 +767,12 @@ function SectionEditPanel({
           initialContent={section.body}
           onChange={(body) => onChange({ body })}
           placeholder="Explain this section of the page."
-          className="rounded-md border border-border bg-card py-2"
+          className={cn(
+            "py-2",
+            os
+              ? "rounded-os-card bg-os-card"
+              : "rounded-md border border-border bg-card",
+          )}
         />
       </div>
 
@@ -664,6 +794,7 @@ function MaintainerPicker({
   const [results, setResults] = useState<MentionUser[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(currentLabel);
   const [open, setOpen] = useState(false);
+  const os = useFeatureFlag("os-redesign");
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -698,7 +829,12 @@ function MaintainerPicker({
             setQuery("");
           }}
           onChange={(e) => setQuery(e.target.value)}
-          className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "flex-1 border border-border text-sm text-foreground focus:outline-none focus:ring-2",
+            os
+              ? "rounded-full bg-os-card px-4 py-2 focus:ring-os-accent/40"
+              : "rounded-md bg-background px-3 py-1.5 focus:ring-accent-coral/30",
+          )}
         />
         {selectedLabel && (
           <button

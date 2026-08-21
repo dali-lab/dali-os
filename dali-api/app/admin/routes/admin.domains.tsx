@@ -17,6 +17,8 @@ import {
 } from "~/admin/lib/eligibility.server";
 import { ChevronDown, Compass, Trash2, Plus, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import {
   type DomainWithCounts,
   type Member,
@@ -475,9 +477,6 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
                     placeholder="Search members…"
                     className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   />
-                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">
-                    Click a level (P1/P2/P3) to assign. Defaults to P1 if you click the name.
-                  </p>
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
                   {filtered.length === 0 ? (
@@ -560,6 +559,7 @@ function DomainRowItem({
 
 export default function AdminConsoleDomains() {
   const { domains, members, viewerIsAdmin } = useLoaderData<typeof loader>();
+  const { os, pageTitle, panel } = useOsChrome();
   const createFetcher = useFetcher<{ error?: string } | null>();
   const [name, setName] = useState("");
   const isCreating = createFetcher.state !== "idle";
@@ -577,15 +577,13 @@ export default function AdminConsoleDomains() {
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
-            <Compass className="h-4.5 w-4.5" />
-          </span>
+          {!os && (
+            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
+              <Compass className="h-4.5 w-4.5" />
+            </span>
+          )}
           <div className="min-w-0">
-            <h1 className="font-heading text-xl font-bold text-foreground">Domains</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              The disciplines members are hired into. Each one carries its own leads and
-              eligibility list.
-            </p>
+            <h1 className={pageTitle}>Domains</h1>
           </div>
         </div>
 
@@ -602,13 +600,21 @@ export default function AdminConsoleDomains() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Add a domain — e.g. Design"
-              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-xs"
+              className={cn(
+                "min-w-0 flex-1 border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-xs",
+                os ? "rounded-full" : "rounded-lg",
+              )}
               disabled={isCreating}
             />
             <button
               type="submit"
               disabled={isCreating || !name.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-coral/90 disabled:opacity-50"
+              className={cn(
+                "disabled:opacity-50",
+                os
+                  ? "os-add-btn"
+                  : "inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-coral/90",
+              )}
             >
               <Plus className="h-3.5 w-3.5" />
               Add domain
@@ -617,7 +623,7 @@ export default function AdminConsoleDomains() {
         )}
       </header>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-brand-1">
+      <div className={cn("overflow-hidden", panel)}>
         {createFetcher.data?.error && (
           <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
             {createFetcher.data.error}

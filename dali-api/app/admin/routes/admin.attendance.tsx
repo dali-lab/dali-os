@@ -9,6 +9,9 @@ import {
 import type { Route } from "./+types/admin.attendance";
 import { adminHandle } from "~/admin/adminNav";
 import { TermFilter } from "~/components/TermFilter";
+import { useOsChrome } from "~/components/os-chrome";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
@@ -248,6 +251,7 @@ function sortEvents(events: AttendanceEvent[], sort: SortKey): AttendanceEvent[]
 
 export default function AdminAttendancePage() {
   const { terms, selected, viewerIsAdmin, events } = useLoaderData<typeof loader>();
+  const { os, pageTitle, panel } = useOsChrome();
   const tz = useUserTimeZone();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date-desc");
@@ -277,15 +281,12 @@ export default function AdminAttendancePage() {
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-accent-coral font-medium">
-            Self check-in
-          </p>
-          <h1 className="font-heading text-2xl font-bold text-foreground mt-0.5">
-            Attendance
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-lg">
-            Who was invited to QR check-in events, and who actually checked in.
-          </p>
+          {!os && (
+            <p className="text-[11px] uppercase tracking-[0.14em] text-accent-coral font-medium">
+              Self check-in
+            </p>
+          )}
+          <h1 className={cn(pageTitle, !os && "mt-0.5")}>Attendance</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="attendance-sort">
@@ -296,7 +297,7 @@ export default function AdminAttendancePage() {
             value={sort}
             onChange={(v) => setSort(v as SortKey)}
             options={SORT_OPTIONS}
-            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            buttonClassName={cn(filterPillClass(os), "sm:w-48")}
           />
           <TermFilter terms={terms} selected={selected} />
         </div>
@@ -318,7 +319,7 @@ export default function AdminAttendancePage() {
       </div>
 
       {events.length === 0 ? (
-        <div className="bg-card border border-border shadow-brand-1 rounded-lg p-10 text-center">
+        <div className={cn(panel, "p-10 text-center")}>
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accent-coral/10">
             <ClipboardCheck className="w-6 h-6 text-accent-coral" aria-hidden />
           </div>
@@ -332,7 +333,7 @@ export default function AdminAttendancePage() {
           </p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-card border border-border shadow-brand-1 rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
+        <div className={cn(panel, "px-4 py-8 text-center text-sm text-muted-foreground")}>
           No events match this search.
         </div>
       ) : (
@@ -348,7 +349,7 @@ export default function AdminAttendancePage() {
             return (
               <li
                 key={event.id}
-                className="bg-card border border-border shadow-brand-1 rounded-lg overflow-hidden"
+                className={cn(panel, "overflow-hidden")}
               >
                 <div className="flex items-stretch">
                   <button

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Select } from "~/components/ui/floating";
-import { X, Trash2 } from "lucide-react";
+import { X, Trash2, Pencil, Plus } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
-import { Button } from "~/components/ui/Button";
+import { sprintBandsForSpan } from "../lib/timeline-days";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
 import { useDialog } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   EpicsTimeline,
   LEVEL_COLOR,
@@ -79,6 +82,17 @@ export type EditableSprint = {
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 const STORY_PRIORITIES: StoryPriority[] = ["Must", "Should", "Could", "Wont"];
 
+/** A story captured by name and not yet filled in — the design's amber dot.
+ *  Derived rather than stored: "has a title and nothing else" is exactly what
+ *  quick-add produces, and it stops being true the moment anyone edits it. */
+export function isStoryIncomplete(st: {
+  notes: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+}): boolean {
+  return !st.notes && !st.startsAt && !st.endsAt;
+}
+
 // Shared control styling for the epic detail rows, so the read and edit
 // affordances occupy the same box.
 const EPIC_FIELD =
@@ -115,6 +129,10 @@ type Props = {
   // Opens a task from a timeline task bar. Left to the caller because the task
   // modal lives on the board (?task=), not in this component.
   onTaskClick?: (taskId: string) => void;
+  // Opens the task board's create form. Provided only where a board is on the
+  // same surface (the os Progress tab), so the Add menu offers "Task" exactly
+  // when there is somewhere for it to land.
+  onAddTask?: () => void;
 };
 
 function dateInputValue(iso: string): string {
@@ -142,6 +160,22 @@ async function api(url: string, method: "POST" | "DELETE", body?: unknown): Prom
   await apiJson<unknown>(url, method, body);
 }
 
+// One row of the design's add-menu: accent glyph, white label, container fill
+// on hover.
+function AddMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-white transition-colors hover:bg-os-container"
+    >
+      <Plus className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
+      {label}
+    </button>
+  );
+}
+
 export function EpicSprintManager({
   projectId,
   epics,
@@ -154,6 +188,7 @@ export function EpicSprintManager({
   storyDependencies = [],
   timelineTerms = [],
   onTaskClick,
+  onAddTask,
 }: Props) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
@@ -161,8 +196,41 @@ export function EpicSprintManager({
 
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // "All" shows every epic; otherwise only epics matching the selected
+  const os = useFeatureFlag("os-redesign");
+  // The design's toolbar under the timeline: an Edit toggle that turns the
+  // bars into things you can drag, and an Add menu.
+  const [editMode, setEditMode] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  // Second level of the Add menu: "User story" has to be told which epic it
+  // belongs to, so picking it lists the epics rather than guessing one.
+  const [addStoryPicking, setAddStoryPicking] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
   // The selected epic opens its detail view in a modal over the timeline.
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  // Which epic to open with its new-story form already up (Add ▸ User story).
+  const [autoNewStoryEpicId, setAutoNewStoryEpicId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+        setAddStoryPicking(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setAddMenuOpen(false);
+        setAddStoryPicking(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [addMenuOpen]);
 
   // Flat "depends on" target list for the story form: every story in the
   // project, labelled with its epic so same-titled stories stay tellable apart.
@@ -197,6 +265,53 @@ export function EpicSprintManager({
     </div>
   );
 
+  // Drag-drop on a bar: shift its span by whole days. Tasks carry their end as
+  // dueAt; epics and stories have an explicit endsAt. A bar with no dates isn't
+  // laid out at all, so anything reaching here has both.
+  const reschedule = (
+    kind: "epic" | "story" | "task",
+    id: string,
+    deltaDays: number,
+    edge: "move" | "start" | "end" = "move",
+  ) => {
+    const shift = (iso: string | null | undefined): string | undefined => {
+      if (!iso) return undefined;
+      const d = new Date(iso);
+      d.setUTCDate(d.getUTCDate() + deltaDays);
+      return d.toISOString();
+    };
+    const bar = timelineEpics.flatMap((e) =>
+      kind === "epic"
+        ? e.id === id
+          ? [{ startsAt: e.startsAt, endsAt: e.endsAt }]
+          : []
+        : e.stories.flatMap((st) =>
+            kind === "story"
+              ? st.id === id
+                ? [{ startsAt: st.startsAt, endsAt: st.endsAt }]
+                : []
+              : st.tasks.flatMap((t) =>
+                  t.id === id ? [{ startsAt: t.startsAt, endsAt: t.endsAt }] : [],
+                ),
+          ),
+    )[0];
+    if (!bar || !bar.startsAt || !bar.endsAt) return;
+
+    // "move" carries both ends; a grip moves one and pins the other. Either
+    // way the span has to stay at least a day long — dragging a start past its
+    // end would otherwise write an inverted range the timeline can't lay out.
+    const startsAt = edge === "end" ? bar.startsAt : shift(bar.startsAt);
+    const endsAt = edge === "start" ? bar.endsAt : shift(bar.endsAt);
+    if (!startsAt || !endsAt) return;
+    if (edge !== "move" && new Date(startsAt) >= new Date(endsAt)) return;
+
+    run(async () => {
+      if (kind === "epic") await api(`/api/epics/${id}`, "POST", { startsAt, endsAt });
+      else if (kind === "story") await api(`/api/stories/${id}`, "POST", { startsAt, endsAt });
+      else await api(`/api/tasks/${id}`, "POST", { startsAt, dueAt: endsAt });
+    });
+  };
+
   // The selected epic's detail view is rendered inside a modal over the list.
   // It survives revalidation because we look the epic up fresh each render.
   const activeEpic = openEpicId ? epics.find((e) => e.id === openEpicId) : null;
@@ -214,22 +329,43 @@ export function EpicSprintManager({
         onClose={() => setNewEpicOpen(false)}
         labelledBy="new-epic-title"
         disableEscape={busy}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-xl w-full p-5 sm:p-6 my-auto"
+        containerClassName={cn(
+          "w-full my-auto",
+          os
+            ? "max-w-[560px] os-modal-card os-form"
+            : "max-w-xl bg-card rounded-2xl shadow-xl p-5 sm:p-6",
+        )}
       >
         {/* Eyebrow rather than a heading: the form's own name field is the
-            prominent title, exactly as in the detail modal. */}
+            prominent title, exactly as in the detail modal. Under os the
+            level moves onto the design's type badge and the heading names the
+            dialog, so the epic's own name can be a field with a required mark
+            on it. */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h2
-            id="new-epic-title"
-            className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-          >
-            New epic
-          </h2>
+          {os ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
+              <h2 id="new-epic-title" className="os-modal-title min-w-0 truncate">
+                New epic
+              </h2>
+            </div>
+          ) : (
+            <h2
+              id="new-epic-title"
+              className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              New epic
+            </h2>
+          )}
           <button
             type="button"
             onClick={() => setNewEpicOpen(false)}
             aria-label="Close"
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+            className={
+              os
+                ? "os-icon-btn"
+                : "p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+            }
           >
             <X className="w-4 h-4" />
           </button>
@@ -261,21 +397,31 @@ export function EpicSprintManager({
         onClose={closeEpic}
         labelledBy="epic-detail-title"
         disableEscape={busy}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-5xl w-full p-5 sm:p-6 my-auto"
+        containerClassName={cn(
+          "w-full my-auto",
+          os
+            ? "max-w-[560px] os-modal-card os-form"
+            : "max-w-5xl bg-card rounded-2xl shadow-xl p-5 sm:p-6",
+        )}
       >
         {activeEpic && (
           <EpicDetail
             projectId={projectId}
             epic={activeEpic}
+            autoNewStory={autoNewStoryEpicId === activeEpic.id}
             storyOptions={allStoryOptions}
             terms={terms}
+            timelineTerms={timelineTerms}
             canManage={canManage}
             busy={busy}
             run={run}
             api={api}
             collabToken={collabToken}
             userName={userName}
-            onClose={closeEpic}
+            onClose={() => {
+              setAutoNewStoryEpicId(null);
+              closeEpic();
+            }}
             onDeleted={closeEpic}
           />
         )}
@@ -289,16 +435,111 @@ export function EpicSprintManager({
         terms={timelineTerms}
         storyDependencies={storyDependencies}
         actions={
-          canManage ? (
+          canManage && !os ? (
             <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>
               + Add epic
             </Button>
           ) : undefined
         }
+        editMode={editMode}
+        onReschedule={canManage ? reschedule : undefined}
         onEpicClick={canManage ? (id) => openEpic(id) : undefined}
         onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
         onTaskClick={onTaskClick}
       />
+
+      {/* The design's toolbar sits under the timeline, and its Add menu opens
+          upward into the space above it. */}
+      {os && canManage && (
+        <div className="flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            className="os-edit-btn"
+            aria-pressed={editMode}
+            onClick={() => setEditMode((v) => !v)}
+            title={
+              editMode
+                ? "Done — bars are read-only again"
+                : "Drag a bar to move it, or its ends to change one date"
+            }
+          >
+            <Pencil className="h-[15px] w-[15px]" aria-hidden />
+            {editMode ? "Done" : "Edit"}
+          </button>
+
+          <div ref={addMenuRef} className="relative">
+            <button
+              type="button"
+              className="os-add-btn"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={() => {
+                setAddMenuOpen((v) => !v);
+                setAddStoryPicking(false);
+              }}
+            >
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              Add
+            </button>
+            {addMenuOpen && (
+              <div
+                role="menu"
+                className="absolute bottom-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.45)]"
+              >
+                {addStoryPicking ? (
+                  epics.length === 0 ? (
+                    <p className="px-2.5 py-2 text-sm text-os-muted">
+                      No epics yet — add one first.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="px-2.5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
+                        Add story to
+                      </p>
+                      {epics.map((e) => (
+                        <button
+                          key={e.id}
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-white transition-colors hover:bg-os-container"
+                          onClick={() => {
+                            setAddMenuOpen(false);
+                            setAddStoryPicking(false);
+                            setAutoNewStoryEpicId(e.id);
+                            openEpic(e.id);
+                          }}
+                        >
+                          <span className="truncate">{e.title}</span>
+                        </button>
+                      ))}
+                    </>
+                  )
+                ) : (
+                  <>
+                    <AddMenuItem
+                      label="Epic"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        setNewEpicOpen(true);
+                      }}
+                    />
+                    <AddMenuItem label="User story" onClick={() => setAddStoryPicking(true)} />
+                    {onAddTask && (
+                      <AddMenuItem
+                        label="Task"
+                        onClick={() => {
+                          setAddMenuOpen(false);
+                          onAddTask();
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -306,8 +547,10 @@ export function EpicSprintManager({
 function EpicDetail({
   projectId,
   epic,
+  autoNewStory = false,
   storyOptions,
   terms,
+  timelineTerms,
   canManage,
   busy,
   run,
@@ -319,10 +562,15 @@ function EpicDetail({
 }: {
   projectId: string;
   epic: EditableEpic;
+  // Open with the new-story form already up — Add ▸ User story lands here.
+  autoNewStory?: boolean;
   // Every story in the project except the one being edited — "depends on"
   // targets. Cross-epic edges are allowed, same as sprint dependencies.
   storyOptions: { id: string; name: string }[];
   terms: EpicTermOption[];
+  // Term spans, oldest first — the anchor for the fixed one-week sprint grid
+  // this modal reads the epic's sprints off.
+  timelineTerms: TimelineTerm[];
   canManage: boolean;
   busy: boolean;
   run: (fn: () => Promise<void>) => void;
@@ -333,7 +581,24 @@ function EpicDetail({
   onDeleted: () => void;
 }) {
   const dialog = useDialog();
-  const [newStoryOpen, setNewStoryOpen] = useState(false);
+  const os = useFeatureFlag("os-redesign");
+  const [newStoryOpen, setNewStoryOpen] = useState(Boolean(autoNewStory));
+  const [quickAddTitle, setQuickAddTitle] = useState("");
+  // Quick-add appends to the end of a list that may already be taller than the
+  // modal, so the row you just typed can land off-screen. Scroll to it when the
+  // count grows — on growth only, so an unrelated revalidate doesn't yank the
+  // modal around while you're reading it.
+  const storyListRef = useRef<HTMLUListElement | null>(null);
+  const storyCountRef = useRef(epic.stories.length);
+  useEffect(() => {
+    const grew = epic.stories.length > storyCountRef.current;
+    storyCountRef.current = epic.stories.length;
+    if (!grew) return;
+    storyListRef.current?.lastElementChild?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [epic.stories.length]);
   const [editStoryId, setEditStoryId] = useState<string | null>(null);
   // The epic name is edited in place in the header (there's no title field in
   // the details form below). Committed on blur/Enter.
@@ -393,17 +658,33 @@ function EpicDetail({
   // epic, or open the details form straight from the read view.
   const canEditContent = canManage;
 
+  // Which fixed weeks this epic runs through — derived from its dates against
+  // the same term-anchored grid the timeline's sprint bands use, so the modal
+  // and the timeline can't disagree about which sprint something is in.
+  const epicSprints = useMemo(() => {
+    if (!epic.startsAt || !epic.endsAt) return [];
+    return sprintBandsForSpan(epic.startsAt, epic.endsAt, timelineTerms, (d) =>
+      d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+    );
+  }, [epic.startsAt, epic.endsAt, timelineTerms]);
+
   return (
-    <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
+    <div className={cn("max-h-[80vh] overflow-y-auto", os ? "" : "flex flex-col gap-4")}>
       {/* Modal header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className={cn("flex items-start justify-between gap-3", os && "mb-6")}>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-              style={{ background: LEVEL_COLOR.epic }}
-            />
+            {/* The design names the level with a badge; the classic header
+                marks it with the level's dot. */}
+            {os ? (
+              <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
+            ) : (
+              <span
+                aria-hidden
+                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                style={{ background: LEVEL_COLOR.epic }}
+              />
+            )}
             {canManage ? (
               <input
                 id="epic-detail-title"
@@ -419,12 +700,20 @@ function EpicDetail({
                   }
                 }}
                 aria-label="Epic name"
-                className="w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className={cn(
+                  "w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+                  // Edited in place, but it is the modal's heading — so it is
+                  // set like one. The stored title keeps its own casing.
+                  os && "os-record-name",
+                )}
               />
             ) : (
               <h2
                 id="epic-detail-title"
-                className="font-heading text-lg font-bold text-foreground truncate"
+                className={cn(
+                  "font-heading text-lg font-bold text-foreground truncate",
+                  os && "os-record-name",
+                )}
               >
                 {epic.title}
               </h2>
@@ -475,6 +764,105 @@ function EpicDetail({
           it or changing it — there's no edit mode that swaps one layout for
           another, so nothing appears or disappears on entering it. Each
           control saves itself; the API takes partial updates. */}
+      {os ? (
+        <section>
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span className="os-field-label">Status</span>
+            {canManage ? (
+              <Select
+                value={epic.status}
+                onChange={(value) => void saveEpic({ status: value })}
+                options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+                buttonClassName={EPIC_FIELD}
+              />
+            ) : (
+              <span className="text-sm text-foreground">{epic.status}</span>
+            )}
+            </div>
+            {terms.length > 0 && (
+              <div className="os-field-group">
+                <span className="os-field-label">Target term</span>
+            {canManage ? (
+              <Select
+                value={epic.targetTermId ?? ""}
+                onChange={(value) => void saveEpic({ targetTermId: value || null })}
+                placeholder="No target term"
+                options={[
+                  { value: "", label: "No target term" },
+                  ...terms.map((t) => ({ value: t.id, label: t.code })),
+                ]}
+                buttonClassName={EPIC_FIELD}
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
+              </span>
+            )}
+              </div>
+            )}
+          </div>
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span className="os-field-label">Start date</span>
+            {canManage ? (
+              <DateField
+                mode="date"
+                value={epic.startsAt ? dateInputValue(epic.startsAt) : ""}
+                onChange={(value) =>
+                  void saveEpic({
+                    startsAt: value ? new Date(value).toISOString() : null,
+                  })
+                }
+                ariaLabel="Epic start date"
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {epic.startsAt ? dateInputValue(epic.startsAt) : "—"}
+              </span>
+            )}
+            </div>
+            <div className="os-field-group">
+              <span className="os-field-label">End date</span>
+            {canManage ? (
+              <DateField
+                mode="date"
+                value={epic.endsAt ? dateInputValue(epic.endsAt) : ""}
+                onChange={(value) =>
+                  void saveEpic({
+                    endsAt: value ? new Date(value).toISOString() : null,
+                  })
+                }
+                ariaLabel="Epic end date"
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {epic.endsAt ? dateInputValue(epic.endsAt) : "—"}
+              </span>
+            )}
+            </div>
+          </div>
+          {/* Not a picker. A sprint is a fixed week, so the weeks an epic runs
+              through are already settled by the two dates above — these state
+              them rather than asking again. */}
+          <div className="os-field-group">
+            <span className="os-field-label">Sprints</span>
+            {epicSprints.length > 0 ? (
+              <div className="os-sprint-chip-row">
+                {epicSprints.map((b) => (
+                  <span key={b.key} className="os-sprint-chip os-sprint-chip--active">
+                    {b.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-os-grey">
+                Set a start and end date to place this epic in its weeks.
+              </p>
+            )}
+          </div>
+        </section>
+      ) : (
       <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
         <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
           <dt className="text-muted-foreground">Status</dt>
@@ -495,22 +883,22 @@ function EpicDetail({
             <>
               <dt className="text-muted-foreground">Target term</dt>
               <dd className="min-w-0">
-                {canManage ? (
-                  <Select
-                    value={epic.targetTermId ?? ""}
-                    onChange={(value) => void saveEpic({ targetTermId: value || null })}
-                    placeholder="No target term"
-                    options={[
-                      { value: "", label: "No target term" },
-                      ...terms.map((t) => ({ value: t.id, label: t.code })),
-                    ]}
-                    buttonClassName={EPIC_FIELD}
-                  />
-                ) : (
-                  <span className="text-sm text-foreground">
-                    {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
-                  </span>
-                )}
+            {canManage ? (
+              <Select
+                value={epic.targetTermId ?? ""}
+                onChange={(value) => void saveEpic({ targetTermId: value || null })}
+                placeholder="No target term"
+                options={[
+                  { value: "", label: "No target term" },
+                  ...terms.map((t) => ({ value: t.id, label: t.code })),
+                ]}
+                buttonClassName={EPIC_FIELD}
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
+              </span>
+            )}
               </dd>
             </>
           )}
@@ -556,14 +944,22 @@ function EpicDetail({
           </dd>
         </dl>
       </section>
+      )}
 
       {/* Description — always live as a collab editor (the project's
           Overview/PRD pattern). The room name is the epic's descriptionDocId
           (lazily provisioned on first open by a manager). For viewers or
           while provisioning is in flight, falls back to a quiet placeholder
           so the modal isn't empty. */}
-      <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-        <h3 className="text-sm font-semibold text-foreground mb-2">Description</h3>
+      {os && <div className="os-modal-divider" aria-hidden />}
+      <section className={cn(!os && "border-t border-border pt-4 first:border-t-0 first:pt-0")}>
+        <h3
+          className={cn(
+            os ? "os-section-header" : "text-sm font-semibold text-foreground mb-2",
+          )}
+        >
+          Description
+        </h3>
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -596,49 +992,110 @@ function EpicDetail({
           and criteria live in their own blocks so long text doesn't jam into
           the requirement cell. Editing uses the same edit mode as the header
           pencil; each story expands inline rather than a nested table-row form. */}
-      <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+      {os && <div className="os-modal-divider" aria-hidden />}
+      <section className={cn(!os && "border-t border-border pt-4 first:border-t-0 first:pt-0")}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <span
-              aria-hidden
-              className="h-2 w-2 rounded-full"
-              style={{ background: LEVEL_COLOR.story }}
-            />
+          <h3
+            className={cn(
+              "flex items-center gap-2",
+              os ? "os-section-header !mb-0" : "text-sm font-semibold text-foreground",
+            )}
+          >
+            {/* The design names a section in type, not with a colour dot. */}
+            {!os && (
+              <span
+                aria-hidden
+                className="h-2 w-2 rounded-full"
+                style={{ background: LEVEL_COLOR.story }}
+              />
+            )}
             User stories
           </h3>
           {canEditContent && !newStoryOpen && (
             <button
               type="button"
               onClick={() => setNewStoryOpen(true)}
-              className="text-xs font-medium hover:underline"
-              style={{ color: LEVEL_COLOR.story }}
+              className={os ? "os-add-btn os-add-btn--sm" : "text-xs font-medium hover:underline"}
+              style={os ? undefined : { color: LEVEL_COLOR.story }}
             >
-              + New story
+              {os ? (
+                <>
+                  <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                  New story
+                </>
+              ) : (
+                "+ New story"
+              )}
             </button>
           )}
         </div>
 
-        {newStoryOpen && (
-          <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
-            <StoryForm
-              busy={busy}
-              onCancel={() => setNewStoryOpen(false)}
-              onSubmit={(values) =>
-                run(async () => {
-                  await api(`/api/epics/${epic.id}/stories`, "POST", values);
+        {newStoryOpen &&
+          (os ? (
+            // The design adds a story by name, in place — .quick-add-input-row
+            // under the list. No dialog: you capture five stories without
+            // leaving the epic, and each lands marked incomplete until its
+            // details are filled in.
+            <div className="os-quick-add-row mb-2.5">
+              <input
+                autoFocus
+                value={quickAddTitle}
+                onChange={(e) => setQuickAddTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setQuickAddTitle("");
+                    setNewStoryOpen(false);
+                    return;
+                  }
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const title = quickAddTitle.trim();
+                  if (!title) return;
+                  setQuickAddTitle("");
+                  run(async () => {
+                    await api(`/api/epics/${epic.id}/stories`, "POST", { title });
+                  });
+                }}
+                placeholder="Story name, then Enter…"
+                aria-label="New story name"
+                className="min-w-0 flex-1"
+              />
+              <button
+                type="button"
+                className="os-icon-btn"
+                aria-label="Done adding"
+                onClick={() => {
+                  setQuickAddTitle("");
                   setNewStoryOpen(false);
-                })
-              }
-            />
-          </div>
-        )}
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
+              <StoryForm
+                busy={busy}
+                onCancel={() => setNewStoryOpen(false)}
+                onSubmit={(values) =>
+                  run(async () => {
+                    await api(`/api/epics/${epic.id}/stories`, "POST", values);
+                    setNewStoryOpen(false);
+                  })
+                }
+              />
+            </div>
+          ))}
 
         {epic.stories.length === 0 && !newStoryOpen ? (
           <p className="text-sm text-muted-foreground italic">No user stories yet.</p>
         ) : (
-          <ul className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+          <ul
+            ref={storyListRef}
+            className={os ? "os-item-list" : "flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x"}
+          >
             {epic.stories.map((story) =>
-              editStoryId === story.id ? (
+              editStoryId === story.id && !os ? (
                 <li
                   key={story.id}
                   className="w-[22rem] flex-shrink-0 snap-start rounded-lg border bg-muted/20 p-3"
@@ -657,6 +1114,48 @@ function EpicDetail({
                     }
                   />
                 </li>
+              ) : os ? (
+                // .quick-add-item: name on the left, one × on the right. The
+                // card below is the classic list's row.
+                <li key={story.id} className="os-item-row">
+                  <button
+                    type="button"
+                    onClick={() => canEditContent && setEditStoryId(story.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    title={story.title}
+                  >
+                    {isStoryIncomplete(story) && (
+                      <span
+                        className="os-incomplete-dot"
+                        title="Added by name — still needs its details"
+                      >
+                        !
+                      </span>
+                    )}
+                    <span className="truncate">{story.title}</span>
+                  </button>
+                  {canEditContent && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Remove ${story.title}`}
+                      className="flex flex-shrink-0 text-os-grey transition-colors hover:text-white"
+                      onClick={async () => {
+                        if (
+                          !(await dialog.confirm({
+                            title: `Delete story "${story.title}"?`,
+                            confirmLabel: "Delete",
+                            tone: "destructive",
+                          }))
+                        )
+                          return;
+                        run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </li>
               ) : (
                 <li
                   key={story.id}
@@ -667,7 +1166,15 @@ function EpicDetail({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground leading-snug">
+                      {os && isStoryIncomplete(story) && (
+                        <span
+                          className="os-incomplete-dot mr-1.5 align-middle"
+                          title="Added by name — still needs its details"
+                        >
+                          !
+                        </span>
+                      )}
+                      <p className="inline text-sm font-medium text-foreground leading-snug">
                         {story.title}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -693,8 +1200,13 @@ function EpicDetail({
                         <button
                           type="button"
                           onClick={() => setEditStoryId(story.id)}
-                          className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
+                          className={
+                            os
+                              ? "os-edit-btn os-add-btn--sm"
+                              : "text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
+                          }
                         >
+                          <Pencil className="h-3 w-3" aria-hidden />
                           Edit
                         </button>
                         <button
@@ -757,6 +1269,50 @@ function EpicDetail({
             )}
           </ul>
         )}
+
+        {/* Editing a story is the same .modal-card as creating one, so the two
+            paths look and behave alike. Hoisted out of the list: rendering it
+            per-<li> would have swapped the card out for a form mid-row. */}
+        {os &&
+          (() => {
+            const editing = epic.stories.find((st) => st.id === editStoryId);
+            if (!editing) return null;
+            return (
+              <Modal
+                open
+                onClose={() => setEditStoryId(null)}
+                labelledBy="edit-story-title"
+                disableEscape={busy}
+                containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
+              >
+                <div className="mb-6 flex items-center justify-between gap-3">
+                  <h2 id="edit-story-title" className="os-type-badge os-type-badge--story">
+                    User story
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setEditStoryId(null)}
+                    aria-label="Close"
+                    className="os-icon-btn"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <StoryForm
+                  busy={busy}
+                  initial={editing}
+                  storyOptions={storyOptions.filter((o) => o.id !== editing.id)}
+                  onCancel={() => setEditStoryId(null)}
+                  onSubmit={(values) =>
+                    run(async () => {
+                      await api(`/api/stories/${editing.id}`, "POST", values);
+                      setEditStoryId(null);
+                    })
+                  }
+                />
+              </Modal>
+            );
+          })()}
       </section>
     </div>
   );
@@ -783,11 +1339,51 @@ function EpicForm({
   }) => void;
   onCancel: () => void;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<EditableEpic["status"]>("Open");
   const [targetTermId, setTargetTermId] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+
+  // The controls themselves are the same either way; only how they're laid out
+  // differs, so they're named once here rather than written twice below.
+  const statusField = (
+    <Select
+      value={status}
+      onChange={(value) => setStatus(value as EditableEpic["status"])}
+      options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+      buttonClassName={EPIC_FIELD}
+    />
+  );
+  const termField = (
+    <Select
+      value={targetTermId}
+      onChange={(value) => setTargetTermId(value)}
+      placeholder="No target term"
+      options={[
+        { value: "", label: "No target term" },
+        ...terms.map((t) => ({ value: t.id, label: t.code })),
+      ]}
+      buttonClassName={EPIC_FIELD}
+    />
+  );
+  const startField = (
+    <DateField
+      mode="date"
+      value={startsAt}
+      onChange={(value) => setStartsAt(value)}
+      ariaLabel="Epic start date"
+    />
+  );
+  const endField = (
+    <DateField
+      mode="date"
+      value={endsAt}
+      onChange={(value) => setEndsAt(value)}
+      ariaLabel="Epic end date"
+    />
+  );
 
   return (
     <form
@@ -803,89 +1399,109 @@ function EpicForm({
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         });
       }}
-      className="flex flex-col gap-4"
+      className={os ? undefined : "flex flex-col gap-4"}
     >
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-          style={{ background: LEVEL_COLOR.epic }}
-        />
-        <input
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Epic name"
-          aria-label="Epic name"
-          className="w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </div>
+      {os ? (
+        // The design's first field, carrying the mark that says it's the one
+        // you can't leave blank.
+        <div className="os-field-group">
+          <label htmlFor="new-epic-name" className="os-field-label">
+            Name<span className="os-required-mark">*</span>
+          </label>
+          <input
+            id="new-epic-name"
+            type="text"
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="What is this epic?"
+            className="w-full"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+            style={{ background: LEVEL_COLOR.epic }}
+          />
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Epic name"
+            aria-label="Epic name"
+            className="w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+        </div>
+      )}
 
-      <section className="border-t border-border pt-4">
-        <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
-          <dt className="text-muted-foreground">Status</dt>
-          <dd className="min-w-0">
-            <Select
-              value={status}
-              onChange={(value) => setStatus(value as EditableEpic["status"])}
-              options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
-              buttonClassName={EPIC_FIELD}
-            />
-          </dd>
+      {os ? (
+        // Fields that answer one question sit on one row: the pairing is what
+        // says Starts and Ends are two ends of a single span, and it halves
+        // the ladder these four made when each took a row of its own.
+        <>
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span className="os-field-label">Status</span>
+              {statusField}
+            </div>
+            {terms.length > 0 && (
+              <div className="os-field-group">
+                <span className="os-field-label">Target term</span>
+                {termField}
+              </div>
+            )}
+          </div>
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span className="os-field-label">Starts</span>
+              {startField}
+              <span className="os-field-hint">
+                Optional — left blank, the epic takes its span from its stories.
+              </span>
+            </div>
+            <div className="os-field-group">
+              <span className="os-field-label">Ends</span>
+              {endField}
+            </div>
+          </div>
+        </>
+      ) : (
+        <section className="border-t border-border pt-4">
+          <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd className="min-w-0">{statusField}</dd>
 
-          {terms.length > 0 && (
-            <>
-              <dt className="text-muted-foreground">Target term</dt>
-              <dd className="min-w-0">
-                <Select
-                  value={targetTermId}
-                  onChange={(value) => setTargetTermId(value)}
-                  placeholder="No target term"
-                  options={[
-                    { value: "", label: "No target term" },
-                    ...terms.map((t) => ({ value: t.id, label: t.code })),
-                  ]}
-                  buttonClassName={EPIC_FIELD}
-                />
-              </dd>
-            </>
-          )}
+            {terms.length > 0 && (
+              <>
+                <dt className="text-muted-foreground">Target term</dt>
+                <dd className="min-w-0">{termField}</dd>
+              </>
+            )}
 
-          <dt className="text-muted-foreground">Starts</dt>
-          <dd className="min-w-0">
-            <DateField
-              mode="date"
-              value={startsAt}
-              onChange={(value) => setStartsAt(value)}
-              ariaLabel="Epic start date"
-            />
-          </dd>
+            <dt className="text-muted-foreground">Starts</dt>
+            <dd className="min-w-0">{startField}</dd>
 
-          <dt className="text-muted-foreground">Ends</dt>
-          <dd className="min-w-0">
-            <DateField
-              mode="date"
-              value={endsAt}
-              onChange={(value) => setEndsAt(value)}
-              ariaLabel="Epic end date"
-            />
-          </dd>
-        </dl>
-      </section>
+            <dt className="text-muted-foreground">Ends</dt>
+            <dd className="min-w-0">{endField}</dd>
+          </dl>
+        </section>
+      )}
 
-      <div className="flex gap-1.5">
+      <div className={os ? "os-modal-footer" : "flex justify-end gap-1.5"}>
+        <button
+          type="button"
+          onClick={onCancel}
+          className={buttonClasses("secondary", "sm")}
+        >
+          Cancel
+        </button>
         {/* Creating hands off to the detail modal to add stories and a
             description, so "Next" signals there's more after this. */}
         <Button type="submit" variant="primary" size="sm" disabled={busy || !title.trim()}>
           Next
         </Button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-        >
-          Cancel
-        </button>
       </div>
     </form>
   );
@@ -980,6 +1596,7 @@ function StoryForm({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(
     initial?.acceptanceCriteria ?? "",
   );
+  const os = useFeatureFlag("os-redesign");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [priority, setPriority] = useState<StoryPriority | "">(initial?.priority ?? "");
   const [startsAt, setStartsAt] = useState(
@@ -989,6 +1606,67 @@ function StoryForm({
     initial?.endsAt ? dateInputValue(initial.endsAt) : "",
   );
   const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? []);
+
+  // Named once, laid out twice: the design pairs Status with the due date on
+  // one row, the classic form runs them along a wrapping strip of fields.
+  const nameField = (
+    <input
+      type="text"
+      autoFocus
+      value={title}
+      onChange={(e) => setTitle(e.target.value)}
+      className={cn(
+        os
+          ? "w-full"
+          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+      )}
+    />
+  );
+  const statusField = (
+    <Select
+      value={status}
+      onChange={(value) => setStatus(value as EditableStory["status"])}
+      options={STORY_STATUSES.map((st) => ({ value: st, label: st }))}
+      buttonClassName={
+        os
+          ? "w-full"
+          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+      }
+    />
+  );
+  const endField = (
+    <DateField
+      mode="date"
+      value={endsAt}
+      onChange={(value) => setEndsAt(value)}
+      ariaLabel="Story end (optional)"
+    />
+  );
+  const categoryField = (
+    <input
+      type="text"
+      value={category}
+      onChange={(e) => setCategory(e.target.value)}
+      placeholder="e.g. Functional"
+      className={cn(
+        os
+          ? "w-full"
+          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+      )}
+    />
+  );
+  const notesField = (
+    <textarea
+      value={notes}
+      onChange={(e) => setNotes(e.target.value)}
+      rows={os ? 4 : 2}
+      className={cn(
+        os
+          ? "w-full"
+          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+      )}
+    />
+  );
 
   return (
     <form
@@ -1010,113 +1688,126 @@ function StoryForm({
           priority: priority || null,
         });
       }}
-      className="flex flex-col gap-2 mb-3"
+      className={cn(os ? "mb-3" : "flex flex-col gap-2 mb-3")}
     >
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
-          <span className="text-muted-foreground">
-            Story (e.g. “As a user, I can …”)
-          </span>
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Status</span>
-          <Select
-            value={status}
-            onChange={(value) => setStatus(value as EditableStory["status"])}
-            options={STORY_STATUSES.map((s) => ({ value: s, label: s }))}
-            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Category</span>
-          <input
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            placeholder="e.g. Functional"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Priority</span>
-          <Select
-            value={priority}
-            onChange={(value) => setPriority(value as StoryPriority | "")}
-            placeholder="—"
-            options={[
-              { value: "", label: "—" },
-              ...STORY_PRIORITIES.map((p) => ({ value: p, label: p })),
-            ]}
-            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        </label>
-      </div>
-      {/* Timeline placement. Left blank, the story inherits its span from its
-          tasks, then from the parent epic — so a bar still renders. */}
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Starts (optional)</span>
-          <DateField
-            mode="date"
-            value={startsAt}
-            onChange={(value) => setStartsAt(value)}
-            ariaLabel="Story start (optional)"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Ends (optional)</span>
-          <DateField
-            mode="date"
-            value={endsAt}
-            onChange={(value) => setEndsAt(value)}
-            ariaLabel="Story end (optional)"
-          />
-        </label>
-        {initial && storyOptions.length > 0 && (
+      {os ? (
+        <>
+          <label className="os-field-group">
+            <span>
+              Name<span className="os-required-mark">*</span>
+            </span>
+            {nameField}
+          </label>
+          {/* Status and the date the story is wanted by are one decision, so
+              they share a row rather than stacking into a ladder. */}
+          <div className="os-field-row">
+            <label className="os-field-group">
+              <span>Status</span>
+              {statusField}
+            </label>
+            <label className="os-field-group">
+              <span>Due date</span>
+              {endField}
+            </label>
+          </div>
+          <label className="os-field-group">
+            <span>Labels</span>
+            {categoryField}
+          </label>
+          <label className="os-field-group">
+            <span>Description</span>
+            {notesField}
+          </label>
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
+              <span className="text-muted-foreground">Story (e.g. “As a user, I can …”)</span>
+              {nameField}
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Status</span>
+              {statusField}
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Category</span>
+              {categoryField}
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Priority</span>
+              <Select
+                value={priority}
+                onChange={(value) => setPriority(value as StoryPriority | "")}
+                placeholder="—"
+                options={[
+                  { value: "", label: "—" },
+                  ...STORY_PRIORITIES.map((p) => ({ value: p, label: p })),
+                ]}
+                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
+            </label>
+          </div>
+          {/* Timeline placement. Left blank, the story inherits its span from
+              its tasks, then from the parent epic — so a bar still renders. */}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Starts (optional)</span>
+              <DateField
+                mode="date"
+                value={startsAt}
+                onChange={(value) => setStartsAt(value)}
+                ariaLabel="Story start (optional)"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Ends (optional)</span>
+              {endField}
+            </label>
+            {initial && storyOptions.length > 0 && (
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Depends on</span>
+                <DependsOnField
+                  options={storyOptions}
+                  value={dependsOn}
+                  onChange={setDependsOn}
+                  noun="story"
+                />
+              </label>
+            )}
+          </div>
           <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Depends on</span>
-            <DependsOnField
-              options={storyOptions}
-              value={dependsOn}
-              onChange={setDependsOn}
-              noun="story"
+            <span className="text-muted-foreground">Success metric (optional)</span>
+            <textarea
+              value={successMetric}
+              onChange={(e) => setSuccessMetric(e.target.value)}
+              rows={2}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           </label>
-        )}
-      </div>
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Success metric (optional)</span>
-        <textarea
-          value={successMetric}
-          onChange={(e) => setSuccessMetric(e.target.value)}
-          rows={2}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Acceptance criteria (optional)</span>
-        <textarea
-          value={acceptanceCriteria}
-          onChange={(e) => setAcceptanceCriteria(e.target.value)}
-          rows={2}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Notes (optional)</span>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </label>
-      <div className="flex gap-1.5">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Acceptance criteria (optional)</span>
+            <textarea
+              value={acceptanceCriteria}
+              onChange={(e) => setAcceptanceCriteria(e.target.value)}
+              rows={2}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Notes (optional)</span>
+            {notesField}
+          </label>
+        </>
+      )}
+      <div className={os ? "os-modal-footer" : "flex gap-1.5"}>
+        <button
+          type="button"
+          onClick={onCancel}
+          className={buttonClasses("secondary", "sm")}
+        >
+          Cancel
+        </button>
         <Button
           type="submit"
           variant="primary"
@@ -1125,13 +1816,6 @@ function StoryForm({
         >
           Save
         </Button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-        >
-          Cancel
-        </button>
       </div>
     </form>
   );
