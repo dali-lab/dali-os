@@ -27,6 +27,8 @@ import {
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { DocEditor } from "~/components/doc";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
@@ -126,6 +128,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function AnnouncementsPage() {
   const { members, groups, publishedForms, scheduled, viewerIsAdmin } =
     useLoaderData<typeof loader>();
+  const { os, pageTitle, card, cardPad } = useOsChrome();
 
   // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
   // affordance opens this composer with the bound form + whole-lab audience
@@ -277,16 +280,8 @@ export default function AnnouncementsPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-5 max-w-3xl">
       <header className="flex items-start gap-3">
-        <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            Announcements
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Send an announcement to the lab. It shows in recipients' Tasks and
-            can carry a due date and an attached form.
-          </p>
-        </div>
+        {!os && <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />}
+        <h1 className={pageTitle}>Announcements</h1>
       </header>
 
       {result && (
@@ -306,7 +301,7 @@ export default function AnnouncementsPage() {
       )}
 
       {/* Due date + send time */}
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
         <h2 className="text-sm font-semibold text-foreground">Timing</h2>
         <div className="flex flex-wrap gap-6">
           <label className="flex flex-col gap-1 text-xs">
@@ -337,7 +332,7 @@ export default function AnnouncementsPage() {
       </section>
 
       {/* Message */}
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
         <h2 className="text-sm font-semibold text-foreground">Message</h2>
         <input
           type="text"
@@ -377,7 +372,7 @@ export default function AnnouncementsPage() {
       </section>
 
       {/* Attach a form — its own card so it doesn't disappear under the body */}
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
         <div className="flex items-center gap-2">
           <Paperclip className="w-4 h-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold text-foreground">
@@ -389,10 +384,7 @@ export default function AnnouncementsPage() {
         </div>
 
         {publishedForms.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No published forms yet — publish a form from the Forms tab to
-            attach it.
-          </p>
+          <p className="text-sm text-muted-foreground">No published forms yet.</p>
         ) : selectedForm ? (
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-accent-coral/40 bg-accent-coral/10 text-foreground">
@@ -449,14 +441,10 @@ export default function AnnouncementsPage() {
       </section>
 
       {/* Audience — compose freely; recipients are the union of all of these */}
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-4">
+      <section className={cn(card, cardPad, "flex flex-col gap-4")}>
         <div>
           <h2 className="text-sm font-semibold text-foreground">Audience</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {allMembers
-              ? "Going to the whole lab."
-              : "Combine groups and people — recipients are everyone matched by at least one."}
-          </p>
+
         </div>
 
         {/* Whole lab — when on, it supersedes the other selectors */}
@@ -595,7 +583,12 @@ export default function AnnouncementsPage() {
           type="button"
           onClick={send}
           disabled={!canSend}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          className={cn(
+            "disabled:opacity-60 disabled:cursor-not-allowed",
+            os
+              ? "os-btn-primary"
+              : "px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors",
+          )}
         >
           {sending ? (scheduling ? "Scheduling…" : "Sending…") : scheduling ? "Schedule" : "Send"}
         </button>

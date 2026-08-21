@@ -4,6 +4,7 @@ import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { notifyFavoritesChanged } from "~/components/favorites-live";
 
 // Stars a page you're currently on — for DB-backed detail pages (project,
 // person, partner org). Document pages use FavoriteStar instead.
@@ -97,8 +98,10 @@ export function FavoriteRouteButton({
         credentials: "include",
         body: JSON.stringify({ href, label, favorited: next }),
       });
-      if (res.ok) onToggled?.(next);
-      else setFavorited(!next);
+      if (res.ok) {
+        notifyFavoritesChanged();
+        onToggled?.(next);
+      } else setFavorited(!next);
     } catch {
       setFavorited(!next);
     } finally {

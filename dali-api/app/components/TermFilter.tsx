@@ -1,6 +1,9 @@
 import { useSearchParams } from "react-router";
-import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
+import { termFilterOrder, type TermOption } from "~/lib/terms.shared";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 // Term dropdown shared by the Projects hub, Members database, Intent to Work
 // and Project Bids. Drives the loader via the `?term=` search param so pages
@@ -10,23 +13,25 @@ import { Select, type SelectOption } from "~/components/ui/floating";
 export function TermFilter({
   terms,
   selected,
+  // Left undefined so every caller picks up the shared filter pill (and its os
+  // dress) automatically; pass one only to override the width or the look.
+  buttonClassName,
 }: {
   terms: TermOption[];
   selected: string;
+  buttonClassName?: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const os = useFeatureFlag("os-redesign");
 
-  const options: SelectOption<string>[] = [
-    ...terms.map((t) => ({ value: t.id, label: t.code })),
-    { value: ALL_TERMS, label: "All terms" },
-  ];
+  const options: SelectOption<string>[] = termFilterOrder(terms);
 
   return (
     <Select
       value={selected}
       options={options}
       ariaLabel="Filter by term"
-      buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-40"
+      buttonClassName={buttonClassName ?? cn(filterPillClass(os), "w-full sm:w-40")}
       onChange={(value) => {
         const next = new URLSearchParams(searchParams);
         next.set("term", value);

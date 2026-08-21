@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildBoard,
   dedupeLiveAssignments,
+  matchesDomainFilter,
   resolveAssignmentDomains,
   resolveAssignmentInputs,
   UNASSIGNED,
@@ -371,6 +372,44 @@ describe("resolveAssignmentDomains", () => {
       { domainId: "d1", level: "P1" },
       { domainId: "d2", level: "P2" },
     ]);
+  });
+});
+
+// Regression: the filter used to accept a matching bid domain too. Because
+// bid-validation hands every ranked project a domainId whether or not the
+// bidder is eligible there, that let a member through any domain they'd
+// happened to bid near — with a few bids each, the filter stopped narrowing
+// anything.
+describe("matchesDomainFilter", () => {
+  const none = new Set<string>();
+  const design = { domainId: "d-design", domainName: "Design", level: "P2" as const };
+
+  it("keeps a member hired in the domain", () => {
+    expect(
+      matchesDomainFilter(member({ domainLevels: [design] }), "d-design", none),
+    ).toBe(true);
+  });
+
+  it("drops a member hired in another domain", () => {
+    expect(
+      matchesDomainFilter(member({ domainLevels: [design] }), "d-dev", none),
+    ).toBe(false);
+  });
+
+  it("ignores the domain a bid happened to land in", () => {
+    const bidder = member({
+      domainLevels: [design],
+      preferences: [
+        { projectId: "p1", domainId: "d-dev", level: "P1", preferenceRank: 1, notes: null },
+      ],
+    });
+    expect(matchesDomainFilter(bidder, "d-dev", none)).toBe(false);
+  });
+
+  it("keeps a member staffed in the domain even without the eligibility", () => {
+    expect(
+      matchesDomainFilter(member(), "d-dev", new Set(["u1"])),
+    ).toBe(true);
   });
 });
 

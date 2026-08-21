@@ -3,8 +3,11 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { LayoutClassic } from '~/components/LayoutClassic'
+import { LayoutOS } from '~/components/LayoutOS'
+import { useOsShellRoot } from '~/lib/os-shell'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
+import { useLiveFavorites } from '~/components/favorites-live'
 import { useShowTablessHistoryNav } from '~/components/TablessHistoryNav'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
@@ -241,7 +244,13 @@ export default function AppLayoutRoute() {
   // `areaPills` (the flag-gated in-page pill row). The pill row only exists when
   // the sidebar redesign is OFF, so its flush top spacing is only reserved then.
   const redesign = flags['sidebar-redesign'] ?? false
-  const hasAreaSubnav = hasSubnavRow(matches, redesign)
+  // The dali.os shell supersedes both other shells wherever it's on: it owns
+  // the page wash and gutters too, so the page wrapper below branches on it.
+  const osRedesign = flags['os-redesign'] ?? false
+  // Portals escape the shell div; mirror the class to <html> so they keep the
+  // palette. In the tab-mode iframe this is the only place that runs it.
+  useOsShellRoot(osRedesign)
+  const hasAreaSubnav = hasSubnavRow(matches, redesign || osRedesign)
   // Pages that land directly on their own title, with no subnav in between,
   // ask for a wider gap under the trail (see adminHandle).
   const roomyBreadcrumb = matches.some(
@@ -262,6 +271,11 @@ export default function AppLayoutRoute() {
   // check matters because LayoutClassic renders no such bar to move it into.
   const showTablessHistoryNav = useShowTablessHistoryNav()
   const guideOnHistoryRow = redesign && showTablessHistoryNav && !hasAreaSubnav
+
+  // Starring a page is a fetcher write, which shouldRevalidate below keeps out
+  // of this loader — so the shells read the list through this instead, and a
+  // new favorite reaches the header without a reload.
+  const liveFavorites = useLiveFavorites(favorites)
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -400,8 +414,16 @@ export default function AppLayoutRoute() {
   const pageContent = (
     <div
       className={cn(
-        'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
-        hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+        'w-full',
+        osRedesign
+          ? // The dali.os view gutter: 64px sides, 60px top on a page that
+            // starts with its own title. Roomier than the default shell's,
+            // because the rail no longer carries favourites or tasks.
+            // No flush case here: under os a page's own sub-nav is a segmented
+            // pill sized to its content, not a bar bleeding to the window
+            // edges, so it wants the same gutter every other page gets.
+            cn('px-5 pb-12 sm:px-10 lg:px-16', 'pt-8 lg:pt-[60px]')
+          : cn('px-3 pb-6 sm:px-6 sm:pb-8 lg:px-10', hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12'),
       )}
     >
       {!hideBreadcrumbRow && (
@@ -412,6 +434,8 @@ export default function AppLayoutRoute() {
           )}
         >
           <Breadcrumbs />
+          {/* Under the dali.os shell the top bar carries the Guide, and
+              ShellGuideProvider stands this copy down for it. */}
           {!guideOnHistoryRow && <PageDocButton suppressWhenPills />}
         </div>
       )}
@@ -427,7 +451,14 @@ export default function AppLayoutRoute() {
     return (
       <FeatureFlagsProvider flags={flags}>
         <PageDocProvider>
-          <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
+          <div
+            className={cn(
+              'min-h-dvh overflow-x-hidden',
+              osRedesign ? 'os-shell bg-os-bg text-white' : 'bg-page',
+            )}
+          >
+            {pageContent}
+          </div>
         </PageDocProvider>
       </FeatureFlagsProvider>
     )
@@ -440,8 +471,12 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        {redesign ? (
-          <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
+        {osRedesign ? (
+          <LayoutOS user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} focusMode={focus}>
+            {tablessChild}
+          </LayoutOS>
+        ) : redesign ? (
+          <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} recents={recents} focusMode={focus}>
             {tablessChild}
           </Layout>
         ) : (

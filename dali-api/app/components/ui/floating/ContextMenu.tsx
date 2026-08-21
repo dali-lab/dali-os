@@ -24,7 +24,7 @@ import {
   FloatingPortal,
 } from "@floating-ui/react";
 import { MenuContext } from "./Menu";
-import { PANEL_CLASS } from "./styles";
+import { usePanelClass } from "./os-styles";
 
 // Right-click menu anchored to the pointer via a floating-ui virtual element.
 // Reuses <Menu.Item>/<Menu.LinkItem> through MenuContext. Clones its single
@@ -41,6 +41,7 @@ export function ContextMenu({
   items: ReactNode;
   ariaLabel?: string;
 }) {
+  const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const listRef = useRef<Array<HTMLElement | null>>([]);
@@ -124,7 +125,7 @@ export function ContextMenu({
               ref={refs.setFloating}
               style={floatingStyles}
               aria-label={ariaLabel}
-              className={`${PANEL_CLASS} min-w-[10rem]`}
+              className={`${panelClass} min-w-[10rem]`}
               {...getFloatingProps()}
             >
               <MenuContext.Provider value={menuValue}>

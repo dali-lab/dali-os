@@ -6,9 +6,11 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { ArrowUpRight } from "lucide-react";
 import {
   DAY,
   dayOffset,
@@ -17,6 +19,8 @@ import {
   sprintBands as computeSprintBands,
   utcDayOf,
 } from "../lib/timeline-days";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
 export type SprintStatus = "Planned" | "Active" | "Closed";
@@ -37,6 +41,9 @@ export type TimelineTask = {
 export type TimelineStory = {
   id: string;
   title: string;
+  description?: string | null;
+  /** Quick-added by name and not yet filled in — draws the design's amber dot. */
+  incomplete?: boolean;
   status: StoryStatus;
   // Resolved span (explicit dates → task union → parent epic), so a story bar
   // always has somewhere to sit inside its epic.
@@ -48,6 +55,9 @@ export type TimelineStory = {
 export type TimelineEpic = {
   id: string;
   title: string;
+  // Prose for the hover card. The design leads its popover with this — a bar's
+  // title says which thing it is, this says what it's for.
+  description?: string | null;
   status: EpicStatus;
   // Null when the epic has no dates and nothing underneath it to derive them
   // from — rendered as "unscheduled" rather than as a bar.
@@ -84,19 +94,63 @@ const BODY_BOTTOM_PAD = 20;
 // viewports, where 70vh alone would leave almost nothing.
 const MAX_BODY_H = "clamp(360px, 70vh, 880px)";
 
-const EPIC_TOP_PAD = 16;
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
-const EPIC_MIN_H = 64;
-const STORY_TOP_PAD = 12;
 const STORY_BOTTOM_PAD = 10;
 const STORY_GAP = 12;
-const STORY_MIN_H = 34;
 const TASK_H = 24;
 const TASK_GAP = 6;
 
+// How much room the group's own label eats before its children can start.
+//
+// The two shells seat the label differently, so this is not a constant. The
+// classic label is notched into the top border (-translate-y-1/2), straddling
+// it and costing the interior almost nothing. The design seats it as a filled
+// pill *inside* the box — so the pad has to cover the pill's offset, its
+// height, and a gap under it, or the first child is drawn straight through it.
+//
+// The numbers are the rendered pill, not an estimate: `top-1.5` (6px) plus a
+// fixed `leading-4` line box (16px) plus the label's vertical padding, plus
+// the design's own gap under the label. The labels below pin that leading
+// precisely so this stays exact rather than riding on a font's default.
+const EPIC_LABEL_PAD = 6 + (16 + 8) + 10; // top-1.5 + leading-4/py-1 + gap
+const STORY_LABEL_PAD = 6 + (16 + 8) + 8; // top-1.5 + leading-4/py-1 + gap
+const epicTopPad = (os: boolean) => (os ? EPIC_LABEL_PAD : 16);
+const storyTopPad = (os: boolean) => (os ? STORY_LABEL_PAD : 12);
+const epicMinH = (os: boolean) => (os ? EPIC_LABEL_PAD + EPIC_BOTTOM_PAD : 64);
+const storyMinH = (os: boolean) => (os ? STORY_LABEL_PAD + STORY_BOTTOM_PAD : 34);
+
 // Each nesting level sits further inset so adjacent borders never collide.
 const INSET_PER_LEVEL = 3;
+
+// Horizontal nesting. The classic inset is a hairline — just enough that two
+// borders don't touch — which is why a child bar sits 3px inside its parent
+// while the vertical pads give it 30-40px of room. That mismatch is what makes
+// the rows read as cramped sideways. The design pads the group boxes instead
+// (10px inside an epic, 8px inside a story), so a child clears its parent's
+// edge, and two siblings on consecutive days clear each other.
+//
+// We place every bar straight on the day grid rather than inside a padded
+// track, so that padding comes off the bar itself. `left` takes the full
+// inset — bars for the same date have to line up down the column — and only
+// the width gives, floored so a one-day bar can't inset itself to nothing.
+const EPIC_PAD_X = 10;
+const STORY_PAD_X = 8;
+const MIN_BAR_W = 26;
+const INSET_X: Record<Level, { os: number; classic: number }> = {
+  epic: { os: INSET_PER_LEVEL, classic: INSET_PER_LEVEL },
+  story: { os: INSET_PER_LEVEL + EPIC_PAD_X, classic: INSET_PER_LEVEL * 2 },
+  task: { os: INSET_PER_LEVEL + EPIC_PAD_X + STORY_PAD_X, classic: INSET_PER_LEVEL * 3 },
+};
+
+/** Left offset and width for a bar at `level`, in the shell that's drawing it. */
+function barX(level: Level, left: number, width: number, os: boolean) {
+  const inset = os ? INSET_X[level].os : INSET_X[level].classic;
+  return {
+    left: left + inset,
+    width: Math.max(width - inset * 2, os ? MIN_BAR_W : PX_PER_DAY / 2),
+  };
+}
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 // One hue per level, held as raw hex because the bars mix border, translucent
@@ -107,6 +161,17 @@ export const LEVEL_COLOR: Record<Level, string> = {
   epic: "#FF8B81",
   story: "#00ADAB",
   task: "#E68FBE",
+};
+
+// The dali.os plates for the same three levels. The design colours a bar by
+// filling it and printing light ink on top, rather than outlining it and
+// tinting the label — so each level needs a fill/ink pair, not one hue. These
+// are the design's own three (its modal type badges: epic purple, story teal,
+// task maroon), which keeps the levels as far apart here as LEVEL_COLOR does.
+export const OS_LEVEL: Record<Level, { fill: string; ink: string; edge: string }> = {
+  epic: { fill: "rgba(109,90,158,0.8)", ink: "#d9c9f7", edge: "rgba(109,90,158,0.8)" },
+  story: { fill: "rgba(89,149,144,0.8)", ink: "#d7fdf5", edge: "rgba(89,149,144,0.6)" },
+  task: { fill: "rgba(125,99,99,0.8)", ink: "#f5d9d9", edge: "rgba(125,99,99,0.8)" },
 };
 
 const LEVEL_LABEL: Record<Level, string> = {
@@ -173,26 +238,62 @@ function rangeLabel(startIso: string, endIso: string): string {
 
 // ── Hover card ──────────────────────────────────────────────────────────────
 
+/** Length of the popover's fade. Mirrors `.os-bar-popover` in app.css. */
+const FADE_MS = 120;
+
 function TimelineBarHover({
   open,
   anchorEl,
   kind,
   title,
+  description,
   rows,
   assignees,
+  clickable = false,
 }: {
   open: boolean;
   anchorEl: HTMLElement | null;
   kind: Level;
   title: string;
+  // The item's own prose, shown under the title in the os popover. The design
+  // leads with it — a bar's title is a label, this is what it's actually for.
+  description?: string | null;
   rows: { label: string; value: string }[];
   assignees?: { id: string; name: string }[];
+  // Whether the bar behind this card opens something on click. Drives the
+  // redirect mark; the card itself is pointer-transparent (it follows a hover),
+  // so the mark reads as "this bar opens" rather than being a second target.
+  clickable?: boolean;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // The card outlives `open` by the length of its fade, so it can animate out
+  // as well as in — unmounting on mouseleave would cut the transition off at
+  // the first frame. `shown` is the class the transition runs against.
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return;
+    }
+    setShown(false);
+    const id = setTimeout(() => setMounted(false), FADE_MS + 20);
+    return () => clearTimeout(id);
+  }, [open]);
+
+  useEffect(() => {
+    // One frame with the card at rest first, or there's nothing for the
+    // browser to transition from and it simply appears.
+    if (!open || !pos) return;
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, [open, pos]);
 
   useLayoutEffect(() => {
-    if (!open || !anchorEl) {
+    if (!mounted || !anchorEl) {
       setPos(null);
       return;
     }
@@ -206,7 +307,10 @@ function TimelineBarHover({
       const margin = 8;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      let left = a.left + a.width / 2 - cw / 2;
+      // The design hangs the card off the bar's left edge, where its label
+      // is. Centring works for a short task bar but strands the card halfway
+      // across the viewport from an epic that spans the whole screen.
+      let left = os ? a.left : a.left + a.width / 2 - cw / 2;
       left = Math.max(margin, Math.min(left, vw - cw - margin));
       let top = a.bottom + gap;
       if (top + ch + margin > vh) top = a.top - gap - ch;
@@ -225,21 +329,88 @@ function TimelineBarHover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchorEl, title]);
+  }, [mounted, anchorEl, title, os]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (!mounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div
       ref={cardRef}
       role="tooltip"
-      className="fixed z-50 w-64 max-w-[min(16rem,calc(100vw-1rem))] rounded-lg border border-border bg-card shadow-lg p-3 text-xs pointer-events-none"
+      className={cn(
+        "pointer-events-none fixed z-50 max-w-[min(19rem,calc(100vw-1rem))] border border-border bg-card text-xs",
+        os
+          ? "w-[300px] rounded-2xl p-4 shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          : "w-64 rounded-lg p-3 shadow-lg",
+        // The design's .task-popover: it rises 4px into place as it fades.
+        os && "os-bar-popover",
+        os && shown && "os-bar-popover--shown",
+      )}
       style={{
         left: pos?.left ?? 0,
         top: pos?.top ?? 0,
         visibility: pos ? "visible" : "hidden",
       }}
     >
+      {os ? (
+        // The design's popover: the title in the level's own ink with a
+        // redirect mark beside it, the description in full, then one labelled
+        // row per fact — stacked, each fenced off by a rule, rather than a
+        // right-aligned definition list.
+        <>
+          <div className="mb-2.5 flex items-start justify-between gap-3">
+            <div
+              className="os-record-name text-[13px] font-bold leading-snug tracking-[0.24px] break-words"
+              style={{ color: OS_LEVEL[kind].ink }}
+            >
+              {title}
+            </div>
+            {clickable && (
+              <span
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-container text-os-accent"
+                aria-hidden
+                title="Click the bar to open"
+              >
+                <ArrowUpRight className="h-[15px] w-[15px]" />
+              </span>
+            )}
+          </div>
+          {description && (
+            <p className="mb-4 text-sm leading-relaxed text-os-grey">{description}</p>
+          )}
+          <div className="flex flex-col">
+            {rows.map((r) => (
+              <div
+                key={r.label}
+                className="flex flex-col gap-1.5 border-t border-os-container pt-3 [&+&]:mt-3"
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-os-grey">
+                  {r.label}
+                </span>
+                <span className="text-sm break-words text-white">{r.value}</span>
+              </div>
+            ))}
+            {assignees && assignees.length > 0 && (
+              <div className="flex flex-col gap-1.5 border-t border-os-container pt-3 [&+&]:mt-3">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-os-grey">
+                  {assignees.length === 1 ? "Assignee" : "Assignees"}
+                </span>
+                <span className="flex flex-wrap items-center gap-3">
+                  {assignees.map((a) => (
+                    <span key={a.id} className="flex items-center gap-2 text-sm text-white">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-os-container text-[9px] font-bold text-white">
+                        {a.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      {a.name}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+      <>
       <div
         className="text-[10px] font-semibold uppercase tracking-wider mb-1"
         style={{ color: LEVEL_COLOR[kind] }}
@@ -276,6 +447,8 @@ function TimelineBarHover({
           ))}
         </div>
       )}
+      </>
+      )}
     </div>,
     document.body,
   );
@@ -286,20 +459,30 @@ function HoverBar({
   style,
   kind,
   title,
+  description,
   rows,
   assignees,
   children,
   onClick,
+  onDragStart,
+  onResizeStart,
+  draggable = false,
 }: {
   className: string;
   style: CSSProperties;
   kind: Level;
   title: string;
+  description?: string | null;
   rows: { label: string; value: string }[];
   assignees?: { id: string; name: string }[];
   children?: ReactNode;
   // When set, the bar becomes a button that opens the matching detail view.
   onClick?: () => void;
+  // Edit mode only: begins a horizontal drag that reschedules the bar.
+  onDragStart?: (e: ReactPointerEvent) => void;
+  // Edit mode only: grips on the two ends, which move one date each.
+  onResizeStart?: (edge: "start" | "end") => (e: ReactPointerEvent) => void;
+  draggable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -307,8 +490,14 @@ function HoverBar({
     <>
       <div
         ref={setAnchorEl}
-        className={`${className}${onClick ? " cursor-pointer" : ""}`}
+        className={cn(
+          className,
+          onClick && !draggable && "cursor-pointer",
+          // The design's edit mode: bars become things you take hold of.
+          draggable && "cursor-grab active:cursor-grabbing",
+        )}
         style={style}
+        onPointerDown={onDragStart}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         {...(onClick
@@ -325,6 +514,28 @@ function HoverBar({
             }
           : {})}
       >
+        {/* Grips on the two ends: the middle of the bar moves the whole span,
+            the ends adjust one date each. The hit area is a transparent 8px
+            strip, but it draws a visible pill inside itself — an edge you can
+            only find by hovering is an edge nobody finds. Faint at rest so a
+            timeline in edit mode isn't a wall of handles, solid on hover. */}
+        {draggable && onResizeStart && (
+          <>
+            {(["start", "end"] as const).map((edge) => (
+              <span
+                key={edge}
+                className={cn(
+                  "group/grip absolute inset-y-0 z-20 flex w-2 cursor-ew-resize items-center justify-center",
+                  edge === "start" ? "left-0" : "right-0",
+                )}
+                onPointerDown={onResizeStart(edge)}
+                aria-hidden
+              >
+                <span className="h-1/2 max-h-3 min-h-2 w-[3px] rounded-full bg-white/45 transition-colors group-hover/grip:bg-white" />
+              </span>
+            ))}
+          </>
+        )}
         {children}
       </div>
       <TimelineBarHover
@@ -332,8 +543,10 @@ function HoverBar({
         anchorEl={anchorEl}
         kind={kind}
         title={title}
+        description={description}
         rows={rows}
         assignees={assignees}
+        clickable={Boolean(onClick)}
       />
     </>
   );
@@ -347,6 +560,8 @@ export function EpicsTimeline({
   terms = [],
   storyDependencies = [],
   actions,
+  editMode = false,
+  onReschedule,
   onEpicClick,
   onStoryClick,
   onTaskClick,
@@ -365,10 +580,121 @@ export function EpicsTimeline({
   // Rendered flush right on the level-toggle row, so the page's primary action
   // shares a line with the legend instead of taking a toolbar of its own.
   actions?: ReactNode;
+  // The design's edit mode: bars can be dragged sideways to reschedule. Off,
+  // the timeline is read-only apart from clicking through to a detail view.
+  editMode?: boolean;
+  // The caller owns persistence (and the revalidate that re-lays the bars out).
+  // Called on drop with the whole-day shift the drag amounts to, and which
+  // edge was held: "move" shifts the whole span, "start"/"end" move one end.
+  onReschedule?: (
+    kind: Level,
+    id: string,
+    deltaDays: number,
+    edge: "move" | "start" | "end",
+  ) => void;
   onEpicClick?: (epicId: string) => void;
   onStoryClick?: (epicId: string, storyId: string) => void;
   onTaskClick?: (taskId: string) => void;
 }) {
+  // The dali.os dress for the timeline: the design's filled bars and label
+  // pills, its card shell, and its accent for "today". Layout, hit targets and
+  // the level filter are untouched.
+  const os = useFeatureFlag("os-redesign");
+
+  /* Drag-to-reschedule. The bar's own transform follows the pointer so the
+     gesture reads as direct manipulation, but only whole days are ever
+     committed — the grid is a day grid, and a half-day shift isn't a thing a
+     start date can be. `moved` gates the click that would otherwise open the
+     detail modal the moment you let go. */
+  type DragEdge = "move" | "start" | "end";
+  const dragRef = useRef<{
+    kind: Level;
+    id: string;
+    edge: DragEdge;
+    startX: number;
+    dx: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  // `dragActive` owns the window listeners; `dragTick` only forces the repaint
+  // that moves the bar. Keeping them apart matters: subscribing on the tick
+  // would tear down and re-add the pointermove listener on every pointermove.
+  const [dragActive, setDragActive] = useState(false);
+  const [dragTick, setDragTick] = useState(0);
+  const dragging = dragRef.current;
+
+  const beginDrag = useCallback(
+    (kind: Level, id: string, edge: DragEdge = "move") =>
+      (e: ReactPointerEvent) => {
+        if (!editMode || !onReschedule) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragRef.current = { kind, id, edge, startX: e.clientX, dx: 0, moved: false };
+        setDragActive(true);
+      },
+    [editMode, onReschedule],
+  );
+
+  useEffect(() => {
+    if (!dragActive) return;
+    const move = (e: globalThis.PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      d.dx = e.clientX - d.startX;
+      if (Math.abs(d.dx) > 3) d.moved = true;
+      setDragTick((t) => t + 1);
+    };
+    const up = () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDragActive(false);
+      if (!d) return;
+      suppressClickRef.current = d.moved;
+      const days = Math.round(d.dx / PX_PER_DAY);
+      if (d.moved && days !== 0) onReschedule?.(d.kind, d.id, days, d.edge);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [dragActive, onReschedule]);
+
+  // Wraps a bar's click so the pointerup that ends a drag doesn't also open
+  // the detail modal. Consumes the flag, so a real click straight after works.
+  const guardClick = useCallback((fn?: () => void) => {
+    if (!fn) return undefined;
+    return () => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      fn();
+    };
+  }, []);
+
+  // The live offset for the bar currently under the pointer, snapped to the
+  // day grid so what you see is what will be committed.
+  const dragStyle = (kind: Level, id: string, width: number): CSSProperties => {
+    if (!dragging || dragging.kind !== kind || dragging.id !== id) return {};
+    const snapped = Math.round(dragging.dx / PX_PER_DAY) * PX_PER_DAY;
+    const lift = { zIndex: 40, boxShadow: "0 10px 24px rgba(0,0,0,0.45)" };
+    // Resizing keeps the opposite edge pinned and never lets the bar collapse
+    // past a single day — the commit below clamps the same way, so what you
+    // drag is what you get.
+    if (dragging.edge === "start") {
+      const dx = Math.min(snapped, width - PX_PER_DAY);
+      return { ...lift, transform: `translateX(${dx}px)`, width: width - dx };
+    }
+    if (dragging.edge === "end") {
+      return { ...lift, width: Math.max(width + snapped, PX_PER_DAY) };
+    }
+    return { ...lift, transform: `translateX(${snapped}px)` };
+  };
+
   const [visibleLevels, setVisibleLevels] = useState<Record<Level, boolean>>({
     epic: true,
     story: true,
@@ -536,15 +862,17 @@ export function EpicsTimeline({
         const n = st.tasks.length;
         const h =
           n > 0
-            ? STORY_TOP_PAD + n * TASK_H + (n - 1) * TASK_GAP + STORY_BOTTOM_PAD
-            : STORY_MIN_H;
+            ? storyTopPad(os) + n * TASK_H + (n - 1) * TASK_GAP + STORY_BOTTOM_PAD
+            : storyMinH(os);
         storyH.set(st.id, h);
         sum += h;
       }
       const n = e.stories.length;
       epicH.set(
         e.id,
-        n > 0 ? EPIC_TOP_PAD + sum + (n - 1) * STORY_GAP + EPIC_BOTTOM_PAD : EPIC_MIN_H,
+        n > 0
+          ? epicTopPad(os) + sum + (n - 1) * STORY_GAP + EPIC_BOTTOM_PAD
+          : epicMinH(os),
       );
     }
 
@@ -559,7 +887,7 @@ export function EpicsTimeline({
         height: eh,
       });
 
-      let storyTop = cursor + EPIC_TOP_PAD;
+      let storyTop = cursor + epicTopPad(os);
       for (const st of e.stories) {
         const sh = storyH.get(st.id)!;
         const sLeft = left(st.startsAt);
@@ -572,13 +900,16 @@ export function EpicsTimeline({
           top: storyTop,
           height: sh,
         });
+        // Arrows land on the bar as drawn, not on the raw day geometry — the
+        // nesting inset moves both its edges.
+        const sx = barX("story", sLeft, sWidth, os);
         storyRects.set(st.id, {
-          sx: sLeft,
-          ex: sLeft + sWidth,
+          sx: sx.left,
+          ex: sx.left + sx.width,
           cy: storyTop + sh / 2,
         });
 
-        let taskTop = storyTop + STORY_TOP_PAD;
+        let taskTop = storyTop + storyTopPad(os);
         for (const t of st.tasks) {
           taskBars.push({
             task: t,
@@ -602,7 +933,7 @@ export function EpicsTimeline({
         : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
 
     return { epicBars, storyBars, taskBars, storyRects, height };
-  }, [epics, bounds, view]);
+  }, [epics, bounds, view, os]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
   // is what makes the horizontal scrollbar jump around under the cursor.
@@ -679,21 +1010,30 @@ export function EpicsTimeline({
               onClick={() =>
                 setVisibleLevels((prev) => ({ ...prev, [lvl]: !prev[lvl] }))
               }
-              className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-opacity ${
-                on ? "text-foreground" : "border-border text-muted-foreground opacity-50"
-              }`}
+              className={cn(
+                "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-opacity",
+                on
+                  ? os
+                    ? "text-white"
+                    : "text-foreground"
+                  : os
+                    ? "border-os-container bg-os-well text-os-grey opacity-60"
+                    : "border-border text-muted-foreground opacity-50",
+              )}
               style={
                 on
-                  ? {
-                      borderColor: LEVEL_COLOR[lvl],
-                      background: `color-mix(in srgb, ${LEVEL_COLOR[lvl]} 14%, transparent)`,
-                    }
+                  ? os
+                    ? { borderColor: OS_LEVEL[lvl].edge, background: OS_LEVEL[lvl].fill }
+                    : {
+                        borderColor: LEVEL_COLOR[lvl],
+                        background: `color-mix(in srgb, ${LEVEL_COLOR[lvl]} 14%, transparent)`,
+                      }
                   : undefined
               }
             >
               <span
                 className="h-2 w-2 rounded-full flex-shrink-0"
-                style={{ background: LEVEL_COLOR[lvl] }}
+                style={{ background: os ? OS_LEVEL[lvl].ink : LEVEL_COLOR[lvl] }}
               />
               {LEVEL_PLURAL[lvl]}
             </button>
@@ -702,7 +1042,12 @@ export function EpicsTimeline({
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
-      <div className="border border-border rounded-lg bg-card overflow-hidden">
+      <div
+        className={cn(
+          "overflow-hidden border border-border bg-card",
+          os ? "rounded-2xl" : "rounded-lg",
+        )}
+      >
         {/* Scrolls in both axes. Giving the box a vertical scrollport is also
             what finally makes the header's `sticky top-0` bite — until now its
             nearest scrollport was the page, so it never pinned. */}
@@ -713,7 +1058,7 @@ export function EpicsTimeline({
           onScroll={handleScroll}
         >
           <div
-            className="relative"
+            className={cn("relative", os && "bg-os-well")}
             style={{ width: bounds ? bounds.width : "100%", height: gridHeight }}
           >
             {bounds && (
@@ -723,9 +1068,15 @@ export function EpicsTimeline({
                   {days.map((d) => (
                     <div
                       key={d.t}
-                      className={`absolute inset-y-0 border-l ${
-                        d.isMonthStart ? "border-border/60" : "border-border/20"
-                      } ${d.weekend ? "bg-muted/25" : ""}`}
+                      className={cn(
+                        "absolute inset-y-0",
+                        d.isMonthStart
+                          ? os
+                            ? "border-l-2 border-os-accent/40"
+                            : "border-l border-border/60"
+                          : "border-l border-border/20",
+                        d.weekend && "bg-muted/25",
+                      )}
                       style={{
                         left: ((d.t - bounds.min) / DAY) * PX_PER_DAY,
                         width: PX_PER_DAY,
@@ -759,7 +1110,10 @@ export function EpicsTimeline({
                     {months.map((m) => (
                       <div
                         key={m.left}
-                        className="absolute top-0 flex items-center pl-2.5 text-[13px] font-bold text-foreground border-r border-border truncate"
+                        className={cn(
+                          "absolute top-0 flex items-center pl-2.5 text-foreground border-r border-border truncate",
+                          os ? "text-base font-medium" : "text-[13px] font-bold",
+                        )}
                         style={{ left: m.left, width: m.width, height: HEADER_ROW_H }}
                       >
                         {m.label}
@@ -774,20 +1128,31 @@ export function EpicsTimeline({
                     {days.map((d) => (
                       <div
                         key={d.t}
-                        className={`absolute top-0 flex items-center justify-center text-[11px] tabular-nums border-r border-border/60 ${
-                          d.weekend ? "bg-muted/40" : ""
-                        } ${
+                        className={cn(
+                          "absolute top-0 flex items-center justify-center border-r border-border/60 tabular-nums",
+                          os ? "text-[13px]" : "text-[11px]",
+                          d.weekend && "bg-muted/40",
                           d.isToday
-                            ? "text-accent-coral font-semibold"
-                            : "text-muted-foreground"
-                        }`}
+                            ? os
+                              ? "text-foreground"
+                              : "text-accent-coral font-semibold"
+                            : "text-muted-foreground",
+                        )}
                         style={{
                           left: ((d.t - bounds.min) / DAY) * PX_PER_DAY,
                           width: PX_PER_DAY,
                           height: HEADER_ROW_H,
                         }}
                       >
-                        {new Date(d.t).getUTCDate()}
+                        {/* The design rings today rather than recolouring the
+                            numeral, so it stays legible against the band. */}
+                        {os && d.isToday ? (
+                          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-os-accent font-extrabold text-os-bg">
+                            {new Date(d.t).getUTCDate()}
+                          </span>
+                        ) : (
+                          new Date(d.t).getUTCDate()
+                        )}
                       </div>
                     ))}
                   </div>
@@ -799,9 +1164,21 @@ export function EpicsTimeline({
                     {sprintBands.map((b, i) => (
                       <div
                         key={b.key}
-                        className={`absolute top-0 flex items-center border-r-2 border-b border-accent-teal/40 text-[11px] font-semibold tracking-wide text-accent-teal ${
-                          i % 2 === 1 ? "bg-accent-teal/5" : "bg-accent-teal/10"
-                        }`}
+                        className={cn(
+                          "absolute top-0 flex items-center border-b font-semibold tracking-wide",
+                          os ? "text-sm" : "text-[11px]",
+                          os
+                            ? // The design alternates two solid bands with white
+                              // ink instead of tinting one accent two ways.
+                              cn(
+                                "border-r border-white/10 text-white",
+                                i % 2 === 1 ? "bg-[#3a5c58]" : "bg-[#4a4670]",
+                              )
+                            : cn(
+                                "border-r-2 border-accent-teal/40 text-accent-teal",
+                                i % 2 === 1 ? "bg-accent-teal/5" : "bg-accent-teal/10",
+                              ),
+                        )}
                         style={{ left: b.left, width: b.width, height: HEADER_ROW_H }}
                       >
                         {/* Sticks to the left edge of the scroll box so a
@@ -872,14 +1249,24 @@ export function EpicsTimeline({
                         kind="epic"
                         className="absolute rounded-lg z-10"
                         style={{
-                          left: b.left + INSET_PER_LEVEL,
-                          width: Math.max(b.width - INSET_PER_LEVEL * 2, PX_PER_DAY / 2),
+                          ...barX("epic", b.left, b.width, os),
                           top: b.top,
                           height: b.height,
-                          border: `1.5px solid ${LEVEL_COLOR.epic}`,
-                          background: `color-mix(in srgb, ${LEVEL_COLOR.epic} 7%, transparent)`,
+                          border: `1px solid ${os ? OS_LEVEL.epic.edge : LEVEL_COLOR.epic}`,
+                          background: os
+                            ? "transparent"
+                            : `color-mix(in srgb, ${LEVEL_COLOR.epic} 7%, transparent)`,
+                          ...dragStyle(
+                            "epic",
+                            b.epic.id,
+                            barX("epic", b.left, b.width, os).width,
+                          ),
                         }}
+                        draggable={editMode && Boolean(onReschedule)}
+                        onDragStart={beginDrag("epic", b.epic.id)}
+                        onResizeStart={(edge) => beginDrag("epic", b.epic.id, edge)}
                         title={b.epic.title}
+                        description={b.epic.description}
                         rows={[
                           { label: "Status", value: EPIC_STATUS_LABEL[b.epic.status] },
                           {
@@ -900,13 +1287,20 @@ export function EpicsTimeline({
                               ]
                             : []),
                         ]}
-                        onClick={
-                          onEpicClick ? () => onEpicClick(b.epic.id) : undefined
-                        }
+                        onClick={guardClick(
+                          onEpicClick ? () => onEpicClick(b.epic.id) : undefined,
+                        )}
                       >
+                        {/* The design seats the label as a filled pill inside
+                            the group's top-left rather than notching it into
+                            the border, so it needs no bg-card to punch a hole. */}
                         <span
-                          className="absolute -top-px left-2 -translate-y-1/2 bg-card px-1.5 text-[11px] font-bold whitespace-nowrap"
-                          style={{ color: LEVEL_COLOR.epic }}
+                          className={
+                            os
+                              ? "os-bar-label os-bar-label--epic absolute left-1.5 top-1.5 max-w-[calc(100%-12px)] truncate rounded-md px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap"
+                              : "absolute -top-px left-2 -translate-y-1/2 bg-card px-1.5 text-[11px] font-bold whitespace-nowrap"
+                          }
+                          style={os ? undefined : { color: LEVEL_COLOR.epic }}
                         >
                           {b.epic.title}
                         </span>
@@ -921,17 +1315,24 @@ export function EpicsTimeline({
                       kind="story"
                       className="absolute rounded-lg z-10"
                       style={{
-                        left: b.left + INSET_PER_LEVEL * 2,
-                        width: Math.max(
-                          b.width - INSET_PER_LEVEL * 4,
-                          PX_PER_DAY / 2,
-                        ),
+                        ...barX("story", b.left, b.width, os),
                         top: b.top,
                         height: b.height,
-                        border: `1.5px solid ${LEVEL_COLOR.story}`,
-                        background: `color-mix(in srgb, ${LEVEL_COLOR.story} 8%, transparent)`,
+                        border: `1px solid ${os ? OS_LEVEL.story.edge : LEVEL_COLOR.story}`,
+                        background: os
+                          ? "transparent"
+                          : `color-mix(in srgb, ${LEVEL_COLOR.story} 8%, transparent)`,
+                        ...dragStyle(
+                          "story",
+                          b.story.id,
+                          barX("story", b.left, b.width, os).width,
+                        ),
                       }}
+                      draggable={editMode && Boolean(onReschedule)}
+                      onDragStart={beginDrag("story", b.story.id)}
+                      onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
                       title={b.story.title}
+                      description={b.story.description}
                       rows={[
                         { label: "Status", value: STORY_STATUS_LABEL[b.story.status] },
                         {
@@ -940,17 +1341,24 @@ export function EpicsTimeline({
                         },
                         { label: "Tasks", value: String(b.story.tasks.length) },
                       ]}
-                      onClick={
+                      onClick={guardClick(
                         onStoryClick
                           ? () => onStoryClick(b.epicId, b.story.id)
-                          : undefined
-                      }
+                          : undefined,
+                      )}
                     >
                       <span
-                        className="absolute -top-px left-2 -translate-y-1/2 bg-card px-1.5 text-[11px] font-bold whitespace-nowrap"
-                        style={{ color: LEVEL_COLOR.story }}
+                        className={
+                          os
+                            ? "os-bar-label os-bar-label--story absolute left-1.5 top-1.5 flex max-w-[calc(100%-12px)] items-center rounded-md px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap"
+                            : "absolute -top-px left-2 -translate-y-1/2 bg-card px-1.5 text-[11px] font-bold whitespace-nowrap"
+                        }
+                        style={os ? undefined : { color: LEVEL_COLOR.story }}
                       >
-                        {b.story.title}
+                        {os && b.story.incomplete && (
+                          <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
+                        )}
+                        <span className="truncate">{b.story.title}</span>
                       </span>
                     </HoverBar>
                   ))}
@@ -960,18 +1368,29 @@ export function EpicsTimeline({
                     <HoverBar
                       key={b.task.id}
                       kind="task"
-                      className="absolute rounded-lg z-10 flex items-center overflow-hidden px-2"
+                      className={cn(
+                        "absolute z-10 flex items-center overflow-hidden px-2",
+                        os ? "os-bar-label os-bar-label--task rounded-xl" : "rounded-lg",
+                      )}
                       style={{
-                        left: b.left + INSET_PER_LEVEL * 3,
-                        width: Math.max(
-                          b.width - INSET_PER_LEVEL * 6,
-                          PX_PER_DAY / 2,
-                        ),
+                        ...barX("task", b.left, b.width, os),
                         top: b.top,
                         height: b.height,
-                        border: `1.5px solid ${LEVEL_COLOR.task}`,
-                        background: `color-mix(in srgb, ${LEVEL_COLOR.task} 8%, transparent)`,
+                        border: os ? "none" : `1.5px solid ${LEVEL_COLOR.task}`,
+                        ...(os
+                          ? null
+                          : {
+                              background: `color-mix(in srgb, ${LEVEL_COLOR.task} 8%, transparent)`,
+                            }),
+                        ...dragStyle(
+                          "task",
+                          b.task.id,
+                          barX("task", b.left, b.width, os).width,
+                        ),
                       }}
+                      draggable={editMode && Boolean(onReschedule)}
+                      onDragStart={beginDrag("task", b.task.id)}
+                      onResizeStart={(edge) => beginDrag("task", b.task.id, edge)}
                       title={b.task.title}
                       rows={[
                         { label: "Status", value: TASK_STATUS_LABEL[b.task.status] },
@@ -981,11 +1400,18 @@ export function EpicsTimeline({
                         },
                       ]}
                       assignees={b.task.assignees}
-                      onClick={onTaskClick ? () => onTaskClick(b.task.id) : undefined}
+                      onClick={guardClick(
+                        onTaskClick ? () => onTaskClick(b.task.id) : undefined,
+                      )}
                     >
                       <span
-                        className="text-[11px] font-bold truncate"
-                        style={{ color: LEVEL_COLOR.task }}
+                        className={
+                          os
+                            ? "truncate text-[12px] font-semibold tracking-[0.24px]"
+                            : "text-[11px] font-bold truncate"
+                        }
+                        // Under os the bar itself carries the ink.
+                        style={os ? undefined : { color: LEVEL_COLOR.task }}
                       >
                         {b.task.title}
                       </span>

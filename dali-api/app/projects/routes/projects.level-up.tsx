@@ -19,6 +19,8 @@ import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -419,6 +421,7 @@ export default function LevelUpDatabase() {
 type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
+  const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmRow, setConfirmRow] = useState<{
@@ -468,9 +471,7 @@ function Loaded({ data }: { data: LoadedData }) {
 
       {data.mappingWarning && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <span className="font-medium">Heads up:</span> {data.mappingWarning}{" "}
-          Submissions are still recorded; affected columns won't feed staffing
-          until you fix the mapping.
+          <span className="font-medium">Heads up:</span> {data.mappingWarning}
         </div>
       )}
 
@@ -484,7 +485,12 @@ function Loaded({ data }: { data: LoadedData }) {
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
 
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div
+        className={cn(
+          "overflow-hidden",
+          os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+        )}
+      >
         {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No Level Up form is connected for this term. Open{" "}
@@ -714,9 +720,6 @@ function LevelUpConfirmDialog({
           <span className="font-semibold">{row.targetLevel}</span> in{" "}
           <span className="font-semibold">{row.domainName}</span>?
         </p>
-        <p className="text-xs text-muted-foreground">
-          This updates their Domain Eligibility and takes effect immediately.
-        </p>
         {fetcher.data && !(fetcher.data as { ok?: boolean }).ok && (
           <p className="text-sm text-red-600">
             {(fetcher.data as { error?: string }).error ?? "Something went wrong."}
@@ -761,23 +764,22 @@ function Header({
   onOpenSettings?: () => void;
   settingsLabel?: string;
 }) {
+  const { os, pageTitle } = useOsChrome();
   return (
     <>
     <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "level-up" })} />
     <header className="flex items-start justify-between gap-3">
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Level Up
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Member level up applications{cycleName ? ` for ${cycleName}` : ""}.
-        </p>
-      </div>
+      <h1 className={pageTitle}>Level Up</h1>
       {onOpenSettings && (
         <button
           type="button"
           onClick={onOpenSettings}
-          className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted"
+          className={cn(
+            "shrink-0",
+            os
+              ? "os-edit-btn"
+              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+          )}
         >
           {settingsLabel ?? "Advanced settings"}
         </button>

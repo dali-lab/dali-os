@@ -326,6 +326,33 @@ export function resolveAssignmentDomains(
   return null;
 }
 
+/**
+ * Does this member belong on the board while it's filtered to one domain?
+ *
+ * The question the filter answers is "who works in this domain", so the answer
+ * comes from DomainEligibility (the member's hired role) — NOT from their bids.
+ * A bid's domainId is not a claim about the bidder: bid-validation assigns one
+ * per ranked project purely to satisfy the row's unique key, falling back to the
+ * project's first declared domain when the member is eligible in none of them.
+ * Matching on it meant ranking a project was enough to appear under that
+ * project's domain, which with a handful of bids each let nearly everyone
+ * through every filter.
+ *
+ * A live assignment still counts. That one IS a domain decision — a lead put
+ * them there — and dropping it would make a real placement vanish from the
+ * column it's sitting in.
+ */
+export function matchesDomainFilter(
+  member: MemberInput,
+  domainId: string,
+  assignedUserIds: ReadonlySet<string>,
+): boolean {
+  return (
+    member.domainLevels.some((d) => d.domainId === domainId) ||
+    assignedUserIds.has(member.userId)
+  );
+}
+
 /** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */
 export function resolveAssignmentInputs(
   member: MemberInput,
