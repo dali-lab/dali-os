@@ -13,6 +13,14 @@ SELECT
     2,
     '[
   {
+    "key": "break-general",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "General Information"
+    }
+  },
+  {
     "key": "project-title",
     "type": "text",
     "required": true,

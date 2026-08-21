@@ -53,11 +53,18 @@ describe("paginateQuestions", () => {
     expect(pages[1].subtitle).toBeUndefined();
   });
 
-  it("yields a titled first page when the form leads with a break", () => {
+  it("titles the first page (no blank page) when the form leads with a break", () => {
     const pages = paginateQuestions([brk("Start"), q("a")]);
-    expect(pages).toHaveLength(2);
-    expect(pages[0].questions).toEqual([]);
-    expect(pages[1].title).toBe("Start");
-    expect(pages[1].questions.map((x) => x.key)).toEqual(["a"]);
+    expect(pages).toHaveLength(1);
+    expect(pages[0].title).toBe("Start");
+    expect(pages[0].questions.map((x) => x.key)).toEqual(["a"]);
+  });
+
+  it("still splits a mid-form break after a leading titled section", () => {
+    const pages = paginateQuestions([brk("Intro"), q("a"), brk("Next"), q("b")]);
+    expect(pages.map((p) => [p.title, p.questions.map((x) => x.key)])).toEqual([
+      ["Intro", ["a"]],
+      ["Next", ["b"]],
+    ]);
   });
 });

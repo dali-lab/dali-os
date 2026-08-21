@@ -305,9 +305,14 @@ test.describe('partner self-signup', () => {
       for (const inp of await page.locator('input[type="text"]:visible').all()) {
         if (!(await inp.inputValue())) await inp.fill('Test answer');
       }
-      // Check the first unchecked checkbox in any checkbox group.
-      const cb = page.locator('input[type="checkbox"]:visible').first();
-      if (await cb.isVisible() && !(await cb.isChecked())) await cb.check();
+      // Check the first unchecked checkbox in any group. The custom Checkbox
+      // renders a visually-hidden (sr-only) real <input> inside a clickable
+      // <label>, so Playwright can't click the input directly — toggle the
+      // option by clicking the wrapping label instead.
+      const cbLabel = page
+        .locator('label:has(input[type="checkbox"]:not(:checked))')
+        .first();
+      if (await cbLabel.isVisible()) await cbLabel.click();
 
       const nextBtn = page.getByRole('button', { name: 'Next' });
       const submitBtn = page.getByRole('button', { name: 'Submit application' });
@@ -400,8 +405,12 @@ test.describe('bound application form', () => {
       await page.goto('/partner/apply');
 
       // First question is Project title — fill it so deriveApplicationTitle
-      // returns a predictable value.
-      await page.getByLabel('Project title').fill('Alumni portal refresh');
+      // returns a predictable value. FormField renders the <label> as a sibling
+      // (no htmlFor), so target the field by position rather than getByLabel.
+      await page
+        .locator('input[type="text"]')
+        .first()
+        .fill('Alumni portal refresh');
       await expect(page.getByText('What is your budget?')).toBeVisible();
       await page.locator('textarea').fill('Around $10k for the pilot term.');
       await page.getByRole('button', { name: 'Submit application' }).click();

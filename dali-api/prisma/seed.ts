@@ -3111,6 +3111,14 @@ async function main() {
       intro: "Thank you for your interest in working with DALI! Please answer the following questions to the best of your ability — detailed answers help us evaluate how the DALI Lab could best work with you. We evaluate projects on five categories: positive social or environmental impact; appropriate and interesting design and development challenges; a passionate and committed founding team; feasibility; and originality / opportunity for innovation. Questions? Email partners@dali.dartmouth.edu.",
       questions: [
   {
+    "key": "break-general",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "General Information"
+    }
+  },
+  {
     "key": "project-title",
     "type": "text",
     "required": true,
