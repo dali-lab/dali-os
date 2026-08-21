@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.favorites.route";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { favoriteHrefs, setRouteFavorite } from "~/lib/user-pages.server";
+import { canonicalRouteHref, favoriteHrefs, setRouteFavorite } from "~/lib/user-pages.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 
 // POST /api/favorites/route — star or un-star a URL inside the app (a project
@@ -41,7 +41,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (href === null) {
     return withCors(request, Response.json({ ok: true, hrefs: [...hrefs] }));
   }
-  return withCors(request, Response.json({ ok: true, favorited: hrefs.has(href) }));
+  // The page asks with the URL it is on, tab query and all; the stored identity
+  // of a detail route is just its path (canonicalRouteHref).
+  return withCors(request, Response.json({ ok: true, favorited: hrefs.has(canonicalRouteHref(href)) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {

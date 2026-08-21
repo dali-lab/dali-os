@@ -20,6 +20,8 @@ import {
   toMonthEvent,
 } from "~/lib/week-events";
 import { coreHandle } from "~/core/coreNav";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 // Core's landing page: the week Core is running, not a menu. The grid merges
 // the meetings scoped to the Core group (each linking to its notes page) with
@@ -168,6 +170,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
   const { timeZone, monthOffset, monthDays, monthLabel, monthEvents, upcoming, deadlines } =
     loaderData;
+  const { os, pageTitle, panel, panelPad, heading, headingIcon } = useOsChrome();
 
   const when = (iso: string) =>
     new Intl.DateTimeFormat("en-US", {
@@ -187,13 +190,9 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
     }).format(new Date(iso));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
       <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Core</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          The month Core is running — meetings and their notes, lab events, and
-          what&apos;s coming due.
-        </p>
+        <h1 className={pageTitle}>Core</h1>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -208,9 +207,9 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         />
 
         <div className="flex flex-col gap-4">
-          <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-            <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-              <CalendarClock className="w-4 h-4 text-accent-coral" />
+          <section className={cn(panel, panelPad)}>
+            <h2 className={heading}>
+              <CalendarClock className={headingIcon} />
               Upcoming Core meetings
             </h2>
             {upcoming.length === 0 ? (
@@ -241,9 +240,9 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
             )}
           </section>
 
-          <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-            <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-              <Flag className="w-4 h-4 text-accent-coral" />
+          <section className={cn(panel, panelPad)}>
+            <h2 className={heading}>
+              <Flag className={headingIcon} />
               Deadlines
             </h2>
             {deadlines.length === 0 ? (

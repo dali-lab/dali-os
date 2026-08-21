@@ -14,6 +14,7 @@ export type PublicProjectViewData = {
   project: {
     id: string;
     name: string;
+    iconEmoji: string | null;
     imageUrl: string | null;
   };
   // Null until someone saves the Public view for the first time. The route
@@ -56,6 +57,7 @@ export async function loadPublicProjectView(
     select: {
       id: true,
       name: true,
+      iconEmoji: true,
       imageUrl: true,
       showcase: true,
     },
@@ -93,6 +95,7 @@ export async function loadPublicProjectView(
     project: {
       id: project.id,
       name: project.name,
+      iconEmoji: project.iconEmoji,
       imageUrl: await resolvePhotoUrl(project.imageUrl),
     },
     showcase: s

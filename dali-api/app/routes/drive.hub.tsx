@@ -11,11 +11,15 @@ import {
   ChevronDown,
   LayoutTemplate,
   Upload,
+  Tag as TagIcon,
+  X,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, currentTerm } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
+import { resolveTermFilter } from "~/lib/terms";
+import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -29,6 +33,8 @@ import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
+import { filterPillClass } from "~/components/ui/floating/styles";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
@@ -64,6 +70,13 @@ export function shouldRevalidate({
 }: ShouldRevalidateFunctionArgs) {
   if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
   if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) {
+    // Scope/folder moves stay inside the tree the loader already sent, which is
+    // the whole point of this gate. `?term=` is different in kind: it changes
+    // which project drives exist at all, so it has to reach the loader or the
+    // dropdown looks broken.
+    if (currentUrl.searchParams.get("term") !== nextUrl.searchParams.get("term")) {
+      return defaultShouldRevalidate;
+    }
     return false;
   }
   return defaultShouldRevalidate;
@@ -75,6 +88,9 @@ export function shouldRevalidate({
 // flows. Signed agreements stay in Settings → Agreements. Templates are a
 // creation aid in the New menu, plus a browseable gallery at /drive/templates
 // (surfaced by the Templates toolbar link when the `templates` flag is on).
+// A tag chip as the Drive hands it to the client.
+export type DocTagOut = { id: string; label: string; slug: string; color: string | null };
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -90,14 +106,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
   // + cycle reviewers/interviewers) so the scope shows for exactly the people
   // the Hiring root is scoped to.
-  const [hiringReviewer, term] = await Promise.all([
+  const [hiringReviewer, termFilter] = await Promise.all([
     roles.isCore || roles.isDomainLead || roles.isInterviewer
       ? Promise.resolve(null) // already qualifies; skip the DB hit
       : prisma.cycleReviewer.findFirst({
           where: { userId: auth.user.sub },
           select: { id: true },
         }),
-    currentTerm(request),
+    resolveTermFilter(request),
   ]);
   const hasHiringAccess =
     roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
@@ -106,7 +122,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   // filter as documents.hub: Core sees all projects; others see only projects
   // they're staffed on, scoped to the current term (matching the default
   // ?term= behavior when docsLoader is called with a /drive URL).
-  const termId = term?.id ?? null;
+  // `?term=` scopes which project drives appear, exactly as it scopes the
+  // projects hub; "All terms" drops the gate so older project drives stay
+  // reachable. Defaults to the current term, which is what this used to
+  // hard-code.
+  const termId = termFilter.isAll ? null : termFilter.termId;
   const rawProjects = await prisma.project.findMany({
     where: {
       ...(termId ? { projectTerms: { some: { termId } } } : {}),
@@ -132,8 +152,52 @@ export async function loader({ request }: Route.LoaderArgs) {
     request,
   });
 
+  // Tags come from the join tables keyed by the ids the scopes actually
+  // resolved to, rather than being selected into every page/file query in
+  // drive.server. Two bounded queries instead of a join on each of the six
+  // scope loaders, and drive.server keeps knowing nothing about tags.
+  const pageIds: string[] = [];
+  const fileIds: string[] = [];
+  for (const scope of driveScopes) {
+    for (const item of scope.items) {
+      if (item.type === "doc" || item.type === "folder") pageIds.push(item.id);
+      else if (item.type === "file") fileIds.push(item.id);
+    }
+  }
+  const [allTags, pageTags, fileTags] = await Promise.all([
+    // Every live tag, not just the ones already on something visible here.
+    // Restricting it to what's in view hides the control completely until
+    // somebody has tagged a document — which reads as "the filter is missing"
+    // rather than "nothing is tagged yet". Matches the old documents hub.
+    prisma.docTag.findMany({
+      where: { archivedAt: null },
+      orderBy: { label: "asc" },
+      select: { id: true, label: true, slug: true, color: true },
+    }),
+    pageIds.length
+      ? prisma.pageTag.findMany({
+          where: { pageId: { in: pageIds }, tag: { archivedAt: null } },
+          select: { pageId: true, tag: { select: { id: true } } },
+        })
+      : Promise.resolve([]),
+    fileIds.length
+      ? prisma.projectFileTag.findMany({
+          where: { fileId: { in: fileIds }, tag: { archivedAt: null } },
+          select: { fileId: true, tag: { select: { id: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const itemTagIds: Record<string, string[]> = {};
+  for (const { pageId, tag } of pageTags) (itemTagIds[pageId] ??= []).push(tag.id);
+  for (const { fileId, tag } of fileTags) (itemTagIds[fileId] ??= []).push(tag.id);
+
   return {
     driveScopes,
+    allTags,
+    itemTagIds,
+    terms: termFilter.terms,
+    selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
   };
@@ -797,7 +861,16 @@ function NewMenu({
 // ── Hub shell ─────────────────────────────────────────────────────────────────
 
 export default function DriveHub() {
-  const { driveScopes, canViewForms, canManageAgreements } = useLoaderData() as LoaderData;
+  const {
+    driveScopes,
+    allTags,
+    itemTagIds,
+    terms,
+    selectedTerm,
+    canViewForms,
+    canManageAgreements,
+  } = useLoaderData() as LoaderData;
+  const os = useFeatureFlag("os-redesign");
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -833,10 +906,15 @@ export default function DriveHub() {
   // when this same hub is embedded at /hiring/library, where it opens straight
   // into the Hiring drive so the hiring team lands on their artifacts.
   const location = useLocation();
-  const currentScopeId =
-    searchParams.get("scope") ??
-    (location.pathname.startsWith("/hiring/library") ? "hiring" : null);
+  const isHiringLibrary = location.pathname.startsWith("/hiring/library");
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
   const currentFolderId = searchParams.get("folder");
+  // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
+  // link someone can send, and the back button steps through filters.
+  const selectedTagIds = useMemo(
+    () => new Set(searchParams.getAll("tag").filter(Boolean)),
+    [searchParams],
+  );
   const rawType = searchParams.get("type") as DriveTypeFilter | null;
   const typeFilter: DriveTypeFilter =
     rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement" ? rawType : "all";
@@ -1176,22 +1254,97 @@ export default function DriveHub() {
     };
   }, [currentScope, currentFolderId]);
 
+  const toggleTag = useCallback(
+    (id: string) => {
+      patchParams((p) => {
+        const next = p.getAll("tag").filter((t) => t !== id);
+        if (!p.getAll("tag").includes(id)) next.push(id);
+        p.delete("tag");
+        for (const t of next) p.append("tag", t);
+      });
+    },
+    // patchParams is redefined each render but only closes over setSearchParams.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const clearTags = useCallback(() => {
+    patchParams((p) => p.delete("tag"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Undefined when nothing is selected — DriveBrowser reads the absence of this
+  // as "tag filter off" rather than taking a separate flag.
+  const tagFilter = useMemo(() => {
+    if (selectedTagIds.size === 0) return undefined;
+    return (item: DriveItem) =>
+      (itemTagIds[item.id] ?? []).some((id) => selectedTagIds.has(id));
+  }, [selectedTagIds, itemTagIds]);
+
+  const tagChips =
+    allTags.length > 0 ? (
+      <div className={cn("flex items-center gap-2 flex-wrap", os && "pb-1")}>
+        <TagIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        {allTags.map((tag) => {
+          const active = selectedTagIds.has(tag.id);
+          return (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => toggleTag(tag.id)}
+              aria-pressed={active}
+              className={cn(
+                "inline-flex items-center rounded-full border font-medium transition-colors",
+                os ? "px-3.5 py-1.5 text-sm" : "px-2.5 py-0.5 text-xs",
+                active
+                  ? os
+                    ? "border-os-accent bg-os-accent/15 text-os-accent"
+                    : "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
+              )}
+            >
+              {tag.label}
+            </button>
+          );
+        })}
+        {selectedTagIds.size > 0 && (
+          <button
+            type="button"
+            onClick={clearTags}
+            className={cn(
+              "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground",
+              os ? "text-sm" : "text-xs",
+            )}
+          >
+            <X className="w-3 h-3" /> Clear
+          </button>
+        )}
+      </div>
+    ) : null;
+
   const caps = { canViewForms, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
   // Type filter as the site's Select dropdown (matches members/forms filters),
   // collapsing the old chip row into one compact control.
   const filterControl = (
-    <div data-testid="drive-filter">
-      <Select<DriveTypeFilter>
-        value={typeFilter}
-        onChange={setTypeFilter}
-        ariaLabel="Filter by type"
-        align="right"
-        options={visibleFilters.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
-        buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 hover:bg-muted/40 transition-colors"
-      />
-    </div>
+    <>
+      <div data-testid="drive-filter">
+        <Select<DriveTypeFilter>
+          value={typeFilter}
+          onChange={setTypeFilter}
+          ariaLabel="Filter by type"
+          align="right"
+          options={visibleFilters.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
+          buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+        />
+      </div>
+      {/* Scopes which project drives are listed — the project drives are the
+          only part of the tree that is term-bound. */}
+      <div data-testid="drive-term-filter">
+        <TermFilter terms={terms} selected={selectedTerm} />
+      </div>
+    </>
   );
 
   const newMenuNode =
@@ -1215,7 +1368,10 @@ export default function DriveHub() {
       {templatesEnabled && (
         <Link
           to="/drive/templates"
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted/40 transition-colors"
+          className={cn(
+            "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
+            os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
+          )}
         >
           <LayoutTemplate className="w-3.5 h-3.5" />
           Templates
@@ -1226,9 +1382,23 @@ export default function DriveHub() {
   );
 
   return (
-    <div className="w-full flex flex-col gap-3 p-4">
-      {/* The breadcrumb (with the Drive root) is the sole title — no separate
-          "Drive" header. Filter + New live in the browser's toolbar row. */}
+    // Off-flag this keeps its own p-4. Under the design the shell already lays
+    // a 64px/60px gutter on every page, so a second inset here started Drive's
+    // content 16px in from where every other page's begins — visible as soon as
+    // two tabs sit side by side.
+    <div className={cn("w-full flex flex-col", os ? "gap-4" : "gap-3 p-4")}>
+      {/* Drive used to treat its breadcrumb as the page title. That worked when
+          no page had a title; under the design every hub opens with one, and a
+          page that starts straight into a toolbar reads as a fragment of some
+          other screen. The breadcrumb stays — it's navigation, and it carries
+          the scope and folder the title can't. */}
+      {os && (
+        <header className="flex items-start justify-between gap-3 flex-wrap">
+          <h1 className="font-heading text-4xl font-medium text-foreground">
+            {isHiringLibrary ? "Library" : "Drive"}
+          </h1>
+        </header>
+      )}
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
       <DriveBrowser
@@ -1249,6 +1419,8 @@ export default function DriveHub() {
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
+        tagChips={tagChips}
+        tagFilter={tagFilter}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

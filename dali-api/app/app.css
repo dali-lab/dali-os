@@ -116,6 +116,39 @@
   --color-sidebar-border: hsl(220 13% 91%);
   --color-sidebar-ring: hsl(217.2 91.2% 59.8%);
 
+  /* ── dali.os design (behind the `os-redesign` flag) ──────────────────
+   * A self-contained dark palette, not a re-skin of the tokens above: the
+   * shell it dresses looks identical in light and dark mode, so these are
+   * literal hex and never remapped under html.dark. Everything it styles is
+   * namespaced `os-` (bg-os-card, rounded-os-card, font-os) so it can't
+   * collide with the brand tokens or the html.dark !important layer. */
+  /* The surface ramp is neutral grey, not blue-grey: at these lightnesses a
+   * hue-240 tint doesn't read as "cool", it reads as a colour cast on what
+   * should be a neutral ground — most visibly on the cards, which are the
+   * lightest and most saturated step. Each value below holds its predecessor's
+   * lightness to within half a point, so every contrast relationship the design
+   * was drawn against (card against page, border against card) is unchanged.
+   * The accent stays blue; it's the one place the palette means to be. */
+  --color-os-bg:           #282830;  /* page */
+  --color-os-nav:          #24242a;  /* sidebar + top bar */
+  --color-os-card:         #2b2b36;  /* cards, wells, menus */
+  --color-os-card-hover:   #323240;
+  --color-os-well:         #26262f;  /* inputs, nested rows */
+  --color-os-container:    #3f3f48;  /* borders, chips, active fill */
+  --color-os-container-hi: #54545f;  /* hover border */
+  --color-os-accent:       #a8d3de;
+  --color-os-accent-hover: #bfe1e9;
+  --color-os-grey:         #bababa;  /* secondary text */
+  --color-os-muted:        #6a6a73;  /* tertiary text / placeholders */
+  --color-os-green:        #9fe0a8;  /* "Active" status */
+  --color-os-amber:        #f2b84b;
+
+  --radius-os-card: 24px;
+  --radius-os-item: 12px;
+
+  --font-os: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-os-logo: "Plus Jakarta Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
+
   --radius: 8px;
   --font-sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-heading: "Dosis", ui-sans-serif, system-ui, sans-serif;
@@ -123,7 +156,15 @@
 }
 
 /* Dark mode overrides — toggled via html.dark (see lib/theme.ts + settings Appearance). */
-html.dark {
+/* The dali.os shell opts into this whole block regardless of the app's
+   light/dark setting: it is a fixed-dark surface, so the raw-palette rescues
+   below (bg-white, text-gray-700, …) have to apply inside it in light mode too,
+   or a page that hasn't migrated to the semantic tokens renders a white card on
+   a #2b2b2c page. The token declarations at the top are overridden by
+   `.os-shell`'s own — custom properties resolve from the nearest ancestor that
+   sets them, and the shell div is nearer than <html>. */
+html.dark,
+.os-shell {
     --color-background: hsl(215 35% 10%);
     --color-foreground: hsl(210 20% 95%);
     --color-card: hsl(215 32% 15%);
@@ -481,10 +522,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  letter-spacing: -0.005em;
+/* In @layer base, not unlayered. Tailwind v4 orders theme < base < components
+   < utilities, and an *unlayered* rule outbids every layer — so while this sat
+   outside a layer it silently beat `font-medium` / `text-4xl` on any heading,
+   and no utility could change a heading's weight anywhere in the app. */
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.005em;
+  }
 }
 
 /* Tailwind v4's preflight no longer sets a pointer cursor on buttons. Restore
@@ -580,9 +627,15 @@ select:not(:disabled) {
   .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
 }
 
+/* The halo colour is a variable so the ring matches whatever plate the CTA is
+   sitting on — coral on the brand shells, the os accent inside `.os-shell`,
+   where a pink pulse around a grey-blue button read as an error state. */
+:root { --guide-pulse-rgb: 255 139 129; }
+.os-shell { --guide-pulse-rgb: 168 211 222; }
+
 @keyframes guide-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
-  50%      { box-shadow: 0 0 0 4px rgba(255, 139, 129, 0.28); }
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--guide-pulse-rgb) / 0); }
+  50%      { box-shadow: 0 0 0 4px rgb(var(--guide-pulse-rgb) / 0.28); }
 }
 .guide-pulse { animation: guide-pulse 2.6s ease-in-out infinite; }
 .guide-pulse:hover, .guide-pulse:focus-visible { animation: none; }
@@ -693,6 +746,672 @@ select:not(:disabled) {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ── dali.os shell ─────────────────────────────────────────────────────
+ * Only the things a utility class can't carry: the font stack for the whole
+ * subtree, a scrollbar that reads on #2b2b2c, and a colour-scheme hint so
+ * native controls (date pickers, autofill) render dark inside the shell even
+ * when the app itself is in light mode. Everything else is `os-` utilities. */
+/* `html.os-shell` is listed alongside `.os-shell` for specificity, not reach.
+ * useOsShellRoot mirrors this class onto <html> so portalled surfaces (Select
+ * panels, menus, dialogs, the palette) inherit the palette — but the dark block
+ * above is `html.dark, .os-shell`, and on a <html class="dark os-shell"> its
+ * `html.dark` arm (0,1,1) outranks a bare `.os-shell` (0,1,0). Every token
+ * below would lose on <html> and portals would render the app's blue-slate
+ * dark palette instead of this one, while the shell div — where `.os-shell` is
+ * the nearest ancestor — rendered correctly. Matching the arms ties the
+ * specificity, and later wins. */
+.os-shell,
+html.os-shell {
+  font-family: var(--font-os);
+  color-scheme: dark;
+
+  /* The dali.os palette is applied by *remapping the semantic tokens* inside
+   * the shell, not by restyling every component that lands in it. Tailwind 4
+   * compiles `bg-card` to `background-color: var(--color-card)`, so a page
+   * written against the semantic tokens (bg-card / border-border /
+   * text-muted-foreground / …) renders in this palette the moment it's inside
+   * `.os-shell`, in light and dark mode alike — one definition instead of an
+   * `os:` variant on every element of every page the flag reaches.
+   *
+   * Deliberately NOT remapped: the brand accents. Coral stays coral — it's
+   * DALI's, it reads fine on #2b2b36, and folding it into the design's pale
+   * blue would put white text on a light-blue button everywhere `buttonClasses
+   * ("primary")` is used. The os accent dresses the new chrome instead. */
+  --color-page: var(--color-os-bg);
+  --color-section-bg: var(--color-os-bg);
+  --color-section-bg-alt: var(--color-os-card);
+  --color-background: var(--color-os-bg);
+  --color-foreground: #ffffff;
+  --color-card: var(--color-os-card);
+  --color-card-foreground: #ffffff;
+  --color-popover: var(--color-os-card);
+  --color-popover-foreground: #ffffff;
+  --color-brand-tint: var(--color-os-card);
+  --color-sidebar-bg: var(--color-os-nav);
+  --color-muted: var(--color-os-container);
+  --color-muted-foreground: var(--color-os-grey);
+  --color-secondary: var(--color-os-container);
+  --color-secondary-foreground: #ffffff;
+  --color-accent: var(--color-os-container);
+  --color-accent-foreground: #ffffff;
+  --color-border: var(--color-os-container);
+  --color-input: var(--color-os-container);
+  --color-ring: var(--color-os-accent);
+  --color-primary: #ffffff;
+  --color-primary-foreground: var(--color-os-bg);
+  --color-text-secondary: var(--color-os-grey);
+
+  /* One typeface across the shell — the design's only second face is the
+     wordmark, which asks for font-os-logo explicitly. */
+  --font-sans: var(--font-os);
+  --font-heading: var(--font-os);
+
+  --radius: var(--radius-os-item);
+}
+
+.os-shell ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.os-shell ::-webkit-scrollbar-thumb {
+  background: var(--color-os-container);
+  border-radius: 8px;
+}
+.os-shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-os-container-hi);
+}
+.os-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The top bar's action cluster — the page Guide and the task bell. They sit
+   side by side and the design gives them one plate, so they share one class:
+   the container fill, the 12px corner, and a 40px height that a 20px glyph and
+   a 24px count badge both have to land on. */
+.os-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: var(--radius-os-item);
+  background: var(--color-os-container);
+  color: #ffffff;
+  transition: background-color 0.15s ease;
+}
+.os-topbar-btn:hover {
+  background: var(--color-os-container-hi);
+}
+
+/* The design's buttons. `.os-add-btn` is its add control (.add-btn): a dark,
+   bordered pill with a heavy plus — the design's own vocabulary for "make a
+   new one", rather than the coral primary the other shells use. `.os-btn-*`
+   are its dialog pair, accent-filled confirm and quiet ghost. */
+.os-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 100px;
+  background: #1e1e1f;
+  border: 1px solid var(--color-os-container);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.os-add-btn:hover {
+  background: #2b2b2c;
+  border-color: var(--color-os-container-hi);
+}
+.os-add-btn:active {
+  transform: scale(0.97);
+}
+
+/* The design's modal card and its header furniture. The `.os-modal-card` shape
+   (24px corners, container hairline, deep cast shadow) is what tells a dialog
+   apart from the page behind it; the type badge names which of epic / story /
+   task you opened, in that level's own colours. */
+.os-modal-card {
+  border-radius: var(--radius-os-card);
+  border: 1px solid var(--color-os-container);
+  background: var(--color-os-card);
+  padding: 24px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.os-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24px;
+  text-transform: uppercase;
+}
+.os-type-badge--epic {
+  background: rgba(109, 90, 158, 0.8);
+  color: #d9c9f7;
+}
+.os-type-badge--story {
+  background: rgba(89, 149, 144, 0.8);
+  color: #d7fdf5;
+}
+.os-type-badge--task {
+  background: rgba(125, 99, 99, 0.8);
+  color: #f5d9d9;
+}
+
+/* A 32px square icon button — the modal's close and edit affordances. */
+.os-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--color-os-grey);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.os-icon-btn:hover {
+  background: var(--color-os-container);
+  color: #ffffff;
+}
+
+/* The design's form furniture. Applied inside `.os-shell` to the field
+   primitives the project modals already use, so a form picks the shape up
+   without every input naming it. */
+.os-shell .os-form input[type="text"],
+.os-shell .os-form input[type="date"],
+.os-shell .os-form input[type="url"],
+.os-shell .os-form input[type="number"],
+.os-shell .os-form textarea {
+  background: var(--color-os-well);
+  border: 1px solid var(--color-os-container);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #ffffff;
+  transition: border-color 0.15s ease;
+}
+.os-shell .os-form input:focus,
+.os-shell .os-form textarea:focus {
+  outline: none;
+  border-color: var(--color-os-accent);
+}
+.os-shell .os-form input::placeholder,
+.os-shell .os-form textarea::placeholder {
+  color: var(--color-os-muted);
+}
+/* The Select / DateField / DependsOn triggers are buttons, not native
+   controls, so they need naming separately — but they're the same field to a
+   reader, and the design gives every field one shape. */
+.os-shell .os-form button[aria-haspopup="listbox"],
+.os-shell .os-form button[aria-haspopup="menu"],
+.os-shell .os-form button[aria-haspopup="dialog"] {
+  background: var(--color-os-well);
+  border: 1px solid var(--color-os-container);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #ffffff;
+  transition: border-color 0.15s ease;
+}
+.os-shell .os-form button[aria-haspopup]:hover {
+  border-color: var(--color-os-container-hi);
+  background: var(--color-os-well);
+}
+
+/* Some of these forms state their fields as a <dl> two-column grid (label
+   left, value right) rather than a <label> column. The design has one field
+   shape — caption over value, full width — so the grid collapses to one column
+   here and the <dt> takes the caption's type. 8px inside a pair, 20px between
+   them, matching .field-group. */
+.os-shell .os-form dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  row-gap: 8px;
+  align-items: start;
+}
+.os-shell .os-form dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-os-grey);
+}
+.os-shell .os-form dt ~ dt {
+  margin-top: 12px;
+}
+
+/* The caption above a field. These forms are built as a <label> column whose
+   first <span> is the caption, so the design's field label lands on all of
+   them at once rather than being retyped onto every field. */
+.os-shell .os-form label > span:first-child {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-os-grey);
+}
+
+/* The app's fields carry a coral focus ring; inside the os shell the focus
+   signal is the accent border set above, so the ring stands down rather than
+   drawing a second, differently-coloured outline around it. */
+.os-shell .os-form input:focus,
+.os-shell .os-form textarea:focus,
+.os-shell .os-form button[aria-haspopup]:focus,
+.os-shell .os-form button[aria-haspopup]:focus-visible {
+  box-shadow: none;
+  border-color: var(--color-os-accent);
+}
+
+.os-shell .os-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+/* The native date picker's indicator is black-on-dark without this. */
+.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+  cursor: pointer;
+  opacity: 0.8;
+}
+.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* ── dali.os modal internals ──────────────────────────────────
+ * Transcribed from the design's own rules (.field-group / .field-label /
+ * .field-input / .modal-divider / .section-header / .label-chip /
+ * .quick-add-item / .modal-footer), `os-` prefixed and kept inside
+ * `.os-shell` so they can't reach the other shells.
+ *
+ * The load-bearing one is `.os-form-readonly`. In the design a detail modal
+ * opens as a *record* — labels over plain values, no boxes, no footer — and
+ * the pencil turns it into a form. That is why our modals still read as the
+ * old ones even with the right colours on them: they are always a form. */
+.os-shell .os-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.os-shell .os-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-os-grey);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.os-shell .os-field-hint {
+  font-size: 12px;
+  color: var(--color-os-grey);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.os-shell .os-required-mark {
+  color: #ff6b6b;
+  margin-left: 2px;
+}
+.os-shell .os-field-row {
+  display: flex;
+  gap: 16px;
+}
+.os-shell .os-field-row .os-field-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+/* A .os-field-row carries no bottom margin of its own — its children gave
+   theirs up — so the 20px between fields has to be restored on whatever
+   follows it, and on the row itself when a plain field comes before. */
+.os-shell .os-field-row + .os-field-group,
+.os-shell .os-field-group + .os-field-row,
+.os-shell .os-field-row + .os-field-row {
+  margin-top: 20px;
+}
+.os-shell .os-modal-divider {
+  height: 1px;
+  background: var(--color-os-container);
+  margin: 24px 0;
+}
+.os-shell .os-section-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+/* The design dims the page behind a dialog to rgba(10,10,13,.6) — enough that
+   the modal reads as the only live surface. */
+.os-shell .os-modal-overlay {
+  background: rgba(10, 13, 10, 0.6);
+}
+.os-shell .os-modal-title {
+  font-size: 22px;
+  font-weight: 500;
+}
+.os-shell .os-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 32px;
+}
+.os-shell .os-modal-footer.hidden {
+  display: none;
+}
+
+/* A row in a list of linked items (the design's .quick-add-item): a task under
+   a story, a story under an epic. */
+.os-shell .os-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--color-os-well);
+  border: 1px solid var(--color-os-container);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #ffffff;
+}
+.os-shell .os-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The design's .quick-add-item + .incomplete-dot: a linked item added by name
+   only. The amber ! is not a status — it means "created fast, still needs
+   filling in", and it follows the item onto the timeline. */
+.os-shell .os-incomplete-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-os-amber);
+  color: var(--color-os-bg);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+.os-shell .os-quick-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The bar labels on the timeline — the design's .epic-label / .story-label /
+   .task-bar. Each names something you can open, so it answers the pointer:
+   the fill lifts and a 1px ring in the level's own ink draws around it over
+   150ms. Colour lives here rather than inline because an inline background
+   would outrank the :hover rule and the label would sit dead under the
+   cursor. The story and task values are the design's own; the epic pair
+   applies the same lift to our purple.
+
+   Applied to the label pill for an epic or a story, and to the whole bar for
+   a task — at that level the bar is the label. */
+.os-shell .os-bar-label {
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* A record's own name is set in caps wherever it's shown as a label or a
+   heading — on a bar, in a hover card, at the top of its modal, in a list of
+   linked records. It's a display treatment, not the stored value: the caps
+   come off the text-transform, so what was typed is what's saved.
+   Deliberately not applied to the name *fields* in a create form — typing
+   into a box that shouts back is a different thing from reading a label. */
+.os-shell .os-record-name,
+.os-shell .os-bar-label,
+.os-shell .os-item-row {
+  text-transform: uppercase;
+}
+.os-shell .os-bar-label--epic {
+  background: rgba(109, 90, 158, 0.8);
+  color: #d9c9f7;
+}
+.os-shell .os-bar-label--epic:hover {
+  background: rgba(134, 115, 183, 0.95);
+  box-shadow: 0 0 0 1px rgba(217, 201, 247, 0.5);
+}
+.os-shell .os-bar-label--story {
+  background: rgba(89, 149, 144, 0.8);
+  color: #d7fdf5;
+}
+.os-shell .os-bar-label--story:hover {
+  background: rgba(110, 170, 165, 0.9);
+  box-shadow: 0 0 0 1px rgba(215, 253, 245, 0.5);
+}
+.os-shell .os-bar-label--task {
+  background: rgba(125, 99, 99, 0.8);
+  color: #f5d9d9;
+}
+.os-shell .os-bar-label--task:hover {
+  background: rgba(150, 115, 115, 0.95);
+  box-shadow: 0 0 0 1px rgba(245, 217, 217, 0.5);
+}
+/* The lift is the affordance, so it stays; only the tween goes. */
+@media (prefers-reduced-motion: reduce) {
+  .os-shell .os-bar-label {
+    transition: none;
+  }
+}
+
+/* The design's .task-popover transition: the hover card fades up 4px into
+   place over 120ms rather than snapping in. It stays mounted for the length
+   of the fade on the way out so the exit animates too (see FADE_MS in
+   EpicsTimeline). */
+.os-shell .os-bar-popover {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.os-shell .os-bar-popover--shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .os-shell .os-bar-popover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* The design's .sprint-chip-row. A sprint is a fixed week, not something you
+   pick, so these are derived from the record's dates and read as a statement
+   of which weeks it lands in — the accent fill marks the weeks it actually
+   covers, the quiet ones its term's neighbours. */
+.os-shell .os-sprint-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.os-shell .os-sprint-chip {
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--color-os-well);
+  border: 1px solid var(--color-os-container);
+  color: var(--color-os-grey);
+}
+.os-shell .os-sprint-chip--active {
+  background: var(--color-os-accent);
+  border-color: var(--color-os-accent);
+  color: var(--color-os-bg);
+}
+
+.os-shell .os-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-os-container);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 100px;
+}
+
+/* Read-only mode. The controls stay in the DOM (so switching to edit is a
+   class change, not a remount that would drop what you typed) but lose their
+   chrome and their ability to take a pointer. */
+.os-shell .os-form-readonly {
+  pointer-events: none;
+}
+.os-shell .os-form-readonly input,
+.os-shell .os-form-readonly textarea,
+.os-shell .os-form-readonly button[aria-haspopup] {
+  border-color: transparent !important;
+  background: transparent !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  opacity: 1;
+  cursor: default;
+}
+.os-shell .os-form-readonly textarea {
+  resize: none;
+}
+/* A read-only value is text: the picker's chevron is an affordance for an
+   interaction that isn't offered until the pencil is pressed. */
+.os-shell .os-form-readonly button[aria-haspopup] svg,
+.os-shell .os-form-readonly input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.os-shell .os-form-readonly .os-required-mark,
+.os-shell .os-form-readonly .os-field-hint {
+  display: none;
+}
+
+/* Every button in the app, in the design's language. Keyed off the role marker
+   `buttonClasses` writes, not off the colour utilities, so a button reads the
+   same here whether it was built with <Button> or the bare class string. The
+   pill radius and the palette are the design's; padding stays with the size
+   class so dense toolbars don't balloon. */
+.os-shell .dali-btn {
+  border-radius: 100px;
+  font-weight: 600;
+  /* The design sets its controls in 14px. The `sm` size compiles to text-xs,
+     which reads as a different family of button next to an os search pill or
+     filter chip — so the shell pulls every button back onto its own scale and
+     lets the size class keep owning the padding. */
+  font-size: 14px;
+}
+.os-shell .dali-btn--primary {
+  background: var(--color-os-accent);
+  color: var(--color-os-bg);
+}
+.os-shell .dali-btn--primary:hover {
+  background: var(--color-os-accent-hover);
+}
+.os-shell .dali-btn--secondary {
+  background: transparent;
+  border: 1px solid var(--color-os-container);
+  color: var(--color-os-grey);
+}
+.os-shell .dali-btn--secondary:hover {
+  border-color: var(--color-os-container-hi);
+  background: transparent;
+  color: #ffffff;
+}
+.os-shell .dali-btn--ghost {
+  color: var(--color-os-grey);
+  font-weight: 500;
+}
+.os-shell .dali-btn--ghost:hover {
+  background: var(--color-os-container);
+  color: #ffffff;
+}
+.os-shell .dali-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-os-accent);
+}
+
+/* The design's secondary action (.edit-btn): a quiet outlined pill that fills
+   with the accent when it's holding a mode open. Used for the project's
+   partner/public view switch and the timeline's edit toggle. */
+.os-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 100px;
+  background: transparent;
+  border: 1px solid var(--color-os-container);
+  color: var(--color-os-grey);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.os-edit-btn:hover {
+  border-color: var(--color-os-container-hi);
+  color: #ffffff;
+}
+.os-edit-btn[aria-pressed="true"] {
+  background: var(--color-os-accent);
+  border-color: var(--color-os-accent);
+  color: var(--color-os-bg);
+}
+
+/* The inline version, for an add control sitting in a section heading rather
+   than a toolbar. */
+.os-add-btn--sm {
+  padding: 5px 12px;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.os-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 100px;
+  background: var(--color-os-accent);
+  color: var(--color-os-bg);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+}
+.os-btn-primary:hover {
+  background: var(--color-os-accent-hover);
+}
+
+.os-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 100px;
+  color: var(--color-os-grey);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.os-btn-ghost:hover {
+  background: var(--color-os-container);
+  color: #ffffff;
+}
+
+/* The active sub-tab in the os sidebar: a filled well flush to the rail's
+   right edge with the accent stripe standing in for its left border. Drawn
+   here rather than as utilities because the negative inset that lets the fill
+   bleed past the nav's gutter has to pair exactly with the stripe. */
+.os-subtab-active {
+  background: var(--color-os-container);
+  border-left: 2px solid var(--color-os-accent);
+  border-radius: 0 var(--radius-os-item) var(--radius-os-item) 0;
 }
 
 /* ── Print stylesheet: ⌘P / "Print / Save as PDF" ───────────────────────

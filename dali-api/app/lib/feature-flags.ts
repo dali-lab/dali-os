@@ -100,6 +100,12 @@ export const FEATURE_FLAGS = [
       "Collapses the sidebar to Projects / Education / Core / Admin / Hiring, with Drive pinned under Calendar. Core process tooling (staffing, intent to work, bids, level up, access, attendance, communications) moves out of Projects and Admin into a Core area at /core/*, leaving Admin strictly system-level. Needs the new left navigation to take effect.",
   },
   {
+    key: "os-redesign",
+    label: "dali.os design",
+    description:
+      "The dark dali.os shell: sidebar with an area switcher, a top bar carrying favorites and the task bell, the recents home, and the card-grid project hub. Takes precedence over the other shell flags on the pages it covers — everything it doesn't cover keeps whatever the new left navigation gives it.",
+  },
+  {
     key: "templates",
     label: "Templates",
     description:

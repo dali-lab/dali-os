@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildBoard,
   dedupeLiveAssignments,
+  matchesDomainFilter,
   resolveAssignmentDomains,
   resolveAssignmentInputs,
   UNASSIGNED,
@@ -55,9 +56,9 @@ describe("buildBoard", () => {
     expect(card.topPreferences.map((p) => p.projectId)).toEqual(["p9", "p1"]);
   });
 
-  it("dedupes same-project same-rank bids into one entry listing each domain", () => {
-    // Gaelle's case: rank-1 bid on "Evergreen" in two domains. The card should
-    // show one #1 Evergreen entry whose domainIds carry both, not two lines.
+  it("dedupes same-project same-rank bids into one entry", () => {
+    // Gaelle's case: rank-1 bid on "Evergreen" expanded into two domain rows.
+    // That's one pick, so the card shows one #1 Evergreen line, not two.
     const board = buildBoard({
       projectIds: [],
       members: [
@@ -73,8 +74,8 @@ describe("buildBoard", () => {
     });
     const { topPreferences } = board[UNASSIGNED][0];
     expect(topPreferences).toEqual([
-      { projectId: "evergreen", rank: 1, domainIds: ["fullstack", "uiux"] },
-      { projectId: "p2", rank: 2, domainIds: ["fullstack"] },
+      { projectId: "evergreen", rank: 1 },
+      { projectId: "p2", rank: 2 },
     ]);
   });
 
@@ -371,6 +372,44 @@ describe("resolveAssignmentDomains", () => {
       { domainId: "d1", level: "P1" },
       { domainId: "d2", level: "P2" },
     ]);
+  });
+});
+
+// Regression: the filter used to accept a matching bid domain too. Because
+// bid-validation hands every ranked project a domainId whether or not the
+// bidder is eligible there, that let a member through any domain they'd
+// happened to bid near — with a few bids each, the filter stopped narrowing
+// anything.
+describe("matchesDomainFilter", () => {
+  const none = new Set<string>();
+  const design = { domainId: "d-design", domainName: "Design", level: "P2" as const };
+
+  it("keeps a member hired in the domain", () => {
+    expect(
+      matchesDomainFilter(member({ domainLevels: [design] }), "d-design", none),
+    ).toBe(true);
+  });
+
+  it("drops a member hired in another domain", () => {
+    expect(
+      matchesDomainFilter(member({ domainLevels: [design] }), "d-dev", none),
+    ).toBe(false);
+  });
+
+  it("ignores the domain a bid happened to land in", () => {
+    const bidder = member({
+      domainLevels: [design],
+      preferences: [
+        { projectId: "p1", domainId: "d-dev", level: "P1", preferenceRank: 1, notes: null },
+      ],
+    });
+    expect(matchesDomainFilter(bidder, "d-dev", none)).toBe(false);
+  });
+
+  it("keeps a member staffed in the domain even without the eligibility", () => {
+    expect(
+      matchesDomainFilter(member(), "d-dev", new Set(["u1"])),
+    ).toBe(true);
   });
 });
 

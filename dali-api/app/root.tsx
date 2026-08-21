@@ -30,7 +30,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@600;700&display=swap",
   },
   { rel: "icon", href: "/icon-blue.svg", type: "image/svg+xml" },
   { rel: "alternate icon", href: "/favicon.ico" },

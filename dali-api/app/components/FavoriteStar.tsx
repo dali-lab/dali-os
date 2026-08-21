@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { notifyFavoritesChanged } from "~/components/favorites-live";
 
 // One star for every place a page is listed — the Documents hub, a project's
 // Documents block, education materials, profile pages.
@@ -38,8 +39,10 @@ export function FavoriteStar({
         credentials: "include",
         body: JSON.stringify({ favorited: next }),
       });
-      if (res.ok) onToggled?.(next);
-      else setFavorited(!next);
+      if (res.ok) {
+        notifyFavoritesChanged();
+        onToggled?.(next);
+      } else setFavorited(!next);
     } catch {
       setFavorited(!next);
     } finally {

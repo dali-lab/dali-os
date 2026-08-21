@@ -85,10 +85,10 @@ export type MemberCardModel = {
   assignmentDomainIds: string[];
   // Member's top 3 project preferences in rank order. Always shown on the card.
   // Deduped by (projectId, rank): a member can bid the same project at one rank
-  // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX) — those
-  // collapse to one entry whose `domainIds` lists each bid domain, so the card
-  // shows the project once with its domains rather than repeating the line.
-  topPreferences: { projectId: string; rank: number; domainIds: string[] }[];
+  // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX), which
+  // is one pick as far as the card is concerned — the bid domain isn't the
+  // member's role (see matchesDomainFilter) and isn't shown.
+  topPreferences: { projectId: string; rank: number }[];
   // Mirrors MemberInput.unresolvedBid — the card renders a badge so the member
   // is visibly distinguished from one who simply hasn't been placed yet.
   unresolvedBid: boolean;
@@ -265,25 +265,16 @@ function toCard(
   };
 }
 
-// Top 3 project picks in rank order, deduped by (projectId, rank). When a member
-// bids the same project at the same rank in several domains, the entry's
-// `domainIds` lists each (in first-seen order). The 3-item cap counts distinct
-// (project, rank) entries, not raw preference rows.
-function topPreferences(
-  prefs: Preference[],
-): { projectId: string; rank: number; domainIds: string[] }[] {
-  const byKey = new Map<string, { projectId: string; rank: number; domainIds: string[] }>();
+// Top 3 project picks in rank order, deduped by (projectId, rank) — a member who
+// bid the same project at the same rank in several domains picked it once. The
+// 3-item cap counts distinct (project, rank) entries, not raw preference rows,
+// so the per-domain expansion can't crowd out real picks.
+function topPreferences(prefs: Preference[]): { projectId: string; rank: number }[] {
+  const byKey = new Map<string, { projectId: string; rank: number }>();
   for (const p of [...prefs].sort((a, b) => a.preferenceRank - b.preferenceRank)) {
     const key = `${p.projectId}::${p.preferenceRank}`;
-    const entry = byKey.get(key);
-    if (entry) {
-      if (!entry.domainIds.includes(p.domainId)) entry.domainIds.push(p.domainId);
-    } else {
-      byKey.set(key, {
-        projectId: p.projectId,
-        rank: p.preferenceRank,
-        domainIds: [p.domainId],
-      });
+    if (!byKey.has(key)) {
+      byKey.set(key, { projectId: p.projectId, rank: p.preferenceRank });
     }
   }
   return Array.from(byKey.values()).slice(0, 3);
@@ -334,6 +325,33 @@ export function resolveAssignmentDomains(
     return [{ domainId: first.domainId, level: first.level }];
   }
   return null;
+}
+
+/**
+ * Does this member belong on the board while it's filtered to one domain?
+ *
+ * The question the filter answers is "who works in this domain", so the answer
+ * comes from DomainEligibility (the member's hired role) — NOT from their bids.
+ * A bid's domainId is not a claim about the bidder: bid-validation assigns one
+ * per ranked project purely to satisfy the row's unique key, falling back to the
+ * project's first declared domain when the member is eligible in none of them.
+ * Matching on it meant ranking a project was enough to appear under that
+ * project's domain, which with a handful of bids each let nearly everyone
+ * through every filter.
+ *
+ * A live assignment still counts. That one IS a domain decision — a lead put
+ * them there — and dropping it would make a real placement vanish from the
+ * column it's sitting in.
+ */
+export function matchesDomainFilter(
+  member: MemberInput,
+  domainId: string,
+  assignedUserIds: ReadonlySet<string>,
+): boolean {
+  return (
+    member.domainLevels.some((d) => d.domainId === domainId) ||
+    assignedUserIds.has(member.userId)
+  );
 }
 
 /** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */

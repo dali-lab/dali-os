@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
@@ -62,6 +63,26 @@ const tabBarLeadingClass = "flex shrink-0 items-center self-stretch";
 // than a state. The active tab now carries a 3px rule, a tinted body and
 // rounded top corners so it reads as a tab sitting on the content below it,
 // with the underline as reinforcement instead of the only signal.
+/* The dali.os switcher. The design navigates from the sidebar rail and has no
+   underline tab bar anywhere, so the pages whose sections aren't sidebar
+   destinations — calendar's three views, settings' sections — switch with a
+   segmented pill instead: one track, the active segment filled, sized to its
+   content and sitting inline above the page rather than bleeding to the window
+   edges under a rule. Same vocabulary as the People directory's Active/Alumni
+   switch, so the flagged app has exactly one way to show "these are views of
+   one page". */
+const osSegmentedTrackClass =
+  "inline-flex w-fit max-w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card p-1";
+
+function osSegmentedItemClass(active: boolean) {
+  return cn(
+    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+    active
+      ? "bg-os-container text-white"
+      : "text-muted-foreground hover:text-foreground",
+  );
+}
+
 function underlineTabItemClass(active: boolean) {
   return cn(
     // px-3, not more: the row is nowrap, so every extra pixel per tab pushes a
@@ -108,8 +129,12 @@ export function AreaPillNav({
   // Under the new left-nav, an area's sub-surfaces live in the sidebar dropdown,
   // so the in-page pill row is suppressed for flagged users. Off (default) it
   // renders exactly as today. Hook runs before the early return below.
+  // The dali.os shell carries the same sidebar sub-tabs under its own flag, so
+  // it suppresses the row for the same reason — otherwise a user on os without
+  // the left-nav flag gets both copies of the same navigation.
   const redesign = useFeatureFlag("sidebar-redesign");
-  if (redesign) return null;
+  const osRedesign = useFeatureFlag("os-redesign");
+  if (redesign || osRedesign) return null;
 
   // A lone tab is pure noise — the page is already the only destination.
   // Still render the row if the history arrows need somewhere to live,
@@ -149,17 +174,58 @@ export function AreaPillNav({
 export function UnderlineTabButtons({
   items,
   label = "Section",
+  heading,
 }: {
   items: UnderlineTabButton[];
   label?: string;
+  /**
+   * The page's own title, rendered as part of this row. Under dali.os it sits
+   * at the left with the switcher pushed to the far right — one line instead of
+   * a title stacked above a rail of pills. The brand shell's row is a
+   * full-width underline bar with no room beside it, so there the title renders
+   * above it.
+   */
+  heading?: ReactNode;
 }) {
   const matches = useMatches();
   const hasDoc = matches.some(
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
   const showHistoryNav = useShowTablessHistoryNav();
+  const osRedesign = useFeatureFlag("os-redesign");
 
-  return (
+  if (osRedesign) {
+    return (
+      // No Guide button here: the os top bar already carries it, so the inline
+      // copy would be the second one on screen. The history arrows stay —
+      // hasSubnavRow still counts this page as owning a row, so the shell's
+      // standalone arrow bar is standing down for it.
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        {showHistoryNav && <TablessHistoryNavInline />}
+        {heading}
+        <div
+          className={cn(osSegmentedTrackClass, Boolean(heading) && "ml-auto")}
+          role="tablist"
+          aria-label={label}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="tab"
+              aria-selected={item.active ?? false}
+              onClick={item.onClick}
+              className={osSegmentedItemClass(!!item.active)}
+            >
+              <SubtabLabel label={item.label} icon={item.icon} />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const bar = (
     <div className={underlineTabBarClass} role="tablist" aria-label={label}>
       {showHistoryNav && (
         <span className={tabBarLeadingClass}>
@@ -186,5 +252,13 @@ export function UnderlineTabButtons({
         </span>
       )}
     </div>
+  );
+
+  if (!heading) return bar;
+  return (
+    <>
+      {heading}
+      {bar}
+    </>
   );
 }

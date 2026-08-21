@@ -14,6 +14,8 @@ import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   Users,
   Plus,
@@ -256,6 +258,7 @@ export default function AdminConsoleGroups() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
+  const os = useFeatureFlag("os-redesign");
 
   const q = query.trim().toLowerCase();
   const visibleGroups = groups.filter((g: GroupRow) => {
@@ -275,44 +278,89 @@ export default function AdminConsoleGroups() {
           { label: "Groups", to: "/members/groups", active: true, icon: Users },
         ]}
       />
-      <div className="flex items-center justify-between">
+      {/* Same header shape as the People directory this sits beside: title
+          left, add control right. The design's title carries the page on its
+          own, so the decorative Users glyph goes with the smaller heading. */}
+      <header className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <Users className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">User Groups</h1>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+          {!os && <Users className="w-6 h-6 text-foreground/80" />}
+          <h1
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-4xl font-medium" : "text-2xl font-bold",
+            )}
+          >
+            User Groups
+          </h1>
+          <span
+            className={cn(
+              "rounded-full font-medium",
+              os
+                ? "bg-os-container px-3 py-1 text-xs text-white"
+                : "bg-muted px-2.5 py-0.5 text-xs text-muted-foreground",
+            )}
+          >
             {activeCount}
           </span>
         </div>
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors"
+          className={
+            os
+              ? "os-add-btn"
+              : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors"
+          }
         >
-          <Plus className="w-4 h-4" /> New group
+          <Plus
+            className={os ? "h-[17px] w-[17px]" : "w-4 h-4"}
+            strokeWidth={os ? 3 : undefined}
+            aria-hidden
+          />
+          New group
         </button>
-      </div>
+      </header>
 
       {groups.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn("flex flex-wrap items-center gap-2", os && "gap-4 pt-2 pb-2")}>
+          <StatusTabs status={status} onChange={setStatus} os={os} />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search groups by name"
-            className="flex-1 min-w-[12rem] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className={cn(
+              "flex-1 min-w-[12rem] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+              os
+                ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+                : "max-w-sm px-3 py-2 rounded-md bg-background",
+            )}
           />
-          <StatusTabs status={status} onChange={setStatus} />
+          <span className="text-xs text-muted-foreground ml-auto">
+            {visibleGroups.length} {visibleGroups.length === 1 ? "group" : "groups"}
+            {visibleGroups.length !== groups.length ? ` of ${groups.length}` : ""}
+          </span>
         </div>
       )}
 
       <div className="space-y-3">
         {groups.length === 0 && (
-          <div className="text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border rounded-lg">
+          <div
+            className={cn(
+              "text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border",
+              os ? "rounded-os-card" : "rounded-lg",
+            )}
+          >
             No groups yet. Click "New group" to create one.
           </div>
         )}
         {groups.length > 0 && visibleGroups.length === 0 && (
-          <div className="text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border rounded-lg">
+          <div
+            className={cn(
+              "text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border",
+              os ? "rounded-os-card" : "rounded-lg",
+            )}
+          >
             {q
               ? `No ${status === "all" ? "" : status + " "}groups match "${query.trim()}".`
               : `No ${status} groups.`}
@@ -342,9 +390,11 @@ export default function AdminConsoleGroups() {
 function StatusTabs({
   status,
   onChange,
+  os,
 }: {
   status: StatusFilter;
   onChange: (s: StatusFilter) => void;
+  os: boolean;
 }) {
   const tabs: { value: StatusFilter; label: string }[] = [
     { value: "active", label: "Active" },
@@ -352,17 +402,26 @@ function StatusTabs({
     { value: "all", label: "All" },
   ];
   return (
-    <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+    <div
+      className={cn(
+        "inline-flex border border-border",
+        os ? "rounded-full bg-os-card p-1" : "rounded-md bg-background p-0.5",
+      )}
+    >
       {tabs.map((t) => (
         <button
           key={t.value}
           type="button"
           onClick={() => onChange(t.value)}
-          className={`px-3 py-1 text-sm rounded transition-colors ${
+          className={cn(
+            "text-sm transition-colors",
+            os ? "rounded-full px-4 py-1.5" : "rounded px-3 py-1",
             status === t.value
-              ? "bg-accent-coral text-white"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+              ? os
+                ? "bg-os-container font-medium text-white"
+                : "bg-accent-coral text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
           aria-pressed={status === t.value}
         >
           {t.label}
@@ -382,6 +441,7 @@ function CreateGroupForm({
   onDone: () => void;
 }) {
   const fetcher = useFetcher();
+  const os = useFeatureFlag("os-redesign");
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -438,7 +498,10 @@ function CreateGroupForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Active this term"
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            className={cn(
+              "w-full px-3 py-2 text-sm border border-border bg-background text-foreground",
+              os ? "rounded-os-item" : "rounded-md",
+            )}
             required
           />
         </div>
@@ -502,14 +565,19 @@ function CreateGroupForm({
                 return (
                   <span
                     key={id}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                      os
+                        ? "bg-os-accent/15 text-os-accent"
+                        : "bg-purple-100 text-purple-800",
+                    )}
                   >
                     {memberLabel(m)}
                     <button
                       type="button"
                       onClick={() => setSelected(selected.filter((s) => s !== id))}
                       aria-label={`Remove ${memberLabel(m)}`}
-                      className="hover:text-purple-600"
+                      className={os ? "hover:text-white" : "hover:text-purple-600"}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -523,9 +591,17 @@ function CreateGroupForm({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name or email…"
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            className={cn(
+              "w-full px-3 py-2 text-sm border border-border bg-background text-foreground",
+              os ? "rounded-os-item" : "rounded-md",
+            )}
           />
-          <div className="mt-2 max-h-48 overflow-y-auto border border-border rounded-md bg-background">
+          <div
+            className={cn(
+              "mt-2 max-h-48 overflow-y-auto border border-border bg-background",
+              os ? "rounded-os-item" : "rounded-md",
+            )}
+          >
             {filtered.slice(0, 50).map((m) => {
               const isSel = selected.includes(m.id);
               return (
@@ -540,7 +616,11 @@ function CreateGroupForm({
                   }`}
                 >
                   <span>{memberLabel(m)}</span>
-                  {isSel && <span className="text-xs text-purple-700">Selected</span>}
+                  {isSel && (
+                    <span className={cn("text-xs", os ? "text-os-accent" : "text-purple-700")}>
+                      Selected
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -562,14 +642,23 @@ function CreateGroupForm({
           <button
             type="button"
             onClick={onDone}
-            className="px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-muted/50"
+            className={
+              os
+                ? "os-btn-ghost"
+                : "px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-muted/50"
+            }
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            className={cn(
+              "disabled:opacity-60",
+              os
+                ? "os-btn-primary"
+                : "px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors",
+            )}
           >
             Create group
           </button>
@@ -595,6 +684,7 @@ function GroupCard({
 }) {
   const fetcher = useFetcher();
   const confirmSubmit = useConfirmSubmit();
+  const os = useFeatureFlag("os-redesign");
   const [expanded, setExpanded] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
   const [query, setQuery] = useState("");
@@ -613,7 +703,13 @@ function GroupCard({
   });
 
   return (
-    <div className={`bg-card border border-border rounded-lg ${group.archived ? "opacity-75" : ""}`}>
+    <div
+      className={cn(
+        "bg-card border border-border transition-colors",
+        os ? "rounded-os-card" : "rounded-lg",
+        group.archived && "opacity-75",
+      )}
+    >
       {/* Collapsed header: metadata only. Clicking the row toggles expansion. */}
       <div className="flex items-center gap-3 p-4">
         <button
@@ -630,23 +726,46 @@ function GroupCard({
           onClick={() => setExpanded((v) => !v)}
           className="flex-1 min-w-0 flex items-center gap-2 flex-wrap text-left"
         >
-          <span className="font-medium text-foreground">{group.name}</span>
+          <span className={cn("font-medium text-foreground", os && "text-base")}>
+            {group.name}
+          </span>
           {isSystem && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wide">
+            <span
+              className={cn(
+                "font-medium uppercase tracking-wide",
+                os
+                  ? "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent"
+                  : "rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700",
+              )}
+            >
               Auto
             </span>
           )}
           {group.archived && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide">
+            <span
+              className={cn(
+                "font-medium uppercase tracking-wide",
+                os
+                  ? "rounded-full border border-os-amber/35 px-2.5 py-0.5 text-xs text-os-amber"
+                  : "rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700",
+              )}
+            >
               Archived
             </span>
           )}
           {group.boundTermCodes.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+            <span
+              className={cn(
+                "font-medium",
+                os
+                  ? "rounded-full bg-os-container px-3 py-1 text-xs text-white"
+                  : "rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
+              )}
+            >
               {group.boundTermCodes.join(", ")}
             </span>
           )}
-          <span className="text-xs font-normal text-muted-foreground">
+          <span className={cn("font-normal text-muted-foreground", os ? "text-sm" : "text-xs")}>
             {group.memberIds.length} member{group.memberIds.length === 1 ? "" : "s"}
           </span>
         </button>
@@ -709,7 +828,10 @@ function GroupCard({
                 return (
                   <div
                     key={uid}
-                    className="border border-border rounded-md p-2 bg-background text-xs text-muted-foreground"
+                    className={cn(
+                      "border border-border p-2 bg-background text-xs text-muted-foreground",
+                      os ? "rounded-os-item" : "rounded-md",
+                    )}
                   >
                     Unknown member
                   </div>
@@ -730,14 +852,22 @@ function GroupCard({
             <button
               type="button"
               onClick={() => setAddingMember(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80"
+              className={cn(
+                "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80",
+                os ? "rounded-full" : "rounded-md",
+              )}
             >
               <Plus className="w-3 h-3" /> Add member
             </button>
           )}
 
           {!isSystem && addingMember && (
-            <div className="border border-border rounded-md bg-background p-2 space-y-2">
+            <div
+              className={cn(
+                "border border-border bg-background p-2 space-y-2",
+                os ? "rounded-os-item" : "rounded-md",
+              )}
+            >
               <input
                 type="text"
                 value={query}
@@ -797,9 +927,15 @@ function ExpandedMemberCard({
   groupId: string;
 }) {
   const fetcher = useFetcher();
+  const os = useFeatureFlag("os-redesign");
   const fullName = `${member.firstName} ${member.lastName}`.trim();
   return (
-    <div className="relative border border-border rounded-md p-2 bg-background flex items-start gap-2 hover:bg-muted/10 transition-colors">
+    <div
+      className={cn(
+        "relative border border-border p-2 bg-background flex items-start gap-2 hover:bg-muted/10 transition-colors",
+        os ? "rounded-os-item" : "rounded-md",
+      )}
+    >
       <Link to={`/members/${member.id}`} className="flex items-start gap-2 min-w-0 flex-1">
         <Avatar photoUrl={member.photoUrl} name={fullName} size="sm" className="flex-shrink-0" />
         <div className="min-w-0 flex-1">

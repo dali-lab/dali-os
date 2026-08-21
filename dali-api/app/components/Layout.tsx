@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useLocation, useMatches, useNavigate, useRevalidator } from 'react-router'
+import { Link, useLocation, useMatches } from 'react-router'
 import {
   LogOut,
   Calendar,
@@ -18,7 +18,7 @@ import {
 import type { FavoritePage } from '~/lib/user-pages.server'
 import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
-import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
+import { TabWorkspace } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
@@ -26,6 +26,8 @@ import { useFeatureFlag } from '~/components/FeatureFlags'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { cn } from '~/lib/cn'
+import { useShellNav } from '~/components/shell-nav'
+import { SidebarMenuPanel } from '~/components/SidebarMenuPanel'
 import {
   areaForPath,
   pinnedNavItems,
@@ -149,9 +151,7 @@ function SubtabRail({ collapsed }: { collapsed: boolean }) {
 
 export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, hasActiveHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   const matches = useMatches()
-  const { revalidate } = useRevalidator()
   // Record every navigation into the shared tabless history store so the
   // desktop back/forward arrows have a stack that survives their host
   // component remounting across page transitions.
@@ -164,14 +164,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // see hasSubnavRow for why calendar was doubling the row.
   const redesign = useFeatureFlag('sidebar-redesign')
   const ownsSubnavRow = hasSubnavRow(matches, redesign)
-  // Held in refs so the message listener (mounted once) always calls the
-  // latest values without needing to re-subscribe.
-  const revalidateRef = useRef(revalidate)
-  revalidateRef.current = revalidate
-  const navigateRef = useRef(navigate)
-  navigateRef.current = navigate
-  const tablessRef = useRef(tabless)
-  tablessRef.current = tabless
+  const {
+    workspaceRef,
+    paletteOpen,
+    setPaletteOpen,
+    togglePalette,
+    openInWorkspace,
+    openFromPalette,
+    tabClickProps,
+  } = useShellNav(tabless)
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
   // otherwise it falls back to the parent route.
@@ -183,95 +184,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const [lastAreaKey, setLastAreaKey] = useState('projects')
   const [areaMenuOpen, setAreaMenuOpen] = useState(false)
   const areaMenuRef = useRef<HTMLDivElement | null>(null)
-  const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
-
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
-  // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
-  // listener (its handler is attached to the shell window AND every iframe's
-  // document, so it fires wherever focus is) and calls togglePalette via
-  // onOpenPalette. In tabless mode there's no TabWorkspace, so listen here.
-  // Gating on `tabless` avoids both handlers firing for one keypress.
-  useEffect(() => {
-    if (!tabless) return
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        togglePalette()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [tabless, togglePalette])
-
-  const openInWorkspace = (req: OpenTabRequest) => {
-    if (tabless) {
-      navigate(req.url)
-      return
-    }
-    workspaceRef.current?.openTab(req)
-  }
-
-  // Open a palette result. Mirrors sidebar navigation: tabless → navigate the
-  // top window (⌘Enter → real browser tab); tab mode → a kept workspace tab
-  // (⌘Enter → split-pane). The user picked this explicitly, so no ephemeral tab.
-  const openFromPalette = (url: string, label: string, toSide: boolean) => {
-    if (tabless) {
-      if (toSide) window.open(url, '_blank', 'noopener')
-      else navigate(url)
-      return
-    }
-    if (toSide) workspaceRef.current?.openTabToSide({ url, label })
-    else workspaceRef.current?.openTab({ url, label })
-  }
-
-  // Props bundle for any sidebar button that opens a surface. In tab mode it
-  // opens a workspace tab; in tabless mode it navigates the top window like a
-  // normal site. Both preserve the browser-style modifier shortcuts:
-  //   - Cmd/Ctrl + click  → tab mode: open to the side (split-pane);
-  //                         tabless: open a real browser tab
-  //   - middle-click       → tab mode: open in background;
-  //                         tabless: open a real browser tab
-  // `auxClick` fires for middle/right-click; we filter to button 1 (middle)
-  // and preventDefault so the browser doesn't autoscroll.
-  const tabClickProps = (req: OpenTabRequest) => {
-    if (tabless) {
-      return {
-        onClick: (e: React.MouseEvent) => {
-          // These are <button>s (no href), so a new browser tab needs an
-          // explicit window.open — the browser won't synthesize one.
-          if (e.metaKey || e.ctrlKey) {
-            window.open(req.url, '_blank', 'noopener')
-            return
-          }
-          navigate(req.url)
-        },
-        onAuxClick: (e: React.MouseEvent) => {
-          if (e.button !== 1) return
-          e.preventDefault()
-          window.open(req.url, '_blank', 'noopener')
-        },
-      }
-    }
-    return {
-      onClick: (e: React.MouseEvent) => {
-        if (e.metaKey || e.ctrlKey) {
-          workspaceRef.current?.openTabToSide(req)
-          return
-        }
-        // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
-        // the pane's preview slot instead of stacking, so skimming sections never
-        // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
-        workspaceRef.current?.openTab(req, { ephemeral: true })
-      },
-      onAuxClick: (e: React.MouseEvent) => {
-        if (e.button !== 1) return
-        e.preventDefault()
-        workspaceRef.current?.openTabInBackground(req)
-      },
-    }
-  }
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
@@ -304,59 +216,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       document.removeEventListener('keydown', onKey)
     }
   }, [areaMenuOpen])
-
-  // Listen for "open in new tab" requests from embedded iframes (e.g. a
-  // notification card in the Home tab whose link would otherwise navigate
-  // the iframe itself, trapping the user in chrome-less embed mode).
-  useEffect(() => {
-    function handler(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return
-      const data = e.data
-      if (!data) return
-      if (data.type === 'dali:openTab' && typeof data.url === 'string') {
-        // Tabless has no workspace; navigate the top window instead. (Reaches
-        // here e.g. from the launch tour's "finish" posting to this window.)
-        if (tablessRef.current) navigateRef.current(data.url)
-        else workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
-      } else if (data.type === 'dali:openTabToSide' && typeof data.url === 'string') {
-        // Open in a second pane to the side (splitting if needed) — used by an
-        // embedded page that wants its target as a split-screen tab, e.g. a
-        // project document opening beside the project page. No side pane in
-        // tabless mode, so fall back to a plain navigation.
-        if (tablessRef.current) navigateRef.current(data.url)
-        else workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
-      } else if (
-        data.type === 'dali:setTabLabel' &&
-        typeof data.url === 'string' &&
-        typeof data.label === 'string'
-      ) {
-        workspaceRef.current?.setTabLabel(data.url, data.label)
-      } else if (data.type === 'dali:closeTab' && typeof data.url === 'string') {
-        // An embedded page retracting a split-screen tab it opened earlier —
-        // e.g. the project hub closing a document pane when the user leaves the
-        // subtab that spawned it. Tabless mode never opened one, so ignore it
-        // there rather than navigating the top window somewhere unasked.
-        if (!tablessRef.current) workspaceRef.current?.closeTabByUrl(data.url)
-      } else if (data.type === 'dali:profileUpdated') {
-        // A profile edit inside a workspace iframe doesn't re-run the shell
-        // loader, so re-fetch it to refresh the footer avatar.
-        revalidateRef.current()
-      } else if (data.type === 'dali:documentTitleChanged') {
-        // A doc title edit in one tab (e.g. a split-screen document) doesn't
-        // touch a sibling tab's own loader (e.g. the project hub's Documents
-        // list). Relay to every open iframe; each one ignores it unless its
-        // own listener cares about this pageId.
-        workspaceRef.current?.broadcast(data)
-      } else if (data.type === TASKS_CHANGED_EVENT) {
-        // Confirming/acting on a task inside an iframe (e.g. Home) doesn't
-        // touch the shell's task poller. Relay it to a same-window event so
-        // the sidebar Tasks count + list refresh immediately.
-        window.dispatchEvent(new Event(TASKS_CHANGED_EVENT))
-      }
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -625,7 +484,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       )}
 
       {/* Areas + nested sections */}
-      <nav className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+      <nav
+        data-sidebar-scroll
+        className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5"
+      >
         {/* Global search launcher. The palette is otherwise keyboard-only (⌘K);
             this is the visible affordance that makes it discoverable and teaches
             the shortcut — styled like a search field rather than a nav button. */}
@@ -840,7 +702,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   // the rail itself, so the old panel barely separated from the
                   // nav behind it. A brighter well, a tighter ring and a cast
                   // shadow make it read as a surface sitting above the sidebar.
-                  <div
+                  <SidebarMenuPanel
                     role="listbox"
                     className="mt-1 max-h-80 overflow-y-auto rounded-md bg-white/10 ring-1 ring-white/20 shadow-lg shadow-black/40 py-1 motion-safe:animate-area-menu"
                   >
@@ -868,7 +730,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                           </button>
                         )
                       })}
-                  </div>
+                  </SidebarMenuPanel>
                 )}
               </div>
             )}

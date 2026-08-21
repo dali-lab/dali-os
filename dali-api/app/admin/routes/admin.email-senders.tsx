@@ -13,6 +13,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { buttonClasses } from "~/components/ui/Button";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import {
   EMAIL_PURPOSES,
   EMAIL_PURPOSE_KEYS,
@@ -101,18 +103,12 @@ export default function EmailSendersAdmin() {
   const [params] = useSearchParams();
   const justAuthorized = params.get("gmail_authorized") === "1";
   const gmailError = params.get("gmail_error");
+  const { os, pageTitle, cardPad } = useOsChrome();
 
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Email Senders
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Each area's outbound email sends from its own connected Google
-          account. Areas without their own account fall back to the Hiring
-          (applications@) sender until one is connected.
-        </p>
+        <h1 className={pageTitle}>Email Senders</h1>
       </header>
 
       {justAuthorized && (
@@ -130,12 +126,15 @@ export default function EmailSendersAdmin() {
         {senders.map((s) => (
           <div
             key={s.purpose}
-            className="rounded-lg border border-zinc-200 bg-white p-4"
+            className={cn(
+              cardPad,
+              os ? "rounded-os-card bg-os-card" : "rounded-lg border border-border bg-card",
+            )}
           >
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-900">{s.label}</span>
+                  <span className="font-semibold text-foreground">{s.label}</span>
                   {s.sendAsEmail ? (
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
                       {s.sendAsEmail}
@@ -150,9 +149,8 @@ export default function EmailSendersAdmin() {
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-sm text-zinc-600">{s.description}</p>
                 {s.sendAsEmail && (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Connected {formatTime(s.linkedAt)} · last used{" "}
                     {formatTime(s.lastUsedAt)}
                     {s.syncError ? ` · error: ${s.syncError}` : ""}
@@ -162,7 +160,7 @@ export default function EmailSendersAdmin() {
               <div className="flex flex-shrink-0 items-center gap-2">
                 <a
                   href={`/admin/authorize-gmail?purpose=${s.purpose}`}
-                  className={buttonClasses("primary", "sm")}
+                  className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
                 >
                   {s.sendAsEmail ? "Reconnect" : "Connect"}
                 </a>
@@ -174,7 +172,7 @@ export default function EmailSendersAdmin() {
                         { method: "post" },
                       )
                     }
-                    className={buttonClasses("ghost", "sm")}
+                    className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
                   >
                     Disable
                   </button>

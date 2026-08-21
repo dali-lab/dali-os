@@ -4,6 +4,9 @@
 // matching its look.
 
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 type Domain = { id: string; name: string };
 
@@ -16,6 +19,7 @@ export function DomainFilter({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const options: SelectOption<string>[] = [
     { value: "", label: "All domains" },
     ...domains.map((d) => ({ value: d.id, label: d.name })),
@@ -25,7 +29,7 @@ export function DomainFilter({
       value={value}
       options={options}
       ariaLabel="Filter by domain"
-      buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-40"
+      buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
       onChange={onChange}
     />
   );

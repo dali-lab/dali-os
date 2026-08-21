@@ -3,10 +3,13 @@ import { useRevalidator, useSearchParams } from "react-router";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
+import { Archive, Eye, EyeOff, Github, Paperclip, Plus, X } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
+import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
   buildTaskBoard,
@@ -36,6 +39,9 @@ type Props = {
   // session, so it's display-only here).
   currentUserId: string;
   currentUserName: string;
+  // Bumped by an outside control (the timeline's Add ▸ Task) to open the
+  // create form. A counter rather than a boolean so repeated adds each fire.
+  createNonce?: number;
 };
 
 const PRIORITY_TONE: Record<Priority, string> = {
@@ -44,6 +50,21 @@ const PRIORITY_TONE: Record<Priority, string> = {
   High: "text-accent-coral",
   Urgent: "text-accent-coral font-semibold",
 };
+
+// The os palette has no coral in its chrome; urgency reads on its amber.
+const OS_PRIORITY_TONE: Record<Priority, string> = {
+  Low: "text-os-muted",
+  Normal: "text-os-grey",
+  High: "text-os-amber",
+  Urgent: "text-os-amber font-semibold",
+};
+
+function priorityTone(priority: Priority, os: boolean): string {
+  return os ? OS_PRIORITY_TONE[priority] : PRIORITY_TONE[priority];
+}
+
+// Card and list meta. 11px sits below the design's smallest step.
+const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
@@ -65,6 +86,7 @@ export function TaskBoard({
   canManage,
   currentUserId,
   currentUserName,
+  createNonce = 0,
 }: Props) {
   // Optimistic board state + rollback live in the shared hook. Server data is
   // adopted whenever it changes and no save is in flight, so teammate edits,
@@ -73,6 +95,10 @@ export function TaskBoard({
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
+
+  useEffect(() => {
+    if (createNonce > 0) setIsCreating(true);
+  }, [createNonce]);
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
@@ -80,6 +106,7 @@ export function TaskBoard({
   // epic/sprint/term filters: those are shareable slices set by a click, while
   // this changes on every keystroke — and a search-param change revalidates the
   // project loader, so `?q=` would refetch the whole board per character.
+  const { os } = useOsChrome();
   const [query, setQuery] = useState("");
   // View density preference (per-browser, not shared): collapse empty
   // Backlog/Cancelled columns so they stop eating horizontal space. Defaults
@@ -493,18 +520,23 @@ export function TaskBoard({
   const showEpicFilter = visibleEpics.length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={cn("flex flex-wrap items-center", os ? "gap-3" : "gap-2")}>
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search tasks…"
           aria-label="Search tasks on this board"
-          containerClassName="w-full sm:w-56"
+          containerClassName={os ? "w-full sm:w-72" : "w-full sm:w-56"}
         />
         {termFilterEnabled && (
-          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label
+            className={cn(
+              "inline-flex items-center gap-1.5 text-muted-foreground",
+              os ? "text-sm" : "text-xs",
+            )}
+          >
             <span className="font-medium">Term</span>
             <Select
               value={effectiveTerm}
@@ -516,7 +548,11 @@ export function TaskBoard({
                 { value: ALL_TERMS, label: "All terms" },
               ]}
               ariaLabel="Filter board by term"
-              buttonClassName="inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40"
+              buttonClassName={
+                os
+                  ? filterPillClass(true)
+                  : "inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40"
+              }
               onChange={(value) => setTermFilter(value)}
             />
           </label>
@@ -582,7 +618,12 @@ export function TaskBoard({
                     ? "Show empty Backlog / Cancelled columns"
                     : "Hide empty Backlog / Cancelled columns"
                 }
-                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-muted/30 transition-colors"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border transition-colors",
+                  os
+                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-white"
+                    : "border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/30",
+                )}
               >
                 {hideEmptyCols ? (
                   <Eye className="w-3.5 h-3.5" aria-hidden />
@@ -594,9 +635,16 @@ export function TaskBoard({
             )}
             {canManage && (
               <>
-                <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
-                  + Add task
-                </Button>
+                {os ? (
+                  <button type="button" className="os-add-btn" onClick={() => setIsCreating(true)}>
+                    <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+                    Add task
+                  </button>
+                ) : (
+                  <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
+                    + Add task
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -606,7 +654,11 @@ export function TaskBoard({
                   <Archive className="w-3.5 h-3.5" />
                   {archiving ? "Archiving…" : "Archive"}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => setShowArchived(true)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowArchived(true)}
+                >
                   <Archive className="w-3.5 h-3.5" />
                   Archived
                 </Button>
@@ -706,6 +758,7 @@ function ArchivedTasksModal({
   projectId: string;
   onClose: () => void;
 }) {
+  const { os } = useOsChrome();
   const [tasks, setTasks] = useState<ArchivedTask[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -733,7 +786,10 @@ function ArchivedTasksModal({
       open
       onClose={onClose}
       labelledBy="archived-tasks-title"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-xl w-full p-5 sm:p-6 my-auto max-h-[80vh] flex flex-col"
+      containerClassName={cn(
+        modalCardClass(os, "max-w-xl max-h-[80vh]"),
+        "flex flex-col",
+      )}
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <h2 id="archived-tasks-title" className="text-lg font-semibold text-foreground">
@@ -742,7 +798,11 @@ function ArchivedTasksModal({
         <button
           type="button"
           onClick={onClose}
-          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          className={
+            os
+              ? "os-icon-btn"
+              : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          }
           aria-label="Close"
         >
           <X className="w-5 h-5" aria-hidden />
@@ -765,16 +825,26 @@ function ArchivedTasksModal({
           {tasks.map((t) => (
             <li
               key={t.id}
-              className="border border-border rounded-md bg-background p-2.5 text-sm"
+              className={cn(
+                "border p-2.5",
+                os
+                  ? "rounded-os-item border-transparent bg-os-well text-[15px]"
+                  : "rounded-md border-border bg-background text-sm",
+              )}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-foreground min-w-0 truncate">{t.title}</span>
-                <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                <span className={cn(META_TEXT(os), "text-muted-foreground flex-shrink-0")}>
                   {TASK_STATUS_LABELS[t.status]}
                 </span>
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                <span className={PRIORITY_TONE[t.priority]}>{t.priority}</span>
+              <div
+                className={cn(
+                  "mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground",
+                  META_TEXT(os),
+                )}
+              >
+                <span className={priorityTone(t.priority, os)}>{t.priority}</span>
                 {t.domain && <span>· {t.domain.name}</span>}
                 {t.assignees.length > 0 && (
                   <span className="truncate">
@@ -802,16 +872,25 @@ function FilterPill({
   active: boolean;
   onClick: () => void;
 }) {
+  const { os } = useOsChrome();
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border transition-colors",
+        os ? "px-4 py-2 text-sm" : "px-2.5 py-1 text-xs",
         active
-          ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
-          : "border-border text-muted-foreground hover:bg-muted/30"
-      }`}
+          ? os
+            ? // The design marks a chosen filter with the container fill, as
+              // the segmented switchers do — not with a tinted brand outline.
+              "border-transparent bg-os-container text-white"
+            : "border-accent-coral bg-accent-coral/10 text-accent-coral"
+          : os
+            ? "border-border text-os-grey hover:text-white"
+            : "border-border text-muted-foreground hover:bg-muted/30",
+      )}
     >
       {label}
     </button>
@@ -836,6 +915,7 @@ function TaskCard({
   isDragging: boolean;
   onOpen: () => void;
 }) {
+  const { os } = useOsChrome();
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
@@ -848,13 +928,20 @@ function TaskCard({
   return (
     <div
       {...dragHandleProps}
-      className={`relative border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
-        isDragging ? "opacity-40" : "hover:bg-muted/20"
-      }`}
+      className={cn(
+        "relative border flex focus-within:ring-2",
+        os
+          ? "rounded-os-item border-transparent bg-os-well text-[15px] focus-within:ring-os-accent/40"
+          : "rounded-md border-border bg-background text-sm focus-within:ring-accent-coral/30",
+        isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
+      )}
     >
       {card.hasUnread && (
         <span
-          className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-accent-coral ring-2 ring-background"
+          className={cn(
+            "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2",
+            os ? "bg-os-accent ring-os-card" : "bg-accent-coral ring-background",
+          )}
           title="New updates since you last opened this task"
           aria-label="New updates since you last opened this task"
         />
@@ -869,15 +956,18 @@ function TaskCard({
             onOpen();
           }
         }}
-        className="flex-1 min-w-0 text-left p-2.5 cursor-pointer focus:outline-none"
+        className={cn(
+          "flex-1 min-w-0 text-left cursor-pointer focus:outline-none",
+          os ? "p-3" : "p-2.5",
+        )}
       >
         <div className="text-foreground">{card.title}</div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <span className={`text-[11px] ${PRIORITY_TONE[card.priority]}`}>
+          <span className={cn(META_TEXT(os), priorityTone(card.priority, os))}>
             {card.priority}
           </span>
           {card.assignees.length > 0 && (
-            <span className="text-[11px] text-muted-foreground truncate">
+            <span className={cn(META_TEXT(os), "text-muted-foreground truncate")}>
               {card.assignees.map((a) => a.name).join(", ")}
             </span>
           )}
@@ -885,32 +975,63 @@ function TaskCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {card.dueAt && (
             <span
-              className={`text-[11px] px-1.5 py-0.5 rounded-md border ${
+              className={cn(
+                META_TEXT(os),
+                "px-1.5 py-0.5 border",
+                os ? "rounded-full" : "rounded-md",
                 overdue
-                  ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
-                  : "border-border text-muted-foreground"
-              }`}
+                  ? os
+                    ? "border-transparent bg-os-amber/20 text-os-amber"
+                    : "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
+                  : os
+                    ? "border-transparent bg-os-container text-os-grey"
+                    : "border-border text-muted-foreground",
+              )}
             >
               Due {formatDuePill(card.dueAt)}
             </span>
           )}
           {card.domain && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+            <span
+              className={cn(
+                META_TEXT(os),
+                "px-1.5 py-0.5 border",
+                os
+                  ? "rounded-full border-transparent bg-os-accent/15 text-os-accent"
+                  : "rounded-md bg-blue-50 text-blue-700 border-blue-100",
+              )}
+            >
               {card.domain.name}
             </span>
           )}
           {checklist && checklist.length > 0 && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded-md border border-border text-muted-foreground">
+            <span
+              className={cn(
+                META_TEXT(os),
+                "px-1.5 py-0.5 border text-muted-foreground",
+                os ? "rounded-full border-transparent bg-os-container" : "rounded-md border-border",
+              )}
+            >
               {checklistDone}/{checklist.length}
             </span>
           )}
           {card.githubIssueNumber !== null && (
-            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 text-muted-foreground",
+                META_TEXT(os),
+              )}
+            >
               <Github aria-hidden className="w-3 h-3" />#{card.githubIssueNumber}
             </span>
           )}
           {card.files.length > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 text-muted-foreground",
+                META_TEXT(os),
+              )}
+            >
               <Paperclip aria-hidden className="w-3 h-3" />
               {card.files.length}
             </span>

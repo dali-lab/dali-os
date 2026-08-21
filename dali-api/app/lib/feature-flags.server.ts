@@ -24,10 +24,30 @@ import {
 // keeps its literal type for FeatureFlagMap.
 const DEFS: readonly FeatureFlagDef[] = FEATURE_FLAGS;
 
+// Flags that are on by default when you run the app outside production, so a
+// design still behind its flag is what a local `npm run dev` actually shows.
+// `defaultEnabled` can't express this — it seeds production too, which would be
+// a silent rollout. Set DEV_FEATURE_FLAGS to a comma-separated key list to
+// override (an empty value turns the whole mechanism off). Only the *default*
+// moves: a FeatureFlag row, once an operator creates one in Admin → Feature
+// Flags, still wins here exactly as it does in production.
+const DEV_DEFAULT_ON: readonly FeatureFlagKey[] = ["os-redesign"];
+
+function devDefaultOn(key: string): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const override = process.env.DEV_FEATURE_FLAGS;
+  if (override === undefined) return (DEV_DEFAULT_ON as readonly string[]).includes(key);
+  return override
+    .split(",")
+    .map((k) => k.trim())
+    .includes(key);
+}
+
 function defaultConfig(def: FeatureFlagDef): FlagConfig {
+  const forced = devDefaultOn(def.key);
   return {
-    enabled: def.defaultEnabled ?? false,
-    everyone: def.defaultEveryone ?? false,
+    enabled: forced || (def.defaultEnabled ?? false),
+    everyone: forced || (def.defaultEveryone ?? false),
     roles: [],
     userIds: [],
     variant: null,

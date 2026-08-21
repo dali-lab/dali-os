@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams, useRevalidator } from "react-router";
+import { Link, useSearchParams, useRevalidator } from "react-router";
 import { Select } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -12,9 +12,12 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { CheckCircle2, Plus, UserPlus } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Plus, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { useOsChrome } from "~/components/os-chrome";
+import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
@@ -36,12 +39,6 @@ type ProjectMeta = {
   slackChannelName?: string | null;
 };
 
-// Expected headcount per (project, domain) for this term — already summed
-// across levels and sorted by domain name in the loader. Keyed by projectId.
-// Absent / empty entries render as no demand chips (a project with no
-// ProjectRoleRequest rows this term).
-export type DomainDemand = { domainId: string; domainName: string; slots: number };
-
 type Props = {
   cycleId: string;
   termId: string;
@@ -62,7 +59,6 @@ type Props = {
   // ranked that aren't board columns, so cards/modal never show a raw id.
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
-  demandByProject: Record<string, DomainDemand[]>;
   /** Staffing leads can drag. Members get a read-only board. */
   canManage: boolean;
 };
@@ -79,9 +75,9 @@ export function StaffingBoard({
   cardOrder,
   projectNames,
   domainNames,
-  demandByProject,
   canManage,
 }: Props) {
+  const { os } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
@@ -551,17 +547,32 @@ export function StaffingBoard({
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
-  // Per-column tone (kept from the original): the Unassigned column is muted,
-  // active projects get the teal wash, paused/archived projects read as dim.
-  const toneClasses: Record<"muted" | "active" | "dim", string> = {
-    muted: "border-border bg-muted/20",
-    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
-    dim: "border-border bg-card",
-  };
+  // Per-column tone. The brand shell washes an active project's column in
+  // teal; the os design has no such wash — its columns are all the one card
+  // fill, and the states separate by weight instead: the staging column sits
+  // in the darker well, a paused or archived project fades back.
+  const toneClasses: Record<"muted" | "active" | "dim", string> = os
+    ? {
+        muted: "border-transparent bg-os-well",
+        active: "border-transparent bg-os-card",
+        dim: "border-transparent bg-os-card opacity-60",
+      }
+    : {
+        muted: "border-border bg-muted/20",
+        active: "border-accent-teal/40 bg-accent-teal/[0.04]",
+        dim: "border-border bg-card",
+      };
   // pt-1/px on the row (the primitive's default row layout) keeps each column's
   // top + side borders off the scroll-clip edge so they stay visible.
   const shell = (tone: "muted" | "active" | "dim") =>
-    `flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} flex flex-col max-h-[calc(100vh-12rem)]`;
+    cn(
+      "flex-shrink-0 w-64 border flex flex-col max-h-[calc(100vh-12rem)]",
+      // A column is a tall container, not a card: the design's 24px card
+      // corner curves away from its own contents at this height, so it takes
+      // the 12px item radius instead.
+      os ? "rounded-os-item" : "rounded-lg",
+      toneClasses[tone],
+    );
   // Only the card list scrolls; the header stays pinned. flex-1 + min-h-0 lets
   // it shrink within the column's max-height so overflow-y kicks in.
   const listClass = "flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto";
@@ -572,30 +583,11 @@ export function StaffingBoard({
     </div>
   );
 
-  const columnSubtitle = (countLabel: string, demand?: DomainDemand[]) => (
-    <>
-      <div>{countLabel}</div>
-      {demand && demand.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {demand.map((d) => (
-            <span
-              key={d.domainId}
-              className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
-              title={`Expected ${d.slots} ${d.domainName} this term`}
-            >
-              {d.domainName} · {d.slots}
-            </span>
-          ))}
-        </div>
-      )}
-    </>
-  );
-
   const columns: KanbanColumn<MemberCardModel>[] = [
     {
       id: UNASSIGNED,
       title: "Unassigned",
-      subtitle: columnSubtitle(`${board[UNASSIGNED]?.length ?? 0} bidding`),
+      subtitle: `${board[UNASSIGNED]?.length ?? 0} bidding`,
       cards: board[UNASSIGNED] ?? [],
       className: shell("muted"),
       listClassName: listClass,
@@ -612,12 +604,28 @@ export function StaffingBoard({
           <span className="flex items-center gap-1.5 min-w-0">
             <ProjectIcon iconEmoji={p.iconEmoji} />
             <span className="truncate">{p.name}</span>
+            {/* Straight through to the project. The column header is part of a
+                drag surface, so the press must not reach it. */}
+            <Link
+              to={`/projects/${p.id}`}
+              prefetch="intent"
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              title={`Open ${p.name}`}
+              aria-label={`Open ${p.name}`}
+              className={cn(
+                "shrink-0 rounded p-0.5 transition-colors",
+                os
+                  ? "text-os-muted hover:text-white"
+                  : "text-muted-foreground/70 hover:text-accent-coral",
+              )}
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
           </span>
         ),
-        subtitle: columnSubtitle(
-          `${board[p.id]?.length ?? 0} assigned`,
-          demandByProject[p.id],
-        ),
+        subtitle: `${board[p.id]?.length ?? 0} assigned`,
         cards,
         className: shell(tone),
         listClassName: listClass,
@@ -635,7 +643,12 @@ export function StaffingBoard({
               onClick={() => setExternalMentorProjectId(p.id)}
               title={`Add external mentor to ${p.name}`}
               aria-label={`Add external mentor to ${p.name}`}
-              className="text-muted-foreground hover:text-accent-teal transition-colors"
+              className={cn(
+                "transition-colors",
+                os
+                  ? "text-os-muted hover:text-white"
+                  : "text-muted-foreground hover:text-accent-teal",
+              )}
             >
               <UserPlus className="w-4 h-4" />
             </button>
@@ -644,7 +657,12 @@ export function StaffingBoard({
               onClick={() => setFinalizeProjectId(p.id)}
               title={`Finalize ${p.name}`}
               aria-label={`Finalize ${p.name}`}
-              className="text-muted-foreground hover:text-accent-coral transition-colors"
+              className={cn(
+                "transition-colors",
+                os
+                  ? "text-os-muted hover:text-os-accent"
+                  : "text-muted-foreground hover:text-accent-coral",
+              )}
             >
               <CheckCircle2 className="w-4 h-4" />
             </button>
@@ -680,7 +698,7 @@ export function StaffingBoard({
             value={termId}
             options={terms.map((t) => ({ value: t.id, label: t.code }))}
             ariaLabel="Term"
-            buttonClassName="inline-flex items-center justify-between gap-1 text-sm px-2 py-1 border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40"
+            buttonClassName={cn(filterPillClass(os), "w-full sm:w-32")}
             onChange={(value) => {
               setSearchParams(
                 (prev) => {
@@ -714,7 +732,6 @@ export function StaffingBoard({
           <MemberCard
             card={card}
             projectNames={projectNames}
-            domainNames={domainNames}
             onOpenBid={() => setOpenBid({ userId: card.userId, columnKey: card.columnKey })}
             // Remove (×): external-mentor cards remove their placement; on the
             // Unassigned column a roster card's × removes them from the board;
@@ -775,11 +792,7 @@ export function StaffingBoard({
         renderOverlay={(activeId) => {
           const card = activeId ? cardByCardId.get(activeId) ?? null : null;
           return card ? (
-            <MemberCardPreview
-              card={card}
-              projectNames={projectNames}
-              domainNames={domainNames}
-            />
+            <MemberCardPreview card={card} projectNames={projectNames} />
           ) : null;
         }}
       />
@@ -792,7 +805,6 @@ export function StaffingBoard({
           preferences={openBidMember.preferences}
           bidFields={openBidMember.bidFields ?? []}
           projectNames={projectNames}
-          domainNames={domainNames}
           currentProjectId={openBidColumnId}
         />
       )}
@@ -833,6 +845,7 @@ export function StaffingBoard({
 // invite all current-term Core + Admin/staff + everyone assigned to a project
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const { os } = useOsChrome();
   const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -868,17 +881,25 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   }
 
   return (
-    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn(
+        "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+        os
+          ? "rounded-os-card bg-os-card"
+          : "rounded-lg border border-accent-coral/30 bg-accent-coral/10",
+      )}
+    >
       <div className="min-w-0">
         <p className="text-sm font-heading font-semibold text-foreground">
           Term Slack channel{termCode ? ` for ${termCode}` : ""}
         </p>
-        <p className="text-xs text-muted-foreground">
-          Get-or-create a channel and invite all Core, staff, and everyone assigned to a project
-          this term.
-        </p>
         {result && (
-          <p className={`text-xs mt-1 ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+          <p
+            className={cn(
+              "text-xs mt-1",
+              result.ok ? (os ? "text-os-green" : "text-accent-teal") : "text-destructive",
+            )}
+          >
             {result.ok ? "✓ " : "✗ "}
             {result.message}
           </p>
@@ -893,7 +914,12 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           onChange={(e) => setChannel(e.target.value)}
           placeholder="26x"
           aria-label="Term channel name"
-          className="w-32 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={cn(
+            "w-32 px-2 py-1 text-sm border border-border bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2",
+            os
+              ? "rounded-os-item focus:ring-os-accent/40"
+              : "rounded-md focus:ring-accent-coral/30",
+          )}
         />
         <Button
           variant="primary"
@@ -925,6 +951,7 @@ function AddMemberToProjectControl({
   assignedUserIds: Set<string>;
   onAdd: (userId: string) => void;
 }) {
+  const { os } = useOsChrome();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -959,20 +986,33 @@ function AddMemberToProjectControl({
         onClick={() => setOpen((v) => !v)}
         title={`Add member to ${projectName}`}
         aria-label={`Add member to ${projectName}`}
-        className="text-muted-foreground hover:text-accent-teal transition-colors"
+        className={cn(
+          "transition-colors",
+          os ? "text-os-muted hover:text-white" : "text-muted-foreground hover:text-accent-teal",
+        )}
       >
         <Plus className="w-4 h-4" />
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-50 p-2">
+        <div
+          className={cn(
+            "absolute right-0 mt-1 w-64 z-50 p-2",
+            os ? OS_SURFACE_CLASS : "bg-card border border-border rounded-md shadow-lg",
+          )}
+        >
           <input
             autoFocus
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search members…"
-            className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-teal/30"
+            className={cn(
+              "w-full text-sm px-2 py-1.5 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
+              os
+                ? "rounded-os-item focus:ring-os-accent/40"
+                : "rounded-md focus:ring-accent-teal/30",
+            )}
           />
           <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
             {query.length >= 2 && results.length === 0 && (

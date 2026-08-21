@@ -6,6 +6,8 @@ import { RolePills } from "~/components/ui/RolePills";
 import { ALL_LEVELS, type Level } from "~/lib/level";
 import type { DomainLevel, MemberCardModel } from "../lib/staffing-board";
 import { Select } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
   P1: { label: "P1", cls: "bg-muted text-muted-foreground" },
@@ -13,12 +15,21 @@ const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
   P3: { label: "P3", cls: "bg-accent-coral/15 text-accent-coral" },
 };
 
+const OS_LEVEL_BADGE: Record<Level, string> = {
+  P1: "bg-os-container text-os-grey",
+  P2: "bg-os-accent/15 text-os-accent",
+  P3: "bg-os-green/15 text-os-green",
+};
+
+function levelBadgeClass(level: Level, os: boolean): string {
+  return os ? OS_LEVEL_BADGE[level] : LEVEL_BADGE[level].cls;
+}
+
 type DomainOption = { id: string; name: string };
 
 type Props = {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
   onOpenBid: () => void;
   /** Remove a manually-added member from the board. Only passed for managers. */
   onRemove?: () => void;
@@ -60,7 +71,6 @@ type Props = {
 export function MemberCard({
   card,
   projectNames,
-  domainNames,
   onOpenBid,
   onRemove,
   draggable,
@@ -76,6 +86,7 @@ export function MemberCard({
   onToggleAssignmentDomain,
 }: Props) {
   const fullName = buildFullName(card);
+  const { os } = useOsChrome();
 
   // External-mentor cards are a distinct, non-roster placement: their own
   // rendering (teal edge, no bid, a Remove ×), never draggable, no bid modal.
@@ -111,19 +122,24 @@ export function MemberCard({
       }}
       aria-label={`View ${fullName}'s bid`}
       title="View bid"
-      className={`rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
+      className={cn(
+        "p-2.5 flex flex-col gap-1.5 select-none",
+        os ? "rounded-os-item" : "rounded-md",
         accentExternal
-          ? "bg-accent-teal/[0.06] border border-accent-teal/40"
-          : "bg-card border border-border"
-      } ${
-        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "opacity-40" : "hover:bg-muted/20"}`}
+          ? os
+            ? "bg-os-well border border-os-accent/40"
+            : "bg-accent-teal/[0.06] border border-accent-teal/40"
+          : os
+            ? "bg-os-well border border-transparent"
+            : "bg-card border border-border",
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
+      )}
     >
       <MemberCardBody
         card={card}
         fullName={fullName}
         projectNames={projectNames}
-        domainNames={domainNames}
         onRemove={onRemove}
         canEditDomains={canEditDomains}
         allDomains={allDomains}
@@ -161,8 +177,16 @@ function ExternalMentorCard({
   fullName: string;
   onRemove?: () => void;
 }) {
+  const { os } = useOsChrome();
   return (
-    <div className="rounded-md p-2.5 flex flex-col gap-1.5 select-none bg-accent-teal/[0.06] border border-accent-teal/40">
+    <div
+      className={cn(
+        "p-2.5 flex flex-col gap-1.5 select-none border",
+        os
+          ? "rounded-os-item bg-os-well border-os-accent/40"
+          : "rounded-md bg-accent-teal/[0.06] border-accent-teal/40",
+      )}
+    >
       <div className="flex items-start gap-2">
         <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" userId={card.userId} />
         <div className="min-w-0 flex-1">
@@ -170,7 +194,12 @@ function ExternalMentorCard({
             <span className="text-sm font-semibold text-foreground truncate text-left">
               {fullName}
             </span>
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent-teal/15 text-accent-teal">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded",
+                os ? "bg-os-accent/15 text-os-accent" : "bg-accent-teal/15 text-accent-teal",
+              )}
+            >
               <GraduationCap className="w-2.5 h-2.5" aria-hidden />
               External mentor
             </span>
@@ -200,7 +229,6 @@ function MemberCardBody({
   card,
   fullName,
   projectNames,
-  domainNames,
   onRemove,
   canEditDomains,
   allDomains,
@@ -212,7 +240,6 @@ function MemberCardBody({
   card: MemberCardModel;
   fullName: string;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
   onRemove?: () => void;
   canEditDomains?: boolean;
   allDomains?: DomainOption[];
@@ -221,6 +248,7 @@ function MemberCardBody({
   assignmentDomainIds?: string[];
   onToggleAssignmentDomain?: (domainId: string) => void;
 }) {
+  const { os } = useOsChrome();
   return (
     <>
       <div className="flex items-start gap-2">
@@ -232,7 +260,10 @@ function MemberCardBody({
             </span>
             {card.unresolvedBid && (
               <span
-                className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-800"
+                className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded",
+                  os ? "bg-os-amber/20 text-os-amber" : "bg-amber-100 text-amber-800",
+                )}
                 title="Submitted a bid, but none of their picks matched an open role for this term — needs a staffing lead's attention."
               >
                 Bid unresolved
@@ -281,7 +312,7 @@ function MemberCardBody({
         assignmentDomainIds={assignmentDomainIds}
         onToggleAssignmentDomain={onToggleAssignmentDomain}
       />
-      <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
+      <BidStrip card={card} projectNames={projectNames} />
     </>
   );
 }
@@ -291,21 +322,20 @@ function MemberCardBody({
 export function MemberCardPreview({
   card,
   projectNames,
-  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
 }) {
   const fullName = buildFullName(card);
+  const { os } = useOsChrome();
   return (
-    <div className="bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing">
-      <MemberCardBody
-        card={card}
-        fullName={fullName}
-        projectNames={projectNames}
-        domainNames={domainNames}
-      />
+    <div
+      className={cn(
+        "p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing border",
+        os ? "rounded-os-item bg-os-card border-os-container" : "bg-card border-border rounded-md",
+      )}
+    >
+      <MemberCardBody card={card} fullName={fullName} projectNames={projectNames} />
     </div>
   );
 }
@@ -327,6 +357,7 @@ function DomainLevelStrip({
   assignmentDomainIds?: string[];
   onToggleAssignmentDomain?: (domainId: string) => void;
 }) {
+  const { os } = useOsChrome();
   const [adding, setAdding] = useState(false);
   const [newDomainId, setNewDomainId] = useState("");
   const [newLevel, setNewLevel] = useState<Level>("P1");
@@ -400,7 +431,10 @@ function DomainLevelStrip({
               setNewDomainId("");
               setNewLevel("P1");
             }}
-            className="rounded bg-accent-coral px-1.5 py-0.5 text-[10px] font-medium text-white disabled:opacity-50"
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-50",
+              os ? "bg-os-accent text-os-bg" : "bg-accent-coral text-white",
+            )}
           >
             Add
           </button>
@@ -439,6 +473,7 @@ function DomainLevelChip({
   onToggleAssignment: () => void;
   onChangeLevel: (level: Level) => void;
 }) {
+  const { os } = useOsChrome();
   const nameButton = canToggleAssignment ? (
     <button
       type="button"
@@ -461,7 +496,9 @@ function DomainLevelChip({
     <span
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
         isAssignment
-          ? "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
+          ? os
+            ? "bg-os-accent/15 text-white ring-1 ring-os-accent/40"
+            : "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
           : "bg-muted text-foreground"
       }`}
       title={
@@ -479,10 +516,14 @@ function DomainLevelChip({
           ariaLabel={`Level for ${domain.domainName}`}
           onChange={(value) => onChangeLevel(value as Level)}
           options={ALL_LEVELS.map((l) => ({ value: l, label: l }))}
-          buttonClassName={`rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 focus:ring-accent-coral/40 inline-flex items-center justify-between gap-0.5 transition-colors ${LEVEL_BADGE[domain.level].cls}`}
+          buttonClassName={cn(
+            "rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 inline-flex items-center justify-between gap-0.5 transition-colors",
+            os ? "focus:ring-os-accent/40" : "focus:ring-accent-coral/40",
+            levelBadgeClass(domain.level, os),
+          )}
         />
       ) : (
-        <span className={`px-1 rounded font-bold ${LEVEL_BADGE[domain.level].cls}`}>
+        <span className={cn("px-1 rounded font-bold", levelBadgeClass(domain.level, os))}>
           {LEVEL_BADGE[domain.level].label}
         </span>
       )}
@@ -493,11 +534,9 @@ function DomainLevelChip({
 function BidStrip({
   card,
   projectNames,
-  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
 }) {
   // Always show the member's top 3 project preferences in rank order,
   // regardless of which column the card is in.
@@ -514,23 +553,15 @@ function BidStrip({
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">
-      {card.topPreferences.map((p) => {
-        // A project bid at this rank in multiple domains shows the project once
-        // with its domains appended (e.g. "Evergreen — Fullstack, UI/UX"),
-        // rather than repeating the project line per domain.
-        const domains = p.domainIds
-          .map((id) => domainNames[id])
-          .filter((n): n is string => !!n);
-        return (
-          <li key={`${p.projectId}-${p.rank}`} className="truncate">
-            <span className="font-semibold">#{p.rank}</span>{" "}
-            {projectNames[p.projectId] ?? p.projectId}
-            {domains.length > 0 && (
-              <span className="text-muted-foreground/70"> — {domains.join(", ")}</span>
-            )}
-          </li>
-        );
-      })}
+      {/* A bid is a ranked project and nothing else — the domain on the
+          underlying rows is bookkeeping, not the member's role, so it would
+          contradict the eligibility chips above. See BidModal. */}
+      {card.topPreferences.map((p) => (
+        <li key={`${p.projectId}-${p.rank}`} className="truncate">
+          <span className="font-semibold">#{p.rank}</span>{" "}
+          {projectNames[p.projectId] ?? p.projectId}
+        </li>
+      ))}
     </ol>
   );
 }

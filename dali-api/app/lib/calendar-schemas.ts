@@ -193,6 +193,24 @@ export const DeleteTimeEntrySchema = z.object({
   id: z.string().min(1),
 });
 
+// "Add to timesheet" on a meeting's detail popover: creates/removes the
+// Meeting-sourced TimeEntry for the viewer only. Deliberately does NOT touch
+// MeetingAttendance — logging your own hours isn't the same claim as the
+// organizer recording that you were present.
+export const ToggleMeetingTimeEntrySchema = z.object({
+  intent: z.literal("toggle-meeting-time-entry"),
+  meetingId: z.string().min(1),
+  onTimesheet: z.boolean(),
+});
+
+// "Mark as a Core meeting" on a meeting's detail popover — the same flag the
+// create form sets, editable after the fact. Core-only; the action re-checks.
+export const SetMeetingCoreSchema = z.object({
+  intent: z.literal("set-meeting-core"),
+  meetingId: z.string().min(1),
+  isCoreMeeting: z.boolean(),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
   SeedWorkingHoursSchema,
@@ -208,6 +226,8 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   AddTimeEntrySchema,
   UpdateTimeEntrySchema,
   DeleteTimeEntrySchema,
+  ToggleMeetingTimeEntrySchema,
+  SetMeetingCoreSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

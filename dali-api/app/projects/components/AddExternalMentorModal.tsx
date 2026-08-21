@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 import { Select } from "~/components/ui/floating";
 
 type Candidate = { userId: string; name: string; email: string | null };
@@ -25,6 +27,7 @@ export function AddExternalMentorModal({
   domains: { id: string; name: string }[];
   onAdded: () => void;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -180,7 +183,12 @@ export function AddExternalMentorModal({
           type="button"
           onClick={submit}
           disabled={!canSubmit}
-          className="px-3 py-1.5 text-sm rounded-lg bg-accent-coral text-white hover:opacity-90 disabled:opacity-50"
+          className={cn(
+            "disabled:opacity-50",
+            os
+              ? "os-btn-primary"
+              : "px-3 py-1.5 text-sm rounded-lg bg-accent-coral text-white hover:opacity-90",
+          )}
         >
           {busy ? "Adding…" : "Add mentor"}
         </button>
