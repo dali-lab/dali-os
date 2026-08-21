@@ -255,11 +255,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               name: true,
               logoUrl: true,
               website: true,
-              users: {
+              memberships: {
+                where: { endedAt: null },
                 select: {
                   id: true,
-                  displayRole: true,
-                  user: { select: USER_NAME_SELECT },
+                  role: true,
+                  contact: { select: { name: true } },
                 },
               },
             },
@@ -1114,10 +1115,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       name: pp.partnerOrg.name,
       logoUrl: pp.partnerOrg.logoUrl,
       website: pp.partnerOrg.website,
-      contacts: pp.partnerOrg.users.map((u) => ({
-        id: u.id,
-        name: fullName(u.user),
-        displayRole: u.displayRole,
+      contacts: pp.partnerOrg.memberships.map((m) => ({
+        id: m.id,
+        name: m.contact.name,
+        displayRole: m.role,
       })),
     },
   }));

@@ -290,9 +290,36 @@ test.describe('partner self-signup', () => {
     await expect(page.getByRole('heading', { name: /Welcome/ })).toBeVisible();
 
     // Apply with NO organization — the person/account is the primitive.
+    // The form is now the full multi-page bound form; fill resiliently.
     await page.goto('/partner/apply');
-    await page.getByLabel('Project title').fill('Warehouse robot dashboard');
-    await page.getByRole('button', { name: 'Submit application' }).click();
+    // Fill the first text input on page 1 with a recognizable value so the
+    // derived application title is predictable for the assertion below.
+    const firstText = page.locator('input[type="text"]').first();
+    await firstText.fill('Warehouse robot dashboard');
+    // Loop: fill remaining visible inputs, then advance or submit.
+    for (let i = 0; i < 20; i++) {
+      // Fill all other visible text inputs and textareas that are still empty.
+      for (const ta of await page.locator('textarea:visible').all()) {
+        if (!(await ta.inputValue())) await ta.fill('Test answer');
+      }
+      for (const inp of await page.locator('input[type="text"]:visible').all()) {
+        if (!(await inp.inputValue())) await inp.fill('Test answer');
+      }
+      // Check the first unchecked checkbox in any checkbox group.
+      const cb = page.locator('input[type="checkbox"]:visible').first();
+      if (await cb.isVisible() && !(await cb.isChecked())) await cb.check();
+
+      const nextBtn = page.getByRole('button', { name: 'Next' });
+      const submitBtn = page.getByRole('button', { name: 'Submit application' });
+      if (await submitBtn.isVisible()) {
+        await submitBtn.click();
+        break;
+      } else if (await nextBtn.isVisible()) {
+        await nextBtn.click();
+      } else {
+        break;
+      }
+    }
     await expect(
       page.getByRole('heading', { name: 'Warehouse robot dashboard' }),
     ).toBeVisible();
@@ -323,6 +350,12 @@ test.describe('bound application form', () => {
         [
           `${formId}-v1`,
           JSON.stringify([
+            {
+              key: 'project-title',
+              type: 'text',
+              required: true,
+              data: { label: 'Project title' },
+            },
             {
               key: 'q-budget',
               type: 'textarea',
@@ -366,13 +399,11 @@ test.describe('bound application form', () => {
       await loginAs({ personalEmail: 'partner.tuck@example.com' });
       await page.goto('/partner/apply');
 
+      // First question is Project title — fill it so deriveApplicationTitle
+      // returns a predictable value.
       await page.getByLabel('Project title').fill('Alumni portal refresh');
-      await expect(page.getByText('A few more questions')).toBeVisible();
       await expect(page.getByText('What is your budget?')).toBeVisible();
-      await page
-        .locator('section', { hasText: 'A few more questions' })
-        .locator('textarea')
-        .fill('Around $10k for the pilot term.');
+      await page.locator('textarea').fill('Around $10k for the pilot term.');
       await page.getByRole('button', { name: 'Submit application' }).click();
 
       await expect(
