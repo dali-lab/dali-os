@@ -7,6 +7,7 @@
 
 import { prisma } from "~/lib/db";
 import type { SigningAudience } from "~/generated/prisma/enums";
+import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import type { SignerCohorts } from "./state.server";
 
 export interface AudiencePerson {
@@ -38,6 +39,18 @@ async function listActiveMembers(): Promise<AudiencePerson[]> {
     select: { user: { select: { id: true, firstName: true, lastName: true } } },
   });
   return members.map((m) => m.user);
+}
+
+// Active members partitioned by the incoming-cohort set: "new" = accepted in the
+// latest General/Fellowship cycle, "returning" = everyone else active.
+async function listNewMembers(): Promise<AudiencePerson[]> {
+  const [active, cohort] = await Promise.all([listActiveMembers(), getNewMemberCohortIds()]);
+  return active.filter((p) => cohort.has(p.id));
+}
+
+async function listReturningMembers(): Promise<AudiencePerson[]> {
+  const [active, cohort] = await Promise.all([listActiveMembers(), getNewMemberCohortIds()]);
+  return active.filter((p) => !cohort.has(p.id));
 }
 
 // The set of users who mentor in the given term (P3 project OR domain lead OR
@@ -72,9 +85,17 @@ async function listTermMentors(termId: string): Promise<AudiencePerson[]> {
 }
 
 export const AUDIENCE_RESOLVERS: Record<SigningAudience, AudienceResolver> = {
-  ActiveMembers: {
-    includes: (c) => c.isMember,
-    listMembers: () => listActiveMembers(),
+  NewMembers: {
+    includes: (c) => c.isMember && c.isNewMember,
+    listMembers: () => listNewMembers(),
+    enumerable: true,
+  },
+  Members: {
+    // Returning active members — everyone active who isn't in the new cohort.
+    // Mentors are established members, so a mentor lands here (Members) AND in
+    // Mentors, receiving both agreements.
+    includes: (c) => c.isMember && !c.isNewMember,
+    listMembers: () => listReturningMembers(),
     enumerable: true,
   },
   Mentors: {

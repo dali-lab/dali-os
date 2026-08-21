@@ -1,6 +1,6 @@
-// Shared loader/action logic for the Forms feature. Both the top-level
-// (/forms) and per-folder (/forms/:folderId) routes render the same card grid
-// over one level of the folder tree, so the query + mutations live here.
+// Shared loader/action logic for the Forms feature. The form editor and the
+// unified Drive both drive form mutations through runFormsAction here; forms are
+// organised by folderPageId (a Drive Page folder), not a separate folder tree.
 //
 // Forms store their question set in the shared `~/types` Question shape (the
 // same one the hiring FormBuilderTab produces). FormVersion.questions is a
@@ -13,7 +13,6 @@ import { prisma, Prisma } from "~/lib/db";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
-import type { FolderOption } from "./folder-tree.shared";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { isGroupArchived } from "~/lib/groups";
 
@@ -141,30 +140,6 @@ export async function lockedVersionIds(formId: string): Promise<Set<string>> {
   return ids;
 }
 
-export type FormCard = {
-  id: string;
-  name: string;
-  folderId: string | null;
-  versionCount: number;
-  published: boolean;
-  publicToken: string | null;
-  latestVersion: { id: string; questions: Question[]; description: unknown } | null;
-};
-
-export type FolderCard = {
-  id: string;
-  name: string;
-  parentId: string | null;
-  formCount: number;
-  folderCount: number;
-};
-
-export type FolderCrumb = { id: string; name: string };
-
-// Slim reference to a form anywhere in the tree — the browser's cross-depth
-// search matches on these rather than loading full cards for every form.
-export type FormRef = { id: string; name: string; folderId: string | null };
-
 export type FormVersionDetail = {
   id: string;
   versionNumber: number;
@@ -184,7 +159,6 @@ export type FormVersionDetail = {
 export type FormDetail = {
   id: string;
   name: string;
-  folderId: string | null;
   folderPageId: string | null;
   createdAt: string;
   published: boolean;
@@ -230,7 +204,6 @@ export async function loadFormForEdit(
   return {
     id: form.id,
     name: form.name,
-    folderId: form.folderId,
     folderPageId: form.folderPageId,
     createdAt: form.createdAt.toISOString(),
     published: form.published,
@@ -266,121 +239,6 @@ export async function loadFormForEdit(
   };
 }
 
-// Root → `startId` chain over an id-indexed folder map. `startId` itself is
-// included; a broken link just truncates the chain.
-function walkFolderCrumbs(
-  byId: Map<string, { id: string; name: string; parentId: string | null }>,
-  startId: string | null,
-): FolderCrumb[] {
-  const crumbs: FolderCrumb[] = [];
-  let cursor = startId;
-  while (cursor) {
-    const node = byId.get(cursor);
-    if (!node) break;
-    crumbs.unshift({ id: node.id, name: node.name });
-    cursor = node.parentId;
-  }
-  return crumbs;
-}
-
-// Folder ancestry (root → the folder itself) for a form's containing folder —
-// the editor/responses pages expand their breadcrumb sub-trail with this.
-export async function folderCrumbs(
-  folderId: string | null,
-): Promise<FolderCrumb[]> {
-  if (!folderId) return [];
-  const all = await prisma.formFolder.findMany({
-    select: { id: true, name: true, parentId: true },
-  });
-  return walkFolderCrumbs(new Map(all.map((f) => [f.id, f])), folderId);
-}
-
-// One level of the tree: the folders/forms whose parent is `folderId`
-// (null = top level), plus breadcrumb ancestry and the flat folder/form
-// lists used by the "move" pickers and the cross-depth search.
-export async function loadFormsLevel(folderId: string | null) {
-  const [childFolders, forms, allFolders, allForms, current] = await Promise.all([
-    prisma.formFolder.findMany({
-      where: { parentId: folderId },
-      orderBy: { name: "asc" },
-      include: { _count: { select: { forms: true, children: true } } },
-    }),
-    prisma.form.findMany({
-      where: { folderId },
-      orderBy: { name: "asc" },
-      include: {
-        _count: { select: { versions: true } },
-        versions: { orderBy: { versionNumber: "desc" }, take: 1 },
-      },
-    }),
-    prisma.formFolder.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, parentId: true },
-    }),
-    prisma.form.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, folderId: true },
-    }),
-    folderId
-      ? prisma.formFolder.findUnique({
-          where: { id: folderId },
-          select: { id: true, name: true, parentId: true },
-        })
-      : Promise.resolve(null),
-  ]);
-
-  if (folderId && !current) return null; // folder not found
-
-  // Breadcrumb ancestry (root → current's parent).
-  const crumbs = walkFolderCrumbs(
-    new Map(allFolders.map((f) => [f.id, f])),
-    current?.parentId ?? null,
-  );
-
-  return {
-    current: current
-      ? { id: current.id, name: current.name, parentId: current.parentId }
-      : null,
-    crumbs,
-    folders: childFolders.map<FolderCard>((d) => ({
-      id: d.id,
-      name: d.name,
-      parentId: d.parentId,
-      formCount: d._count.forms,
-      folderCount: d._count.children,
-    })),
-    forms: forms.map<FormCard>((f) => {
-      const v = f.versions[0];
-      return {
-        id: f.id,
-        name: f.name,
-        folderId: f.folderId,
-        versionCount: f._count.versions,
-        published: f.published,
-        publicToken: f.publicToken,
-        latestVersion: v
-          ? {
-              id: v.id,
-              questions: (v.questions as unknown as Question[]) ?? [],
-              // intro holds serialized ProseMirror JSON (see module note).
-              description: v.intro ? safeParseJsonString(v.intro) : null,
-            }
-          : null,
-      };
-    }),
-    allFolders: allFolders.map<FolderOption>((f) => ({
-      id: f.id,
-      name: f.name,
-      parentId: f.parentId,
-    })),
-    allForms: allForms.map<FormRef>((f) => ({
-      id: f.id,
-      name: f.name,
-      folderId: f.folderId,
-    })),
-  };
-}
-
 export function safeParseJsonString(s: string | null | undefined): unknown {
   if (!s) return null;
   try {
@@ -390,42 +248,23 @@ export function safeParseJsonString(s: string | null | undefined): unknown {
   }
 }
 
-// "" / undefined → null (top level), else verify the folder exists.
-async function resolveFolderId(
+// Verify a Drive Page-folder exists (kind=Folder) for form placement. "" /
+// undefined → null (top level / unplaced).
+async function resolveFolderPageId(
   raw: string | undefined,
 ): Promise<{ ok: true; value: string | null } | { ok: false }> {
   if (!raw) return { ok: true, value: null };
-  const folder = await prisma.formFolder.findUnique({
-    where: { id: raw },
+  const page = await prisma.page.findFirst({
+    where: { id: raw, kind: "Folder" },
     select: { id: true },
   });
-  return folder ? { ok: true, value: folder.id } : { ok: false };
-}
-
-// A folder cannot be moved into itself or any of its own descendants
-// (that would orphan a cycle from the tree).
-async function isDescendantOrSelf(
-  candidateParentId: string,
-  folderId: string,
-): Promise<boolean> {
-  if (candidateParentId === folderId) return true;
-  const all = await prisma.formFolder.findMany({
-    select: { id: true, parentId: true },
-  });
-  const byId = new Map(all.map((f) => [f.id, f.parentId]));
-  let cursor: string | null | undefined = candidateParentId;
-  while (cursor) {
-    if (cursor === folderId) return true;
-    cursor = byId.get(cursor);
-  }
-  return false;
+  return page ? { ok: true, value: page.id } : { ok: false };
 }
 
 export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("create-form"),
     name: z.string().trim().min(1).max(120),
-    folderId: z.string().optional(), // "" = top level
     folderPageId: z.string().optional(), // Drive Page-folder placement; "" or absent = unplaced
   }),
   z.object({
@@ -437,7 +276,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("move-form"),
     id: z.string().min(1),
-    folderId: z.string().optional(), // "" = top level
+    folderPageId: z.string().optional(), // Drive Page-folder; "" = top level
   }),
   z.object({ intent: z.literal("duplicate-form"), id: z.string().min(1) }),
   z.object({
@@ -471,22 +310,6 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     intent: z.literal("delete-version"),
     id: z.string().min(1),
     versionId: z.string().min(1),
-  }),
-  z.object({
-    intent: z.literal("create-folder"),
-    name: z.string().trim().min(1).max(120),
-    parentId: z.string().optional(), // "" = top level
-  }),
-  z.object({
-    intent: z.literal("rename-folder"),
-    id: z.string().min(1),
-    name: z.string().trim().min(1).max(120),
-  }),
-  z.object({ intent: z.literal("delete-folder"), id: z.string().min(1) }),
-  z.object({
-    intent: z.literal("move-folder"),
-    id: z.string().min(1),
-    parentId: z.string().optional(), // "" = top level
   }),
   z.object({ intent: z.literal("publish-form"), id: z.string().min(1) }),
   z.object({ intent: z.literal("unpublish-form"), id: z.string().min(1) }),
@@ -559,13 +382,12 @@ export async function runFormsAction(
 
   switch (input.intent) {
     case "create-form": {
-      const folder = await resolveFolderId(input.folderId);
+      const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
       const created = await prisma.form.create({
         data: {
           name: input.name,
-          folderId: folder.value,
-          folderPageId: input.folderPageId || null,
+          folderPageId: folder.value,
           createdById: userId,
         },
         select: { id: true },
@@ -577,7 +399,7 @@ export async function runFormsAction(
         where: { id: input.id },
         select: {
           name: true,
-          folderId: true,
+          folderPageId: true,
           draftQuestions: true,
           draftIntro: true,
           versions: {
@@ -603,7 +425,7 @@ export async function runFormsAction(
       const created = await prisma.form.create({
         data: {
           name: `Copy of ${source.name}`.slice(0, 120),
-          folderId: source.folderId,
+          folderPageId: source.folderPageId,
           createdById: userId,
           draftQuestions: questions === null ? undefined : (questions as object),
           draftIntro: intro,
@@ -618,11 +440,11 @@ export async function runFormsAction(
         select: { id: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
-      const folder = await resolveFolderId(input.folderId);
+      const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
       await prisma.form.update({
         where: { id: input.id },
-        data: { folderId: folder.value },
+        data: { folderPageId: folder.value },
       });
       return { ok: true };
     }
@@ -785,71 +607,6 @@ export async function runFormsAction(
         }
         throw e;
       }
-      return { ok: true };
-    }
-    case "create-folder": {
-      if (input.parentId) {
-        const parent = await prisma.formFolder.findUnique({
-          where: { id: input.parentId },
-          select: { id: true },
-        });
-        if (!parent) return { error: "Parent folder not found", status: 404 };
-      }
-      await prisma.formFolder.create({
-        data: {
-          name: input.name,
-          parentId: input.parentId || null,
-          createdById: userId,
-        },
-      });
-      return { ok: true };
-    }
-    case "rename-folder": {
-      const exists = await prisma.formFolder.findUnique({
-        where: { id: input.id },
-        select: { id: true },
-      });
-      if (!exists) return { error: "Not found", status: 404 };
-      await prisma.formFolder.update({
-        where: { id: input.id },
-        data: { name: input.name },
-      });
-      return { ok: true };
-    }
-    case "move-folder": {
-      const exists = await prisma.formFolder.findUnique({
-        where: { id: input.id },
-        select: { id: true },
-      });
-      if (!exists) return { error: "Not found", status: 404 };
-      const target = input.parentId || null;
-      if (target) {
-        const parent = await prisma.formFolder.findUnique({
-          where: { id: target },
-          select: { id: true },
-        });
-        if (!parent) return { error: "Parent folder not found", status: 404 };
-        if (await isDescendantOrSelf(target, input.id))
-          return {
-            error: "Can't move a folder into itself or its own subfolder.",
-            status: 400,
-          };
-      }
-      await prisma.formFolder.update({
-        where: { id: input.id },
-        data: { parentId: target },
-      });
-      return { ok: true };
-    }
-    case "delete-folder": {
-      const exists = await prisma.formFolder.findUnique({
-        where: { id: input.id },
-        select: { id: true },
-      });
-      if (!exists) return { error: "Not found", status: 404 };
-      // Form.folderId and FormFolder.parentId are both onDelete: SetNull —
-      // this folder's forms and subfolders fall back to the top level.
-      await prisma.formFolder.delete({ where: { id: input.id } });
       return { ok: true };
     }
     case "publish-form": {

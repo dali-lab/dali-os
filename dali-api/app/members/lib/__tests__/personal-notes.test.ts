@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(), listVisibleGroupsForUser: vi.fn() }));
 
 import { prisma } from "~/lib/db";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupsForUser } from "~/lib/groups";
 import {
   noteAccess,
   requireNoteView,
@@ -17,6 +17,9 @@ import {
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const OWNER = "owner-1";
 const OTHER = "other-1";
+
+// Shaped as listVisibleGroupsForUser returns — groupIdsForUser reads only id + archivedAt.
+const memberGroup = (id: string, archivedAt: string | null = null) => ({ id, archivedAt }) as any;
 
 const NOTE = {
   workspaceType: "Member",
@@ -32,6 +35,7 @@ beforeEach(() => {
   mockPrisma.pageShare.findFirst.mockResolvedValue(null);
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
   vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+  vi.mocked(listVisibleGroupsForUser).mockResolvedValue([]);
 });
 
 describe("noteAccess — the owner", () => {
@@ -85,14 +89,13 @@ describe("noteAccess — everyone else", () => {
     mockPrisma.pageShare.findFirst
       .mockResolvedValueOnce(null) // no direct share
       .mockResolvedValueOnce({ id: "sh-2" }); // matched via group
-    mockPrisma.groupDefinition.findMany.mockResolvedValue([{ id: "grp-1" }]);
-    vi.mocked(resolveGroupMembers).mockResolvedValue([OTHER]);
+    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([memberGroup("grp-1")]);
     expect((await noteAccess("pg-1", OTHER)).canView).toBe(true);
   });
 
   it("is refused when shared with a group they are NOT in", async () => {
-    mockPrisma.groupDefinition.findMany.mockResolvedValue([{ id: "grp-1" }]);
-    vi.mocked(resolveGroupMembers).mockResolvedValue(["somebody-else"]);
+    // Viewer belongs to no groups, so the group-share query is never attempted.
+    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([]);
     expect((await noteAccess("pg-1", OTHER)).canView).toBe(false);
     // No group matched, so the group share query is never even attempted.
     expect(mockPrisma.pageShare.findFirst).toHaveBeenCalledTimes(1);

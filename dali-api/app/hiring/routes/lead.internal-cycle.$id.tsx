@@ -10,6 +10,7 @@ import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.
 import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import type { Question } from "~/types";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
+import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
 import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { renderEmail } from "~/lib/email";
@@ -162,8 +163,44 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ]);
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
+  // Confidentiality agreement (a Confidentiality-kind SigningDocument bound to
+  // the cycle via a SigningBinding). Same gate as Standard cycles: reviewers
+  // and leads can't see sensitive data until one is bound and signed. Reshaped
+  // to the picker's expected shape, shared with the Standard cycle setup page.
+  const confidentialityAgreementOptions = await prisma.signingDocument.findMany({
+    where: { kind: "Confidentiality", archivedAt: null },
+    include: { versions: { orderBy: { versionNumber: "desc" } } },
+    orderBy: { name: "asc" },
+  });
+  const confidentialityBindingRow = await prisma.signingBinding.findFirst({
+    where: { cycleId: params.id, document: { kind: "Confidentiality" } },
+    include: { version: { include: { document: { select: { name: true } } } } },
+  });
+  const currentConfidentialityBinding = confidentialityBindingRow
+    ? {
+        confidentialityAgreementVersion: {
+          id: confidentialityBindingRow.version.id,
+          versionNumber: confidentialityBindingRow.version.versionNumber,
+          agreement: { name: confidentialityBindingRow.version.document.name },
+        },
+      }
+    : null;
+  const confidentialitySignatures = (
+    await prisma.signingSignature.findMany({
+      where: {
+        roleKey: "member",
+        binding: { cycleId: params.id, document: { kind: "Confidentiality" } },
+      },
+      include: { signer: { select: { firstName: true, lastName: true } } },
+      orderBy: { signedAt: "asc" },
+    })
+  ).map((s) => ({ user: s.signer }));
+
   return {
     isCoreCycle,
+    confidentialityAgreementOptions,
+    currentConfidentialityBinding,
+    confidentialitySignatures,
     cycle: {
       id: cycle.id,
       name: cycle.name,
@@ -479,6 +516,44 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "set-confidentiality-agreement") {
+    // Bind/rebind/unbind a Confidentiality-kind SigningDocument version to this
+    // cycle. Mirrors the Standard cycle setup action so internal (Fellowship/
+    // Core) cycles gate reviewers and decisions the same way.
+    const versionId =
+      (formData.get("confidentialityAgreementVersionId") as string) || null;
+    const scopeKey = `cycle:${cycleId}`;
+    const existing = await prisma.signingBinding.findFirst({
+      where: { cycleId, document: { kind: "Confidentiality" } },
+      select: { id: true },
+    });
+    if (versionId) {
+      const version = await prisma.signingDocumentVersion.findUnique({
+        where: { id: versionId },
+        select: { documentId: true },
+      });
+      if (version) {
+        if (existing) {
+          // Update in place so existing signatures survive the version bump
+          // (they no longer match the new version → members re-sign).
+          await prisma.signingBinding.update({
+            where: { id: existing.id },
+            data: { versionId, documentId: version.documentId, scopeKey },
+          });
+        } else {
+          await prisma.signingBinding.create({
+            data: { documentId: version.documentId, versionId, scopeKey, cycleId },
+          });
+        }
+      }
+    } else if (existing) {
+      // Unbind: returns the cycle to the no_agreement state (cascades away its
+      // signatures).
+      await prisma.signingBinding.delete({ where: { id: existing.id } });
+    }
+    return { ok: true };
+  }
+
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
@@ -497,6 +572,9 @@ export default function FellowshipCycleSetup() {
     emailTemplates,
     currentDecisionEmails,
     releasedDecisionTypes,
+    confidentialityAgreementOptions,
+    currentConfidentialityBinding,
+    confidentialitySignatures,
   } = data;
   const isOpen = cycle.status === "Open" || cycle.status === "UnderReview";
 
@@ -559,6 +637,12 @@ export default function FellowshipCycleSetup() {
         targetDomains={cycle.targetDomains}
         members={members}
         isCoreCycle={isCoreCycle}
+      />
+
+      <ConfidentialityAgreementPicker
+        currentBinding={currentConfidentialityBinding}
+        agreementOptions={confidentialityAgreementOptions}
+        signatures={confidentialitySignatures}
       />
 
       <DecisionEmailsSection
@@ -659,10 +743,11 @@ function ApplicationFormSection({
         <div className="mb-3 flex items-center gap-3">
           <p className="text-sm text-muted-foreground">No application form bound yet.</p>
           <button
+            disabled={fetcher.state !== "idle"}
             onClick={() => fetcher.submit({ intent: "create-application-form" }, { method: "post" })}
-            className="text-sm font-medium text-blue-700 hover:underline"
+            className="text-sm font-medium text-blue-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Create form
+            {fetcher.state !== "idle" ? "Creating…" : "+ Create form"}
           </button>
         </div>
       )}

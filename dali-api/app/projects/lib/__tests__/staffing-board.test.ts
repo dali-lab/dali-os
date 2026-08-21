@@ -57,8 +57,8 @@ describe("buildBoard", () => {
   });
 
   it("dedupes same-project same-rank bids into one entry", () => {
-    // Gaelle's case: rank-1 bid on "Evergreen" expanded into two domain rows.
-    // That's one pick, so the card shows one #1 Evergreen line, not two.
+    // Gaelle's case: rank-1 bid on "Evergreen" in two domains. The card should
+    // show one #1 Evergreen line, not one per bid domain.
     const board = buildBoard({
       projectIds: [],
       members: [

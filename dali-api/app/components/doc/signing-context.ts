@@ -1,9 +1,9 @@
 // Mode-aware context for the signing field family + merge variables.
 // Successor of SigningFieldCtx (app/components/editor/signing-fields.tsx),
 // same semantics:
-//   author -> static pill "⟦label: role⟧" (field config is document state)
+//   author -> static pill naming the placeable field (field config is doc state)
 //   fill   -> interactive input for the signer's own role, read-only otherwise
-//   view   -> read-only baked/captured value
+//   view   -> baked/captured value, or a typed captioned placeholder if unfilled
 //
 // Fill values live in HOST React state (values / onFieldChange), never in the
 // document. The spike proved React context propagation reaches BlockNote's

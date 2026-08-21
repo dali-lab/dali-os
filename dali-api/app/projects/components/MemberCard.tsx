@@ -335,7 +335,11 @@ export function MemberCardPreview({
         os ? "rounded-os-item bg-os-card border-os-container" : "bg-card border-border rounded-md",
       )}
     >
-      <MemberCardBody card={card} fullName={fullName} projectNames={projectNames} />
+      <MemberCardBody
+        card={card}
+        fullName={fullName}
+        projectNames={projectNames}
+      />
     </div>
   );
 }
@@ -553,9 +557,8 @@ function BidStrip({
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">
-      {/* A bid is a ranked project and nothing else — the domain on the
-          underlying rows is bookkeeping, not the member's role, so it would
-          contradict the eligibility chips above. See BidModal. */}
+      {/* Project only: the bid's domain can be stale (submitted wrong, fixed
+          later), so the card's domain chips carry the real domain. */}
       {card.topPreferences.map((p) => (
         <li key={`${p.projectId}-${p.rank}`} className="truncate">
           <span className="font-semibold">#{p.rank}</span>{" "}

@@ -3,6 +3,7 @@ import {
   ensureTeam,
   addTeamMember,
   grantTeamRepo,
+  isNo2fa,
   __setGitHubClientForTests,
 } from "~/lib/github";
 import type { Octokit } from "@octokit/rest";
@@ -141,5 +142,37 @@ describe("grantTeamRepo", () => {
     const grantRepo = vi.fn().mockRejectedValue(notFound);
     __setGitHubClientForTests(fakeOctokit({ grantRepo }));
     await expect(grantTeamRepo("alpha", "dali-lab", "nope")).rejects.toBe(notFound);
+  });
+});
+
+describe("isNo2fa", () => {
+  // The org enforces 2FA, so this is the routine reason a real roster member
+  // can't be added. Finalize buckets them by name instead of aborting the run.
+  it("detects the 422 the org's 2FA requirement raises", () => {
+    const err = Object.assign(new Error("User doesn't satisfy the two-factor authentication requirements for this organization."), {
+      status: 422,
+      response: { data: { errors: [{ resource: "TeamMember", field: "user", code: "no_2fa" }] } },
+    });
+    expect(isNo2fa(err)).toBe(true);
+  });
+
+  it("matches when only Octokit's serialized message survives", () => {
+    const err = new Error(
+      `User doesn't satisfy the two-factor authentication requirements for this organization.: {"code":"no_2fa","field":"user","resource":"TeamMember"}`,
+    );
+    expect(isNo2fa(err)).toBe(true);
+  });
+
+  it("does not claim unrelated failures", () => {
+    expect(isNo2fa(Object.assign(new Error("Not Found"), { status: 404 }))).toBe(false);
+    expect(
+      isNo2fa(
+        Object.assign(new Error("Validation Failed"), {
+          status: 422,
+          response: { data: { errors: [{ code: "already_exists" }] } },
+        }),
+      ),
+    ).toBe(false);
+    expect(isNo2fa(null)).toBe(false);
   });
 });

@@ -46,9 +46,10 @@ export const MANAGE_FORM_TOOL = {
         type: "string",
         description: "Form name (create / rename).",
       },
-      folderId: {
+      folderPageId: {
         type: "string",
-        description: "Target folder ID (create / move). Empty string = top level.",
+        description:
+          "Target Drive folder Page ID (create / move) — a Page of kind=Folder. Empty string = top level.",
       },
       questions: {
         type: "string",
@@ -129,7 +130,7 @@ type Args = {
   action: string;
   formId?: string;
   name?: string;
-  folderId?: string;
+  folderPageId?: string;
   questions?: string;
   description?: string;
   opensAt?: string;
@@ -154,7 +155,7 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
 
   if (args.formId) fd.set("id", args.formId);
   if (args.name !== undefined) fd.set("name", args.name);
-  if (args.folderId !== undefined) fd.set("folderId", args.folderId);
+  if (args.folderPageId !== undefined) fd.set("folderPageId", args.folderPageId);
   if (args.questions !== undefined) fd.set("questions", args.questions);
   if (args.description !== undefined) fd.set("description", args.description);
   if (args.opensAt !== undefined) fd.set("opensAt", args.opensAt);

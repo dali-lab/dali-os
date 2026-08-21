@@ -106,7 +106,8 @@ vi.mock("~/signing/lib/sign.server", () => ({
 
 vi.mock("~/signing/lib/audiences", () => ({
   AUDIENCE_RESOLVERS: {
-    ActiveMembers: { includes: vi.fn().mockReturnValue(true) },
+    NewMembers: { includes: vi.fn().mockReturnValue(false) },
+    Members: { includes: vi.fn().mockReturnValue(true) },
     Mentors: { includes: vi.fn().mockReturnValue(false) },
     Manual: { includes: vi.fn().mockReturnValue(false) },
     HiringParticipants: { includes: vi.fn().mockReturnValue(false) },
@@ -367,6 +368,7 @@ describe("sign_document", () => {
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
     // Mentors resolver returns false for non-mentors.
@@ -378,13 +380,14 @@ describe("sign_document", () => {
 
   it("signs the document and returns ok", async () => {
     mockPrisma.signingBinding.findUnique.mockResolvedValue({
-      document: { audience: "ActiveMembers" },
+      document: { audience: "Members" },
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
-    vi.mocked(AUDIENCE_RESOLVERS.ActiveMembers.includes).mockReturnValue(true);
+    vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({ ok: true });
 
     const result = await runSignDocument(ctx(), {
@@ -403,13 +406,14 @@ describe("sign_document", () => {
 
   it("throws invalid when recordSignature returns an error", async () => {
     mockPrisma.signingBinding.findUnique.mockResolvedValue({
-      document: { audience: "ActiveMembers" },
+      document: { audience: "Members" },
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
-    vi.mocked(AUDIENCE_RESOLVERS.ActiveMembers.includes).mockReturnValue(true);
+    vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({
       ok: false,
       error: "Please complete all required fields before signing.",
@@ -471,7 +475,7 @@ describe("manage_agreement", () => {
       name: "Membership Agreement",
       kind: "MemberAgreement",
       gateScope: "App",
-      audience: "ActiveMembers",
+      audience: "Members",
       cadence: "PerTerm",
     });
     expect(mockPrisma.signingDocument.create).toHaveBeenCalledWith(
@@ -479,7 +483,7 @@ describe("manage_agreement", () => {
         data: expect.objectContaining({
           kind: "MemberAgreement",
           gateScope: "App",
-          audience: "ActiveMembers",
+          audience: "Members",
           cadence: "PerTerm",
         }),
       }),
@@ -621,4 +625,72 @@ describe("manage_agreement", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
+  it("updates config facets on an existing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue({ id: "d1" });
+    mockPrisma.signingDocument.update.mockResolvedValue({ id: "d1" });
+
+    const result = await runManageAgreement(ctx(), {
+      action: "update",
+      documentId: "d1",
+      gateScope: "App",
+      audience: "Mentors",
+      cadence: "PerTerm",
+    });
+    expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "d1" },
+        data: { gateScope: "App", audience: "Mentors", cadence: "PerTerm" },
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("updates the kind on an existing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue({ id: "d1" });
+    mockPrisma.signingDocument.update.mockResolvedValue({ id: "d1" });
+
+    await runManageAgreement(ctx(), {
+      action: "update",
+      documentId: "d1",
+      kind: "MentorshipAgreement",
+    });
+    expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "d1" },
+        data: { kind: "MentorshipAgreement" },
+      }),
+    );
+  });
+
+  it("throws invalid when update supplies no facets", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageAgreement(ctx(), { action: "update", documentId: "d1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("throws invalid for an unknown enum value on update", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageAgreement(ctx(), {
+        action: "update",
+        documentId: "d1",
+        audience: "Everyone",
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("throws not-found when updating a missing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue(null);
+    await expect(
+      runManageAgreement(ctx(), {
+        action: "update",
+        documentId: "gone",
+        audience: "Mentors",
+      }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
 });

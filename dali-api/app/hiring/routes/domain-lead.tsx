@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Form, Link, useLoaderData, useNavigate, useSearchParams, useRevalidator } from "react-router";
+import { Form, Link, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
@@ -1234,6 +1234,13 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
   isChallengeReady: boolean;
 }) {
   const hasLinked = linkedChallengeForms.length > 0;
+  const navigation = useNavigation();
+  // Guard against double-submit: creating a challenge form is NOT idempotent —
+  // each submit makes a new form — so disable the button while one is in flight.
+  const creatingChallenge =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "create-challenge-form" &&
+    navigation.formData?.get("domainId") === domainId;
 
   // Ready — configuration frozen for applicants, still editable via "Edit challenges".
   if (hasLinked && isChallengeReady) {
@@ -1304,10 +1311,11 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
           <input type="hidden" name="domainId" value={domainId} />
           <button
             type="submit"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/50"
+            disabled={creatingChallenge}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
-            Add challenge form (Drive)
+            {creatingChallenge ? "Adding…" : "Add challenge form (Drive)"}
           </button>
         </Form>
         {hasLinked && (

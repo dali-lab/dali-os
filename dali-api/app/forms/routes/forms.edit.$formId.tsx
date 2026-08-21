@@ -5,7 +5,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import {
-  folderCrumbs,
   loadFormForEdit,
   runFormsAction,
 } from "~/forms/lib/forms-data";
@@ -19,6 +18,7 @@ import {
 import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { parseSessionCookie } from "~/lib/cookies";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -62,19 +62,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, crumbs, allGroups, hiringLinks, driveCrumbs] =
+  const [terms, usages, allGroups, hiringLinks, driveCrumbs] =
     await Promise.all([
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
         select: { id: true, code: true },
       }),
       formUsages(params.formId),
-      folderCrumbs(form.folderId),
       // Audience picker choices. listAllGroups (not the per-user visibility
       // helper): a Core author must be able to target groups they aren't in.
       listAllGroups(),
       loadFormHiringLinks(params.formId),
-      driveFolderCrumbs(form.folderPageId),
+      driveFolderCrumbs(form.folderPageId, auth.user.sub, request),
     ]);
   // When a feature owns this form's distribution (hiring cycle, education
   // offering, staffing, partner), the generic publish/audience settings are
@@ -86,11 +85,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     usages,
     managing,
     hiringLinks,
-    crumbs,
     driveCrumbs,
     groups: allGroups
       .filter((g) => !g.archived)
       .map((g) => ({ id: g.id, name: g.name, type: g.type })),
+    // Session cookie forwarded to the client so FormBuilderTab can authenticate
+    // its Hocuspocus connection for the form's structured collab room.
+    collabToken: parseSessionCookie(request),
   };
 }
 

@@ -3,6 +3,7 @@ import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
+import { parseSessionCookie } from '~/lib/cookies'
 import { RubricDetail } from '~/hiring/components/RubricDetail'
 import { driveFolderCrumbs } from '~/lib/drive-crumbs.server'
 import { driveRootCrumbs } from '~/lib/drive-crumbs'
@@ -50,9 +51,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  const driveCrumbs = await driveFolderCrumbs(rubric.folderPageId)
+  const driveCrumbs = await driveFolderCrumbs(rubric.folderPageId, gate.auth.user.sub, request)
+  // Session token passed to useSharedArray for the rubric:{id}:draft collab room.
+  const collabToken = parseSessionCookie(request)
 
-  return { rubric, driveCrumbs }
+  return { rubric, driveCrumbs, collabToken }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

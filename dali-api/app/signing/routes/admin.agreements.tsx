@@ -1,43 +1,37 @@
-// Admin → Agreements: the document-signing template library. Core-gated (like
-// Email Templates — any Core member authors agreements). Lists SigningDocuments
-// and creates new ones; version authoring + binding lives on the detail page.
+// Core → Agreements. The `agreements-console` flag decides what this route is:
+//   flag on  -> the compliance console (signing status across every agreement,
+//               reminders to outstanding signers, term-rollover activation).
+//   flag off -> redirect to the Drive agreements folder (today's behavior).
+// Authoring, versioning, and config always live in the Drive detail either way;
+// this route only aggregates status and fires reminder/activation actions. The
+// create action is kept because Drive's "New agreement" posts here too.
 
-import { redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.agreements";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
+import { logAuditEvent } from "~/lib/audit";
 import { ensureCoreDriveRoot } from "~/lib/pages";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type {
   SigningDocumentKind,
   SigningGateScope,
   SigningAudience,
   SigningCadence,
 } from "~/generated/prisma/enums";
+import { getAgreementsOverview } from "~/signing/lib/console.server";
+import { activateVersion } from "~/signing/lib/activate.server";
+import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
+import { AgreementsConsole } from "~/signing/components/AgreementsConsole";
+import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 
 export const handle = coreHandle("agreements");
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Agreements · Admin · DALI OS" },
-];
-
-const KINDS: SigningDocumentKind[] = [
-  "General",
-  "MemberAgreement",
-  "MentorshipAgreement",
-  "Confidentiality",
-];
-const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
-const AUDIENCES: SigningAudience[] = [
-  "Manual",
-  "ActiveMembers",
-  "Mentors",
-  "HiringParticipants",
-];
-const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
+export const meta: Route.MetaFunction = () => [{ title: "Agreements · Core · DALI OS" }];
 
 function slugify(s: string): string {
   return (
@@ -67,13 +61,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // The Drive is the only agreement authoring surface. Redirect the
-  // /admin/agreements list to the Drive hub (filter=agreement) so the URL
-  // changes but content is preserved. Path-keyed: only redirect when the request
-  // is at the admin path — the documents/agreement re-export also calls this
-  // loader, and we must not redirect in that case.
+  // Path-keyed: only act on the admin URL. The documents/agreement re-export
+  // also runs this loader and must fall through to the list data below.
   const url = new URL(request.url);
   if (url.pathname.startsWith("/admin/agreements")) {
+    if (await isFeatureEnabled("agreements-console", auth.user.sub, roles, request)) {
+      const overview = await getAgreementsOverview();
+      return { mode: "console" as const, ...overview, isAdmin: roles.isAdmin };
+    }
+    // Flag off: the Drive is the only agreement surface — preserve today's URL
+    // change while keeping the content in the Drive hub (filter=agreement).
     return redirect("/drive?type=agreement");
   }
 
@@ -85,7 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     orderBy: { createdAt: "desc" },
   });
-  return { documents, isAdmin: roles.isAdmin };
+  return { mode: "list" as const, documents, isAdmin: roles.isAdmin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -114,16 +111,67 @@ export async function action({ request }: Route.ActionArgs) {
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
-    // File the new agreement into Core ▸ Agreements ▸ {kind} immediately (it's
-    // created unplaced) so its Drive breadcrumb resolves without waiting for the
-    // next Core-drive visit. Idempotent + best-effort — never block creation.
+    // File the new agreement into Core ▸ Agreements immediately (it's created
+    // unplaced) so its Drive breadcrumb resolves without waiting for the next
+    // Core-drive visit. Idempotent + best-effort — never block creation.
     await ensureCoreDriveRoot(auth.user.sub).catch(() => null);
     // Land on the Drive-namespaced route so the browser opens the agreement in
     // the Drive rather than the admin URL.
     return redirect(`/documents/agreement/${doc.id}`);
   }
 
+  // Console: nudge a binding's outstanding signers. Reuses the same notify path
+  // as activation (audience minus already-signed), throttled to ≤ once/24h.
+  if (intent === "remind") {
+    const bindingId = formData.get("bindingId") as string;
+    const binding = await prisma.signingBinding.findUnique({
+      where: { id: bindingId },
+      select: {
+        id: true,
+        documentId: true,
+        lastRemindedAt: true,
+        document: { select: { archivedAt: true } },
+      },
+    });
+    if (!binding || binding.document.archivedAt) return { error: "Binding not found." };
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    if (binding.lastRemindedAt && Date.now() - binding.lastRemindedAt.getTime() < DAY_MS) {
+      return { error: "Already reminded in the last 24 hours." };
+    }
+    await notifySignRequest(bindingId);
+    await prisma.signingBinding.update({
+      where: { id: bindingId },
+      data: { lastRemindedAt: new Date() },
+    });
+    await logAuditEvent({
+      action: "signing.remind",
+      userId: auth.user.sub,
+      targetId: binding.documentId,
+      metadata: { bindingId },
+      request,
+    });
+    return { ok: true };
+  }
+
+  // Console: one-click term rollover — put the latest published version in force
+  // for the current scope. Shares activateVersion with the Drive detail action.
+  if (intent === "activate") {
+    const documentId = formData.get("documentId") as string;
+    const versionId = formData.get("versionId") as string;
+    const result = await activateVersion({
+      documentId,
+      versionId,
+      userId: auth.user.sub,
+      request,
+    });
+    if ("error" in result) return { error: result.error };
+    return { ok: true };
+  }
+
   return null;
 }
 
-export default SigningDocumentsPage;
+export default function AgreementsRoute() {
+  const data = useLoaderData<typeof loader>();
+  return data.mode === "console" ? <AgreementsConsole /> : <SigningDocumentsPage />;
+}

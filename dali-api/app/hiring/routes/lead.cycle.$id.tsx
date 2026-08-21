@@ -29,11 +29,13 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
 import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
@@ -1083,6 +1085,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
 
 export default function HiringLeadCycleDetails() {
   const toast = useToast()
+  const dialog = useDialog()
   const { id: cycleId } = useParams()
   const loaderData = useLoaderData<typeof loader>() as any
   const cycle = loaderData?.cycle
@@ -1169,6 +1172,26 @@ export default function HiringLeadCycleDetails() {
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
+  const [releasingAll, setReleasingAll] = useState(false)
+
+  // Release a single decision behind a confirm — sends an irreversible email.
+  async function confirmReleaseOne(d: any) {
+    if (releasing === d.id) return
+    if (
+      !(await dialog.confirm({
+        title: `Release this decision to ${d.domainApplication.application.user.firstName}?`,
+        description:
+          "This emails the applicant their decision using the bound template. It can't be undone.",
+        confirmLabel: "Release",
+        tone: "destructive",
+      }))
+    )
+      return
+    setReleasing(d.id)
+    await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+    setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+    setReleasing(null)
+  }
   const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
   const [decisionDomainFilter, setDecisionDomainFilter] = useState<string>('all')
   const [decisionTypeFilter, setDecisionTypeFilter] = useState<string>('all')
@@ -2863,14 +2886,28 @@ export default function HiringLeadCycleDetails() {
               {pendingDecisions.length > 0 && (
                 <button
                   onClick={async () => {
+                    if (releasingAll) return
                     const ids = releasable.map((d: any) => d.id)
+                    if (ids.length === 0) return
+                    if (
+                      !(await dialog.confirm({
+                        title: `Release ${ids.length} decision${ids.length === 1 ? '' : 's'}?`,
+                        description:
+                          `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now, using the bound templates. It can't be undone.`,
+                        confirmLabel: `Release ${ids.length}`,
+                        tone: "destructive",
+                      }))
+                    )
+                      return
+                    setReleasingAll(true)
                     for (const id of ids) {
                       await fetch(`/api/hiring/decisions/${id}/release`, { method: 'POST', credentials: 'include' })
                     }
                     const releasedIds = new Set(ids)
                     setPendingDecisions(prev => prev.filter(p => !releasedIds.has(p.id)))
+                    setReleasingAll(false)
                   }}
-                  disabled={releasable.length === 0}
+                  disabled={releasable.length === 0 || releasingAll}
                   title={
                     skipped > 0
                       ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
@@ -2879,8 +2916,10 @@ export default function HiringLeadCycleDetails() {
                   className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 >
                   <Mail className="w-3.5 h-3.5" aria-hidden />
-                  {filtersActive ? 'Release Filtered' : 'Release All'} ({releasable.length})
-                  {skipped > 0 && ` — ${skipped} skipped, no template bound`}
+                  {releasingAll
+                    ? 'Releasing…'
+                    : `${filtersActive ? 'Release Filtered' : 'Release All'} (${releasable.length})`}
+                  {!releasingAll && skipped > 0 && ` — ${skipped} skipped, no template bound`}
                 </button>
               )}
             </div>
@@ -2969,13 +3008,8 @@ export default function HiringLeadCycleDetails() {
                           </button>
                         </Tooltip>
                         <button
-                          onClick={async () => {
-                            setReleasing(d.id)
-                            await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                            setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                            setReleasing(null)
-                          }}
-                          disabled={releasing === d.id || !hasBinding}
+                          onClick={() => confirmReleaseOne(d)}
+                          disabled={releasing === d.id || releasingAll || !hasBinding}
                           title={
                             !hasBinding
                               ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
@@ -3550,15 +3584,16 @@ function ApplicationFormSection({
       ) : (
         <div className="rounded-lg border border-border bg-card p-4">
           <button
+            disabled={fetcher.state !== "idle"}
             onClick={() =>
               fetcher.submit(
                 { intent: "create-application-form" },
                 { method: "post" },
               )
             }
-            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
+            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Create form
+            {fetcher.state !== "idle" ? "Creating…" : "+ Create form"}
           </button>
         </div>
       )}
@@ -4500,131 +4535,3 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
   );
 }
 
-function ConfidentialityAgreementPicker({
-  currentBinding,
-  agreementOptions,
-  signatures,
-}: {
-  currentBinding: any | null;
-  agreementOptions: any[];
-  signatures: { user: { firstName: string | null; lastName: string | null } }[];
-}) {
-  const [editing, setEditing] = useState(!currentBinding);
-  const [signersOpen, setSignersOpen] = useState(false);
-  const currentName =
-    currentBinding?.confidentialityAgreementVersion?.agreement?.name ?? null;
-  const currentVersion =
-    currentBinding?.confidentialityAgreementVersion?.versionNumber ?? null;
-  const signatureCount = signatures.length;
-
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-foreground/80">
-        Confidentiality Agreement
-      </h3>
-      <p className="text-xs text-muted-foreground">
-        Reviewers, interviewers, domain leads, and admins must sign this
-        agreement before viewing sensitive data for the cycle. If unset, nobody
-        — including you — can see submitted applications, reviews, interviews,
-        notes, or decisions.
-      </p>
-      {!currentBinding && !editing && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          No agreement bound — sensitive cycle data is hidden from everyone.
-        </div>
-      )}
-      {currentBinding && !editing ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span>
-                {currentName ?? "Set"} — v{currentVersion}
-              </span>
-            </div>
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Change
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSignersOpen((o) => !o)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ChevronRight
-              className={`w-3 h-3 transition-transform ${signersOpen ? "rotate-90" : ""}`}
-            />
-            {signatureCount} signature{signatureCount === 1 ? "" : "s"}
-          </button>
-          {signersOpen && (
-            <ul className="ml-4 space-y-1">
-              {signatures.length === 0 ? (
-                <li className="text-xs text-muted-foreground italic">
-                  No one has signed yet.
-                </li>
-              ) : (
-                signatures.map((sig, i) => {
-                  const name =
-                    `${sig.user.firstName ?? ""} ${sig.user.lastName ?? ""}`.trim() ||
-                    "Unknown";
-                  return (
-                    <li key={i} className="text-xs text-foreground/80">
-                      {name}
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          )}
-        </div>
-      ) : (
-        <Form
-          method="post"
-          className="flex items-end gap-3"
-          onSubmit={() => setEditing(false)}
-        >
-          <input
-            type="hidden"
-            name="intent"
-            value="set-confidentiality-agreement"
-          />
-          <div className="flex-1">
-            <Select
-              name="confidentialityAgreementVersionId"
-              defaultValue={currentBinding?.confidentialityAgreementVersionId ?? ""}
-              placeholder="No agreement bound"
-              options={[
-                { value: "", label: "No agreement bound" },
-                ...agreementOptions.flatMap((a: any) =>
-                  (a.versions ?? []).map((v: any): SelectOption => ({
-                    value: v.id,
-                    label: `${a.name} — v${v.versionNumber}`,
-                  }))
-                ),
-              ]}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-          {currentBinding && (
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          )}
-        </Form>
-      )}
-    </div>
-  );
-}

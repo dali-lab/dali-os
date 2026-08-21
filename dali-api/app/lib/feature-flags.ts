@@ -119,6 +119,12 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
+  {
+    key: "agreements-console",
+    label: "Agreements console",
+    description:
+      "Replace the Core ▸ Agreements Drive redirect with a compliance console: signing status across every agreement, one-click reminders to outstanding signers, and term-rollover activation. Authoring stays in the Drive. Default off; flip on for Core.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

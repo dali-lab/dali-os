@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isOfferingManager } from "~/education/lib/access.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -30,9 +31,10 @@ const BodySchema = z.object({
   parentPageId: z.string().min(1).nullable(),
   beforeId: z.string().min(1).nullable().optional(),
   // Destination workspace. Omit both for a same-workspace reorder.
-  // EducationOffering/Member are intentionally not movable (enrollment /
-  // privacy audiences), so the enum rejects them.
-  workspaceType: z.enum(["Lab", "Project"]).optional(),
+  // Member is intentionally excluded (privacy — personal notes stay private).
+  // EducationOffering is now a valid destination (Drive-space move into a
+  // course workspace). Lab and Project remain as before.
+  workspaceType: z.enum(["Lab", "Project", "EducationOffering"]).optional(),
   workspaceId: z.string().min(1).nullable().optional(),
 });
 
@@ -66,7 +68,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (
     !page ||
-    (page.workspaceType !== "Lab" && page.workspaceType !== "Project") ||
+    (page.workspaceType !== "Lab" && page.workspaceType !== "Project" && page.workspaceType !== "EducationOffering") ||
     (page.workspaceType === "Lab" ? page.workspaceId !== null : !page.workspaceId) ||
     page.archivedAt !== null
   ) {
@@ -77,16 +79,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
 
   // Destination. Absent workspaceType → reorder in place.
-  let dest: { type: "Lab" | "Project"; id: string | null };
+  let dest: { type: "Lab" | "Project" | "EducationOffering"; id: string | null };
   if (!body.workspaceType) {
-    dest = { type: page.workspaceType as "Lab" | "Project", id: page.workspaceId };
+    dest = {
+      type: page.workspaceType as "Lab" | "Project" | "EducationOffering",
+      id: page.workspaceId,
+    };
   } else if (body.workspaceType === "Lab") {
     dest = { type: "Lab", id: null };
   } else {
     if (!body.workspaceId) {
-      return withCors(request, Response.json({ error: "Project destination needs a workspaceId" }, { status: 400 }));
+      return withCors(
+        request,
+        Response.json({ error: "Workspace destination needs a workspaceId" }, { status: 400 }),
+      );
     }
-    dest = { type: "Project", id: body.workspaceId };
+    dest = { type: body.workspaceType, id: body.workspaceId };
   }
   const sameWorkspace = dest.type === page.workspaceType && dest.id === page.workspaceId;
 
@@ -106,10 +114,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Destination authority (cross-workspace only): must be able to edit there.
   if (!sameWorkspace) {
-    const canDest =
-      dest.type === "Lab"
-        ? await isLabMember(userId)
-        : (await isCore(userId)) || (await isProjectMember(userId, dest.id!));
+    let canDest: boolean;
+    if (dest.type === "Lab") {
+      canDest = await isLabMember(userId);
+    } else if (dest.type === "EducationOffering") {
+      // Only instructors for this offering (or Core) may add docs to its Drive.
+      canDest = await isOfferingManager(userId, dest.id!);
+    } else {
+      canDest = (await isCore(userId)) || (await isProjectMember(userId, dest.id!));
+    }
     if (!canDest) {
       return withCors(request, Response.json({ error: "You can't move documents into that destination" }, { status: 403 }));
     }

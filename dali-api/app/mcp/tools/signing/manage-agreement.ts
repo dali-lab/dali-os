@@ -1,7 +1,8 @@
 // MCP tool: manage_agreement — Core-only faceted tool for authoring and
 // activating signing documents. Actions mirror the admin route intents:
-// create · rename · publish · activate. Activation records the pre-signed
-// admin-signature counter-signatures placed in the body.
+// create · rename · publish · activate · update. Activation records the
+// pre-signed admin-signature counter-signatures placed in the body; update
+// edits the config facets (kind / gate scope / audience / cadence).
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -9,6 +10,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
+import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 import {
   requireForAction,
   McpNotFoundError,
@@ -23,23 +25,6 @@ import type {
   SigningAudience,
   SigningCadence,
 } from "~/generated/prisma/enums";
-
-// ─── Enum arrays (mirrored from admin.agreements.tsx) ────────────────────────
-
-const KINDS: SigningDocumentKind[] = [
-  "General",
-  "MemberAgreement",
-  "MentorshipAgreement",
-  "Confidentiality",
-];
-const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
-const AUDIENCES: SigningAudience[] = [
-  "Manual",
-  "ActiveMembers",
-  "Mentors",
-  "HiringParticipants",
-];
-const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
 
 function slugify(s: string): string {
   return (
@@ -69,17 +54,17 @@ async function uniqueSlug(base: string): Promise<string> {
 export const MANAGE_AGREEMENT_TOOL = {
   name: "manage_agreement",
   description:
-    "Core-only. Create, rename, publish, or activate a signing document/agreement. Actions: create · rename · publish · activate. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body.",
+    "Core-only. Create, rename, publish, activate, or update a signing document/agreement. Actions: create · rename · publish · activate · update. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body. Update edits the config facets (kind / gate scope / audience / cadence) on an existing document.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "rename", "publish", "activate"],
+        enum: ["create", "rename", "publish", "activate", "update"],
       },
       documentId: {
         type: "string",
-        description: "Required for rename, publish, activate.",
+        description: "Required for rename, publish, activate, update.",
       },
       versionId: {
         type: "string",
@@ -92,22 +77,23 @@ export const MANAGE_AGREEMENT_TOOL = {
       kind: {
         type: "string",
         enum: ["General", "MemberAgreement", "MentorshipAgreement", "Confidentiality"],
-        description: "Document kind (create only, defaults to General).",
+        description: "Document kind. Set on create (defaults to General) or update.",
       },
       gateScope: {
         type: "string",
         enum: ["None", "App", "HiringCycle"],
-        description: "Gate scope (create only, defaults to None).",
+        description: "Gate scope. Set on create (defaults to None) or update.",
       },
       audience: {
         type: "string",
-        enum: ["Manual", "ActiveMembers", "Mentors", "HiringParticipants"],
-        description: "Target audience (create only, defaults to Manual).",
+        enum: ["Manual", "NewMembers", "Members", "Mentors", "HiringParticipants"],
+        description:
+          "Target audience. NewMembers = this cycle's General/Fellowship hires; Members = returning active members (not new); Mentors = all mentors. Set on create (defaults to Manual) or update.",
       },
       cadence: {
         type: "string",
         enum: ["Once", "PerTerm", "PerCycle"],
-        description: "Signing cadence (create only, defaults to Once).",
+        description: "Signing cadence. Set on create (defaults to Once) or update.",
       },
     },
     required: ["action"],
@@ -138,6 +124,7 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     rename: ["documentId", "name"],
     publish: ["documentId", "versionId"],
     activate: ["documentId", "versionId"],
+    update: ["documentId"],
   });
 
   // ─── create ──────────────────────────────────────────────────────────────
@@ -249,6 +236,50 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     await notifySignRequest(bound.id);
 
     return { ok: true, bindingId: bound.id };
+  }
+
+  // ─── update ───────────────────────────────────────────────────────────────
+
+  if (args.action === "update") {
+    const data: {
+      kind?: SigningDocumentKind;
+      gateScope?: SigningGateScope;
+      audience?: SigningAudience;
+      cadence?: SigningCadence;
+    } = {};
+    if (args.kind !== undefined) {
+      if (!KINDS.includes(args.kind as SigningDocumentKind)) throw new McpInvalidError("Invalid kind.");
+      data.kind = args.kind as SigningDocumentKind;
+    }
+    if (args.gateScope !== undefined) {
+      if (!SCOPES.includes(args.gateScope as SigningGateScope)) throw new McpInvalidError("Invalid gateScope.");
+      data.gateScope = args.gateScope as SigningGateScope;
+    }
+    if (args.audience !== undefined) {
+      if (!AUDIENCES.includes(args.audience as SigningAudience)) throw new McpInvalidError("Invalid audience.");
+      data.audience = args.audience as SigningAudience;
+    }
+    if (args.cadence !== undefined) {
+      if (!CADENCES.includes(args.cadence as SigningCadence)) throw new McpInvalidError("Invalid cadence.");
+      data.cadence = args.cadence as SigningCadence;
+    }
+    if (Object.keys(data).length === 0) {
+      throw new McpInvalidError("Provide at least one of kind, gateScope, audience, cadence to update.");
+    }
+    const doc = await prisma.signingDocument.findUnique({
+      where: { id: args.documentId! },
+      select: { id: true },
+    });
+    if (!doc) throw new McpNotFoundError("Document not found.");
+    await prisma.signingDocument.update({ where: { id: args.documentId! }, data });
+    await logAuditEvent({
+      action: "signing.configure",
+      userId: ctx.user.id,
+      targetId: args.documentId!,
+      metadata: data,
+      request: ctx.request,
+    });
+    return { ok: true };
   }
 
   // requireForAction handles unknown actions — this is unreachable.

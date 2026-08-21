@@ -11,12 +11,13 @@ import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
+import { FolderIcon } from "~/components/FolderIcon";
 import { redirectToLogin } from "~/lib/login-next";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -62,7 +63,7 @@ export const handle = {
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
-          icon: <PageIcon iconEmoji={f.iconEmoji} />,
+          icon: <FolderIcon iconEmoji={f.iconEmoji} />,
         })),
         { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
       ];
@@ -71,6 +72,9 @@ export const handle = {
       d.workspaceType === "EducationOffering"
         ? { label: "Education", to: "/education" }
         : { label: "Projects", to: "/projects" };
+    // Folder ancestors within a project/offering open in the Drive (drilled to
+    // that folder), not the doc viewer — a folder is not a document.
+    const driveScope = d.workspaceType === "EducationOffering" ? "education" : "projects";
     return [
       root,
       {
@@ -84,11 +88,11 @@ export const handle = {
           ),
       },
       // Nested pages within a project/offering keep their folder ancestry
-      // (hub ▸ Folder ▸ … ▸ page); each ancestor opens in the same doc viewer.
+      // (hub ▸ Folder ▸ … ▸ page); folders deep-link into the Drive folder view.
       ...(d.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
-        to: `/documents/${f.id}`,
-        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+        to: `/drive?scope=${driveScope}&folder=${f.id}`,
+        icon: <FolderIcon iconEmoji={f.iconEmoji} />,
       })),
       // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
       { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
@@ -108,6 +112,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      kind: true,
       workspaceType: true,
       workspaceId: true,
       parentPageId: true,
@@ -159,6 +164,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const { canEdit, canComment, canResolve } = access;
   if (!access.canView) throw new Response("Not found", { status: 404 });
+
+  // Folder pages are Drive containers, not documents — the doc viewer would
+  // render them with an editable body and a document breadcrumb. Send folders to
+  // the Drive drilled into that folder, whatever the entry point (breadcrumb
+  // link, bookmark, stale href). The Drive scope is the page's workspace; Lab
+  // folders resolve to lab/core/hiring via the folder chain.
+  if (page.kind === "Folder") {
+    const scope =
+      workspaceDriveScope(page.workspaceType) ??
+      (await driveFolderCrumbs(page.id, auth.user.sub, request)).scope;
+    return redirect(`/drive?scope=${scope}&folder=${page.id}`);
+  }
 
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
@@ -215,7 +232,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // (Drive ▸ Folder ▸ … ▸ page for Lab docs; hub ▸ Folder ▸ … ▸ page for
   // project/offering docs) instead of collapsing to just the parent hub. Only
   // Lab pages consume the detected scope; project/offering pages use `folders`.
-  const driveCrumbs = await driveFolderCrumbs(page.parentPageId);
+  const driveCrumbs = await driveFolderCrumbs(page.parentPageId, auth.user.sub, request);
 
   let attendance:
     | {

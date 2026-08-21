@@ -13,7 +13,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover } from "~/components/ui/floating";
-import { CalendarDays, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -518,10 +518,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: true,
         title: true,
         partnerVisible: true,
+        // Placement in the Drive folder tree — null = tree root, else nested
+        // under the Page with this id (must be a Folder-kind Page).
+        folderPageId: true,
         currentVersion: { select: { fileName: true, sizeBytes: true } },
         _count: { select: { versions: true } },
-        // Which epics this file's linked tasks belong to — the Files block
-        // groups work files by epic (derived, not managed; see file-groups.ts).
+        // Which epics this file's linked tasks belong to — used for the deferred
+        // epic-grouping feature (kept on the DTO so the data is available later).
         taskLinks: { select: { task: { select: { epicId: true } } } },
       },
     }),
@@ -650,6 +653,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const files = fileRows.map((f) => ({
     id: f.id,
     title: f.title,
+    folderPageId: f.folderPageId,
     fileName: f.currentVersion?.fileName ?? null,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
@@ -2116,50 +2120,64 @@ function ProjectHeader({
 
   // Hoisted so both header layouts place the same controls: the default puts
   // them alone on the right, the os layout groups them with the tag clusters.
-  const editControls = canEdit && (
+  const editControls = (
     <div className="flex items-center gap-1.5 shrink-0">
-      {editing ? (
-        <>
-          <Tooltip label="Cancel">
+      {!editing && (
+        <Link
+          to={`/calendar?tab=schedule&project=${project.id}`}
+          className={
+            os
+              ? "os-edit-btn"
+              : "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+          }
+        >
+          <CalendarPlus className="w-4 h-4" />
+          Schedule meeting
+        </Link>
+      )}
+      {canEdit &&
+        (editing ? (
+          <>
+            <Tooltip label="Cancel">
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                aria-label="Cancel"
+                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Save">
+              <button
+                type="button"
+                onClick={() => {
+                  if (formRef.current) submit(formRef.current);
+                  setEditing(false);
+                }}
+                aria-label="Save"
+                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          </>
+        ) : (
+          <Tooltip label="Edit">
             <button
               type="button"
-              onClick={() => setEditing(false)}
-              aria-label="Cancel"
+              onClick={openEditor}
+              aria-label={
+                os && canEditScope
+                  ? "Edit project name, status, terms and roles"
+                  : "Edit project name and status"
+              }
               className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             >
-              <X className="w-3.5 h-3.5" />
+              <Pencil className="w-3.5 h-3.5" />
             </button>
           </Tooltip>
-          <Tooltip label="Save">
-            <button
-              type="button"
-              onClick={() => {
-                if (formRef.current) submit(formRef.current);
-                setEditing(false);
-              }}
-              aria-label="Save"
-              className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              <Check className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        </>
-      ) : (
-        <Tooltip label="Edit">
-          <button
-            type="button"
-            onClick={openEditor}
-            aria-label={
-              os && canEditScope
-                ? "Edit project name, status, terms and roles"
-                : "Edit project name and status"
-            }
-            className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-        </Tooltip>
-      )}
+        ))}
     </div>
   );
 
@@ -3447,25 +3465,17 @@ function OverviewTab({
           tab of its own, so Overview stops rendering it here. */}
       {showMeetings && <MeetingsSection meetings={upcomingMeetings} />}
 
-      {/* Drive — the project's one file surface: collab-doc pages (rows + Add
-          open the doc as a split-screen tab via the TabWorkspace shell) over
-          standalone uploads, which keep their versions, partner sharing, and
-          epic grouping as a subsection rather than a second card. */}
+      {/* Drive — the project's one file surface: collab-doc pages and uploaded
+          files together in one folder tree. Files render inline (root-level
+          at the bottom, folder-placed nested under the matching folder). */}
       <DocumentsBlock
         projectId={project.id}
         documents={documents}
         pinnedDocuments={pinnedDocuments}
+        files={files}
+        fileEpics={fileEpics}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
-        filesSlot={
-          <FilesBlock
-            projectId={project.id}
-            files={files}
-            epics={fileEpics}
-            canEdit={canEdit}
-            hasActivePartner={hasActivePartner}
-          />
-        }
       />
 
       {/* Recent project-scoped audit activity — editors only (the loader
@@ -3851,26 +3861,190 @@ function PartnersSection({
   );
 }
 
+// Row-level doc type (folder children and top-level docs are structurally
+// compatible for the row UI).
+type DocRowItem = LoaderData["documents"][number]["children"][number];
+
+// Callbacks + drag state a document row needs. Bundled so the row components
+// can live at module scope: defining them inside DocumentsBlock gave them a new
+// identity on every render, which remounted the whole list and detached any
+// open "⋯" floating menu mid-interaction (Playwright saw "element detached").
+type DocRowCtx = {
+  canEdit: boolean;
+  drag: { id: string; isFolder: boolean } | null;
+  dropTarget: string | "root" | null;
+  setDrag: (d: { id: string; isFolder: boolean } | null) => void;
+  setDropTarget: React.Dispatch<React.SetStateAction<string | "root" | null>>;
+  onDropBefore: (targetId: string, parentId: string | null) => void;
+  toggleFavorite: (id: string, next: boolean) => void;
+  togglePartnerVisible: (id: string, next: boolean) => void;
+  togglePin: (id: string, next: boolean) => void;
+  setMoveDoc: (d: { id: string; title: string } | null) => void;
+  deleteDocument: (id: string, title: string) => void;
+};
+
+// Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
+// share, pin, move, delete) lives here instead of as loose inline icons.
+function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
+  return (
+    <Menu
+      align="right"
+      ariaLabel="Document actions"
+      trigger={
+        <button
+          type="button"
+          aria-label="Document actions"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      }
+    >
+      {doc.kind !== "Folder" && (
+        <Menu.Item
+          icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
+          onSelect={() => ctx.toggleFavorite(doc.id, !doc.favorited)}
+        >
+          {doc.favorited ? "Remove from favorites" : "Add to favorites"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && (
+        <Menu.Item
+          icon={<Handshake className="w-3.5 h-3.5" />}
+          onSelect={() => ctx.togglePartnerVisible(doc.id, !doc.partnerVisible)}
+        >
+          {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && !indent && (
+        <Menu.Item
+          icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
+          onSelect={() => ctx.togglePin(doc.id, !doc.pinned)}
+        >
+          {doc.pinned ? "Unpin" : "Pin to top"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && !doc.isSystem && (
+        <Menu.Item
+          icon={<FolderInput className="w-3.5 h-3.5" />}
+          onSelect={() => ctx.setMoveDoc({ id: doc.id, title: doc.title })}
+        >
+          Move to…
+        </Menu.Item>
+      )}
+      {ctx.canEdit && (
+        <>
+          <Menu.Separator />
+          <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => ctx.deleteDocument(doc.id, doc.title)}>
+            Delete
+          </Menu.Item>
+        </>
+      )}
+    </Menu>
+  );
+}
+
+function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
+  return (
+    <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+      <button
+        type="button"
+        onClick={() => openDocumentTab(doc.id, doc.title)}
+        className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
+      >
+        <PageIcon iconEmoji={doc.iconEmoji} />
+        <span className="truncate">{doc.title}</span>
+      </button>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {/* Read-only status badges stay inline; all actions live in "⋯". */}
+        {doc.partnerVisible && (
+          <Tooltip label="Shared with partner">
+            <span className="flex items-center text-accent-teal">
+              <Handshake className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )}
+        {doc.publicVisible && (
+          <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+            <span className="flex items-center text-accent-coral">
+              <Globe className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )}
+        <DocRowMenu doc={doc} indent={indent} ctx={ctx} />
+      </div>
+    </div>
+  );
+}
+
+function DocRow({
+  doc,
+  indent,
+  parentId,
+  ctx,
+}: {
+  doc: DocRowItem;
+  indent: boolean;
+  parentId: string | null;
+  ctx: DocRowCtx;
+}) {
+  const dragProps = ctx.canEdit
+    ? {
+        draggable: true,
+        onDragStart: (e: React.DragEvent) => {
+          ctx.setDrag({ id: doc.id, isFolder: false });
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", doc.id);
+        },
+        onDragEnd: () => ctx.setDrag(null),
+        onDragOver: (e: React.DragEvent) => {
+          if (!ctx.drag) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (ctx.dropTarget !== doc.id) ctx.setDropTarget(doc.id);
+        },
+        onDragLeave: () => ctx.setDropTarget((t) => (t === doc.id ? null : t)),
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.onDropBefore(doc.id, parentId);
+        },
+      }
+    : {};
+  return (
+    <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
+      <DocRowInner doc={doc} indent={indent} ctx={ctx} />
+    </div>
+  );
+}
+
 function DocumentsBlock({
   projectId,
   documents,
   pinnedDocuments,
+  files,
+  fileEpics,
   canEdit,
   hasActivePartner,
-  filesSlot,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
   pinnedDocuments: LoaderData["pinnedDocuments"];
+  files: LoaderData["files"];
+  fileEpics: LoaderData["boardOptions"]["epics"];
   canEdit: boolean;
   hasActivePartner: boolean;
-  /** The project's uploads, rendered inside this block so Drive is one place. */
-  filesSlot?: React.ReactNode;
 }) {
   const dialog = useDialog();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // When set, next pick uploads a new version of this file id; null = new file.
+  const versionForId = useRef<string | null>(null);
+  // The folder context for the next upload — set when user clicks Upload inside
+  // a specific folder, so the new file lands inside that folder (via folderPageId).
+  const uploadFolderIdRef = useRef<string | null>(null);
   // "Move to…" dialog state — tracks which doc the user wants to move.
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
   // Folders start collapsed (Finder/Drive convention). Newly created folders are
@@ -4094,147 +4268,220 @@ function DocumentsBlock({
     else void moveDocument(drag.id, folderId, null);
   }
 
-  function DocRow({
-    doc,
-    indent,
-    parentId,
-  }: {
-    doc: LoaderData["documents"][number]["children"][number];
-    indent: boolean;
-    parentId: string | null;
-  }) {
-    const dragProps = canEdit
-      ? {
-          draggable: true,
-          onDragStart: (e: React.DragEvent) => {
-            setDrag({ id: doc.id, isFolder: false });
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", doc.id);
-          },
-          onDragEnd: () => setDrag(null),
-          onDragOver: (e: React.DragEvent) => {
-            if (!drag) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            if (dropTarget !== doc.id) setDropTarget(doc.id);
-          },
-          onDragLeave: () => setDropTarget((t) => (t === doc.id ? null : t)),
-          onDrop: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDropBefore(doc.id, parentId);
-          },
+  // ── File upload (new file or new version) ────────────────────────────────
+  // The hidden <input> is shared for both flows; refs decide what to do on pick.
+  async function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0];
+    e.target.value = "";
+    if (!picked) return;
+    const targetId = versionForId.current;
+    const folderId = uploadFolderIdRef.current;
+    versionForId.current = null;
+    uploadFolderIdRef.current = null;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
+      if (targetId) {
+        const res = await fetch(`/api/files/${targetId}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intent: "version", ...meta }),
+        });
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? "Failed to upload new version");
         }
-      : {};
-    return (
-      <div {...dragProps} className={drag && dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
-        <DocRowInner doc={doc} indent={indent} />
-      </div>
-    );
+      } else {
+        const res = await fetch(`/api/projects/${projectId}/files`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: picked.name,
+            ...(folderId ? { folderPageId: folderId } : {}),
+            ...meta,
+          }),
+        });
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? "Failed to add file");
+        }
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
-  // share, pin, move, delete) lives here instead of as loose inline icons.
-  function DocRowMenu({
-    doc,
-    indent,
-  }: {
-    doc: LoaderData["documents"][number]["children"][number];
-    indent: boolean;
-  }) {
-    return (
-      <Menu
-        align="right"
-        ariaLabel="Document actions"
-        trigger={
-          <button
-            type="button"
-            aria-label="Document actions"
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-        }
-      >
-        {doc.kind !== "Folder" && (
-          <Menu.Item
-            icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
-            onSelect={() => void toggleFavorite(doc.id, !doc.favorited)}
-          >
-            {doc.favorited ? "Remove from favorites" : "Add to favorites"}
-          </Menu.Item>
-        )}
-        {canEdit && (
-          <Menu.Item
-            icon={<Handshake className="w-3.5 h-3.5" />}
-            onSelect={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-          >
-            {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
-          </Menu.Item>
-        )}
-        {canEdit && !indent && (
-          <Menu.Item
-            icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
-            onSelect={() => void togglePin(doc.id, !doc.pinned)}
-          >
-            {doc.pinned ? "Unpin" : "Pin to top"}
-          </Menu.Item>
-        )}
-        {canEdit && !doc.isSystem && (
-          <Menu.Item
-            icon={<FolderInput className="w-3.5 h-3.5" />}
-            onSelect={() => setMoveDoc({ id: doc.id, title: doc.title })}
-          >
-            Move to…
-          </Menu.Item>
-        )}
-        {canEdit && (
-          <>
-            <Menu.Separator />
-            <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => void deleteDocument(doc.id, doc.title)}>
-              Delete
-            </Menu.Item>
-          </>
-        )}
-      </Menu>
-    );
+  function triggerUpload(folderId?: string) {
+    versionForId.current = null;
+    uploadFolderIdRef.current = folderId ?? null;
+    fileInputRef.current?.click();
   }
 
-  function DocRowInner({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
+  function triggerVersionUpload(fileId: string) {
+    versionForId.current = fileId;
+    uploadFolderIdRef.current = null;
+    fileInputRef.current?.click();
+  }
+
+  async function deleteFile(id: string, title: string) {
+    if (
+      !(await dialog.confirm({
+        title: `Delete file "${title}"?`,
+        description: "All versions will be removed.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      }))
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/files/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to delete");
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleFilePartnerVisible(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/files/${id}/partner-visible`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // "Folders" = the default folder tree; "epics" = files grouped by epic.
+  const [fileView, setFileView] = useState<"folders" | "epics">("folders");
+
+  // Derived: files split by folder placement so the tree can render them inline.
+  const rootFiles = files.filter((f) => f.folderPageId === null);
+  const filesByFolder = new Map<string, LoaderData["files"]>();
+  for (const f of files) {
+    if (!f.folderPageId) continue;
+    const bucket = filesByFolder.get(f.folderPageId);
+    if (bucket) bucket.push(f);
+    else filesByFolder.set(f.folderPageId, [f]);
+  }
+
+  // Epic-grouped view — only computed when the toggle is active or there are
+  // files to group (avoids the import being dead weight on every render).
+  const epicGroups = groupFilesByEpic(files, fileEpics);
+
+  function renderFileRow(f: LoaderData["files"][number], indent: boolean) {
     return (
-      <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
-        <button
-          type="button"
-          onClick={() => openDocumentTab(doc.id, doc.title)}
+      <div key={f.id} className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+        <Link
+          to={`/documents/file/${f.id}`}
           className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
         >
-          <PageIcon iconEmoji={doc.iconEmoji} />
-          <span className="truncate">{doc.title}</span>
-        </button>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Read-only status badges stay inline; all actions live in "⋯". */}
-          {doc.partnerVisible && (
+          <Paperclip className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+          <span className="truncate">{f.title}</span>
+          <span className="text-muted-foreground text-xs font-normal flex-shrink-0">
+            {f.fileName}
+            {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
+            {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
+          </span>
+        </Link>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {f.partnerVisible && !canEdit && (
             <Tooltip label="Shared with partner">
               <span className="flex items-center text-accent-teal">
                 <Handshake className="w-3.5 h-3.5" />
               </span>
             </Tooltip>
           )}
-          {doc.publicVisible && (
-            <Tooltip label="Public write-up — rendered on this project's page on dali.website">
-              <span className="flex items-center text-accent-coral">
-                <Globe className="w-3.5 h-3.5" />
-              </span>
-            </Tooltip>
+          {canEdit && (
+            <Menu
+              align="right"
+              ariaLabel="File actions"
+              trigger={
+                <button
+                  type="button"
+                  aria-label="File actions"
+                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              }
+            >
+              <Menu.Item
+                icon={<Handshake className="w-3.5 h-3.5" />}
+                onSelect={() => void toggleFilePartnerVisible(f.id, !f.partnerVisible)}
+              >
+                {f.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
+              </Menu.Item>
+              <Menu.Item
+                icon={<Upload className="w-3.5 h-3.5" />}
+                onSelect={() => triggerVersionUpload(f.id)}
+              >
+                Upload new version
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                icon={<Trash2 className="w-3.5 h-3.5" />}
+                onSelect={() => void deleteFile(f.id, f.title)}
+              >
+                Delete
+              </Menu.Item>
+            </Menu>
           )}
-          <DocRowMenu doc={doc} indent={indent} />
         </div>
       </div>
     );
   }
 
+  // Row callbacks + drag state, bundled for the module-scope row components.
+  // Kept as one object (not spread props) so hoisting the rows didn't balloon
+  // into a dozen individual props at every call site.
+  const rowCtx: DocRowCtx = {
+    canEdit,
+    drag,
+    dropTarget,
+    setDrag,
+    setDropTarget,
+    onDropBefore,
+    toggleFavorite,
+    togglePartnerVisible,
+    togglePin,
+    setMoveDoc,
+    deleteDocument,
+  };
+
+  const isEmpty = documents.length === 0 && files.length === 0;
+
   return (
     <section className="bg-card border border-border rounded-lg p-4">
+      {/* Hidden file input shared for new-file and new-version uploads. */}
+      <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePick} />
+
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <Folder className="w-4 h-4" /> Drive
@@ -4243,6 +4490,33 @@ function DocumentsBlock({
             Open-in-Drive link jumps to it in the main Drive; create actions
             consolidate into one New ▾ menu. */}
         <div className="flex items-center gap-2">
+          {/* View toggle — only shown when there are uploaded files to group. */}
+          {files.length > 0 && (
+            <div className="flex items-center rounded-md border border-border text-xs font-medium overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setFileView("folders")}
+                className={`px-2 py-1 transition-colors ${
+                  fileView === "folders"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                Folders
+              </button>
+              <button
+                type="button"
+                onClick={() => setFileView("epics")}
+                className={`px-2 py-1 transition-colors border-l border-border ${
+                  fileView === "epics"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                By epic
+              </button>
+            </div>
+          )}
           <Link
             to={`/drive?scope=${projectId}`}
             className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
@@ -4269,6 +4543,10 @@ function DocumentsBlock({
               <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
                 New folder
               </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} onSelect={() => triggerUpload()}>
+                Upload file
+              </Menu.Item>
             </Menu>
           )}
         </div>
@@ -4280,8 +4558,51 @@ function DocumentsBlock({
         </div>
       )}
 
-      {documents.length === 0 ? (
+      {isEmpty ? (
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
+      ) : fileView === "epics" ? (
+        /* ── By-epic view: files only, clustered under their linked epic. ── */
+        <div className="flex flex-col gap-4">
+          {epicGroups.epicGroups.map((g) => (
+            <div key={g.id}>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                {g.title}
+                <span className="ml-1.5 normal-case tracking-normal">({g.files.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {g.files.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          ))}
+          {epicGroups.otherWorkFiles.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                Other work files
+                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.otherWorkFiles.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {epicGroups.otherWorkFiles.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          )}
+          {epicGroups.generalFiles.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                Other files
+                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.generalFiles.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {epicGroups.generalFiles.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          )}
+          {files.length > 0 &&
+            epicGroups.epicGroups.length === 0 &&
+            epicGroups.otherWorkFiles.length === 0 &&
+            epicGroups.generalFiles.length === 0 && (
+              <p className="text-sm text-muted-foreground italic">No files to group.</p>
+            )}
+        </div>
       ) : (
         <div
           onDragOver={
@@ -4311,7 +4632,7 @@ function DocumentsBlock({
           {/* Pinned docs on top — full document rows (share/pin/delete), just
               lifted above the rest. The filled coral pin marks them pinned. */}
           {pinnedDocuments.map((d) => (
-            <DocRow key={d.id} doc={d} indent={false} parentId={null} />
+            <DocRow key={d.id} doc={d} indent={false} parentId={null} ctx={rowCtx} />
           ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (
@@ -4387,13 +4708,24 @@ function DocumentsBlock({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
+                      <Tooltip label="Upload file into folder">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => triggerUpload(doc.id)}
+                          aria-label="Upload file into folder"
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                       {!doc.isSystem && (
                         <button
                           type="button"
-                          disabled={busy || doc.children.length > 0}
+                          disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
                           title={
-                            doc.children.length > 0
-                              ? "Move or delete the documents inside this folder first"
+                            doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
+                              ? "Move or delete the items inside this folder first"
                               : "Delete folder"
                           }
                           aria-label="Delete folder"
@@ -4406,21 +4738,27 @@ function DocumentsBlock({
                     </div>
                   )}
                 </div>
-                {expanded.has(doc.id) &&
-                  (doc.children.length === 0 ? (
-                    <p className="pl-6 text-xs text-muted-foreground italic">Empty</p>
-                  ) : (
+                {expanded.has(doc.id) && (() => {
+                  const folderFiles = filesByFolder.get(doc.id) ?? [];
+                  const hasContent = doc.children.length > 0 || folderFiles.length > 0;
+                  return hasContent ? (
                     <div className="flex flex-col divide-y divide-border">
                       {doc.children.map((child) => (
-                        <DocRow key={child.id} doc={child} indent parentId={doc.id} />
+                        <DocRow key={child.id} doc={child} indent parentId={doc.id} ctx={rowCtx} />
                       ))}
+                      {folderFiles.map((f) => renderFileRow(f, true))}
                     </div>
-                  ))}
+                  ) : (
+                    <p className="pl-6 text-xs text-muted-foreground italic">Empty</p>
+                  );
+                })()}
               </div>
             ) : (
-              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} />
+              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} ctx={rowCtx} />
             ),
           )}
+          {/* Root-level uploaded files (no folder) appear after all docs. */}
+          {rootFiles.map((f) => renderFileRow(f, false))}
         </div>
       )}
 
@@ -4435,274 +4773,8 @@ function DocumentsBlock({
           revalidator.revalidate();
         }}
       />
-      {filesSlot}
     </section>
   );
-}
-
-function FilesBlock({
-  projectId,
-  files,
-  epics,
-  canEdit,
-  hasActivePartner,
-}: {
-  projectId: string;
-  files: LoaderData["files"];
-  epics: LoaderData["boardOptions"]["epics"];
-  canEdit: boolean;
-  hasActivePartner: boolean;
-}) {
-  const dialog = useDialog();
-  const revalidator = useRevalidator();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Share/unshare a file with the project's partner org(s) — same pattern as
-  // DocumentsBlock.togglePartnerVisible. Persisted via its own API route; the
-  // badge state comes back through the loader.
-  async function togglePartnerVisible(id: string, next: boolean) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/files/${id}/partner-visible`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partnerVisible: next }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to update sharing");
-      }
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-  // When set, the chosen file is added as a new version of this file id;
-  // otherwise it creates a new ProjectFile.
-  const versionForId = useRef<string | null>(null);
-
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
-    e.target.value = "";
-    if (!picked) return;
-    const targetId = versionForId.current;
-    versionForId.current = null;
-
-    setBusy(true);
-    setError(null);
-    try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
-      if (targetId) {
-        const res = await fetch(`/api/files/${targetId}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intent: "version", ...meta }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to upload new version");
-        }
-      } else {
-        const res = await fetch(`/api/projects/${projectId}/files`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: picked.name, ...meta }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to add file");
-        }
-      }
-      revalidator.revalidate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deleteFile(id: string, title: string) {
-    if (
-      !(await dialog.confirm({
-        title: `Delete file "${title}"?`,
-        description: "All versions will be removed.",
-        confirmLabel: "Delete",
-        tone: "destructive",
-      }))
-    )
-      return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/files/${id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to delete");
-      }
-      revalidator.revalidate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Work files cluster under the epic of their linked task(s); the flat list
-  // survives untouched when nothing is task-linked yet.
-  const { epicGroups, otherWorkFiles, generalFiles } = groupFilesByEpic(files, epics);
-  const grouped = epicGroups.length > 0 || otherWorkFiles.length > 0;
-
-  return (
-    <div className="mt-4 border-t border-border pt-4">
-      <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-          <Paperclip className="w-3.5 h-3.5" /> Files
-        </h3>
-        {canEdit && (
-          <Tooltip label={busy ? "Uploading…" : "Add file"}>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                versionForId.current = null;
-                fileInputRef.current?.click();
-              }}
-              aria-label={busy ? "Uploading…" : "Add file"}
-              className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        )}
-      </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-3">
-          {error}
-        </div>
-      )}
-
-      {files.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No files yet.</p>
-      ) : !grouped ? (
-        <div className="flex flex-col divide-y divide-border">
-          {files.map(renderRow)}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {epicGroups.map((g) => fileGroup(g.title, g.files, g.id))}
-          {otherWorkFiles.length > 0 && fileGroup("Other work files", otherWorkFiles)}
-          {generalFiles.length > 0 && fileGroup("Other files", generalFiles)}
-        </div>
-      )}
-    </div>
-  );
-
-  // One group: epic title (or bucket label) over the standard row list.
-  function fileGroup(
-    label: string,
-    groupFiles: LoaderData["files"],
-    key: string = label,
-  ) {
-    return (
-      <div key={key}>
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-0.5">
-          {label}
-          <span className="ml-1.5 normal-case tracking-normal">({groupFiles.length})</span>
-        </h3>
-        <div className="flex flex-col divide-y divide-border">
-          {groupFiles.map(renderRow)}
-        </div>
-      </div>
-    );
-  }
-
-  function renderRow(f: LoaderData["files"][number]) {
-    return (
-      <div key={f.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
-              <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
-                <span className="text-foreground font-medium">{f.title}</span>
-                <span className="text-muted-foreground ml-2 text-xs">
-                  {f.fileName}
-                  {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
-                  {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
-                </span>
-              </Link>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {f.partnerVisible && !canEdit && (
-                  <Tooltip label="Shared with partner — partners on this project can download this file">
-                    <span className="flex items-center text-accent-teal">
-                      <Handshake className="w-3.5 h-3.5" />
-                    </span>
-                  </Tooltip>
-                )}
-                {/* Same as the Documents toggle: available to any editor, not
-                    only once a partner org is linked. */}
-                {canEdit && (
-                  <Tooltip
-                    label={
-                      f.partnerVisible
-                        ? "Shared with partner — click to stop sharing"
-                        : "Share with partner"
-                    }
-                  >
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void togglePartnerVisible(f.id, !f.partnerVisible)}
-                      aria-label={f.partnerVisible ? "Shared file with partner" : "Share file with partner"}
-                      className={`p-1 rounded disabled:opacity-60 ${
-                        f.partnerVisible
-                          ? "text-accent-teal"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <Handshake className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                )}
-                {canEdit && (
-                  <>
-                    <Tooltip label="New version">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          versionForId.current = f.id;
-                          fileInputRef.current?.click();
-                        }}
-                        aria-label="New version"
-                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip label="Delete file">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void deleteFile(f.id, f.title)}
-                        aria-label="Delete file"
-                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                  </>
-                )}
-              </div>
-            </div>
-    );
-  }
 }
 
 // Planning holds the epics & sprints manager, rendered as the Gantt timeline

@@ -29,6 +29,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { DocEditor } from "~/components/doc";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 export const handle = adminHandle("announcements");
@@ -147,11 +148,15 @@ export default function AnnouncementsPage() {
   const [groupSearch, setGroupSearch] = useState("");
 
   const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  // Rich body authored in the DocEditor (BlockNote block JSON). `null` until the
+  // editor is touched. composerKey remounts the editor empty after a send.
+  const [bodyBlocks, setBodyBlocks] = useState<unknown>(null);
+  const [composerKey, setComposerKey] = useState(0);
   const [dueAt, setDueAt] = useState("");
   const [sendAt, setSendAt] = useState("");
   const [formId, setFormId] = useState(seededForm);
   const [formSearch, setFormSearch] = useState("");
+  const [ccDartmouth, setCcDartmouth] = useState(false);
 
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<
@@ -224,10 +229,13 @@ export default function AnnouncementsPage() {
         groupIds: Array.from(pickedGroups),
         userIds: Array.from(pickedUsers),
       };
-      if (body.trim()) payload.body = body.trim();
+      if (Array.isArray(bodyBlocks) && bodyBlocks.length > 0) {
+        payload.bodyBlocks = bodyBlocks;
+      }
       if (dueAt) payload.dueAt = new Date(dueAt).toISOString();
       if (formId) payload.formId = formId;
       if (sendAt) payload.sendAt = new Date(sendAt).toISOString();
+      if (ccDartmouth) payload.ccDartmouth = true;
 
       const res = await fetch("/api/notifications/send", {
         method: "POST",
@@ -249,11 +257,13 @@ export default function AnnouncementsPage() {
       // Full reset after a successful send — clear the message, the attached
       // form, and the audience so the next one starts blank.
       setTitle("");
-      setBody("");
+      setBodyBlocks(null);
+      setComposerKey((k) => k + 1);
       setDueAt("");
       setSendAt("");
       setFormId("");
       setFormSearch("");
+      setCcDartmouth(false);
       setAllMembers(false);
       setPickedGroups(new Set());
       setPickedUsers(new Set());
@@ -332,13 +342,32 @@ export default function AnnouncementsPage() {
           maxLength={200}
           className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
         />
-        <textarea
-          placeholder="Body (optional)"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={4}
-          maxLength={2000}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+        <DocEditor
+          key={composerKey}
+          features="field"
+          density="compact"
+          editable
+          onChange={setBodyBlocks}
+          placeholder="Body (optional) — select text to format or add a link"
+          className="min-h-[8rem] px-1 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus-within:border-accent-coral/50"
+        />
+        <p className="text-xs text-muted-foreground">
+          Links (to DALI OS pages or external URLs) and formatting carry through
+          to the email. In-app and Slack show a plain-text version.
+        </p>
+        <Checkbox
+          checked={ccDartmouth}
+          onChange={(e) => setCcDartmouth(e.target.checked)}
+          label={
+            <span className="text-xs text-foreground">
+              Also send to Dartmouth email
+              <span className="text-muted-foreground">
+                {" "}
+                — the recipient's email reaches both their DALI and Dartmouth
+                inboxes. In-app and Slack are unaffected.
+              </span>
+            </span>
+          }
         />
       </section>
 

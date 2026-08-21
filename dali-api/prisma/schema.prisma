@@ -186,7 +186,6 @@ model User {
   staffingCardOrders    StaffingCardOrder[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
-  formFolders           FormFolder[]
   formVersions          FormVersion[]
   formSubmissions       FormSubmission[]
   formBindingsSet       StaffingCycleFormBinding[]
@@ -1573,7 +1572,8 @@ enum SigningGateScope {
 
 enum SigningAudience {
   Manual
-  ActiveMembers
+  NewMembers // this cycle's incoming hires (latest General/Fellowship accepts)
+  Members // active members who are not new (the returning cohort)
   Mentors
   HiringParticipants
 }
@@ -1586,7 +1586,9 @@ enum SigningCadence {
   PerCycle // one binding per hiring cycle ("cycle:<id>") — bound from hiring UI
 }
 
-// Immutable snapshot of a SigningDocument. Never update — append a new version.
+// A version of a SigningDocument. Editable/deletable in place while it's still
+// a draft (publishedAt null + no signatures) so repeated saves don't stack junk
+// versions; once published or signed it's frozen — changes append a new version.
 // body is ProseMirror JSON containing the placeable field + variable nodes;
 // roles is the ordered list of signer-role slugs (e.g. ["member","supervisor"]).
 model SigningDocumentVersion {
@@ -1632,6 +1634,11 @@ model SigningBinding {
   cycle    ApplicationCycle? @relation(fields: [cycleId], references: [id])
   termId   String? // set for termly (mentorship) scope
   term     Term?             @relation(fields: [termId], references: [id])
+
+  // Last time a Core member nudged this binding's outstanding signers from the
+  // agreements console. Throttles reminders (≤ once/24h) and surfaces "reminded
+  // N ago" in the UI. Null = never reminded.
+  lastRemindedAt DateTime?
 
   signatures SigningSignature[]
 
@@ -3613,31 +3620,10 @@ enum IntentStatus {
 // ─── Generic forms ──────────────────────────────────────────────────────────
 //
 // The Forms page is a generic form builder. Users create Forms, optionally
-// grouped into FormFolders (Form.folderId nullable — null = top level; can be
-// reassigned to move a form in/out of a folder). A form's question set is
-// edited by appending immutable FormVersion rows; members fill out the latest
-// version and their answers are stored as a FormSubmission.
-
-model FormFolder {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Null = top level. Folders nest arbitrarily deep; deleting a parent sets
-  // children back to null (top level) rather than cascading them away.
-  parentId String?
-  parent   FormFolder?  @relation("FormFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children FormFolder[] @relation("FormFolderTree")
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  forms Form[]
-
-  @@index([parentId])
-  @@index([createdById])
-}
+// organised into Page folders (Form.folderPageId nullable — null = top level;
+// can be reassigned to move a form in/out of a folder in the Drive). A form's
+// question set is edited by appending immutable FormVersion rows; members fill
+// out the latest version and their answers are stored as a FormSubmission.
 
 // Who may fill a published form via its link. Members = signed-in lab
 // members (the historical behavior and default); SignedIn = any account
@@ -3656,13 +3642,8 @@ model Form {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Null = top level. Deleting a folder sets this back to null rather than
-  // cascading the forms away.
-  folderId String?
-  folder   FormFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-
-  // Drive unified tree placement. Null = unplaced (rendered inside FormsBrowser
-  // under the legacy FormFolder tree). When set, must point at a Page of
+  // Drive unified tree placement. Null = unplaced (rendered at the Lab top
+  // level). When set, must point at a Page of
   // kind=Folder. Loose FK — no DB-level constraint — matching the existing
   // Page.workspaceId / ProjectFile.folderPageId convention. Placement is
   // ORGANISATION only and NEVER changes who can see or fill this form: the
@@ -3725,7 +3706,6 @@ model Form {
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
   hiringDomainChallenges              CycleDomainForm[]
 
-  @@index([folderId])
   @@index([folderPageId])
   @@index([createdById])
 }
@@ -4439,6 +4419,9 @@ model ScheduledAnnouncement {
 
   title  String
   body   String?
+  // Sanitized rich-text HTML for the email channel (rendered later, at fire
+  // time). In-app/Slack use the plain-text `body` mirror. Null → plain body.
+  bodyHtml String?
   link   String?
   kind   NotificationKind @default(General)
   isTodo Boolean          @default(false)
@@ -4446,6 +4429,9 @@ model ScheduledAnnouncement {
   // Deliberately not an FK: the payload is a deferred request, re-validated
   // at fire time — deleting a form must not cascade the pending announcement.
   formId String?
+  // Also email each recipient's Dartmouth address at fire time (composer
+  // toggle). Email channel only.
+  ccDartmouth Boolean @default(false)
 
   allMembers Boolean  @default(false)
   groupIds   String[] @default([])

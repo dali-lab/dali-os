@@ -134,6 +134,21 @@ export async function grantTeamRepo(
   });
 }
 
+// The org enforces two-factor auth, so adding a member who hasn't enabled 2FA
+// on their GitHub account fails with a 422 carrying `code: "no_2fa"`. That's a
+// per-member condition rather than a misconfiguration — callers report who and
+// carry on with the rest of the roster.
+export function isNo2fa(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const errors = (err as { response?: { data?: { errors?: unknown } } }).response?.data?.errors;
+  if (Array.isArray(errors)) {
+    if (errors.some((e) => (e as { code?: string })?.code === "no_2fa")) return true;
+  }
+  // Octokit serializes the errors array into the message, so a client that
+  // surfaces only the Error still matches.
+  return err instanceof Error && /no_2fa/.test(err.message);
+}
+
 export function isNotFound(err: unknown): boolean {
   return (
     typeof err === "object" &&

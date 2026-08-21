@@ -102,4 +102,12 @@ describe("sendAnnouncement", () => {
       }),
     );
   });
+
+  it("forwards ccDartmouth to notify(), defaulting to false", async () => {
+    await sendAnnouncement(input({ userIds: ["u1"] }));
+    expect(mockNotify.mock.calls[0][0].message.ccDartmouth).toBe(false);
+
+    await sendAnnouncement(input({ userIds: ["u1"], ccDartmouth: true }));
+    expect(mockNotify.mock.calls[1][0].message.ccDartmouth).toBe(true);
+  });
 });

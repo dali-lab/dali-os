@@ -261,6 +261,46 @@ describe("notify", () => {
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
+  it("ccDartmouth: emails both the DALI and Dartmouth addresses in one message", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1", { dartmouthEmail: "ada@dartmouth.edu" }),
+    ]);
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "T", ccDartmouth: true },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "u1@dali.dartmouth.edu, ada@dartmouth.edu" }),
+    );
+  });
+
+  it("ccDartmouth: derives the Dartmouth address from netId, excluding personal", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1", { netId: "f00abc", personalEmail: "ada@gmail.com" }),
+    ]);
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "T", ccDartmouth: true },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "u1@dali.dartmouth.edu, f00abc@dartmouth.edu" }),
+    );
+  });
+
+  it("ccDartmouth: sends only the DALI address when no Dartmouth address resolves", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]); // no dartmouthEmail, no netId
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "T", ccDartmouth: true },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "u1@dali.dartmouth.edu" }),
+    );
+  });
+
   it("falls back to netId@dartmouth.edu for portal students", async () => {
     mockPrisma.user.findMany.mockResolvedValue([
       user("u1", { daliEmail: null, netId: "f00xyz" }),
@@ -357,5 +397,63 @@ describe("notify", () => {
     const inserted =
       mockPrisma.notification.createManyAndReturn.mock.calls[0][0].data[0];
     expect("ics" in inserted).toBe(false);
+  });
+
+  it("drops the redundant in-body title for an announcement that carries a body", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "announcement",
+      message: { title: "Lab news", body: "The actual message." },
+      recipients: [{ userId: "u1" }],
+    });
+    const email = mockSendEmail.mock.calls[0][0];
+    expect(email.subject).toBe("Lab news"); // title still carried by the subject
+    expect(email.html).not.toContain("<strong>Lab news</strong>");
+    expect(email.html).toContain("The actual message.");
+  });
+
+  it("keeps the in-body title for a body-less announcement (never an empty email)", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "announcement",
+      message: { title: "Lab meeting moved to 5pm" },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail.mock.calls[0][0].html).toContain(
+      "<strong>Lab meeting moved to 5pm</strong>",
+    );
+  });
+
+  it("keeps the in-body title for non-announcement events even with a body", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "Course update", body: "Details here." },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail.mock.calls[0][0].html).toContain("<strong>Course update</strong>");
+  });
+
+  it("renders a rich HTML body and an attached-form CTA button in the email", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "announcement",
+      message: {
+        title: "Please sign",
+        bodyHtml: '<p>Read <a href="https://x.com">this</a> first.</p>',
+        link: "/forms/fill/tok123",
+        linkLabel: "Open the form",
+      },
+      recipients: [{ userId: "u1" }],
+    });
+    const html = mockSendEmail.mock.calls[0][0].html;
+    // Rich body link survives sanitization with safe target/rel.
+    expect(html).toContain('href="https://x.com"');
+    expect(html).toContain('rel="noopener noreferrer nofollow"');
+    // CTA button points at the absolutized form fill URL with the custom label.
+    expect(html).toContain("https://os.dali.dartmouth.edu/forms/fill/tok123");
+    expect(html).toContain("Open the form");
+    // Body present → the duplicate title heading is suppressed.
+    expect(html).not.toContain("<strong>Please sign</strong>");
   });
 });

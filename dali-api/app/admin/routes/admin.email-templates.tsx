@@ -32,6 +32,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub)
   if (!roles.isCore) return redirect('/')
 
+  // The card-grid list is retired; Drive is the browser. Send the list URL
+  // straight to the Drive email-template filter. The per-template editor
+  // (/admin/email-templates/:id) is a separate route and is unaffected.
+  const url = new URL(request.url)
+  const isListUrl =
+    url.pathname === "/admin/email-templates" ||
+    url.pathname === "/core/communications/email"
+  if (isListUrl) return redirect("/drive?type=emailTemplate")
+
   const templates = await prisma.emailTemplate.findMany({
     include: {
       versions: {

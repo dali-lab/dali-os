@@ -21,12 +21,16 @@ describe("signing variables", () => {
 
   it("knows the registered variable set", () => {
     expect(isKnownSigningVariable("term")).toBe(true);
+    expect(isKnownSigningVariable("upcomingTerm")).toBe(true);
     expect(isKnownSigningVariable("nope")).toBe(false);
   });
 
   it("resolves provided inputs and defaults the rest to empty", () => {
-    expect(resolveSigningVariables({ term: "26S", memberName: "Ada Lovelace" })).toEqual({
+    expect(
+      resolveSigningVariables({ term: "26S", upcomingTerm: "26X", memberName: "Ada Lovelace" }),
+    ).toEqual({
       term: "26S",
+      upcomingTerm: "26X",
       today: "",
       memberName: "Ada Lovelace",
       supervisorName: "",

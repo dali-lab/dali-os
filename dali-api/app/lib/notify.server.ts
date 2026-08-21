@@ -13,7 +13,7 @@
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
-import { bodyToHtml } from "~/lib/email";
+import { bodyToHtml, sanitizeRichEmailHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
@@ -23,7 +23,9 @@ import type { NotificationKind } from "~/generated/prisma/client";
 export type NotifyMessage = {
   title: string;
   body?: string | null;
+  bodyHtml?: string | null; // sanitized rich HTML for the email channel only
   link?: string | null; // app-relative; email/Slack renderers absolutize
+  linkLabel?: string | null; // overrides the email CTA button label
   isTodo?: boolean;
   dueAt?: Date | null;
   formId?: string | null;
@@ -34,6 +36,9 @@ export type NotifyMessage = {
   // RFC 5545 payload attached on the instant-email channel only (calendar
   // invite/cancel). Never persisted — the Notification row doesn't carry it.
   ics?: string | null;
+  // Email-only: also deliver to the recipient's Dartmouth address in the same
+  // message (announcement composer toggle). Never persisted on the row.
+  ccDartmouth?: boolean;
 };
 
 export type NotifyRecipient = { userId: string } & Partial<NotifyMessage>;
@@ -60,15 +65,27 @@ export function renderNotificationEmail(args: {
   firstName: string;
   title: string;
   body?: string | null;
+  bodyHtml?: string | null;
   link?: string | null;
+  linkLabel?: string | null;
+  // Whether to repeat the title as a heading in the body. Default true. The
+  // title is always the email subject, so callers whose body already stands on
+  // its own (announcements with a body) pass false to avoid duplicating it.
+  titleInBody?: boolean;
 }): string {
+  const label = args.linkLabel || "Open in DALI OS";
   const button = args.link
-    ? `<p><a href="${args.link}" style="display:inline-block;padding:10px 16px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;">Open in DALI OS</a></p>`
+    ? `<p><a href="${args.link}" style="display:inline-block;padding:10px 16px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;">${label}</a></p>`
     : "";
+  const body = args.bodyHtml
+    ? sanitizeRichEmailHtml(args.bodyHtml)
+    : args.body
+      ? bodyToHtml(args.body)
+      : "";
   return [
     `<p>Hi ${args.firstName},</p>`,
-    `<p><strong>${args.title}</strong></p>`,
-    args.body ? bodyToHtml(args.body) : "",
+    args.titleInBody === false ? "" : `<p><strong>${args.title}</strong></p>`,
+    body,
     button,
     `<p style="color:#71717a;font-size:12px;">— DALI OS · <a href="${getFrontendUrl()}/settings/notifications" style="color:#71717a;">notification settings</a></p>`,
   ]
@@ -164,6 +181,15 @@ export async function notify(args: {
     kind: r.kind ?? args.message.kind ?? def.kind,
   });
   const icsFor = (r: NotifyRecipient) => r.ics ?? args.message.ics ?? null;
+  // Email-only channel extras (like ics): resolved per-recipient, never written
+  // to the Notification row.
+  const bodyHtmlFor = (r: NotifyRecipient) => r.bodyHtml ?? args.message.bodyHtml ?? null;
+  const linkLabelFor = (r: NotifyRecipient) => r.linkLabel ?? args.message.linkLabel ?? null;
+  const ccDartmouthFor = (r: NotifyRecipient) => r.ccDartmouth ?? args.message.ccDartmouth ?? false;
+  // The title is always the email subject; for announcements that carry a body
+  // the in-body title heading is redundant, so drop it (a body-less
+  // announcement still shows it, so the email is never empty).
+  const isAnnouncement = args.eventType === "announcement";
 
   // In-app: one bulk insert. May throw — that's the caller's existing
   // error-handling seam.
@@ -197,14 +223,23 @@ export async function notify(args: {
       let lastError: string | null = null;
       for (const r of emailTargets) {
         // Same chain as education's recipientEmail(): the netId fallback only
-        // ever fires for portal students (members always have daliEmail).
-        const to =
-          r.user.daliEmail ??
-          r.user.dartmouthEmail ??
-          r.user.personalEmail ??
-          (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
+        // ever fires for portal students (members always have daliEmail). When
+        // the caller opts in (announcement composer toggle) we instead deliver
+        // to both work addresses in one message — the To: header preserves the
+        // comma-joined list — deriving the Dartmouth address from netId when no
+        // dartmouthEmail is on file (personalEmail is deliberately excluded on
+        // this path).
+        const dartmouth =
+          r.user.dartmouthEmail ?? (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
+        const to = ccDartmouthFor(r.recipient)
+          ? Array.from(new Set([r.user.daliEmail, dartmouth].filter(Boolean))).join(", ") || null
+          : (r.user.daliEmail ??
+            r.user.dartmouthEmail ??
+            r.user.personalEmail ??
+            (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null));
         if (!to) continue;
         const m = merged(r.recipient);
+        const bodyHtml = bodyHtmlFor(r.recipient);
         try {
           await sendEmail({
             refreshToken: sender.refreshToken,
@@ -215,7 +250,10 @@ export async function notify(args: {
               firstName: r.user.firstName,
               title: m.title,
               body: m.body,
+              bodyHtml,
               link: absoluteLink(m.link),
+              linkLabel: linkLabelFor(r.recipient),
+              titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
             }),
             ics: icsFor(r.recipient) ?? undefined,
           });

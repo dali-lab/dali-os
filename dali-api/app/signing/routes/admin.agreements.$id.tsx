@@ -8,16 +8,25 @@ import type { Route } from "./+types/admin.agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isCore } from "~/lib/roles";
+import { getUserRoles, isCore, currentTerm } from "~/lib/roles";
+import { nextTermCode } from "~/lib/terms.shared";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { resolveAdminScope } from "~/signing/lib/scope.server";
-import { applyAdminSignatures } from "~/signing/lib/presign.server";
-import { notifySignRequest } from "~/signing/lib/notify.server";
+import { activateVersion } from "~/signing/lib/activate.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
+import { computeRoster, type BindingRoster } from "~/signing/lib/roster.server";
+import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
+import type {
+  SigningDocumentKind,
+  SigningGateScope,
+  SigningAudience,
+  SigningCadence,
+} from "~/generated/prisma/enums";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
+import { parseSessionCookie } from "~/lib/cookies";
+import { signingDraftName } from "~/collab/roomName";
+import { readDocAsBlocks } from "~/collab/read";
 
 export const handle = coreHandle("agreements");
 
@@ -73,39 +82,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Signatory roster per binding: who has signed (linkable to their completed
   // copy) and — when the audience is enumerable — who hasn't. The audience
   // registry resolves the member set per binding (Mentors keys off the binding's
-  // term); non-enumerable audiences show the signed list only.
-  type Person = { id: string; firstName: string; lastName: string };
-  const rosterFor = (
-    audience: Person[] | null,
-    b: (typeof document.bindings)[number],
-  ) => {
-    const memberSigs = b.signatures.filter(
-      (s) => s.roleKey === "member" && s.versionId === b.versionId,
-    );
-    const signedIds = new Set(memberSigs.map((s) => s.signerUserId));
-    const signed = memberSigs
-      .map((s) => ({ name: s.typedName || fullName(s.signer) || "Unknown", signatureId: s.id }))
-      .sort((a, z) => a.name.localeCompare(z.name));
-    const outstanding = audience
-      ? audience
-          .filter((u) => !signedIds.has(u.id))
-          .map((u) => `${u.firstName} ${u.lastName}`.trim())
-          .sort()
-      : null;
-    return { signed, outstanding };
-  };
-
-  const rosters: Record<
-    string,
-    { signed: { name: string; signatureId: string }[]; outstanding: string[] | null }
-  > = {};
-
+  // term); non-enumerable audiences show the signed list only. computeRoster is
+  // shared with the agreements console so the two stay in lockstep.
+  const rosters: Record<string, BindingRoster> = {};
   const resolver = AUDIENCE_RESOLVERS[document.audience];
   for (const b of document.bindings) {
     const audience = resolver.enumerable
       ? await resolver.listMembers({ termId: b.termId ?? undefined })
       : null;
-    rosters[b.id] = rosterFor(audience, b);
+    rosters[b.id] = computeRoster(audience, b);
   }
 
   // Convert-on-read: pre-migration version bodies are legacy ProseMirror JSON;
@@ -115,7 +100,50 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     versions: document.versions.map((v) => ({ ...v, body: ensureBlocks(v.body) })),
   };
 
-  return { document: document_, isAdmin: roles.isAdmin, rosters };
+  // Versions that already carry a member/admin signature are frozen even if
+  // (defensively) still unpublished — the client uses this to gate Edit/Delete.
+  const lockedVersionIds = [
+    ...new Set(document.bindings.flatMap((b) => b.signatures.map((s) => s.versionId))),
+  ];
+
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
+
+  // Sample values for the author's "Preview as signer" + the "+ Variable" menu
+  // hints — resolved from the real current term so {{term}}/{{upcomingTerm}}
+  // show what a signer would actually see, not a placeholder.
+  const termNow = await currentTerm(request);
+  const variablePreview: Record<string, string> = {
+    term: termNow?.code ?? "",
+    upcomingTerm: termNow?.code ? nextTermCode(termNow.code) : "",
+    today: new Date().toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    memberName: "Jane Member",
+    supervisorName: "DALI Staff",
+  };
+
+  const collabToken = parseSessionCookie(request);
+  const collabRoomName = signingDraftName(params.id!);
+  const collabUserName =
+    [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core";
+
+  return {
+    document: document_,
+    isAdmin: roles.isAdmin,
+    rosters,
+    lockedVersionIds,
+    variablePreview,
+    collabToken,
+    collabRoomName,
+    collabUserName,
+    currentUserId: auth.user.sub,
+  };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -128,31 +156,89 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Post-action redirects go to the Drive URL — the canonical agreement surface.
   const back = `/documents/agreement/${params.id}`;
 
-  if (intent === "create-version") {
-    const bodyRaw = formData.get("body") as string;
+  if (intent === "save-version") {
+    // Snapshot the working draft from the collab room. If the room has never
+    // been written (brand-new document, no CollabDocument row yet), fall back
+    // to a form-posted body for backward-compat with any in-flight request.
+    const roomName = signingDraftName(params.id!);
+    const roomBlocks = await readDocAsBlocks(roomName);
     let body: unknown;
-    try {
-      body = JSON.parse(bodyRaw);
-    } catch {
-      return { error: "Body must be valid JSON" };
+    if (roomBlocks.length > 0) {
+      body = roomBlocks;
+    } else {
+      // Fallback: room empty or not yet persisted — honour the form-posted body.
+      const bodyRaw = formData.get("body") as string | null;
+      try {
+        body = bodyRaw ? JSON.parse(bodyRaw) : [];
+      } catch {
+        body = [];
+      }
+      body = ensureBlocks(body);
     }
-    // New/edited versions store BLOCK JSON: block arrays pass through, a stale
-    // client posting legacy ProseMirror gets converted, junk becomes empty.
-    body = ensureBlocks(body);
     const roles = parseRoles(formData.get("roles") as string | null);
+    // Update-in-place when the newest version is still an editable draft
+    // (unpublished + unsigned) so repeated saves don't stack junk versions;
+    // otherwise append a fresh version. Publishing (or a signature) freezes a
+    // version, and the next save then starts a new draft.
     const last = await prisma.signingDocumentVersion.findFirst({
       where: { documentId: params.id },
       orderBy: { versionNumber: "desc" },
-      select: { versionNumber: true },
-    });
-    await prisma.signingDocumentVersion.create({
-      data: {
-        documentId: params.id!,
-        versionNumber: (last?.versionNumber ?? 0) + 1,
-        body: body as object,
-        roles,
-        createdById: auth.user.sub,
+      select: {
+        id: true,
+        versionNumber: true,
+        publishedAt: true,
+        _count: { select: { signatures: true } },
       },
+    });
+    if (last && !last.publishedAt && last._count.signatures === 0) {
+      await prisma.signingDocumentVersion.update({
+        where: { id: last.id },
+        data: { body: body as object, roles, createdById: auth.user.sub },
+      });
+      await logAuditEvent({
+        action: "signing.version.update",
+        userId: auth.user.sub,
+        targetId: params.id,
+        metadata: { versionId: last.id },
+        request,
+      });
+    } else {
+      await prisma.signingDocumentVersion.create({
+        data: {
+          documentId: params.id!,
+          versionNumber: (last?.versionNumber ?? 0) + 1,
+          body: body as object,
+          roles,
+          createdById: auth.user.sub,
+        },
+      });
+    }
+    return redirect(back);
+  }
+
+  if (intent === "delete-version") {
+    // Drafts (unpublished, unsigned, not in force) are disposable — deleting
+    // them lets an author clear junk versions. Frozen versions are protected.
+    const versionId = formData.get("versionId") as string;
+    const version = await prisma.signingDocumentVersion.findUnique({
+      where: { id: versionId },
+      select: {
+        documentId: true,
+        publishedAt: true,
+        _count: { select: { signatures: true, bindings: true } },
+      },
+    });
+    if (!version || version.documentId !== params.id) return { error: "Version not found." };
+    if (version.publishedAt || version._count.signatures > 0 || version._count.bindings > 0) {
+      return { error: "This version is published or in use and can't be deleted." };
+    }
+    await prisma.signingDocumentVersion.delete({ where: { id: versionId } });
+    await logAuditEvent({
+      action: "signing.version.delete",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: { versionId },
+      request,
     });
     return redirect(back);
   }
@@ -180,44 +266,45 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(back);
   }
 
-  if (intent === "activate") {
-    const versionId = formData.get("versionId") as string;
-    const version = await prisma.signingDocumentVersion.findUnique({
-      where: { id: versionId },
-      select: { publishedAt: true, body: true },
-    });
-    if (!version?.publishedAt) return { error: "Publish the version before putting it in force." };
-
-    const doc = await prisma.signingDocument.findUniqueOrThrow({
-      where: { id: params.id },
-      select: { cadence: true },
-    });
-    const scope = await resolveAdminScope(doc);
-    if ("error" in scope) return { error: scope.error };
-
-    // One binding per (document, scopeKey): re-activating swaps the version.
-    const bound = await prisma.signingBinding.upsert({
-      where: { documentId_scopeKey: { documentId: params.id!, scopeKey: scope.scopeKey } },
-      create: {
-        documentId: params.id!,
-        versionId,
-        scopeKey: scope.scopeKey,
-        termId: scope.termId ?? null,
-        cycleId: scope.cycleId ?? null,
-      },
-      update: { versionId },
-      select: { id: true },
-    });
-    // Record the pre-signed staff counter-signatures configured in the body.
-    await applyAdminSignatures({ bindingId: bound.id, versionId, body: version.body });
+  if (intent === "update") {
+    // Edit the config facets — kind / gate scope / audience / cadence. The create
+    // form sets these once; this is the only post-create editor for them.
+    // Validated against the shared allowlists; unknown/absent values are skipped.
+    const kind = formData.get("kind") as SigningDocumentKind;
+    const gateScope = formData.get("gateScope") as SigningGateScope;
+    const audience = formData.get("audience") as SigningAudience;
+    const cadence = formData.get("cadence") as SigningCadence;
+    const data: {
+      kind?: SigningDocumentKind;
+      gateScope?: SigningGateScope;
+      audience?: SigningAudience;
+      cadence?: SigningCadence;
+    } = {};
+    if (KINDS.includes(kind)) data.kind = kind;
+    if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
+    if (AUDIENCES.includes(audience)) data.audience = audience;
+    if (CADENCES.includes(cadence)) data.cadence = cadence;
+    if (Object.keys(data).length === 0) return { error: "No valid changes to save." };
+    await prisma.signingDocument.update({ where: { id: params.id }, data });
     await logAuditEvent({
-      action: "signing.bind",
+      action: "signing.configure",
       userId: auth.user.sub,
       targetId: params.id,
-      metadata: { versionId, scopeKey: scope.scopeKey },
+      metadata: data,
       request,
     });
-    await notifySignRequest(bound.id);
+    return redirect(back);
+  }
+
+  if (intent === "activate") {
+    const versionId = formData.get("versionId") as string;
+    const result = await activateVersion({
+      documentId: params.id!,
+      versionId,
+      userId: auth.user.sub,
+      request,
+    });
+    if ("error" in result) return { error: result.error };
     return redirect(back);
   }
 

@@ -18,6 +18,14 @@ export interface DocCollabConfig {
   userName: string;
   /** User.id — carried on awareness for presence dedupe / profile links. */
   userId?: string;
+  /**
+   * Seed blocks to insert into the Y.Doc the FIRST time the room is opened
+   * (i.e., after the server syncs and the fragment is still empty). Used by
+   * versioned-content editors (agreements, rubrics) to bootstrap the collab
+   * draft from the latest saved version. Ignored when the room already has
+   * content — never overwrites work in progress.
+   */
+  seedContent?: DocPartialBlock[] | unknown;
 }
 
 /** Wires BlockNote's CommentsExtension for inline commenting.

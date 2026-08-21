@@ -1,21 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/groups", () => ({
-  listVisibleGroupsForUser: vi.fn(),
-}));
-vi.mock("~/lib/roles", () => ({
-  canViewForms: vi.fn(),
+  listAllGroups: vi.fn(),
 }));
 
-import { listVisibleGroupsForUser } from "~/lib/groups";
-import { canViewForms } from "~/lib/roles";
+import { listAllGroups } from "~/lib/groups";
 import { runListGroups, LIST_GROUPS_TOOL } from "~/mcp/tools/list-groups";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: roster-privileged caller (Core/Instructor). Individual tests
-  // override to exercise the non-privileged path.
-  vi.mocked(canViewForms).mockResolvedValue(true);
 });
 
 const ACTIVE_GROUP = {
@@ -42,8 +35,16 @@ describe("list_groups", () => {
     expect(LIST_GROUPS_TOOL.requiredScope).toBe("mcp:read");
   });
 
+  it("lists every group, not just the caller's own", async () => {
+    // A second group the caller is not a member of — it must still be returned.
+    const OTHER_GROUP = { ...ACTIVE_GROUP, id: "g3", name: "Staff", memberIds: ["u9"] };
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP, OTHER_GROUP]);
+    const out = await runListGroups("u1", {});
+    expect(out.groups.map((g) => g.id)).toEqual(["g1", "g3"]);
+  });
+
   it("hides archived groups by default", async () => {
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([ACTIVE_GROUP, ARCHIVED_GROUP]);
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP, ARCHIVED_GROUP]);
     const out = await runListGroups("u1", {});
     expect(out.groups.map((g) => g.id)).toEqual(["g1"]);
     expect(out.groups[0]).toMatchObject({
@@ -56,24 +57,15 @@ describe("list_groups", () => {
   });
 
   it("includes archived groups when requested", async () => {
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([ACTIVE_GROUP, ARCHIVED_GROUP]);
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP, ARCHIVED_GROUP]);
     const out = await runListGroups("u1", { includeArchived: true });
     expect(out.groups.map((g) => g.id)).toEqual(["g1", "g2"]);
   });
 
-  it("returns the full memberIds roster to Core/Instructor callers", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([ACTIVE_GROUP]);
+  it("returns the full memberIds roster to any caller", async () => {
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP]);
     const out = await runListGroups("u1", {});
     expect(out.groups[0].memberIds).toEqual(["u1", "u2"]);
-    expect(out.groups[0].memberCount).toBe(2);
-  });
-
-  it("omits memberIds for non-privileged callers (keeps the count)", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(false);
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([ACTIVE_GROUP]);
-    const out = await runListGroups("u1", {});
-    expect(out.groups[0].memberIds).toBeUndefined();
     expect(out.groups[0].memberCount).toBe(2);
   });
 });

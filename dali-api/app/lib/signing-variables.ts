@@ -13,6 +13,7 @@ import {
 
 export const SIGNING_VARIABLE_DESCRIPTIONS = {
   term: TEMPLATE_VARIABLES_REGISTRY.term.description,
+  upcomingTerm: TEMPLATE_VARIABLES_REGISTRY.upcomingTerm.description,
   today: TEMPLATE_VARIABLES_REGISTRY.today.description,
   memberName: TEMPLATE_VARIABLES_REGISTRY.memberName.description,
   supervisorName: TEMPLATE_VARIABLES_REGISTRY.supervisorName.description,
@@ -41,6 +42,7 @@ export function lintSigningText(text: string): { unknown: string[] } {
 // pure so it's trivially testable; the server wrapper does the DB lookups.
 export interface SigningVariableInputs {
   term?: string;
+  upcomingTerm?: string;
   today?: string;
   memberName?: string;
   supervisorName?: string;
@@ -51,6 +53,7 @@ export function resolveSigningVariables(
 ): Record<SigningVariableName, string> {
   return {
     term: inputs.term ?? "",
+    upcomingTerm: inputs.upcomingTerm ?? "",
     today: inputs.today ?? "",
     memberName: inputs.memberName ?? "",
     supervisorName: inputs.supervisorName ?? "",

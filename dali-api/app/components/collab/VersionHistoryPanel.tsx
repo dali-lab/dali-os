@@ -165,7 +165,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                   type="button"
                   onClick={() => setSelectedId(v.id)}
                   className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted/50 ${
-                    isSelected ? "bg-blue-50 hover:bg-blue-50" : ""
+                    isSelected ? "bg-accent-coral/5 hover:bg-accent-coral/5" : ""
                   }`}
                   title={new Date(v.createdAt).toLocaleString()}
                 >
@@ -211,7 +211,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                   type="button"
                   onClick={handleRestore}
                   disabled={restoring}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-accent-coral rounded hover:bg-accent-coral/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {restoring ? "Restoring..." : "Restore this version"}
                 </button>

@@ -12,7 +12,6 @@ export type SearchResultType =
   | "document"
   | "application"
   | "form"
-  | "formFolder"
   | "challenge"
   | "rubric"
   | "emailTemplate"
@@ -49,7 +48,6 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   document: (id) => `/documents/${id}`,
   application: (id) => `/hiring/applications/${id}`,
   form: (id) => `/forms/edit/${id}`,
-  formFolder: (id) => `/forms/${id}`,
   challenge: (id) => `/hiring/challenges/${id}`,
   rubric: (id) => `/hiring/rubrics/${id}`,
   // /hiring/emails/:id just redirects here — link straight to the canonical page.

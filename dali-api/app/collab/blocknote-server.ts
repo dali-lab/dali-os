@@ -31,10 +31,12 @@ import {
   variableConfig,
 } from "~/components/doc/schema/configs";
 import {
+  fieldCaption,
   fieldDisplayText,
   variableDisplayText,
   type SigningFieldType,
 } from "~/lib/signing-fields";
+import { sanitizeRichEmailHtml, htmlToPlainText } from "~/lib/email";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -106,9 +108,17 @@ const signingFieldSpecs = Object.fromEntries(
     createInlineContentSpec(config, {
       render: (ic) => {
         const dom = document.createElement("span");
-        const text = fieldDisplayText(config.type as SigningFieldType, ic.props.value);
-        // An unfilled non-checkbox field exports as a signature line.
-        dom.textContent = text || "__________";
+        const type = config.type as SigningFieldType;
+        const label = typeof ic.props.label === "string" ? ic.props.label.trim() : "";
+        const text = fieldDisplayText(type, ic.props.value);
+        // Checkbox: glyph + its label. Non-checkbox: the captured value, else a
+        // signature line captioned with the field's kind ("(Signature)", …).
+        dom.textContent =
+          type === "checkboxField"
+            ? label
+              ? `${text} ${label}`
+              : text
+            : text || `__________ (${fieldCaption(type, label)})`;
         return { dom };
       },
     }),
@@ -184,6 +194,16 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 export function blocksToHtml(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
   return serialized(() => getServerEditor().blocksToHTMLLossy(blocks as any));
+}
+
+/** Announcement body → { html, text }: email-safe sanitized HTML for the email
+ * channel plus a plain-text mirror for the in-app feed and Slack DM. One
+ * conversion, shared by instant and scheduled sends. */
+export async function renderAnnouncementBody(
+  blocks: DocBlock[],
+): Promise<{ html: string; text: string }> {
+  const html = sanitizeRichEmailHtml(await blocksToHtml(blocks));
+  return { html, text: htmlToPlainText(html) };
 }
 
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form
