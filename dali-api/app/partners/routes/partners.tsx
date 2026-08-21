@@ -18,7 +18,6 @@ import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
-import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { cn } from "~/lib/cn";
@@ -46,7 +45,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const now = new Date();
-  const [orgs, openInquiryCount, canEdit] = await Promise.all([
+  const [orgs, canEdit] = await Promise.all([
     prisma.partnerOrg.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -66,12 +65,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           },
         },
       },
-    }),
-    // Open inquiries are org-independent until promotion (partnerOrgId is null
-    // through the funnel), so this is a single lab-wide count for the pipeline
-    // entry point rather than a per-org number.
-    prisma.partnerApplication.count({
-      where: { status: { in: OPEN_APPLICATION_STATUSES } },
     }),
     isCore(auth.user.sub),
   ]);
@@ -95,7 +88,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   );
 
-  return { rows, openInquiryCount, canEdit };
+  return { rows, canEdit };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -127,7 +120,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersOrganizations() {
-  const { rows, openInquiryCount, canEdit } = useLoaderData<typeof loader>();
+  const { rows, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
@@ -185,34 +178,6 @@ export default function PartnersOrganizations() {
           {actionData.error}
         </div>
       )}
-
-      <Link
-        to="/partners/applications"
-        className="group flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent-coral/40 hover:bg-muted/10"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-tint text-dark-blue">
-            <FileText className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="font-semibold text-foreground">
-              Application pipeline
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Track inquiries from first contact through to a project.
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">
-            {openInquiryCount} open{" "}
-            {openInquiryCount === 1 ? "inquiry" : "inquiries"}
-          </span>
-          <span className="text-accent-coral transition-transform group-hover:translate-x-0.5">
-            →
-          </span>
-        </div>
-      </Link>
 
       {creating && canEdit && (
         <Form

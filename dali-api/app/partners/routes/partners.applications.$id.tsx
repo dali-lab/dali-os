@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -9,8 +9,9 @@ import {
   useSubmit,
 } from "react-router";
 import { Select, type SelectOption } from "~/components/ui/floating";
-import { Pencil, ArrowLeft, Calendar } from "lucide-react";
+import { Pencil, Calendar } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
@@ -31,7 +32,6 @@ import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -810,32 +810,16 @@ export default function PartnerApplicationDetail() {
     activities,
     actorNames,
   } = useLoaderData() as LoaderData;
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
+  // Always-inline editing (gated only by permission), matching the rest of the
+  // site — no view/edit mode toggle.
+  const canEdit = canEditPerm;
   const actionData = useActionData<typeof action>();
 
-  const topBar = (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <Link
-          to="/partners/applications"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> All applications
-        </Link>
-        <EditModeToggle
-          canEdit={canEditPerm}
-          editMode={editMode}
-          setEditMode={setEditMode}
-        />
-      </div>
-
-      {actionData?.error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionData.error}
-        </div>
-      )}
-    </>
-  );
+  const topBar = actionData?.error ? (
+    <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
+      {actionData.error}
+    </div>
+  ) : null;
 
   const header = (
     <Header application={application} canEdit={canEdit} crmEnabled={crmEnabled} />
@@ -949,6 +933,77 @@ export default function PartnerApplicationDetail() {
 
 // ─── CRM: Triage / decision bar + assign-meeter ───────────────────────────────
 
+// Happy-path funnel order for the stepper + the sequential "advance" CTA.
+// Branch states (LearnMore, OnHold, Rejected) sit off this main line.
+const FUNNEL_ORDER = [
+  "Inquiry",
+  "Triaged",
+  "Meeting",
+  "ApplicationSubmitted",
+  "UnderReview",
+  "Accepted",
+  "Promoted",
+] as const;
+
+const STEP_SHORT: Record<(typeof FUNNEL_ORDER)[number], string> = {
+  Inquiry: "Inquiry",
+  Triaged: "Triaged",
+  Meeting: "Meeting",
+  ApplicationSubmitted: "Applied",
+  UnderReview: "Review",
+  Accepted: "Accepted",
+  Promoted: "Promoted",
+};
+
+// Branch/legacy states map onto the nearest main-line stage for the stepper.
+const BRANCH_ANCHOR: Record<string, (typeof FUNNEL_ORDER)[number]> = {
+  LearnMore: "UnderReview",
+  OnHold: "UnderReview",
+  Rejected: "UnderReview",
+  Submitted: "ApplicationSubmitted",
+};
+
+function StatusStepper({ status }: { status: Status }) {
+  const onPath = (FUNNEL_ORDER as readonly string[]).includes(status);
+  const currentIdx = FUNNEL_ORDER.indexOf(
+    onPath
+      ? (status as (typeof FUNNEL_ORDER)[number])
+      : (BRANCH_ANCHOR[status] ?? "Inquiry"),
+  );
+  return (
+    <ol className="flex flex-wrap items-center gap-1">
+      {FUNNEL_ORDER.map((s, i) => {
+        const done = i < currentIdx;
+        const current = i === currentIdx && onPath;
+        return (
+          <li key={s} className="flex items-center gap-1">
+            <span
+              className={cn(
+                "text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap",
+                current
+                  ? "bg-accent-coral text-white border-accent-coral"
+                  : done
+                    ? "bg-accent-coral/10 text-accent-coral border-accent-coral/20"
+                    : "bg-muted/40 text-muted-foreground border-border",
+              )}
+            >
+              {STEP_SHORT[s]}
+            </span>
+            {i < FUNNEL_ORDER.length - 1 && (
+              <span className="text-muted-foreground/40 text-[10px]">›</span>
+            )}
+          </li>
+        );
+      })}
+      {status === "Rejected" && (
+        <li className="ml-1 text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/20">
+          Rejected
+        </li>
+      )}
+    </ol>
+  );
+}
+
 function TriageBar({
   application,
   coreMembers,
@@ -962,58 +1017,130 @@ function TriageBar({
     "offer-meeting" | "send-application" | "reject" | "learn-more" | null
   >(null);
 
-  return (
-    <div className="mt-3 flex flex-col gap-3">
-      {/* Action buttons */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setShowing(showing === "offer-meeting" ? null : "offer-meeting")}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral/15 text-accent-coral border border-accent-coral/20 hover:bg-accent-coral/25 transition-colors"
-        >
-          Offer meeting
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowing(showing === "send-application" ? null : "send-application")}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-muted text-foreground border border-border hover:bg-muted/70 transition-colors"
-        >
-          Send application
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowing(showing === "learn-more" ? null : "learn-more")}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
-        >
-          Need to learn more
-        </button>
+  const submitStatus = (to: Status) => {
+    const fd = new FormData();
+    fd.set("intent", "status");
+    fd.set("status", to);
+    submit(fd, { method: "post" });
+  };
 
+  const SECONDARY =
+    "px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors";
+  const openBtn = (
+    kind: "offer-meeting" | "send-application" | "reject" | "learn-more",
+    label: string,
+    primary = false,
+  ) => (
+    <button
+      type="button"
+      onClick={() => setShowing(showing === kind ? null : kind)}
+      className={primary ? buttonClasses("primary", "sm") : SECONDARY}
+    >
+      {label}
+    </button>
+  );
+
+  // The sequential "advance to next status" primary CTA is status-aware — it
+  // reuses the existing side-effecting forms (offer meeting / send application /
+  // accept) or a direct status move. Off-ramps (reject, learn-more) stay as
+  // secondary actions; the full any→any dropdown lives in the header.
+  const status = application.status;
+  let primary: ReactNode = null;
+  const secondary: ReactNode[] = [];
+  switch (status) {
+    case "Inquiry":
+      primary = openBtn("send-application", "Send application →", true);
+      secondary.push(openBtn("offer-meeting", "Offer meeting"));
+      break;
+    case "Triaged":
+      primary = openBtn("offer-meeting", "Offer meeting →", true);
+      secondary.push(openBtn("send-application", "Resend application"));
+      break;
+    case "Meeting":
+    case "ApplicationSubmitted":
+      primary = (
+        <button
+          type="button"
+          onClick={() => submitStatus("UnderReview")}
+          className={buttonClasses("primary", "sm")}
+        >
+          Start review →
+        </button>
+      );
+      secondary.push(openBtn("offer-meeting", "Offer another meeting"));
+      break;
+    case "UnderReview":
+      primary = (
         <Form
           method="post"
           onSubmit={confirmSubmit({
             title: "Accept this partner?",
-            description: "This will mark the application as Accepted and notify the partner.",
+            description:
+              "This will mark the application as Accepted and notify the partner.",
             confirmLabel: "Accept",
           })}
           className="inline"
         >
           <input type="hidden" name="intent" value="accept" />
-          <button
-            type="submit"
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-teal/15 text-accent-teal border border-accent-teal/20 hover:bg-accent-teal/25 transition-colors"
-          >
-            Accept
+          <button type="submit" className={buttonClasses("primary", "sm")}>
+            Accept →
           </button>
         </Form>
-
+      );
+      secondary.push(openBtn("learn-more", "Need more info"));
+      break;
+    case "LearnMore":
+    case "OnHold":
+      primary = (
         <button
           type="button"
-          onClick={() => setShowing(showing === "reject" ? null : "reject")}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-colors"
+          onClick={() => submitStatus("UnderReview")}
+          className={buttonClasses("primary", "sm")}
         >
-          Reject
+          Resume review →
         </button>
-      </div>
+      );
+      break;
+    case "Accepted":
+      primary = (
+        <a href="#promote" className={buttonClasses("primary", "sm")}>
+          Promote to project →
+        </a>
+      );
+      break;
+    case "Rejected":
+      secondary.push(
+        <button
+          key="reopen"
+          type="button"
+          onClick={() => submitStatus("UnderReview")}
+          className={SECONDARY}
+        >
+          Reopen
+        </button>,
+      );
+      break;
+    // Promoted: terminal — no actions.
+  }
+  if (!["Accepted", "Rejected", "Promoted"].includes(status)) {
+    secondary.push(openBtn("reject", "Reject"));
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <StatusStepper status={status} />
+      {status === "Promoted" ? (
+        <p className="text-xs text-muted-foreground">
+          Promoted to a project — this opportunity is complete.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {primary}
+          {secondary.map((node, i) => (
+            <span key={i}>{node}</span>
+          ))}
+        </div>
+      )}
 
       {/* Inline forms for actions that need extra input */}
       {showing === "offer-meeting" && (
@@ -1605,6 +1732,7 @@ function Header({
 
       {canEdit && !application.resultingProjectId && (
         <Form
+          id="promote"
           method="post"
           onSubmit={confirmSubmit({
             title: "Create a project from this application?",
@@ -1612,7 +1740,7 @@ function Header({
               "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
             confirmLabel: "Create project",
           })}
-          className="mt-2"
+          className="mt-2 scroll-mt-4"
         >
           <input type="hidden" name="intent" value="promote" />
           {!application.partner && (
