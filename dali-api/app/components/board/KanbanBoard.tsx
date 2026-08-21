@@ -263,6 +263,7 @@ function BoardColumn<TCard>({
   return (
     <div
       ref={setNodeRef}
+      data-testid="board-column"
       className={cn(shellClass, isOver && (os ? "ring-2 ring-os-accent/50" : "ring-2 ring-accent-coral/40"))}
     >
       <div

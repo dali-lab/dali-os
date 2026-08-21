@@ -928,6 +928,7 @@ function TaskCard({
   return (
     <div
       {...dragHandleProps}
+      data-testid="task-card"
       className={cn(
         "relative border flex focus-within:ring-2",
         os

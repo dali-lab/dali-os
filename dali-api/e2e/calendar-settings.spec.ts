@@ -31,7 +31,10 @@ test.describe('calendar settings persistence', () => {
 
     // Render the calendar route standalone (skip workspace shell).
     await page.goto('/calendar?embed=1');
-    await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
+    // The view switcher, not the rail's heading: the os shell names the page
+    // once (its title) and lets the switcher name the view, so the old
+    // "Availability" h1 only exists in the brand shell.
+    await expect(page.getByRole('tab', { name: 'My Availability' })).toBeVisible();
 
     // The seed turned working hours on, so Monday's segment editor is present.
     await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
