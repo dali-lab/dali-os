@@ -25,7 +25,6 @@ import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { resolveTermFilter } from "~/lib/terms";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
@@ -240,8 +239,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
-    terms: termResult?.terms ?? [],
-    selectedTerm: termResult?.selected ?? "",
   };
 }
 
