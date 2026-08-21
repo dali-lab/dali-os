@@ -2,7 +2,7 @@
 // lens and applies the form-placement de-dup logic so this code never reaches
 // the client bundle (*.server.ts convention enforced by client-bundle-leak test).
 
-import { loadDriveScope, loadForms, buildLinkedProcessMap } from "~/lib/drive.server";
+import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
 import { favoritePageIds } from "~/lib/user-pages.server";
@@ -76,20 +76,16 @@ type WorkspaceOut = {
 };
 
 /**
- * Load all DriveScopes for the Browse lens. Behaviour depends on the
- * `driveSpacesEnabled` flag:
+ * Load all DriveScopes for the Browse lens. Registry-driven: iterates
+ * `visibleDriveSpaces(roleFlags)` and dispatches on each space's backing
+ * strategy. My Drive, General (Lab-wide), Projects, Education, Core (Core
+ * members), and Hiring (hiring team) each materialise per their strategy.
  *
- *   FLAG OFF (default) — byte-for-byte identical to the original hardcoded
- *   loader: My Drive, Lab-wide, Core (Core members), Hiring (hiring team),
- *   then one sub-scope per project.  No Education space.
- *
- *   FLAG ON — registry-driven: iterates `visibleDriveSpaces(roleFlags)` and
- *   dispatches on each space's backing strategy.  Education offerings appear as
- *   `workspace-multi` sub-spaces alongside Projects.
- *
- * In both modes the form-placement de-dup rule is preserved:
+ * The form-placement de-dup rule is preserved:
  *   - A form with folderPageId in scope X stays only in scope X.
  *   - An unplaced form (folderPageId = null) appears once, in the Lab scope.
+ *   - A form whose folder was archived/deleted surfaces once, in the Lab scope
+ *     (via loadOrphanForms) so it is never lost.
  *   - No form is duplicated across scopes.
  */
 export async function loadDriveScopes({
@@ -100,15 +96,11 @@ export async function loadDriveScopes({
   canManageAgreements,
   isCore,
   hasHiringAccess,
-  driveSpacesEnabled,
   request,
 }: {
   userSub: string;
   projectWorkspaces: WorkspaceOut[];
-  /**
-   * Education offerings the viewer can access (enrolled / instructor / Core).
-   * Only consulted when `driveSpacesEnabled` is true; pass [] otherwise.
-   */
+  /** Education offerings the viewer can access (enrolled / instructor / Core). */
   educationWorkspaces: WorkspaceOut[];
   canViewForms: boolean;
   /** Whether to include agreement templates in the Lab scope (= isCore). */
@@ -117,26 +109,8 @@ export async function loadDriveScopes({
   isCore: boolean;
   /** Whether the viewer has hiring access — gates the auto-provisioned Hiring drive. */
   hasHiringAccess: boolean;
-  /** `drive-spaces` feature flag resolved for this viewer. */
-  driveSpacesEnabled: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
-  // ── Legacy path (flag OFF) ───────────────────────────────────────────────────
-  // Identical to the original hardcoded implementation.  When the flag is off
-  // this function is a byte-for-byte behavioural clone of the previous version.
-  if (!driveSpacesEnabled) {
-    return loadDriveScopesLegacy({
-      userSub,
-      projectWorkspaces,
-      canViewForms,
-      canManageAgreements,
-      isCore,
-      hasHiringAccess,
-      request,
-    });
-  }
-
-  // ── Registry-driven path (flag ON) ──────────────────────────────────────────
   // Build the minimal RoleFlags needed by the drive-spaces gates. The registry
   // gates only read `isCore` and `hasHiringAccess`; the other fields default to
   // false (safe: we'd only under-show spaces, never over-show).
@@ -216,6 +190,10 @@ export async function loadDriveScopes({
   // Phase 2: load all forms in ONE query across all visible folder ids.
   const needForms = labCanViewForms || canViewForms;
   let allForms: DriveItem[] = [];
+  // Safety-net: forms whose folder was archived/deleted are dropped by the scoped
+  // loadForms query above; surface them at the General root so none are lost.
+  // Gated on the un-widened canViewForms (they land in the Lab scope, like labForms).
+  let orphanForms: DriveItem[] = [];
   if (needForms) {
     const allFolderIds = [
       ...labItems.filter((i) => i.type === "folder").map((i) => i.id),
@@ -223,7 +201,10 @@ export async function loadDriveScopes({
       ...educationItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
     ];
     // Pass linkedProcessMap so each form row gets its process annotation (Signal ②).
-    allForms = await loadForms(allFolderIds, linkedProcessMap);
+    [allForms, orphanForms] = await Promise.all([
+      loadForms(allFolderIds, linkedProcessMap),
+      canViewForms ? loadOrphanForms(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
+    ]);
   }
 
   // Carve out the Core subtree from the Lab load (same logic as legacy).
@@ -309,7 +290,7 @@ export async function loadDriveScopes({
   // Compose final item lists.
   const finalCoreItems = [...coreItems, ...coreForms];
   const finalHiringItems = [...hiringItems, ...hiringForms];
-  const filteredLab = [...labVisibleItems, ...labForms];
+  const filteredLab = [...labVisibleItems, ...labForms, ...orphanForms];
   const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
 
@@ -467,159 +448,4 @@ export async function loadDriveScopes({
     }
   }
   return result;
-}
-
-// ── Legacy loader (flag OFF) ──────────────────────────────────────────────────
-// Preserved verbatim from the original implementation so the flag-off path is
-// identical to what shipped before Wave 1.  This function is private; callers
-// always go through `loadDriveScopes` which dispatches based on the flag.
-
-async function loadDriveScopesLegacy({
-  userSub,
-  projectWorkspaces,
-  canViewForms,
-  canManageAgreements,
-  isCore,
-  hasHiringAccess,
-  request,
-}: {
-  userSub: string;
-  projectWorkspaces: WorkspaceOut[];
-  canViewForms: boolean;
-  canManageAgreements: boolean;
-  isCore: boolean;
-  hasHiringAccess: boolean;
-  request: Request;
-}): Promise<DriveTreeScope[]> {
-  const [coreRoot, hiringRoot, favIds] = await Promise.all([
-    isCore ? ensureCoreDriveRoot(userSub) : Promise.resolve(null),
-    hasHiringAccess ? ensureHiringDriveRoot(userSub) : Promise.resolve(null),
-    favoritePageIds(userSub),
-  ]);
-  const projectIds = projectWorkspaces.map((w) => w.key);
-  const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
-  const projectEmojis = new Map(
-    projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
-  );
-
-  const labCanViewForms = canViewForms || hasHiringAccess;
-
-  const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
-    loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
-    loadDriveScope({
-      userSub,
-      scope: { kind: "Lab" },
-      canViewForms: false,
-      canManageAgreements: isCore,
-      canManageEmailTemplates: isCore,
-      request,
-    }),
-    ...projectIds.map((projectId) =>
-      loadDriveScope({
-        userSub,
-        scope: { kind: "Project", projectId },
-        canViewForms: false,
-        request,
-      }),
-    ),
-  ]);
-
-  const needForms = labCanViewForms || canViewForms;
-  let allForms: DriveItem[] = [];
-  if (needForms) {
-    const allFolderIds = [
-      ...labItems.filter((i) => i.type === "folder").map((i) => i.id),
-      ...projectItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
-    ];
-    allForms = await loadForms(allFolderIds);
-  }
-
-  let coreItems: DriveItem[] = [];
-  let labVisibleItems = labItems;
-  let coreFolderIds = new Set<string>();
-  if (coreRoot) {
-    const inCore = subtreeIds(labItems, coreRoot.id);
-    labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
-    coreItems = labItems
-      .filter((it) => it.id !== coreRoot.id && inCore.has(it.id))
-      .map((it) =>
-        it.parentFolderId === coreRoot.id ? { ...it, parentFolderId: null } : it,
-      );
-    coreFolderIds = new Set([
-      coreRoot.id,
-      ...coreItems.filter((i) => i.type === "folder").map((i) => i.id),
-    ]);
-  }
-
-  let hiringItems: DriveItem[] = [];
-  let hiringFolderIds = new Set<string>();
-  if (hiringRoot) {
-    const inHiring = subtreeIds(labVisibleItems, hiringRoot.id);
-    const remaining = labVisibleItems.filter((it) => !inHiring.has(it.id));
-    hiringItems = labVisibleItems
-      .filter((it) => it.id !== hiringRoot.id && inHiring.has(it.id))
-      .map((it) =>
-        it.parentFolderId === hiringRoot.id ? { ...it, parentFolderId: null } : it,
-      );
-    labVisibleItems = remaining;
-    hiringFolderIds = new Set([
-      hiringRoot.id,
-      ...hiringItems.filter((i) => i.type === "folder").map((i) => i.id),
-    ]);
-  }
-
-  labVisibleItems = labVisibleItems.filter(
-    (it) =>
-      it.type !== "agreement" &&
-      it.type !== "rubric" &&
-      it.type !== "emailTemplate",
-  );
-
-  const labFolderIds = new Set(
-    labVisibleItems.filter((i) => i.type === "folder").map((i) => i.id),
-  );
-  const projectFolderIdSets = projectItemArrays.map(
-    (arr) => new Set(arr.filter((i) => i.type === "folder").map((i) => i.id)),
-  );
-
-  function pickScopeForms(
-    scopeFolderIds: Set<string>,
-    isLab: boolean,
-    viewerCanSeeForms: boolean,
-  ): DriveItem[] {
-    if (!viewerCanSeeForms) return [];
-    return allForms.filter((item) => {
-      if (item.parentFolderId === null) return isLab;
-      return scopeFolderIds.has(item.parentFolderId);
-    });
-  }
-
-  const coreForms = pickScopeForms(coreFolderIds, false, isCore);
-  const hiringForms = pickScopeForms(hiringFolderIds, false, labCanViewForms);
-  const labForms = pickScopeForms(labFolderIds, true, canViewForms);
-  const projectForms = projectItemArrays.map((_, i) =>
-    pickScopeForms(projectFolderIdSets[i], false, canViewForms),
-  );
-
-  const finalCoreItems = [...coreItems, ...coreForms];
-  const finalHiringItems = [...hiringItems, ...hiringForms];
-  const filteredLab = [...labVisibleItems, ...labForms];
-  const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
-
-  return [
-    { id: "mine", label: "My Drive", iconEmoji: null, items: tagFavorites(memberItems, favIds) },
-    { id: "lab", label: "Lab-wide", iconEmoji: null, items: tagFavorites(filteredLab, favIds) },
-    ...(coreRoot
-      ? [{ id: "core", label: "Core", iconEmoji: null, items: tagFavorites(finalCoreItems, favIds), rootFolderId: coreRoot.id }]
-      : []),
-    ...(hiringRoot
-      ? [{ id: "hiring", label: "Hiring", iconEmoji: null, items: tagFavorites(finalHiringItems, favIds), rootFolderId: hiringRoot.id }]
-      : []),
-    ...projectIds.map((id, i) => ({
-      id,
-      label: projectNames.get(id) ?? "Project",
-      iconEmoji: projectEmojis.get(id) ?? null,
-      items: tagFavorites(filteredProjects[i], favIds),
-    })),
-  ];
 }
