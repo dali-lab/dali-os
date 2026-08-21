@@ -46,7 +46,6 @@ export interface OutstandingBinding {
   bindingId: string;
   documentId: string;
   documentName: string;
-  kind: string;
   versionId: string;
 }
 
@@ -64,7 +63,7 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
       id: true,
       versionId: true,
       document: {
-        select: { id: true, name: true, audience: true, audienceGroupId: true, kind: true },
+        select: { id: true, name: true, audience: true, audienceGroupId: true },
       },
       signatures: {
         where: { signerUserId: userId, roleKey: "member" },
@@ -101,7 +100,6 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
       bindingId: b.id,
       documentId: b.document.id,
       documentName: b.document.name,
-      kind: b.document.kind,
       versionId: b.versionId,
     });
   }
@@ -128,7 +126,7 @@ export async function listMySignedDocuments(userId: string): Promise<SignedDocum
     where: {
       signerUserId: userId,
       roleKey: "member",
-      binding: { document: { kind: { not: "Confidentiality" }, archivedAt: null } },
+      binding: { document: { gateScope: { not: "HiringCycle" }, archivedAt: null } },
     },
     select: {
       id: true,

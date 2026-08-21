@@ -238,12 +238,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
   // shape so its UI is unchanged.
   const confidentialityAgreementOptions = await prisma.signingDocument.findMany({
-    where: { kind: "Confidentiality", archivedAt: null },
+    where: { gateScope: "HiringCycle", archivedAt: null },
     include: { versions: { orderBy: { versionNumber: "desc" } } },
     orderBy: { name: "asc" },
   });
   const confidentialityBindingRow = await prisma.signingBinding.findFirst({
-    where: { cycleId: params.id, document: { kind: "Confidentiality" } },
+    where: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
     include: {
       version: { include: { document: { select: { name: true } } } },
     },
@@ -261,7 +261,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     await prisma.signingSignature.findMany({
       where: {
         roleKey: "member",
-        binding: { cycleId: params.id, document: { kind: "Confidentiality" } },
+        binding: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
       },
       include: { signer: { select: { firstName: true, lastName: true } } },
       orderBy: { signedAt: "asc" },
@@ -625,7 +625,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const cycleId = params.id!;
     const scopeKey = `cycle:${cycleId}`;
     const existing = await prisma.signingBinding.findFirst({
-      where: { cycleId, document: { kind: "Confidentiality" } },
+      where: { cycleId, document: { gateScope: "HiringCycle" } },
       select: { id: true },
     });
     if (versionId) {

@@ -26,7 +26,6 @@ export interface ConsoleBinding {
 export interface ConsoleAgreement {
   id: string;
   name: string;
-  kind: string;
   gateScope: string;
   audience: string;
   cadence: string;
@@ -146,7 +145,6 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     agreements.push({
       id: doc.id,
       name: doc.name,
-      kind: doc.kind,
       gateScope: doc.gateScope,
       audience: doc.audience,
       cadence: doc.cadence,
@@ -160,12 +158,13 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     });
   }
 
-  // Recent member signatures across the member-facing agreements (Confidentiality
-  // is hiring-internal, excluded like the personal archive does).
+  // Recent member signatures across the member-facing agreements (hiring
+  // confidentiality — gateScope HiringCycle — is hiring-internal, excluded like
+  // the personal archive does).
   const recent = await prisma.signingSignature.findMany({
     where: {
       roleKey: "member",
-      binding: { document: { archivedAt: null, kind: { not: "Confidentiality" } } },
+      binding: { document: { archivedAt: null, gateScope: { not: "HiringCycle" } } },
     },
     select: {
       id: true,

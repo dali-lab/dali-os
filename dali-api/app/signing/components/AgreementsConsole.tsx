@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import type { loader } from "~/signing/routes/admin.agreements";
 import {
-  KIND_SHORT,
   SCOPE_SHORT,
   AUDIENCE_SHORT,
   CADENCE_SHORT,
@@ -202,7 +201,6 @@ export function AgreementsConsole() {
                         {a.name}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                        <Pill>{KIND_SHORT[a.kind] ?? a.kind}</Pill>
                         <Pill>{AUDIENCE_SHORT[a.audience] ?? a.audience}</Pill>
                         <Pill>{CADENCE_SHORT[a.cadence] ?? a.cadence}</Pill>
                         <Pill>{SCOPE_SHORT[a.gateScope] ?? a.gateScope}</Pill>

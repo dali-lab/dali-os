@@ -284,7 +284,7 @@ async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
 
 async function searchAgreements(q: string, like: Like): Promise<SearchResult[]> {
   const rows = await prisma.signingDocument.findMany({
-    where: { name: like, kind: "Confidentiality", archivedAt: null },
+    where: { name: like, gateScope: "HiringCycle", archivedAt: null },
     select: { id: true, name: true },
     take: RAW_TAKE,
   });

@@ -1533,10 +1533,9 @@ model SigningDocument {
   // references a document by slug rather than a cuid.
   slug String @unique
 
-  kind      SigningDocumentKind @default(General)
-  gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
-  audience  SigningAudience     @default(Manual) // who is required to sign
-  cadence   SigningCadence      @default(Once) // how often a fresh signature is required
+  gateScope SigningGateScope @default(None) // how an unsigned copy is enforced
+  audience  SigningAudience  @default(Manual) // who is required to sign
+  cadence   SigningCadence   @default(Once) // how often a fresh signature is required
 
   // Target group when audience == Group (a GroupDefinition id; resolved through
   // resolveGroupMembers, so a plain column like Form.audienceGroupIds — no FK).
@@ -1559,15 +1558,6 @@ model SigningDocument {
 
   versions SigningDocumentVersion[]
   bindings SigningBinding[]
-
-  @@index([kind])
-}
-
-enum SigningDocumentKind {
-  General
-  MemberAgreement // onboarding auto-trigger (membership lifecycle)
-  MentorshipAgreement // termly re-sign for mentors
-  Confidentiality // hiring-cycle gate (migrated from ConfidentialityAgreement)
 }
 
 enum SigningGateScope {
