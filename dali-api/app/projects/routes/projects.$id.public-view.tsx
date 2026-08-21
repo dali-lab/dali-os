@@ -17,6 +17,7 @@ import { VersionHistoryPanel } from "~/components/collab/VersionHistoryPanel";
 import { pageDocName } from "~/collab/roomName";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import { loadPublicProjectView } from "../lib/public-project-view.server";
 import type { ProjectShowcaseStatus } from "~/generated/prisma/client";
 
@@ -26,9 +27,27 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export const handle = {
-  breadcrumb: (data: unknown) => {
-    const d = data as { project?: { name: string } } | undefined;
-    return d?.project ? d.project.name : null;
+  // breadcrumbTrail, not breadcrumb: a leaf label can only rename its OWN
+  // segment, and this route's path has an id segment in the middle. Breadcrumbs
+  // drops a mid-path id only when it looks opaque (a cuid); project ids here are
+  // human-slugged, so `project-dali-os` survived the walk and titlecased itself
+  // into a crumb — leaving "Projects › Project Dali Os › DALI OS", the project
+  // nested inside a mangled copy of its own id. Declaring the whole trail skips
+  // the segment walk entirely and gives the same two crumbs the project page
+  // itself renders, icon included.
+  breadcrumbTrail: (data: unknown) => {
+    const p = (
+      data as { project?: { id: string; name: string; iconEmoji: string | null } } | undefined
+    )?.project;
+    if (!p) return null;
+    return [
+      { label: "Projects", to: "/projects" },
+      {
+        label: p.name,
+        to: `/projects/${p.id}`,
+        icon: <ProjectIcon iconEmoji={p.iconEmoji} />,
+      },
+    ];
   },
   headerAction: (data: unknown) => {
     const d = data as { project?: { id: string } } | undefined;

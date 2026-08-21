@@ -16,8 +16,10 @@ import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
-import { dedupeLiveAssignments } from "../lib/staffing-board";
+import { dedupeLiveAssignments, matchesDomainFilter } from "../lib/staffing-board";
 import { projectsPills } from "../components/projectsPills";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
@@ -165,13 +167,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true },
     }),
     prisma.domain.findMany({ select: { id: true, displayName: true } }),
-    // Expected headcount per (project, domain) for THIS term. ProjectRoleRequest
-    // is keyed (projectId, termId, domainId, level), so we sum slots across
-    // levels to get the headline number a staffing lead actually cares about
-    // ("we need 3 devs on this project") and show it under each column title.
+    // Read only to union in projects being staffed this term that have no
+    // ProjectTerm row (see stagedProjectIds) — the board shows what is assigned,
+    // not what was asked for.
     prisma.projectRoleRequest.findMany({
       where: { termId: selectedTerm.id },
-      select: { projectId: true, domainId: true, slots: true },
+      select: { projectId: true },
     }),
     // Manual within-column card order. columnKey is carried so a stale order
     // from a card's previous column is ignored once it moves (see below).
@@ -333,11 +334,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     members.push(...manual);
   }
 
-  // Apply the domain filter to the member pool. A member stays if they're
-  // eligible in the domain, OR already have a bid/assignment in it — filtering
-  // out a member who's proposed-staffed in that domain would make a real
-  // assignment silently vanish from the board. Ignore an unknown domain id
-  // (treat as "all") so a stale ?domain= link doesn't empty the board.
+  // Apply the domain filter to the member pool — see matchesDomainFilter for
+  // what counts as "in this domain" (hired role, not bids). Ignore an unknown
+  // domain id (treat as "all") so a stale ?domain= link doesn't empty the board.
   const domainFilterActive =
     selectedDomainId !== null && domains.some((d) => d.id === selectedDomainId);
   if (domainFilterActive) {
@@ -346,11 +345,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         .filter((a) => a.domainId === selectedDomainId)
         .map((a) => a.userId),
     );
-    const filtered = members.filter(
-      (m) =>
-        m.domainLevels.some((d) => d.domainId === selectedDomainId) ||
-        m.preferences.some((p) => p.domainId === selectedDomainId) ||
-        assignedUserIds.has(m.userId),
+    const filtered = members.filter((m) =>
+      matchesDomainFilter(m, selectedDomainId, assignedUserIds),
     );
     members.length = 0;
     members.push(...filtered);
@@ -385,31 +381,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     ...Object.fromEntries(extraProjectNames.map((p) => [p.id, p.name])),
   };
 
-  // Sum slots per (project, domain), drop zero rows, sort the per-project
-  // list alphabetically so the chip order is stable run-to-run.
-  const demandTotals = new Map<string, number>();
-  for (const r of roleRequests) {
-    const key = `${r.projectId}:${r.domainId}`;
-    demandTotals.set(key, (demandTotals.get(key) ?? 0) + r.slots);
-  }
-  const demandByProject: Record<
-    string,
-    Array<{ domainId: string; domainName: string; slots: number }>
-  > = {};
-  for (const [key, slots] of demandTotals) {
-    if (slots <= 0) continue;
-    const [projectId, domainId] = key.split(":");
-    const list = demandByProject[projectId] ?? (demandByProject[projectId] = []);
-    list.push({
-      domainId,
-      domainName: domainNames[domainId] ?? domainId,
-      slots,
-    });
-  }
-  for (const list of Object.values(demandByProject)) {
-    list.sort((a, b) => a.domainName.localeCompare(b.domainName));
-  }
-
   // Bids only exist through a bound Project Bids form. If none is bound, the
   // board legitimately has no new bids to staff — surface that so a lead
   // doesn't read an empty board as a bug. (Legacy StaffingPreference rows
@@ -436,7 +407,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     cardOrder: cardOrders,
     projectNames,
     domainNames,
-    demandByProject,
     bidsFormBound,
     ...presence,
   };
@@ -444,12 +414,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function StaffingPage() {
   const data = useLoaderData<typeof loader>();
+  const { os, pageTitle } = useOsChrome();
 
   if (!data.cycle) {
     return (
       <div className="flex flex-col gap-4">
         <header>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
+          <h1 className={pageTitle}>Staffing</h1>
           <p className="text-sm text-muted-foreground mt-1">
             No terms in the database yet — run the v0-reference seed first.
           </p>
@@ -462,22 +433,19 @@ export default function StaffingPage() {
     <div className="flex flex-col gap-4">
       <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "staffing" })} />
       <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {data.canManage
-              ? "Pick a term, then drag-and-drop project assignments. Changes are saved as Proposed staffing assignments."
-              : "Pick a term to view its proposed assignments."}
-          </p>
-        </div>
+        <h1 className={pageTitle}>Staffing</h1>
         <PresenceBar />
       </header>
 
       {!data.bidsFormBound && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          No Project Bids form is connected for this term, so there are no new
-          bids to staff from. Connect one on the Project Bids page — bids only
-          exist through the form.
+        <div
+          className={cn(
+            "border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800",
+            os ? "rounded-os-item" : "rounded-md",
+          )}
+        >
+          No Project Bids form is connected for this term — connect one on the
+          Project Bids page.
         </div>
       )}
 
@@ -493,7 +461,6 @@ export default function StaffingPage() {
         cardOrder={data.cardOrder}
         projectNames={data.projectNames}
         domainNames={data.domainNames}
-        demandByProject={data.demandByProject}
         canManage={data.canManage}
       />
     </div>

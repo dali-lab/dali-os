@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { useRevalidator } from "react-router";
 import { UserPlus } from "lucide-react";
 
@@ -9,6 +12,7 @@ type Candidate = { userId: string; name: string; email: string | null };
 // Searches /api/staffing/board-member (debounced); POSTing adds the member and
 // revalidates the route so the new card appears.
 export function AddMemberControl({ cycleId }: { cycleId: string }) {
+  const os = useFeatureFlag("os-redesign");
   const revalidator = useRevalidator();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -100,21 +104,36 @@ export function AddMemberControl({ cycleId }: { cycleId: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 border border-border rounded-md bg-background text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        className={cn(
+          "focus:outline-none focus:ring-2",
+          os
+            ? cn(filterPillClass(true), "focus:ring-os-accent/40")
+            : "inline-flex items-center gap-1.5 text-sm px-2.5 py-1 border border-border rounded-md bg-background text-foreground hover:bg-muted focus:ring-accent-coral/30",
+        )}
       >
         <UserPlus className="w-4 h-4" />
         Add member
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1 w-72 bg-card border border-border rounded-md shadow-lg z-50 p-2">
+        <div
+          className={cn(
+            "absolute right-0 mt-1 w-72 z-50 p-2",
+            os ? OS_SURFACE_CLASS : "bg-card border border-border rounded-md shadow-lg",
+          )}
+        >
           <input
             autoFocus
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search members by name or email…"
-            className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className={cn(
+              "w-full text-sm px-2 py-1.5 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
+              os
+                ? "rounded-os-item focus:ring-os-accent/40"
+                : "rounded-md focus:ring-accent-coral/30",
+            )}
           />
           {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
           <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">

@@ -12,9 +12,10 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select, Menu } from "~/components/ui/floating";
+import { Select, Menu, Popover } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -149,6 +150,40 @@ type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
+
+// The dali.os cut of the same page. Nothing new is computed for it — the
+// content is the classic tabs redealt: the planning timeline and the task
+// board are one "Progress" surface, the meetings list gets its own tab
+// instead of being a card buried in Overview, and what's left of Overview is
+// the project's details.
+const OS_TABS = ["progress", "meetings", "details", "mentorship"] as const;
+type OsTab = (typeof OS_TABS)[number];
+function isOsTab(x: string | null): x is OsTab {
+  return (OS_TABS as readonly string[]).includes(x ?? "");
+}
+
+const OS_TAB_LABELS: Record<OsTab, string> = {
+  progress: "Progress",
+  meetings: "Meetings",
+  details: "Project details",
+  mentorship: "Mentorship",
+};
+
+// Links already in the wild carry ?tab=overview / ?tab=board, and openTaskFrom
+// Timeline still writes "board". Translate rather than 404 into the default:
+// the board folded into Progress, Overview became Project details.
+const CLASSIC_TO_OS: Record<Tab, OsTab> = {
+  overview: "details",
+  board: "progress",
+  mentorship: "mentorship",
+};
+// And back, for a member who lands on an os link with the flag off.
+const OS_TO_CLASSIC: Record<OsTab, Tab> = {
+  progress: "board",
+  meetings: "overview",
+  details: "overview",
+  mentorship: "mentorship",
+};
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
@@ -699,6 +734,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       stories.push({
         id: st.id,
         title: st.title,
+        description: st.notes,
+        // Mirrors isStoryIncomplete in EpicSprintManager: title only.
+        incomplete: !st.notes && !st.startsAt && !st.endsAt,
         status: st.status as TimelineStory["status"],
         startsAt: new Date(sStart).toISOString(),
         endsAt: new Date(sEnd).toISOString(),
@@ -731,6 +769,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       id: e.id,
       title: e.title,
+      description: e.description,
       status: e.status as EpicStatus,
       startsAt: startMs != null ? new Date(startMs).toISOString() : null,
       endsAt: endMs != null ? new Date(endMs).toISOString() : null,
@@ -1035,6 +1074,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
   const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
+  // Term spans anchor the fixed one-week sprint grid and label its bands
+  // (26FA, 26FB, …). Oldest first, the order the grid walks them. Both the
+  // timeline and the task modal read weeks off this same anchor, so it's built
+  // once here rather than twice.
+  const termSpans = [...plannedTerms]
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map((t) => ({
+      code: t.code,
+      startsAt: t.startDate.toISOString(),
+      endsAt: t.endDate.toISOString(),
+    }));
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
       .map(([id, name]) => ({ id, name, photoUrl: photoByUserId.get(id) ?? null }))
@@ -1059,6 +1109,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
     ),
     projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
+    termSpans,
     terms: boardTerms,
     currentTermId: boardCurrentTermId,
   };
@@ -1197,15 +1248,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     editableEpics,
     sprints,
     storyDependencies,
-    // Term spans anchor the timeline's fixed one-week sprint grid and label
-    // its bands (26FA, 26FB, …). Oldest first, the order the grid walks them.
-    timelineTerms: [...plannedTerms]
-      .sort((a, b) => a.sortKey - b.sortKey)
-      .map((t) => ({
-        code: t.code,
-        startsAt: t.startDate.toISOString(),
-        endsAt: t.endDate.toISOString(),
-      })),
+    timelineTerms: termSpans,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1254,6 +1297,55 @@ export function shouldRevalidate({
     return false;
   }
   return defaultShouldRevalidate;
+}
+
+// Declared domains for this project. Full-replacement: the incoming set wins.
+// Filtered down to active, real Domain ids so a stale dropdown value can't
+// create orphan rows. Wrapped in a transaction so a partial failure leaves the
+// project's domain list untouched.
+async function replaceProjectDomains(projectId: string, incoming: string[]) {
+  const valid = incoming.length
+    ? await prisma.domain.findMany({
+        where: { id: { in: incoming }, active: true },
+        select: { id: true },
+      })
+    : [];
+  const ids = valid.map((d) => d.id);
+  await prisma.$transaction([
+    prisma.projectDomain.deleteMany({ where: { projectId } }),
+    ...(ids.length
+      ? [
+          prisma.projectDomain.createMany({
+            data: ids.map((domainId) => ({ projectId, domainId })),
+            skipDuplicates: true,
+          }),
+        ]
+      : []),
+  ]);
+}
+
+// Project term set. Full-replacement too, so the one helper covers both adding
+// and removing terms. The start term and active-this-term are derived from this
+// set, not stored.
+async function replaceProjectTerms(projectId: string, incoming: string[]) {
+  const valid = incoming.length
+    ? await prisma.term.findMany({
+        where: { id: { in: incoming } },
+        select: { id: true },
+      })
+    : [];
+  const ids = valid.map((t) => t.id);
+  await prisma.$transaction([
+    prisma.projectTerm.deleteMany({ where: { projectId } }),
+    ...(ids.length
+      ? [
+          prisma.projectTerm.createMany({
+            data: ids.map((termId) => ({ projectId, termId })),
+            skipDuplicates: true,
+          }),
+        ]
+      : []),
+  ]);
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -1311,7 +1403,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return "error" in result ? result : redirect(`/projects/${params.id}`);
   }
 
-  // Header form: name + status + icon.
+  // Header form: name + status + icon, and — from the os hero, which edits the
+  // whole meta row under one pencil — the term and role sets too. The marker
+  // fields say those sets rode along at all: both are full-replacement writes,
+  // so their absence has to mean "leave alone" rather than "clear". They stay
+  // Core-only, matching the standalone `terms`/`domains` intents.
   if (intent === "header") {
     const name = (form.get("name") as string | null)?.trim() ?? "";
     const status = (form.get("status") as string | null) ?? "";
@@ -1325,6 +1421,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { name, status: status as ProjectStatus, iconEmoji: iconRaw || null },
     });
     await ensureProjectGroup(params.id, name);
+    if (core && form.get("hasTerms") === "1") {
+      await replaceProjectTerms(params.id, form.getAll("termId").map(String));
+    }
+    if (core && form.get("hasDomains") === "1") {
+      await replaceProjectDomains(params.id, form.getAll("domainId").map(String));
+    }
     return redirect(`/projects/${params.id}`);
   }
 
@@ -1403,58 +1505,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Declared domains for this project. Full-replacement: incoming set wins.
-  // Filtered down to active, real Domain ids so a stale dropdown value can't
-  // create orphan rows. Wrapped in a transaction so a partial failure leaves
-  // the project's domain list untouched.
   if (intent === "domains") {
-    const incoming = form.getAll("domainId").map((v) => String(v));
-    const valid = incoming.length
-      ? await prisma.domain.findMany({
-          where: { id: { in: incoming }, active: true },
-          select: { id: true },
-        })
-      : [];
-    const ids = valid.map((d) => d.id);
-    await prisma.$transaction([
-      prisma.projectDomain.deleteMany({ where: { projectId: params.id } }),
-      ...(ids.length
-        ? [
-            prisma.projectDomain.createMany({
-              data: ids.map((domainId) => ({ projectId: params.id, domainId })),
-              skipDuplicates: true,
-            }),
-          ]
-        : []),
-    ]);
+    await replaceProjectDomains(params.id, form.getAll("domainId").map(String));
     return redirect(`/projects/${params.id}`);
   }
 
-  // Project term set. Full-replacement: the incoming set of termIds wins, so
-  // the same handler covers both adding and removing terms. Filtered to real
-  // Term ids so a stale value can't create an orphan row. The start term and
-  // active-this-term are derived from this set, not stored. Mirrors the
-  // `domains` handler above.
   if (intent === "terms") {
-    const incoming = form.getAll("termId").map((v) => String(v));
-    const valid = incoming.length
-      ? await prisma.term.findMany({
-          where: { id: { in: incoming } },
-          select: { id: true },
-        })
-      : [];
-    const ids = valid.map((t) => t.id);
-    await prisma.$transaction([
-      prisma.projectTerm.deleteMany({ where: { projectId: params.id } }),
-      ...(ids.length
-        ? [
-            prisma.projectTerm.createMany({
-              data: ids.map((termId) => ({ projectId: params.id, termId })),
-              skipDuplicates: true,
-            }),
-          ]
-        : []),
-    ]);
+    await replaceProjectTerms(params.id, form.getAll("termId").map(String));
     return redirect(`/projects/${params.id}`);
   }
 
@@ -1564,22 +1621,42 @@ export default function ProjectDetail() {
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
+  // The dali.os dress for this page: the taller hero, the terms/roles clusters
+  // beside the title, and the filled tab plates. Same tabs, same permissions.
+  const os = useFeatureFlag("os-redesign");
+  // Add ▸ Task on the timeline toolbar opens the board's create form; the two
+  // are siblings under Progress, so the signal goes up here and back down.
+  const [taskCreateNonce, setTaskCreateNonce] = useState(0);
 
   const tabParam = searchParams.get("tab");
-  // A ?tab=mentorship deep link from a non-mentor would otherwise render an
-  // empty body (valid tab, but its content branch is gated) — treat it as
-  // invalid and fall back to Overview.
-  const tab: Tab =
-    isTab(tabParam) && (tabParam !== "mentorship" || canViewMentorshipTab)
-      ? tabParam
-      : "overview";
-  // A task bar on the planning timeline opens the board's task modal, which
-  // lives on the Tasks tab — so this hops tabs and sets ?task= in one go.
+  // Read the param under whichever tab set is live, translating one written in
+  // the other. A ?tab=mentorship deep link from a non-mentor would otherwise
+  // render an empty body (valid tab, but its content branch is gated) — treat
+  // it as invalid and fall back to the default.
+  const resolveTab = (): Tab | OsTab => {
+    const want = os
+      ? isOsTab(tabParam)
+        ? tabParam
+        : isTab(tabParam)
+          ? CLASSIC_TO_OS[tabParam]
+          : "progress"
+      : isTab(tabParam)
+        ? tabParam
+        : isOsTab(tabParam)
+          ? OS_TO_CLASSIC[tabParam]
+          : "overview";
+    if (want === "mentorship" && !canViewMentorshipTab) return os ? "progress" : "overview";
+    return want;
+  };
+  const tab = resolveTab();
+  // A task bar on the planning timeline opens the task modal, which lives with
+  // the board — its own tab classically, folded into Progress under os. Either
+  // way this hops to it and sets ?task= in one go.
   const openTaskFromTimeline = (taskId: string) => {
     closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
-        prev.set("tab", "board");
+        prev.set("tab", os ? "progress" : "board");
         prev.set("task", taskId);
         return prev;
       },
@@ -1587,7 +1664,7 @@ export default function ProjectDetail() {
     );
   };
 
-  const setTab = (next: Tab) => {
+  const setTab = (next: Tab | OsTab) => {
     if (next === tab) return;
     closeOpenedDocumentTabs();
     setSearchParams(
@@ -1599,8 +1676,45 @@ export default function ProjectDetail() {
     );
   };
 
+  // Hoisted because both tab sets deal them out differently: classically the
+  // timeline lives inside Overview and the board is its own tab; under os both
+  // are Progress. One definition each, placed twice.
+  const planningNode = (
+    <PlanningTab
+      projectId={project.id}
+      epics={epics}
+      editableEpics={editableEpics}
+      storyDependencies={storyDependencies}
+      timelineTerms={timelineTerms}
+      terms={plannedTerms}
+      taskCountsByEpic={taskCountsByEpic}
+      canEdit={canEdit}
+      collabToken={collabToken}
+      userName={userName}
+      onTaskClick={openTaskFromTimeline}
+      // Only on the os Progress tab, where the board is on this same surface
+      // for the created task to appear in.
+      onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
+    />
+  );
+  const board = (
+    <TaskBoard
+      projectId={project.id}
+      initialTasks={tasks}
+      options={boardOptions}
+      canManage={canEdit}
+      currentUserId={currentUserId}
+      currentUserName={userName}
+      createNonce={taskCreateNonce}
+    />
+  );
+
   const page = (
-    <div className="flex flex-col gap-4">
+    // No column cap: this page fills the width its layout gutters give it, the
+    // same as the task board and the partner/public views. The design's 1020px
+    // figure was measured on a narrower shell than this one, and capping here
+    // left every uncapped block on the page hanging past the right edge.
+    <div className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
       <PresenceBar className="self-end" />
 
       {/* Overview header — always on top, not behind a tab */}
@@ -1608,25 +1722,46 @@ export default function ProjectDetail() {
         project={project}
         partnerNames={partnerNames}
         canEdit={canEdit}
+        canEditScope={canEditScope}
+        os={os}
+        plannedTerms={plannedTerms}
+        allTermOptions={allTermOptions}
+        allDomainOptions={allDomainOptions}
       />
 
       {/* Tab bar. Each section now owns its own edit button — there's no
           page-level edit mode left to clear when switching tabs. */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {TABS.filter(
-          (t) => t !== "mentorship" || canViewMentorshipTab,
-        ).map((t) => (
+      <div
+        className={cn(
+          "flex items-center border-b border-border",
+          os ? "gap-2" : "gap-1",
+        )}
+      >
+        {(os ? OS_TABS : TABS)
+          .filter((t) => t !== "mentorship" || canViewMentorshipTab)
+          .map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? "border-accent-coral text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
+            className={
+              os
+                ? cn(
+                    // The design marks the open tab with a filled, top-rounded
+                    // plate that meets the rule below it, not an underline.
+                    "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
+                    tab === t
+                      ? "bg-os-container text-white"
+                      : "text-os-grey hover:text-white",
+                  )
+                : `px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    tab === t
+                      ? "border-accent-coral text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`
+            }
           >
-            {TAB_LABELS[t]}
+            {os ? OS_TAB_LABELS[t as OsTab] : TAB_LABELS[t as Tab]}
           </button>
         ))}
         {/* Scope/challenge config lives behind this gear, visible only to
@@ -1655,23 +1790,12 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {tab === "overview" && (
+      {(tab === "overview" || tab === "details") && (
         <OverviewTab
-          planning={
-            <PlanningTab
-              projectId={project.id}
-              epics={epics}
-              editableEpics={editableEpics}
-              storyDependencies={storyDependencies}
-              timelineTerms={timelineTerms}
-              terms={plannedTerms}
-              taskCountsByEpic={taskCountsByEpic}
-              canEdit={canEdit}
-              collabToken={collabToken}
-              userName={userName}
-              onTaskClick={openTaskFromTimeline}
-            />
-          }
+          // Under the os tabs the timeline is the Progress tab's own content,
+          // so Project details renders without it.
+          planning={os ? null : planningNode}
+          showMeetings={!os}
           project={project}
           teams={teams}
           documents={documents}
@@ -1725,19 +1849,22 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
+      {/* Progress (os): the timeline and the board are one surface — the plan
+          above, the work under it — rather than two tabs you flip between to
+          answer one question. */}
+      {tab === "progress" && (
+        <div className="flex flex-col gap-6">
+          {planningNode}
+          {board}
+        </div>
+      )}
+
+      {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
+
       {/* Board keys off the raw edit permission, not the page-level Edit-mode
           toggle: epics/sprints/tasks each gate their own inline edit
           affordances, so there's nothing to "turn on" first. */}
-      {tab === "board" && (
-        <TaskBoard
-          projectId={project.id}
-          initialTasks={tasks}
-          options={boardOptions}
-          canManage={canEdit}
-          currentUserId={currentUserId}
-          currentUserName={userName}
-        />
-      )}
+      {tab === "board" && board}
 
       {tab === "mentorship" && canViewMentorshipTab && (
         <ProjectMentorshipTab
@@ -1768,20 +1895,139 @@ export default function ProjectDetail() {
 // component only ever renders with the data branch, so narrow it out here.
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
+/* Chips that edit where they read: the selected set keeps the same shape it
+   has outside edit mode, each chip growing an ×, and a + opens the full option
+   list. Terms and roles share it so the hero's meta row keeps its height and
+   its reading order whether or not the editor is open. */
+function HeroChipPicker({
+  label,
+  options,
+  selected,
+  onChange,
+  chipClass,
+  emptyLabel,
+}: {
+  label: string;
+  /** Popover order and chip order both — one list, so nothing reorders on open. */
+  options: { id: string; label: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  chipClass: (label: string) => string;
+  emptyLabel: string;
+}) {
+  const chosen = options.filter((o) => selected.includes(o.id));
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id],
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {chosen.length === 0 && (
+        <span className="text-[13px] text-os-muted">{emptyLabel}</span>
+      )}
+      {chosen.map((o) => (
+        <span
+          key={o.id}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full py-[5px] pl-3 pr-1.5 text-[13px] font-semibold",
+            chipClass(o.label),
+          )}
+        >
+          {o.label}
+          <button
+            type="button"
+            onClick={() => toggle(o.id)}
+            aria-label={`Remove ${o.label}`}
+            className="flex h-4 w-4 items-center justify-center rounded-full opacity-60 transition-opacity hover:opacity-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <Popover
+        ariaLabel={`Choose ${label.toLowerCase()}`}
+        trigger={
+          <button
+            type="button"
+            aria-label={`Add ${label.toLowerCase()}`}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-white"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        }
+      >
+        <div className="flex max-w-[20rem] flex-wrap gap-1.5 p-2">
+          {options.map((o) => {
+            const on = selected.includes(o.id);
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => toggle(o.id)}
+                aria-pressed={on}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[13px] font-semibold transition-colors",
+                  on
+                    ? chipClass(o.label)
+                    : "bg-os-container/50 text-os-grey hover:text-white",
+                )}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
 function ProjectHeader({
   project,
   partnerNames,
   canEdit,
+  canEditScope = false,
+  os = false,
+  plannedTerms = [],
+  allTermOptions = [],
+  allDomainOptions = [],
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
+  // Terms and roles are Core-only even for a staffed member who can rename the
+  // project, so the hero editor shows them read-only without it.
+  canEditScope?: boolean;
+  os?: boolean;
+  // The os hero edits terms and roles where they're printed, so it needs the
+  // same option lists the Project details segments use. Defaulted empty so the
+  // classic header, which doesn't offer that, needn't pass them.
+  plannedTerms?: { id: string; code: string }[];
+  allTermOptions?: { id: string; code: string }[];
+  allDomainOptions?: { id: string; name: string }[];
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
   const [editing, setEditing] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
   const [iconEmoji, setIconEmoji] = useState(project.iconEmoji);
+  const [name, setName] = useState(project.name);
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>(project.status);
+  const [termIds, setTermIds] = useState<string[]>(() => plannedTerms.map((t) => t.id));
+  const [domainIds, setDomainIds] = useState<string[]>(() =>
+    project.domains.map((d) => d.id),
+  );
+
+  // Every field re-seeds from the loader on open, so a cancelled edit leaves
+  // nothing behind and a saved one picks up the revalidated values.
+  function openEditor() {
+    setIconEmoji(project.iconEmoji);
+    setName(project.name);
+    setStatus(project.status);
+    setTermIds(plannedTerms.map((t) => t.id));
+    setDomainIds(project.domains.map((d) => d.id));
+    setEditing(true);
+  }
 
   // Actual terms vs the expected span: when they differ, show "N of M" so a
   // partially-scheduled project reads as such. termCount is the expected target.
@@ -1804,58 +2050,235 @@ function ProjectHeader({
     </p>
   );
 
+  // Chronological, matching the order the read-mode chips print in, so opening
+  // the editor doesn't shuffle them.
+  const termOptions = [...allTermOptions]
+    .reverse()
+    .map((t) => ({ id: t.id, label: t.code }));
+  const domainOptions = allDomainOptions.map((d) => ({ id: d.id, label: d.name }));
+
+  // The design's right-hand clusters: TERMS as chips, ROLES as tinted chips.
+  // Same two facts the subtitle above states in prose — the "N of M terms"
+  // count rides the end of the term row so a partially-scheduled project still
+  // reads as one. In edit mode the chips stay put and become selectable, rather
+  // than the row vanishing behind a name field.
+  const osTagGroup = (
+    <div className="flex flex-wrap items-center gap-6">
+      <HeroClusterLabel label="Terms">
+        {editing && canEditScope ? (
+          <HeroChipPicker
+            label="Terms"
+            options={termOptions}
+            selected={termIds}
+            onChange={setTermIds}
+            chipClass={() => "bg-os-container text-white"}
+            emptyLabel="No terms yet"
+          />
+        ) : project.terms.length === 0 ? (
+          <span className="text-[13px] text-os-muted">No terms yet</span>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {project.terms.map((t) => (
+              <span
+                key={t.code}
+                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-white"
+              >
+                {t.code}
+              </span>
+            ))}
+          </div>
+        )}
+        <span className="text-xs text-os-grey">
+          {editing && canEditScope
+            ? `${termIds.length} of ${project.termCount} expected`
+            : termCountLabel}
+        </span>
+      </HeroClusterLabel>
+
+      <HeroClusterLabel label="Roles">
+        {editing && canEditScope ? (
+          <HeroChipPicker
+            label="Roles"
+            options={domainOptions}
+            selected={domainIds}
+            onChange={setDomainIds}
+            chipClass={osRoleChipClass}
+            emptyLabel="No roles yet"
+          />
+        ) : project.domains.length === 0 && project.derivedDomains.length === 0 ? (
+          <span className="text-[13px] text-os-muted">No roles yet</span>
+        ) : (
+          <DomainChips
+            items={project.domains.length > 0 ? project.domains : project.derivedDomains}
+            muted={project.domains.length === 0}
+            os
+          />
+        )}
+      </HeroClusterLabel>
+    </div>
+  );
+
+  // Hoisted so both header layouts place the same controls: the default puts
+  // them alone on the right, the os layout groups them with the tag clusters.
+  const editControls = (
+    <div className="flex items-center gap-1.5 shrink-0">
+      {!editing && (
+        <Link
+          to={`/calendar?tab=schedule&project=${project.id}`}
+          className={
+            os
+              ? "os-edit-btn"
+              : "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+          }
+        >
+          <CalendarPlus className="w-4 h-4" />
+          Schedule meeting
+        </Link>
+      )}
+      {canEdit &&
+        (editing ? (
+          <>
+            <Tooltip label="Cancel">
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                aria-label="Cancel"
+                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Save">
+              <button
+                type="button"
+                onClick={() => {
+                  if (formRef.current) submit(formRef.current);
+                  setEditing(false);
+                }}
+                aria-label="Save"
+                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          </>
+        ) : (
+          <Tooltip label="Edit">
+            <button
+              type="button"
+              onClick={openEditor}
+              aria-label={
+                os && canEditScope
+                  ? "Edit project name, status, terms and roles"
+                  : "Edit project name and status"
+              }
+              className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+        ))}
+    </div>
+  );
+
+  // One form for the whole hero: name, status and icon always, plus the term
+  // and role sets when the viewer may change them. The marker fields tell the
+  // action those sets rode along at all — without them (classic header, or a
+  // staffed non-Core member) it leaves them untouched rather than clearing
+  // them, since both are full-replacement writes.
+  const titleCluster = editing ? (
+    <Form
+      method="post"
+      ref={formRef}
+      className="flex items-center gap-2 flex-wrap"
+    >
+      <input type="hidden" name="intent" value="header" />
+      <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
+      <input type="hidden" name="status" value={status} />
+      {os && canEditScope && (
+        <>
+          <input type="hidden" name="hasTerms" value="1" />
+          <input type="hidden" name="hasDomains" value="1" />
+          {termIds.map((id) => (
+            <input key={id} type="hidden" name="termId" value={id} />
+          ))}
+          {domainIds.map((id) => (
+            <input key={id} type="hidden" name="domainId" value={id} />
+          ))}
+        </>
+      )}
+      <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
+      <input
+        name="name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        aria-label="Project name"
+        autoFocus
+        // Sized to the name it holds so the title doesn't jump to a box of some
+        // other width the moment you click the pencil.
+        style={os ? { width: `${Math.max(name.length, 8) + 1}ch` } : undefined}
+        className={cn(
+          "font-heading text-foreground bg-transparent max-w-full focus:outline-none",
+          os
+            ? "text-[32px] font-medium border-b border-os-container-hi focus:border-os-accent"
+            : "text-xl font-bold px-2 py-1 border border-border rounded-md bg-background focus:ring-2 focus:ring-accent-coral/30",
+        )}
+      />
+      <Select
+        value={status}
+        onChange={(v) => setStatus(v as (typeof STATUSES)[number])}
+        ariaLabel="Project status"
+        options={STATUSES.map((s) => ({ value: s, label: s }))}
+        buttonClassName={
+          os
+            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-white"
+            : "text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        }
+      />
+    </Form>
+  ) : (
+    <>
+      {/* Real project icon at the title's own size — the design
+          prints the emoji inline with the heading. */}
+      <ProjectIcon iconEmoji={project.iconEmoji} size={os ? "inherit" : "lg"} />
+      <h1
+        className={cn(
+          "font-heading text-foreground",
+          os ? "text-[32px] font-medium" : "text-2xl font-bold",
+        )}
+      >
+        {project.name}
+      </h1>
+      <StatusBadge status={project.status} os={os} />
+    </>
+  );
+
   return (
-    <header className="flex flex-col gap-4">
+    <header className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
       <ProjectImageBanner
         projectId={project.id}
         projectName={project.name}
         initialPreviewUrl={project.imageUrlResolved}
         canEdit={canEdit}
+        frameClassName={os ? "h-[275px] rounded-os-card" : undefined}
       />
       <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-3">
+        <div
+          className={cn(
+            "gap-3",
+            os
+              ? "flex flex-wrap items-center justify-between gap-y-4"
+              : "flex items-start justify-between",
+          )}
+        >
           <div className="min-w-0">
-          <div key={resetKey} className="flex items-center gap-2 flex-wrap">
-            {editing && canEdit ? (
-              <Form
-                method="post"
-                ref={formRef}
-                className="flex items-center gap-2 flex-wrap"
-              >
-                <input type="hidden" name="intent" value="header" />
-                <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
-                <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
-                <input
-                  name="name"
-                  defaultValue={project.name}
-                  aria-label="Project name"
-                  autoFocus
-                  className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-                <Select
-                  name="status"
-                  defaultValue={project.status}
-                  ariaLabel="Project status"
-                  options={STATUSES.map((s) => ({ value: s, label: s }))}
-                  buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </Form>
-            ) : (
-              <>
-                <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
-                <h1 className="font-heading text-2xl font-bold text-foreground">
-                  {project.name}
-                </h1>
-                <StatusBadge status={project.status} />
-              </>
-            )}
-
-          </div>
+          <div className="flex items-center gap-2 flex-wrap">{titleCluster}</div>
 
           {/* Domains sit on their own row under the title. Sharing the title's
               wrapped flex row meant they trailed off the end of the name and
               broke to an arbitrary place as it grew. */}
           {!editing &&
+            !os &&
             (project.domains.length > 0 ? (
               <div className="mt-1.5">
                 <DomainChips items={project.domains} />
@@ -1867,64 +2290,33 @@ function ProjectHeader({
             ) : null)}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {!editing && (
-              <Link
-                to={`/calendar?tab=schedule&project=${project.id}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-              >
-                <CalendarPlus className="w-4 h-4" />
-                Schedule meeting
-              </Link>
-            )}
-            {canEdit &&
-              (editing ? (
-                <>
-                  <Tooltip label="Cancel">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIconEmoji(project.iconEmoji);
-                        setResetKey((k) => k + 1);
-                        setEditing(false);
-                      }}
-                      aria-label="Cancel"
-                      className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Save">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (formRef.current) submit(formRef.current);
-                        setEditing(false);
-                      }}
-                      aria-label="Save"
-                      className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </>
-              ) : (
-                <Tooltip label="Edit">
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    aria-label="Edit project name and status"
-                    className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                </Tooltip>
-              ))}
-          </div>
+          {/* os: title left, then the clusters and controls together on the
+              right (the design's hero-meta row). Default: controls alone on
+              the right, as today. */}
+          {os ? (
+            <div className="flex flex-wrap items-center gap-4">
+              {osTagGroup}
+              {editControls}
+            </div>
+          ) : (
+            editControls
+          )}
         </div>
-        {subtitle}
+        {!os && subtitle}
       </div>
     </header>
+  );
+}
+
+/* The label a hero cluster wears (TERMS, ROLES) with its contents beside it. */
+function HeroClusterLabel({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="text-xs font-semibold tracking-widest text-os-grey uppercase">
+        {label}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -2615,23 +3007,64 @@ function DomainScopesSegment({
   );
 }
 
+// The design gives each role its own tinted chip. Domains are DB rows with
+// free-text names, so the four named in the design are matched by name and
+// anything else lands on one of them by a stable hash of the name — a new
+// domain gets a colour without anyone editing a table, and keeps it.
+const OS_ROLE_CHIPS = [
+  "bg-[#3d3a26] text-[#e8dd9a]", // data
+  "bg-[#1f3a37] text-[#8fd6cb]", // fullstack
+  "bg-[#31284a] text-[#c3aef2]", // product
+  "bg-[#3f2530] text-[#f2a8bd]", // ui/ux
+] as const;
+
+const OS_ROLE_BY_NAME: Record<string, number> = {
+  data: 0,
+  fullstack: 1,
+  full_stack: 1,
+  dev: 1,
+  product: 2,
+  pm: 2,
+  design: 3,
+  uiux: 3,
+  ux: 3,
+};
+
+function osRoleChipClass(name: string): string {
+  const key = name.toLowerCase().replace(/[^a-z]/g, "");
+  const named = OS_ROLE_BY_NAME[key];
+  if (named !== undefined) return OS_ROLE_CHIPS[named];
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 997;
+  return OS_ROLE_CHIPS[hash % OS_ROLE_CHIPS.length];
+}
+
 function DomainChips({
   items,
   muted = false,
+  os = false,
 }: {
   items: { id: string; name: string }[];
   muted?: boolean;
+  os?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-2">
       {items.map((d) => (
         <span
           key={d.id}
-          className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
-            muted
-              ? "bg-muted text-muted-foreground"
-              : "bg-blue-50 text-blue-700 border border-blue-100"
-          }`}
+          className={
+            os
+              ? cn(
+                  "inline-flex items-center rounded-full px-3.5 py-[5px] text-[13px] font-semibold",
+                  muted ? "bg-os-container text-os-grey" : osRoleChipClass(d.name),
+                )
+              : `inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
+                  muted
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-blue-50 text-blue-700 border border-blue-100"
+                }`
+          }
         >
           {d.name}
         </span>
@@ -2640,15 +3073,32 @@ function DomainChips({
   );
 }
 
-function StatusBadge({ status }: { status: (typeof STATUSES)[number] }) {
+function StatusBadge({
+  status,
+  os = false,
+}: {
+  status: (typeof STATUSES)[number];
+  os?: boolean;
+}) {
   const palette: Record<(typeof STATUSES)[number], string> = {
     Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
     Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
     Archived: "bg-muted/50 text-muted-foreground border-border",
   };
+  // The design's status tag — the same plate the project cards wear over their
+  // cover, so a project reads the same in the grid and on its own page.
+  const osPalette: Record<(typeof STATUSES)[number], string> = {
+    Active: "bg-os-bg/85 text-os-green border-os-green/35",
+    Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
+    Archived: "bg-os-bg/85 text-os-grey border-os-grey/35",
+  };
   return (
     <span
-      className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${palette[status]}`}
+      className={
+        os
+          ? `rounded-full border px-3 py-[5px] text-xs font-semibold ${osPalette[status]}`
+          : `text-[11px] px-2 py-0.5 rounded-full border font-medium ${palette[status]}`
+      }
     >
       {status}
     </span>
@@ -2794,6 +3244,51 @@ function TeamLevelEditor({
   );
 }
 
+/* The project's upcoming meetings. A card inside Overview classically; the
+   whole body of the Meetings tab under the os tab set, where it carries an
+   empty state because a tab you can click and get nothing from reads as
+   broken in a way a hidden card never did. */
+function MeetingsSection({
+  meetings,
+  standalone = false,
+}: {
+  meetings: LoaderData["upcomingMeetings"];
+  standalone?: boolean;
+}) {
+  const tz = useUserTimeZone();
+  if (meetings.length === 0) {
+    if (!standalone) return null;
+    return (
+      <section className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        No meetings scheduled for this project.
+      </section>
+    );
+  }
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+        <CalendarDays className="w-4 h-4" /> Meetings
+      </h2>
+      <div className="flex flex-col divide-y divide-border">
+        {meetings.map((m) => (
+          <Link
+            key={m.id}
+            to="/calendar"
+            className="py-2.5 flex items-center justify-between gap-3 text-sm group"
+          >
+            <span className="truncate font-medium text-foreground group-hover:text-accent-coral">
+              {m.title}
+            </span>
+            <span className="text-xs text-muted-foreground flex-shrink-0">
+              {formatDateTime(m.startsAt, tz)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function OverviewTab({
   planning,
   project,
@@ -2803,6 +3298,7 @@ function OverviewTab({
   files,
   fileEpics,
   upcomingMeetings,
+  showMeetings = true,
   recentActivity,
   canEdit,
   canEditFinance,
@@ -2825,6 +3321,8 @@ function OverviewTab({
   files: LoaderData["files"];
   fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
+  // False under the os tab set, where Meetings is its own tab.
+  showMeetings?: boolean;
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
   canEditFinance: boolean;
@@ -2963,31 +3461,9 @@ function OverviewTab({
         />
       </section>
 
-      {/* Next scheduled meetings for this project. Hidden entirely when there
-          are none — no empty-state card. */}
-      {upcomingMeetings.length > 0 && (
-        <section className="bg-card border border-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-            <CalendarDays className="w-4 h-4" /> Meetings
-          </h2>
-          <div className="flex flex-col divide-y divide-border">
-            {upcomingMeetings.map((m) => (
-              <Link
-                key={m.id}
-                to="/calendar"
-                className="py-2.5 flex items-center justify-between gap-3 text-sm group"
-              >
-                <span className="truncate font-medium text-foreground group-hover:text-accent-coral">
-                  {m.title}
-                </span>
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {formatDateTime(m.startsAt, tz)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Next scheduled meetings for this project. Under the os tabs this is a
+          tab of its own, so Overview stops rendering it here. */}
+      {showMeetings && <MeetingsSection meetings={upcomingMeetings} />}
 
       {/* Drive — the project's one file surface: collab-doc pages and uploaded
           files together in one folder tree. Files render inline (root-level
@@ -4315,6 +4791,7 @@ function PlanningTab({
   collabToken,
   userName,
   onTaskClick,
+  onAddTask,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -4327,6 +4804,7 @@ function PlanningTab({
   collabToken: string | null;
   userName: string;
   onTaskClick: (taskId: string) => void;
+  onAddTask?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -4342,6 +4820,7 @@ function PlanningTab({
         storyDependencies={storyDependencies}
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
+        onAddTask={onAddTask}
       />
     </div>
   );

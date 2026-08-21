@@ -2,6 +2,8 @@
 // staffing-board.ts: route loaders pass plain data in, the component renders
 // the board the helper builds, and persistence goes through an /api route.
 
+import type { TimelineTermSpan } from "./timeline-days";
+
 export const TASK_STATUSES = [
   "Backlog",
   "Todo",
@@ -105,6 +107,10 @@ export type TaskBoardOptions = {
   // The project's sprints/epics: the board's sprint filter pills and the
   // modal's sprint/epic pickers. Sprints ordered Active → Planned → Closed.
   sprints: BoardSprint[];
+  // Term spans, oldest first — the same anchor the timeline's fixed one-week
+  // sprint grid uses. The modal derives which weeks a task lands in from its
+  // dates against this rather than asking anyone to pick a sprint.
+  termSpans: TimelineTermSpan[];
   epics: BoardEpic[];
   // The project's user stories, for the modal's story picker. Ordered by epic
   // then position; `epicId` drives the same Epic → child cascade as sprints.

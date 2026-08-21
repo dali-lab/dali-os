@@ -104,10 +104,37 @@ function usePageDoc(): PageDocContextValue {
   return ctx;
 }
 
-/** Guide CTA. On pill pages AreaPillNav owns it; layout uses suppressWhenPills. */
-export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills?: boolean }) {
+// True inside a shell that carries its own Guide CTA above the page (the
+// dali.os top bar). Every page-row copy under it stands down, or the page shows
+// two. A workspace iframe is a separate document with no shell wrapped around
+// it, so it never sees this and keeps its own row copy — which is what we want,
+// since only the iframe's tree knows the route's docKey.
+const ShellGuideContext = createContext(false);
+
+export function ShellGuideProvider({ children }: { children: ReactNode }) {
+  return <ShellGuideContext.Provider value>{children}</ShellGuideContext.Provider>;
+}
+
+/**
+ * Guide CTA. On pill pages AreaPillNav owns it; layout uses suppressWhenPills.
+ *
+ * `variant="topbar"` is the dali.os shell's copy, which lives in the top bar
+ * beside the task bell instead of on a page row — so it takes the bell's plate
+ * (see `.os-topbar-btn`) and skips the page-row suppression rules, which are
+ * about not stacking two CTAs on one row and don't apply above the page. It
+ * renders outside ShellGuideProvider, since it's the copy that provider defers
+ * to.
+ */
+export function PageDocButton({
+  suppressWhenPills = false,
+  variant = "default",
+}: {
+  suppressWhenPills?: boolean;
+  variant?: "default" | "topbar";
+}) {
   const matches = useMatches();
   const { docKey, open, setOpen } = usePageDoc();
+  const shellOwnsGuide = useContext(ShellGuideContext);
   // Pills only render when the sidebar redesign is off; when it's on AreaPillNav
   // returns null, so the guide CTA belongs back on the breadcrumb row.
   const redesign = useFeatureFlag("sidebar-redesign");
@@ -125,6 +152,22 @@ export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills
   // The open guide renders its own Close (X) in the page header, so this CTA
   // only ever opens.
   if (open) return null;
+
+  if (variant === "topbar") {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Open this page's guide"
+        className="guide-pulse os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+      >
+        <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
+        Guide
+      </button>
+    );
+  }
+
+  if (shellOwnsGuide) return null;
   if (suppressWhenPills && (hasAreaPills || hasAreaSubnav)) return null;
 
   return (
@@ -145,6 +188,7 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
   const location = useLocation();
   const matches = useMatches();
   const redesignOpen = useFeatureFlag("sidebar-redesign");
+  const osRedesign = useFeatureFlag("os-redesign");
 
   if (open && docKey) {
     // On pages with their own sub-nav row the layout zeroes its top padding
@@ -154,7 +198,9 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
     // nav-areas) and put the padding back exactly when it was zeroed; reading
     // `areaPills` alone missed `areaSubnav` pages and, under the sidebar
     // redesign, every page — leaving the guide title flush against the top.
-    const zeroedTopPadding = hasSubnavRow(matches, redesignOpen);
+    // Under os the layout never zeroes it (its sub-nav is an inline pill, not a
+    // flush bar), so there is nothing to put back.
+    const zeroedTopPadding = !osRedesign && hasSubnavRow(matches, redesignOpen);
     return (
       <div className={zeroedTopPadding ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
         <Suspense

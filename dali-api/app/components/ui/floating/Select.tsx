@@ -16,7 +16,8 @@ import {
   FloatingPortal,
 } from "@floating-ui/react";
 import { Check, ChevronDown } from "lucide-react";
-import { PANEL_CLASS, SELECT_TRIGGER_CLASS } from "./styles";
+import { usePanelClass, useSelectTriggerClass } from "./os-styles";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // The app's single-select value picker, built on @floating-ui/react. Replaces
 // native <select> (which can't be styled/portaled) and the old hand-rolled
@@ -69,6 +70,9 @@ export function Select<T extends string = string>({
   align?: "left" | "right";
   buttonClassName?: string;
 }) {
+  const os = useFeatureFlag("os-redesign");
+  const panelClass = usePanelClass();
+  const triggerClass = useSelectTriggerClass();
   const isControlled = value !== undefined;
   const [internal, setInternal] = useState<T | undefined>(defaultValue);
   const selected = isControlled ? value : internal;
@@ -113,7 +117,14 @@ export function Select<T extends string = string>({
         padding: 8,
         apply({ rects, elements, availableHeight }) {
           Object.assign(elements.floating.style, {
-            minWidth: `${Math.max(rects.reference.width, 200)}px`,
+            // Align the panel to the control it drops out of. The 200px floor
+            // exists for the compact triggers this replaced a native <select>
+            // on (table cells, dense forms), where a content-width menu is
+            // unreadably narrow — but a toolbar filter pill is already wider
+            // than its labels, so the floor only made the panel overhang it.
+            // Either way this is a minimum, not a width: a long option still
+            // grows the panel, up to the max-w-[18rem] on the list.
+            minWidth: `${os ? rects.reference.width : Math.max(rects.reference.width, 200)}px`,
             maxHeight: `${Math.min(availableHeight, 320)}px`,
           });
         },
@@ -192,7 +203,7 @@ export function Select<T extends string = string>({
         // buttonClassName — even one written for a native <select> — still lays
         // out on one compact line.
         className={`inline-flex items-center justify-between gap-1 ${
-          buttonClassName ?? SELECT_TRIGGER_CLASS
+          buttonClassName ?? triggerClass
         }`}
         {...getReferenceProps()}
         aria-haspopup="listbox"
@@ -208,7 +219,7 @@ export function Select<T extends string = string>({
             <ul
               ref={refs.setFloating}
               style={floatingStyles}
-              className={`${PANEL_CLASS} max-w-[18rem]`}
+              className={`${panelClass} max-w-[18rem]`}
               {...getFloatingProps()}
             >
               {options.map((o, i) => {
@@ -224,8 +235,19 @@ export function Select<T extends string = string>({
                       ref={(node) => {
                         listRef.current[i] = node;
                       }}
-                      className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors disabled:opacity-50 ${
-                        isActive ? "bg-muted/60" : "hover:bg-muted/50"
+                      className={`flex w-full items-start gap-2 text-left text-sm transition-colors disabled:opacity-50 ${
+                        os ? "rounded-lg px-3 py-2" : "rounded px-2 py-1.5"
+                      } ${
+                        os
+                          ? // The design's own row fill, not a translucent wash
+                            // of it — 50% muted over the card reads as a muddy
+                            // tint rather than a selected row.
+                            isActive
+                            ? "bg-os-container"
+                            : "hover:bg-os-container"
+                          : isActive
+                            ? "bg-muted/60"
+                            : "hover:bg-muted/50"
                       }`}
                       {...getItemProps({
                         onClick: () => {
@@ -235,7 +257,11 @@ export function Select<T extends string = string>({
                     >
                       <Check
                         className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
-                          isSelected ? "text-accent-coral" : "opacity-0"
+                          isSelected
+                            ? os
+                              ? "text-os-accent"
+                              : "text-accent-coral"
+                            : "opacity-0"
                         }`}
                       />
                       <span className="flex min-w-0 flex-col">

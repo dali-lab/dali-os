@@ -34,6 +34,10 @@ export function ProjectImageBanner({
   fieldName = "imageUrl",
   removeTitle = "Remove the project image?",
   removeDescription = "The default banner will show instead.",
+  // The frame the image fills. Defaulted to today's banner so every existing
+  // caller is unchanged; the dali.os project page passes the design's taller,
+  // borderless hero.
+  frameClassName = "h-48 rounded-lg border border-border",
 }: {
   projectId: string;
   projectName: string;
@@ -43,6 +47,7 @@ export function ProjectImageBanner({
   fieldName?: string;
   removeTitle?: string;
   removeDescription?: string;
+  frameClassName?: string;
 }) {
   const dialog = useDialog();
   const fetcher = useFetcher();
@@ -191,7 +196,7 @@ export function ProjectImageBanner({
           disabled={!clickable}
           onClick={() => fileRef.current?.click()}
           aria-label={previewUrl ? "Replace project image" : "Upload project image"}
-          className={`relative block w-full h-48 rounded-lg overflow-hidden border border-border ${
+          className={`relative block w-full overflow-hidden ${frameClassName} ${
             clickable ? "cursor-pointer" : "cursor-default"
           }`}
         >

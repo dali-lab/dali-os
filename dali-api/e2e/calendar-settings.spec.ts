@@ -31,7 +31,10 @@ test.describe('calendar settings persistence', () => {
 
     // Render the calendar route standalone (skip workspace shell).
     await page.goto('/calendar?embed=1');
-    await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
+    // The view switcher, not the rail's heading: the os shell names the page
+    // once (its title) and lets the switcher name the view, so the old
+    // "Availability" h1 only exists in the brand shell.
+    await expect(page.getByRole('tab', { name: 'My Availability' })).toBeVisible();
 
     // The seed turned working hours on, so Monday's segment editor is present.
     await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
@@ -58,11 +61,15 @@ test.describe('calendar settings persistence', () => {
     await page.goto('/calendar?embed=1');
     // Pick 30m (the largest offered option) so this test doesn't collide with
     // the 15m default.
-    await page.getByRole('button', { name: '30m', exact: true }).click();
-    await expect(page.getByText(/30-minute buffer will be added/)).toBeVisible();
+    const thirty = page.getByRole('button', { name: '30m', exact: true });
+    await thirty.click();
+    await expect(thirty).toHaveAttribute('aria-pressed', 'true');
     await page.waitForLoadState('networkidle');
     await page.reload();
-    await expect(page.getByText(/30-minute buffer will be added/)).toBeVisible();
+    await expect(page.getByRole('button', { name: '30m', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   test('Add Google Account link is present and points at OAuth start', async ({ page }) => {

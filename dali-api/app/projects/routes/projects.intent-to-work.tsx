@@ -19,6 +19,8 @@ import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsMod
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
@@ -285,6 +287,7 @@ function Loaded({
     { gate: "ok" }
   >;
 }) {
+  const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -347,7 +350,12 @@ function Loaded({
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
 
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div
+        className={cn(
+          "overflow-hidden",
+          os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+        )}
+      >
         {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No Intent to Work form is connected for this term. Open{" "}
@@ -382,23 +390,22 @@ function Header({
   onOpenSettings?: () => void;
   settingsLabel?: string;
 }) {
+  const { os, pageTitle } = useOsChrome();
   return (
     <>
     <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "intent" })} />
     <header className="flex items-start justify-between gap-3">
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Intent to Work
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Received intent submissions{cycleName ? ` for ${cycleName}` : ""}.
-        </p>
-      </div>
+      <h1 className={pageTitle}>Intent to Work</h1>
       {onOpenSettings && (
         <button
           type="button"
           onClick={onOpenSettings}
-          className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted"
+          className={cn(
+            "shrink-0",
+            os
+              ? "os-edit-btn"
+              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+          )}
         >
           {settingsLabel ?? "Advanced settings"}
         </button>

@@ -37,6 +37,7 @@ import {
 } from "~/lib/roles";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import {
   fetchBusyEvents,
   getValidAccessTokenForLink,
@@ -67,6 +68,9 @@ import { RsvpButtons } from "~/components/RsvpButtons";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -1346,6 +1350,7 @@ const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-c
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
+  const { os } = useOsChrome();
   const [searchParams] = useSearchParams();
   // Persist the active tab in sessionStorage so navigating away and back
   // (or the workspace iframe re-mounting on tab focus) restores where the
@@ -1374,9 +1379,16 @@ export default function CalendarPage() {
   }, [tab]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className={cn("flex flex-col", os ? "gap-4" : "gap-5")}>
       <UnderlineTabButtons
         label="Calendar"
+        // Under os the page title shares the switcher's line, the switcher
+        // pushed to the far right; the brand shell has no title here.
+        heading={
+          os ? (
+            <h1 className="font-heading text-4xl font-medium text-foreground">Calendar</h1>
+          ) : undefined
+        }
         items={[
           {
             label: "My Availability",
@@ -1437,32 +1449,60 @@ function AvailabilityView({ data }: { data: LoaderData }) {
       // localStorage disabled / quota — ignore
     }
   }, [sidebarCollapsed]);
+  const { os, iconBtn } = useOsChrome();
   return (
     <div
-      className={`grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 px-3 pt-2 ${
-        sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]"
-      }`}
+      className={cn(
+        "grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0",
+        os ? "pt-1" : "px-3 pt-2",
+        sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]",
+      )}
     >
       {sidebarCollapsed ? (
         <button
           type="button"
           onClick={() => setSidebarCollapsed(false)}
-          className="hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 rounded-lg border border-border py-3 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={cn(
+            "hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 py-3",
+            os
+              ? "rounded-os-item bg-os-card text-os-grey transition-colors hover:bg-os-card-hover hover:text-white"
+              : "rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
           aria-label="Expand availability settings"
           title="Expand settings"
         >
           <PanelLeftOpen className="h-5 w-5 shrink-0" />
         </button>
       ) : (
-        <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-6 lg:min-h-0">
-          <header className="flex items-start justify-between gap-2">
-            <div>
-              <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
-            </div>
+        <aside
+          className={cn(
+            "flex flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:min-h-0",
+            os ? "gap-8 lg:pr-8" : "gap-6 lg:pr-6",
+          )}
+        >
+          {/* Under os the page carries its own "Calendar" title and the
+              switcher already says which view this is, so the rail drops the
+              heading and keeps only the collapse control. */}
+          <header
+            className={cn(
+              "flex items-start gap-2",
+              os ? "justify-end" : "justify-between",
+            )}
+          >
+            {!os && (
+              <div>
+                <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setSidebarCollapsed(true)}
-              className="hidden lg:inline-flex shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className={cn(
+                "hidden lg:inline-flex shrink-0",
+                os
+                  ? iconBtn
+                  : "rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
               aria-label="Collapse availability settings"
               title="Collapse settings"
             >
@@ -1498,11 +1538,12 @@ function CalendarIntegrationsCard({
   ingestionError: string | null;
   generalCalendar: GeneralCalendarState;
 }) {
+  const { os, card, cardPad, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <CalendarDays className="w-4 h-4 text-accent-coral" />
+      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
+        <h2 className={heading}>
+          <CalendarDays className={headingIcon} />
           Calendar Integrations
         </h2>
         {/* `<a target="_top">` — Google's auth page sends X-Frame-Options: DENY, so
@@ -1511,7 +1552,7 @@ function CalendarIntegrationsCard({
           href="/oauth/calendar/google/start"
           target="_top"
           rel="noopener"
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
+          className={quietBtn}
         >
           <Plus className="w-3.5 h-3.5" />
           Add Google Account
@@ -1525,9 +1566,7 @@ function CalendarIntegrationsCard({
       {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
       <div className="flex flex-col gap-3">
         {links.length === 0 && (
-          <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 text-xs text-muted-foreground">
-            No external calendars connected. Click <em>Add Google Account</em> above to link one.
-          </div>
+          <div className={cn(card, cardPad, bodyText)}>No external calendars connected.</div>
         )}
         {links.map((l) => (
           <CalendarLinkBlock key={l.id} link={l} />
@@ -1541,6 +1580,7 @@ function CalendarIntegrationsCard({
 // account. One account → subscribe straight away; several → let the member pick
 // which one it lands on.
 function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
+  const { os } = useOsChrome();
   const fetcher = useFetcher<{ error?: string }>();
   const [picking, setPicking] = useState(false);
   const accounts = links.filter((l) => l.provider === "Google");
@@ -1552,11 +1592,13 @@ function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
   const error = fetcher.data?.error;
 
   return (
-    <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-md px-3 py-2.5 mb-2 flex flex-col gap-2">
-      <p className="text-xs text-foreground">
-        The DALI General Calendar isn&apos;t on any of your linked accounts — add it to see
-        lab-wide events in your own Google Calendar.
-      </p>
+    <div
+      className={cn(
+        "bg-accent-coral/10 border border-accent-coral/30 px-3 py-2.5 mb-2 flex flex-col gap-2",
+        os ? "rounded-os-item" : "rounded-md",
+      )}
+    >
+      <p className="text-xs text-foreground">Add the DALI General Calendar</p>
       {picking && accounts.length > 1 ? (
         <div className="flex flex-col gap-1">
           {accounts.map((a) => (
@@ -1565,7 +1607,10 @@ function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
               type="button"
               disabled={busy}
               onClick={() => subscribe(a.id)}
-              className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+              className={cn(
+                "flex items-center gap-2 border border-border bg-card px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted transition-colors disabled:opacity-60",
+                os ? "rounded-os-item" : "rounded-md",
+              )}
             >
               <GoogleIcon />
               <span className="truncate">{a.externalEmail}</span>
@@ -1577,7 +1622,10 @@ function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
           type="button"
           disabled={busy}
           onClick={() => (accounts.length === 1 ? subscribe(accounts[0].id) : setPicking(true))}
-          className="self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral-light transition-colors disabled:opacity-60"
+          className={cn(
+            "self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-accent-coral text-white hover:bg-accent-coral-light transition-colors disabled:opacity-60",
+            os ? "rounded-full" : "rounded-md",
+          )}
         >
           <Plus className="w-3.5 h-3.5" />
           {busy
@@ -1593,12 +1641,21 @@ function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
 }
 
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
+  const { os, card, bodyText } = useOsChrome();
   const removeFetcher = useFetcher();
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <div className="bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-teal rounded-md overflow-hidden">
+    <div
+      className={cn(
+        "overflow-hidden",
+        card,
+        // The teal edge is the brand shell's source marker; under os the tinted
+        // header carries that on its own and a 4px edge fights the 24px corner.
+        !os && "border-l-4 border-l-accent-teal",
+      )}
+    >
       <div className="flex items-center justify-between bg-accent-teal/10 pr-3">
         <button
           type="button"
@@ -1633,15 +1690,10 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
           {link.syncError && (
             <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
           )}
-          <p className="text-xs text-muted-foreground">
-            Select which calendars should block your availability:
-          </p>
           {link.subCalendars === null ? (
-            <div className="text-xs text-muted-foreground italic">
-              Couldn't load this account's calendars.
-            </div>
+            <div className={cn(bodyText, "italic")}>Couldn't load this account's calendars.</div>
           ) : link.subCalendars.length === 0 ? (
-            <div className="text-xs text-muted-foreground italic">No calendars found.</div>
+            <div className={cn(bodyText, "italic")}>No calendars found.</div>
           ) : (
             link.subCalendars.map((cal) => (
               <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
@@ -1720,6 +1772,7 @@ function WorkingHoursCard({
   workingHours: WhDay[];
   hasPersisted: boolean;
 }) {
+  const { os, card, cardPad, heading, headingIcon, iconBtn } = useOsChrome();
   const resetFetcher = useFetcher();
   const toggleFetcher = useFetcher();
 
@@ -1757,9 +1810,9 @@ function WorkingHoursCard({
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <Clock className="w-4 h-4 text-accent-coral" />
+      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
+        <h2 className={heading}>
+          <Clock className={headingIcon} />
           Working Hours
         </h2>
         <div className="flex items-center gap-1">
@@ -1789,7 +1842,7 @@ function WorkingHoursCard({
                   type="submit"
                   aria-label="Reset working hours to defaults"
                   title="Reset to defaults"
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  className={iconBtn}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
@@ -1805,7 +1858,7 @@ function WorkingHoursCard({
         </div>
       </div>
       {enabled && (
-        <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 flex flex-col gap-2">
+        <div className={cn(card, cardPad, "flex flex-col gap-2")}>
           {workingHours.map((d) => (
             <DayRow key={d.dayOfWeek} day={d} allDays={workingHours} />
           ))}
@@ -1978,6 +2031,7 @@ function TimeField({
   onCommit,
   ...rest
 }: { valueMin: number; onCommit: (min: number) => void } & React.AriaAttributes) {
+  const { os, compactField } = useOsChrome();
   const [text, setText] = useState(formatTime(valueMin));
   // Keep text in sync if the canonical value changes externally (e.g. after submit).
   // Using a key on the parent would be cleaner, but a defaultValue + onBlur commit
@@ -1997,7 +2051,11 @@ function TimeField({
           }
           onCommit(parsed);
         }}
-        className="w-[88px] pl-2 pr-6 py-1 text-xs border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        className={cn(
+          "w-[88px] pl-2 pr-6 py-1 text-xs border border-border focus:outline-none",
+          compactField,
+          !os && "focus:ring-2 focus:ring-accent-coral/30",
+        )}
       />
       <Clock className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
     </div>
@@ -2039,6 +2097,7 @@ function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => 
 }
 
 function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
+  const { os, card, cardPad, heading, headingIcon } = useOsChrome();
   const fetcher = useFetcher();
   const pending = fetcher.formData;
   const selectedMin = pending ? Number(pending.get("defaultEventBufferMin")) : bufferMin;
@@ -2051,56 +2110,59 @@ function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
   ];
   return (
     <section>
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-3">
-        <Shield className="w-4 h-4 text-accent-coral" />
+      <h2 className={cn(heading, os ? "mb-4" : "mb-3")}>
+        <Shield className={headingIcon} />
         Event Buffers
       </h2>
-      <div className="bg-card border border-border shadow-brand-1 rounded-md p-3">
+      <div className={cn(card, cardPad)}>
         <div className="flex flex-wrap gap-2">
           {options.map((o) => (
             <button
               key={o.value}
               type="button"
+              // The fill is the only thing that says which buffer is on now
+              // that the sentence under the row is gone.
+              aria-pressed={selectedMin === o.value}
               onClick={() =>
                 fetcher.submit(
                   { intent: "set-event-buffer", defaultEventBufferMin: String(o.value) },
                   { method: "post" },
                 )
               }
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold transition-colors",
+                os ? "rounded-full" : "rounded-md",
                 selectedMin === o.value
-                  ? "bg-accent-coral text-white"
-                  : "bg-background text-foreground border border-border hover:bg-muted"
-              }`}
+                  ? // The os design marks a chosen segment with the container
+                    // fill, as the People directory's Active/Alumni switch does.
+                    os
+                    ? "bg-os-container text-white"
+                    : "bg-accent-coral text-white"
+                  : os
+                    ? "bg-os-well text-os-grey hover:text-white"
+                    : "bg-background text-foreground border border-border hover:bg-muted",
+              )}
             >
               {o.label}
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground mt-3">
-          {selectedMin === 0
-            ? "No buffer will be added between events."
-            : `A ${selectedMin}-minute buffer will be added before and after every event.`}
-        </p>
       </div>
     </section>
   );
 }
 
 function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; timezone: string }) {
+  const { os, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
   const [adding, setAdding] = useState(false);
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <CalendarIcon className="w-4 h-4 text-accent-coral" />
+      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
+        <h2 className={heading}>
+          <CalendarIcon className={headingIcon} />
           Manual Blocks
         </h2>
-        <button
-          type="button"
-          onClick={() => setAdding((v) => !v)}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
-        >
+        <button type="button" onClick={() => setAdding((v) => !v)} className={quietBtn}>
           {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
           {adding ? "Cancel" : "Add Block"}
         </button>
@@ -2108,7 +2170,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
       {adding && <AddManualBlockForm onDone={() => setAdding(false)} />}
       <div className="flex flex-col gap-2">
         {blocks.length === 0 && !adding && (
-          <div className="text-xs text-muted-foreground italic">No manual blocks.</div>
+          <div className={cn(bodyText, "italic")}>No manual blocks.</div>
         )}
         {blocks.map((b) => (
           <ManualBlockRow key={b.id} block={b} timezone={timezone} />
@@ -2119,6 +2181,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
 }
 
 function AddManualBlockForm({ onDone }: { onDone: () => void }) {
+  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
   const fetcher = useFetcher();
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const [startLocal, setStartLocal] = useState("");
@@ -2130,7 +2193,7 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         // Optimistically close the form; the loader revalidation will reveal the new row.
         queueMicrotask(onDone);
       }}
-      className="bg-card border border-border shadow-brand-1 rounded-md p-3 mb-2 flex flex-col gap-2"
+      className={cn(card, formClass, cardPad, "mb-2 flex flex-col gap-2")}
     >
       <input type="hidden" name="intent" value="add-manual-block" />
       <input
@@ -2140,7 +2203,7 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
       />
       <div className="flex gap-2">
-        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className={cn("flex-1 min-w-0", fieldLabel)}>
           Start
           <DateField
             mode="datetime-local"
@@ -2152,7 +2215,7 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           />
           <input type="hidden" name="startTime" value={startLocal ? new Date(startLocal).toISOString() : ""} readOnly />
         </label>
-        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className={cn("flex-1 min-w-0", fieldLabel)}>
           End
           <DateField
             mode="datetime-local"
@@ -2169,8 +2232,11 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         value={repeat}
         onChange={setRepeat}
         anchorLocal={startLocal}
-        labelClassName="text-xs text-muted-foreground"
-        fieldClassName="w-full h-9 px-2 text-sm border border-border rounded-md bg-background text-foreground"
+        labelClassName={os ? "text-sm text-os-grey" : "text-xs text-muted-foreground"}
+        fieldClassName={cn(
+          "w-full px-2 text-sm border border-border rounded-md bg-background text-foreground",
+          !os && "h-9",
+        )}
       />
       {/* The action reads `recurrenceRule` as an RRULE string; derive it from
           the friendly Repeats choice so non-technical users never see RRULE. */}
@@ -2179,13 +2245,23 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={onDone}
-          className="px-3 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted"
+          className={cn(
+            "px-3 py-1 text-xs font-medium",
+            os
+              ? "rounded-full text-os-grey hover:bg-os-container hover:text-white"
+              : "rounded-md border border-border hover:bg-muted",
+          )}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-3 py-1 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90"
+          className={cn(
+            "px-3 py-1 text-xs font-semibold",
+            os
+              ? "rounded-full bg-os-accent text-os-bg hover:bg-os-accent-hover"
+              : "rounded-md bg-accent-coral text-white hover:bg-accent-coral/90",
+          )}
         >
           Add
         </button>
@@ -2195,13 +2271,18 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
 }
 
 function ManualBlockRow({ block, timezone }: { block: ManualBlockDTO; timezone: string }) {
+  const { os } = useOsChrome();
   const fetcher = useFetcher();
   const removing = fetcher.state !== "idle";
   return (
     <div
-      className={`bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2 flex items-start justify-between ${
-        removing ? "opacity-50" : ""
-      }`}
+      className={cn(
+        "border-l-4 border-l-accent-coral px-3 py-2 flex items-start justify-between",
+        // A row, not a panel: the os side takes the 12px item corner and the
+        // flat card fill, keeping the coral edge that matches its grid block.
+        os ? "rounded-os-item bg-os-card" : "bg-card border border-border shadow-brand-1 rounded-md",
+        removing && "opacity-50",
+      )}
     >
       <div>
         <div className="text-sm font-medium text-foreground">
@@ -2273,21 +2354,29 @@ function WeekToolbar({
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
+  const { os, iconBtn } = useOsChrome();
   // Use URL-relative resolution so "?weekStart=…" stays on /calendar instead of
   // bubbling up to the parent route (which would land on /).
   const prev = `?weekStart=${shiftWeekParam(weekStartIso, -1)}`;
   const next = `?weekStart=${shiftWeekParam(weekStartIso, 1)}`;
   return (
-    <div className="flex items-center justify-between mb-3">
+    <div className={cn("flex items-center justify-between", os ? "mb-5" : "mb-3")}>
       <div className="flex items-center gap-3">
-        <h2 className="font-heading text-lg font-bold text-foreground">{monthLabel}</h2>
+        <h2
+          className={cn(
+            "font-heading text-foreground",
+            os ? "text-2xl font-medium" : "text-lg font-bold",
+          )}
+        >
+          {monthLabel}
+        </h2>
         <div className="flex items-center gap-1">
           <Link
             to={prev}
             relative="path"
             aria-label="Previous week"
             preventScrollReset
-            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            className={iconBtn}
           >
             <ChevronLeft className="w-4 h-4" />
           </Link>
@@ -2295,7 +2384,12 @@ function WeekToolbar({
             to="?"
             relative="path"
             preventScrollReset
-            className="px-3 py-1 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
+            className={cn(
+              "text-xs font-semibold transition-colors",
+              os
+                ? "os-edit-btn os-add-btn--sm"
+                : "px-3 py-1 rounded-md border border-border hover:bg-muted",
+            )}
           >
             Today
           </Link>
@@ -2304,7 +2398,7 @@ function WeekToolbar({
             relative="path"
             aria-label="Next week"
             preventScrollReset
-            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            className={iconBtn}
           >
             <ChevronRight className="w-4 h-4" />
           </Link>
@@ -2315,7 +2409,7 @@ function WeekToolbar({
               disabled={refreshing}
               aria-label="Refresh availability"
               title="Refresh availability"
-              className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              className={cn(iconBtn, "disabled:opacity-50")}
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
@@ -2377,6 +2471,7 @@ function AvailabilityWeekGrid({
   // opens the create-editor popover anchored beside it.
   enableDragCreate?: boolean;
 }) {
+  const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
@@ -2486,7 +2581,7 @@ function AvailabilityWeekGrid({
   }
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col lg:flex-1 lg:min-h-0">
+    <section className={cn(panel, "p-4 flex flex-col lg:flex-1 lg:min-h-0")}>
       <WeekToolbar
         monthLabel={monthLabel}
         weekStartIso={data.weekStartIso}
@@ -2504,11 +2599,6 @@ function AvailabilityWeekGrid({
             : [{ color: "bg-accent-coral", label: "Busy" }]),
         ]}
       />
-      {enableDragCreate && (
-        <p className="px-1 pb-2 text-[11px] text-muted-foreground">
-          Drag a range on the grid to block off time. To invite people, use the Schedule Meeting tab.
-        </p>
-      )}
       <WeekGrid
         fillAndScroll
         days={days}
@@ -2657,7 +2747,7 @@ const NO_ROLES_MESSAGE =
 // textarea. Each of those sizes itself from its own intrinsic content — the
 // native date/time widgets and the select spinner all differ, and by locale —
 // so equal padding does not produce equal heights. Pin them instead.
-const FIELD_BASE = "h-9 px-2 text-sm border rounded-md bg-background text-foreground";
+const FIELD_BASE = "h-9 px-2 text-sm border";
 
 function timeEntryRoleKey(t: TimeEntryDTO): string {
   return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
@@ -2742,16 +2832,22 @@ function RoleSelectField({
   value: string;
   onChange: (next: string) => void;
 }) {
+  const { fieldLabel, compactField } = useOsChrome();
   const parsed = parseRoleOptionKey(value);
   return (
-    <label htmlFor={id} className="text-xs text-muted-foreground flex flex-col gap-1">
+    <label htmlFor={id} className={fieldLabel}>
       Role
       <Select
         value={value}
         onChange={onChange}
         placeholder="Select a role…"
         options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-        buttonClassName={`${FIELD_BASE} ${value ? "border-border" : "border-red-500"} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        buttonClassName={cn(
+          FIELD_BASE,
+          compactField,
+          value ? "border-border" : "border-red-500",
+          "inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40",
+        )}
       />
       <input type="hidden" name="assignmentType" value={parsed?.assignmentType ?? ""} />
       <input type="hidden" name="roleRefId" value={parsed?.roleRefId ?? ""} />
@@ -2774,6 +2870,7 @@ function CreateFromDragPopover({
   myRoles: RoleInstance[];
   onClose: () => void;
 }) {
+  const { os, popover, formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
   const [title, setTitle] = useState("");
   const [start, setStart] = useState(startLocal);
@@ -2850,7 +2947,7 @@ function CreateFromDragPopover({
 
   return (
     <div
-      className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
       role="dialog"
       aria-modal="false"
       aria-label="New personal block"
@@ -2867,12 +2964,7 @@ function CreateFromDragPopover({
         </button>
       </div>
 
-      <form onSubmit={submit} className="p-3 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Blocks your own time. Not shared with anyone. To invite people, use
-            the <strong>Schedule Meeting</strong> tab.
-          </p>
-
+      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
           <div>
             <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
               Title
@@ -2923,7 +3015,10 @@ function CreateFromDragPopover({
             onChange={setRepeat}
             anchorLocal={start}
             labelClassName="block text-sm font-medium text-foreground mb-1"
-            fieldClassName="w-full h-9 px-3 text-sm border border-border rounded-md bg-background text-foreground"
+            fieldClassName={cn(
+              "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
+              !os && "h-9",
+            )}
           />
 
           {myRoles.length > 0 && !isRecurring && (
@@ -2940,18 +3035,11 @@ function CreateFromDragPopover({
                   value={roleKey}
                   onChange={(v) => setRoleKey(v)}
                   options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-                  buttonClassName="mt-2 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  buttonClassName={cn("mt-2 border-border", formTrigger)}
                 />
               )}
             </div>
           )}
-          {isRecurring && (
-            <p className="text-xs text-muted-foreground">
-              Recurring blocks can't be logged as work yet — add each occurrence individually on
-              the Timesheet tab if you need hours for it.
-            </p>
-          )}
-
           {error && <p className="text-sm text-red-700">{error}</p>}
 
           <div className="flex items-center justify-end gap-2 pt-1">
@@ -3094,6 +3182,7 @@ function todayDateInputValue(timezone: string): string {
 }
 
 function TimesheetView({ data }: { data: LoaderData }) {
+  const { os, card, panelPad, heading, compactField, fieldLabel } = useOsChrome();
   const addFetcher = useFetcher<{ error?: string } | null>();
   const adding = addFetcher.state !== "idle";
   const [date, setDate] = useState(() => todayDateInputValue(data.timezone));
@@ -3139,9 +3228,9 @@ function TimesheetView({ data }: { data: LoaderData }) {
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
-      <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <section className={cn(card, panelPad)}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-heading font-semibold text-foreground">Timesheet</h2>
+          <h2 className={heading}>Timesheet</h2>
           {/* Adding an outside job is how someone with no current DALI
               assignment gets a role to log against, so it stays reachable even
               when the form below is showing the no-roles message. */}
@@ -3151,13 +3240,6 @@ function TimesheetView({ data }: { data: LoaderData }) {
               .map((r) => ({ id: r.roleRefId, label: r.label }))}
           />
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Meeting-sourced entries are added automatically when someone checks you present on a
-          meeting note's attendance checklist. Every entry shows up as a block on the calendar
-          below — add one here, or drag a range on the calendar. Click a block on the calendar to
-          edit or delete it.
-        </p>
-
         {!hasRoles ? (
           <p className="text-xs text-red-600">{NO_ROLES_MESSAGE}</p>
         ) : (
@@ -3179,7 +3261,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
             <input type="hidden" name="hours" value={hours > 0 ? String(hours) : ""} />
             <input type="hidden" name="startTime" value={startIso ?? ""} />
             <input type="hidden" name="endTime" value={endIso ?? ""} />
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={fieldLabel}>
               Date
               <DateField
                 mode="date"
@@ -3191,7 +3273,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 ariaLabel="Date"
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={fieldLabel}>
               Start
               <DateField
                 mode="time"
@@ -3202,7 +3284,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 ariaLabel="Start time"
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={fieldLabel}>
               End
               <DateField
                 mode="time"
@@ -3219,7 +3301,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
               value={roleKey}
               onChange={setRoleKey}
             />
-            <label className="text-xs text-muted-foreground flex flex-col gap-1 sm:col-span-2 xl:col-span-1">
+            <label className={cn(fieldLabel, "sm:col-span-2 xl:col-span-1")}>
               Note
               <textarea
                 name="note"
@@ -3230,14 +3312,19 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 // Starts level with the rest of the row; drag to grow for a
                 // longer note. A textarea is top-aligned rather than centred
                 // like an input, hence the explicit vertical padding.
-                className={`${FIELD_BASE} border-border py-2 min-h-9 resize-y`}
+                className={cn(FIELD_BASE, compactField, "border-border py-2 min-h-9 resize-y")}
               />
             </label>
             <div className="flex items-center gap-1.5 sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-start">
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="h-9 px-3 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+                className={cn(
+                  "h-9 px-3 text-xs font-semibold disabled:opacity-50",
+                  os
+                    ? "rounded-full bg-os-accent text-os-bg hover:bg-os-accent-hover"
+                    : "rounded-md bg-accent-coral text-white hover:bg-accent-coral/90",
+                )}
               >
                 Add
               </button>
@@ -3246,7 +3333,12 @@ function TimesheetView({ data }: { data: LoaderData }) {
                   type="button"
                   onClick={resetAddForm}
                   aria-label="Reset"
-                  className="inline-flex h-9 w-9 items-center justify-center text-xs font-semibold rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  className={cn(
+                    "inline-flex h-9 w-9 items-center justify-center text-xs font-semibold transition-colors",
+                    os
+                      ? "rounded-os-item text-os-grey hover:bg-os-container hover:text-white"
+                      : "rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
                 >
                   <RotateCcw className="w-3 h-3" aria-hidden />
                 </button>
@@ -3290,6 +3382,7 @@ type TimesheetSelection = {
 } & ({ mode: "create" } | { mode: "edit"; entry: TimeEntryDTO });
 
 function TimesheetWeekGrid({ data }: { data: LoaderData }) {
+  const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
@@ -3451,17 +3544,13 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   }).format(weekStart);
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
+    <section className={cn(panel, "p-4 flex flex-col")}>
       <WeekToolbar
         monthLabel={monthLabel}
         weekStartIso={data.weekStartIso}
         onRefresh={refresh}
         refreshing={revalidator.state !== "idle"}
       />
-      <p className="px-1 pb-2 text-[11px] text-muted-foreground">
-        Drag a range to log time, or click any block to edit role, time, or note. See My
-        Availability for your full calendar.
-      </p>
       {/* Names the window the chip hours cover, so "12.5h" isn't mistaken for
           this week's total. */}
       <p className="px-1 pb-1 text-[11px] text-muted-foreground">
@@ -3554,6 +3643,7 @@ function TimesheetDragPopover({
   myRoles: RoleInstance[];
   onClose: () => void;
 }) {
+  const { popover, formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -3616,7 +3706,7 @@ function TimesheetDragPopover({
 
   return (
     <div
-      className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
       role="dialog"
       aria-modal="false"
       aria-label="New timesheet entry"
@@ -3633,7 +3723,7 @@ function TimesheetDragPopover({
         </button>
       </div>
 
-      <form onSubmit={submit} className="p-3 space-y-3">
+      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="ts-drag-start" className="block text-sm font-medium text-foreground mb-1">
@@ -3679,7 +3769,7 @@ function TimesheetDragPopover({
               onChange={(v) => setRoleKey(v)}
               placeholder="Select a role…"
               options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-              buttonClassName={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${
+              buttonClassName={`${formTrigger} ${
                 roleKey ? "border-border" : "border-red-500"
               }`}
             />
@@ -3739,6 +3829,7 @@ function TimesheetEditPopover({
   myRoles: RoleInstance[];
   onClose: () => void;
 }) {
+  const { popover, formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -3830,7 +3921,7 @@ function TimesheetEditPopover({
 
   return (
     <div
-      className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
       role="dialog"
       aria-modal="false"
       aria-label="Edit timesheet entry"
@@ -3847,7 +3938,7 @@ function TimesheetEditPopover({
         </button>
       </div>
 
-      <form onSubmit={submit} className="p-3 space-y-3">
+      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="ts-edit-start" className="block text-sm font-medium text-foreground mb-1">
@@ -3895,7 +3986,7 @@ function TimesheetEditPopover({
                 : []),
               ...myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
             ]}
-            buttonClassName={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${
+            buttonClassName={`${formTrigger} ${
               roleKey ? "border-border" : "border-red-500"
             }`}
           />
@@ -3982,6 +4073,7 @@ function CreateScheduledMeetingForm({
   onChangeSelectedGroupIds: (ids: string[]) => void;
   resolvedParticipantIds: string[];
 }) {
+  const { panel, panelPad, formClass } = useOsChrome();
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const googleLinks = calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
@@ -4124,9 +4216,9 @@ function CreateScheduledMeetingForm({
   const labelClass = "block text-sm font-medium text-foreground mb-1";
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+    <section className={cn(panel, panelPad)}>
       <h2 className="font-heading font-semibold text-foreground mb-4">Create Meeting</h2>
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit} className={cn("space-y-5", formClass)}>
         {/* Essentials */}
         <div className="space-y-3">
           <div>
@@ -4239,7 +4331,6 @@ function CreateScheduledMeetingForm({
               checked={createNote}
               onChange={(e) => setCreateNote(e.target.checked)}
               label="Create meeting note"
-              description={`Adds a note with an attendance checklist${projectId ? " under the project's documents" : " in Lab documents"}. Invites still go only to people and groups in Participants.`}
             />
 
             {createNote && (
@@ -4301,7 +4392,6 @@ function CreateScheduledMeetingForm({
                 checked={coreMeeting}
                 onChange={(e) => setCoreMeeting(e.target.checked)}
                 label="Core meeting"
-                description="Shows this meeting on the Core hub's week calendar. Doesn't change who's invited."
               />
             </div>
           )}
@@ -4312,7 +4402,6 @@ function CreateScheduledMeetingForm({
                 checked={selfCheckIn}
                 onChange={(e) => setSelfCheckIn(e.target.checked)}
                 label="Self check-in (QR)"
-                description={`Attendees mark themselves present. Works with or without a meeting note —${createNote ? " the QR appears on the note." : " you'll get a shareable check-in link after creating."}`}
               />
             </div>
           )}
@@ -4327,10 +4416,21 @@ function CreateScheduledMeetingForm({
                 {status.notePageId && (
                   <>
                     {" "}
+                    {/* Not target="_blank": the desktop shell is a single
+                        webview with no window to open into, so the click did
+                        nothing at all. Embedded in the web workspace this opens
+                        a tab; standalone it just navigates. */}
                     <a
                       href={`/documents/${status.notePageId}`}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={(e) => {
+                        if (
+                          requestOpenTabIfEmbedded(
+                            `/documents/${status.notePageId}`,
+                            "Meeting note",
+                          )
+                        )
+                          e.preventDefault();
+                      }}
                       className="underline font-medium"
                     >
                       View meeting note
@@ -4342,8 +4442,15 @@ function CreateScheduledMeetingForm({
                     {" "}
                     <a
                       href={`/calendar/check-in/${status.meetingId}`}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={(e) => {
+                        if (
+                          requestOpenTabIfEmbedded(
+                            `/calendar/check-in/${status.meetingId}`,
+                            "Check-in",
+                          )
+                        )
+                          e.preventDefault();
+                      }}
                       className="underline font-medium"
                     >
                       Open check-in / QR
@@ -4413,6 +4520,7 @@ function ParticipantPicker({
   groupsById: Map<string, GroupOption>;
   resolvedCount: number;
 }) {
+  const { fieldRadius } = useOsChrome();
   const [adding, setAdding] = useState<AddingMode>(null);
   const [query, setQuery] = useState("");
 
@@ -4511,7 +4619,7 @@ function ParticipantPicker({
       </div>
 
       {adding !== null && (
-        <div className="mt-2 border border-border rounded-md bg-background p-2 space-y-2">
+        <div className={cn("mt-2 border border-border bg-background p-2 space-y-2", fieldRadius)}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-foreground">
               {adding === "user" ? "Pick a user" : "Pick a user group"}
@@ -4627,6 +4735,7 @@ function ScheduleWeekGrid({
   selectedStartLocal?: string;
   selectedEndLocal?: string;
 }) {
+  const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4863,7 +4972,7 @@ function ScheduleWeekGrid({
   }
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
+    <section className={cn(panel, "p-4 flex flex-col")}>
       <WeekToolbar
         monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
@@ -5547,7 +5656,6 @@ function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["me
           )
         }
         label="Add to timesheet"
-        description="Logs this meeting's hours on your Timesheet. Pick a role there to attribute them."
       />
       {timesheetFetcher.data?.error && (
         <p className="text-[11px] text-red-600">{timesheetFetcher.data.error}</p>
@@ -5568,7 +5676,6 @@ function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["me
               )
             }
             label="Core meeting"
-            description="Shows this meeting on the Core hub's week calendar. Doesn't change who's invited."
           />
           {coreFetcher.data?.error && (
             <p className="text-[11px] text-red-600">{coreFetcher.data.error}</p>

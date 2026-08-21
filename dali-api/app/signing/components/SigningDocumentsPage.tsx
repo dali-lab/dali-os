@@ -3,6 +3,8 @@ import { Link, Form, useLoaderData } from "react-router";
 import { Plus, FileSignature, ChevronRight } from "lucide-react";
 import type { loader } from "~/signing/routes/admin.agreements";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 const KIND_LABELS: Record<string, string> = {
   General: "General",
@@ -20,6 +22,7 @@ const SCOPE_LABELS: Record<string, string> = {
 export function SigningDocumentsPage() {
   const data = useLoaderData<typeof loader>();
   const [creating, setCreating] = useState(false);
+  const { os, pageTitle, card, formClass } = useOsChrome();
   // The route serves this legacy card grid only in "list" mode (the console
   // mode renders AgreementsConsole instead).
   if (data.mode !== "list") return null;
@@ -28,21 +31,18 @@ export function SigningDocumentsPage() {
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Agreements</h1>
-          <p className="mt-1 text-muted-foreground">
-            Author signable documents — membership, mentorship, and
-            confidentiality agreements. Place signature, date, and checkbox
-            fields, use <code>{"{{term}}"}</code>-style variables, then put a
-            version in force and track who has signed.
-          </p>
-        </div>
+        <h1 className={pageTitle}>Agreements</h1>
         <button
           type="button"
           onClick={() => setCreating((c) => !c)}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm shrink-0"
+          className={cn(
+            "shrink-0",
+            os
+              ? "os-add-btn"
+              : "inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm",
+          )}
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className={os ? "h-[17px] w-[17px]" : "w-4 h-4 mr-2"} strokeWidth={os ? 3 : undefined} />
           New Agreement
         </button>
       </div>
@@ -50,7 +50,11 @@ export function SigningDocumentsPage() {
       {creating && (
         <Form
           method="post"
-          className="bg-card rounded-xl border border-border p-5 shadow-sm grid gap-3 sm:grid-cols-2"
+          className={cn(
+            "p-5 grid gap-3 sm:grid-cols-2",
+            formClass,
+            os ? "rounded-os-card bg-os-card" : "bg-card rounded-xl border border-border shadow-sm",
+          )}
           onSubmit={() => setCreating(false)}
         >
           <input type="hidden" name="intent" value="create" />
@@ -124,13 +128,21 @@ export function SigningDocumentsPage() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+              className={
+                os
+                  ? "os-btn-ghost"
+                  : "px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+              }
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+              className={cn(
+                os
+                  ? "os-btn-primary"
+                  : "px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90",
+              )}
             >
               Create
             </button>
@@ -139,9 +151,7 @@ export function SigningDocumentsPage() {
       )}
 
       {documents.length === 0 ? (
-        <p className="text-muted-foreground italic">
-          No agreements yet. Create one to get started.
-        </p>
+        <p className="text-muted-foreground italic">No agreements yet.</p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
           {documents.map((doc) => {
@@ -150,7 +160,12 @@ export function SigningDocumentsPage() {
               <Link
                 key={doc.id}
                 to={`/admin/agreements/${doc.id}`}
-                className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
+                className={cn(
+                  "group block p-6",
+                  os
+                    ? "rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover"
+                    : "bg-card rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow",
+                )}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3 min-w-0">

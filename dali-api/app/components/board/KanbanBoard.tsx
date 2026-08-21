@@ -19,6 +19,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { cn } from "~/lib/cn";
 
 export type KanbanColumn<TCard> = {
   /** Droppable id (status, projectId, UNASSIGNED, delib column). */
@@ -211,6 +213,7 @@ function BoardColumn<TCard>({
   layout: "row" | "grid";
   emptyLabel: ReactNode;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
   const cardIds = column.cards.map(getCardId);
 
@@ -219,7 +222,11 @@ function BoardColumn<TCard>({
   // own shape via `className`. The coral `isOver` ring is applied uniformly.
   const shellClass =
     column.className ??
-    "flex-shrink-0 w-64 border rounded-lg border-border bg-card flex flex-col";
+    (os
+      ? // 12px, not the 24px card corner: a column runs the height of the
+        // board, and the bigger radius reads as a bubble at that size.
+        "flex-shrink-0 w-64 border border-transparent rounded-os-item bg-os-card flex flex-col"
+      : "flex-shrink-0 w-64 border rounded-lg border-border bg-card flex flex-col");
 
   const list = (
     <>
@@ -227,7 +234,12 @@ function BoardColumn<TCard>({
         column.renderEmpty ? (
           column.renderEmpty()
         ) : (
-          <div className="text-xs text-muted-foreground italic text-center py-4">
+          <div
+            className={cn(
+              "text-muted-foreground italic text-center py-4",
+              os ? "text-sm" : "text-xs",
+            )}
+          >
             {emptyLabel}
           </div>
         )
@@ -251,7 +263,8 @@ function BoardColumn<TCard>({
   return (
     <div
       ref={setNodeRef}
-      className={`${shellClass} ${isOver ? "ring-2 ring-accent-coral/40" : ""}`}
+      data-testid="board-column"
+      className={cn(shellClass, isOver && (os ? "ring-2 ring-os-accent/50" : "ring-2 ring-accent-coral/40"))}
     >
       <div
         className={
@@ -260,17 +273,30 @@ function BoardColumn<TCard>({
         }
       >
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground truncate" title={
-            typeof column.title === "string" ? column.title : undefined
-          }>
+          {/* The os type scale starts a step up from the brand shell's: a
+              column name is 16px there, its counts 12px, not 14/11. */}
+          <div
+            className={cn(
+              "text-foreground truncate",
+              os ? "text-base font-medium" : "text-sm font-semibold",
+            )}
+            title={typeof column.title === "string" ? column.title : undefined}
+          >
             {column.title}
           </div>
           {column.subtitle != null && (
-            <div className="text-[11px] text-muted-foreground">{column.subtitle}</div>
+            <div className={cn("text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
+              {column.subtitle}
+            </div>
           )}
         </div>
         {column.headerExtra ?? (
-          <div className="text-[11px] text-muted-foreground flex-shrink-0">
+          <div
+            className={cn(
+              "text-muted-foreground flex-shrink-0",
+              os ? "text-xs" : "text-[11px]",
+            )}
+          >
             {column.count ?? column.cards.length}
           </div>
         )}

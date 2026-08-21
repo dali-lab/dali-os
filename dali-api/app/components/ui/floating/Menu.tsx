@@ -29,7 +29,8 @@ import {
   FloatingList,
   FloatingPortal,
 } from "@floating-ui/react";
-import { MENU_ITEM_CLASS, PANEL_CLASS } from "./styles";
+import { MENU_ITEM_CLASS } from "./styles";
+import { usePanelClass } from "./os-styles";
 
 // Action menu (the ⋯ / profile / breadcrumb menus, split-button popups). Items
 // are callbacks or links. Shared with ContextMenu.tsx via MenuContext so both
@@ -64,6 +65,7 @@ function MenuRoot({
   align?: "left" | "right";
   ariaLabel?: string;
 }) {
+  const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const listRef = useRef<Array<HTMLElement | null>>([]);
@@ -135,7 +137,7 @@ function MenuRoot({
               ref={refs.setFloating}
               style={floatingStyles}
               aria-label={ariaLabel}
-              className={`${PANEL_CLASS} min-w-[10rem]`}
+              className={`${panelClass} min-w-[10rem]`}
               {...getFloatingProps()}
             >
               <MenuContext.Provider value={menuValue}>
