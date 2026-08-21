@@ -821,11 +821,32 @@ export default function PartnerApplicationDetail() {
     </div>
   ) : null;
 
-  const header = (
-    <Header application={application} canEdit={canEdit} crmEnabled={crmEnabled} />
-  );
+  const header = <Header application={application} canEdit={canEdit} />;
   const details = (
     <DetailsSection application={application} terms={terms} canEdit={canEdit} />
+  );
+  // CRM working sections (only meaningful with edit permission).
+  const triageBar = canEdit ? (
+    <TriageBar application={application} coreMembers={coreMembers} />
+  ) : null;
+  const evaluation = canEdit ? (
+    <EvaluationCard application={application} />
+  ) : null;
+  const meetings = canEdit ? (
+    <div id="partner-meetings" className="scroll-mt-4">
+      <MeetingsSection
+        applicationId={application.id}
+        meetings={application.meetings}
+        coreMembers={coreMembers}
+      />
+    </div>
+  ) : null;
+  const promoteBlock = (
+    <PromoteBlock
+      application={application}
+      canEdit={canEdit}
+      crmEnabled={crmEnabled}
+    />
   );
   const answers =
     formAnswers.length > 0 ? (
@@ -872,6 +893,7 @@ export default function PartnerApplicationDetail() {
         {topBar}
         {header}
         {details}
+        {promoteBlock}
         {answers}
         {domainScope}
         {sow}
@@ -879,48 +901,40 @@ export default function PartnerApplicationDetail() {
     );
   }
 
-  // Flag on → 3-panel record: identity · activity timeline · action cards. The
-  // doc-editor-heavy / long-form blocks (answers, domain scope, SOW) stay full
-  // width below the grid so their embedded editors aren't cramped in a rail.
+  // Flag on → 2-column record: a wide working body (identity → status
+  // progression → details → evaluation → meetings → decision) plus a sticky
+  // activity rail. A narrow rail (not a wide center column) keeps a sparse
+  // activity feed from leaving a hole, and gives the tall evaluation form full
+  // width. Doc-editor-heavy / long-form blocks stay full width below.
   return (
     <div className="flex flex-col gap-4">
       {topBar}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
-        <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-4">
           {header}
+          {triageBar}
           {details}
+          {evaluation}
+          {meetings}
+          {promoteBlock}
         </div>
 
-        <PartnerActivityFeed
-          activities={activities}
-          actorNames={actorNames}
-          canEdit={canEdit}
-          headerActions={
-            canEdit ? (
-              <a
-                href="#partner-meetings"
-                className={buttonClasses("ghost", "sm")}
-              >
-                <Calendar className="w-3.5 h-3.5" /> Log meeting
-              </a>
-            ) : undefined
-          }
-        />
-
-        <div className="flex flex-col gap-4">
-          {canEdit && (
-            <TriageBar application={application} coreMembers={coreMembers} />
-          )}
-          {canEdit && <EvaluationCard application={application} />}
-          <div id="partner-meetings" className="scroll-mt-4">
-            {canEdit && (
-              <MeetingsSection
-                applicationId={application.id}
-                meetings={application.meetings}
-                coreMembers={coreMembers}
-              />
-            )}
-          </div>
+        <div className="lg:sticky lg:top-4">
+          <PartnerActivityFeed
+            activities={activities}
+            actorNames={actorNames}
+            canEdit={canEdit}
+            headerActions={
+              canEdit ? (
+                <a
+                  href="#partner-meetings"
+                  className={buttonClasses("ghost", "sm")}
+                >
+                  <Calendar className="w-3.5 h-3.5" /> Log meeting
+                </a>
+              ) : undefined
+            }
+          />
         </div>
       </div>
 
@@ -1622,15 +1636,12 @@ function MeetingsSection({
 function Header({
   application,
   canEdit,
-  crmEnabled,
 }: {
   application: LoaderData["application"];
   canEdit: boolean;
-  crmEnabled: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const submit = useSubmit();
-  const confirmSubmit = useConfirmSubmit();
 
   return (
     <header className="flex flex-col gap-2">
@@ -1729,40 +1740,52 @@ function Header({
           </>
         )}
       </p>
-
-      {canEdit && !application.resultingProjectId && (
-        <Form
-          id="promote"
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Create a project from this application?",
-            description:
-              "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-            confirmLabel: "Create project",
-          })}
-          className="mt-2 scroll-mt-4"
-        >
-          <input type="hidden" name="intent" value="promote" />
-          {!application.partner && (
-            <input
-              type="text"
-              name="orgName"
-              placeholder="Organization name (optional — defaults to the applicant)"
-              className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-            />
-          )}
-          {/* CRM acceptance fields near the promote button */}
-          {crmEnabled && canEdit && (
-            <AcceptanceFields application={application} />
-          )}
-          <div className="mt-3">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Promote to project →
-            </button>
-          </div>
-        </Form>
-      )}
     </header>
+  );
+}
+
+// The accept/promote decision block — the tail of the funnel. Pulled out of the
+// header so it reads at the end of the record flow (after evaluation), not up
+// top. Anchored (#promote) for the "Promote to project →" advance CTA.
+function PromoteBlock({
+  application,
+  canEdit,
+  crmEnabled,
+}: {
+  application: LoaderData["application"];
+  canEdit: boolean;
+  crmEnabled: boolean;
+}) {
+  const confirmSubmit = useConfirmSubmit();
+  if (!canEdit || application.resultingProjectId) return null;
+  return (
+    <Form
+      id="promote"
+      method="post"
+      onSubmit={confirmSubmit({
+        title: "Create a project from this application?",
+        description:
+          "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
+        confirmLabel: "Create project",
+      })}
+      className="scroll-mt-4 bg-card border border-border rounded-lg p-4"
+    >
+      <input type="hidden" name="intent" value="promote" />
+      {!application.partner && (
+        <input
+          type="text"
+          name="orgName"
+          placeholder="Organization name (optional — defaults to the applicant)"
+          className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+        />
+      )}
+      {crmEnabled && <AcceptanceFields application={application} />}
+      <div className="mt-3">
+        <button type="submit" className={buttonClasses("primary", "sm")}>
+          Promote to project →
+        </button>
+      </div>
+    </Form>
   );
 }
 
@@ -2234,17 +2257,9 @@ function SowBlock({
   const documentName = `partnersow:${applicationId}:body`;
   return (
     <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">
-            Statement of Work
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Versioned automatically — open version history from the editor
-            toolbar.
-          </p>
-        </div>
-      </div>
+      <h2 className="text-sm font-semibold text-foreground mb-3">
+        Statement of Work
+      </h2>
       {collabToken ? (
         <PresenceProvider
           pageId={`partnersow:${applicationId}`}
