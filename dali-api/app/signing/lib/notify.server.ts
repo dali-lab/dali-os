@@ -40,7 +40,8 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
   await notify({
     eventType: "document.sign_request",
     message: {
-      title: `Please sign: ${binding.document.name}`,
+      title: "You have a new document to sign",
+      body: binding.document.name,
       link: `/sign/${bindingId}`,
       isTodo: true,
     },
