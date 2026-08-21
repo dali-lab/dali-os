@@ -8,7 +8,14 @@ import {
   useSubmit,
 } from "react-router";
 import { Select, type SelectOption } from "~/components/ui/floating";
-import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  FolderKanban,
+  Mail,
+  Users,
+  Unlink,
+} from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -428,6 +435,12 @@ export default function PartnerOrgDetail() {
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
+      <Link
+        to="/partners"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" /> All partners
+      </Link>
       <div className="flex items-center gap-4">
         {org.logoDisplayUrl ? (
           <img

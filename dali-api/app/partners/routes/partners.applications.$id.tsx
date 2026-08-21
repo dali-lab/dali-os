@@ -9,7 +9,11 @@ import {
   useSubmit,
 } from "react-router";
 import { Select, type SelectOption } from "~/components/ui/floating";
-import { Pencil } from "lucide-react";
+import { Pencil, ArrowLeft, Calendar } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
+import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -46,6 +50,10 @@ import {
   sendDecisionRejectedEmail,
   sendLearnMoreRequestEmail,
 } from "../lib/partner-emails.server";
+import {
+  logPartnerActivity,
+  setApplicationStatus,
+} from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
 
@@ -188,6 +196,57 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  // Activity timeline (newest first) + a name map for the acting Core members.
+  // Only loaded behind the flag — the feed only renders when the CRM is on.
+  let activities: {
+    id: string;
+    createdAt: string;
+    actorUserId: string | null;
+    type: string;
+    body: string | null;
+    metadata: Record<string, unknown> | null;
+  }[] = [];
+  let actorNames: Record<string, string> = {};
+  if (crmEnabled) {
+    const rows = await prisma.partnerActivity.findMany({
+      where: { applicationId: params.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        actorUserId: true,
+        type: true,
+        body: true,
+        metadata: true,
+      },
+    });
+    activities = rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      actorUserId: r.actorUserId,
+      type: r.type,
+      body: r.body,
+      metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+    }));
+    const actorIds = [
+      ...new Set(rows.map((r) => r.actorUserId).filter(Boolean)),
+    ] as string[];
+    if (actorIds.length > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      });
+      actorNames = Object.fromEntries(
+        users.map((u) => [
+          u.id,
+          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+            u.daliEmail ||
+            u.id,
+        ]),
+      );
+    }
+  }
+
   return {
     application: {
       id: application.id,
@@ -235,6 +294,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userName,
     crmEnabled,
     coreMembers,
+    activities,
+    actorNames,
   };
 }
 
@@ -261,9 +322,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!isPartnerApplicationStatus(status)) {
       return { error: "Invalid status." };
     }
-    await prisma.partnerApplication.update({
-      where: { id: params.id },
-      data: { status },
+    await setApplicationStatus(prisma, {
+      applicationId: params.id,
+      to: status,
+      actorUserId: auth.user.sub,
     });
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
@@ -410,13 +472,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
         select: { id: true },
       });
-      await tx.partnerApplication.update({
-        where: { id: app.id },
-        data: {
-          resultingProjectId: created.id,
-          partnerOrgId: orgId,
-          status: "Promoted",
-        },
+      await setApplicationStatus(tx, {
+        applicationId: app.id,
+        to: "Promoted",
+        actorUserId: auth.user.sub,
+        data: { resultingProjectId: created.id, partnerOrgId: orgId },
+        meta: { projectId: created.id },
       });
       return created;
     });
@@ -434,7 +495,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "eval" ||
     intent === "acceptance" ||
     intent === "meeting-create" ||
-    intent === "meeting-debrief"
+    intent === "meeting-debrief" ||
+    intent === "note"
   ) {
     // Re-check the flag server-side on every CRM write.
     const actionRoles = await getUserRoles(auth.user.sub, request);
@@ -449,9 +511,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { status: "Meeting" },
+      await setApplicationStatus(prisma, {
+        applicationId: params.id,
+        to: "Meeting",
+        actorUserId: auth.user.sub,
       });
       if (applicant?.applicantContact?.email) {
         await sendMeetingInviteEmail(
@@ -460,6 +523,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           when,
           details,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "meeting-invite" },
+        });
       }
 
     } else if (intent === "send-application") {
@@ -470,9 +539,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { status: "Triaged" },
+      await setApplicationStatus(prisma, {
+        applicationId: params.id,
+        to: "Triaged",
+        actorUserId: auth.user.sub,
       });
       if (applicant?.applicantContact?.email) {
         await sendTriageNextStepsEmail(
@@ -480,6 +550,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicant.applicantContact.name,
           nextSteps + `\n\nApply here: ${getFrontendUrl()}/partner/apply`,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "next-steps" },
+        });
       }
 
     } else if (intent === "reject") {
@@ -488,9 +564,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { status: "Rejected", decisionReason: reason ?? null },
+      await setApplicationStatus(prisma, {
+        applicationId: params.id,
+        to: "Rejected",
+        actorUserId: auth.user.sub,
+        data: { decisionReason: reason ?? null },
+        ...(reason ? { meta: { reason } } : {}),
       });
       if (applicant?.applicantContact?.email) {
         await sendDecisionRejectedEmail(
@@ -498,6 +577,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicant.applicantContact.name,
           reason,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "rejected" },
+        });
       }
 
     } else if (intent === "learn-more") {
@@ -507,9 +592,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { status: "LearnMore", decisionReason: whatWeNeed },
+      await setApplicationStatus(prisma, {
+        applicationId: params.id,
+        to: "LearnMore",
+        actorUserId: auth.user.sub,
+        data: { decisionReason: whatWeNeed },
+        meta: { reason: whatWeNeed },
       });
       if (applicant?.applicantContact?.email) {
         await sendLearnMoreRequestEmail(
@@ -517,6 +605,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicant.applicantContact.name,
           whatWeNeed,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "learn-more" },
+        });
       }
 
     } else if (intent === "accept") {
@@ -527,9 +621,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicantContact: { select: { name: true, email: true } },
         },
       });
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { status: "Accepted" },
+      await setApplicationStatus(prisma, {
+        applicationId: params.id,
+        to: "Accepted",
+        actorUserId: auth.user.sub,
       });
       if (app?.applicantContact?.email) {
         await sendDecisionAcceptedEmail(
@@ -537,6 +632,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           app.applicantContact.name,
           app.title,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "accepted" },
+        });
       }
 
     } else if (intent === "assign-meeter") {
@@ -573,6 +674,14 @@ export async function action({ request, params }: Route.ActionArgs) {
           ...(interviewRating !== null ? { interviewRating } : {}),
         },
       });
+      await logPartnerActivity(prisma, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+        type: "Evaluated",
+        ...(interviewRating !== null
+          ? { metadata: { interviewRating } }
+          : {}),
+      });
 
     } else if (intent === "acceptance") {
       const ambiguityRaw = form.get("ambiguityRating");
@@ -606,7 +715,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         select: { applicantContactId: true, applicantContact: { select: { name: true, email: true } } },
       });
 
-      await prisma.partnerMeeting.create({
+      const meeting = await prisma.partnerMeeting.create({
         data: {
           applicationId: params.id,
           scheduledAt,
@@ -614,6 +723,13 @@ export async function action({ request, params }: Route.ActionArgs) {
           notes: notes ?? null,
           contactId: app?.applicantContactId ?? null,
         },
+        select: { id: true },
+      });
+      await logPartnerActivity(prisma, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+        type: "MeetingScheduled",
+        metadata: { meetingId: meeting.id, scheduledAt: scheduledAt.toISOString() },
       });
 
       const notifyPartner = form.get("notifyPartner") === "on";
@@ -628,6 +744,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           when,
           notes,
         );
+        await logPartnerActivity(prisma, {
+          applicationId: params.id,
+          actorUserId: auth.user.sub,
+          type: "EmailSent",
+          metadata: { kind: "meeting-invite" },
+        });
       }
 
     } else if (intent === "meeting-debrief") {
@@ -645,6 +767,22 @@ export async function action({ request, params }: Route.ActionArgs) {
           debrief,
           ...(outcome ? { outcome } : {}),
         },
+      });
+      await logPartnerActivity(prisma, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+        type: "MeetingDebriefed",
+        metadata: { meetingId, ...(outcome ? { outcome } : {}) },
+      });
+
+    } else if (intent === "note") {
+      const body = (form.get("body") as string | null)?.trim() ?? "";
+      if (!body) return { error: "Note can't be empty." };
+      await logPartnerActivity(prisma, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+        type: "Note",
+        body,
       });
     }
 
@@ -669,13 +807,21 @@ export default function PartnerApplicationDetail() {
     userName,
     crmEnabled,
     coreMembers,
+    activities,
+    actorNames,
   } = useLoaderData() as LoaderData;
   const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
+  const topBar = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          to="/partners/applications"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> All applications
+        </Link>
         <EditModeToggle
           canEdit={canEditPerm}
           editMode={editMode}
@@ -688,65 +834,115 @@ export default function PartnerApplicationDetail() {
           {actionData.error}
         </div>
       )}
+    </>
+  );
 
-      <Header
-        application={application}
-        canEdit={canEdit}
-        crmEnabled={crmEnabled}
-        coreMembers={coreMembers}
-      />
+  const header = (
+    <Header application={application} canEdit={canEdit} crmEnabled={crmEnabled} />
+  );
+  const details = (
+    <DetailsSection application={application} terms={terms} canEdit={canEdit} />
+  );
+  const answers =
+    formAnswers.length > 0 ? (
+      <section className="bg-card border border-border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-foreground mb-3">
+          Application answers
+        </h2>
+        <dl className="flex flex-col gap-3">
+          {formAnswers.map((row) => (
+            <div key={row.key}>
+              <dt className="text-xs font-medium text-muted-foreground mb-0.5">
+                {row.label}
+              </dt>
+              <dd className="text-sm text-foreground whitespace-pre-wrap">
+                {row.value || "—"}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    ) : null;
+  const domainScope = (
+    <DomainScopeBlock
+      applicationId={application.id}
+      domains={application.domains}
+      availableDomains={availableDomains}
+      canEdit={canEdit}
+    />
+  );
+  const sow = (
+    <SowBlock
+      applicationId={application.id}
+      canEdit={canEdit}
+      collabToken={collabToken}
+      userName={userName}
+    />
+  );
 
-      <DetailsSection
-        application={application}
-        terms={terms}
-        canEdit={canEdit}
-      />
+  // Flag off → the pre-CRM single-column page, unchanged (triage / eval /
+  // meetings / activity are all CRM-only, so none render here).
+  if (!crmEnabled) {
+    return (
+      <div className="flex flex-col gap-4">
+        {topBar}
+        {header}
+        {details}
+        {answers}
+        {domainScope}
+        {sow}
+      </div>
+    );
+  }
 
-      {formAnswers.length > 0 && (
-        <section className="bg-card border border-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-foreground mb-3">
-            Application answers
-          </h2>
-          <dl className="flex flex-col gap-3">
-            {formAnswers.map((row) => (
-              <div key={row.key}>
-                <dt className="text-xs font-medium text-muted-foreground mb-0.5">
-                  {row.label}
-                </dt>
-                <dd className="text-sm text-foreground whitespace-pre-wrap">
-                  {row.value || "—"}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
+  // Flag on → 3-panel record: identity · activity timeline · action cards. The
+  // doc-editor-heavy / long-form blocks (answers, domain scope, SOW) stay full
+  // width below the grid so their embedded editors aren't cramped in a rail.
+  return (
+    <div className="flex flex-col gap-4">
+      {topBar}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
+        <div className="flex flex-col gap-4">
+          {header}
+          {details}
+        </div>
 
-      <DomainScopeBlock
-        applicationId={application.id}
-        domains={application.domains}
-        availableDomains={availableDomains}
-        canEdit={canEdit}
-      />
-
-      {crmEnabled && canEdit && (
-        <EvaluationCard application={application} />
-      )}
-
-      {crmEnabled && canEdit && (
-        <MeetingsSection
-          applicationId={application.id}
-          meetings={application.meetings}
-          coreMembers={coreMembers}
+        <PartnerActivityFeed
+          activities={activities}
+          actorNames={actorNames}
+          canEdit={canEdit}
+          headerActions={
+            canEdit ? (
+              <a
+                href="#partner-meetings"
+                className={buttonClasses("ghost", "sm")}
+              >
+                <Calendar className="w-3.5 h-3.5" /> Log meeting
+              </a>
+            ) : undefined
+          }
         />
-      )}
 
-      <SowBlock
-        applicationId={application.id}
-        canEdit={canEdit}
-        collabToken={collabToken}
-        userName={userName}
-      />
+        <div className="flex flex-col gap-4">
+          {canEdit && (
+            <TriageBar application={application} coreMembers={coreMembers} />
+          )}
+          {canEdit && <EvaluationCard application={application} />}
+          <div id="partner-meetings" className="scroll-mt-4">
+            {canEdit && (
+              <MeetingsSection
+                applicationId={application.id}
+                meetings={application.meetings}
+                coreMembers={coreMembers}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {answers}
+      {domainScope}
+      {sow}
     </div>
   );
 }
@@ -842,7 +1038,7 @@ function TriageBar({
             />
           </label>
           <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors">
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Send invite
             </button>
             <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
@@ -865,7 +1061,7 @@ function TriageBar({
             />
           </label>
           <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors">
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Send email
             </button>
             <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
@@ -981,7 +1177,7 @@ function AcceptanceFields({ application }: { application: LoaderData["applicatio
       <div className="flex justify-end">
         <button
           type="submit"
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+          className={buttonClasses("primary", "sm")}
         >
           Save
         </button>
@@ -1076,7 +1272,7 @@ function EvaluationCard({ application }: { application: LoaderData["application"
         <div className="flex justify-end">
           <button
             type="submit"
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={buttonClasses("primary", "sm")}
           >
             Save evaluation
           </button>
@@ -1141,11 +1337,11 @@ function MeetingsSection({
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground font-medium">Date & time *</span>
-              <input
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 name="meetingDate"
                 required
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                ariaLabel="Meeting date and time"
               />
             </label>
           </div>
@@ -1153,10 +1349,13 @@ function MeetingsSection({
             <legend className="text-xs text-muted-foreground font-medium mb-1">Attendees</legend>
             <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto">
               {coreMembers.map((m) => (
-                <label key={m.userId} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                  <input type="checkbox" name="attendeeUserIds" value={m.userId} className="rounded" />
-                  <span className="text-foreground truncate">{m.name}</span>
-                </label>
+                <Checkbox
+                  key={m.userId}
+                  name="attendeeUserIds"
+                  value={m.userId}
+                  label={m.name}
+                  className="text-xs"
+                />
               ))}
             </div>
           </fieldset>
@@ -1169,15 +1368,20 @@ function MeetingsSection({
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
             />
           </label>
-          <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input type="checkbox" name="notifyPartner" className="rounded" />
-            <span className="text-muted-foreground">Email partner a meeting invite</span>
-          </label>
+          <Checkbox
+            name="notifyPartner"
+            label="Email partner a meeting invite"
+            className="text-xs"
+          />
           <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors">
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Log meeting
             </button>
-            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              className={buttonClasses("secondary", "sm")}
+            >
               Cancel
             </button>
           </div>
@@ -1249,23 +1453,29 @@ function MeetingsSection({
                     </label>
                     <label className="flex flex-col gap-1 text-xs">
                       <span className="text-muted-foreground font-medium">Outcome</span>
-                      <select
+                      <Select
                         name="outcome"
                         defaultValue={m.outcome ?? ""}
-                        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                      >
-                        <option value="">No outcome set</option>
-                        <option value="Advance">Advance</option>
-                        <option value="Hold">Hold</option>
-                        <option value="Reject">Reject</option>
-                        <option value="MoreInfoNeeded">Need more info</option>
-                      </select>
+                        ariaLabel="Meeting outcome"
+                        options={[
+                          { value: "", label: "No outcome set" },
+                          { value: "Advance", label: "Advance" },
+                          { value: "Hold", label: "Hold" },
+                          { value: "Reject", label: "Reject" },
+                          { value: "MoreInfoNeeded", label: "Need more info" },
+                        ]}
+                        buttonClassName="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1"
+                      />
                     </label>
                     <div className="flex gap-2">
-                      <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors">
+                      <button type="submit" className={buttonClasses("primary", "sm")}>
                         Save debrief
                       </button>
-                      <button type="button" onClick={() => setDebriefOpenId(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setDebriefOpenId(null)}
+                        className={buttonClasses("secondary", "sm")}
+                      >
                         Cancel
                       </button>
                     </div>
@@ -1286,12 +1496,10 @@ function Header({
   application,
   canEdit,
   crmEnabled,
-  coreMembers,
 }: {
   application: LoaderData["application"];
   canEdit: boolean;
   crmEnabled: boolean;
-  coreMembers: LoaderData["coreMembers"];
 }) {
   const [editing, setEditing] = useState(false);
   const submit = useSubmit();
@@ -1314,16 +1522,13 @@ function Header({
               aria-label="Application title"
               className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
-            <button
-              type="submit"
-              className="px-2.5 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Save
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-2.5 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={buttonClasses("secondary", "sm")}
             >
               Cancel
             </button>
@@ -1398,11 +1603,6 @@ function Header({
         )}
       </p>
 
-      {/* CRM triage bar */}
-      {crmEnabled && canEdit && (
-        <TriageBar application={application} coreMembers={coreMembers} />
-      )}
-
       {canEdit && !application.resultingProjectId && (
         <Form
           method="post"
@@ -1428,10 +1628,7 @@ function Header({
             <AcceptanceFields application={application} />
           )}
           <div className="mt-3">
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Promote to project →
             </button>
           </div>
@@ -1490,7 +1687,7 @@ function DetailsSection({
         <div className="flex justify-end">
           <button
             type="submit"
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={buttonClasses("primary", "sm")}
           >
             Save changes
           </button>
@@ -1696,7 +1893,7 @@ function DomainScopeBlock({
           <button
             type="submit"
             disabled={busy || !newDomainId}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
+            className={buttonClasses("primary", "sm")}
           >
             Add
           </button>
@@ -1852,7 +2049,7 @@ function DomainScopeEditRow({
           <button
             type="submit"
             disabled={busy}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
+            className={buttonClasses("primary", "sm")}
           >
             Save
           </button>

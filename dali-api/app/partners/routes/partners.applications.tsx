@@ -33,6 +33,7 @@ import {
 } from "../lib/application-form.server";
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
+import { logPartnerActivity } from "../lib/partner-activity.server";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
 
@@ -235,6 +236,12 @@ export async function action({ request }: Route.ActionArgs) {
       source: "Manual",
     },
     select: { id: true },
+  });
+  await logPartnerActivity(prisma, {
+    applicationId: created.id,
+    actorUserId: auth.user.sub,
+    type: "Created",
+    metadata: { source: "Manual" },
   });
   return redirect(`/partners/applications/${created.id}`);
 }

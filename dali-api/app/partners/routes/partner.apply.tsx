@@ -7,6 +7,7 @@ import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
+import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import {
   useFormPager,
@@ -108,7 +109,7 @@ export async function action({ request }: Route.ActionArgs) {
       },
       select: { id: true },
     });
-    return tx.partnerApplication.create({
+    const app = await tx.partnerApplication.create({
       data: {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
@@ -119,6 +120,14 @@ export async function action({ request }: Route.ActionArgs) {
       },
       select: { id: true },
     });
+    // actorUserId null = partner-originated (the applicant, not a Core member).
+    await logPartnerActivity(tx, {
+      applicationId: app.id,
+      actorUserId: null,
+      type: "Created",
+      metadata: { source: "Form" },
+    });
+    return app;
   });
 
   await logAuditEvent({

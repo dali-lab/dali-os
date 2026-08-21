@@ -37,7 +37,6 @@ type OrgRow = {
   memberCount: number;
   activeProjectCount: number;
   totalProjectCount: number;
-  openApplicationCount: number;
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -47,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const now = new Date();
-  const [orgs, canEdit] = await Promise.all([
+  const [orgs, openInquiryCount, canEdit] = await Promise.all([
     prisma.partnerOrg.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -56,7 +55,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         logoUrl: true,
         website: true,
         isIndividual: true,
-        _count: { select: { users: true } },
+        // Active members only. Reads `memberships` (account-first), NOT the
+        // retired `users`/PartnerUser relation — which no longer gets rows.
+        memberships: { where: { endedAt: null }, select: { id: true } },
         projects: {
           select: {
             startedAt: true,
@@ -64,8 +65,13 @@ export async function loader({ request }: Route.LoaderArgs) {
             project: { select: { status: true } },
           },
         },
-        applications: { select: { status: true } },
       },
+    }),
+    // Open inquiries are org-independent until promotion (partnerOrgId is null
+    // through the funnel), so this is a single lab-wide count for the pipeline
+    // entry point rather than a per-org number.
+    prisma.partnerApplication.count({
+      where: { status: { in: OPEN_APPLICATION_STATUSES } },
     }),
     isCore(auth.user.sub),
   ]);
@@ -78,7 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       logoUrl: await resolvePhotoUrl(o.logoUrl),
       website: o.website,
       isIndividual: o.isIndividual,
-      memberCount: o._count.users,
+      memberCount: o.memberships.length,
       activeProjectCount: o.projects.filter(
         (p) =>
           p.project.status !== "Archived" &&
@@ -86,13 +92,10 @@ export async function loader({ request }: Route.LoaderArgs) {
           (p.endedAt === null || p.endedAt > now),
       ).length,
       totalProjectCount: o.projects.length,
-      openApplicationCount: o.applications.filter((a) =>
-        (OPEN_APPLICATION_STATUSES as readonly string[]).includes(a.status),
-      ).length,
     })),
   );
 
-  return { rows, canEdit };
+  return { rows, openInquiryCount, canEdit };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -124,7 +127,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersOrganizations() {
-  const { rows, canEdit } = useLoaderData<typeof loader>();
+  const { rows, openInquiryCount, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
@@ -182,6 +185,34 @@ export default function PartnersOrganizations() {
           {actionData.error}
         </div>
       )}
+
+      <Link
+        to="/partners/applications"
+        className="group flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent-coral/40 hover:bg-muted/10"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-tint text-dark-blue">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="font-semibold text-foreground">
+              Application pipeline
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Track inquiries from first contact through to a project.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {openInquiryCount} open{" "}
+            {openInquiryCount === 1 ? "inquiry" : "inquiries"}
+          </span>
+          <span className="text-accent-coral transition-transform group-hover:translate-x-0.5">
+            →
+          </span>
+        </div>
+      </Link>
 
       {creating && canEdit && (
         <Form
@@ -284,7 +315,6 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
             <th className="text-left font-medium px-4 py-2">Organization</th>
             <th className="text-left font-medium px-4 py-2">Members</th>
             <th className="text-left font-medium px-4 py-2">Active projects</th>
-            <th className="text-left font-medium px-4 py-2">Open applications</th>
           </tr>
         </thead>
         <tbody>
@@ -318,9 +348,6 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
                 {o.totalProjectCount > o.activeProjectCount && (
                   <span className="text-xs"> / {o.totalProjectCount} total</span>
                 )}
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {o.openApplicationCount}
               </td>
             </tr>
           ))}
@@ -364,12 +391,6 @@ function PartnerCard({ org }: { org: OrgRow }) {
               ? ` / ${org.totalProjectCount} total`
               : ""}
           </div>
-          {org.openApplicationCount > 0 && (
-            <div>
-              {org.openApplicationCount} open{" "}
-              {org.openApplicationCount === 1 ? "application" : "applications"}
-            </div>
-          )}
         </div>
       </div>
     </Link>

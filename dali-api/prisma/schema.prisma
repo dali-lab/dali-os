@@ -4901,6 +4901,7 @@ model PartnerApplication {
   targetTerms      PartnerApplicationTargetTerm[]
   domains          PartnerApplicationDomain[]
   meetings         PartnerMeeting[]
+  activities       PartnerActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4942,6 +4943,39 @@ enum PartnerMeetingOutcome {
   Hold
   Reject
   MoreInfoNeeded
+}
+
+// Append-only activity log for a partner opportunity — the per-record timeline
+// (status moves, notes, sent emails, meetings, eval, decision, promotion). This
+// is the CRM history feed; distinct from the global security AuditLog. Rows are
+// always written (even when the CRM flag is off) so history accrues before the
+// feed is rolled out. `metadata` carries a typed payload per `type`
+// (e.g. StatusChanged {from,to}, EmailSent {emailKind}, Triaged {kind}).
+model PartnerActivity {
+  id            String              @id @default(cuid())
+  createdAt     DateTime            @default(now())
+  applicationId String
+  // Core member who performed the action. Null = system / partner-originated
+  // (e.g. the applicant submitting the form). Loose ref to User.id.
+  actorUserId   String?
+  type          PartnerActivityType
+  // Freeform for Note; a short human summary for other types (optional).
+  body          String?
+  metadata      Json?
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+enum PartnerActivityType {
+  Created
+  StatusChanged
+  Note
+  EmailSent
+  MeetingScheduled
+  MeetingDebriefed
+  Evaluated
 }
 
 enum PartnerApplicationSource {

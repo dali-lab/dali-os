@@ -172,6 +172,15 @@ export const prisma = {
     delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
+  partnerActivity: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  },
   partnerApplication: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
