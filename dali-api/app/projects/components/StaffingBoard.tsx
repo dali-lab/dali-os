@@ -5,6 +5,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
+  matchesBoardSearch,
   resolveAssignmentDomains,
   UNASSIGNED,
   type MemberCardModel,
@@ -12,18 +13,17 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { ArrowUpRight, CheckCircle2, Plus, UserPlus } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { useOsChrome } from "~/components/os-chrome";
-import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
+import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
-import { AddMemberControl } from "./AddMemberControl";
-import { AddExternalMentorModal } from "./AddExternalMentorModal";
+import { AddMemberFlow } from "./AddMemberFlow";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
 import type { Level } from "~/lib/level";
@@ -85,6 +85,10 @@ export function StaffingBoard({
   // the persist+revalidate reconciles. Same lifecycle as `assignments`.
   const [order, setOrder] = useState(cardOrder);
   const [error, setError] = useState<string | null>(null);
+  // Board text search. Filters visible cards by name/email, eligibility domain,
+  // and full application text (bid answers + preference notes) — see
+  // matchesBoardSearch. Client-side only; every field is already loaded.
+  const [boardQuery, setBoardQuery] = useState("");
   // Member + column whose bid modal is open (column highlights their current
   // project among the bids), or null.
   const [openBid, setOpenBid] = useState<{ userId: string; columnKey: string } | null>(null);
@@ -265,9 +269,6 @@ export function StaffingBoard({
     }
   }, []);
 
-  // Project id whose "add external mentor" modal is open, or null.
-  const [externalMentorProjectId, setExternalMentorProjectId] = useState<string | null>(null);
-
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
   // optimistic move mid-drag. Once our save lands it revalidates and this clears.
@@ -309,9 +310,29 @@ export function StaffingBoard({
 
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
+  // Board search narrows which members render. memberById stays UNfiltered so
+  // drag / placement / add-member still see the whole roster.
+  const visibleMembers = useMemo(
+    () => membersForBoard.filter((m) => matchesBoardSearch(m, boardQuery)),
+    [membersForBoard, boardQuery],
+  );
+
+  // External-mentor cards aren't roster members (no MemberInput), so filter them
+  // with the same tokens over their name + mentoring domain.
+  const externalCardVisible = useCallback(
+    (c: MemberCardModel) => {
+      const tokens = boardQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return true;
+      const hay =
+        `${c.firstName} ${c.lastName} ${c.domainLevels.map((d) => d.domainName).join(" ")}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    },
+    [boardQuery],
+  );
+
   const board = useMemo(
-    () => buildBoard({ projectIds, members: membersForBoard, assignments, cardOrder: order }),
-    [projectIds, membersForBoard, assignments, order],
+    () => buildBoard({ projectIds, members: visibleMembers, assignments, cardOrder: order }),
+    [projectIds, visibleMembers, assignments, order],
   );
 
   const memberById = useMemo(
@@ -542,8 +563,6 @@ export function StaffingBoard({
   }
 
   const openBidMember = openBid ? memberById.get(openBid.userId) ?? null : null;
-  const openBidColumnId =
-    openBid && openBid.columnKey !== UNASSIGNED ? openBid.columnKey : null;
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
@@ -597,7 +616,10 @@ export function StaffingBoard({
     ...projects.map<KanbanColumn<MemberCardModel>>((p) => {
       const tone = p.status === "Active" ? "active" : "dim";
       // Roster cards first, then external-mentor cards pinned at the end.
-      const cards = [...(board[p.id] ?? []), ...(externalCardsByProject.get(p.id) ?? [])];
+      const cards = [
+        ...(board[p.id] ?? []),
+        ...(externalCardsByProject.get(p.id) ?? []).filter(externalCardVisible),
+      ];
       return {
         id: p.id,
         title: (
@@ -631,42 +653,20 @@ export function StaffingBoard({
         listClassName: listClass,
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
-          <div className="flex-shrink-0 flex items-center gap-1.5">
-            <AddMemberToProjectControl
-              projectName={p.name}
-              members={membersForBoard}
-              assignedUserIds={new Set((board[p.id] ?? []).map((c) => c.userId))}
-              onAdd={(userId) => void addMemberToProject(userId, p.id)}
-            />
-            <button
-              type="button"
-              onClick={() => setExternalMentorProjectId(p.id)}
-              title={`Add external mentor to ${p.name}`}
-              aria-label={`Add external mentor to ${p.name}`}
-              className={cn(
-                "transition-colors",
-                os
-                  ? "text-os-muted hover:text-white"
-                  : "text-muted-foreground hover:text-accent-teal",
-              )}
-            >
-              <UserPlus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setFinalizeProjectId(p.id)}
-              title={`Finalize ${p.name}`}
-              aria-label={`Finalize ${p.name}`}
-              className={cn(
-                "transition-colors",
-                os
-                  ? "text-os-muted hover:text-os-accent"
-                  : "text-muted-foreground hover:text-accent-coral",
-              )}
-            >
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setFinalizeProjectId(p.id)}
+            title={`Finalize ${p.name}`}
+            aria-label={`Finalize ${p.name}`}
+            className={cn(
+              "flex-shrink-0 transition-colors",
+              os
+                ? "text-os-muted hover:text-os-accent"
+                : "text-muted-foreground hover:text-accent-coral",
+            )}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+          </button>
         ) : (
           <span />
         ),
@@ -677,38 +677,84 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
-      <div className="flex items-center justify-end gap-3 flex-wrap">
-        {canManage && <AddMemberControl cycleId={cycleId} />}
-        <DomainFilter
-          domains={domains}
-          value={selectedDomainId}
-          onChange={(id) => {
-            setSearchParams(
-              (prev) => {
-                if (id) prev.set("domain", id);
-                else prev.delete("domain");
-                return prev;
-              },
-              { replace: true },
-            );
-          }}
-        />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <Select
-            value={termId}
-            options={terms.map((t) => ({ value: t.id, label: t.code }))}
-            ariaLabel="Term"
-            buttonClassName={cn(filterPillClass(os), "w-full sm:w-32")}
-            onChange={(value) => {
+          <div className="relative">
+            <Search
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
+              aria-hidden
+            />
+            <input
+              type="text"
+              value={boardQuery}
+              onChange={(e) => setBoardQuery(e.target.value)}
+              placeholder="Search people, domains, application…"
+              aria-label="Search the board"
+              className={cn(
+                "w-56 sm:w-72 text-sm pl-7 pr-7 py-1 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
+                os ? "rounded-os-item focus:ring-os-accent/40" : "rounded-md focus:ring-accent-coral/30",
+              )}
+            />
+            {boardQuery && (
+              <button
+                type="button"
+                onClick={() => setBoardQuery("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground rounded p-0.5"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden />
+              </button>
+            )}
+          </div>
+          {boardQuery.trim() && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {visibleMembers.length} of {membersForBoard.length} shown
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {canManage && (
+            <AddMemberFlow
+              cycleId={cycleId}
+              projects={projects.map((p) => ({ id: p.id, name: p.name, iconEmoji: p.iconEmoji }))}
+              members={membersForBoard}
+              assignments={assignments}
+              domains={domains}
+              onStaffToProject={(userId, projectId) => void addMemberToProject(userId, projectId)}
+              onExternalMentorAdded={() => loadExternalMentorsRef.current()}
+            />
+          )}
+          <DomainFilter
+            domains={domains}
+            value={selectedDomainId}
+            onChange={(id) => {
               setSearchParams(
                 (prev) => {
-                  prev.set("term", value);
+                  if (id) prev.set("domain", id);
+                  else prev.delete("domain");
                   return prev;
                 },
                 { replace: true },
               );
             }}
           />
+          <div className="flex items-center gap-2">
+            <Select
+              value={termId}
+              options={terms.map((t) => ({ value: t.id, label: t.code }))}
+              ariaLabel="Term"
+              buttonClassName={cn(filterPillClass(os), "w-full sm:w-32")}
+              onChange={(value) => {
+                setSearchParams(
+                  (prev) => {
+                    prev.set("term", value);
+                    return prev;
+                  },
+                  { replace: true },
+                );
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -805,7 +851,19 @@ export function StaffingBoard({
           preferences={openBidMember.preferences}
           bidFields={openBidMember.bidFields ?? []}
           projectNames={projectNames}
-          currentProjectId={openBidColumnId}
+          boardProjects={projects.map((p) => ({ id: p.id, name: p.name, iconEmoji: p.iconEmoji }))}
+          assignedProjectIds={Array.from(
+            new Set(
+              assignments
+                .filter((a) => a.userId === openBidMember.userId)
+                .map((a) => a.projectId),
+            ),
+          )}
+          canManage={canManage}
+          onPlace={(projectId) => {
+            void addMemberToProject(openBidMember.userId, projectId);
+            setOpenBid(null);
+          }}
         />
       )}
 
@@ -826,17 +884,6 @@ export function StaffingBoard({
         />
       )}
 
-      {externalMentorProjectId && (
-        <AddExternalMentorModal
-          open={true}
-          onClose={() => setExternalMentorProjectId(null)}
-          cycleId={cycleId}
-          projectId={externalMentorProjectId}
-          projectName={projectNames[externalMentorProjectId] ?? "project"}
-          domains={domains}
-          onAdded={() => loadExternalMentorsRef.current()}
-        />
-      )}
     </div>
   );
 }
@@ -931,113 +978,6 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           {running ? "Creating…" : "Create + invite"}
         </Button>
       </div>
-    </div>
-  );
-}
-
-// Per-project "add member" search. Unlike the board-wide AddMemberControl (which
-// adds a non-bidder to the Unassigned pool), this staffs an existing board member
-// onto ONE project additively — the way to put someone on a second project.
-// Search is client-side over the already-loaded members; members already on this
-// project are excluded, but those staffed elsewhere are included.
-function AddMemberToProjectControl({
-  projectName,
-  members,
-  assignedUserIds,
-  onAdd,
-}: {
-  projectName: string;
-  members: MemberInput[];
-  assignedUserIds: Set<string>;
-  onAdd: (userId: string) => void;
-}) {
-  const { os } = useOsChrome();
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const query = q.trim().toLowerCase();
-  const results =
-    query.length < 2
-      ? []
-      : members
-          .filter((m) => !assignedUserIds.has(m.userId))
-          .filter((m) => {
-            const name = `${m.firstName} ${m.lastName}`.toLowerCase();
-            return name.includes(query) || (m.email ?? "").toLowerCase().includes(query);
-          })
-          .slice(0, 20);
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={`Add member to ${projectName}`}
-        aria-label={`Add member to ${projectName}`}
-        className={cn(
-          "transition-colors",
-          os ? "text-os-muted hover:text-white" : "text-muted-foreground hover:text-accent-teal",
-        )}
-      >
-        <Plus className="w-4 h-4" />
-      </button>
-
-      {open && (
-        <div
-          className={cn(
-            "absolute right-0 mt-1 w-64 z-50 p-2",
-            os ? OS_SURFACE_CLASS : "bg-card border border-border rounded-md shadow-lg",
-          )}
-        >
-          <input
-            autoFocus
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search members…"
-            className={cn(
-              "w-full text-sm px-2 py-1.5 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
-              os
-                ? "rounded-os-item focus:ring-os-accent/40"
-                : "rounded-md focus:ring-accent-teal/30",
-            )}
-          />
-          <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
-            {query.length >= 2 && results.length === 0 && (
-              <p className="text-xs text-muted-foreground px-1 py-1">No members found.</p>
-            )}
-            {results.map((m) => (
-              <button
-                key={m.userId}
-                type="button"
-                onClick={() => {
-                  onAdd(m.userId);
-                  setOpen(false);
-                  setQ("");
-                }}
-                className="text-left px-2 py-1.5 rounded hover:bg-muted flex flex-col"
-              >
-                <span className="text-sm text-foreground">
-                  {m.firstName} {m.lastName}
-                </span>
-                {m.email && <span className="text-[11px] text-muted-foreground">{m.email}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

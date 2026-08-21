@@ -353,6 +353,36 @@ export function matchesDomainFilter(
   );
 }
 
+/**
+ * Client-side board search predicate. The board loads every member's full data
+ * (name, email, eligibility domains, and the complete Project Bids answers +
+ * preference notes), so filtering is a pure in-memory match — no server call.
+ *
+ * Token-AND, case-insensitive: the query is split on whitespace and EVERY token
+ * must appear in at least one searchable field, so "ada design" narrows to Ada
+ * in the Design domain. Mirrors the server board-member search's token behaviour.
+ *
+ * Searchable fields: full name, email, every eligibility domain name, and the
+ * full application text (each bid answer's label + value, and every preference
+ * note). Role/status labels are deliberately excluded. Empty query matches all.
+ */
+export function matchesBoardSearch(member: MemberInput, query: string): boolean {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const haystack: string = [
+    `${member.firstName} ${member.lastName}`,
+    member.email ?? "",
+    ...member.domainLevels.map((d) => d.domainName),
+    ...member.bidFields.flatMap((f) => [f.label, f.value]),
+    ...member.preferences.map((p) => p.notes ?? ""),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  return tokens.every((t) => haystack.includes(t));
+}
+
 /** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */
 export function resolveAssignmentInputs(
   member: MemberInput,
