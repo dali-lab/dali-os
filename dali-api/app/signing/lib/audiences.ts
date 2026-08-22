@@ -7,9 +7,9 @@
 
 import { prisma } from "~/lib/db";
 import type { SigningAudience } from "~/generated/prisma/enums";
-import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups";
 import { currentTerm } from "~/lib/roles";
+import { partitionStaffedMembers, listStaffedMentors } from "./staffing-audience.server";
 import type { SignerCohorts } from "./state.server";
 
 export interface AudiencePerson {
@@ -29,8 +29,8 @@ export interface AudienceContext {
 }
 
 // The group + term facts listMembers needs. termId scopes term-derived
-// audiences (Mentors, and a Group audience with no fixed group). audienceGroupId
-// targets a specific group.
+// audiences (NewMembers/Members/Mentors, and a Group audience with no fixed
+// group). audienceGroupId targets a specific group.
 export interface AudienceListContext {
   termId?: string;
   audienceGroupId?: string | null;
@@ -43,22 +43,6 @@ export interface AudienceResolver {
   // enumerate from here (Manual, HiringParticipants) — callers then show the
   // signed list only, with no "who hasn't signed" set.
   enumerable: boolean;
-}
-
-// Active lab members who are not full-time staff.
-const activeMemberWhere = {
-  user: {
-    membershipStatus: "Active" as const,
-    NOT: { adminMembership: { is: { isStaff: true } } },
-  },
-};
-
-async function listActiveMembers(): Promise<AudiencePerson[]> {
-  const members = await prisma.dALIMember.findMany({
-    where: activeMemberWhere,
-    select: { user: { select: { id: true, firstName: true, lastName: true } } },
-  });
-  return members.map((m) => m.user);
 }
 
 // Hydrate a set of userIds (from group resolution) into AudiencePerson rows,
@@ -88,66 +72,44 @@ async function listGroupMembers(ctx: AudienceListContext): Promise<AudiencePerso
   return hydratePeople(await resolveDynamicQuery(`term:${termId}`));
 }
 
-// Active members partitioned by the incoming-cohort set: "new" = accepted in the
-// latest General/Fellowship cycle, "returning" = everyone else active.
-async function listNewMembers(): Promise<AudiencePerson[]> {
-  const [active, cohort] = await Promise.all([listActiveMembers(), getNewMemberCohortIds()]);
-  return active.filter((p) => cohort.has(p.id));
-}
-
-async function listReturningMembers(): Promise<AudiencePerson[]> {
-  const [active, cohort] = await Promise.all([listActiveMembers(), getNewMemberCohortIds()]);
-  return active.filter((p) => !cohort.has(p.id));
-}
-
-// The set of users who mentor in the given term (P3 project OR domain lead OR
-// core OR PM-eligible + any term role), excluding full-time staff. Bulk analog
-// of isLabMentor.
-async function listTermMentors(termId: string): Promise<AudiencePerson[]> {
-  return prisma.user.findMany({
-    where: {
-      NOT: { adminMembership: { is: { isStaff: true } } },
-      OR: [
-        { projectAssignments: { some: { termId, level: "P3" } } },
-        { domainLeadAssignmentsAsUser: { some: { termId } } },
-        { coreAssignments: { some: { termId } } },
-        {
-          // PM mentor: monotonic P3 PM eligibility confirmed by any current-term role.
-          AND: [
-            { domainEligibilities: { some: { level: "P3", domain: { code: "PM" } } } },
-            {
-              OR: [
-                { projectAssignments: { some: { termId } } },
-                { coreAssignments: { some: { termId } } },
-                { domainLeadAssignmentsAsUser: { some: { termId } } },
-                { instructorAssignments: { some: { termId } } },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    select: { id: true, firstName: true, lastName: true },
-  });
+// Term for the enumerating call. Term-derived audiences use the binding's term,
+// falling back to the current term (mirrors listGroupMembers).
+async function resolveTermId(ctx: AudienceListContext): Promise<string | undefined> {
+  return ctx.termId ?? (await currentTerm())?.id;
 }
 
 export const AUDIENCE_RESOLVERS: Record<SigningAudience, AudienceResolver> = {
+  // First-term members: staffed this term (project ∪ core) and never staffed
+  // before. Together with Members this partitions the term's staffed roster.
   NewMembers: {
-    includes: (c) => c.isMember && c.isNewMember,
-    listMembers: () => listNewMembers(),
+    includes: (c) => c.isStaffedThisTerm && c.isNewStaffed,
+    listMembers: async (ctx) => {
+      const termId = await resolveTermId(ctx);
+      if (!termId) return [];
+      return (await partitionStaffedMembers(termId)).newMembers;
+    },
     enumerable: true,
   },
   Members: {
-    // Returning active members — everyone active who isn't in the new cohort.
-    // Mentors are established members, so a mentor lands here (Members) AND in
-    // Mentors, receiving both agreements.
-    includes: (c) => c.isMember && !c.isNewMember,
-    listMembers: () => listReturningMembers(),
+    // Returning members: staffed this term but not new. A mentor is a staffed
+    // member too, so a mentor lands here (Members) AND in Mentors, receiving
+    // both agreements.
+    includes: (c) => c.isStaffedThisTerm && !c.isNewStaffed,
+    listMembers: async (ctx) => {
+      const termId = await resolveTermId(ctx);
+      if (!termId) return [];
+      return (await partitionStaffedMembers(termId)).returning;
+    },
     enumerable: true,
   },
   Mentors: {
+    // People mentoring this term: P3 project mentors ∪ external mentors.
     includes: (c) => c.isMentor,
-    listMembers: ({ termId }) => (termId ? listTermMentors(termId) : Promise.resolve([])),
+    listMembers: async (ctx) => {
+      const termId = await resolveTermId(ctx);
+      if (!termId) return [];
+      return listStaffedMentors(termId);
+    },
     enumerable: true,
   },
   // A user group. A fixed audienceGroupId gates on membership in that group; a

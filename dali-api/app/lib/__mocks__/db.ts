@@ -520,6 +520,10 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  externalMentor: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   domainLeadAssignment: {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
