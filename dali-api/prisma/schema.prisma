@@ -147,8 +147,8 @@ model User {
   oauthSessions                 OAuthSession[]
   sessions                      Session[]
   rubricVersions                RubricVersion[]
-  authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
-  signingSignatures             SigningSignature[]                  @relation("SigningSigner")
+  authoredSigningVersions       SigningDocumentVersion[]       @relation("SigningVersionAuthor")
+  signingSignatures             SigningSignature[]             @relation("SigningSigner")
 
   // ─── Calendar / scheduling relations ───────────────────────────────────────
   calendarLinks        UserCalendarLink[]
@@ -210,8 +210,8 @@ model User {
   mentorNotesAsMentee MentorNote[] @relation("MentorNoteMentee")
 
   // ─── Phase 1: page-tree back-relations ────────────────────────────────────
-  createdPages    Page[] @relation("PageCreatedBy")
-  lastEditedPages Page[] @relation("PageLastEditedBy")
+  createdPages    Page[]         @relation("PageCreatedBy")
+  lastEditedPages Page[]         @relation("PageLastEditedBy")
   favorites       UserFavorite[]
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
@@ -220,7 +220,9 @@ model User {
   scheduledAnnouncements  ScheduledAnnouncement[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
-  partnerUser PartnerUser?
+  // partnerUser is deprecated (see PartnerUser); new code reads partnerContact.
+  partnerUser    PartnerUser?
+  partnerContact PartnerContact?
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants    OAuthGrant[]
@@ -234,17 +236,17 @@ model User {
   authoredNotifications Notification[]     @relation("NotificationAuthor")
 
   // ─── Phase 2: hiring FK back-relations (formerly via DALIMember) ──────────
-  cycleReviewers                          CycleReviewer[]
-  cycleInterviewers                       CycleInterviewer[]
-  domainLeadAssignmentsAsUser             DomainLeadAssignment[]
-  decisionsMade                           Decision[]                        @relation("DecisionMadeBy")
-  applicationReviewsSubmitted             ApplicationReview[]               @relation("ApplicationReviewSubmittedBy")
-  delibsSessionsOpened                    DelibsSession[]
-  emailTemplateVersionsCreated            EmailTemplateVersion[]
+  cycleReviewers               CycleReviewer[]
+  cycleInterviewers            CycleInterviewer[]
+  domainLeadAssignmentsAsUser  DomainLeadAssignment[]
+  decisionsMade                Decision[]             @relation("DecisionMadeBy")
+  applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
+  delibsSessionsOpened         DelibsSession[]
+  emailTemplateVersionsCreated EmailTemplateVersion[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
-  projectFileVersionsUploaded ProjectFileVersion[]   @relation("ProjectFileVersionUploader")
-  docComments                 DocComment[]           @relation("DocCommentAuthor")
+  projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
+  docComments                 DocComment[]         @relation("DocCommentAuthor")
   docCommentReactions         DocCommentReaction[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
@@ -336,9 +338,9 @@ model ApplicationCycle {
   applicationFormId String?
   applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
-  statusUpdates     ApplicationCycleStatusUpdate[]
-  applications      Application[]
-  domains           DomainApplicationCycle[]
+  statusUpdates        ApplicationCycleStatusUpdate[]
+  applications         Application[]
+  domains              DomainApplicationCycle[]
   domainChallengeForms CycleDomainForm[]
 
   interviewConfig    InterviewConfig?
@@ -350,7 +352,7 @@ model ApplicationCycle {
   notificationEmails CycleNotificationEmail[]
   notificationSends  CycleNotificationSend[]
 
-  signingBindings           SigningBinding[]
+  signingBindings SigningBinding[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -385,15 +387,15 @@ model Application {
   // as the applicant fills out the form; finalized on submission.
   answers Json
 
-  userId                    String
-  user                      User              @relation(fields: [userId], references: [id])
-  applicationCycleId        String
-  applicationCycle          ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
+  userId                   String
+  user                     User             @relation(fields: [userId], references: [id])
+  applicationCycleId       String
+  applicationCycle         ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   // The FormVersion of the cycle's application form (a Drive Form) that this
   // applicant answered, pinned at creation so later edits to the form don't
   // change an in-progress draft.
   applicationFormVersionId String?
-  applicationFormVersion   FormVersion? @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  applicationFormVersion   FormVersion?     @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
@@ -462,16 +464,16 @@ model DomainApplication {
   closedAt      DateTime?
   closureReason DomainApplicationClosureReason?
 
-  applicationId      String
-  application        Application       @relation(fields: [applicationId], references: [id])
+  applicationId          String
+  application            Application  @relation(fields: [applicationId], references: [id])
   // The FormVersion of the picked per-domain challenge Form the applicant
   // answered, pinned at pick time. Set on Standard cycles; null on internal.
   challengeFormVersionId String?
   challengeFormVersion   FormVersion? @relation("DomainApplicationChallengeForm", fields: [challengeFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // The target Domain this DA represents. Required for every DA regardless
   // of cycle type — single source of truth for "what domain is this for".
-  domainId           String
-  domain             Domain            @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  domainId               String
+  domain                 Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   interviews Interview[]
   reviews    ApplicationReview[]
@@ -1165,9 +1167,9 @@ model DocComment {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
-  author    User                  @relation("DocCommentAuthor", fields: [authorId], references: [id])
-  parent    DocComment?           @relation("DocCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   DocComment[]          @relation("DocCommentThread")
+  author    User                 @relation("DocCommentAuthor", fields: [authorId], references: [id])
+  parent    DocComment?          @relation("DocCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   DocComment[]         @relation("DocCommentThread")
   reactions DocCommentReaction[]
 
   // Back-relation when targetType=file. Kept loose: only the file side is a
@@ -2184,9 +2186,9 @@ model Term {
 // per term from the defaults in app/lib/term-timeline.ts the first time the
 // page is opened, then edited in place by Core.
 model TimelineWeek {
-  id     String @id @default(cuid())
-  termId String
-  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  termId    String
+  term      Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
   // 0-based, matching the W0…W9 labels on the page.
   weekIndex Int
   title     String
@@ -2211,14 +2213,14 @@ model TimelineWeek {
 }
 
 model TimelineMilestone {
-  id     String       @id @default(cuid())
-  weekId String
-  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
-  name   String
-  detail String
+  id       String       @id @default(cuid())
+  weekId   String
+  week     TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  name     String
+  detail   String
   // Lab-wide events (Prod Tales, Bug Hunt, Technigala) render as the coral
   // banner; the rest are milestones each team hits on its own.
-  labWide  Boolean @default(false)
+  labWide  Boolean      @default(false)
   position Int
 
   @@index([weekId])
@@ -2228,9 +2230,9 @@ model TimelineMilestone {
 // split into. Seeded from DOMAINS in app/lib/term-timeline.ts, then edited
 // (added to, renamed, recoloured, removed) from the page's edit mode.
 model TimelineDomain {
-  id     String @id @default(cuid())
-  termId String
-  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  termId   String
+  term     Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
   // What TimelineLane.domainKey points at. "pm"/"design"/"dev"/"data" for the
   // seeded four, an opaque unique string for domains added later.
   key      String
@@ -2243,9 +2245,9 @@ model TimelineDomain {
 }
 
 model TimelineLane {
-  id     String       @id @default(cuid())
-  weekId String
-  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  id           String       @id @default(cuid())
+  weekId       String
+  week         TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
   // TimelineDomain.key within this week's term — the domain vocabulary of this
   // page, not the Domain table (which is staffing's, and is finer-grained).
   domainKey    String
@@ -3109,17 +3111,17 @@ model TaskView {
 // project) — capture serialises, instantiate rebuilds. The `blueprint` JSON
 // shape is defined + versioned in app/lib/project-templates.server.ts.
 model ProjectTemplate {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  iconEmoji   String?
-  isDefault   Boolean @default(false)
-  blueprint   Json
+  id                   String   @id @default(cuid())
+  name                 String
+  description          String?
+  iconEmoji            String?
+  isDefault            Boolean  @default(false)
+  blueprint            Json
   // Optional Lab/Project page duplicated as the new project's Overview doc.
   overviewSourcePageId String?
   // Free-form creator userId (loose, like other template models).
-  createdBy   String?
-  createdAt   DateTime @default(now())
+  createdBy            String?
+  createdAt            DateTime @default(now())
 
   @@index([isDefault])
 }
@@ -3382,8 +3384,8 @@ model EducationAnnouncement {
   parentId   String?
   sentAt     DateTime    @default(now())
 
-  offering EducationOffering @relation(fields: [offeringId], references: [id])
-  author   User              @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
+  offering EducationOffering       @relation(fields: [offeringId], references: [id])
+  author   User                    @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
   parent   EducationAnnouncement?  @relation("EduPostReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies  EducationAnnouncement[] @relation("EduPostReplies")
 
@@ -3723,7 +3725,7 @@ model FormVersion {
   // from page-load to submit: a mismatch means the version was edited underneath
   // them, so the submit is rejected with a reload prompt instead of recording
   // answers keyed to questions that no longer exist.
-  updatedAt DateTime @updatedAt @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   versionNumber Int
   questions     Json
@@ -3739,7 +3741,7 @@ model FormVersion {
   submissions FormSubmission[]
 
   // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
-  hiringApplicationsAsPinnedForm Application[] @relation("ApplicationApplicationForm")
+  hiringApplicationsAsPinnedForm      Application[]       @relation("ApplicationApplicationForm")
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
 
   @@unique([formId, versionNumber])
@@ -4040,7 +4042,7 @@ model Page {
   linkAccess     LinkAccess      @default(Restricted)
   linkPermission SharePermission @default(View)
 
-  shares PageShare[]
+  shares    PageShare[]
   favorites UserFavorite[]
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
@@ -4181,7 +4183,7 @@ model UserFavorite {
   // entity detail routes — project / person / partner org (recordRouteVisit) —
   // that "Recently opened" surfaces. Hubs and sub-tabs are not recorded, so
   // they don't drown the list out.
-  visitedAt DateTime?
+  visitedAt   DateTime?
 
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   page Page? @relation(fields: [pageId], references: [id], onDelete: Cascade)
@@ -4380,12 +4382,12 @@ enum JobRunStatus {
 // to registry defaults (a missing row is evaluated as off). See ScheduledJob
 // for the same registry-seeds/row-wins contract.
 model FeatureFlag {
-  key      String  @id // registry key, e.g. "desktop-app"
+  key      String   @id // registry key, e.g. "desktop-app"
   // Master kill switch. When false the flag is off for everyone regardless of
   // the targeting below.
-  enabled  Boolean @default(false)
+  enabled  Boolean  @default(false)
   // When enabled: on for all users.
-  everyone Boolean @default(false)
+  everyone Boolean  @default(false)
   // Role keys from getUserRoles() (app/lib/roles.ts), e.g. "isCore","isAdmin".
   // A user matches if they hold any listed role. Constrained to ROLE_TARGETS
   // at write time by the admin action.
@@ -4414,21 +4416,21 @@ model ScheduledAnnouncement {
   createdByUserId String
   createdBy       User   @relation(fields: [createdByUserId], references: [id])
 
-  title  String
-  body   String?
+  title       String
+  body        String?
   // Sanitized rich-text HTML for the email channel (rendered later, at fire
   // time). In-app/Slack use the plain-text `body` mirror. Null → plain body.
-  bodyHtml String?
-  link   String?
-  kind   NotificationKind @default(General)
-  isTodo Boolean          @default(false)
-  dueAt  DateTime?
+  bodyHtml    String?
+  link        String?
+  kind        NotificationKind @default(General)
+  isTodo      Boolean          @default(false)
+  dueAt       DateTime?
   // Deliberately not an FK: the payload is a deferred request, re-validated
   // at fire time — deleting a form must not cascade the pending announcement.
-  formId String?
+  formId      String?
   // Also email each recipient's Dartmouth address at fire time (composer
   // toggle). Email channel only.
-  ccDartmouth Boolean @default(false)
+  ccDartmouth Boolean          @default(false)
 
   allMembers Boolean  @default(false)
   groupIds   String[] @default([])
@@ -4451,16 +4453,19 @@ model PartnerOrg {
   name             String
   logoUrl          String?
   website          String?
-  // Optional designated primary contact (FK to PartnerUser within this org).
-  // Free-form: a PartnerUser.id. Not enforced as a Prisma relation to avoid
-  // a circular FK; app-level keeps this valid.
+  // Optional designated primary contact within this org. Free-form: a
+  // PartnerMembership.id (was PartnerUser.id pre-CRM-cutover). Not enforced as
+  // a Prisma relation to avoid a circular FK; app-level keeps this valid.
   primaryContactId String?
   // True for solo-individual partners (e.g., a Dartmouth professor funding
   // a one-off project, no real organization). Single-user org to avoid a
   // second code path.
   isIndividual     Boolean @default(false)
 
+  // `users` is the deprecated org membership (see PartnerUser). New code uses
+  // `memberships` (PartnerMembership). Kept only until the PartnerUser drop.
   users        PartnerUser[]
+  memberships  PartnerMembership[]
   projects     ProjectPartner[]
   applications PartnerApplication[]
   invites      PartnerInvite[]
@@ -4495,15 +4500,14 @@ model PartnerInvite {
   @@index([email])
 }
 
-// Per Cl-3: PartnerUser.userId @unique → User. Single Session model and
-// auth surface; partner-only metadata (org membership, displayRole) lives
-// here. Tier resolver returns Partner when this row exists for the User.
+// DEPRECATED — superseded by PartnerContact + PartnerMembership (the account-
+// first CRM cutover). No longer read/written by app code; retained only so the
+// data survives one deploy for a rollback window. Dropped in a follow-up
+// migration. Do not add new references.
 model PartnerUser {
   id           String              @id @default(cuid())
   userId       String              @unique
   partnerOrgId String
-  // Free-text display role, e.g. "VP Engineering", "Technical PM".
-  // Not a permission — visibility derives entirely from org membership.
   displayRole  String?
   authProvider PartnerAuthProvider
 
@@ -4516,6 +4520,58 @@ model PartnerUser {
 enum PartnerAuthProvider {
   MagicLink
   Google
+}
+
+// The account-first primitive: a person in the partner funnel. Exists BEFORE
+// any authenticated User (Core logs inquiries from emails/referrals) and BEFORE
+// any PartnerOrg (orgs are created only at promotion). One contact spans many
+// applications and many orgs over time. `userId` is set when/if the person
+// authenticates (Google or magic link).
+model PartnerContact {
+  id           String               @id @default(cuid())
+  name         String
+  // Normalized lowercase email — the natural key for de-duping inbound
+  // inquiries and matching to a User at auth time.
+  email        String               @unique
+  // Set when the person authenticates and a User is resolved. Nullable +
+  // unique: at most one contact per User, but a contact may never sign in.
+  userId       String?              @unique
+  // How the person authenticated (unset until first sign-in). Moved here from
+  // PartnerUser — it's a person-level fact, not per-org.
+  authProvider PartnerAuthProvider?
+
+  user         User?                @relation(fields: [userId], references: [id])
+  applications PartnerApplication[]
+  memberships  PartnerMembership[]
+  meetings     PartnerMeeting[]
+
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// A person's membership in one org (replaces PartnerUser). A PartnerContact
+// can hold many memberships across many orgs over time; an org has many
+// members. Access derives entirely from membership; `role` is display-only.
+model PartnerMembership {
+  id        String    @id @default(cuid())
+  contactId String
+  orgId     String
+  // Free-text display role, e.g. "VP Engineering". Not a permission (was
+  // PartnerUser.displayRole).
+  role      String?
+  // Soft end for "used to be at this org" without deleting history.
+  // Null = current member.
+  endedAt   DateTime?
+
+  contact PartnerContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  org     PartnerOrg     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([contactId, orgId])
+  @@index([orgId])
+  @@index([contactId])
 }
 
 // Many-to-many: projects can have multiple partners, and partners can fund
@@ -4783,11 +4839,36 @@ enum SlackBugReportStatus {
 // linked back via `resultingProjectId` (loose ref — no Prisma relation, to
 // avoid a hard dependency cycle with Project).
 //
-// `partnerOrgId` is a required FK: applications are always tied to a known
-// PartnerOrg (Q: "linked to partner is very important").
+// Account-owned inbound opportunity (the "partner card"): carries the whole
+// CRM funnel from Inquiry → triage → application → meetings → decision →
+// promotion. Owned by a PartnerContact (`applicantContactId`); the org is
+// deferred and set only at promotion, so `partnerOrgId` is nullable.
 model PartnerApplication {
   id                 String                   @id @default(cuid())
-  partnerOrgId       String
+  // The account this opportunity belongs to. Always present — an opportunity
+  // has an originating person even before any org exists.
+  applicantContactId String
+  // Set only at promotion (org is created then). Null through the whole
+  // pre-promotion funnel.
+  partnerOrgId       String?
+  // Where this opportunity came from (Core-logged email/referral vs. a
+  // /partner/apply form submission).
+  source             PartnerApplicationSource @default(Form)
+  // Free-text reason captured at a triage or decision transition
+  // (e.g. "not enough dev scope", "revisit next term"). Reused across triage
+  // + decision to avoid two near-identical columns.
+  decisionReason     String?
+  // Discovery eval: 8 numeric criteria + notes + criteriaVersion, kept as a
+  // flexible blob so criteria can be reworded without a migration.
+  evalRubric         Json?
+  // 1–5 interview rating (own column so applications can be sorted by score).
+  interviewRating    Int?
+  // Captured on the acceptance checklist, before promotion.
+  ambiguityRating    Int?
+  fundingModel       String?
+  // Core member assigned to meet the partner ("who will meet"). Loose ref to
+  // User.id (same convention as PartnerInvite.invitedByUserId).
+  assignedMeeterId   String?
   title              String
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
@@ -4798,7 +4879,7 @@ model PartnerApplication {
   // opened/created. Not a Prisma relation: CollabDocument is keyed by its
   // unique `name`, addressed at the app layer.
   sowDocId           String?                  @unique
-  status             PartnerApplicationStatus @default(Submitted)
+  status             PartnerApplicationStatus @default(Inquiry)
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
@@ -4808,19 +4889,97 @@ model PartnerApplication {
   // cascades its submissions away — the application must survive that.
   formSubmissionId   String?                  @unique
 
-  partnerOrg     PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
-  formSubmission FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
+  applicantContact PartnerContact                 @relation(fields: [applicantContactId], references: [id])
+  partnerOrg       PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
+  formSubmission   FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
   // application's expected headcount counts toward every target term.
-  targetTerms    PartnerApplicationTargetTerm[]
-  domains        PartnerApplicationDomain[]
+  targetTerms      PartnerApplicationTargetTerm[]
+  domains          PartnerApplicationDomain[]
+  meetings         PartnerMeeting[]
+  activities       PartnerActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
+  @@index([applicantContactId])
   @@index([status])
+}
+
+// A Core↔partner meeting attached to an opportunity. Supports "meet in pairs":
+// attendeeUserIds holds the Core members present; `debrief` and `outcome` are
+// filled after the pair syncs. Notes/debrief are plain text (single-author
+// internal scratch — unlike the co-authored SOW, no collab machinery).
+model PartnerMeeting {
+  id              String                 @id @default(cuid())
+  applicationId   String
+  scheduledAt     DateTime
+  // Core attendees. Loose refs to User.id (same convention as
+  // PartnerInvite.invitedByUserId) — display-only, no relation.
+  attendeeUserIds String[]
+  notes           String?
+  debrief         String?
+  outcome         PartnerMeetingOutcome?
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  // Denormalized contact link so a meeting is reachable from the account.
+  contactId   String?
+  contact     PartnerContact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([applicationId])
+  @@index([scheduledAt])
+}
+
+enum PartnerMeetingOutcome {
+  Advance
+  Hold
+  Reject
+  MoreInfoNeeded
+}
+
+// Append-only activity log for a partner opportunity — the per-record timeline
+// (status moves, notes, sent emails, meetings, eval, decision, promotion). This
+// is the CRM history feed; distinct from the global security AuditLog. Rows are
+// always written (even when the CRM flag is off) so history accrues before the
+// feed is rolled out. `metadata` carries a typed payload per `type`
+// (e.g. StatusChanged {from,to}, EmailSent {emailKind}, Triaged {kind}).
+model PartnerActivity {
+  id            String              @id @default(cuid())
+  createdAt     DateTime            @default(now())
+  applicationId String
+  // Core member who performed the action. Null = system / partner-originated
+  // (e.g. the applicant submitting the form). Loose ref to User.id.
+  actorUserId   String?
+  type          PartnerActivityType
+  // Freeform for Note; a short human summary for other types (optional).
+  body          String?
+  metadata      Json?
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+enum PartnerActivityType {
+  Created
+  StatusChanged
+  Note
+  EmailSent
+  MeetingScheduled
+  MeetingDebriefed
+  Evaluated
+}
+
+enum PartnerApplicationSource {
+  Email // Core logged an inbound email
+  Form // /partner/apply submission
+  Referral // word-of-mouth / introduction
+  Manual // Core created it directly (MCP / internal page)
 }
 
 // Binds the generic Form whose questions partners answer when pitching a
@@ -4876,14 +5035,26 @@ model PartnerApplicationDomain {
   @@index([domainId])
 }
 
-// Inbound-pitch pipeline. Submitted → UnderReview → (Accepted | Rejected),
-// with OnHold as a parking state.
+// CRM funnel:
+//   Inquiry → Triaged → Meeting / ApplicationSubmitted → UnderReview
+//   → (Accepted → Promoted) | Rejected | LearnMore, with OnHold as a parking
+//   state reachable from any active stage.
+// (The pre-CRM values were Submitted/UnderReview/OnHold/Accepted/Rejected;
+// Submitted → ApplicationSubmitted and Accepted → Promoted-when-projected in
+// the backfill. Old enum labels linger in the Postgres type — harmless.)
 enum PartnerApplicationStatus {
-  Submitted
+  Inquiry
+  Triaged
+  Meeting
+  ApplicationSubmitted
   UnderReview
+  LearnMore
   OnHold
   Accepted
   Rejected
+  Promoted
+  // Deprecated pre-CRM label, retained because Postgres can't drop enum values.
+  Submitted
 }
 
 // ─── Payroll: Reconcile ──────────────────────────────────────────────────────

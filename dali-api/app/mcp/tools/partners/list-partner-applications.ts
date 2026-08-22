@@ -13,7 +13,7 @@ import { McpForbiddenError, McpInvalidError } from "../../registry";
 export const LIST_PARTNER_APPLICATIONS_TOOL = {
   name: "list_partner_applications",
   description:
-    "List partner applications, optionally filtered by status. Valid statuses: Submitted, UnderReview, OnHold, Accepted, Rejected. Requires staffing-view access.",
+    "List partner applications, optionally filtered by status. Valid statuses: Inquiry, Triaged, Meeting, ApplicationSubmitted, UnderReview, LearnMore, OnHold, Accepted, Rejected, Promoted. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -61,6 +61,7 @@ export async function runListPartnerApplications(
       status: true,
       createdAt: true,
       partnerOrg: { select: { id: true, name: true } },
+      applicantContact: { select: { id: true, name: true, email: true } },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { term: { select: { code: true } } },
@@ -80,8 +81,11 @@ export async function runListPartnerApplications(
       id: a.id,
       title: a.title,
       status: a.status,
-      partnerOrgId: a.partnerOrg.id,
-      partnerOrgName: a.partnerOrg.name,
+      partnerOrgId: a.partnerOrg?.id ?? null,
+      partnerOrgName: a.partnerOrg?.name ?? null,
+      applicantContact: a.applicantContact
+        ? { id: a.applicantContact.id, name: a.applicantContact.name, email: a.applicantContact.email }
+        : null,
       targetTerms: a.targetTerms.map((t) => t.term.code),
       domains: a.domains.map((d) => ({
         domainId: d.domainId,

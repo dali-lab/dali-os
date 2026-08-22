@@ -20,6 +20,11 @@ export const PROMOTE_PARTNER_APPLICATION_TOOL = {
     type: "object" as const,
     properties: {
       applicationId: { type: "string", description: "PartnerApplication id to promote." },
+      orgName: {
+        type: "string",
+        description:
+          "Name for the PartnerOrg created at promotion. Only used when the application has no org yet (account-first). Defaults to the applicant's name as an individual partner.",
+      },
     },
     required: ["applicationId"],
     additionalProperties: false,
@@ -29,7 +34,7 @@ export const PROMOTE_PARTNER_APPLICATION_TOOL = {
 
 export async function runPromotePartnerApplication(
   callerId: string,
-  input: { applicationId: string },
+  input: { applicationId: string; orgName?: string },
 ): Promise<unknown> {
   if (!(await isCore(callerId))) {
     throw new McpForbiddenError("Only Core members can promote partner applications");
@@ -43,6 +48,8 @@ export async function runPromotePartnerApplication(
       summary: true,
       resultingProjectId: true,
       partnerOrgId: true,
+      applicantContactId: true,
+      applicantContact: { select: { id: true, name: true } },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { termId: true },
@@ -79,13 +86,37 @@ export async function runPromotePartnerApplication(
   const inheritedDomainIds = Array.from(new Set(roleRequestRows.map((r) => r.domainId)));
 
   const project = await prisma.$transaction(async (tx) => {
+    // Account-first: the org is born HERE. Existing (legacy) applications already
+    // carry a partnerOrgId; new ones create the org from the applicant contact
+    // and add them as its first member.
+    let orgId = app.partnerOrgId;
+    if (!orgId) {
+      const providedName = input.orgName?.trim();
+      const org = await tx.partnerOrg.create({
+        data: {
+          name: providedName || app.applicantContact?.name || app.title,
+          isIndividual: !providedName,
+        },
+        select: { id: true },
+      });
+      const membership = await tx.partnerMembership.create({
+        data: { contactId: app.applicantContactId, orgId: org.id },
+        select: { id: true },
+      });
+      await tx.partnerOrg.update({
+        where: { id: org.id },
+        data: { primaryContactId: membership.id },
+      });
+      orgId = org.id;
+    }
+
     const created = await tx.project.create({
       data: {
         name: app.title,
         githubTeamSlug: githubTeamSlug(app.title) || null,
         description: app.summary,
         ...(firstTermId ? { projectTerms: { create: { termId: firstTermId } } } : {}),
-        partners: { create: { partnerOrgId: app.partnerOrgId } },
+        partners: { create: { partnerOrgId: orgId } },
         ...(roleRequestRows.length > 0
           ? { roleRequests: { create: roleRequestRows } }
           : {}),
@@ -101,7 +132,7 @@ export async function runPromotePartnerApplication(
     });
     await tx.partnerApplication.update({
       where: { id: app.id },
-      data: { resultingProjectId: created.id },
+      data: { resultingProjectId: created.id, partnerOrgId: orgId, status: "Promoted" },
     });
     return created;
   });

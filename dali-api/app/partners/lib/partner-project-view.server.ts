@@ -4,6 +4,23 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
 
+// Which of the account's orgs holds the active partnership with this project —
+// used to surface the correct partnerSince date. Lives here (a .server helper)
+// so the rendering route never imports ~/lib/db directly (see the client-bundle
+// leak guard). Returns null when none matches; access is checked separately.
+export async function resolvePartnerProjectOrgId(
+  projectId: string,
+  orgIds: string[],
+): Promise<string | null> {
+  if (orgIds.length === 0) return null;
+  const link = await prisma.projectPartner.findFirst({
+    where: { projectId, partnerOrgId: { in: orgIds } },
+    select: { partnerOrgId: true },
+    orderBy: { startedAt: "asc" },
+  });
+  return link?.partnerOrgId ?? null;
+}
+
 // The three time states every work item collapses to, so the UI can speak one
 // visual language: past (teal/settled), current (coral/live), planned (dashed).
 export type PartnerWorkState = "past" | "current" | "planned";

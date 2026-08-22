@@ -1,8 +1,8 @@
 import { Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/partner.home";
 import { prisma } from "~/lib/db";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
-import { partnerProjectsWhere } from "~/partners/lib/partner-access";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import {
@@ -15,11 +15,12 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  const orgIds = ctx.memberships.map((m) => m.orgId);
 
   const [applications, projects] = await Promise.all([
     prisma.partnerApplication.findMany({
-      where: { partnerOrgId: partnerUser.partnerOrgId },
+      where: { applicantContactId: ctx.contact.id },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -29,16 +30,20 @@ export async function loader({ request }: Route.LoaderArgs) {
         resultingProjectId: true,
       },
     }),
-    prisma.project.findMany({
-      where: partnerProjectsWhere(partnerUser.partnerOrgId),
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, description: true, imageUrl: true },
-    }),
+    // Skip the project query entirely when there are no org memberships yet
+    // (fresh applicant). partnerProjectsWhereForOrgs([]) would return zero rows
+    // anyway, but skipping avoids a vacuous DB round-trip.
+    orgIds.length > 0
+      ? prisma.project.findMany({
+          where: partnerProjectsWhereForOrgs(orgIds),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, description: true, imageUrl: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   return {
-    org,
-    firstName: auth.user.firstName,
+    firstName: ctx.auth.user.firstName,
     applications,
     projects: await Promise.all(
       projects.map(async (p) => ({
@@ -52,14 +57,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function PartnerHome() {
-  const { org, firstName, applications, projects } = useLoaderData<typeof loader>();
+  const { firstName, applications, projects } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="font-heading text-3xl font-bold text-dark-blue">
-          {/* Greet the person — the org name already sits in the nav chip. */}
-          Welcome, {firstName || org.name}
+          Welcome{firstName ? `, ${firstName}` : ""}
         </h1>
         <p className="text-muted-foreground mt-1">
           Your projects and applications with the DALI Lab.

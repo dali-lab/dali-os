@@ -40,6 +40,7 @@ import { runListPartnerOrgs, LIST_PARTNER_ORGS_TOOL } from "../list-partner-orgs
 
 const mockPrisma = prisma as unknown as {
   partnerOrg: { findMany: ReturnType<typeof vi.fn> };
+  partnerApplication: { count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -63,11 +64,14 @@ describe("list_partner_orgs", () => {
     mockPrisma.partnerOrg = {
       findMany: vi.fn().mockResolvedValue([]),
     };
+    mockPrisma.partnerApplication = {
+      count: vi.fn().mockResolvedValue(0),
+    };
     const out = await runListPartnerOrgs("u1", {});
-    expect(out).toMatchObject({ orgs: [] });
+    expect(out).toMatchObject({ orgs: [], openInquiryCount: 0 });
   });
 
-  it("computes activeProjectCount and openApplicationCount correctly", async () => {
+  it("computes activeProjectCount and openInquiryCount correctly", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     const now = new Date();
     const past = new Date(now.getTime() - 1000);
@@ -80,7 +84,8 @@ describe("list_partner_orgs", () => {
           name: "Acme Corp",
           website: "https://acme.com",
           isIndividual: false,
-          _count: { users: 3 },
+          // Active memberships (account-first), not the retired `users` relation.
+          memberships: [{ id: "m1" }, { id: "m2" }, { id: "m3" }],
           projects: [
             // active (no dates)
             { startedAt: null, endedAt: null, project: { status: "Active" } },
@@ -91,19 +96,19 @@ describe("list_partner_orgs", () => {
             // archived
             { startedAt: null, endedAt: null, project: { status: "Archived" } },
           ],
-          applications: [
-            { status: "Submitted" },
-            { status: "UnderReview" },
-            { status: "Accepted" }, // not open
-          ],
         },
       ]),
+    };
+    // Open inquiries are counted lab-wide (org-independent until promotion).
+    mockPrisma.partnerApplication = {
+      count: vi.fn().mockResolvedValue(2),
     };
 
     const out = await runListPartnerOrgs("u1", {});
     const org = (out.orgs as Array<Record<string, unknown>>)[0];
     expect(org.memberCount).toBe(3);
     expect(org.activeProjectCount).toBe(2);
-    expect(org.openApplicationCount).toBe(2);
+    expect(org.openApplicationCount).toBeUndefined();
+    expect(out.openInquiryCount).toBe(2);
   });
 });

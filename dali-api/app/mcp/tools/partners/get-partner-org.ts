@@ -40,18 +40,14 @@ export async function runGetPartnerOrg(
       isIndividual: true,
       primaryContactId: true,
       createdAt: true,
-      users: {
+      memberships: {
+        where: { endedAt: null },
         orderBy: { createdAt: "asc" },
         select: {
           id: true,
-          displayRole: true,
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              personalEmail: true,
-            },
+          role: true,
+          contact: {
+            select: { id: true, name: true, email: true, userId: true },
           },
         },
       },
@@ -83,13 +79,13 @@ export async function runGetPartnerOrg(
     isIndividual: org.isIndividual,
     primaryContactId: org.primaryContactId,
     createdAt: org.createdAt,
-    users: org.users.map((u) => ({
-      id: u.id,
-      displayRole: u.displayRole,
-      userId: u.user.id,
-      name: [u.user.firstName, u.user.lastName].filter(Boolean).join(" ") || null,
-      email: u.user.personalEmail,
-      isPrimaryContact: u.id === org.primaryContactId,
+    users: org.memberships.map((m) => ({
+      id: m.id,
+      displayRole: m.role,
+      userId: m.contact.userId,
+      name: m.contact.name,
+      email: m.contact.email,
+      isPrimaryContact: m.id === org.primaryContactId,
     })),
     projects: org.projects.map((p) => ({
       id: p.project.id,

@@ -500,18 +500,18 @@ export async function tier(userId: string): Promise<Tier> {
   if (await isAdmin(userId)) return "Admin";
   if (await isCore(userId)) return "Core";
 
-  const [userRow, partner] = await Promise.all([
+  const [userRow, contact] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { membershipStatus: true, daliMember: { select: { id: true } } },
     }),
-    prisma.partnerUser.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.partnerContact.findUnique({ where: { userId }, select: { id: true } }),
   ]);
 
   if (userRow?.daliMember) {
     return userRow.membershipStatus === "Alumni" ? "Alumni" : "Member";
   }
-  if (partner !== null) return "Partner";
+  if (contact !== null) return "Partner";
   return "Student";
 }
 

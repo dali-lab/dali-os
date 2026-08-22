@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (userId) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { partnerUser: { select: { id: true } } },
+      include: { partnerContact: { select: { id: true } } },
     });
     if (!user) return new Response("User not found", { status: 404 });
     return loginAsUser(user);
@@ -32,10 +32,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       coreAssignments: { select: { leadTitle: true } },
       domainLeadAssignmentsAsUser: { include: { domain: true } },
       cycleReviewers: { include: { domain: true } },
-      partnerUser: {
+      partnerContact: {
         select: {
-          displayRole: true,
-          partnerOrg: { select: { name: true } },
+          memberships: {
+            where: { endedAt: null },
+            select: { role: true, org: { select: { name: true } } },
+            take: 1,
+          },
         },
       },
     },
@@ -44,10 +47,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const daliUsers = users.filter((u) => u.daliMember !== null);
   const partnerUsers = users.filter(
-    (u) => u.daliMember === null && u.partnerUser !== null,
+    (u) => u.daliMember === null && u.partnerContact !== null,
   );
   const applicantUsers = users.filter(
-    (u) => u.daliMember === null && u.partnerUser === null,
+    (u) => u.daliMember === null && u.partnerContact === null,
   );
 
   const html = `<!DOCTYPE html>
@@ -121,14 +124,14 @@ async function loginAsUser(user: {
   dartmouthEmail: string | null;
   firstName: string;
   lastName: string;
-  partnerUser: { id: string } | null;
+  partnerContact: { id: string } | null;
 }) {
   const session = await issueSession({ userId: user.id });
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
 
-  const redirect = user.daliEmail ? "/" : user.partnerUser ? "/partner" : "/portal";
+  const redirect = user.daliEmail ? "/" : user.partnerContact ? "/partner" : "/portal";
   headers.set("Location", redirect);
   return new Response(null, { status: 302, headers });
 }
@@ -162,9 +165,10 @@ function getBadges(isMember: boolean, user: any): string {
   const badges: string[] = [];
 
   if (isMember) badges.push('<span class="badge badge-member">Member</span>');
-  else if (user.partnerUser) {
-    const org = user.partnerUser.partnerOrg?.name ?? "Partner";
-    const role = user.partnerUser.displayRole;
+  else if (user.partnerContact) {
+    const firstMembership = user.partnerContact.memberships?.[0];
+    const org = firstMembership?.org?.name ?? "Partner";
+    const role = firstMembership?.role;
     badges.push(
       `<span class="badge badge-partner">Partner: ${esc(org)}${role ? ` · ${esc(role)}` : ""}</span>`,
     );

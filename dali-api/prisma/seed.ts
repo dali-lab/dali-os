@@ -3036,7 +3036,7 @@ async function main() {
       title: "Lab sensor dashboard",
       partnerOrgId: "partner-thayer",
       targetTermIds: [term26X?.id],
-      status: "Submitted" as const,
+      status: "ApplicationSubmitted" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
         { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
@@ -3044,10 +3044,25 @@ async function main() {
     },
   ];
   for (const a of partnerApplicationSeeds) {
+    // Account-first: every application is owned by a PartnerContact. Seed one
+    // per application (deterministic email) so re-seeding stays idempotent.
+    const applicant = await prisma.partnerContact.upsert({
+      where: { email: `${a.partnerOrgId}@seed.dali` },
+      update: {},
+      create: { email: `${a.partnerOrgId}@seed.dali`, name: `${a.title} contact` },
+      select: { id: true },
+    });
     await prisma.partnerApplication.upsert({
       where: { id: a.id },
       update: { title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
-      create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
+      create: {
+        id: a.id,
+        title: a.title,
+        partnerOrgId: a.partnerOrgId,
+        applicantContactId: applicant.id,
+        status: a.status,
+        summary: a.summary,
+      },
     });
     // Replace the target-term set each run so re-seeding stays idempotent.
     const termIds = [...new Set(a.targetTermIds.filter((t): t is string => Boolean(t)))];
@@ -3092,46 +3107,312 @@ async function main() {
       formId: partnerAppForm.id,
       versionNumber: 1,
       createdById: admin.id,
+      intro: "Thank you for your interest in working with DALI! Please answer the following questions to the best of your ability — detailed answers help us evaluate how the DALI Lab could best work with you. We evaluate projects on five categories: positive social or environmental impact; appropriate and interesting design and development challenges; a passionate and committed founding team; feasibility; and originality / opportunity for innovation. Questions? Email partners@dali.dartmouth.edu.",
       questions: [
-        {
-          key: "pitch",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Short pitch",
-            description: "What problem are you trying to solve, and for whom?",
-          },
-        },
-        {
-          key: "success",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What does success look like?",
-            description:
-              "A term from now, what would make you glad you worked with the lab?",
-          },
-        },
-        {
-          key: "users",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Who will use what we build?",
-            description: "Roughly how many people, and in what setting?",
-          },
-        },
-        {
-          key: "existing_work",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What exists today?",
-            description:
-              "Any research, designs, or a codebase we would be building on rather than starting from scratch.",
-          },
-        },
-      ] as object,
+  {
+    "key": "break-general",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "General Information"
+    }
+  },
+  {
+    "key": "project-title",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "Project title"
+    }
+  },
+  {
+    "key": "contact-name",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "Main contact name"
+    }
+  },
+  {
+    "key": "contact-phone",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "Main contact phone number"
+    }
+  },
+  {
+    "key": "contact-email",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "Main contact email"
+    }
+  },
+  {
+    "key": "legal-entity-name",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "Legal entity name"
+    }
+  },
+  {
+    "key": "legal-entity-address",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Legal entity address"
+    }
+  },
+  {
+    "key": "internal-reference",
+    "type": "text",
+    "required": false,
+    "data": {
+      "label": "Internal reference",
+      "description": "if applicable"
+    }
+  },
+  {
+    "key": "team-members",
+    "type": "textarea",
+    "required": false,
+    "data": {
+      "label": "Team members"
+    }
+  },
+  {
+    "key": "preferred-start-dates",
+    "type": "checkbox",
+    "required": true,
+    "data": {
+      "label": "Preferred start dates",
+      "options": [
+        "No preference",
+        "Fall (September start)",
+        "Winter (January start)",
+        "Spring (April start)"
+      ]
+    }
+  },
+  {
+    "key": "affiliation",
+    "type": "text",
+    "required": true,
+    "data": {
+      "label": "What best describes your affiliation?"
+    }
+  },
+  {
+    "key": "website",
+    "type": "text",
+    "required": false,
+    "data": {
+      "label": "Website (if applicable)"
+    }
+  },
+  {
+    "key": "break-problem",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "Part 1: The Problem",
+      "description": "Please complete the prompts to the best of your ability. Ideally, answers are 1–2 paragraphs — but the more detail, the better."
+    }
+  },
+  {
+    "key": "problem",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Briefly describe the problem you are solving"
+    }
+  },
+  {
+    "key": "solution",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "What is your proposed solution(s) / idea?"
+    }
+  },
+  {
+    "key": "differentiation",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "How is your project different from other existing similar solutions?"
+    }
+  },
+  {
+    "key": "users",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Who will use this product?",
+      "description": "Give multiple, specific examples of users and stakeholder groups."
+    }
+  },
+  {
+    "key": "impact-who",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Who does your project impact and how?"
+    }
+  },
+  {
+    "key": "long-term-impact",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "What do you envision are the long-term impacts of this project?"
+    }
+  },
+  {
+    "key": "break-existing",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "Part 2: Existing Work"
+    }
+  },
+  {
+    "key": "stage",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "At what stage is the project / idea?"
+    }
+  },
+  {
+    "key": "user-research",
+    "type": "textarea",
+    "required": false,
+    "data": {
+      "label": "Have you spoken with potential users of your solution and researched their needs?",
+      "description": "If so, briefly describe your approach and findings, and the most recent user feedback."
+    }
+  },
+  {
+    "key": "competitive-research",
+    "type": "textarea",
+    "required": false,
+    "data": {
+      "label": "What previous competitive research has been done on the project?",
+      "description": "if any"
+    }
+  },
+  {
+    "key": "content-data",
+    "type": "textarea",
+    "required": false,
+    "data": {
+      "label": "What content or data will your project need? Do you own it? If not, what access do you have?",
+      "description": "If it has yet to be created, please describe the plans for creation."
+    }
+  },
+  {
+    "key": "timeline",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "What is your project timeline?",
+      "description": "Briefly describe your timeline, in particular any go-to-market ideas if applicable."
+    }
+  },
+  {
+    "key": "break-collaboration",
+    "type": "pageBreak",
+    "required": false,
+    "data": {
+      "label": "Part 3: Collaboration with DALI"
+    }
+  },
+  {
+    "key": "why-dali",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Why DALI?"
+    }
+  },
+  {
+    "key": "dali-help",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Which aspects of the project would you like to enlist DALI's help?"
+    }
+  },
+  {
+    "key": "funding",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Describe any funding available to you to support this project."
+    }
+  },
+  {
+    "key": "how-heard",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "How did you learn about the DALI Lab?"
+    }
+  },
+  {
+    "key": "time-pressure",
+    "type": "textarea",
+    "required": true,
+    "data": {
+      "label": "Is this project under any time pressure or restrictions?",
+      "description": "If so, please explain or provide a hard-stop for DALI's contribution."
+    }
+  },
+  {
+    "key": "anything-else",
+    "type": "textarea",
+    "required": false,
+    "data": {
+      "label": "Is there anything else we should know when evaluating this project?"
+    }
+  },
+  {
+    "key": "attachments-info",
+    "type": "info",
+    "required": false,
+    "data": {
+      "label": "",
+      "body": "Attachments (optional). Upload any relevant documents or material that provide further detail or clarity to help us evaluate your application."
+    }
+  },
+  {
+    "key": "file-1",
+    "type": "file",
+    "required": false,
+    "data": {
+      "label": "File 1"
+    }
+  },
+  {
+    "key": "file-2",
+    "type": "file",
+    "required": false,
+    "data": {
+      "label": "File 2"
+    }
+  },
+  {
+    "key": "file-3",
+    "type": "file",
+    "required": false,
+    "data": {
+      "label": "File 3"
+    }
+  }
+] as object,
     },
   });
   await prisma.partnerApplicationFormBinding.deleteMany({});
@@ -3694,13 +3975,14 @@ async function main() {
         }
       }
 
-      // PartnerUser: one external contact on the Tuck partner org.
+      // Account-first: one external PartnerContact (the person) with a
+      // PartnerMembership in the Tuck org. PartnerUser is retired.
       const tuck = await prisma.partnerOrg.findUnique({
         where: { id: "partner-tuck-school" },
         select: { id: true },
       });
       if (tuck) {
-        const partnerContact = await prisma.user.upsert({
+        const partnerUserRow = await prisma.user.upsert({
           where: { personalEmail: "partner.tuck@example.com" },
           update: { firstName: "Pat", lastName: "Tuck" },
           create: {
@@ -3709,21 +3991,30 @@ async function main() {
             lastName: "Tuck",
           },
         });
-        const tuckContact = await prisma.partnerUser.upsert({
-          where: { userId: partnerContact.id },
-          update: { partnerOrgId: tuck.id },
+        const tuckContact = await prisma.partnerContact.upsert({
+          where: { email: "partner.tuck@example.com" },
+          update: { userId: partnerUserRow.id, name: "Pat Tuck", authProvider: "MagicLink" },
           create: {
-            userId: partnerContact.id,
-            partnerOrgId: tuck.id,
-            displayRole: "Program Sponsor",
+            email: "partner.tuck@example.com",
+            userId: partnerUserRow.id,
+            name: "Pat Tuck",
             authProvider: "MagicLink",
+          },
+        });
+        const tuckMembership = await prisma.partnerMembership.upsert({
+          where: { contactId_orgId: { contactId: tuckContact.id, orgId: tuck.id } },
+          update: { role: "Program Sponsor" },
+          create: {
+            contactId: tuckContact.id,
+            orgId: tuck.id,
+            role: "Program Sponsor",
           },
         });
         // Self-signup sets the founder as primary contact; mirror that so the
         // seeded org shows the "Primary contact" badge in settings.
         await prisma.partnerOrg.update({
           where: { id: tuck.id },
-          data: { primaryContactId: tuckContact.id },
+          data: { primaryContactId: tuckMembership.id },
         });
 
         // A pending teammate invite with a deterministic token so E2E can
@@ -3756,7 +4047,7 @@ async function main() {
         select: { id: true },
       });
       if (hood) {
-        const hoodContact = await prisma.user.upsert({
+        const hoodUser = await prisma.user.upsert({
           where: { personalEmail: "partner.hood@example.com" },
           update: { firstName: "Harper", lastName: "Hood" },
           create: {
@@ -3765,14 +4056,23 @@ async function main() {
             lastName: "Hood",
           },
         });
-        await prisma.partnerUser.upsert({
-          where: { userId: hoodContact.id },
-          update: { partnerOrgId: hood.id },
+        const hoodContact = await prisma.partnerContact.upsert({
+          where: { email: "partner.hood@example.com" },
+          update: { userId: hoodUser.id, name: "Harper Hood", authProvider: "MagicLink" },
           create: {
-            userId: hoodContact.id,
-            partnerOrgId: hood.id,
-            displayRole: "Curator",
+            email: "partner.hood@example.com",
+            userId: hoodUser.id,
+            name: "Harper Hood",
             authProvider: "MagicLink",
+          },
+        });
+        await prisma.partnerMembership.upsert({
+          where: { contactId_orgId: { contactId: hoodContact.id, orgId: hood.id } },
+          update: { role: "Curator" },
+          create: {
+            contactId: hoodContact.id,
+            orgId: hood.id,
+            role: "Curator",
           },
         });
       }

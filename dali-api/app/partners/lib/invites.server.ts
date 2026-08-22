@@ -36,16 +36,21 @@ export async function createPartnerInvite(
     };
   }
   if (identity.kind === "existing") {
-    const partnerUser = await prisma.partnerUser.findUnique({
+    // Check if a PartnerContact linked to this User already has an active
+    // membership in this specific org (multi-org is allowed in v2).
+    const contact = await prisma.partnerContact.findUnique({
       where: { userId: identity.userId },
-      select: { partnerOrgId: true },
+      select: {
+        memberships: {
+          where: { orgId: params.partnerOrgId, endedAt: null },
+          select: { id: true },
+        },
+      },
     });
-    if (partnerUser?.partnerOrgId === params.partnerOrgId) {
+    if (contact?.memberships.length) {
       return { error: "That person is already a member of this organization" };
     }
-    if (partnerUser) {
-      return { error: "That person already belongs to another partner organization" };
-    }
+    // Note: belonging to OTHER orgs is now fine — multi-org is supported.
   }
 
   // Re-inviting supersedes any pending invite for the same org + email.
@@ -115,7 +120,7 @@ export type AcceptInviteResult =
   | { error: string };
 
 // Atomic consume (same updateMany-guard pattern as the magic link), then
-// find-or-create the User by personalEmail and attach the PartnerUser row.
+// find-or-create a PartnerContact by email and create a PartnerMembership.
 export async function acceptPartnerInvite(
   raw: string,
   request?: Request,
@@ -139,48 +144,69 @@ export async function acceptPartnerInvite(
   if (!invite) return { error: "This invitation is invalid or has expired" };
 
   // The invitee's identity may have changed since the invite was sent
-  // (became a member, joined another org) — re-check at accept time.
+  // (became a member) — re-check at accept time.
   const identity = await classifyPartnerEmail(invite.email);
   if (identity.kind === "member-conflict") {
     return { error: "This email now belongs to a DALI account — sign in at /login instead" };
   }
 
-  const userId =
-    identity.kind === "existing"
-      ? identity.userId
-      : (
-          await prisma.user.create({
-            data: { personalEmail: invite.email, firstName: "", lastName: "" },
-            select: { id: true },
-          })
-        ).id;
+  // Find or create the User row. Invitees accepting before they've ever signed
+  // in may not have a User yet — we create a minimal one here.
+  let userId: string | null = null;
+  if (identity.kind === "existing") {
+    userId = identity.userId;
+  } else {
+    userId = (
+      await prisma.user.create({
+        data: { personalEmail: invite.email, firstName: "", lastName: "" },
+        select: { id: true },
+      })
+    ).id;
+  }
+
+  // Upsert the PartnerContact by email (the guard will link userId at first
+  // sign-in if the contact was created here without a live session).
+  const contact = await prisma.partnerContact.upsert({
+    where: { email: invite.email },
+    create: {
+      email: invite.email,
+      name: invite.email.split("@")[0] ?? invite.email,
+      ...(userId ? { userId } : {}),
+    },
+    update: {
+      // Only set userId if the contact doesn't have one yet.
+      ...(userId ? { userId } : {}),
+    },
+    select: { id: true },
+  });
 
   try {
-    await prisma.partnerUser.create({
+    await prisma.partnerMembership.create({
       data: {
-        userId,
-        partnerOrgId: invite.partnerOrgId,
-        displayRole: invite.displayRole,
-        authProvider: "MagicLink",
+        contactId: contact.id,
+        orgId: invite.partnerOrgId,
+        role: invite.displayRole,
       },
     });
   } catch (e) {
-    // PartnerUser.userId is unique — one org per person in v1.
+    // @@unique([contactId, orgId]) — this contact is already a member of this org.
     if ((e as { code?: string })?.code === "P2002") {
-      return { error: "This account already belongs to a partner organization" };
+      return { error: "This account is already a member of this organization" };
     }
     throw e;
   }
 
+  // userId is always set here: either from an existing User or freshly created.
+  const resolvedUserId = userId!;
   await logAuditEvent({
     action: "partner.invite.accepted",
-    userId,
+    userId: resolvedUserId,
     targetId: invite.partnerOrgId,
     metadata: { inviteId: invite.id },
     request,
   });
 
-  return { userId, partnerOrgId: invite.partnerOrgId };
+  return { userId: resolvedUserId, partnerOrgId: invite.partnerOrgId };
 }
 
 export async function revokePartnerInvite(

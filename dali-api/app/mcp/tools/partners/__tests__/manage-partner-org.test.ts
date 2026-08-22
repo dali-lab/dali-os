@@ -46,7 +46,7 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  partnerUser: { count: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
+  partnerMembership: { count: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
   projectPartner: { count: ReturnType<typeof vi.fn> };
   partnerApplication: { count: ReturnType<typeof vi.fn> };
   partnerInvite: {
@@ -109,7 +109,7 @@ describe("manage_partner_org", () => {
       update: vi.fn(),
       delete: vi.fn(),
     };
-    mockPrisma.partnerUser = {
+    mockPrisma.partnerMembership = {
       count: vi.fn().mockResolvedValue(2),
       findFirst: vi.fn(),
     };
@@ -130,7 +130,7 @@ describe("manage_partner_org", () => {
       update: vi.fn(),
       delete: vi.fn(),
     };
-    mockPrisma.partnerUser = { count: vi.fn().mockResolvedValue(0), findFirst: vi.fn() };
+    mockPrisma.partnerMembership = { count: vi.fn().mockResolvedValue(0), findFirst: vi.fn() };
     mockPrisma.projectPartner = { count: vi.fn().mockResolvedValue(0) };
     mockPrisma.partnerApplication = { count: vi.fn().mockResolvedValue(0) };
     mockPrisma.partnerInvite = {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    partnerUser: { findUnique: vi.fn() },
+    partnerContact: { findUnique: vi.fn() },
     projectPartner: { findFirst: vi.fn() },
   },
 }));
@@ -34,20 +34,28 @@ describe("activeProjectPartnerWhere", () => {
 });
 
 describe("partnerHasProjectAccess", () => {
-  it("rejects users with no PartnerUser row without querying links", async () => {
-    mockPrisma.partnerUser.findUnique.mockResolvedValue(null);
+  it("rejects users with no contact / no memberships without querying links", async () => {
+    mockPrisma.partnerContact.findUnique.mockResolvedValue(null);
+    expect(await partnerHasProjectAccess("user1", "proj1")).toBe(false);
+    expect(mockPrisma.projectPartner.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects users whose contact has no active memberships", async () => {
+    mockPrisma.partnerContact.findUnique.mockResolvedValue({ memberships: [] });
     expect(await partnerHasProjectAccess("user1", "proj1")).toBe(false);
     expect(mockPrisma.projectPartner.findFirst).not.toHaveBeenCalled();
   });
 
   it("allows partners whose org has an active link to the project", async () => {
-    mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+    mockPrisma.partnerContact.findUnique.mockResolvedValue({
+      memberships: [{ orgId: "org1" }],
+    });
     mockPrisma.projectPartner.findFirst.mockResolvedValue({ id: "pp1" });
     expect(await partnerHasProjectAccess("user1", "proj1")).toBe(true);
 
     const arg = mockPrisma.projectPartner.findFirst.mock.calls[0][0];
     expect(arg.where.projectId).toBe("proj1");
-    expect(arg.where.partnerOrgId).toBe("org1");
+    expect(arg.where.partnerOrgId).toEqual({ in: ["org1"] });
     // Archived projects never grant access.
     expect(arg.where.project).toEqual({ status: { not: "Archived" } });
     // Active-window predicate is part of the query.
@@ -55,7 +63,9 @@ describe("partnerHasProjectAccess", () => {
   });
 
   it("rejects partners whose org has no active link", async () => {
-    mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+    mockPrisma.partnerContact.findUnique.mockResolvedValue({
+      memberships: [{ orgId: "org1" }],
+    });
     mockPrisma.projectPartner.findFirst.mockResolvedValue(null);
     expect(await partnerHasProjectAccess("user1", "proj1")).toBe(false);
   });
