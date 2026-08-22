@@ -33,10 +33,10 @@ export const SCOPE_OPTIONS: ConfigOption[] = [
 
 export const AUDIENCE_OPTIONS: ConfigOption[] = [
   { value: "Manual", label: "Manual (no one auto-required)" },
-  { value: "NewMembers", label: "New members (this cycle's hires)" },
-  { value: "Members", label: "Members (returning, not new)" },
-  { value: "Mentors", label: "Mentors" },
-  { value: "HiringParticipants", label: "Hiring participants" },
+  { value: "NewMembers", label: "New members (first term staffed)" },
+  { value: "Members", label: "Returning members (staffed this term)" },
+  { value: "Mentors", label: "Mentors (staffed this term)" },
+  { value: "HiringParticipants", label: "Hiring participants (in a cycle)" },
   { value: "Group", label: "Active this term (staffed)" },
 ];
 
@@ -56,7 +56,7 @@ export const SCOPE_SHORT: Record<string, string> = {
 export const AUDIENCE_SHORT: Record<string, string> = {
   Manual: "Manual",
   NewMembers: "New members",
-  Members: "Members",
+  Members: "Returning",
   Mentors: "Mentors",
   HiringParticipants: "Hiring",
   Group: "Active this term",

@@ -5,20 +5,37 @@
 // audience of, and they haven't signed that version.
 
 import { prisma } from "~/lib/db";
-import { currentTerm, isLabMentor } from "~/lib/roles";
+import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
-import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
+import {
+  hasPriorStaffing,
+  isStaffedInTerm,
+  isStaffedMentorInTerm,
+} from "./staffing-audience.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
 export interface SignerCohorts {
   isMember: boolean;
-  // A member of the current incoming cohort (latest General/Fellowship hires).
-  isNewMember: boolean;
+  // Staffed this term = a ProjectAssignment or CoreAssignment in the current
+  // term. Gates the new/returning member agreements, which partition this set.
+  isStaffedThisTerm: boolean;
+  // Staffed this term and never staffed before → owes the *new* member agreement
+  // rather than the returning one.
+  isNewStaffed: boolean;
+  // Mentoring this term (P3 project ∪ external mentor). Gates the mentor agreement.
   isMentor: boolean;
-  // Active/staffed in the current term (the term group's membership rule).
-  // Gates the term-group Group audience so off-term members aren't required.
+  // Active in the term group (project ∪ core ∪ instructor ∪ mentorship). Gates
+  // the term-group Group audience so off-term members aren't required.
   isActiveThisTerm: boolean;
 }
+
+const NO_COHORTS: SignerCohorts = {
+  isMember: false,
+  isStaffedThisTerm: false,
+  isNewStaffed: false,
+  isMentor: false,
+  isActiveThisTerm: false,
+};
 
 export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
   const [member, u, term] = await Promise.all([
@@ -31,15 +48,22 @@ export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
   ]);
   // Full-time staff are exempt from signing obligations entirely (they also
   // skip the student onboarding flow).
-  if (u?.adminMembership?.isStaff)
-    return { isMember: false, isNewMember: false, isMentor: false, isActiveThisTerm: false };
+  if (u?.adminMembership?.isStaff) return NO_COHORTS;
   const isMember = !!member && u?.membershipStatus !== "Alumni";
-  const [isMentor, isNewMember, isActiveThisTerm] = await Promise.all([
-    isLabMentor(userId, term?.id),
-    isMember ? isNewMemberCohort(userId) : Promise.resolve(false),
-    term ? isUserActiveInTerm(userId, term.id) : Promise.resolve(false),
+  if (!term) return { ...NO_COHORTS, isMember };
+  const [isStaffedThisTerm, priorStaffed, isMentor, isActiveThisTerm] = await Promise.all([
+    isStaffedInTerm(userId, term.id),
+    hasPriorStaffing(userId, term.sortKey),
+    isStaffedMentorInTerm(userId, term.id),
+    isUserActiveInTerm(userId, term.id),
   ]);
-  return { isMember, isNewMember, isMentor, isActiveThisTerm };
+  return {
+    isMember,
+    isStaffedThisTerm,
+    isNewStaffed: isStaffedThisTerm && !priorStaffed,
+    isMentor,
+    isActiveThisTerm,
+  };
 }
 
 export interface OutstandingBinding {
@@ -51,7 +75,7 @@ export interface OutstandingBinding {
 
 // Every app-enforced binding this user still owes a member signature on.
 export async function listOutstandingBindings(userId: string): Promise<OutstandingBinding[]> {
-  const cohorts = await getSignerCohorts(userId);
+  const [cohorts, term] = await Promise.all([getSignerCohorts(userId), currentTerm()]);
   if (!cohorts.isMember && !cohorts.isMentor && !cohorts.isActiveThisTerm) return [];
 
   const bindings = await prisma.signingBinding.findMany({
@@ -62,6 +86,7 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
     select: {
       id: true,
       versionId: true,
+      termId: true,
       document: {
         select: { id: true, name: true, audience: true, audienceGroupId: true },
       },
@@ -89,6 +114,9 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
 
   const out: OutstandingBinding[] = [];
   for (const b of bindings) {
+    // Term-scoped bindings only gate for their own term — a past term's member
+    // agreement never blocks the app once the term rolls over.
+    if (b.termId && b.termId !== term?.id) continue;
     const inAudience = AUDIENCE_RESOLVERS[b.document.audience].includes(cohorts, {
       audienceGroupId: b.document.audienceGroupId,
       userGroupIds,
