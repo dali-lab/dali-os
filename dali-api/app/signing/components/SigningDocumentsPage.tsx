@@ -6,13 +6,6 @@ import { Select, type SelectOption } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
-const KIND_LABELS: Record<string, string> = {
-  General: "General",
-  MemberAgreement: "Membership",
-  MentorshipAgreement: "Mentorship",
-  Confidentiality: "Confidentiality",
-};
-
 const SCOPE_LABELS: Record<string, string> = {
   None: "Not enforced",
   App: "Blocks app until signed",
@@ -67,20 +60,6 @@ export function SigningDocumentsPage() {
               placeholder="DALI Term Agreement"
               className="px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground/80">Kind</span>
-            <Select
-              name="kind"
-              defaultValue="MemberAgreement"
-              options={[
-                { value: "General", label: "General" },
-                { value: "MemberAgreement", label: "Membership" },
-                { value: "MentorshipAgreement", label: "Mentorship" },
-                { value: "Confidentiality", label: "Confidentiality" },
-              ]}
-              buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -177,7 +156,7 @@ export function SigningDocumentsPage() {
                         {doc.name}
                       </h3>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {KIND_LABELS[doc.kind] ?? doc.kind} · {doc.versions.length} version
+                        {SCOPE_LABELS[doc.gateScope] ?? doc.gateScope} · {doc.versions.length} version
                         {doc.versions.length !== 1 ? "s" : ""}
                         {published > 0 ? ` · ${published} published` : ""}
                       </p>

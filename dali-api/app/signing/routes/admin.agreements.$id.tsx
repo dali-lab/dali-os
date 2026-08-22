@@ -16,9 +16,8 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { activateVersion } from "~/signing/lib/activate.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { computeRoster, type BindingRoster } from "~/signing/lib/roster.server";
-import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
+import { SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 import type {
-  SigningDocumentKind,
   SigningGateScope,
   SigningAudience,
   SigningCadence,
@@ -267,21 +266,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "update") {
-    // Edit the config facets — kind / gate scope / audience / cadence. The create
+    // Edit the config facets — gate scope / audience / cadence. The create
     // form sets these once; this is the only post-create editor for them.
     // Validated against the shared allowlists; unknown/absent values are skipped.
-    const kind = formData.get("kind") as SigningDocumentKind;
     const gateScope = formData.get("gateScope") as SigningGateScope;
     const audience = formData.get("audience") as SigningAudience;
     const cadence = formData.get("cadence") as SigningCadence;
     const data: {
-      kind?: SigningDocumentKind;
       gateScope?: SigningGateScope;
       audience?: SigningAudience;
       cadence?: SigningCadence;
       audienceGroupId?: string | null;
     } = {};
-    if (KINDS.includes(kind)) data.kind = kind;
     if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
     if (AUDIENCES.includes(audience)) data.audience = audience;
     if (CADENCES.includes(cadence)) data.cadence = cadence;

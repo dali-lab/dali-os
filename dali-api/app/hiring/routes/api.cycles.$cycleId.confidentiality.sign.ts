@@ -13,7 +13,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const cycleId = params.cycleId!;
   const binding = await prisma.signingBinding.findFirst({
-    where: { cycleId, document: { kind: "Confidentiality" } },
+    where: { cycleId, document: { gateScope: "HiringCycle" } },
     select: { id: true, versionId: true },
   });
   if (!binding) {
