@@ -6,6 +6,7 @@ import {
   activeSubtabHref,
   hasSubnavRow,
   isAreaSubtabPath,
+  isPinnedActive,
   pinnedNavItems,
   visibleAreas,
   visibleSubtabs,
@@ -255,6 +256,52 @@ describe("areaForPath", () => {
 
   it("ignores the query string", () => {
     expect(areaForPath("/core/staffing?term=25F", REGROUP)?.key).toBe("core");
+  });
+
+  it("keeps a Core deep-link into the Drive owned by Core, not the Drive pin", () => {
+    // With the agreements-console flag off, Core ▸ Agreements points at
+    // /drive?type=agreement — it lives in the Drive but belongs to Core. The
+    // sub-tab must claim it (the bare /drive hub can't, and once regrouped Drive
+    // is a pinned item with no area to fall back on), or clicking the sub-tab
+    // bounces the sidebar to the Drive pin.
+    expect(areaForPath("/drive?type=agreement", REGROUP)?.key).toBe("core");
+    // Extra params on the url don't break ownership.
+    expect(areaForPath("/drive?scope=lab&type=agreement", REGROUP)?.key).toBe("core");
+    // A plain Drive url has no owning area once regrouped (Drive is pinned), so
+    // it stays out of every area — the pin, not an area, lights up for it.
+    expect(areaForPath("/drive", REGROUP)).toBeUndefined();
+    expect(areaForPath("/drive?type=file", REGROUP)).toBeUndefined();
+    expect(areaForPath("/drive/abc123", REGROUP)).toBeUndefined();
+  });
+
+  it("highlights the Agreements sub-tab on its Drive deep-link", () => {
+    const core = areasFor(REGROUP).find((a) => a.key === "core")!;
+    expect(activeSubtabHref(core, "/drive?type=agreement")).toBe("/drive?type=agreement");
+    expect(activeSubtabHref(core, "/drive?scope=lab&type=agreement")).toBe(
+      "/drive?type=agreement",
+    );
+    // The console keeps the plain /admin/agreements surface highlighted too.
+    expect(activeSubtabHref(core, "/admin/agreements")).toBe("/drive?type=agreement");
+    expect(activeSubtabHref(core, "/admin/agreements/abc123")).toBe("/drive?type=agreement");
+  });
+});
+
+describe("isPinnedActive", () => {
+  it("lights the Drive pin on plain Drive urls, including filters and subtrees", () => {
+    expect(isPinnedActive("/drive", "/drive", REGROUP)).toBe(true);
+    expect(isPinnedActive("/drive?type=file", "/drive", REGROUP)).toBe(true);
+    expect(isPinnedActive("/drive?scope=core", "/drive", REGROUP)).toBe(true);
+    expect(isPinnedActive("/drive/abc123", "/drive", REGROUP)).toBe(true);
+  });
+
+  it("does NOT light the Drive pin on a Core deep-link that lives in the Drive", () => {
+    expect(isPinnedActive("/drive?type=agreement", "/drive", REGROUP)).toBe(false);
+    expect(isPinnedActive("/drive?scope=lab&type=agreement", "/drive", REGROUP)).toBe(false);
+  });
+
+  it("is false for unrelated paths", () => {
+    expect(isPinnedActive("/projects", "/drive", REGROUP)).toBe(false);
+    expect(isPinnedActive("/core/staffing", "/drive", REGROUP)).toBe(false);
   });
 });
 

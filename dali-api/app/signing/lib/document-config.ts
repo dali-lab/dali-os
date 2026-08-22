@@ -5,18 +5,11 @@
 // the same values label the UI and guard the server.
 
 import type {
-  SigningDocumentKind,
   SigningGateScope,
   SigningAudience,
   SigningCadence,
 } from "~/generated/prisma/enums";
 
-export const KINDS: SigningDocumentKind[] = [
-  "General",
-  "MemberAgreement",
-  "MentorshipAgreement",
-  "Confidentiality",
-];
 export const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
 export const AUDIENCES: SigningAudience[] = [
   "Manual",
@@ -24,19 +17,13 @@ export const AUDIENCES: SigningAudience[] = [
   "Members",
   "Mentors",
   "HiringParticipants",
+  "Group",
 ];
 export const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
 
 // Select options (value + human label). Assignable to the floating `Select`'s
 // `SelectOption[]` prop; kept as plain objects here to avoid a component import.
 type ConfigOption = { value: string; label: string };
-
-export const KIND_OPTIONS: ConfigOption[] = [
-  { value: "General", label: "General" },
-  { value: "MemberAgreement", label: "Membership" },
-  { value: "MentorshipAgreement", label: "Mentorship" },
-  { value: "Confidentiality", label: "Confidentiality" },
-];
 
 export const SCOPE_OPTIONS: ConfigOption[] = [
   { value: "None", label: "Not enforced (surface only)" },
@@ -50,6 +37,7 @@ export const AUDIENCE_OPTIONS: ConfigOption[] = [
   { value: "Members", label: "Members (returning, not new)" },
   { value: "Mentors", label: "Mentors" },
   { value: "HiringParticipants", label: "Hiring participants" },
+  { value: "Group", label: "Active this term (staffed)" },
 ];
 
 export const CADENCE_OPTIONS: ConfigOption[] = [
@@ -60,12 +48,6 @@ export const CADENCE_OPTIONS: ConfigOption[] = [
 
 // Compact labels for the config pills (the dropdown items use the fuller
 // *_OPTIONS labels above).
-export const KIND_SHORT: Record<string, string> = {
-  General: "General",
-  MemberAgreement: "Membership",
-  MentorshipAgreement: "Mentorship",
-  Confidentiality: "Confidentiality",
-};
 export const SCOPE_SHORT: Record<string, string> = {
   None: "Not enforced",
   App: "App gate",
@@ -77,6 +59,7 @@ export const AUDIENCE_SHORT: Record<string, string> = {
   Members: "Members",
   Mentors: "Mentors",
   HiringParticipants: "Hiring",
+  Group: "Active this term",
 };
 export const CADENCE_SHORT: Record<string, string> = {
   Once: "Once",

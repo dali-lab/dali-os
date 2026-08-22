@@ -1535,10 +1535,15 @@ model SigningDocument {
   // references a document by slug rather than a cuid.
   slug String @unique
 
-  kind      SigningDocumentKind @default(General)
-  gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
-  audience  SigningAudience     @default(Manual) // who is required to sign
-  cadence   SigningCadence      @default(Once) // how often a fresh signature is required
+  gateScope SigningGateScope @default(None) // how an unsigned copy is enforced
+  audience  SigningAudience  @default(Manual) // who is required to sign
+  cadence   SigningCadence   @default(Once) // how often a fresh signature is required
+
+  // Target group when audience == Group (a GroupDefinition id; resolved through
+  // resolveGroupMembers, so a plain column like Form.audienceGroupIds — no FK).
+  // Null with audience=Group means "the binding's term group", so a per-term
+  // agreement auto-rolls to each term's active-member roster (staffed this term).
+  audienceGroupId String?
 
   // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced
   // (agreements render at Lab top level today). Set for hiring Confidentiality
@@ -1555,15 +1560,6 @@ model SigningDocument {
 
   versions SigningDocumentVersion[]
   bindings SigningBinding[]
-
-  @@index([kind])
-}
-
-enum SigningDocumentKind {
-  General
-  MemberAgreement // onboarding auto-trigger (membership lifecycle)
-  MentorshipAgreement // termly re-sign for mentors
-  Confidentiality // hiring-cycle gate (migrated from ConfidentialityAgreement)
 }
 
 enum SigningGateScope {
@@ -1578,6 +1574,7 @@ enum SigningAudience {
   Members // active members who are not new (the returning cohort)
   Mentors
   HiringParticipants
+  Group // a user group (audienceGroupId); null id = the binding's term group
 }
 
 // How often a signature must be renewed — the binding scope an "activate" (or the

@@ -8,6 +8,8 @@
 import { prisma } from "~/lib/db";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
+import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups";
+import { currentTerm } from "~/lib/roles";
 import type { SignerCohorts } from "./state.server";
 
 export interface AudiencePerson {
@@ -16,9 +18,27 @@ export interface AudiencePerson {
   lastName: string;
 }
 
+// Per-document facts the gate needs beyond the signer's cohorts. Only the Group
+// audience reads them (the document's target group + the groups this signer is
+// in); every other resolver ignores ctx.
+export interface AudienceContext {
+  audienceGroupId?: string | null;
+  // Fixed (non-term) group ids this signer belongs to, precomputed once by the
+  // gate so includes() stays synchronous.
+  userGroupIds?: Set<string>;
+}
+
+// The group + term facts listMembers needs. termId scopes term-derived
+// audiences (Mentors, and a Group audience with no fixed group). audienceGroupId
+// targets a specific group.
+export interface AudienceListContext {
+  termId?: string;
+  audienceGroupId?: string | null;
+}
+
 export interface AudienceResolver {
-  includes: (cohorts: SignerCohorts) => boolean;
-  listMembers: (ctx: { termId?: string }) => Promise<AudiencePerson[]>;
+  includes: (cohorts: SignerCohorts, ctx?: AudienceContext) => boolean;
+  listMembers: (ctx: AudienceListContext) => Promise<AudiencePerson[]>;
   // Whether listMembers is a complete roster. False for audiences we can't
   // enumerate from here (Manual, HiringParticipants) — callers then show the
   // signed list only, with no "who hasn't signed" set.
@@ -39,6 +59,33 @@ async function listActiveMembers(): Promise<AudiencePerson[]> {
     select: { user: { select: { id: true, firstName: true, lastName: true } } },
   });
   return members.map((m) => m.user);
+}
+
+// Hydrate a set of userIds (from group resolution) into AudiencePerson rows,
+// dropping full-time staff — they're exempt from signing (see getSignerCohorts),
+// so they must not appear in a group audience's roster or notifications either.
+async function hydratePeople(userIds: string[]): Promise<AudiencePerson[]> {
+  if (userIds.length === 0) return [];
+  return prisma.user.findMany({
+    where: {
+      id: { in: userIds },
+      NOT: { adminMembership: { is: { isStaff: true } } },
+    },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+}
+
+// The people in a Group audience. A fixed audienceGroupId resolves to that
+// group; a null id means "the binding's term group" (resolved against termId,
+// falling back to the current term) so per-term agreements auto-roll each term.
+async function listGroupMembers(ctx: AudienceListContext): Promise<AudiencePerson[]> {
+  if (ctx.audienceGroupId) {
+    return hydratePeople(await resolveGroupMembers(ctx.audienceGroupId));
+  }
+  const termId = ctx.termId ?? (await currentTerm())?.id;
+  if (!termId) return [];
+  return hydratePeople(await resolveDynamicQuery(`term:${termId}`));
 }
 
 // Active members partitioned by the incoming-cohort set: "new" = accepted in the
@@ -101,6 +148,18 @@ export const AUDIENCE_RESOLVERS: Record<SigningAudience, AudienceResolver> = {
   Mentors: {
     includes: (c) => c.isMentor,
     listMembers: ({ termId }) => (termId ? listTermMentors(termId) : Promise.resolve([])),
+    enumerable: true,
+  },
+  // A user group. A fixed audienceGroupId gates on membership in that group; a
+  // null id means "the binding's term group" — everyone active/staffed this term
+  // (isActiveThisTerm) — so a per-term member agreement never reaches off-term
+  // (off-campus) members on either the notification or the app gate.
+  Group: {
+    includes: (c, ctx) =>
+      ctx?.audienceGroupId
+        ? (ctx.userGroupIds?.has(ctx.audienceGroupId) ?? false)
+        : c.isActiveThisTerm,
+    listMembers: (ctx) => listGroupMembers(ctx),
     enumerable: true,
   },
   // Manual is explicit-only; HiringParticipants is gated inside hiring, never

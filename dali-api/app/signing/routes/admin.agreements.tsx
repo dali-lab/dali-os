@@ -17,7 +17,6 @@ import { logAuditEvent } from "~/lib/audit";
 import { ensureCoreDriveRoot } from "~/lib/pages";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type {
-  SigningDocumentKind,
   SigningGateScope,
   SigningAudience,
   SigningCadence,
@@ -27,7 +26,7 @@ import { activateVersion } from "~/signing/lib/activate.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
 import { AgreementsConsole } from "~/signing/components/AgreementsConsole";
-import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
+import { SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 
 export const handle = coreHandle("agreements");
 
@@ -96,7 +95,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create") {
     const name = (formData.get("name") as string)?.trim();
     if (!name) return { error: "Name is required" };
-    const kind = formData.get("kind") as SigningDocumentKind;
     const gateScope = formData.get("gateScope") as SigningGateScope;
     const audience = formData.get("audience") as SigningAudience;
     const cadence = formData.get("cadence") as SigningCadence;
@@ -105,7 +103,6 @@ export async function action({ request }: Route.ActionArgs) {
       data: {
         name,
         slug: await uniqueSlug(slugify(name)),
-        kind: KINDS.includes(kind) ? kind : "General",
         gateScope: SCOPES.includes(gateScope) ? gateScope : "None",
         audience: AUDIENCES.includes(audience) ? audience : "Manual",
         cadence: CADENCES.includes(cadence) ? cadence : "Once",

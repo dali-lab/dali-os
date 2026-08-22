@@ -13,8 +13,10 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, FileSignature, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -724,6 +726,7 @@ export function StaffingBoard({
               onExternalMentorAdded={() => loadExternalMentorsRef.current()}
             />
           )}
+          {canManage && <IssueTermAgreementsButton />}
           <DomainFilter
             domains={domains}
             value={selectedDomainId}
@@ -889,6 +892,90 @@ export function StaffingBoard({
 }
 
 // Full-width banner: get-or-create a term-wide Slack channel (e.g. #26x) and
+// One preview row from GET /api/agreements/issue (kept in step with
+// IssuablePreview in signing/lib/issue.server.ts — that file is server-only).
+type IssuePreviewItem = {
+  documentId: string;
+  documentName: string;
+  recipientCount: number;
+  alreadyInForce: boolean;
+};
+
+// Core-only button: put this term's recurring agreements in force and send their
+// sign requests once staffing is done. Confirms which agreement goes to how many
+// people first (issuance is never silent), and only reaches members staffed this
+// term when the agreement's audience is the term group.
+function IssueTermAgreementsButton() {
+  const { confirm } = useDialog();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function onClick() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/agreements/issue", { credentials: "include" });
+      const data = (await res.json().catch(() => ({}))) as {
+        termCode?: string | null;
+        items?: IssuePreviewItem[];
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.error ?? "Couldn't load agreements.");
+        return;
+      }
+      const items = data.items ?? [];
+      const forTerm = data.termCode ? ` for ${data.termCode}` : "";
+      if (items.length === 0) {
+        toast.info(`No recurring agreements to issue${forTerm}.`);
+        return;
+      }
+      const ok = await confirm({
+        title: `Issue term agreements${forTerm}?`,
+        description: (
+          <div className="space-y-2 text-sm">
+            <p>Each will be put in force and sent a sign request:</p>
+            <ul className="space-y-0.5">
+              {items.map((i) => (
+                <li key={i.documentId}>
+                  <span className="font-medium">{i.documentName}</span> →{" "}
+                  {i.recipientCount} {i.recipientCount === 1 ? "person" : "people"}
+                  {i.alreadyInForce ? " (re-issue)" : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ),
+        confirmLabel: "Send",
+      });
+      if (!ok) return;
+      const post = await fetch("/api/agreements/issue", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentIds: items.map((i) => i.documentId) }),
+      });
+      const result = (await post.json().catch(() => ({}))) as {
+        issued?: number;
+        error?: string;
+      };
+      if (!post.ok) {
+        toast.error(result.error ?? "Failed to issue agreements.");
+        return;
+      }
+      const n = result.issued ?? 0;
+      toast.success(`Issued ${n} agreement${n === 1 ? "" : "s"}.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button variant="secondary" size="sm" onClick={() => void onClick()} disabled={busy}>
+      <FileSignature className="w-4 h-4" /> {busy ? "Issuing…" : "Issue term agreements"}
+    </Button>
+  );
+}
+
 // invite all current-term Core + Admin/staff + everyone assigned to a project
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
