@@ -367,7 +367,8 @@ describe("sign_document", () => {
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
-      isNewMember: false,
+      isStaffedThisTerm: true,
+      isNewStaffed: false,
       isMentor: false,
       isActiveThisTerm: false,
     });
@@ -384,7 +385,8 @@ describe("sign_document", () => {
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
-      isNewMember: false,
+      isStaffedThisTerm: true,
+      isNewStaffed: false,
       isMentor: false,
       isActiveThisTerm: false,
     });
@@ -411,7 +413,8 @@ describe("sign_document", () => {
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
-      isNewMember: false,
+      isStaffedThisTerm: true,
+      isNewStaffed: false,
       isMentor: false,
       isActiveThisTerm: false,
     });
