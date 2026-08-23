@@ -111,8 +111,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   // Sample values for the author's "Preview as signer" + the "+ Variable" menu
-  // hints — resolved from the real current term so {{term}}/{{upcomingTerm}}
-  // show what a signer would actually see, not a placeholder.
+  // hints. {{term}}/{{upcomingTerm}} default to the current term but the author
+  // picks the preview term client-side (an agreement is issued for a chosen
+  // term — often an upcoming one — and {{term}} resolves to THAT term at sign
+  // time, not the current one), so we also ship the current term code for the
+  // picker to build its options from.
   const termNow = await currentTerm(request);
   const variablePreview: Record<string, string> = {
     term: termNow?.code ?? "",
@@ -138,6 +141,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rosters,
     lockedVersionIds,
     variablePreview,
+    currentTermCode: termNow?.code ?? "",
     collabToken,
     collabRoomName,
     collabUserName,

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, Link, useLoaderData, useActionData, useSubmit } from "react-router";
 import { Menu } from "~/components/ui/floating";
+import { nextTermCode } from "~/lib/terms.shared";
 import {
   Plus,
   Clock,
@@ -222,7 +223,7 @@ function SigningInsertControls({
 }
 
 export function SigningDocumentDetail() {
-  const { document, variablePreview, lockedVersionIds, collabToken, collabRoomName, collabUserName, currentUserId } =
+  const { document, variablePreview, currentTermCode, lockedVersionIds, collabToken, collabRoomName, collabUserName, currentUserId } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<{ error?: string }>();
   const tz = useUserTimeZone();
@@ -248,6 +249,40 @@ export function SigningDocumentDetail() {
   const [previewing, setPreviewing] = useState(false);
   // Editor instance captured from onEditorReady — used by insert controls.
   const [editorInstance, setEditorInstance] = useState<DocEditorInstance | null>(null);
+
+  // Preview term: an agreement is issued for a chosen term, and {{term}}
+  // resolves to THAT term at sign time — so the author previews against the
+  // term they'll issue for, not always the current one. Per-term agreements
+  // usually go out for the upcoming term (issued before it starts), so default
+  // there; everything else defaults to the current term. Options are a small
+  // window forward from the current term (pure nextTermCode — no server call).
+  const termOptions = useMemo(() => {
+    if (!currentTermCode) return [] as { value: string; label: string }[];
+    const codes: string[] = [];
+    let c = currentTermCode;
+    for (let i = 0; i < 4; i++) {
+      codes.push(c);
+      c = nextTermCode(c);
+    }
+    return codes.map((code) => ({ value: code, label: code }));
+  }, [currentTermCode]);
+  const [previewTermCode, setPreviewTermCode] = useState(
+    currentTermCode
+      ? document.cadence === "PerTerm"
+        ? nextTermCode(currentTermCode)
+        : currentTermCode
+      : "",
+  );
+  // {{term}}/{{upcomingTerm}} follow the picked preview term; other sample
+  // values (today, names) come from the loader unchanged.
+  const previewVariables = useMemo(
+    () => ({
+      ...variablePreview,
+      term: previewTermCode,
+      upcomingTerm: previewTermCode ? nextTermCode(previewTermCode) : "",
+    }),
+    [variablePreview, previewTermCode],
+  );
 
   const selectedVersion =
     document.versions.find((v) => v.id === selectedVersionId) ?? null;
@@ -462,13 +497,24 @@ export function SigningDocumentDetail() {
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-medium text-foreground/80">Body</label>
-                <button
-                  type="button"
-                  onClick={() => setPreviewing((p) => !p)}
-                  className="text-xs font-medium text-accent-coral hover:underline"
-                >
-                  {previewing ? "← Back to editing" : "Preview as signer"}
-                </button>
+                <div className="flex items-center gap-3 text-xs">
+                  {termOptions.length > 0 && (
+                    <ConfigPill
+                      label="Preview term"
+                      value={previewTermCode || "—"}
+                      selected={previewTermCode}
+                      options={termOptions}
+                      onSelect={setPreviewTermCode}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewing((p) => !p)}
+                    className="font-medium text-accent-coral hover:underline"
+                  >
+                    {previewing ? "← Back to editing" : "Preview as signer"}
+                  </button>
+                </div>
               </div>
               {previewing ? (
                 <div className="rounded-lg border border-border bg-card p-6">
@@ -482,17 +528,18 @@ export function SigningDocumentDetail() {
                         ? editorInstance.document
                         : (selectedVersion?.body ?? [])
                     }
-                    signing={{ mode: "view", variables: variablePreview }}
+                    signing={{ mode: "view", variables: previewVariables }}
                   />
                   <p className="mt-4 text-xs text-muted-foreground italic">
-                    Preview with sample values — variables resolve to the current term and today's
-                    date; signature, initials, text, and checkbox fields show as labeled
+                    Preview with sample values — {"{{term}}"} resolves to{" "}
+                    {previewTermCode || "the selected term"} (the term you issue for) and dates to
+                    today; signature, initials, text, and checkbox fields show as labeled
                     placeholders (the date auto-fills) and become fillable for the signer.
                   </p>
                 </div>
               ) : (
                 <div className="rounded-lg border border-border bg-card">
-                  <SigningInsertControls editor={editorInstance} examples={variablePreview} />
+                  <SigningInsertControls editor={editorInstance} examples={previewVariables} />
                   {collabConfig ? (
                     // Collab mode: the Y.Doc is the source of truth.
                     // Room is seeded from latestVersionBody on first open (see
