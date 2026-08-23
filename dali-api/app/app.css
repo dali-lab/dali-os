@@ -1303,7 +1303,12 @@ html.os-shell {
 /* Read-only mode. The controls stay in the DOM (so switching to edit is a
    class change, not a remount that would drop what you typed) but lose their
    chrome and their ability to take a pointer. */
-.os-shell .os-form-readonly {
+/* Inert *contents*, not an inert panel: this class sits on the modal's scroll
+   container, and `pointer-events: none` on the container itself takes the
+   wheel and the scrollbar with it — a record taller than the card then has no
+   way to scroll and simply ends mid-content. Scoping to the children keeps
+   every field as dead to the pointer as before while the panel still scrolls. */
+.os-shell .os-form-readonly > * {
   pointer-events: none;
 }
 .os-shell .os-form-readonly input,
@@ -1328,6 +1333,31 @@ html.os-shell {
 .os-shell .os-form-readonly .os-required-mark,
 .os-shell .os-form-readonly .os-field-hint {
   display: none;
+}
+
+/* `.os-live` opts a block out of record mode. A comment is a conversation
+   *about* the record rather than one of its fields, so it stays usable while
+   the fields around it are plain text — you shouldn't have to put the task into
+   edit mode, and risk saving something, just to reply. Both readonly effects
+   are undone: the pointer block above, and the chrome stripping that would
+   otherwise leave the composer looking like a paragraph. Values match the base
+   `.os-form` field so the box reads as the input it is. */
+.os-shell .os-form-readonly .os-live {
+  pointer-events: auto;
+}
+.os-shell .os-form-readonly .os-live input[type="text"],
+.os-shell .os-form-readonly .os-live textarea {
+  background: var(--color-os-well) !important;
+  border: 1px solid var(--color-os-container) !important;
+  border-radius: 10px;
+  padding: 10px 14px !important;
+}
+.os-shell .os-form-readonly .os-live input:focus,
+.os-shell .os-form-readonly .os-live textarea:focus {
+  border-color: var(--color-os-accent) !important;
+}
+.os-shell .os-form-readonly .os-live textarea {
+  resize: vertical;
 }
 
 /* Every button in the app, in the design's language. Keyed off the role marker

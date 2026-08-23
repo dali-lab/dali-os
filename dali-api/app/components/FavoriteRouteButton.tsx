@@ -64,7 +64,13 @@ export function FavoriteRouteButton({
   useEffect(() => {
     if (known) return;
     let live = true;
-    setReady(false);
+    // Deliberately not clearing `ready` here. A detail route's stored identity
+    // is its path alone (canonicalRouteHref), but `href` carries the query, so
+    // every sub-tab hop rewrites it and re-runs this — and the answer that
+    // comes back is always the one already on screen. Blanking `ready` in the
+    // meantime disabled the button for the length of the fetch, which read as
+    // the star dimming to 40% and snapping back on each hop. The first load
+    // still gates on the initial `ready` being false.
     fetch(`/api/favorites/route?href=${encodeURIComponent(href)}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
