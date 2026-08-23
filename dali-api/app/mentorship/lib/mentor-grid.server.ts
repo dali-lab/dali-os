@@ -55,8 +55,6 @@ export type MentorGridResult = {
 };
 
 export type GridFilters = {
-  mentorId?: string;
-  menteeId?: string;
   projectId?: string;
   domainId?: string;
 };
@@ -97,15 +95,11 @@ export async function buildGrid({
       : Array.from({ length: weeksCount }, (_, i) => i + 1);
 
   const pairFilters: Record<string, unknown> = { termId: term.id };
-  if (filters.mentorId) pairFilters.mentorUserId = filters.mentorId;
-  if (filters.menteeId) pairFilters.menteeUserId = filters.menteeId;
   if (filters.projectId) pairFilters.projectId = filters.projectId;
   if (filters.domainId) pairFilters.domainId = filters.domainId;
   const pairWhere = { AND: [pairScope, pairFilters] };
 
   const noteFilters: Record<string, unknown> = { termId: term.id };
-  if (filters.mentorId) noteFilters.mentorId = filters.mentorId;
-  if (filters.menteeId) noteFilters.menteeId = filters.menteeId;
   if (filters.projectId) noteFilters.projectId = filters.projectId;
   if (filters.domainId) noteFilters.domainId = filters.domainId;
   const noteWhere = { AND: [noteScope, noteFilters] };
