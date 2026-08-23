@@ -44,6 +44,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       versionId: true,
       document: { select: { name: true, audience: true } },
       version: { select: { body: true } },
+      term: { select: { code: true } },
       signatures: {
         where: { roleKey: "supervisor" },
         select: { typedName: true },
@@ -64,7 +65,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (state.status !== "signed" && !inAudience) return redirect("/");
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";
-  const variables = await resolveSigningVariablesForSigner(userId, { supervisorName });
+  const variables = await resolveSigningVariablesForSigner(userId, {
+    supervisorName,
+    termCode: binding.term?.code ?? undefined,
+  });
 
   // Convert-on-read: the fill surface and field validation walk block JSON;
   // legacy ProseMirror version rows are normalized here (never rewritten).

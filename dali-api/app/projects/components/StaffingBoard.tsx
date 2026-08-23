@@ -726,7 +726,7 @@ export function StaffingBoard({
               onExternalMentorAdded={() => loadExternalMentorsRef.current()}
             />
           )}
-          {canManage && <IssueTermAgreementsButton />}
+          {canManage && <IssueTermAgreementsButton termId={termId} />}
           <DomainFilter
             domains={domains}
             value={selectedDomainId}
@@ -905,7 +905,7 @@ type IssuePreviewItem = {
 // sign requests once staffing is done. Confirms which agreement goes to how many
 // people first (issuance is never silent), and only reaches members staffed this
 // term when the agreement's audience is the term group.
-function IssueTermAgreementsButton() {
+function IssueTermAgreementsButton({ termId }: { termId: string }) {
   const { confirm } = useDialog();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -913,7 +913,10 @@ function IssueTermAgreementsButton() {
   async function onClick() {
     setBusy(true);
     try {
-      const res = await fetch("/api/agreements/issue", { credentials: "include" });
+      const res = await fetch(
+        `/api/agreements/issue?termId=${encodeURIComponent(termId)}`,
+        { credentials: "include" },
+      );
       const data = (await res.json().catch(() => ({}))) as {
         termCode?: string | null;
         items?: IssuePreviewItem[];
@@ -952,7 +955,7 @@ function IssueTermAgreementsButton() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentIds: items.map((i) => i.documentId) }),
+        body: JSON.stringify({ documentIds: items.map((i) => i.documentId), termId }),
       });
       const result = (await post.json().catch(() => ({}))) as {
         issued?: number;

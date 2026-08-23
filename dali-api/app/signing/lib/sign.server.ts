@@ -33,6 +33,7 @@ export async function recordSignature(
       versionId: true,
       version: { select: { body: true } },
       document: { select: { name: true } },
+      term: { select: { code: true } },
     },
   });
   if (!binding) return { ok: false, error: "Agreement not found." };
@@ -67,7 +68,9 @@ export async function recordSignature(
     typedName = u ? fullName(u) : "";
   }
 
-  const variables = await resolveSigningVariablesForSigner(args.signerUserId);
+  const variables = await resolveSigningVariablesForSigner(args.signerUserId, {
+    termCode: binding.term?.code ?? undefined,
+  });
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
     variables,
