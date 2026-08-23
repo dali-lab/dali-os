@@ -61,10 +61,13 @@ describe("inlineUploadImages", () => {
   });
 
   it("leaves the src untouched when the object can't be read (best-effort)", async () => {
-    getObjectBytes.mockRejectedValue(new Error("no such key"));
+    // Throw (don't return a rejected promise) so no dangling rejection is
+    // created; inlineUploadImages must still swallow it and return the original.
+    getObjectBytes.mockImplementation(() => {
+      throw new Error("no such key");
+    });
     const src = "/api/upload/raw?key=uploads%2Fgone.jpg";
-    const out = await inlineUploadImages(`<img src="${src}" />`);
-    expect(out).toContain(src);
+    await expect(inlineUploadImages(`<img src="${src}" />`)).resolves.toContain(src);
   });
 
   it("ignores non-upload image srcs and never calls S3", async () => {
