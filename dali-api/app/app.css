@@ -728,6 +728,26 @@ select:not(:disabled) {
   font-style: normal;
   color: var(--color-muted-foreground);
 }
+/* Fill mode (signer) — DocuSign-style cues: a red required marker plus an
+   empty/filled affordance so the signer can see where they still have to act. */
+.signing-field__required {
+  color: #dc2626; /* red-600 */
+  font-weight: 700;
+  margin-left: 0.1rem;
+  align-self: flex-start;
+}
+.signing-field--input.signing-field--empty {
+  border-radius: 0.25rem;
+  background: rgba(220, 38, 38, 0.08);
+  box-shadow: 0 0 0 1.5px rgba(220, 38, 38, 0.45);
+  padding: 0 0.15rem;
+}
+.signing-field--input.signing-field--empty .signing-field__text {
+  border-bottom-color: #dc2626;
+}
+.signing-field--input.signing-field--filled .signing-field__text {
+  border-bottom-color: #16a34a; /* green-600 — quiet confirmation once filled */
+}
 
 /* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */
 .shadow-brand-1 { box-shadow: var(--shadow-1); }

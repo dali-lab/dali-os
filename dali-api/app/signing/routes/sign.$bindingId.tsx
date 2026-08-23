@@ -131,7 +131,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!result.ok) return { error: result.error };
 
-  return redirect(next ?? "/sign");
+  // Land on the signed confirmation view (not the inbox) so the signer gets an
+  // explicit "you're done" screen with the emailed-copy note + download. Carry
+  // `next` so Continue still returns them to where they came from.
+  const signedUrl = `/sign/${bindingId}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+  return redirect(signedUrl);
 }
 
 export default function SignBindingPage() {
@@ -140,9 +144,14 @@ export default function SignBindingPage() {
   if (data.status === "signed") {
     return (
       <div className="max-w-3xl mx-auto py-10 space-y-6">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="w-6 h-6 text-green-600" />
-          <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-6 h-6 text-green-600" />
+            <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Thanks for signing. A copy has been emailed to you and is available to download below.
+          </p>
         </div>
         <article className="bg-card border border-border rounded-lg p-6">
           {data.signedLegacyHtml != null ? (

@@ -1,13 +1,13 @@
-// Core → Agreements. The `agreements-console` flag decides what this route is:
-//   flag on  -> the compliance console (signing status across every agreement,
-//               reminders to outstanding signers, term-rollover activation).
-//   flag off -> redirect to the Drive agreements folder (today's behavior).
-// Authoring, versioning, and config always live in the Drive detail either way;
-// this route only aggregates status and fires reminder/activation actions. The
-// create action is kept because Drive's "New agreement" posts here too.
+// Core ▸ Agreements — the compliance console: signing status across every
+// agreement, reminders to outstanding signers, and term-rollover activation.
+// This is the permanent Core hub for agreements (the old `agreements-console`
+// flag + Drive redirect are retired). Authoring, versioning, and config live in
+// the Drive detail (/documents/agreement/:id); this route only aggregates status
+// and fires reminder/activation actions. The create action is kept because
+// Drive's "New agreement" posts here too.
 
 import { redirect, useLoaderData } from "react-router";
-import type { Route } from "./+types/admin.agreements";
+import type { Route } from "./+types/core.agreements";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -15,7 +15,6 @@ import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { ensureCoreDriveRoot } from "~/lib/pages";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type {
   SigningGateScope,
   SigningAudience,
@@ -60,17 +59,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // Path-keyed: only act on the admin URL. The documents/agreement re-export
-  // also runs this loader and must fall through to the list data below.
+  // Path-keyed: only render the console on the Core URL. The documents/agreement
+  // re-export also runs this loader and must fall through to the list data below.
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/admin/agreements")) {
-    if (await isFeatureEnabled("agreements-console", auth.user.sub, roles, request)) {
-      const overview = await getAgreementsOverview();
-      return { mode: "console" as const, ...overview, isAdmin: roles.isAdmin };
-    }
-    // Flag off: the Drive is the only agreement surface — preserve today's URL
-    // change while keeping the content in the Drive hub (filter=agreement).
-    return redirect("/drive?type=agreement");
+  if (url.pathname.startsWith("/core/agreements")) {
+    const overview = await getAgreementsOverview();
+    return { mode: "console" as const, ...overview, isAdmin: roles.isAdmin };
   }
 
   const documents = await prisma.signingDocument.findMany({

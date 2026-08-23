@@ -1,8 +1,8 @@
-// Resource route — streams an admin's view of a member's signed copy as PDF.
-// Auth mirrors admin.agreements.$id.signature.$sigId.tsx loader exactly.
+// Resource route — streams a Core view of a member's signed copy as PDF.
+// Auth mirrors core.agreements.$id.signature.$sigId.tsx loader exactly.
 
 import { redirect } from "react-router";
-import type { Route } from "./+types/admin.agreements.$id.signature.$sigId.pdf";
+import type { Route } from "./+types/core.agreements.$id.signature.$sigId.pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -35,12 +35,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!sig || sig.binding.documentId !== params.id) {
-    return redirect(`/admin/agreements/${params.id}`);
+    return redirect(`/core/agreements/${params.id}`);
   }
 
   const body = sig.frozenBody ?? sig.version.body;
   const title = sig.version.document.name;
-  const filename = `${safeFilename(title)}-${safeFilename(sig.typedName || fullName(sig.signer))}.pdf`;
+  // Prefer the account name for the file name; typedName (often initials) is the
+  // fallback only when the signer relation is missing.
+  const filename = `${safeFilename(title)}-${safeFilename(fullName(sig.signer) || sig.typedName)}.pdf`;
 
   const pdf = await renderProseMirrorToPdf(title, body as PMNode | DocBlock[]);
   return new Response(new Uint8Array(pdf), {

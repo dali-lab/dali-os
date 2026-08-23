@@ -42,7 +42,7 @@ import {
   AUDIENCE_SHORT,
   CADENCE_SHORT,
 } from "~/signing/lib/document-config";
-import type { loader } from "~/signing/routes/admin.agreements.$id";
+import type { loader } from "~/signing/routes/core.agreements.$id";
 
 // The signer fills these; the pre-signed supervisor signature is placed separately.
 const MEMBER_FIELD_TYPES = SIGNING_FIELD_TYPES.filter(
@@ -709,7 +709,7 @@ function BindingsPanel() {
                     roster.signed.map((s) => (
                       <li key={s.signatureId}>
                         <Link
-                          to={`/admin/agreements/${document.id}/signature/${s.signatureId}`}
+                          to={`/core/agreements/${document.id}/signature/${s.signatureId}`}
                           className="block truncate text-xs text-accent-coral hover:underline"
                           title="View signed copy"
                         >

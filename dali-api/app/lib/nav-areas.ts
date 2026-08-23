@@ -69,9 +69,8 @@ export type SubTab = {
   // Omitted => always visible to anyone who can see the area.
   gate?: (r: RoleFlags) => boolean;
   // Path subtree this tab owns for active-area / highlight matching, when its
-  // `href` links elsewhere (e.g. an Agreements tab that deep-links into the
-  // Drive but whose editor still lives under /admin/agreements). Defaults to
-  // `href`.
+  // `href` links elsewhere (e.g. the Communications email-templates tab that
+  // deep-links into the Drive at /drive?type=emailTemplate). Defaults to `href`.
   matchPrefix?: string;
 };
 
@@ -254,8 +253,8 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Domains", href: "/core/access/domains", icon: Globe },
       ...coreClusterSubtabs,
       // Agreements left Admin's Documents cluster; it is lab process, not
-      // system administration. Its URL stays /admin/agreements.
-      { label: "Agreements", href: "/admin/agreements", icon: FileSignature },
+      // system administration. It renders its own Core compliance console.
+      { label: "Agreements", href: "/core/agreements", icon: FileSignature },
       { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },
@@ -303,24 +302,16 @@ function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
   ];
 }
 
-// The card-grid lists for agreements and email templates are retired; their
-// sidebar entries deep-link directly into the Drive folder. The rest of the
+// The card-grid list for email templates is retired; its sidebar entry
+// deep-links directly into the Drive folder. (Agreements keeps a dedicated Core
+// console at /core/agreements, so it is NOT substituted here.) The rest of the
 // area (editors, create action) stays intact.
-function applyDriveSpacesSubstitutions(
-  areas: NavArea[],
-  agreementsConsole: boolean,
-): NavArea[] {
+function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
   return areas.map((a) => {
     if (a.key !== "core") return a;
     return {
       ...a,
       subtabs: a.subtabs.map((t) => {
-        // Core ▸ Agreements → Drive filtered to agreements, unless the console
-        // flag keeps the dedicated /admin/agreements compliance page. The tab
-        // keeps owning /admin/agreements for highlighting (its editor lives
-        // there) even though the link now points at the Drive.
-        if (t.href === "/admin/agreements")
-          return agreementsConsole ? t : { ...t, href: "/drive?type=agreement", matchPrefix: t.href };
         // Core ▸ Communications email templates → Drive filtered to email templates.
         if (t.href === "/core/communications/email")
           return { ...t, href: "/drive?type=emailTemplate", matchPrefix: t.href };
@@ -337,9 +328,9 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
     return a;
   });
-  // Deep-link agreements + email templates directly into Drive (agreements stays
-  // on its console page when the agreements-console flag is on).
-  return applyDriveSpacesSubstitutions(base, !!flags["agreements-console"]);
+  // Deep-link email templates directly into Drive (agreements has its own Core
+  // console page at /core/agreements).
+  return applyDriveSpacesSubstitutions(base);
 }
 
 /**
