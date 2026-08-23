@@ -100,7 +100,19 @@ export async function sendSignatureReceipt(args: {
   });
 }
 
-export async function notifySignRequest(bindingId: string): Promise<void> {
+// Send the "please sign" notification to a binding's outstanding signers.
+//
+// By DEFAULT this skips members already notified for THIS binding + in-force
+// version, so re-issuing a term's agreements (e.g. after finalizing more teams)
+// doesn't re-nudge members who were already asked and just haven't signed yet —
+// only newly-added, still-unsigned members are reached. A NEW version in force
+// has a different versionId, so its notified-set is empty and everyone is asked
+// to re-sign. Pass { force: true } to re-nudge everyone outstanding regardless
+// (the agreements console "remind" action does this on purpose).
+export async function notifySignRequest(
+  bindingId: string,
+  opts: { force?: boolean } = {},
+): Promise<void> {
   const binding = await prisma.signingBinding.findUnique({
     where: { id: bindingId },
     select: {
@@ -127,10 +139,22 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
     }),
   ]);
   const signedSet = new Set(signed.map((s) => s.signerUserId));
-  const recipients = audience
-    .filter((p) => !signedSet.has(p.id))
-    .map((p) => ({ userId: p.id }));
-  if (recipients.length === 0) return;
+  let eligible = audience.filter((p) => !signedSet.has(p.id));
+
+  // Unless forcing, drop members already notified for this binding+version.
+  if (!opts.force && eligible.length > 0) {
+    const already = await prisma.signRequestNotification.findMany({
+      where: {
+        bindingId,
+        versionId: binding.versionId,
+        signerUserId: { in: eligible.map((p) => p.id) },
+      },
+      select: { signerUserId: true },
+    });
+    const alreadySet = new Set(already.map((r) => r.signerUserId));
+    eligible = eligible.filter((p) => !alreadySet.has(p.id));
+  }
+  if (eligible.length === 0) return;
 
   await notify({
     eventType: "document.sign_request",
@@ -140,6 +164,20 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
       link: `/sign/${bindingId}`,
       isTodo: true,
     },
-    recipients,
+    recipients: eligible.map((p) => ({ userId: p.id })),
   });
+
+  // Record who we just notified so a later re-issue skips them. Idempotent via
+  // the (bindingId, versionId, signerUserId) unique constraint; best-effort —
+  // a tracking-write failure must not fail the notification already sent.
+  await prisma.signRequestNotification
+    .createMany({
+      data: eligible.map((p) => ({
+        bindingId,
+        versionId: binding.versionId,
+        signerUserId: p.id,
+      })),
+      skipDuplicates: true,
+    })
+    .catch((err) => console.error("[signing] sign-request tracking write failed:", err));
 }

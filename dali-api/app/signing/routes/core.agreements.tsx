@@ -129,7 +129,9 @@ export async function action({ request }: Route.ActionArgs) {
     if (binding.lastRemindedAt && Date.now() - binding.lastRemindedAt.getTime() < DAY_MS) {
       return { error: "Already reminded in the last 24 hours." };
     }
-    await notifySignRequest(bindingId);
+    // force: a manual reminder re-nudges everyone still outstanding, bypassing
+    // the "already notified this version" skip that the issue flow relies on.
+    await notifySignRequest(bindingId, { force: true });
     await prisma.signingBinding.update({
       where: { id: bindingId },
       data: { lastRemindedAt: new Date() },
