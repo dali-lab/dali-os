@@ -33,6 +33,7 @@ import {
   pinnedNavItems,
   activeSubtabHref,
   hasSubnavRow,
+  isPinnedActive,
   visibleAreas,
   visibleSubtabs,
   type NavArea,
@@ -175,8 +176,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   } = useShellNav(tabless)
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
-  // otherwise it falls back to the parent route.
-  const path = focusedTabUrl ?? location.pathname
+  // otherwise it falls back to the parent route. Keep the query — the nav
+  // matchers trim it, but need it to tell a Core deep-link into the Drive
+  // (/drive?type=agreement) from the plain Drive pin (in tabless mode
+  // location.pathname would drop it).
+  const path = focusedTabUrl ?? location.pathname + location.search
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   // The area the dropdown falls back to on non-area routes. Kept in sync with
@@ -278,9 +282,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   // Label for a workspace tab seeded by direct navigation (deep link) — the
   // active area, or the pinned/footer surfaces that aren't areas.
-  const pinnedLabel = pinned.find(
-    (i) => path === i.href || path.startsWith(i.href + '/'),
-  )?.label
+  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href, navFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -637,7 +639,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               title={collapsed ? item.label : undefined}
               {...tabClickProps({ url: item.href, label: item.label })}
               className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                path === item.href || path.startsWith(item.href + '/')
+                isPinnedActive(path, item.href, navFlags)
                   ? 'text-white'
                   : 'text-white/65 hover:text-white'
               }`}

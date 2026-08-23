@@ -125,6 +125,12 @@ export const FEATURE_FLAGS = [
     description:
       "Replace the Core ▸ Agreements Drive redirect with a compliance console: signing status across every agreement, one-click reminders to outstanding signers, and term-rollover activation. Authoring stays in the Drive. Default off; flip on for Core.",
   },
+  {
+    key: "partner-crm",
+    label: "Partner CRM lifecycle",
+    description:
+      "Account-first partner lifecycle: log inquiries, triage (meet / apply / reject / learn more), record discovery meetings + an evaluation rubric, and an accept→promote checklist that creates the org only when a project is spun up. Gates the new Core CRM surfaces + account-first onboarding. Default off; flip on for Core first.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

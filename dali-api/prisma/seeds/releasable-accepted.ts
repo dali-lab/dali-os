@@ -50,7 +50,7 @@ async function main() {
   if (!admin) throw new Error("No admin user found to act as releaser.");
 
   const binding = await prisma.signingBinding.findFirst({
-    where: { cycleId: CYCLE_ID, document: { kind: "Confidentiality" } },
+    where: { cycleId: CYCLE_ID, document: { gateScope: "HiringCycle" } },
     select: { id: true, versionId: true },
   });
   if (binding) {

@@ -23,14 +23,14 @@ export async function getCycleConfidentialityState(
   // ~30 hiring gate call sites keep working.
   const [binding, signature] = await Promise.all([
     prisma.signingBinding.findFirst({
-      where: { cycleId, document: { kind: "Confidentiality" } },
+      where: { cycleId, document: { gateScope: "HiringCycle" } },
       select: { versionId: true },
     }),
     prisma.signingSignature.findFirst({
       where: {
         signerUserId: userId,
         roleKey: "member",
-        binding: { cycleId, document: { kind: "Confidentiality" } },
+        binding: { cycleId, document: { gateScope: "HiringCycle" } },
       },
       select: { versionId: true },
     }),

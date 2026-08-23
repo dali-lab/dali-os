@@ -12,12 +12,25 @@ import {
 } from "lucide-react";
 import type { loader } from "~/signing/routes/admin.agreements";
 import {
-  KIND_SHORT,
   SCOPE_SHORT,
   AUDIENCE_SHORT,
   CADENCE_SHORT,
 } from "~/signing/lib/document-config";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime } from "~/lib/display";
+
+// The "sign request goes to whom" line for the activation confirm. Turns the
+// resolved audience (null = not enumerable) into a short, honest sentence —
+// including the empty-audience case (e.g. a term-group agreement before staffing
+// is finalized), which would otherwise silently notify no one.
+function recipientSummary(pendingRecipients: string[] | null): string {
+  if (pendingRecipients === null) return "everyone in this agreement's audience";
+  const n = pendingRecipients.length;
+  if (n === 0) return "no one right now — the audience is empty (is staffing finalized?)";
+  const shown = pendingRecipients.slice(0, 8).join(", ");
+  const more = n > 8 ? `, +${n - 8} more` : "";
+  return `${n} ${n === 1 ? "person" : "people"} (${shown}${more})`;
+}
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 // Console shapes derived from the loader (not imported from console.server, so
@@ -188,7 +201,6 @@ export function AgreementsConsole() {
                         {a.name}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                        <Pill>{KIND_SHORT[a.kind] ?? a.kind}</Pill>
                         <Pill>{AUDIENCE_SHORT[a.audience] ?? a.audience}</Pill>
                         <Pill>{CADENCE_SHORT[a.cadence] ?? a.cadence}</Pill>
                         <Pill>{SCOPE_SHORT[a.gateScope] ?? a.gateScope}</Pill>
@@ -228,6 +240,9 @@ function NeedsAttentionCard({
 }) {
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const activating = fetcher.state !== "idle";
+  const confirmSubmit = useConfirmSubmit();
+  const scopeSuffix =
+    agreement.cadence === "PerTerm" && currentTermCode ? ` for ${currentTermCode}` : "";
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
       <div className="flex items-start gap-2">
@@ -250,7 +265,14 @@ function NeedsAttentionCard({
           )}
           <div className="mt-2">
             {agreement.needsActivation && agreement.latestPublishedVersionId ? (
-              <fetcher.Form method="post">
+              <fetcher.Form
+                method="post"
+                onSubmit={confirmSubmit({
+                  title: "Put in force & send sign requests?",
+                  description: `“${agreement.name}” will go in force${scopeSuffix} and send a sign request to ${recipientSummary(agreement.pendingRecipients)}.`,
+                  confirmLabel: "Send",
+                })}
+              >
                 <input type="hidden" name="intent" value="activate" />
                 <input type="hidden" name="documentId" value={agreement.id} />
                 <input

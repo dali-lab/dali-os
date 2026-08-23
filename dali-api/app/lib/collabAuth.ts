@@ -203,19 +203,32 @@ export async function authorizeCollabDoc(
   }
 
   // partnersow:{applicationId}:body — co-drafted SOW, intentionally editable
-  // by both Core and the partner org. Not read-only for partners here.
+  // by both Core and the owning partner. Authorized by ACCOUNT (the applicant
+  // contact) so the SOW can be co-drafted during courtship, before any org
+  // exists; once promoted, an org member also qualifies.
   if (entity === "partnersow") {
     const application = await prisma.partnerApplication.findUnique({
       where: { id },
-      select: { partnerOrgId: true },
+      select: { applicantContactId: true, partnerOrgId: true },
     });
     if (!application) return deny;
     if (await isCore(userSub)) return allow;
-    const partnerUser = await prisma.partnerUser.findUnique({
+    const contact = await prisma.partnerContact.findUnique({
       where: { userId: userSub },
-      select: { partnerOrgId: true },
+      select: {
+        id: true,
+        memberships: { where: { endedAt: null }, select: { orgId: true } },
+      },
     });
-    return partnerUser?.partnerOrgId === application.partnerOrgId ? allow : deny;
+    if (!contact) return deny;
+    if (application.applicantContactId === contact.id) return allow;
+    if (
+      application.partnerOrgId &&
+      contact.memberships.some((m) => m.orgId === application.partnerOrgId)
+    ) {
+      return allow;
+    }
+    return deny;
   }
 
   // task:{taskId}:description — same gate as the task's project.

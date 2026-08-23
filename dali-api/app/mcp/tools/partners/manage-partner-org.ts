@@ -37,7 +37,7 @@ export const MANAGE_PARTNER_ORG_TOOL = {
       isIndividual: { type: "boolean" },
       primaryContactId: {
         type: "string",
-        description: "PartnerUser.id to set as primary contact.",
+        description: "PartnerMembership.id to set as primary contact.",
       },
     },
     required: ["action"],
@@ -98,12 +98,12 @@ export async function runManagePartnerOrg(
 
     const primaryContactId = (input.primaryContactId as string | undefined) || null;
     if (primaryContactId) {
-      const contact = await prisma.partnerUser.findFirst({
-        where: { id: primaryContactId, partnerOrgId: orgId },
+      const contact = await prisma.partnerMembership.findFirst({
+        where: { id: primaryContactId, orgId, endedAt: null },
         select: { id: true },
       });
       if (!contact) {
-        throw new McpInvalidError("Primary contact must belong to this organization");
+        throw new McpInvalidError("Primary contact must be an active member of this organization");
       }
     }
 
@@ -135,7 +135,7 @@ export async function runManagePartnerOrg(
 
   const [memberCount, projectCount, applicationCount, pendingInviteCount] =
     await Promise.all([
-      prisma.partnerUser.count({ where: { partnerOrgId: orgId } }),
+      prisma.partnerMembership.count({ where: { orgId, endedAt: null } }),
       prisma.projectPartner.count({ where: { partnerOrgId: orgId } }),
       prisma.partnerApplication.count({ where: { partnerOrgId: orgId } }),
       prisma.partnerInvite.count({

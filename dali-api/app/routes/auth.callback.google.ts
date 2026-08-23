@@ -87,14 +87,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // Returning-partner sign-in. Branches on DB state — a pre-existing
-  // PartnerUser matched by the Google-verified email — not on any strippable
-  // cookie, so it cannot widen access: an email with no PartnerUser row falls
+  // PartnerContact matched by the Google-verified email — not on any strippable
+  // cookie, so it cannot widen access: an email with no PartnerContact row falls
   // through to the member-domain check / partner-signup branch below.
   const partnerCandidate = await prisma.user.findUnique({
     where: { personalEmail: googleUser.email.toLowerCase() },
-    select: { id: true, partnerUser: { select: { id: true } } },
+    select: { id: true, partnerContact: { select: { id: true } } },
   });
-  if (partnerCandidate?.partnerUser) {
+  if (partnerCandidate?.partnerContact) {
     const session = await issueSession({
       userId: partnerCandidate.id,
       userAgent: request.headers.get("user-agent") ?? undefined,
@@ -110,8 +110,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       request,
     });
-    await prisma.partnerUser.update({
-      where: { id: partnerCandidate.partnerUser.id },
+    await prisma.partnerContact.update({
+      where: { id: partnerCandidate.partnerContact.id },
       data: { authProvider: "Google" },
     });
     const headers = new Headers();
@@ -168,6 +168,34 @@ export async function loader({ request }: Route.LoaderArgs) {
             })
           ).id;
 
+    // Ensure the account-first PartnerContact exists and record that they
+    // authenticated via Google. Link an existing contact (e.g. one Core created
+    // when it logged this person's inquiry from an email) by email rather than
+    // create a duplicate — PartnerContact.email is unique. Inlined here (not via
+    // the .server guard helper) because this is a resource route.
+    const existingContact = await prisma.partnerContact.findFirst({
+      where: { OR: [{ userId }, { email }] },
+      select: { id: true, userId: true },
+    });
+    if (existingContact) {
+      await prisma.partnerContact.update({
+        where: { id: existingContact.id },
+        data: {
+          authProvider: "Google",
+          ...(existingContact.userId ? {} : { userId }),
+        },
+      });
+    } else {
+      await prisma.partnerContact.create({
+        data: {
+          userId,
+          email,
+          name: `${googleUser.firstName} ${googleUser.lastName}`.trim() || email,
+          authProvider: "Google",
+        },
+      });
+    }
+
     const session = await issueSession({
       userId,
       userAgent: request.headers.get("user-agent") ?? undefined,
@@ -187,7 +215,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     const headers = new Headers();
     headers.append("Set-Cookie", clearStateCookie);
     setSessionCookie(headers, session.rawId);
-    headers.set("Location", "/partner/onboarding");
+    // Google gave us the name, so onboarding is optional — go straight to the
+    // portal (consistent with the magic-link verify flow).
+    headers.set("Location", "/partner");
     return new Response(null, { status: 302, headers });
   }
 

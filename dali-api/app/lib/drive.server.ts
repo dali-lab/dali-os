@@ -516,7 +516,7 @@ async function loadAgreements(
     // adoption on the next Core drive visit — don't float it at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, folderPageId: true, updatedAt: true, kind: true },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true, gateScope: true },
   });
   return rows.map((d) => ({
     type: "agreement" as const,
@@ -527,7 +527,7 @@ async function loadAgreements(
     updatedAt: d.updatedAt,
     href: `/documents/agreement/${d.id}`,
     // Signal ②: agreements always show their semantic role as the process label.
-    linkedProcess: { label: agreementKindLabel(d.kind), href: `/documents/agreement/${d.id}` },
+    linkedProcess: { label: agreementProcessLabel(d.gateScope), href: `/documents/agreement/${d.id}` },
   }));
 }
 
@@ -677,7 +677,7 @@ export async function loadOrphanForms(
  *   • forms → hiring cycle (via `ApplicationCycle.applicationFormId`)
  *   • forms → hiring domain challenge (via `CycleDomainForm`)
  *   • forms → education offering (via `EducationOffering.applicationFormId`)
- *   • agreements → their `SigningDocumentKind` label (always-on; kind is enum)
+ *   • agreements → a role label (always-on; hiring confidentiality vs. general)
  *   • email templates → hiring cycle decision/notification binding (first binding wins)
  *   • email templates → education offering decision binding (first binding wins)
  *
@@ -791,22 +791,13 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
 }
 
 /**
- * Derive a `linkedProcess` entry from a `SigningDocumentKind` enum value.
- * Agreements always have a meaningful kind label; there is no single "cycle"
- * to link to (confidentiality is bound per-cycle at signing time, not on the
- * document template itself), so we show the agreement's semantic role instead.
+ * The `linkedProcess` label for an agreement in the Drive listing. There's no
+ * single "cycle" to link to (confidentiality is bound per-cycle at signing time,
+ * not on the document template), so we show the agreement's role instead —
+ * distinguishing the hiring-cycle gate from ordinary lab agreements.
  */
-export function agreementKindLabel(kind: string): string {
-  switch (kind) {
-    case "MemberAgreement":
-      return "Member onboarding";
-    case "MentorshipAgreement":
-      return "Mentorship";
-    case "Confidentiality":
-      return "Hiring – confidentiality";
-    default:
-      return "General agreement";
-  }
+export function agreementProcessLabel(gateScope: string): string {
+  return gateScope === "HiringCycle" ? "Hiring – confidentiality" : "Agreement";
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

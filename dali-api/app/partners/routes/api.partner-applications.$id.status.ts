@@ -4,6 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerApplicationStatus } from "../lib/partner-application";
+import { setApplicationStatus } from "../lib/partner-activity.server";
 
 // POST /api/partner-applications/:id/status
 //
@@ -45,19 +46,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  try {
-    await prisma.partnerApplication.update({
-      where: { id: params.id },
-      data: { status },
-    });
-  } catch (e) {
-    if ((e as { code?: string })?.code === "P2025") {
-      return withCors(
-        request,
-        Response.json({ error: "Application not found" }, { status: 404 }),
-      );
-    }
-    throw e;
+  const prev = await setApplicationStatus(prisma, {
+    applicationId: params.id,
+    to: status,
+    actorUserId: auth.user.sub,
+  });
+  if (prev === null) {
+    return withCors(
+      request,
+      Response.json({ error: "Application not found" }, { status: 404 }),
+    );
   }
 
   return withCors(request, Response.json({ ok: true }));
