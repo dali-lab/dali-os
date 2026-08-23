@@ -1639,11 +1639,30 @@ model SigningBinding {
   // N ago" in the UI. Null = never reminded.
   lastRemindedAt DateTime?
 
-  signatures SigningSignature[]
+  signatures               SigningSignature[]
+  signRequestNotifications SignRequestNotification[]
 
   @@unique([documentId, scopeKey])
   @@index([cycleId])
   @@index([termId])
+}
+
+// Records that a "please sign" notification was sent to a member for a specific
+// binding + in-force version. Lets re-issuing a term's agreements skip anyone
+// already notified (the default) instead of re-nudging still-unsigned members —
+// while a NEW version in force (different versionId) resets the set so everyone
+// is notified to re-sign. The console "remind" action bypasses this (force).
+// signerUserId is a plain column (no FK) — orphaned rows are harmless markers.
+model SignRequestNotification {
+  id           String         @id @default(cuid())
+  createdAt    DateTime       @default(now())
+  bindingId    String
+  binding      SigningBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  versionId    String
+  signerUserId String
+
+  @@unique([bindingId, versionId, signerUserId])
+  @@index([bindingId, versionId])
 }
 
 // One party's signature on one binding. Generalizes
