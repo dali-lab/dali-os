@@ -196,6 +196,15 @@ export function blocksToHtml(blocks: DocBlock[]): Promise<string> {
   return serialized(() => getServerEditor().blocksToHTMLLossy(blocks as any));
 }
 
+/** Blocks → the FULL BlockNote editor DOM (blocksToFullHTML), carrying the
+ * editor's `bn-*` classes + data attributes. Paired with @blocknote/core's
+ * stylesheet this renders like the on-screen editor — the dialect the PDF
+ * exporter feeds to headless Chromium. */
+export function blocksToFullHtml(blocks: DocBlock[]): Promise<string> {
+  if (blocks.length === 0) return Promise.resolve("");
+  return serialized(() => getServerEditor().blocksToFullHTML(blocks as any));
+}
+
 /** Announcement body → { html, text }: email-safe sanitized HTML for the email
  * channel plus a plain-text mirror for the in-app feed and Slack DM. One
  * conversion, shared by instant and scheduled sends. */
