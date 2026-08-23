@@ -1,25 +1,25 @@
 // Drive-namespaced authoring route for agreement templates.
 //
-// Re-exports the admin.agreements.$id route action + component but provides
-// its own loader that augments the admin loader's result with driveCrumbs so
+// Re-exports the core.agreements.$id route action + component but provides
+// its own loader that augments the core loader's result with driveCrumbs so
 // the breadcrumb shows the full Drive folder path instead of just the name.
 //
-// The redirect-loop guard lives in admin.agreements.$id.tsx: its loader only
-// redirects when the request path starts with /admin/agreements, so wrapping
+// The redirect-loop guard lives in core.agreements.$id.tsx: its loader only
+// redirects when the request path starts with /core/agreements, so wrapping
 // that loader here is safe — loading /documents/agreement/:id will not redirect.
 
 import type { Route } from "./+types/documents.agreement.$id";
-import { loader as adminLoader } from "./admin.agreements.$id";
+import { loader as coreLoader } from "./core.agreements.$id";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { requireAuth } from "~/lib/auth";
 import { PageIcon } from "~/components/PageIcon";
 
-export { action, default } from "./admin.agreements.$id";
+export { action, default } from "./core.agreements.$id";
 
 export async function loader(args: Route.LoaderArgs) {
-  const result = await adminLoader(args as unknown as Parameters<typeof adminLoader>[0]);
-  // If the admin loader redirected, pass it through.
+  const result = await coreLoader(args as unknown as Parameters<typeof coreLoader>[0]);
+  // If the core loader redirected, pass it through.
   if (result instanceof Response) return result;
   const doc = (result as { document?: { folderPageId?: string | null } }).document;
   // adminLoader has already authed this request; requireAuth just reads the sub.
@@ -29,8 +29,8 @@ export async function loader(args: Route.LoaderArgs) {
   return { ...(result as object), driveCrumbs };
 }
 
-// Override the adminHandle breadcrumb trail (which roots at Admin) so the Drive
-// surface shows "Drive › Folder › … › <agreement name>" instead of the admin trail.
+// Override the coreHandle breadcrumb trail (which roots at Core) so the Drive
+// surface shows "Drive › Folder › … › <agreement name>" instead of the Core trail.
 export const handle = {
   docKey: "agreement.author",
   docTitle: "Agreements",

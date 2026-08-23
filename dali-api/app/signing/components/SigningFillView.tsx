@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Form as RRForm } from "react-router";
+import { ArrowDown } from "lucide-react";
 import { DocEditor } from "~/components/doc";
 import { isCheckboxChecked, type SigningFieldRef } from "~/lib/signing-fields";
 
@@ -19,6 +20,7 @@ interface SigningFillViewProps {
 // filled (the hard gate, re-checked server-side by recordSignature).
 export function SigningFillView({ body, variables, fields, next }: SigningFillViewProps) {
   const memberFields = fields.filter((f) => f.role === "member");
+  const articleRef = useRef<HTMLElement>(null);
 
   // Seed date fields with the resolved sign date so they're captured too.
   const [values, setValues] = useState<Record<string, unknown>>(() => {
@@ -29,18 +31,56 @@ export function SigningFillView({ body, variables, fields, next }: SigningFillVi
     return seed;
   });
 
-  const allRequiredFilled = memberFields
-    .filter((f) => f.required)
-    .every((f) => {
-      const v = values[f.fieldId];
-      return f.type === "checkboxField"
-        ? isCheckboxChecked(v)
-        : v != null && String(v).trim() !== "";
-    });
+  const isFilled = (f: SigningFieldRef): boolean => {
+    const v = values[f.fieldId];
+    return f.type === "checkboxField"
+      ? isCheckboxChecked(v)
+      : v != null && String(v).trim() !== "";
+  };
+
+  // Required member fields drive the progress counter, the "where do I sign"
+  // jump, and the submit gate. memberFields is in document order, so the first
+  // unfilled one is the natural "next".
+  const requiredFields = memberFields.filter((f) => f.required);
+  const filledCount = requiredFields.filter(isFilled).length;
+  const totalRequired = requiredFields.length;
+  const nextEmpty = requiredFields.find((f) => !isFilled(f));
+  const allRequiredFilled = !nextEmpty;
+
+  // Scroll the next unfilled required field into view and focus its input, so a
+  // signer never has to hunt for the fields buried in a long agreement.
+  const jumpToNext = () => {
+    if (!nextEmpty || !articleRef.current) return;
+    const el = articleRef.current.querySelector<HTMLElement>(
+      `[data-field-id="${CSS.escape(nextEmpty.fieldId)}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.querySelector<HTMLElement>("input")?.focus();
+  };
 
   return (
     <div className="space-y-6">
-      <article className="bg-card border border-border rounded-lg p-6">
+      {totalRequired > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm">
+          <span className={allRequiredFilled ? "font-medium text-green-600" : "text-muted-foreground"}>
+            {allRequiredFilled
+              ? "All required fields complete."
+              : `${filledCount} of ${totalRequired} required field${totalRequired === 1 ? "" : "s"} complete`}
+          </span>
+          {!allRequiredFilled && (
+            <button
+              type="button"
+              onClick={jumpToNext}
+              className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90"
+            >
+              <ArrowDown className="h-3.5 w-3.5" />
+              {filledCount === 0 ? "Start signing" : "Next field"}
+            </button>
+          )}
+        </div>
+      )}
+      <article ref={articleRef} className="bg-card border border-border rounded-lg p-6">
         <DocEditor
           features="agreement"
           editable={false}

@@ -10,7 +10,7 @@ import {
   ChevronRight,
   PenLine,
 } from "lucide-react";
-import type { loader } from "~/signing/routes/admin.agreements";
+import type { loader } from "~/signing/routes/core.agreements";
 import {
   SCOPE_SHORT,
   AUDIENCE_SHORT,

@@ -156,6 +156,6 @@ async function loadSigningDocuments(): Promise<TemplateItem[]> {
     kind: "signing" as const,
     name: r.name,
     action: "open" as const,
-    useHref: `/admin/agreements/${r.id}`,
+    useHref: `/core/agreements/${r.id}`,
   }));
 }

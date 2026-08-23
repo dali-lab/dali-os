@@ -1,10 +1,10 @@
-// Admin → Agreements → detail. Author immutable versions (place fields +
+// Core ▸ Agreements → detail. Author immutable versions (place fields +
 // variables, incl. pre-signed admin-signature fields), publish a version, and
 // put a published version in force (bind) — which records the configured staff
 // counter-signatures — and track signatories.
 
 import { redirect } from "react-router";
-import type { Route } from "./+types/admin.agreements.$id";
+import type { Route } from "./+types/core.agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -31,7 +31,7 @@ export const handle = coreHandle("agreements");
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { document?: { name?: string } } | undefined)?.document?.name;
-  return [{ title: `${name || "Agreement"} · Admin · DALI OS` }];
+  return [{ title: `${name || "Agreement"} · Core · DALI OS` }];
 };
 
 function parseRoles(raw: string | null): string[] {
@@ -48,11 +48,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // /admin/agreements/:id redirects to the Drive-namespaced route. Path-keyed:
+  // /core/agreements/:id redirects to the Drive-namespaced route. Path-keyed:
   // this loader is also re-exported by documents.agreement.$id.tsx — only
-  // redirect for admin-path requests to avoid an infinite loop.
+  // redirect for core-path requests to avoid an infinite loop.
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/admin/agreements/")) {
+  if (url.pathname.startsWith("/core/agreements/")) {
     return redirect(`/documents/agreement/${params.id}`);
   }
 

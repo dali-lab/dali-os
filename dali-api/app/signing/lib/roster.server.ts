@@ -39,8 +39,12 @@ export function computeRoster(
     (s) => s.roleKey === "member" && s.versionId === binding.versionId,
   );
   const signedIds = new Set(memberSigs.map((s) => s.signerUserId));
+  // Label the signed row with the signer's ACCOUNT name so it matches the
+  // outstanding rows (also account names). typedName holds whatever the member
+  // typed into their signature/initials field — often just initials — so it's
+  // only a last-resort fallback when the signer relation is missing.
   const signed = memberSigs
-    .map((s) => ({ name: s.typedName || fullName(s.signer ?? {}) || "Unknown", signatureId: s.id }))
+    .map((s) => ({ name: fullName(s.signer ?? {}) || s.typedName || "Unknown", signatureId: s.id }))
     .sort((a, z) => a.name.localeCompare(z.name));
   const outstanding = audience
     ? audience

@@ -2,8 +2,8 @@
 // signatory data (buried one-agreement-at-a-time in the Drive detail page) up
 // across every non-archived agreement: completion per binding, what needs a
 // binding this term, and a recent-signatures feed. Read-only — authoring,
-// versioning, and config all stay in the Drive detail. Gated by the
-// `agreements-console` flag at the route.
+// versioning, and config all stay in the Drive detail. Rendered by the
+// permanent /core/agreements route.
 
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
