@@ -7,11 +7,8 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
-import {
-  hasPriorStaffing,
-  isStaffedInTerm,
-  isStaffedMentorInTerm,
-} from "./staffing-audience.server";
+import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
+import { isStaffedInTerm, isStaffedMentorInTerm } from "./staffing-audience.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
 export interface SignerCohorts {
@@ -19,8 +16,9 @@ export interface SignerCohorts {
   // Staffed this term = a ProjectAssignment or CoreAssignment in the current
   // term. Gates the new/returning member agreements, which partition this set.
   isStaffedThisTerm: boolean;
-  // Staffed this term and never staffed before → owes the *new* member agreement
-  // rather than the returning one.
+  // Staffed this term and in the incoming hire cohort (accepted in the latest
+  // General/Fellowship cycle) → owes the *new* member agreement rather than the
+  // returning one.
   isNewStaffed: boolean;
   // Mentoring this term (P3 project ∪ external mentor). Gates the mentor agreement.
   isMentor: boolean;
@@ -61,16 +59,16 @@ async function cohortsForTerm(
   isMember: boolean,
   term: { id: string; sortKey: number },
 ): Promise<SignerCohorts> {
-  const [isStaffedThisTerm, priorStaffed, isMentor, isActiveThisTerm] = await Promise.all([
+  const [isStaffedThisTerm, isNewHire, isMentor, isActiveThisTerm] = await Promise.all([
     isStaffedInTerm(userId, term.id),
-    hasPriorStaffing(userId, term.sortKey),
+    isNewMemberCohort(userId),
     isStaffedMentorInTerm(userId, term.id),
     isUserActiveInTerm(userId, term.id),
   ]);
   return {
     isMember,
     isStaffedThisTerm,
-    isNewStaffed: isStaffedThisTerm && !priorStaffed,
+    isNewStaffed: isStaffedThisTerm && isNewHire,
     isMentor,
     isActiveThisTerm,
   };
