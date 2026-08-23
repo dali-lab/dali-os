@@ -7,7 +7,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
-import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
+import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
@@ -22,6 +22,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: bindingId },
     select: {
       id: true,
+      termId: true,
       document: { select: { name: true, audience: true } },
       version: { select: { body: true } },
     },
@@ -30,7 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [state, cohorts] = await Promise.all([
     getBindingStateForUser(userId, bindingId),
-    getSignerCohorts(userId),
+    getSignerCohortsForBinding(userId, binding.termId),
   ]);
 
   const inAudience = AUDIENCE_RESOLVERS[binding.document.audience].includes(cohorts);

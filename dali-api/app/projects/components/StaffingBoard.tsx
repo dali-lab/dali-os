@@ -678,7 +678,12 @@ export function StaffingBoard({
 
   return (
     <div className="flex flex-col gap-3">
-      {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
+      {canManage && (
+        <div className="flex flex-col gap-2">
+          <TermChannelBanner termId={termId} termCode={termCode} />
+          <IssueTermAgreementsBanner termId={termId} termCode={termCode} />
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -726,7 +731,6 @@ export function StaffingBoard({
               onExternalMentorAdded={() => loadExternalMentorsRef.current()}
             />
           )}
-          {canManage && <IssueTermAgreementsButton termId={termId} />}
           <DomainFilter
             domains={domains}
             value={selectedDomainId}
@@ -898,14 +902,19 @@ type IssuePreviewItem = {
   documentId: string;
   documentName: string;
   recipientCount: number;
+  recipientNames: string[];
   alreadyInForce: boolean;
 };
 
-// Core-only button: put this term's recurring agreements in force and send their
-// sign requests once staffing is done. Confirms which agreement goes to how many
-// people first (issuance is never silent), and only reaches members staffed this
-// term when the agreement's audience is the term group.
-function IssueTermAgreementsButton({ termId }: { termId: string }) {
+// Core-only, term-level one-time action (rendered as a banner beside the term
+// Slack channel setup, not in the per-board filter row): put this term's
+// agreements in force and send their sign requests once staffing is finalized.
+// The confirm first lists each agreement and exactly who it reaches — issuance
+// is never silent — and reminds Core to finalize staffing first (recipients come
+// from the staffed roster) and that re-issuing is safe (only unsigned people are
+// notified again).
+function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const { os } = useOsChrome();
   const { confirm } = useDialog();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -935,14 +944,30 @@ function IssueTermAgreementsButton({ termId }: { termId: string }) {
       const ok = await confirm({
         title: `Issue term agreements${forTerm}?`,
         description: (
-          <div className="space-y-2 text-sm">
-            <p>Each will be put in force and sent a sign request:</p>
-            <ul className="space-y-0.5">
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Finalize all project staffing{forTerm} first — recipients are drawn from the
+              staffed roster, so anyone not yet staffed won't be included. Safe to run again
+              afterward: re-issuing only notifies people who still haven't signed.
+            </p>
+            <p>Each agreement is put in force and sent a sign request:</p>
+            <ul className="space-y-2">
               {items.map((i) => (
                 <li key={i.documentId}>
-                  <span className="font-medium">{i.documentName}</span> →{" "}
-                  {i.recipientCount} {i.recipientCount === 1 ? "person" : "people"}
-                  {i.alreadyInForce ? " (re-issue)" : ""}
+                  <div>
+                    <span className="font-medium">{i.documentName}</span> →{" "}
+                    {i.recipientCount} {i.recipientCount === 1 ? "person" : "people"}
+                    {i.alreadyInForce ? " (re-issue)" : ""}
+                  </div>
+                  {i.recipientNames.length > 0 ? (
+                    <div className="mt-0.5 max-h-24 overflow-auto text-xs text-muted-foreground">
+                      {i.recipientNames.join(", ")}
+                    </div>
+                  ) : (
+                    <div className="mt-0.5 text-xs italic text-muted-foreground">
+                      No one to notify yet.
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -973,9 +998,35 @@ function IssueTermAgreementsButton({ termId }: { termId: string }) {
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={() => void onClick()} disabled={busy}>
-      <FileSignature className="w-4 h-4" /> {busy ? "Issuing…" : "Issue term agreements"}
-    </Button>
+    <div
+      className={cn(
+        "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+        os
+          ? "rounded-os-card bg-os-card"
+          : "rounded-lg border border-accent-coral/30 bg-accent-coral/10",
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-heading font-semibold text-foreground">
+          Term agreements{termCode ? ` for ${termCode}` : ""}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Put this term's agreements in force and notify the staffed roster to sign. Finalize
+          staffing first.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void onClick()}
+          disabled={busy}
+          className="whitespace-nowrap"
+        >
+          <FileSignature className="w-4 h-4" /> {busy ? "Issuing…" : "Issue agreements"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

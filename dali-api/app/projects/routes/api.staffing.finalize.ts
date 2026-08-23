@@ -19,6 +19,10 @@ import {
   ensureWorkspaceGroup,
   addGroupMember,
 } from "~/lib/google-workspace";
+import {
+  externalFinalizeAllowed,
+  EXTERNAL_FINALIZE_SKIP_MESSAGE,
+} from "~/projects/lib/finalize-external.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
@@ -474,7 +478,9 @@ export async function action({ request }: Route.ActionArgs) {
   // announcement (each member's domain + level, plus the project's repos). The
   // channel id is reused across runs (stored on Project.slackChannelId).
   if (selected.has("slack")) {
-    if (!slackConfigured()) {
+    if (!externalFinalizeAllowed()) {
+      results.slack = { status: "skipped" as const, message: EXTERNAL_FINALIZE_SKIP_MESSAGE };
+    } else if (!slackConfigured()) {
       results.slack = { status: "skipped" as const, message: SLACK_NOT_CONFIGURED_MESSAGE };
     } else {
       try {
@@ -650,7 +656,9 @@ export async function action({ request }: Route.ActionArgs) {
   // Re-runnable: every Directory API call treats "already exists" (409) as
   // success and we never remove members.
   if (selected.has("gmail")) {
-    if (!workspaceConfigured()) {
+    if (!externalFinalizeAllowed()) {
+      results.gmail = { status: "skipped", message: EXTERNAL_FINALIZE_SKIP_MESSAGE };
+    } else if (!workspaceConfigured()) {
       results.gmail = {
         status: "skipped",
         message: "Google Workspace provisioning is not configured.",
@@ -741,7 +749,9 @@ export async function action({ request }: Route.ActionArgs) {
     // persisted to) Project.githubTeamSlug, so it no longer has to be pre-set on
     // the project page.
     const slug = body.githubTeamSlug?.trim() || project.githubTeamSlug;
-    if (!process.env.GITHUB_ORG) {
+    if (!externalFinalizeAllowed()) {
+      results.github = { status: "skipped", message: EXTERNAL_FINALIZE_SKIP_MESSAGE };
+    } else if (!process.env.GITHUB_ORG) {
       results.github = { status: "skipped", message: "GITHUB_ORG not set." };
     } else if (!slug) {
       results.github = { status: "skipped", message: "No team slug set." };
