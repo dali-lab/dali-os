@@ -114,9 +114,12 @@ export async function recordSignature(
     request: args.request,
   });
 
-  // Email the signer a thank-you with a PDF copy attached. The signature is
-  // already durably recorded, so a mail failure must not fail the sign.
-  await sendSignatureReceipt({
+  // Email the signer a thank-you with a PDF copy attached — FIRE-AND-FORGET.
+  // The signature is already durably recorded, and rendering the PDF (headless
+  // Chromium) + sending the mail can take a couple seconds; the signer must not
+  // wait on it. Runs in the background on the persistent server; errors are
+  // logged, never surfaced (a receipt failure never fails the sign).
+  void sendSignatureReceipt({
     signerUserId: args.signerUserId,
     bindingId: args.bindingId,
     documentName: binding.document.name,
