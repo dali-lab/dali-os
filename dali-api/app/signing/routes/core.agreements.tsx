@@ -63,8 +63,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   // re-export also runs this loader and must fall through to the list data below.
   const url = new URL(request.url);
   if (url.pathname.startsWith("/core/agreements")) {
-    const overview = await getAgreementsOverview();
-    return { mode: "console" as const, ...overview, isAdmin: roles.isAdmin };
+    // Focus term: ?term=<id> lets Core manage a not-yet-current term (issue an
+    // upcoming term's agreements early, track its completion). Defaults to the
+    // current term. The term list feeds the console's selector.
+    const termId = url.searchParams.get("term") ?? undefined;
+    const [overview, terms] = await Promise.all([
+      getAgreementsOverview({ termId }),
+      prisma.term.findMany({ select: { id: true, code: true }, orderBy: { sortKey: "desc" } }),
+    ]);
+    return { mode: "console" as const, ...overview, terms, isAdmin: roles.isAdmin };
   }
 
   const documents = await prisma.signingDocument.findMany({
@@ -151,10 +158,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "activate") {
     const documentId = formData.get("documentId") as string;
     const versionId = formData.get("versionId") as string;
+    // The console's focus term — issue for the selected term (may be upcoming).
+    const termId = (formData.get("termId") as string) || undefined;
     const result = await activateVersion({
       documentId,
       versionId,
       userId: auth.user.sub,
+      termId,
       request,
     });
     if ("error" in result) return { error: result.error };

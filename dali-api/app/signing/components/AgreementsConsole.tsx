@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
+import { Link, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { Select } from "~/components/ui/floating";
+import { IssueTermAgreementsButton } from "~/signing/components/IssueTermAgreementsButton";
 import {
   FileSignature,
   Zap,
@@ -66,10 +68,11 @@ export function AgreementsConsole() {
   const data = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const [showPast, setShowPast] = useState(false);
+  const [, setSearchParams] = useSearchParams();
 
   // The route renders this only in console mode; guard keeps the types honest.
   if (data.mode !== "console") return null;
-  const { agreements, activity, currentTermCode } = data;
+  const { agreements, activity, termId, termCode, terms } = data;
 
   const needsAttention = agreements.filter((a) => a.needsActivation || a.draftPending);
 
@@ -95,25 +98,51 @@ export function AgreementsConsole() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Agreements</h1>
           <p className="mt-1 text-muted-foreground">
             Signing status across every agreement
-            {currentTermCode ? ` · current term ${currentTermCode}` : ""}. Author versions, place
-            fields, and publish in the{" "}
+            {termCode ? ` · ${termCode}` : ""}. Author versions, place fields, and publish in the{" "}
             <Link to="/drive?type=agreement" className="text-accent-coral hover:underline">
               Drive
             </Link>
-            ; track completion and nudge signers here.
+            ; issue, track completion, and nudge signers here.
           </p>
         </div>
-        <Link
-          to="/drive?type=agreement"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-foreground/80 bg-card border border-border hover:bg-muted/50 shrink-0"
-        >
-          <FileSignature className="w-4 h-4" /> Open in Drive
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {/* Focus term: switch which term the console manages (issue an upcoming
+              term's agreements early, track its completion). */}
+          {terms.length > 0 && termId && (
+            <Select
+              value={termId}
+              options={terms.map((t) => ({ value: t.id, label: t.code }))}
+              ariaLabel="Term"
+              onChange={(value) =>
+                setSearchParams(
+                  (prev) => {
+                    prev.set("term", value);
+                    return prev;
+                  },
+                  { replace: true },
+                )
+              }
+            />
+          )}
+          {/* Bulk: issue every per-term agreement for the focus term at once. */}
+          {termId && (
+            <IssueTermAgreementsButton
+              termId={termId}
+              label={`Issue all${termCode ? ` for ${termCode}` : ""}`}
+            />
+          )}
+          <Link
+            to="/drive?type=agreement"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-foreground/80 bg-card border border-border hover:bg-muted/50"
+          >
+            <FileSignature className="w-4 h-4" /> Open in Drive
+          </Link>
+        </div>
       </div>
 
       {needsAttention.length > 0 && (
@@ -123,7 +152,7 @@ export function AgreementsConsole() {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {needsAttention.map((a) => (
-              <NeedsAttentionCard key={a.id} agreement={a} currentTermCode={currentTermCode} />
+              <NeedsAttentionCard key={a.id} agreement={a} termCode={termCode} termId={termId} />
             ))}
           </div>
         </section>
@@ -146,7 +175,7 @@ export function AgreementsConsole() {
         </div>
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground italic">
-            Nothing in force{currentTermCode ? ` for ${currentTermCode}` : ""} yet. Publish a
+            Nothing in force{termCode ? ` for ${termCode}` : ""} yet. Publish a
             version in the Drive and put it in force.
           </p>
         ) : (
@@ -233,16 +262,18 @@ function Pill({ children, tone }: { children: ReactNode; tone?: "amber" }) {
 
 function NeedsAttentionCard({
   agreement,
-  currentTermCode,
+  termCode,
+  termId,
 }: {
   agreement: ConsoleAgreement;
-  currentTermCode: string | null;
+  termCode: string | null;
+  termId: string | null;
 }) {
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const activating = fetcher.state !== "idle";
   const confirmSubmit = useConfirmSubmit();
   const scopeSuffix =
-    agreement.cadence === "PerTerm" && currentTermCode ? ` for ${currentTermCode}` : "";
+    agreement.cadence === "PerTerm" && termCode ? ` for ${termCode}` : "";
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
       <div className="flex items-start gap-2">
@@ -256,7 +287,7 @@ function NeedsAttentionCard({
           </Link>
           {agreement.needsActivation ? (
             <p className="mt-0.5 text-xs text-amber-800">
-              Nothing in force{currentTermCode ? ` for ${currentTermCode}` : ""}.
+              Nothing in force{termCode ? ` for ${termCode}` : ""}.
             </p>
           ) : (
             <p className="mt-0.5 text-xs text-amber-800">
@@ -275,6 +306,7 @@ function NeedsAttentionCard({
               >
                 <input type="hidden" name="intent" value="activate" />
                 <input type="hidden" name="documentId" value={agreement.id} />
+                <input type="hidden" name="termId" value={termId ?? ""} />
                 <input
                   type="hidden"
                   name="versionId"

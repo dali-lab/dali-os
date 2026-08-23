@@ -13,10 +13,8 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { ArrowUpRight, CheckCircle2, FileSignature, Search, X } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { useDialog } from "~/components/ui/dialog";
-import { useToast } from "~/components/ui/toast";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -28,6 +26,7 @@ import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberFlow } from "./AddMemberFlow";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
+import { IssueTermAgreementsButton } from "~/signing/components/IssueTermAgreementsButton";
 import type { Level } from "~/lib/level";
 import type { DomainLevel } from "../lib/staffing-board";
 
@@ -898,105 +897,12 @@ export function StaffingBoard({
 // Full-width banner: get-or-create a term-wide Slack channel (e.g. #26x) and
 // One preview row from GET /api/agreements/issue (kept in step with
 // IssuablePreview in signing/lib/issue.server.ts — that file is server-only).
-type IssuePreviewItem = {
-  documentId: string;
-  documentName: string;
-  recipientCount: number;
-  recipientNames: string[];
-  alreadyInForce: boolean;
-};
-
-// Core-only, term-level one-time action (rendered as a banner beside the term
-// Slack channel setup, not in the per-board filter row): put this term's
-// agreements in force and send their sign requests once staffing is finalized.
-// The confirm first lists each agreement and exactly who it reaches — issuance
-// is never silent — and reminds Core to finalize staffing first (recipients come
-// from the staffed roster) and that re-issuing is safe (only unsigned people are
-// notified again).
+// Core-only, term-level banner beside the term Slack channel setup: put this
+// term's agreements in force and notify the staffed roster (finalize staffing
+// first). The shared IssueTermAgreementsButton owns the preview/confirm/issue
+// flow — the same control the Core ▸ Agreements hub uses.
 function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termCode: string }) {
   const { os } = useOsChrome();
-  const { confirm } = useDialog();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-
-  async function onClick() {
-    setBusy(true);
-    try {
-      const res = await fetch(
-        `/api/agreements/issue?termId=${encodeURIComponent(termId)}`,
-        { credentials: "include" },
-      );
-      const data = (await res.json().catch(() => ({}))) as {
-        termCode?: string | null;
-        items?: IssuePreviewItem[];
-        error?: string;
-      };
-      if (!res.ok) {
-        toast.error(data.error ?? "Couldn't load agreements.");
-        return;
-      }
-      const items = data.items ?? [];
-      const forTerm = data.termCode ? ` for ${data.termCode}` : "";
-      if (items.length === 0) {
-        toast.info(`No recurring agreements to issue${forTerm}.`);
-        return;
-      }
-      const ok = await confirm({
-        title: `Issue term agreements${forTerm}?`,
-        description: (
-          <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground">
-              Finalize all project staffing{forTerm} first — recipients are drawn from the
-              staffed roster, so anyone not yet staffed won't be included. Safe to run again
-              afterward: re-issuing only notifies people who still haven't signed.
-            </p>
-            <p>Each agreement is put in force and sent a sign request:</p>
-            <ul className="space-y-2">
-              {items.map((i) => (
-                <li key={i.documentId}>
-                  <div>
-                    <span className="font-medium">{i.documentName}</span> →{" "}
-                    {i.recipientCount} {i.recipientCount === 1 ? "person" : "people"}
-                    {i.alreadyInForce ? " (re-issue)" : ""}
-                  </div>
-                  {i.recipientNames.length > 0 ? (
-                    <div className="mt-0.5 max-h-24 overflow-auto text-xs text-muted-foreground">
-                      {i.recipientNames.join(", ")}
-                    </div>
-                  ) : (
-                    <div className="mt-0.5 text-xs italic text-muted-foreground">
-                      No one to notify yet.
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ),
-        confirmLabel: "Send",
-      });
-      if (!ok) return;
-      const post = await fetch("/api/agreements/issue", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentIds: items.map((i) => i.documentId), termId }),
-      });
-      const result = (await post.json().catch(() => ({}))) as {
-        issued?: number;
-        error?: string;
-      };
-      if (!post.ok) {
-        toast.error(result.error ?? "Failed to issue agreements.");
-        return;
-      }
-      const n = result.issued ?? 0;
-      toast.success(`Issued ${n} agreement${n === 1 ? "" : "s"}.`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div
       className={cn(
@@ -1016,15 +922,12 @@ function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termC
         </p>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <Button
+        <IssueTermAgreementsButton
+          termId={termId}
           variant="primary"
-          size="sm"
-          onClick={() => void onClick()}
-          disabled={busy}
+          label="Issue agreements"
           className="whitespace-nowrap"
-        >
-          <FileSignature className="w-4 h-4" /> {busy ? "Issuing…" : "Issue agreements"}
-        </Button>
+        />
       </div>
     </div>
   );
