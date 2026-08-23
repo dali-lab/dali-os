@@ -38,4 +38,26 @@ describe("export-pdf renderer robustness", () => {
     ] as never);
     expect(isPdf(pdf)).toBe(true);
   });
+
+  // The check-list branch draws a vector box (checked vs unchecked) and advances
+  // the cursor for the label — exercise both so a positioning/drawing bug throws.
+  it("renders checked and unchecked check-list items", async () => {
+    const pdf = await renderBlocksToPdf("Checklist", [
+      { type: "checkListItem", props: { checked: true }, content: [{ type: "text", text: "Done" }], children: [] },
+      { type: "checkListItem", props: { checked: false }, content: [{ type: "text", text: "Todo" }], children: [] },
+    ] as never);
+    expect(isPdf(pdf)).toBe(true);
+  });
+
+  it("renders a representative mixed document (headings, lists, quote, divider)", async () => {
+    const pdf = await renderBlocksToPdf("Agreement", [
+      { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Terms" }], children: [] },
+      { type: "paragraph", content: [{ type: "text", text: "Dear signer," }], children: [] },
+      { type: "bulletListItem", content: [{ type: "text", text: "Point one" }], children: [] },
+      { type: "numberedListItem", content: [{ type: "text", text: "First" }], children: [] },
+      { type: "quote", content: [{ type: "text", text: "A note" }], children: [] },
+      { type: "divider", children: [] },
+    ] as never);
+    expect(isPdf(pdf)).toBe(true);
+  });
 });

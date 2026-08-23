@@ -17,6 +17,24 @@ import {
 // quote, code, divider, images-as-placeholders, toggles, callouts, tables,
 // marks, links, mentions, signing fields, variables); unknown blocks degrade
 // to their text so content is never dropped.
+//
+// Styling follows the DALI brand: a sans body (Helvetica, standing in for the
+// brand's Open Sans), headings + links in DALI blue, a coral title accent, and
+// drawn check boxes. It re-lays-out the content — it is NOT a pixel copy of the
+// web CSS (that would need a headless browser we deliberately don't run here).
+
+// DALI palette (see the lab style guide): DALI blue for headings/links, the
+// neutral dark for body text, coral as the accent, a light neutral for rules.
+const BRAND = {
+  heading: "#1E5779",
+  body: "#404040",
+  muted: "#6B7280",
+  link: "#1E5779",
+  accent: "#FF8B81",
+  rule: "#C6CACC",
+} as const;
+
+const BODY_SIZE = 11.5;
 
 type Run = { text: string; bold?: boolean; italic?: boolean; underline?: boolean; link?: string };
 
@@ -50,8 +68,9 @@ function inlineRuns(content: DocInline[] | undefined, inherited: Partial<Run> = 
         if (isSigningFieldType(inline.type)) {
           const type = inline.type as SigningFieldType;
           const label = typeof inline.props?.label === "string" ? inline.props.label : "";
-          // pdfkit core fonts lack ballot-box glyphs, so checkboxes render as
-          // [x]/[ ] like check lists do — followed by their label.
+          // pdfkit core fonts lack a ballot-box glyph, so an inline checkbox
+          // field renders as [x]/[ ] followed by its label. (Check-LIST items,
+          // which are their own blocks, get a drawn box — see renderBlock.)
           if (type === "checkboxField") {
             const box = isCheckboxChecked(inline.props?.value) ? "[x]" : "[ ]";
             out.push({ text: label.trim() ? `${box} ${label.trim()}` : box });
@@ -88,10 +107,10 @@ function cellRuns(cell: DocTableCell | DocInline[]): Run[] {
 }
 
 function fontFor(run: Run): string {
-  if (run.bold && run.italic) return "Times-BoldItalic";
-  if (run.bold) return "Times-Bold";
-  if (run.italic) return "Times-Italic";
-  return "Times-Roman";
+  if (run.bold && run.italic) return "Helvetica-BoldOblique";
+  if (run.bold) return "Helvetica-Bold";
+  if (run.italic) return "Helvetica-Oblique";
+  return "Helvetica";
 }
 
 function writeInline(doc: PDFKit.PDFDocument, runs: Run[], fontSize: number) {
@@ -102,15 +121,14 @@ function writeInline(doc: PDFKit.PDFDocument, runs: Run[], fontSize: number) {
   runs.forEach((run, i) => {
     const isLast = i === runs.length - 1;
     doc.font(fontFor(run)).fontSize(fontSize);
-    if (run.link) doc.fillColor("#1155cc");
-    else doc.fillColor("#1a1a1a");
+    doc.fillColor(run.link ? BRAND.link : BRAND.body);
     doc.text(run.text, {
       continued: !isLast,
       link: run.link ?? undefined,
       underline: run.underline || !!run.link,
     });
   });
-  doc.fillColor("#1a1a1a");
+  doc.fillColor(BRAND.body);
 }
 
 // Render a sequence of sibling blocks. Numbering for consecutive
@@ -146,67 +164,92 @@ function renderChildren(doc: PDFKit.PDFDocument, block: DocBlock) {
   doc.x = prev;
 }
 
+// Draw a small check box at the current line start and advance the cursor past
+// it, so the label can follow as continued text. Returns nothing; leaves doc.x
+// just to the right of the box.
+function drawCheckBox(doc: PDFKit.PDFDocument, checked: boolean) {
+  const size = 9.5;
+  const x = doc.x;
+  const y = doc.y + 1.5; // nudge down to sit on the text baseline
+  doc.save();
+  doc
+    .lineWidth(1)
+    .strokeColor(checked ? BRAND.accent : BRAND.rule)
+    .roundedRect(x, y, size, size, 2)
+    .stroke();
+  if (checked) {
+    doc
+      .strokeColor(BRAND.accent)
+      .lineWidth(1.4)
+      .moveTo(x + 2, y + size * 0.55)
+      .lineTo(x + size * 0.42, y + size - 2)
+      .lineTo(x + size - 1.5, y + 1.8)
+      .stroke();
+  }
+  doc.restore();
+  doc.x = x + size + 6;
+}
+
 function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: string) {
   switch (block.type) {
     case "paragraph": {
       if (listPrefix) {
-        doc.font("Times-Roman").fontSize(12).text(listPrefix, { continued: true });
+        doc.font("Helvetica").fontSize(BODY_SIZE).fillColor(BRAND.body).text(listPrefix, { continued: true });
       }
-      writeInline(doc, blockRuns(block), 12);
+      writeInline(doc, blockRuns(block), BODY_SIZE);
       doc.moveDown(0.5);
       renderChildren(doc, block);
       break;
     }
     case "heading": {
       const level = Math.min(Math.max(Number(block.props?.level ?? 1), 1), 6);
-      const size = level === 1 ? 22 : level === 2 ? 18 : 15;
-      doc.moveDown(0.3);
-      doc.font("Helvetica-Bold").fontSize(size);
-      doc.fillColor("#1a1a1a").text(blockText(block));
+      const size = level === 1 ? 19 : level === 2 ? 16 : 14;
       doc.moveDown(0.4);
+      doc.font("Helvetica-Bold").fontSize(size).fillColor(BRAND.heading).text(blockText(block));
+      doc.moveDown(0.35);
       renderChildren(doc, block);
       break;
     }
     case "bulletListItem": {
-      doc.font("Times-Roman").fontSize(12).text(listPrefix ?? "•  ", { continued: true });
-      writeInline(doc, blockRuns(block), 12);
+      doc.font("Helvetica").fontSize(BODY_SIZE).fillColor(BRAND.body).text(listPrefix ?? "•  ", { continued: true });
+      writeInline(doc, blockRuns(block), BODY_SIZE);
       doc.moveDown(0.3);
       renderChildren(doc, block);
       break;
     }
     case "numberedListItem": {
-      doc.font("Times-Roman").fontSize(12).text(listPrefix ?? "1.  ", { continued: true });
-      writeInline(doc, blockRuns(block), 12);
+      doc.font("Helvetica").fontSize(BODY_SIZE).fillColor(BRAND.body).text(listPrefix ?? "1.  ", { continued: true });
+      writeInline(doc, blockRuns(block), BODY_SIZE);
       doc.moveDown(0.3);
       renderChildren(doc, block);
       break;
     }
     case "checkListItem": {
-      const box = block.props?.checked === true ? "[x]  " : "[ ]  ";
-      doc.font("Times-Roman").fontSize(12).text(box, { continued: true });
-      writeInline(doc, blockRuns(block), 12);
+      drawCheckBox(doc, block.props?.checked === true);
+      writeInline(doc, blockRuns(block), BODY_SIZE);
       doc.moveDown(0.3);
       renderChildren(doc, block);
       break;
     }
     case "quote":
-      doc.font("Times-Italic").fontSize(12).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(BODY_SIZE).fillColor(BRAND.muted);
       doc.text(blockText(block) || " ");
-      doc.fillColor("#1a1a1a");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.5);
       renderChildren(doc, block);
       break;
     case "codeBlock": {
-      doc.font("Courier").fontSize(10).fillColor("#333");
+      doc.font("Courier").fontSize(10).fillColor(BRAND.body);
       doc.text(blockText(block) || " ");
-      doc.fillColor("#1a1a1a");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.5);
       break;
     }
     case "divider":
       doc.moveDown(0.3);
       doc
-        .strokeColor("#ddd")
+        .strokeColor(BRAND.rule)
+        .lineWidth(1)
         .moveTo(doc.x, doc.y)
         .lineTo(doc.page.width - doc.page.margins.right, doc.y)
         .stroke();
@@ -222,9 +265,9 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         typeof block.props?.caption === "string" && block.props.caption
           ? block.props.caption
           : "";
-      doc.font("Times-Italic").fontSize(11).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(10.5).fillColor(BRAND.muted);
       doc.text(caption ? `[Image: ${caption}]` : "[Image]");
-      doc.fillColor("#1a1a1a");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.5);
       break;
     }
@@ -241,13 +284,13 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
           : "";
       const label = caption || name;
       if (url) {
-        doc.font("Times-Roman").fontSize(12).fillColor("#1155cc");
+        doc.font("Helvetica").fontSize(BODY_SIZE).fillColor(BRAND.link);
         doc.text(label, { link: url, underline: true });
-        doc.fillColor("#1a1a1a");
+        doc.fillColor(BRAND.body);
       } else {
-        doc.font("Times-Italic").fontSize(11).fillColor("#555");
+        doc.font("Helvetica-Oblique").fontSize(10.5).fillColor(BRAND.muted);
         doc.text(`[File: ${label || "attachment"}]`);
-        doc.fillColor("#1a1a1a");
+        doc.fillColor(BRAND.body);
       }
       doc.moveDown(0.5);
       break;
@@ -260,33 +303,34 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         typeof block.props?.caption === "string" && block.props.caption
           ? block.props.caption
           : "";
-      doc.font("Times-Italic").fontSize(11).fillColor("#555");
       if (url) {
-        const label = caption ? `[Video: ${caption}]` : "[Video]";
-        doc.text(label, { link: url, underline: true });
+        doc.font("Helvetica").fontSize(BODY_SIZE).fillColor(BRAND.link);
+        doc.text(caption ? `[Video: ${caption}]` : "[Video]", { link: url, underline: true });
       } else {
+        doc.font("Helvetica-Oblique").fontSize(10.5).fillColor(BRAND.muted);
         doc.text(caption ? `[Video: ${caption}]` : "[Video]");
       }
-      doc.fillColor("#1a1a1a");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.5);
       break;
     }
     case "toggleListItem": {
       // Print the summary as a bold line, then the (always-expanded) body.
-      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1a1a1a");
+      doc.font("Helvetica-Bold").fontSize(BODY_SIZE).fillColor(BRAND.heading);
       doc.text(blockText(block) || "Toggle");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.2);
       renderChildren(doc, block);
       doc.moveDown(0.3);
       break;
     }
     case "callout": {
-      // Render like a blockquote (italic, gray) — pdfkit's core fonts have no
+      // Render like a blockquote (italic, muted) — pdfkit's core fonts have no
       // emoji glyph, so the marker is dropped rather than rendered as tofu.
-      doc.font("Times-Italic").fontSize(12).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(BODY_SIZE).fillColor(BRAND.muted);
       doc.text(blockText(block) || " ");
       renderChildren(doc, block);
-      doc.fillColor("#1a1a1a");
+      doc.fillColor(BRAND.body);
       doc.moveDown(0.3);
       break;
     }
@@ -294,7 +338,7 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
       const content = block.content as
         | { rows?: { cells?: (DocTableCell | DocInline[])[] }[] }
         | undefined;
-      doc.font("Times-Roman").fontSize(11).fillColor("#1a1a1a");
+      doc.font("Helvetica").fontSize(10.5).fillColor(BRAND.body);
       for (const row of content?.rows ?? []) {
         const cells = (row.cells ?? []).map((cell) =>
           cellRuns(cell)
@@ -311,7 +355,7 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
     default:
       // Unknown block: render its text + children so content is never dropped.
       if (Array.isArray(block.content)) {
-        writeInline(doc, blockRuns(block), 12);
+        writeInline(doc, blockRuns(block), BODY_SIZE);
         doc.moveDown(0.5);
       }
       renderChildren(doc, block);
@@ -327,11 +371,23 @@ export function renderBlocksToPdf(title: string, blocks: DocBlock[]): Promise<Bu
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    doc.font("Helvetica-Bold").fontSize(28).fillColor("#1a1a1a").text(title);
-    doc.moveDown(0.8);
+    // Title, in DALI blue, underlined with a short coral accent rule.
+    doc.font("Helvetica-Bold").fontSize(24).fillColor(BRAND.heading).text(title);
+    doc.moveDown(0.35);
+    const ruleY = doc.y;
+    doc
+      .save()
+      .strokeColor(BRAND.accent)
+      .lineWidth(2.5)
+      .moveTo(doc.page.margins.left, ruleY)
+      .lineTo(doc.page.margins.left + 64, ruleY)
+      .stroke()
+      .restore();
+    doc.moveDown(0.9);
+    doc.fillColor(BRAND.body);
 
     if (blocks.length === 0) {
-      doc.font("Times-Italic").fontSize(12).fillColor("#777").text("This document is empty.");
+      doc.font("Helvetica-Oblique").fontSize(BODY_SIZE).fillColor(BRAND.muted).text("This document is empty.");
     } else {
       renderBlockList(doc, blocks);
     }
