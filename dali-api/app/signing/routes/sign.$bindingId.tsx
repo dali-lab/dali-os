@@ -195,7 +195,7 @@ export default function SignBindingPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-10 space-y-6">
+    <div className="max-w-3xl mx-auto py-10 space-y-6">
       <h1 className="text-2xl font-bold text-foreground">{data.name}</h1>
       <p className="text-sm text-muted-foreground">
         Please read the agreement below and complete your fields to sign.
