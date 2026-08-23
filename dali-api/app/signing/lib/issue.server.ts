@@ -22,13 +22,22 @@ export interface TermIssuePreview {
   items: IssuablePreview[];
 }
 
-// The recurring (PerTerm) App-gated agreements that can be issued for the current
-// term, each with the roster a fresh sign request would reach: the term audience
-// minus whoever already signed the latest published version. Empty items (e.g. a
-// term-group agreement before staffing populates the term group) still surface,
-// so the confirm can show "0 people".
-export async function previewTermIssue(): Promise<TermIssuePreview> {
-  const term = await currentTerm();
+// The recurring (PerTerm) App-gated agreements that can be issued for a term —
+// the staffing board's selected term (opts.termId), which may be a not-yet-
+// started term whose agreements go out early; defaults to the current term.
+// Each item carries the roster a fresh sign request would reach: the term
+// audience minus whoever already signed the latest published version. Empty
+// items (e.g. a term-group agreement before staffing populates the term group)
+// still surface, so the confirm can show "0 people".
+export async function previewTermIssue(
+  opts: { termId?: string } = {},
+): Promise<TermIssuePreview> {
+  const term = opts.termId
+    ? await prisma.term.findUnique({
+        where: { id: opts.termId },
+        select: { id: true, code: true },
+      })
+    : await currentTerm();
   if (!term) return { termCode: null, items: [] };
   const scopeKey = `term:${term.id}`;
 
@@ -89,13 +98,15 @@ export async function previewTermIssue(): Promise<TermIssuePreview> {
   return { termCode: term.code, items };
 }
 
-// Put each document's latest published version in force for the current term.
-// activateVersion handles the binding upsert, admin counter-signatures, audit,
-// and the sign-request notification — so this is idempotent and re-issuing only
-// notifies members who still owe a signature.
+// Put each document's latest published version in force for the target term
+// (opts.termId — the staffing board's selected term; defaults to the current
+// term). activateVersion handles the binding upsert, admin counter-signatures,
+// audit, and the sign-request notification — so this is idempotent and
+// re-issuing only notifies members who still owe a signature.
 export async function issueTermAgreements(opts: {
   documentIds: string[];
   userId: string;
+  termId?: string;
   request?: Request;
 }): Promise<{ issued: number; errors: string[] }> {
   let issued = 0;
@@ -111,6 +122,7 @@ export async function issueTermAgreements(opts: {
       documentId,
       versionId: latest.id,
       userId: opts.userId,
+      termId: opts.termId,
       request: opts.request,
     });
     if ("ok" in res) issued++;

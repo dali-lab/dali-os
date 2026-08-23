@@ -24,6 +24,16 @@ describe("resolveAdminScope", () => {
     expect(scope).toEqual({ scopeKey: "term:term-26f", termId: "term-26f" });
   });
 
+  it("PerTerm with an explicit termId → that term's scope, ignoring the current term", async () => {
+    mockCurrentTerm.mockResolvedValue({ id: "term-26x", code: "26X" });
+    const scope = await resolveAdminScope({ cadence: "PerTerm" } as never, {
+      termId: "term-26f",
+    });
+    expect(scope).toEqual({ scopeKey: "term:term-26f", termId: "term-26f" });
+    // The selected term wins outright — no need to consult the current term.
+    expect(mockCurrentTerm).not.toHaveBeenCalled();
+  });
+
   it("PerTerm with no current term → an error", async () => {
     mockCurrentTerm.mockResolvedValue(null);
     const scope = await resolveAdminScope({ cadence: "PerTerm" } as never);

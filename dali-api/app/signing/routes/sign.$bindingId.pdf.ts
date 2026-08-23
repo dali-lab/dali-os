@@ -49,10 +49,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const signedRaw = mine?.frozenBody ?? binding.version.body;
   if (!signedRaw) return redirect(`/sign/${bindingId}`);
 
-  const pdf = await renderProseMirrorToPdf(
-    binding.document.name,
-    signedRaw as PMNode | DocBlock[],
-  );
+  // A render failure must return a readable error, not the SPA's HTML error
+  // document (a component-less resource route otherwise falls through to the
+  // root error boundary, and the browser "downloads" that HTML as the PDF).
+  let pdf: Buffer;
+  try {
+    pdf = await renderProseMirrorToPdf(
+      binding.document.name,
+      signedRaw as PMNode | DocBlock[],
+    );
+  } catch (err) {
+    console.error("[signing] signed-copy PDF render failed:", err);
+    return new Response("Could not render this signed copy as a PDF.", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

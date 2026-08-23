@@ -18,14 +18,24 @@ export interface SigningScope {
 
 type ScopeDoc = Pick<SigningDocument, "cadence">;
 
-// The scope an admin "Activate" action (or the signing-issuance job) targets for
-// the current period. Cycle-scoped agreements are bound from the hiring lead's
-// cycle UI, not here, so this covers Once + PerTerm.
-export async function resolveAdminScope(doc: ScopeDoc): Promise<SigningScope | { error: string }> {
+// The scope an admin "Activate" action (or the signing-issuance job) targets.
+// Cycle-scoped agreements are bound from the hiring lead's cycle UI, not here,
+// so this covers Once + PerTerm. For PerTerm, the target term is explicit
+// (opts.termId — e.g. the staffing board's selected term, which may be a
+// not-yet-started term whose agreements go out early) and falls back to the
+// current term when omitted.
+export async function resolveAdminScope(
+  doc: ScopeDoc,
+  opts: { termId?: string } = {},
+): Promise<SigningScope | { error: string }> {
   if (doc.cadence === "PerTerm") {
-    const term = await currentTerm();
-    if (!term) return { error: "No current term is configured to bind a termly agreement." };
-    return { scopeKey: `term:${term.id}`, termId: term.id };
+    let termId = opts.termId;
+    if (!termId) {
+      const term = await currentTerm();
+      if (!term) return { error: "No current term is configured to bind a termly agreement." };
+      termId = term.id;
+    }
+    return { scopeKey: `term:${termId}`, termId };
   }
   if (doc.cadence === "PerCycle") {
     return { error: "Per-cycle agreements are bound to a cycle from the hiring lead's cycle setup." };
