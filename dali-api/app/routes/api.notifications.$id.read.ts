@@ -109,8 +109,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Same rule for a form todo: clicking through to the form — from the sidebar
   // tile, a desktop banner, or the History row — isn't the same as filling it
-  // in. Only the authed submit (closeFormTodos) marks it read.
-  if (isFormTodo) {
+  // in. Only the authed submit (closeFormTodos) marks it read. The one
+  // exception is an explicit `intent=dismiss`: a recipient who won't (or can't)
+  // fill the form confirms in the UI and clears the reminder anyway, so it
+  // stops sitting in Tasks forever. A plain read (no intent) still skips.
+  if (isFormTodo && intent !== "dismiss") {
     return withCors(request, Response.json({ ok: true, skipped: "form-todo" }));
   }
 

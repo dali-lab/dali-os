@@ -273,3 +273,71 @@ describe("POST /api/notifications/:id/read", () => {
     });
   });
 });
+
+describe("POST /api/notifications/:id/read intent=dismiss", () => {
+  function dismissReq(id: string) {
+    return new Request(`http://localhost/api/notifications/${id}/read`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent: "dismiss" }),
+    });
+  }
+
+  it("clears a form todo the recipient won't fill (the escape hatch)", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      isTodo: true,
+      form: { published: true, publicToken: "tok" },
+      link: "/forms/fill/tok",
+    });
+    const res = await action({
+      request: dismissReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true });
+    expect(json.skipped).toBeUndefined();
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { readAt: expect.any(Date) },
+    });
+  });
+
+  it("still refuses to dismiss a meeting invite (RSVP/Decline instead)", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: "m1",
+      kind: "MeetingInvite",
+      link: null,
+    });
+    const res = await action({
+      request: dismissReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true, skipped: "meeting-invite" });
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+
+  it("still refuses to dismiss the onboarding task (finish it instead)", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      eventType: "member.onboarding",
+    });
+    const res = await action({
+      request: dismissReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true, skipped: "onboarding" });
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+});

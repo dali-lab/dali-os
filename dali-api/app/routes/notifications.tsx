@@ -7,7 +7,9 @@ import {
   ExternalLink,
   RotateCcw,
   Check,
+  X,
 } from "lucide-react";
+import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import {
@@ -109,25 +111,49 @@ function openLink(link: string, label: string) {
 
 function OpenTab({ tasks }: { tasks: Task[] }) {
   const [items, setItems] = useState(tasks);
+  const { confirm } = useDialog();
   // Re-sync when the loader hands down a fresh list (revalidation, tab switch).
   useEffect(() => setItems(tasks), [tasks]);
 
-  // Self-clearing tasks carry no manual dismiss: meeting invites clear by
-  // RSVPing, form todos by submitting the form, onboarding by finishing it
-  // (all `hasAction`) — and the server refuses a plain read on them anyway.
-  // Everything else — reminders, announcements, general to-dos — can be marked
-  // read here: POST /read clears the notification and drops the sidebar count.
-  async function markRead(id: string) {
+  // Most tasks clear by "Mark as read": POST /read sets readAt and drops the
+  // sidebar count. Self-clearing tasks are the exception — meeting invites
+  // clear by RSVPing, onboarding by finishing it (both `hasAction`, no manual
+  // dismiss). Form todos are also `hasAction`, but a recipient who won't fill
+  // the form gets a "Dismiss" instead (see `dismiss`) so they aren't stuck.
+  async function post(id: string, intent?: "dismiss") {
     setItems((prev) => prev.filter((t) => t.id !== id));
     try {
       await fetch(`/api/notifications/${id}/read`, {
         method: "POST",
         credentials: "include",
         keepalive: true,
+        ...(intent
+          ? {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ intent }),
+            }
+          : {}),
       });
     } finally {
       window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
     }
+  }
+
+  function markRead(id: string) {
+    return post(id);
+  }
+
+  // A form todo normally clears only on submit. Dismissing it clears the
+  // reminder without submitting, so confirm the intent first.
+  async function dismiss(id: string) {
+    const ok = await confirm({
+      title: "Dismiss this reminder?",
+      description:
+        "You haven't submitted this form. Dismissing removes it from your tasks — you can still find it in History.",
+      confirmLabel: "Dismiss",
+    });
+    if (!ok) return;
+    await post(id, "dismiss");
   }
 
   if (items.length === 0) {
@@ -187,6 +213,15 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
                   className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
                 >
                   <Check className="w-3 h-3" /> Mark as read
+                </button>
+              )}
+              {t.formTodo && (
+                <button
+                  type="button"
+                  onClick={() => void dismiss(t.id)}
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3 h-3" /> Dismiss
                 </button>
               )}
             </div>
