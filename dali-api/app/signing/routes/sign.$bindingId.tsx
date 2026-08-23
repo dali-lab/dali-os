@@ -13,7 +13,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { collectSigningFields } from "~/lib/signing-fields";
-import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
+import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { recordSignature } from "~/signing/lib/sign.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
@@ -42,6 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       versionId: true,
+      termId: true,
       document: { select: { name: true, audience: true } },
       version: { select: { body: true } },
       term: { select: { code: true } },
@@ -56,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [state, cohorts] = await Promise.all([
     getBindingStateForUser(userId, bindingId),
-    getSignerCohorts(userId),
+    getSignerCohortsForBinding(userId, binding.termId),
   ]);
 
   // Gate direct access: only members in the audience (or someone who already
