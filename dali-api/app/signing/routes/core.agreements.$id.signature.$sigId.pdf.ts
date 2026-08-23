@@ -8,7 +8,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 
@@ -49,7 +49,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // root error boundary, and the browser "downloads" that HTML as the PDF).
   let pdf: Buffer;
   try {
-    pdf = await renderProseMirrorToPdf(title, body as PMNode | DocBlock[]);
+    pdf = await renderDocumentPdf(title, body as PMNode | DocBlock[]);
   } catch (err) {
     console.error("[signing] signed-copy PDF render failed:", err);
     return new Response("Could not render this signed copy as a PDF.", {

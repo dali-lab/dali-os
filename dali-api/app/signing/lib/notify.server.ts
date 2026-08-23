@@ -9,7 +9,7 @@ import { notify } from "~/lib/notify.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender } from "~/lib/gmail-integration";
 import { getFrontendUrl } from "~/lib/app-env";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
@@ -66,7 +66,7 @@ export async function sendSignatureReceipt(args: {
   // thank-you (with a link) rather than nothing.
   let attachments: EmailAttachment[] | undefined;
   try {
-    const pdf = await renderProseMirrorToPdf(
+    const pdf = await renderDocumentPdf(
       args.documentName,
       args.frozenBody as PMNode | DocBlock[],
     );

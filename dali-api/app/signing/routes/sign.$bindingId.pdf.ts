@@ -6,7 +6,7 @@ import type { Route } from "./+types/sign.$bindingId.pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import type { PMNode } from "~/collab/export-html";
@@ -55,7 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // root error boundary, and the browser "downloads" that HTML as the PDF).
   let pdf: Buffer;
   try {
-    pdf = await renderProseMirrorToPdf(
+    pdf = await renderDocumentPdf(
       binding.document.name,
       signedRaw as PMNode | DocBlock[],
     );
