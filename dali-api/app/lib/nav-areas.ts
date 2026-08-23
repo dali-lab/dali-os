@@ -371,6 +371,27 @@ function pathnameOf(path: string): string {
   return cut === -1 ? path : path.slice(0, cut);
 }
 
+// A sub-tab can deep-link into a shared hub with a filter query — Core ▸
+// Agreements points at /drive?type=agreement, and Core ▸ Communications' email
+// templates at /drive?type=emailTemplate. Those pages live in the Drive but are
+// owned by Core, so the bare /drive hub would otherwise win areaForPath by
+// prefix and bounce the sidebar to Drive. A sub-tab whose href carries a query
+// claims the exact filtered url instead: the path must match and every query
+// param on the href must be present (extra params on the url are fine). Returns
+// the full href length (query included) so the match ranks ABOVE the hub prefix;
+// -1 when it doesn't apply or doesn't match.
+function queryHrefMatchLen(url: string, href: string): number {
+  const qi = href.indexOf("?");
+  if (qi === -1) return -1;
+  if (pathnameOf(url) !== href.slice(0, qi)) return -1;
+  const want = new URLSearchParams(href.slice(qi + 1));
+  const hashless = url.split("#")[0];
+  const ui = hashless.indexOf("?");
+  const have = new URLSearchParams(ui === -1 ? "" : hashless.slice(ui + 1));
+  for (const [k, v] of want) if (have.get(k) !== v) return -1;
+  return href.length;
+}
+
 // The area that owns a path. Two rules, in order:
 //  1. an exact sub-tab href — the regrouped Projects area owns /members,
 //     /partners and /mentorship, which are not under its hubPath at all, so
@@ -395,6 +416,13 @@ export function areaForPath(
       if (matches && match.length > bestLen) {
         best = a;
         bestLen = match.length;
+      }
+      // A query-scoped deep-link (e.g. /drive?type=agreement) is owned by this
+      // sub-tab's area, not the hub its path belongs to.
+      const qLen = queryHrefMatchLen(path, t.href);
+      if (qLen > bestLen) {
+        best = a;
+        bestLen = qLen;
       }
     }
     const hubMatches = p === a.hubPath || p.startsWith(a.hubPath + "/");
@@ -422,8 +450,34 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
       best = t.href;
       bestLen = match.length;
     }
+    // Highlight a query-scoped deep-link (e.g. Core ▸ Agreements at
+    // /drive?type=agreement) when the current url carries its filter, matching
+    // areaForPath's ownership rule so the pill and the area agree.
+    const qLen = queryHrefMatchLen(path, t.href);
+    if (qLen > bestLen) {
+      best = t.href;
+      bestLen = qLen;
+    }
   }
   return best;
+}
+
+// Is a pinned nav item (e.g. Drive, once regrouped) the owner of the current
+// url? A pinned hub owns its pathname subtree — EXCEPT where a query-scoped area
+// sub-tab claims the exact filtered url: Core ▸ Agreements lives at
+// /drive?type=agreement but belongs to Core, so the Drive pin must NOT light up
+// there. Handed a live url (pathname + search) like the other matchers, so the
+// query is visible in tabless mode too (there `location.pathname` drops it).
+export function isPinnedActive(
+  path: string,
+  href: string,
+  flags: Partial<FeatureFlagMap> = {},
+): boolean {
+  const p = pathnameOf(path);
+  if (p !== href && !p.startsWith(href + "/")) return false;
+  // areaForPath returns an area only when a (query-scoped) sub-tab claims this
+  // url; on a plain Drive url it's undefined, so the pin stays lit.
+  return !areaForPath(path, flags);
 }
 
 /**

@@ -52,7 +52,7 @@ export async function runGetSignedDocument(ctx: McpCtx, args: Args) {
       bindingId: true,
       binding: {
         select: {
-          document: { select: { name: true, kind: true } },
+          document: { select: { name: true } },
           version: { select: { versionNumber: true, body: true } },
         },
       },
@@ -67,7 +67,6 @@ export async function runGetSignedDocument(ctx: McpCtx, args: Args) {
     signatureId: sig.id,
     bindingId: sig.bindingId,
     documentName: sig.binding.document.name,
-    documentKind: sig.binding.document.kind,
     versionNumber: sig.binding.version.versionNumber,
     signedAt: sig.signedAt.toISOString(),
     typedName: sig.typedName,

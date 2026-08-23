@@ -1,16 +1,13 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { ChevronDown } from "lucide-react";
-import { termCodeLabel } from "~/lib/display";
 import type { Route } from "./+types/partner.apply";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { currentTerm } from "~/lib/roles";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
+import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import {
   useFormPager,
@@ -22,221 +19,152 @@ import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { findMissingRequired } from "~/lib/form-answers";
+import type { Question } from "~/types";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Apply · DALI OS" },
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth } = await requirePartner(request);
-  const current = await currentTerm();
-  const [terms, domains, applicationForm] = await Promise.all([
-    prisma.term.findMany({
-      // Only current + future terms make sense as staffing targets.
-      where: current ? { sortKey: { gte: current.sortKey } } : undefined,
-      orderBy: { sortKey: "asc" },
-      take: 6,
-      select: { id: true, code: true },
-    }),
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
-    // The lab-configured extra questions (see PartnerApplicationFormBinding).
-    // Null when none are bound — the structured fields below are the whole form.
-    loadApplicationForm(auth.user.sub),
-  ]);
+  await requirePartnerAccount(request);
+  const applicationForm = await loadApplicationForm();
   return {
-    terms,
-    domains,
     applicationForm: applicationForm
       ? {
           questions: applicationForm.questions,
           description: applicationForm.description,
-          // Echoed back on submit so an in-place edit to the bound form's
-          // (not-yet-used) version between load and submit is caught.
           versionUpdatedAt: applicationForm.versionUpdatedAt,
         }
       : null,
   };
 }
 
-// Plain text from the form, stored as a single-paragraph BlockNote block array
-// — the format the internal scope editor round-trips (mutable rich-text
-// columns store block JSON going forward).
-function wrapChallenges(text: string) {
-  if (!text) return null;
-  return [
-    {
-      id: crypto.randomUUID(),
-      type: "paragraph",
-      props: { backgroundColor: "default", textColor: "default", textAlignment: "left" },
-      content: [{ type: "text", text, styles: {} }],
-      children: [],
-    },
-  ];
+// Returns the first non-empty answer to a "real" question (skips info,
+// pageBreak, file). Arrays are joined with ", ". Falls back to a generic label.
+function deriveApplicationTitle(
+  questions: Question[],
+  answers: Record<string, unknown>,
+): string {
+  for (const q of questions) {
+    if (q.type === "info" || q.type === "pageBreak" || q.type === "file") continue;
+    const raw = answers[q.key];
+    if (raw === undefined || raw === null) continue;
+    const text = Array.isArray(raw)
+      ? raw.filter(Boolean).join(", ")
+      : String(raw);
+    const trimmed = text.trim();
+    if (trimmed) return trimmed;
+  }
+  return "Partner application";
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  const { auth } = ctx;
   const form = await request.formData();
 
-  const title = (form.get("title") as string | null)?.trim() ?? "";
-  const termIds = form.getAll("termIds").map(String).filter(Boolean);
-  const domainIds = form.getAll("domainIds").map(String).filter(Boolean);
-
-  if (!title) return { error: "Give your pitch a title." };
-
-  // Validate the picked ids exist (form data is client-controlled).
-  const [validTerms, validDomains] = await Promise.all([
-    prisma.term.findMany({ where: { id: { in: termIds } }, select: { id: true } }),
-    prisma.domain.findMany({ where: { id: { in: domainIds }, active: true }, select: { id: true } }),
-  ]);
-
-  // Bound-form answers ride along as one JSON field. Re-resolve the form
-  // server-side (never trust the client's version/questions) and validate
-  // against its latest version — same fallback semantics as submitMemberForm.
   const applicationForm = await loadApplicationForm(auth.user.sub);
-  let formAnswers: Record<string, unknown> = {};
-  if (applicationForm) {
-    // The bound form's version can be edited in place until first use — if it
-    // changed since this page loaded, reject rather than record answers keyed
-    // to questions that may no longer exist.
-    const loadedFingerprint = form.get("formVersionUpdatedAt");
-    if (
-      typeof loadedFingerprint === "string" &&
-      loadedFingerprint &&
-      loadedFingerprint !== applicationForm.versionUpdatedAt
-    ) {
-      return { error: "This form was just updated — reload and re-submit." };
-    }
-    const rawAnswers = form.get("formAnswers");
-    if (typeof rawAnswers === "string" && rawAnswers) {
-      try {
-        const parsed: unknown = JSON.parse(rawAnswers);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          formAnswers = parsed as Record<string, unknown>;
-        }
-      } catch {
-        // Unparseable answers fall through to validation, which reports any
-        // required question as missing.
-      }
-    }
-    const bad = await validateAnswers(
-      applicationForm.questions,
-      formAnswers,
-      auth.user.sub,
-    );
-    if (bad) return { error: bad.error };
+  if (!applicationForm) return { error: "Applications aren't open right now." };
+
+  // Version-fingerprint: if the form was edited between page load and submit,
+  // reject so the partner re-reads the new questions.
+  const loadedFingerprint = form.get("formVersionUpdatedAt");
+  if (
+    typeof loadedFingerprint === "string" &&
+    loadedFingerprint &&
+    loadedFingerprint !== applicationForm.versionUpdatedAt
+  ) {
+    return { error: "This form was just updated — reload and re-submit." };
   }
 
-  const application = await prisma.$transaction(async (tx) => {
-    // The submission is created first so the application can link it by
-    // scalar FK (Prisma's unchecked create can't nest a relation the
-    // application holds the FK for).
-    let formSubmissionId: string | undefined;
-    if (applicationForm) {
-      const submission = await tx.formSubmission.create({
-        data: {
-          formId: applicationForm.formId,
-          formVersionId: applicationForm.versionId,
-          userId: auth.user.sub,
-          answers: formAnswers as object,
-        },
-        select: { id: true },
-      });
-      formSubmissionId = submission.id;
+  let formAnswers: Record<string, unknown> = {};
+  const rawAnswers = form.get("formAnswers");
+  if (typeof rawAnswers === "string" && rawAnswers) {
+    try {
+      const parsed: unknown = JSON.parse(rawAnswers);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        formAnswers = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Unparseable answers fall through to validation below.
     }
-    // No structural summary: the qualitative pitch lives in the bound form's
-    // answers (see the seeded "Partner application questions" form).
-    return tx.partnerApplication.create({
+  }
+
+  const bad = await validateAnswers(
+    applicationForm.questions,
+    formAnswers,
+    auth.user.sub,
+  );
+  if (bad) return { error: bad.error };
+
+  const title = deriveApplicationTitle(applicationForm.questions, formAnswers);
+
+  const application = await prisma.$transaction(async (tx) => {
+    const submission = await tx.formSubmission.create({
       data: {
-        partnerOrgId: partnerUser.partnerOrgId,
-        title,
-        formSubmissionId,
-        targetTerms: {
-          create: validTerms.map((t) => ({ termId: t.id })),
-        },
-        domains: {
-          create: validDomains.map((d) => {
-            const members = Number(form.get(`expectedMembers:${d.id}`) ?? 0);
-            const challenges =
-              (form.get(`challenges:${d.id}`) as string | null)?.trim() ?? "";
-            return {
-              domainId: d.id,
-              expectedMembers: Number.isFinite(members) && members > 0 ? Math.floor(members) : 0,
-              expectedChallenges: wrapChallenges(challenges) ?? undefined,
-            };
-          }),
-        },
+        formId: applicationForm.formId,
+        formVersionId: applicationForm.versionId,
+        userId: auth.user.sub,
+        answers: formAnswers as object,
       },
       select: { id: true },
     });
+    const app = await tx.partnerApplication.create({
+      data: {
+        applicantContactId: ctx.contact.id,
+        partnerOrgId: null,
+        status: "ApplicationSubmitted",
+        source: "Form",
+        title,
+        formSubmissionId: submission.id,
+      },
+      select: { id: true },
+    });
+    // actorUserId null = partner-originated (the applicant, not a Core member).
+    await logPartnerActivity(tx, {
+      applicationId: app.id,
+      actorUserId: null,
+      type: "Created",
+      metadata: { source: "Form" },
+    });
+    return app;
   });
 
   await logAuditEvent({
     action: "partner.application.submitted",
     userId: auth.user.sub,
     targetId: application.id,
-    metadata: { partnerOrgId: partnerUser.partnerOrgId },
+    metadata: { contactId: ctx.contact.id },
     request,
   });
-  if (applicationForm) {
-    await notifyFormSubmission({
-      formId: applicationForm.formId,
-      submitterUserId: auth.user.sub,
-    });
-  }
+  await notifyFormSubmission({
+    formId: applicationForm.formId,
+    submitterUserId: auth.user.sub,
+  });
 
   return redirect(`/partner/applications/${application.id}`);
 }
 
 export default function PartnerApply({ actionData }: Route.ComponentProps) {
-  const { terms, domains, applicationForm } = useLoaderData<typeof loader>();
+  const { applicationForm } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
-  // Controlled so editing a domain's fields selects the domain — otherwise
-  // an expanded-but-unchecked row's input is silently dropped on submit.
-  const [checkedDomains, setCheckedDomains] = useState<Set<string>>(new Set());
   const [clientError, setClientError] = useState<string | null>(null);
-  // Custom-question pages ride alongside the fixed project fields: the fixed
-  // fields live on step 0, page breaks in the bound form add further steps.
+
   const pages = useMemo(
     () => paginateQuestions(applicationForm?.questions ?? []),
     [applicationForm],
   );
-  const pager = useFormPager(pages, { excludeFileType: true });
+  const pager = useFormPager(pages);
 
-  function selectDomain(id: string) {
-    setCheckedDomains((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }
   const error =
     clientError ??
     (actionData && "error" in actionData ? actionData.error : null);
 
-  // Final submit only fires on the last step. Required-ness is checked here
-  // before the post (the action re-validates server-side). The project title's
-  // native `required` is dropped because a required control on a hidden
-  // (paginated-away) step breaks native submit — it's validated here instead.
   function checkRequired(e: React.FormEvent<HTMLFormElement>) {
-    const title = String(new FormData(e.currentTarget).get("title") ?? "").trim();
-    if (!title) {
-      e.preventDefault();
-      setClientError("Project title is required.");
-      pager.reset();
-      return;
-    }
     const missing = applicationForm
-      ? findMissingRequired(applicationForm.questions, (q) => formAnswers[q.key], {
-          excludeFileType: true,
-        })
+      ? findMissingRequired(applicationForm.questions, (q) => formAnswers[q.key])
       : [];
     if (missing.length > 0) {
       e.preventDefault();
@@ -246,9 +174,18 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
     }
   }
 
-  const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
-  const labelClass = "block text-sm font-medium text-dark-blue mb-1";
+  if (!applicationForm) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
+          Apply to partner with DALI
+        </h1>
+        <p className="text-muted-foreground">
+          Applications aren't open right now.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -267,150 +204,43 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
       )}
 
       <Form method="post" onSubmit={checkRequired} className="flex flex-col gap-6">
-        {/* Fixed project fields ride on step 0. Kept mounted (hidden, not
-            unmounted) on later steps so their native/uncontrolled inputs still
-            submit. */}
-        <div className={pager.index === 0 ? "flex flex-col gap-6" : "hidden"}>
-        <div>
-          <label htmlFor="title" className={labelClass}>
-            Project title<span className="text-accent-coral ml-0.5">*</span>
-          </label>
-          <input id="title" name="title" className={inputClass} />
-        </div>
-
-        {terms.length > 0 && (
-          <fieldset>
-            <legend className={labelClass}>
-              Which terms would you like the team working?
-            </legend>
-            <div className="flex flex-wrap gap-3 mt-1">
-              {terms.map((t) => (
-                <Checkbox
-                  key={t.id}
-                  name="termIds"
-                  value={t.id}
-                  label={termCodeLabel(t.code)}
-                  className="text-sm text-dark-blue bg-card border border-border rounded-lg px-3 py-2"
-                />
-              ))}
+        <section className="flex flex-col gap-5">
+          {pager.index === 0 && !isEmptyBlocks(applicationForm.description) && (
+            <div className="text-sm text-muted-foreground">
+              <DocEditor
+                features="notes"
+                density="compact"
+                editable={false}
+                initialContent={applicationForm.description}
+              />
             </div>
-          </fieldset>
-        )}
-
-        <fieldset>
-          <legend className={labelClass}>
-            What kinds of work do you expect?
-          </legend>
-          <div className="flex flex-col gap-3 mt-1">
-            {domains.map((d) => (
-              <details key={d.id} className="group bg-card border border-border rounded-xl">
-                <summary className="flex items-center gap-2 text-sm text-dark-blue px-4 py-3 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    name="domainIds"
-                    value={d.id}
-                    checked={checkedDomains.has(d.id)}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setCheckedDomains((prev) => {
-                        const next = new Set(prev);
-                        if (on) next.add(d.id);
-                        else next.delete(d.id);
-                        return next;
-                      });
-                    }}
-                    className="rounded"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  {d.displayName}
-                  <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto transition-transform group-open:rotate-180" />
-                </summary>
-                {/* Typing in either field selects the domain, so an expanded-
-                    but-unchecked row can't silently lose its input. */}
-                <div className="px-4 pb-4 flex flex-col gap-3" onInput={() => selectDomain(d.id)}>
-                  <label className="block">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Expected team members (rough)
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      name={`expectedMembers:${d.id}`}
-                      defaultValue={0}
-                      className="mt-1 w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      What should this discipline tackle?
-                    </span>
-                    <textarea
-                      name={`challenges:${d.id}`}
-                      rows={2}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    />
-                  </label>
-                </div>
-              </details>
-            ))}
-          </div>
-        </fieldset>
-
-        </div>
-
-        {applicationForm && applicationForm.questions.length > 0 && (
-          <section className="flex flex-col gap-5 border-t border-border pt-6">
-            {pager.index === 0 && (
-              <>
-                <h2 className="font-heading text-lg font-semibold text-dark-blue">
-                  A few more questions
-                </h2>
-                {!isEmptyBlocks(applicationForm.description) && (
-                  <div className="text-sm text-muted-foreground -mt-1">
-                    <DocEditor
-                      features="notes"
-                      density="compact"
-                      editable={false}
-                      initialContent={applicationForm.description}
-                    />
-                  </div>
-                )}
-              </>
+          )}
+          <FormPageHeading page={pager.page} />
+          <FormFieldList
+            questions={pager.page.questions}
+            values={formAnswers}
+            onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
+            renderField={(q) => (
+              <FormQuestionField
+                question={q}
+                value={formAnswers[q.key] ?? ""}
+                onChange={(v) =>
+                  setFormAnswers((a) => ({ ...a, [q.key]: v }))
+                }
+              />
             )}
-            <FormPageHeading page={pager.page} />
-            <FormFieldList
-              questions={pager.page.questions}
-              values={formAnswers}
-              onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
-              renderField={(q) =>
-                q.type === "file" ? (
-                  <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                    File uploads aren’t available here.
-                  </div>
-                ) : (
-                  <FormQuestionField
-                    question={q}
-                    value={formAnswers[q.key] ?? ""}
-                    onChange={(v) =>
-                      setFormAnswers((a) => ({ ...a, [q.key]: v }))
-                    }
-                  />
-                )
-              }
-            />
-            <input
-              type="hidden"
-              name="formAnswers"
-              value={JSON.stringify(formAnswers)}
-            />
-            <input
-              type="hidden"
-              name="formVersionUpdatedAt"
-              value={applicationForm.versionUpdatedAt}
-            />
-          </section>
-        )}
+          />
+          <input
+            type="hidden"
+            name="formAnswers"
+            value={JSON.stringify(formAnswers)}
+          />
+          <input
+            type="hidden"
+            name="formVersionUpdatedAt"
+            value={applicationForm.versionUpdatedAt}
+          />
+        </section>
 
         <FormPagerNav
           pager={pager}

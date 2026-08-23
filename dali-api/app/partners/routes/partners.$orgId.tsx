@@ -69,19 +69,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isIndividual: true,
       primaryContactId: true,
       createdAt: true,
-      users: {
+      memberships: {
+        where: { endedAt: null },
         orderBy: { createdAt: "asc" },
         select: {
           id: true,
-          displayRole: true,
-          authProvider: true,
+          role: true,
           createdAt: true,
-          user: {
+          contact: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
-              personalEmail: true,
+              name: true,
+              email: true,
             },
           },
         },
@@ -150,7 +149,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // empty (the action re-validates with authoritative counts).
     canDeleteOrg:
       canEdit &&
-      org.users.length === 0 &&
+      org.memberships.length === 0 &&
       org.projects.length === 0 &&
       org.applications.length === 0 &&
       pendingInvites.length === 0,
@@ -180,8 +179,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     const primaryContactId =
       (form.get("primaryContactId") as string | null) || null;
     if (primaryContactId) {
-      const contact = await prisma.partnerUser.findFirst({
-        where: { id: primaryContactId, partnerOrgId: org.id },
+      const contact = await prisma.partnerMembership.findFirst({
+        where: { id: primaryContactId, orgId: org.id, endedAt: null },
         select: { id: true },
       });
       if (!contact) return { error: "Primary contact must belong to this organization." };
@@ -206,35 +205,35 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "member-role") {
-    const partnerUserId = form.get("partnerUserId") as string;
-    const displayRole =
-      (form.get("displayRole") as string | null)?.trim() || null;
-    const res = await prisma.partnerUser.updateMany({
-      where: { id: partnerUserId, partnerOrgId: org.id },
-      data: { displayRole },
+    const membershipId = form.get("partnerUserId") as string;
+    const role = (form.get("displayRole") as string | null)?.trim() || null;
+    const res = await prisma.partnerMembership.updateMany({
+      where: { id: membershipId, orgId: org.id, endedAt: null },
+      data: { role },
     });
     if (res.count !== 1) return { error: "Member not found." };
     await logAuditEvent({
       action: "partner.member.update",
       userId: auth.user.sub,
-      targetId: partnerUserId,
-      metadata: { partnerOrgId: org.id },
+      targetId: membershipId,
+      metadata: { orgId: org.id },
       request,
     });
     return { ok: true };
   }
 
   if (intent === "member-move") {
-    const partnerUserId = form.get("partnerUserId") as string;
+    // "partnerUserId" hidden field name preserved for UI compatibility.
+    const membershipId = form.get("partnerUserId") as string;
     const targetOrgId = (form.get("targetOrgId") as string | null) ?? "";
     if (!targetOrgId) return { error: "Choose an organization to move them to." };
     if (targetOrgId === org.id) {
       return { error: "They're already in this organization." };
     }
     const [member, target] = await Promise.all([
-      prisma.partnerUser.findFirst({
-        where: { id: partnerUserId, partnerOrgId: org.id },
-        select: { id: true },
+      prisma.partnerMembership.findFirst({
+        where: { id: membershipId, orgId: org.id, endedAt: null },
+        select: { id: true, contactId: true },
       }),
       prisma.partnerOrg.findUnique({
         where: { id: targetOrgId },
@@ -245,21 +244,25 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!target) return { error: "That organization no longer exists." };
     await prisma.$transaction(async (tx) => {
       // Primary contact doesn't travel — the source org just loses it.
-      if (org.primaryContactId === partnerUserId) {
+      if (org.primaryContactId === membershipId) {
         await tx.partnerOrg.update({
           where: { id: org.id },
           data: { primaryContactId: null },
         });
       }
-      await tx.partnerUser.update({
-        where: { id: partnerUserId },
-        data: { partnerOrgId: targetOrgId },
+      // End the current membership and open a new one in the target org.
+      await tx.partnerMembership.update({
+        where: { id: membershipId },
+        data: { endedAt: new Date() },
+      });
+      await tx.partnerMembership.create({
+        data: { contactId: member.contactId, orgId: targetOrgId },
       });
     });
     await logAuditEvent({
       action: "partner.member.update",
       userId: auth.user.sub,
-      targetId: partnerUserId,
+      targetId: membershipId,
       metadata: { movedFrom: org.id, movedTo: targetOrgId },
       request,
     });
@@ -272,7 +275,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     // invite rows don't — they're deleted with the org.
     const [memberCount, projectCount, applicationCount, pendingInviteCount] =
       await Promise.all([
-        prisma.partnerUser.count({ where: { partnerOrgId: org.id } }),
+        prisma.partnerMembership.count({ where: { orgId: org.id, endedAt: null } }),
         prisma.projectPartner.count({ where: { partnerOrgId: org.id } }),
         prisma.partnerApplication.count({ where: { partnerOrgId: org.id } }),
         prisma.partnerInvite.count({
@@ -307,26 +310,31 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "member-remove") {
-    const partnerUserId = form.get("partnerUserId") as string;
-    const member = await prisma.partnerUser.findFirst({
-      where: { id: partnerUserId, partnerOrgId: org.id },
+    // "partnerUserId" hidden field name preserved for UI compatibility.
+    const membershipId = form.get("partnerUserId") as string;
+    const member = await prisma.partnerMembership.findFirst({
+      where: { id: membershipId, orgId: org.id, endedAt: null },
       select: { id: true },
     });
     if (!member) return { error: "Member not found." };
     await prisma.$transaction(async (tx) => {
-      if (org.primaryContactId === partnerUserId) {
+      if (org.primaryContactId === membershipId) {
         await tx.partnerOrg.update({
           where: { id: org.id },
           data: { primaryContactId: null },
         });
       }
-      await tx.partnerUser.delete({ where: { id: partnerUserId } });
+      // End the membership — preserves history rather than hard-deleting.
+      await tx.partnerMembership.update({
+        where: { id: membershipId },
+        data: { endedAt: new Date() },
+      });
     });
     await logAuditEvent({
       action: "partner.member.remove",
       userId: auth.user.sub,
-      targetId: partnerUserId,
-      metadata: { partnerOrgId: org.id },
+      targetId: membershipId,
+      metadata: { orgId: org.id },
       request,
     });
     return { ok: true };
@@ -395,8 +403,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   return { error: "Unknown action." };
 }
 
-function memberName(u: { firstName: string; lastName: string; personalEmail: string | null }) {
-  return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.personalEmail || "Unnamed";
+function memberName(c: { name: string; email: string | null }) {
+  return c.name || c.email || "Unnamed";
 }
 
 export default function PartnerOrgDetail() {
@@ -506,17 +514,16 @@ export default function PartnerOrgDetail() {
                     defaultValue={org.primaryContactId ?? ""}
                     options={[
                       { value: "", label: "None" },
-                      ...org.users.map((m) => ({ value: m.id, label: memberName(m.user) })),
+                      ...org.memberships.map((m) => ({ value: m.id, label: memberName(m.contact) })),
                     ]}
                     buttonClassName={`${inputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
                   />
                 ) : (
                   <div className="text-sm text-foreground">
                     {memberName(
-                      org.users.find((m) => m.id === org.primaryContactId)?.user ?? {
-                        firstName: "—",
-                        lastName: "",
-                        personalEmail: null,
+                      org.memberships.find((m) => m.id === org.primaryContactId)?.contact ?? {
+                        name: "—",
+                        email: null,
                       },
                     )}
                   </div>
@@ -586,18 +593,18 @@ export default function PartnerOrgDetail() {
           </Form>
         )}
 
-        {org.users.length === 0 && pendingInvites.length === 0 ? (
+        {org.memberships.length === 0 && pendingInvites.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No members yet{canEdit ? " — invite the first contact." : "."}
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {org.users.map((m) => (
+            {org.memberships.map((m) => (
               <li key={m.id} className="py-2.5 flex flex-col gap-2">
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <span className="text-sm font-medium text-foreground">
-                      {memberName(m.user)}
+                      {memberName(m.contact)}
                     </span>
                     {org.primaryContactId === m.id && (
                       <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
@@ -605,8 +612,8 @@ export default function PartnerOrgDetail() {
                       </span>
                     )}
                     <div className="text-xs text-muted-foreground">
-                      {m.user.personalEmail ?? "no email"}
-                      {m.displayRole ? ` · ${m.displayRole}` : ""}
+                      {m.contact.email ?? "no email"}
+                      {m.role ? ` · ${m.role}` : ""}
                     </div>
                   </div>
                   {canEdit && otherOrgs.length > 0 && (
@@ -624,7 +631,7 @@ export default function PartnerOrgDetail() {
                     <Form
                       method="post"
                       onSubmit={confirmSubmit({
-                        title: `Remove ${memberName(m.user)} from ${org.name}?`,
+                        title: `Remove ${memberName(m.contact)} from ${org.name}?`,
                         description: "They lose portal access immediately.",
                         confirmLabel: "Remove",
                         tone: "destructive",
@@ -646,7 +653,7 @@ export default function PartnerOrgDetail() {
                     method="post"
                     className="flex items-center gap-2 bg-muted/20 rounded-lg p-2.5"
                     onSubmit={confirmSubmit({
-                      title: `Move ${memberName(m.user)} to the selected organization?`,
+                      title: `Move ${memberName(m.contact)} to the selected organization?`,
                       description: "Their portal access switches immediately.",
                       confirmLabel: "Move",
                     })}

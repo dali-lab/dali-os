@@ -6,7 +6,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {
   createPartnerInvite,
   listPendingInvites,
@@ -18,65 +18,85 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  // Settings are org-scoped to the first active membership.
+  const membership = ctx.memberships[0];
+  const org = membership?.org ?? null;
+
   const [members, pendingInvites] = await Promise.all([
-    prisma.partnerUser.findMany({
-      where: { partnerOrgId: org.id },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        displayRole: true,
-        user: {
-          select: { firstName: true, lastName: true, personalEmail: true },
-        },
-      },
-    }),
-    listPendingInvites(org.id),
+    org
+      ? prisma.partnerMembership.findMany({
+          where: { orgId: org.id, endedAt: null },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            role: true,
+            contact: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    org ? listPendingInvites(org.id) : Promise.resolve([]),
   ]);
+
   return {
     me: {
-      userId: auth.user.sub,
-      firstName: auth.user.firstName,
-      lastName: auth.user.lastName,
-      displayRole: partnerUser.displayRole,
-      partnerUserId: partnerUser.id,
+      userId: ctx.auth.user.sub,
+      firstName: ctx.contact.name.split(" ")[0] ?? "",
+      lastName: ctx.contact.name.split(" ").slice(1).join(" ") ?? "",
+      role: membership?.role ?? null,
+      membershipId: membership?.id ?? null,
     },
     org,
-    logoPreviewUrl: await resolvePhotoUrl(org.logoUrl),
+    logoPreviewUrl: org ? await resolvePhotoUrl(org.logoUrl) : null,
     members,
     pendingInvites,
+    hasOrg: !!org,
   };
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  const membership = ctx.memberships[0];
+  const org = membership?.org ?? null;
+
   const form = await request.formData();
   const intent = form.get("intent") as string;
 
   if (intent === "profile") {
     const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
     const lastName = (form.get("lastName") as string | null)?.trim() ?? "";
-    const displayRole =
-      (form.get("displayRole") as string | null)?.trim() || null;
+    const role = (form.get("displayRole") as string | null)?.trim() || null;
     if (!firstName || !lastName) {
       return { error: "First and last name are required." };
     }
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
     await prisma.$transaction([
       prisma.user.update({
-        where: { id: auth.user.sub },
+        where: { id: ctx.auth.user.sub },
         data: { firstName, lastName },
       }),
-      prisma.partnerUser.update({
-        where: { id: partnerUser.id },
-        data: { displayRole },
+      prisma.partnerContact.update({
+        where: { id: ctx.contact.id },
+        data: { name: fullName },
       }),
+      ...(membership
+        ? [
+            prisma.partnerMembership.update({
+              where: { id: membership.id },
+              data: { role },
+            }),
+          ]
+        : []),
     ]);
     return { ok: true };
   }
 
   if (intent === "org") {
+    if (!org) return { error: "No organization found." };
     // Any org member may edit — visibility and permissions derive entirely
-    // from org membership (schema comment on PartnerUser.displayRole).
+    // from org membership.
     const name = (form.get("name") as string | null)?.trim() ?? "";
     if (!name) return { error: "Organization name is required." };
     await prisma.partnerOrg.update({
@@ -89,7 +109,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
     await logAuditEvent({
       action: "partner.org.update",
-      userId: auth.user.sub,
+      userId: ctx.auth.user.sub,
       targetId: org.id,
       metadata: { via: "partner-settings" },
       request,
@@ -98,9 +118,10 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "set-primary") {
-    const targetId = form.get("partnerUserId") as string;
-    const target = await prisma.partnerUser.findFirst({
-      where: { id: targetId, partnerOrgId: org.id },
+    if (!org) return { error: "No organization found." };
+    const targetId = form.get("membershipId") as string;
+    const target = await prisma.partnerMembership.findFirst({
+      where: { id: targetId, orgId: org.id, endedAt: null },
       select: { id: true },
     });
     if (!target) return { error: "Member not found." };
@@ -110,7 +131,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
     await logAuditEvent({
       action: "partner.org.update",
-      userId: auth.user.sub,
+      userId: ctx.auth.user.sub,
       targetId: org.id,
       metadata: { change: "primary-contact" },
       request,
@@ -119,13 +140,14 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "remove-member") {
-    const targetId = form.get("partnerUserId") as string;
-    const target = await prisma.partnerUser.findFirst({
-      where: { id: targetId, partnerOrgId: org.id },
-      select: { id: true, userId: true },
+    if (!org) return { error: "No organization found." };
+    const targetId = form.get("membershipId") as string;
+    const target = await prisma.partnerMembership.findFirst({
+      where: { id: targetId, orgId: org.id, endedAt: null },
+      select: { id: true, contactId: true },
     });
     if (!target) return { error: "Member not found." };
-    if (target.id === partnerUser.id) {
+    if (target.id === membership?.id) {
       return { error: "You can't remove yourself." };
     }
     if (org.primaryContactId === target.id) {
@@ -133,24 +155,29 @@ export async function action({ request }: Route.ActionArgs) {
         error: "Assign a new primary contact before removing this member.",
       };
     }
-    await prisma.partnerUser.delete({ where: { id: target.id } });
+    // End the membership — preserves history rather than hard-deleting.
+    await prisma.partnerMembership.update({
+      where: { id: target.id },
+      data: { endedAt: new Date() },
+    });
     await logAuditEvent({
       action: "partner.member.remove",
-      userId: auth.user.sub,
+      userId: ctx.auth.user.sub,
       targetId: org.id,
-      metadata: { removedUserId: target.userId },
+      metadata: { membershipId: target.id },
       request,
     });
     return { ok: true };
   }
 
   if (intent === "invite") {
+    if (!org) return { error: "No organization found." };
     const result = await createPartnerInvite(
       {
         partnerOrgId: org.id,
         email: (form.get("email") as string | null) ?? "",
         displayRole: (form.get("displayRole") as string | null)?.trim() || null,
-        invitedByUserId: auth.user.sub,
+        invitedByUserId: ctx.auth.user.sub,
       },
       request,
     );
@@ -158,11 +185,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "revoke-invite") {
+    if (!org) return { error: "No organization found." };
     const result = await revokePartnerInvite(
       {
         inviteId: (form.get("inviteId") as string | null) ?? "",
         partnerOrgId: org.id,
-        actorUserId: auth.user.sub,
+        actorUserId: ctx.auth.user.sub,
       },
       request,
     );
@@ -173,7 +201,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerSettings({ actionData }: Route.ComponentProps) {
-  const { me, org, logoPreviewUrl, members, pendingInvites } =
+  const { me, org, logoPreviewUrl, members, pendingInvites, hasOrg } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -212,7 +240,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
           </div>
           <div>
             <label className={labelClass}>Role</label>
-            <input name="displayRole" defaultValue={me.displayRole ?? ""} className={inputClass} />
+            <input name="displayRole" defaultValue={me.role ?? ""} className={inputClass} />
           </div>
           <button type="submit" disabled={submitting} className={saveClass}>
             Save profile
@@ -220,154 +248,155 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-4">
-          Organization
-        </h2>
-        <Form method="post" className="flex flex-col gap-4">
-          <input type="hidden" name="intent" value="org" />
-          <div>
-            <label className={labelClass}>Name</label>
-            <input name="name" required defaultValue={org.name} className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>Website</label>
-            <input name="website" defaultValue={org.website ?? ""} className={inputClass} />
-          </div>
-          <PhotoUploadField
-            userId={me.userId}
-            name={org.name}
-            label="Logo"
-            fieldName="logoUrl"
-            keyPrefix={`logos/${org.id}`}
-            initialKey={org.logoUrl}
-            initialPreviewUrl={logoPreviewUrl}
-            readOnly={false}
-          />
-          <button type="submit" disabled={submitting} className={saveClass}>
-            Save organization
-          </button>
-        </Form>
-      </section>
+      {hasOrg && org && (
+        <>
+          <section className="bg-card border border-border rounded-2xl p-5">
+            <h2 className="font-heading font-semibold text-dark-blue mb-4">
+              Organization
+            </h2>
+            <Form method="post" className="flex flex-col gap-4">
+              <input type="hidden" name="intent" value="org" />
+              <div>
+                <label className={labelClass}>Name</label>
+                <input name="name" required defaultValue={org.name} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>Website</label>
+                <input name="website" defaultValue={org.website ?? ""} className={inputClass} />
+              </div>
+              <PhotoUploadField
+                userId={me.userId}
+                name={org.name}
+                label="Logo"
+                fieldName="logoUrl"
+                keyPrefix={`logos/${org.id}`}
+                initialKey={org.logoUrl}
+                initialPreviewUrl={logoPreviewUrl}
+                readOnly={false}
+              />
+              <button type="submit" disabled={submitting} className={saveClass}>
+                Save organization
+              </button>
+            </Form>
+          </section>
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-heading font-semibold text-dark-blue">Team</h2>
-          <button
-            type="button"
-            onClick={() => setInviting((v) => !v)}
-            className="text-sm font-medium text-accent-coral hover:underline"
-          >
-            + Invite teammate
-          </button>
-        </div>
-
-        {invited && (
-          <p className="text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3 mb-3">
-            Invitation sent.
-          </p>
-        )}
-
-        {inviting && (
-          <Form
-            method="post"
-            className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-xl p-4 mb-4"
-          >
-            <input type="hidden" name="intent" value="invite" />
-            <div className="flex-1 min-w-[200px]">
-              <label className={labelClass}>Email</label>
-              <input name="email" type="email" required className={inputClass} />
+          <section className="bg-card border border-border rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-heading font-semibold text-dark-blue">Team</h2>
+              <button
+                type="button"
+                onClick={() => setInviting((v) => !v)}
+                className="text-sm font-medium text-accent-coral hover:underline"
+              >
+                + Invite teammate
+              </button>
             </div>
-            <div className="flex-1 min-w-[140px]">
-              <label className={labelClass}>Role (optional)</label>
-              <input name="displayRole" className={inputClass} />
-            </div>
-            <button type="submit" disabled={submitting} className={saveClass}>
-              Send invite
-            </button>
-          </Form>
-        )}
 
-        <ul className="divide-y divide-border">
-          {members.map((m) => {
-            const name =
-              [m.user.firstName, m.user.lastName].filter(Boolean).join(" ") ||
-              m.user.personalEmail ||
-              "Unnamed";
-            return (
-              <li key={m.id} className="py-3 flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-foreground">{name}</span>
-                  {org.primaryContactId === m.id && (
-                    <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
-                      Primary contact
-                    </span>
-                  )}
-                  <div className="text-xs text-muted-foreground">
-                    {m.user.personalEmail ?? ""}
-                    {m.displayRole ? ` · ${m.displayRole}` : ""}
-                  </div>
+            {invited && (
+              <p className="text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3 mb-3">
+                Invitation sent.
+              </p>
+            )}
+
+            {inviting && (
+              <Form
+                method="post"
+                className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-xl p-4 mb-4"
+              >
+                <input type="hidden" name="intent" value="invite" />
+                <div className="flex-1 min-w-[200px]">
+                  <label className={labelClass}>Email</label>
+                  <input name="email" type="email" required className={inputClass} />
                 </div>
-                {org.primaryContactId !== m.id && (
+                <div className="flex-1 min-w-[140px]">
+                  <label className={labelClass}>Role (optional)</label>
+                  <input name="displayRole" className={inputClass} />
+                </div>
+                <button type="submit" disabled={submitting} className={saveClass}>
+                  Send invite
+                </button>
+              </Form>
+            )}
+
+            <ul className="divide-y divide-border">
+              {members.map((m) => {
+                const name = m.contact.name || m.contact.email || "Unnamed";
+                return (
+                  <li key={m.id} className="py-3 flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm font-medium text-foreground">{name}</span>
+                      {org.primaryContactId === m.id && (
+                        <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                          Primary contact
+                        </span>
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        {m.contact.email ?? ""}
+                        {m.role ? ` · ${m.role}` : ""}
+                      </div>
+                    </div>
+                    {org.primaryContactId !== m.id && (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="set-primary" />
+                        <input type="hidden" name="membershipId" value={m.id} />
+                        <button
+                          type="submit"
+                          className="text-xs text-muted-foreground hover:text-foreground transition"
+                        >
+                          Make primary contact
+                        </button>
+                      </Form>
+                    )}
+                    {org.primaryContactId !== m.id && m.id !== me.membershipId && (
+                      <Form
+                        method="post"
+                        onSubmit={confirmSubmit({
+                          title: `Remove ${name} from ${org.name}?`,
+                          description: "They'll lose access to the portal.",
+                          confirmLabel: "Remove",
+                          tone: "destructive",
+                        })}
+                      >
+                        <input type="hidden" name="intent" value="remove-member" />
+                        <input type="hidden" name="membershipId" value={m.id} />
+                        <button
+                          type="submit"
+                          className="text-xs text-muted-foreground hover:text-destructive transition"
+                        >
+                          Remove
+                        </button>
+                      </Form>
+                    )}
+                  </li>
+                );
+              })}
+              {pendingInvites.map((inv) => (
+                <li key={inv.id} className="py-3 flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm text-foreground">{inv.email}</span>
+                    <span className="ml-2 text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
+                      Invited
+                    </span>
+                    <div className="text-xs text-muted-foreground">
+                      Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                    </div>
+                  </div>
                   <Form method="post">
-                    <input type="hidden" name="intent" value="set-primary" />
-                    <input type="hidden" name="partnerUserId" value={m.id} />
-                    <button
-                      type="submit"
-                      className="text-xs text-muted-foreground hover:text-foreground transition"
-                    >
-                      Make primary contact
-                    </button>
-                  </Form>
-                )}
-                {org.primaryContactId !== m.id && m.id !== me.partnerUserId && (
-                  <Form
-                    method="post"
-                    onSubmit={confirmSubmit({
-                      title: `Remove ${name} from ${org.name}?`,
-                      description: "They'll lose access to the portal.",
-                      confirmLabel: "Remove",
-                      tone: "destructive",
-                    })}
-                  >
-                    <input type="hidden" name="intent" value="remove-member" />
-                    <input type="hidden" name="partnerUserId" value={m.id} />
+                    <input type="hidden" name="intent" value="revoke-invite" />
+                    <input type="hidden" name="inviteId" value={inv.id} />
                     <button
                       type="submit"
                       className="text-xs text-muted-foreground hover:text-destructive transition"
                     >
-                      Remove
+                      Revoke
                     </button>
                   </Form>
-                )}
-              </li>
-            );
-          })}
-          {pendingInvites.map((inv) => (
-            <li key={inv.id} className="py-3 flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <span className="text-sm text-foreground">{inv.email}</span>
-                <span className="ml-2 text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
-                  Invited
-                </span>
-                <div className="text-xs text-muted-foreground">
-                  Expires {new Date(inv.expiresAt).toLocaleDateString()}
-                </div>
-              </div>
-              <Form method="post">
-                <input type="hidden" name="intent" value="revoke-invite" />
-                <input type="hidden" name="inviteId" value={inv.id} />
-                <button
-                  type="submit"
-                  className="text-xs text-muted-foreground hover:text-destructive transition"
-                >
-                  Revoke
-                </button>
-              </Form>
-            </li>
-          ))}
-        </ul>
-      </section>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
     </div>
   );
 }

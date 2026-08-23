@@ -15,7 +15,9 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
       id: true,
       versionId: true,
       termId: true,
-      document: { select: { name: true, gateScope: true, audience: true } },
+      document: {
+        select: { name: true, gateScope: true, audience: true, audienceGroupId: true },
+      },
     },
   });
   if (!binding) return;
@@ -25,6 +27,7 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
   const [audience, signed] = await Promise.all([
     AUDIENCE_RESOLVERS[binding.document.audience].listMembers({
       termId: binding.termId ?? undefined,
+      audienceGroupId: binding.document.audienceGroupId,
     }),
     prisma.signingSignature.findMany({
       where: { bindingId, roleKey: "member", versionId: binding.versionId },
@@ -40,7 +43,8 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
   await notify({
     eventType: "document.sign_request",
     message: {
-      title: `Please sign: ${binding.document.name}`,
+      title: "You have a new document to sign",
+      body: binding.document.name,
       link: `/sign/${bindingId}`,
       isTodo: true,
     },

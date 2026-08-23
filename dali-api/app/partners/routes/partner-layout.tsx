@@ -9,27 +9,67 @@ import {
 import { ChevronDown } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
-import { partnerProjectsWhere } from "~/partners/lib/partner-access";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 import { Menu } from "~/components/ui/floating";
 
 // Partner portal chrome: fixed top navbar, no member sidebar — the same
-// shape as the applicant portal. NOTE: this loader's requirePartner does NOT
-// protect child routes (loaders run in parallel); every /partner route calls
+// shape as the applicant portal. NOTE: this loader's requirePartnerAccount does
+// NOT protect child routes (loaders run in parallel); every /partner route calls
 // the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
-  // The org's projects feed the Projects nav item: direct link for one,
-  // dropdown for several, hidden for none (pre-acceptance partners).
-  const projects = await prisma.project.findMany({
-    where: partnerProjectsWhere(partnerUser.partnerOrgId),
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-  return { user: auth.user, orgName: org.name, projects };
+  const ctx = await requirePartnerAccount(request);
+  const orgIds = ctx.memberships.map((m) => m.orgId);
+
+  // The account's projects across ALL memberships feed the Projects nav item.
+  // A partner in more than one org over time gets a two-level org→project menu;
+  // one org stays a flat list; one project a direct link; none hides the item.
+  const projectRows =
+    orgIds.length > 0
+      ? await prisma.project.findMany({
+          where: partnerProjectsWhereForOrgs(orgIds),
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            partners: {
+              where: { partnerOrgId: { in: orgIds } },
+              select: { partnerOrgId: true },
+            },
+          },
+        })
+      : [];
+
+  // Group each project under the account's org that owns its partnership.
+  const orgNameById = new Map(ctx.memberships.map((m) => [m.orgId, m.org.name]));
+  const groups = new Map<
+    string,
+    { orgId: string; orgName: string; projects: { id: string; name: string }[] }
+  >();
+  for (const p of projectRows) {
+    const orgId = p.partners.find((pp) => orgNameById.has(pp.partnerOrgId))
+      ?.partnerOrgId;
+    if (!orgId) continue;
+    if (!groups.has(orgId)) {
+      groups.set(orgId, {
+        orgId,
+        orgName: orgNameById.get(orgId) ?? "",
+        projects: [],
+      });
+    }
+    groups.get(orgId)!.projects.push({ id: p.id, name: p.name });
+  }
+  const orgGroups = [...groups.values()];
+
+  // Show the org name in the nav chip only when there is exactly one membership
+  // (unambiguous). Multi-org and no-org accounts show nothing.
+  const orgName =
+    ctx.memberships.length === 1 ? ctx.memberships[0].org.name : null;
+
+  return { user: ctx.auth.user, orgName, orgGroups };
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -38,7 +78,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function PartnerLayout() {
-  const { user, orgName, projects } = useLoaderData<typeof loader>();
+  const { user, orgName, orgGroups } = useLoaderData<typeof loader>();
 
   const displayName = user.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
@@ -59,7 +99,7 @@ export default function PartnerLayout() {
         {/* Nav holds places, not actions — pitching lives on Home, where the
             partner's applications give it context. */}
         <div className="flex items-center gap-5">
-          <ProjectsNav projects={projects} />
+          <ProjectsNav orgGroups={orgGroups} />
         </div>
 
         <PortalProfileMenu
@@ -79,24 +119,33 @@ export default function PartnerLayout() {
   );
 }
 
-// One project → plain link straight to its hub; several → dropdown by name;
-// none → nothing (pre-acceptance partners see just the logo and profile).
-function ProjectsNav({
-  projects,
-}: {
+type OrgGroup = {
+  orgId: string;
+  orgName: string;
   projects: { id: string; name: string }[];
-}) {
+};
+
+// One project → plain link straight to its hub; several in one org → flat
+// dropdown; several across orgs → two-level org→project menu; none → nothing
+// (pre-acceptance partners see just the logo and profile).
+function ProjectsNav({ orgGroups }: { orgGroups: OrgGroup[] }) {
   const location = useLocation();
   const active = location.pathname.startsWith("/partner/projects");
+  const allProjects = orgGroups.flatMap((g) => g.projects);
 
-  if (projects.length === 0) return null;
-  if (projects.length === 1) {
+  if (allProjects.length === 0) return null;
+  if (allProjects.length === 1) {
     return (
-      <NavLink to={`/partner/projects/${projects[0].id}`} className={navLinkClass}>
+      <NavLink
+        to={`/partner/projects/${allProjects[0].id}`}
+        className={navLinkClass}
+      >
         Projects
       </NavLink>
     );
   }
+
+  const multiOrg = orgGroups.length > 1;
 
   return (
     <Menu
@@ -116,14 +165,23 @@ function ProjectsNav({
         </button>
       )}
     >
-      {projects.map((p) => (
-        <Menu.LinkItem
-          key={p.id}
-          to={`/partner/projects/${p.id}`}
-          className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition truncate"
-        >
-          {p.name}
-        </Menu.LinkItem>
+      {orgGroups.map((g) => (
+        <div key={g.orgId}>
+          {multiOrg && (
+            <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
+              {g.orgName}
+            </div>
+          )}
+          {g.projects.map((p) => (
+            <Menu.LinkItem
+              key={p.id}
+              to={`/partner/projects/${p.id}`}
+              className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition truncate"
+            >
+              {p.name}
+            </Menu.LinkItem>
+          ))}
+        </div>
       ))}
     </Menu>
   );

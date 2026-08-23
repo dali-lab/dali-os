@@ -4,9 +4,12 @@
 // Actions:
 //   invite        — send an invite to email for orgId.
 //   revoke_invite — revoke a pending invite by inviteId within orgId.
-//   set_role      — update the displayRole label for a PartnerUser.
-//   move          — move a PartnerUser to a different org (targetOrgId).
-//   remove        — remove a PartnerUser from their org.
+//   set_role      — update the role label for a PartnerMembership.
+//   move          — move a member to a different org (targetOrgId).
+//   remove        — end a member's active membership.
+//
+// Arg change: `partnerUserId` renamed to `membershipId` (PartnerMembership.id).
+//   The old name `partnerUserId` is also accepted for backwards compatibility.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -25,7 +28,7 @@ import {
 export const MANAGE_PARTNER_MEMBER_TOOL = {
   name: "manage_partner_member",
   description:
-    "Manage partner organization members. Action 'invite' sends an email invite. Action 'revoke_invite' cancels a pending invite. Action 'set_role' updates the display role label. Action 'move' moves a member to a different org. Action 'remove' removes a member. Requires Core access.",
+    "Manage partner organization members. Action 'invite' sends an email invite. Action 'revoke_invite' cancels a pending invite. Action 'set_role' updates the display role label. Action 'move' moves a member to a different org. Action 'remove' ends a member's active membership. Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,9 +38,15 @@ export const MANAGE_PARTNER_MEMBER_TOOL = {
         description: "What to do.",
       },
       orgId: { type: "string", description: "Partner org id." },
+      membershipId: {
+        type: "string",
+        description:
+          "Required for set_role, move, and remove (PartnerMembership.id). Alias: partnerUserId (deprecated).",
+      },
+      // TODO(partner-crm): remove partnerUserId from schema once all callers migrate to membershipId.
       partnerUserId: {
         type: "string",
-        description: "Required for set_role, move, and remove (PartnerUser.id).",
+        description: "Deprecated alias for membershipId.",
       },
       inviteId: {
         type: "string",
@@ -69,12 +78,20 @@ export async function runManagePartnerMember(
   requireForAction(action, input, {
     invite: ["orgId", "email"],
     revoke_invite: ["orgId", "inviteId"],
-    set_role: ["orgId", "partnerUserId"],
-    move: ["orgId", "partnerUserId", "targetOrgId"],
-    remove: ["orgId", "partnerUserId"],
+    // Accept either membershipId or the legacy partnerUserId alias.
+    set_role: ["orgId"],
+    move: ["orgId", "targetOrgId"],
+    remove: ["orgId"],
   });
 
   const orgId = input.orgId as string;
+
+  // Resolve membership id from either the new or legacy arg name.
+  const resolveMembershipId = (): string => {
+    const id = (input.membershipId ?? input.partnerUserId) as string | undefined;
+    if (!id) throw new McpInvalidError("membershipId is required for this action");
+    return id;
+  };
 
   // ── invite ────────────────────────────────────────────────────────────────
   if (action === "invite") {
@@ -101,34 +118,34 @@ export async function runManagePartnerMember(
 
   // ── set_role ──────────────────────────────────────────────────────────────
   if (action === "set_role") {
-    const partnerUserId = input.partnerUserId as string;
-    const displayRole = (input.displayRole as string | undefined)?.trim() || null;
-    const res = await prisma.partnerUser.updateMany({
-      where: { id: partnerUserId, partnerOrgId: orgId },
-      data: { displayRole },
+    const membershipId = resolveMembershipId();
+    const role = (input.displayRole as string | undefined)?.trim() || null;
+    const res = await prisma.partnerMembership.updateMany({
+      where: { id: membershipId, orgId, endedAt: null },
+      data: { role },
     });
     if (res.count !== 1) throw new McpNotFoundError("Member not found in this organization");
     await logAuditEvent({
       action: "partner.member.update",
       userId: callerId,
-      targetId: partnerUserId,
-      metadata: { partnerOrgId: orgId },
+      targetId: membershipId,
+      metadata: { orgId },
     });
     return { ok: true };
   }
 
   // ── move ──────────────────────────────────────────────────────────────────
   if (action === "move") {
-    const partnerUserId = input.partnerUserId as string;
+    const membershipId = resolveMembershipId();
     const targetOrgId = input.targetOrgId as string;
     if (targetOrgId === orgId) {
       throw new McpInvalidError("That member is already in this organization");
     }
 
     const [member, org, target] = await Promise.all([
-      prisma.partnerUser.findFirst({
-        where: { id: partnerUserId, partnerOrgId: orgId },
-        select: { id: true },
+      prisma.partnerMembership.findFirst({
+        where: { id: membershipId, orgId, endedAt: null },
+        select: { id: true, contactId: true },
       }),
       prisma.partnerOrg.findUnique({
         where: { id: orgId },
@@ -146,31 +163,35 @@ export async function runManagePartnerMember(
 
     await prisma.$transaction(async (tx) => {
       // Primary contact doesn't travel — the source org loses it.
-      if (org.primaryContactId === partnerUserId) {
+      if (org.primaryContactId === membershipId) {
         await tx.partnerOrg.update({
           where: { id: orgId },
           data: { primaryContactId: null },
         });
       }
-      await tx.partnerUser.update({
-        where: { id: partnerUserId },
-        data: { partnerOrgId: targetOrgId },
+      // End current membership and open a new one in the target org.
+      await tx.partnerMembership.update({
+        where: { id: membershipId },
+        data: { endedAt: new Date() },
+      });
+      await tx.partnerMembership.create({
+        data: { contactId: member.contactId, orgId: targetOrgId },
       });
     });
     await logAuditEvent({
       action: "partner.member.update",
       userId: callerId,
-      targetId: partnerUserId,
+      targetId: membershipId,
       metadata: { movedFrom: orgId, movedTo: targetOrgId },
     });
     return { ok: true };
   }
 
   // ── remove ────────────────────────────────────────────────────────────────
-  const partnerUserId = input.partnerUserId as string;
+  const membershipId = resolveMembershipId();
   const [member, org] = await Promise.all([
-    prisma.partnerUser.findFirst({
-      where: { id: partnerUserId, partnerOrgId: orgId },
+    prisma.partnerMembership.findFirst({
+      where: { id: membershipId, orgId, endedAt: null },
       select: { id: true },
     }),
     prisma.partnerOrg.findUnique({
@@ -183,18 +204,22 @@ export async function runManagePartnerMember(
   if (!org) throw new McpNotFoundError(`Partner organization ${orgId} not found`);
 
   await prisma.$transaction(async (tx) => {
-    if (org.primaryContactId === partnerUserId) {
+    if (org.primaryContactId === membershipId) {
       await tx.partnerOrg.update({
         where: { id: orgId },
         data: { primaryContactId: null },
       });
     }
-    await tx.partnerUser.delete({ where: { id: partnerUserId } });
+    // End the membership — preserves history rather than hard-deleting.
+    await tx.partnerMembership.update({
+      where: { id: membershipId },
+      data: { endedAt: new Date() },
+    });
   });
   await logAuditEvent({
     action: "partner.member.update",
     userId: callerId,
-    targetId: partnerUserId,
+    targetId: membershipId,
     metadata: { removedFrom: orgId },
   });
   return { ok: true };

@@ -29,33 +29,53 @@ export function partnerProjectsWhere(
   };
 }
 
-// True iff `userSub` is a partner-portal account (has a PartnerUser row).
+// True iff `userSub` is a partner-portal account (has a PartnerContact row).
 // Used to mark a partner's collab connection to a shared document read-only —
 // they may view and comment, but the body is the team's to edit.
 export async function isPartnerUser(userSub: string): Promise<boolean> {
-  const row = await prisma.partnerUser.findUnique({
+  const row = await prisma.partnerContact.findUnique({
     where: { userId: userSub },
     select: { id: true },
   });
   return row !== null;
 }
 
-// True iff `userSub` has a PartnerUser row whose org holds an active
-// ProjectPartner link to a non-archived `projectId`. Used by route loaders
-// and by authorizeCollabDoc, so this module must stay prisma-only.
+// Current org ids the signed-in partner account belongs to (memberships that
+// haven't ended). Empty for a fresh applicant / logged inquiry with no org yet.
+export async function partnerOrgIdsForUser(userSub: string): Promise<string[]> {
+  const contact = await prisma.partnerContact.findUnique({
+    where: { userId: userSub },
+    select: { memberships: { where: { endedAt: null }, select: { orgId: true } } },
+  });
+  return contact?.memberships.map((m) => m.orgId) ?? [];
+}
+
+// Projects any of the account's orgs may currently see in the portal.
+export function partnerProjectsWhereForOrgs(
+  orgIds: string[],
+  now = new Date(),
+): Prisma.ProjectWhereInput {
+  return {
+    status: { not: "Archived" },
+    partners: {
+      some: { partnerOrgId: { in: orgIds }, ...activeProjectPartnerWhere(now) },
+    },
+  };
+}
+
+// True iff `userSub`'s account holds a membership whose org has an active
+// ProjectPartner link to a non-archived `projectId`. Used by route loaders and
+// by authorizeCollabDoc, so this module must stay prisma-only.
 export async function partnerHasProjectAccess(
   userSub: string,
   projectId: string,
 ): Promise<boolean> {
-  const partnerUser = await prisma.partnerUser.findUnique({
-    where: { userId: userSub },
-    select: { partnerOrgId: true },
-  });
-  if (!partnerUser) return false;
+  const orgIds = await partnerOrgIdsForUser(userSub);
+  if (orgIds.length === 0) return false;
   const link = await prisma.projectPartner.findFirst({
     where: {
       projectId,
-      partnerOrgId: partnerUser.partnerOrgId,
+      partnerOrgId: { in: orgIds },
       ...activeProjectPartnerWhere(),
       project: { status: { not: "Archived" } },
     },

@@ -1,8 +1,11 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/partner.projects.$id";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
-import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
+import {
+  loadPartnerProjectView,
+  resolvePartnerProjectOrgId,
+} from "~/partners/lib/partner-project-view.server";
 import { PartnerProjectHubView } from "~/partners/components/PartnerProjectHubView";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -11,13 +14,20 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
   // 404 (not 403) so inaccessible project ids don't leak existence.
-  if (!(await partnerHasProjectAccess(auth.user.sub, params.id!))) {
+  if (!(await partnerHasProjectAccess(ctx.auth.user.sub, params.id!))) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const data = await loadPartnerProjectView(params.id!, partnerUser.partnerOrgId);
+  // Resolve which of the account's orgs holds the active partnership with this
+  // project so loadPartnerProjectView can surface the correct partnerSince date.
+  const partnerOrgId = await resolvePartnerProjectOrgId(
+    params.id!,
+    ctx.memberships.map((m) => m.orgId),
+  );
+
+  const data = await loadPartnerProjectView(params.id!, partnerOrgId);
   if (!data) throw new Response("Not found", { status: 404 });
   return data;
 }

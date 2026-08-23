@@ -15,16 +15,17 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
-import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 
-export const handle = { areaPills: true };
+// areaSubnav (not areaPills): this page renders its own UnderlineTabButtons row
+// unconditionally, so it reserves the flush top spacing regardless of the flag.
+export const handle = { areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -37,7 +38,6 @@ type OrgRow = {
   memberCount: number;
   activeProjectCount: number;
   totalProjectCount: number;
-  openApplicationCount: number;
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -56,7 +56,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         logoUrl: true,
         website: true,
         isIndividual: true,
-        _count: { select: { users: true } },
+        // Active members only. Reads `memberships` (account-first), NOT the
+        // retired `users`/PartnerUser relation — which no longer gets rows.
+        memberships: { where: { endedAt: null }, select: { id: true } },
         projects: {
           select: {
             startedAt: true,
@@ -64,7 +66,6 @@ export async function loader({ request }: Route.LoaderArgs) {
             project: { select: { status: true } },
           },
         },
-        applications: { select: { status: true } },
       },
     }),
     isCore(auth.user.sub),
@@ -78,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       logoUrl: await resolvePhotoUrl(o.logoUrl),
       website: o.website,
       isIndividual: o.isIndividual,
-      memberCount: o._count.users,
+      memberCount: o.memberships.length,
       activeProjectCount: o.projects.filter(
         (p) =>
           p.project.status !== "Archived" &&
@@ -86,9 +87,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           (p.endedAt === null || p.endedAt > now),
       ).length,
       totalProjectCount: o.projects.length,
-      openApplicationCount: o.applications.filter((a) =>
-        (OPEN_APPLICATION_STATUSES as readonly string[]).includes(a.status),
-      ).length,
     })),
   );
 
@@ -126,6 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function PartnersOrganizations() {
   const { rows, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:partners", "list");
@@ -142,10 +141,21 @@ export default function PartnersOrganizations() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
+      <UnderlineTabButtons
+        label="Partners"
         items={[
-          { label: "Hub", to: "/partners", active: true, icon: LayoutGrid },
-          { label: "Applications", to: "/partners/applications", icon: FileText },
+          {
+            label: "Organizations",
+            icon: LayoutGrid,
+            active: true,
+            onClick: () => navigate("/partners"),
+          },
+          {
+            label: "Pipeline",
+            icon: FileText,
+            active: false,
+            onClick: () => navigate("/partners/applications"),
+          },
         ]}
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">
@@ -284,7 +294,6 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
             <th className="text-left font-medium px-4 py-2">Organization</th>
             <th className="text-left font-medium px-4 py-2">Members</th>
             <th className="text-left font-medium px-4 py-2">Active projects</th>
-            <th className="text-left font-medium px-4 py-2">Open applications</th>
           </tr>
         </thead>
         <tbody>
@@ -318,9 +327,6 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
                 {o.totalProjectCount > o.activeProjectCount && (
                   <span className="text-xs"> / {o.totalProjectCount} total</span>
                 )}
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {o.openApplicationCount}
               </td>
             </tr>
           ))}
@@ -364,12 +370,6 @@ function PartnerCard({ org }: { org: OrgRow }) {
               ? ` / ${org.totalProjectCount} total`
               : ""}
           </div>
-          {org.openApplicationCount > 0 && (
-            <div>
-              {org.openApplicationCount} open{" "}
-              {org.openApplicationCount === 1 ? "application" : "applications"}
-            </div>
-          )}
         </div>
       </div>
     </Link>

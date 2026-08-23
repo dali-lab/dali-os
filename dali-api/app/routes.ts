@@ -79,6 +79,7 @@ export default [
     route("admin/agreements/:id/signature/:sigId", "signing/routes/admin.agreements.$id.signature.$sigId.tsx"),
     route("admin/agreements/:id/signature/:sigId/pdf", "signing/routes/admin.agreements.$id.signature.$sigId.pdf.ts"),
     route("api/agreements/people", "signing/routes/api.agreements.people.ts"),
+    route("api/agreements/issue", "signing/routes/api.agreements.issue.ts"),
     route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
     route("admin/payroll", "admin/routes/admin.payroll.tsx"),
 
