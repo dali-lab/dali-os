@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { blocksToFullHtml, type DocBlock } from "~/collab/blocknote-server";
+import { getObjectBytes } from "~/lib/s3";
 
 const require = createRequire(import.meta.url);
 
@@ -76,10 +77,45 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+// Doc-editor media is stored as `/api/upload/raw?key=...` — a relative,
+// session-authed redirect. Headless Chromium renders our HTML from about:blank
+// with no origin and no cookie, so those <img> src's silently fail to load and
+// drop out of the PDF. Inline each referenced object as a data: URI (fetched
+// from S3 server-side, where we have the key + creds) so the render is truly
+// self-contained. Best-effort: an object that can't be read is left as-is
+// rather than failing the whole export.
+const UPLOAD_SRC_RE = /src="([^"]*\/api\/upload\/raw\?key=([^"&]+)[^"]*)"/g;
+
+export async function inlineUploadImages(html: string): Promise<string> {
+  const keys = new Set<string>();
+  for (const m of html.matchAll(UPLOAD_SRC_RE)) keys.add(decodeURIComponent(m[2]));
+  if (keys.size === 0) return html;
+
+  const dataUris = new Map<string, string>();
+  await Promise.all(
+    [...keys].map(async (key) => {
+      try {
+        const { body, contentType } = await getObjectBytes(key);
+        dataUris.set(
+          key,
+          `data:${contentType || "application/octet-stream"};base64,${body.toString("base64")}`,
+        );
+      } catch (err) {
+        console.error("[pdf] failed to inline upload image:", key, err);
+      }
+    }),
+  );
+
+  return html.replace(UPLOAD_SRC_RE, (whole, _url, enc) => {
+    const uri = dataUris.get(decodeURIComponent(enc));
+    return uri ? `src="${uri}"` : whole;
+  });
+}
+
 // Full standalone HTML document for `blocks`, titled `title`. Async because the
 // block→HTML conversion runs through the server BlockNote editor.
 export async function documentToPrintHtml(title: string, blocks: DocBlock[]): Promise<string> {
-  const body = await blocksToFullHtml(blocks);
+  const body = await inlineUploadImages(await blocksToFullHtml(blocks));
   return `<!doctype html>
 <html lang="en">
 <head>
