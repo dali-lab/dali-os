@@ -2,22 +2,40 @@ import { prisma } from "~/lib/db";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
-// Published education offerings for dali.website's offerings calendar.
-// Response shape matches the site's `Offering` interface (shared/api.ts).
+// Upcoming (not-yet-started) published education offerings for dali.website's
+// offerings calendar. This module's exported types ARE the contract the site
+// renders from — an offering spans a date range with multiple sessions, so the
+// payload carries the range, the full session schedule, and the registration
+// window rather than a single date.
+
+export type PublicOfferingDate = {
+  day: number;
+  month: string;
+  year: number;
+  time: string;
+  fullDate: string; // ISO 8601
+};
+
+export type PublicOfferingSession = {
+  sequence: number;
+  title: string | null;
+  location: string | null;
+  date: PublicOfferingDate;
+};
 
 export type PublicOffering = {
   id: string;
   name: string;
   description: string;
-  date: {
-    day: number;
-    month: string;
-    year?: number;
-    time?: string;
-    fullDate?: string;
+  type: string; // lowercased offering type: "miniseries" | "workshop"
+  startDate: PublicOfferingDate;
+  endDate: PublicOfferingDate;
+  sessions: PublicOfferingSession[];
+  registration: {
+    opensAt: PublicOfferingDate;
+    closesAt: PublicOfferingDate;
+    open: boolean;
   };
-  type: string;
-  tags: string[];
   signUpLink: string;
 };
 
@@ -27,10 +45,11 @@ const MONTHS = [
 ];
 
 // The site renders the parts separately, so it gets parts rather than a
-// formatted string. Times are rendered in Eastern — the lab is one campus and
-// every offering happens on it, so a viewer's local zone would be misleading
-// rather than helpful.
-function toDateParts(d: Date): PublicOffering["date"] {
+// formatted string, plus an ISO `fullDate` for anything that needs the raw
+// value. Times are rendered in Eastern — the lab is one campus and every
+// offering happens on it, so a viewer's local zone would be misleading rather
+// than helpful.
+function toDateParts(d: Date): PublicOfferingDate {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -53,17 +72,29 @@ function toDateParts(d: Date): PublicOffering["date"] {
   };
 }
 
-export async function listPublicOfferings(): Promise<PublicOffering[]> {
+export async function listPublicOfferings(
+  now: Date = new Date(),
+): Promise<PublicOffering[]> {
   const rows = await prisma.educationOffering.findMany({
-    where: { status: "Published" },
+    // "Upcoming" = published and not yet started. An offering drops off the
+    // public feed the moment its first session begins, even if it's still
+    // mid-run or accepting late registration.
+    where: { status: "Published", startsAt: { gt: now } },
     orderBy: { startsAt: "asc" },
     select: {
       id: true,
       title: true,
       type: true,
-      startsAt: true,
       descriptionDocId: true,
       applicationFormId: true,
+      startsAt: true,
+      endsAt: true,
+      registrationOpensAt: true,
+      registrationClosesAt: true,
+      sessions: {
+        orderBy: { sequence: "asc" },
+        select: { sequence: true, title: true, location: true, datetime: true },
+      },
     },
   });
 
@@ -79,12 +110,23 @@ export async function listPublicOfferings(): Promise<PublicOffering[]> {
         id: o.id,
         name: o.title,
         description,
-        date: toDateParts(o.startsAt),
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
-        // Notion carried free-text tags per offering; DALI OS models the one
-        // meaningful distinction as `type`, so that's the only tag there is.
-        tags: [o.type],
+        startDate: toDateParts(o.startsAt),
+        endDate: toDateParts(o.endsAt),
+        sessions: o.sessions.map((s) => ({
+          sequence: s.sequence,
+          title: s.title,
+          location: s.location,
+          date: toDateParts(s.datetime),
+        })),
+        registration: {
+          opensAt: toDateParts(o.registrationOpensAt),
+          closesAt: toDateParts(o.registrationClosesAt),
+          open:
+            o.registrationOpensAt.getTime() <= now.getTime() &&
+            now.getTime() <= o.registrationClosesAt.getTime(),
+        },
         // Offerings apply through the shared Forms system. Null form = not
         // open yet; "#" matches what the site already renders for that case.
         signUpLink: o.applicationFormId
