@@ -97,7 +97,9 @@ describe("runDigest", () => {
       },
     ]);
     // Claim-in-transaction: run the callback against the same mock client.
-    mockPrisma.$transaction.mockImplementation(
+    // ($transaction is a Mock, but the loose mockPrisma type reads it as a
+    // nested record — cast so .mockImplementation resolves to the Mock method.)
+    (mockPrisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       async (fn: (tx: unknown) => unknown) => fn(mockPrisma),
     );
     mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });

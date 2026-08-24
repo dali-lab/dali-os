@@ -6,8 +6,7 @@
 // Deleting old ledger rows can't resurrect reminders: both reminder jobs
 // only look at a window around `now`, far inside any whole-month cutoff.
 
-import { prisma } from "~/lib/db";
-import { Prisma } from "~/generated/prisma/client";
+import { prisma, Prisma } from "~/lib/db";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 // Strip the heavy rendered payload off Sent outbound rows this soon after

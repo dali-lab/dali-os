@@ -17,7 +17,7 @@ import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
-import { Prisma, type NotificationKind } from "~/generated/prisma/client";
+import type { NotificationKind } from "~/generated/prisma/client";
 
 export type NotifyMessage = {
   title: string;
@@ -258,8 +258,10 @@ export async function notify(args: {
       });
       rows.push(row);
     } catch (err) {
-      // Already claimed by an earlier fire — a duplicate we absorb.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") continue;
+      // Already claimed by an earlier fire — a duplicate we absorb. Duck-type on
+      // the Prisma error code (no value-import of the generated client needed).
+      if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002")
+        continue;
       throw err;
     }
   }

@@ -13,12 +13,12 @@
 //
 // See specs/communication-idempotency.md.
 
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { slackConfigured, sendDm, postMessage } from "~/slack/lib/slack-client";
 import { getAppEnv } from "~/lib/app-env";
-import { Prisma, type EmailSendPurpose } from "~/generated/prisma/client";
+import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 export type OutboundChannel = "email" | "slack_dm" | "slack_channel";
@@ -77,7 +77,10 @@ function slackAllowed(): boolean {
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+  // Duck-type on the Prisma error code rather than instanceof — robust whether
+  // Prisma is the real namespace or a test mock, and avoids a value-import of
+  // the generated client.
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
 }
 
 type StoredAttachment = { filename: string; mimeType: string; contentBase64: string };

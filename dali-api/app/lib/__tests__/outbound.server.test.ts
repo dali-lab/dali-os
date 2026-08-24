@@ -11,7 +11,6 @@ vi.mock("~/slack/lib/slack-client", () => ({
 vi.mock("~/lib/app-env", () => ({ getAppEnv: vi.fn(() => "prod") }));
 
 import { prisma } from "~/lib/db";
-import { Prisma } from "~/generated/prisma/client";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { sendDm, postMessage } from "~/slack/lib/slack-client";
@@ -48,10 +47,9 @@ function emailRow(o: Record<string, unknown> = {}) {
 const ctx = () => ({ now: new Date(), lastSuccessAt: null, settings: {} as Record<string, number> });
 
 function p2002() {
-  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-    code: "P2002",
-    clientVersion: "7.9.0",
-  });
+  // Duck-typed Prisma unique-violation (matches isUniqueViolation's code check)
+  // without a value-import of the generated client.
+  return Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
 }
 
 beforeEach(() => {
