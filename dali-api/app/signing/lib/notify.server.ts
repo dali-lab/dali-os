@@ -140,23 +140,15 @@ export async function notifySignRequest(
     }),
   ]);
   const signedSet = new Set(signed.map((s) => s.signerUserId));
-  let eligible = audience.filter((p) => !signedSet.has(p.id));
-
-  // Unless forcing, drop members already notified for this binding+version.
-  if (!opts.force && eligible.length > 0) {
-    const already = await prisma.signRequestNotification.findMany({
-      where: {
-        bindingId,
-        versionId: binding.versionId,
-        signerUserId: { in: eligible.map((p) => p.id) },
-      },
-      select: { signerUserId: true },
-    });
-    const alreadySet = new Set(already.map((r) => r.signerUserId));
-    eligible = eligible.filter((p) => !alreadySet.has(p.id));
-  }
+  const eligible = audience.filter((p) => !signedSet.has(p.id));
   if (eligible.length === 0) return;
 
+  // Idempotency is the notify() dedupKey. A per-(binding, version, signer)
+  // forever key means re-issuing a term's agreements no-ops for members already
+  // notified for the in-force version, while a NEW version in force (different
+  // versionId) reaches everyone afresh. force → no key, so the console "remind"
+  // re-nudges everyone still outstanding. (Replaced the SignRequestNotification
+  // ledger, which did exactly this dedup.)
   await notify({
     eventType: "document.sign_request",
     message: {
@@ -165,20 +157,11 @@ export async function notifySignRequest(
       link: `/sign/${bindingId}`,
       isTodo: true,
     },
-    recipients: eligible.map((p) => ({ userId: p.id })),
+    recipients: eligible.map((p) => ({
+      userId: p.id,
+      dedupKey: opts.force
+        ? null
+        : `signing.request:${bindingId}:${binding.versionId}:${p.id}`,
+    })),
   });
-
-  // Record who we just notified so a later re-issue skips them. Idempotent via
-  // the (bindingId, versionId, signerUserId) unique constraint; best-effort —
-  // a tracking-write failure must not fail the notification already sent.
-  await prisma.signRequestNotification
-    .createMany({
-      data: eligible.map((p) => ({
-        bindingId,
-        versionId: binding.versionId,
-        signerUserId: p.id,
-      })),
-      skipDuplicates: true,
-    })
-    .catch((err) => console.error("[signing] sign-request tracking write failed:", err));
 }
