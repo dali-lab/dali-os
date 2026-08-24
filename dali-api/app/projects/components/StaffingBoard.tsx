@@ -38,6 +38,7 @@ type ProjectMeta = {
   // Pre-fill the Finalize modal's editable fields (shared with the project page).
   githubTeamSlug?: string | null;
   slackChannelName?: string | null;
+  vaultwardenCollectionId?: string | null;
 };
 
 type Props = {
@@ -886,6 +887,9 @@ export function StaffingBoard({
           }
           defaultGithubSlug={
             projects.find((p) => p.id === finalizeProjectId)?.githubTeamSlug ?? ""
+          }
+          defaultVaultwardenCollectionId={
+            projects.find((p) => p.id === finalizeProjectId)?.vaultwardenCollectionId ?? ""
           }
         />
       )}

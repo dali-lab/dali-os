@@ -2570,6 +2570,18 @@ model Project {
   // GITHUB_ORG and adds the confirmed roster. Null = automation skips.
   githubTeamSlug String?
 
+  // Vaultwarden org GROUP id for this project's team, persistent across terms.
+  // Backfilled by the "Set up Vaultwarden group" finalize automation / sync,
+  // which get-or-creates a group named after the project (by plaintext name)
+  // when this is null and persists the resulting id here. An operator may also
+  // paste an existing group id to bind one. Members are added by daliEmail.
+  vaultwardenGroupId String?
+  // Vaultwarden COLLECTION id (the secrets container) the project's group is
+  // granted access to. Operator-pasted on the project detail page — the bot
+  // can't create/name-match collections (their names are org-key-encrypted),
+  // so it only grants the group access to this id. Null = no collection grant.
+  vaultwardenCollectionId String?
+
   // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
   // post the team announcement on staffing finalize. Backfilled by finalize/modal
   // Save when the channel (named by slackChannelName) is get-or-created. Null
