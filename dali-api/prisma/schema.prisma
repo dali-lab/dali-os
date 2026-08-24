@@ -1946,6 +1946,12 @@ model Notification {
   // re-fired notify() collides with instead of writing a duplicate row.
   dedupKey String?
 
+  // Number of notifications merged into this row. Starts at 1; for events with
+  // a coalesce window (notification-events.ts), a burst within the window
+  // increments this in place instead of writing new rows, and notify() surfaces
+  // the count in the body ("3 new comments · latest: …"). See notify.server.ts.
+  coalesceCount Int @default(1)
+
   // Announcement extras (kind == SystemAnnouncement). `dueAt` makes the
   // announcement a "todo" with a deadline; `isTodo` marks it as action-needed
   // so it surfaces in the Tasks sidebar / Home banner like a meeting invite.
