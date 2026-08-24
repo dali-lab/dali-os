@@ -143,6 +143,13 @@
   --color-os-green:        #9fe0a8;  /* "Active" status */
   --color-os-amber:        #f2b84b;
 
+  /* Inks & shadow that flip in light mode — see the `.light .os-shell` block.
+     Defaults are the design's dark values, so dark mode is unchanged. */
+  --color-os-fg:           #ffffff;  /* primary ink */
+  --color-os-shadow:       rgba(0, 0, 0, 0.5);
+  --color-os-add-bg:       #1e1e1f;  /* the add-pill fill */
+  --color-os-add-bg-hover: #2b2b2c;
+
   --radius-os-card: 24px;
   --radius-os-item: 12px;
 
@@ -164,7 +171,7 @@
    `.os-shell`'s own — custom properties resolve from the nearest ancestor that
    sets them, and the shell div is nearer than <html>. */
 html.dark,
-.os-shell {
+:where(html.dark) .os-shell {
     --color-background: hsl(215 35% 10%);
     --color-foreground: hsl(210 20% 95%);
     --color-card: hsl(215 32% 15%);
@@ -838,23 +845,23 @@ html.os-shell {
   --color-section-bg: var(--color-os-bg);
   --color-section-bg-alt: var(--color-os-card);
   --color-background: var(--color-os-bg);
-  --color-foreground: #ffffff;
+  --color-foreground: var(--color-os-fg);
   --color-card: var(--color-os-card);
-  --color-card-foreground: #ffffff;
+  --color-card-foreground: var(--color-os-fg);
   --color-popover: var(--color-os-card);
-  --color-popover-foreground: #ffffff;
+  --color-popover-foreground: var(--color-os-fg);
   --color-brand-tint: var(--color-os-card);
   --color-sidebar-bg: var(--color-os-nav);
   --color-muted: var(--color-os-container);
   --color-muted-foreground: var(--color-os-grey);
   --color-secondary: var(--color-os-container);
-  --color-secondary-foreground: #ffffff;
+  --color-secondary-foreground: var(--color-os-fg);
   --color-accent: var(--color-os-container);
-  --color-accent-foreground: #ffffff;
+  --color-accent-foreground: var(--color-os-fg);
   --color-border: var(--color-os-container);
   --color-input: var(--color-os-container);
   --color-ring: var(--color-os-accent);
-  --color-primary: #ffffff;
+  --color-primary: var(--color-os-fg);
   --color-primary-foreground: var(--color-os-bg);
   --color-text-secondary: var(--color-os-grey);
 
@@ -864,6 +871,61 @@ html.os-shell {
   --font-heading: var(--font-os);
 
   --radius: var(--radius-os-item);
+}
+
+/* ── dali.os light mode ──────────────────────────────────────────────
+ * The design honours the app's Appearance setting: when the shell resolves
+ * to light (html.light), the os palette flips to a light read of the same
+ * ramp — the dark grounds become light surfaces, the palette's deepest tone
+ * (#24242a) becomes the ink, and the accent darkens so it stays legible on
+ * white. Everything downstream — the semantic-token map above, every `os-`
+ * utility, the furniture below — reads these variables, so this block is the
+ * whole of it. Both arms, so portalled surfaces mirrored onto <html> flip too
+ * (same reason the token map lists `html.os-shell`). */
+html.light.os-shell,
+.light .os-shell {
+  color-scheme: light;
+
+  --color-os-bg:           #f4f4f6;  /* page */
+  --color-os-nav:          #ffffff;  /* sidebar + top bar */
+  --color-os-card:         #ffffff;  /* cards, wells, menus */
+  --color-os-card-hover:   #eef0f2;
+  --color-os-well:         #eef0f2;  /* inputs, nested rows */
+  --color-os-container:    #dfe1e6;  /* borders, chips, active fill */
+  --color-os-container-hi: #c4c8d0;  /* hover border */
+  --color-os-accent:       #2f7c8c;  /* deeper cool blue — legible on white */
+  --color-os-accent-hover: #276577;
+  --color-os-grey:         #5b5f66;  /* secondary text */
+  --color-os-muted:        #8a8f98;  /* tertiary text / placeholders */
+  --color-os-green:        #1f7a44;  /* "Active" status */
+  --color-os-amber:        #b26a00;
+  --color-os-fg:           #24242a;  /* primary ink = the dark nav tone */
+  --color-os-shadow:       rgba(20, 22, 28, 0.14);
+  --color-os-add-bg:       #ffffff;  /* the add-pill fill */
+  --color-os-add-bg-hover: #eef0f2;
+}
+
+/* The date picker's indicator is inverted so it reads white on the dark
+   shell; on a light field it must not be. */
+html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator,
+.light .os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
+/* The type badges and timeline bars are category-coloured chips carrying pale
+   ink. Their dark fills are 0.8-alpha, which washes toward the ink over white
+   — solidify the fill so the pale ink keeps its contrast in light mode. */
+html.light.os-shell .os-type-badge--epic, .light .os-shell .os-type-badge--epic,
+html.light.os-shell .os-bar-label--epic, .light .os-shell .os-bar-label--epic {
+  background: #6d5a9e;
+}
+html.light.os-shell .os-type-badge--story, .light .os-shell .os-type-badge--story,
+html.light.os-shell .os-bar-label--story, .light .os-shell .os-bar-label--story {
+  background: #3f8a83;
+}
+html.light.os-shell .os-type-badge--task, .light .os-shell .os-type-badge--task,
+html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
+  background: #8a6b6b;
 }
 
 .os-shell ::-webkit-scrollbar {
@@ -893,7 +955,7 @@ html.os-shell {
   padding: 8px 16px;
   border-radius: var(--radius-os-item);
   background: var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
   transition: background-color 0.15s ease;
 }
 .os-topbar-btn:hover {
@@ -910,15 +972,15 @@ html.os-shell {
   gap: 8px;
   padding: 10px 18px;
   border-radius: 100px;
-  background: #1e1e1f;
+  background: var(--color-os-add-bg);
   border: 1px solid var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
   font-size: 14px;
   font-weight: 900;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .os-add-btn:hover {
-  background: #2b2b2c;
+  background: var(--color-os-add-bg-hover);
   border-color: var(--color-os-container-hi);
 }
 .os-add-btn:active {
@@ -934,7 +996,7 @@ html.os-shell {
   border: 1px solid var(--color-os-container);
   background: var(--color-os-card);
   padding: 24px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 64px var(--color-os-shadow);
 }
 
 .os-type-badge {
@@ -974,7 +1036,7 @@ html.os-shell {
 }
 .os-icon-btn:hover {
   background: var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 
 /* The design's form furniture. Applied inside `.os-shell` to the field
@@ -990,7 +1052,7 @@ html.os-shell {
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 14px;
-  color: #ffffff;
+  color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
 .os-shell .os-form input:focus,
@@ -1013,7 +1075,7 @@ html.os-shell {
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 14px;
-  color: #ffffff;
+  color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
 .os-shell .os-form button[aria-haspopup]:hover {
@@ -1137,7 +1199,7 @@ html.os-shell {
 .os-shell .os-section-header {
   font-size: 12px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--color-os-fg);
   letter-spacing: 1.2px;
   text-transform: uppercase;
   margin-bottom: 14px;
@@ -1173,7 +1235,7 @@ html.os-shell {
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 13px;
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 .os-shell .os-item-list {
   display: flex;
@@ -1313,7 +1375,7 @@ html.os-shell {
   align-items: center;
   gap: 6px;
   background: var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
@@ -1409,7 +1471,7 @@ html.os-shell {
 .os-shell .dali-btn--secondary:hover {
   border-color: var(--color-os-container-hi);
   background: transparent;
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 .os-shell .dali-btn--ghost {
   color: var(--color-os-grey);
@@ -1417,7 +1479,7 @@ html.os-shell {
 }
 .os-shell .dali-btn--ghost:hover {
   background: var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 .os-shell .dali-btn:focus-visible {
   box-shadow: 0 0 0 2px var(--color-os-accent);
@@ -1441,7 +1503,7 @@ html.os-shell {
 }
 .os-edit-btn:hover {
   border-color: var(--color-os-container-hi);
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 .os-edit-btn[aria-pressed="true"] {
   background: var(--color-os-accent);
@@ -1486,7 +1548,7 @@ html.os-shell {
 }
 .os-btn-ghost:hover {
   background: var(--color-os-container);
-  color: #ffffff;
+  color: var(--color-os-fg);
 }
 
 /* The active sub-tab in the os sidebar: a filled well flush to the rail's

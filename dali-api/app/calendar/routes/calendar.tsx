@@ -1465,7 +1465,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
           className={cn(
             "hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 py-3",
             os
-              ? "rounded-os-item bg-os-card text-os-grey transition-colors hover:bg-os-card-hover hover:text-white"
+              ? "rounded-os-item bg-os-card text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
               : "rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
           aria-label="Expand availability settings"
@@ -2136,10 +2136,10 @@ function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
                   ? // The os design marks a chosen segment with the container
                     // fill, as the People directory's Active/Alumni switch does.
                     os
-                    ? "bg-os-container text-white"
+                    ? "bg-os-container text-foreground"
                     : "bg-accent-coral text-white"
                   : os
-                    ? "bg-os-well text-os-grey hover:text-white"
+                    ? "bg-os-well text-os-grey hover:text-foreground"
                     : "bg-background text-foreground border border-border hover:bg-muted",
               )}
             >
@@ -2248,7 +2248,7 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           className={cn(
             "px-3 py-1 text-xs font-medium",
             os
-              ? "rounded-full text-os-grey hover:bg-os-container hover:text-white"
+              ? "rounded-full text-os-grey hover:bg-os-container hover:text-foreground"
               : "rounded-md border border-border hover:bg-muted",
           )}
         >
@@ -3336,7 +3336,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                   className={cn(
                     "inline-flex h-9 w-9 items-center justify-center text-xs font-semibold transition-colors",
                     os
-                      ? "rounded-os-item text-os-grey hover:bg-os-container hover:text-white"
+                      ? "rounded-os-item text-os-grey hover:bg-os-container hover:text-foreground"
                       : "rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >

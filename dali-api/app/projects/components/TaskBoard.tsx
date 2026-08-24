@@ -584,7 +584,7 @@ export function TaskBoard({
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border transition-colors",
                   os
-                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-white"
+                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-foreground"
                     : "border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/30",
                 )}
               >

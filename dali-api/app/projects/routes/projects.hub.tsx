@@ -717,13 +717,13 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-3 p-[17px]">
-        <span className="flex min-w-0 items-center gap-1.5 text-xl text-white">
+        <span className="flex min-w-0 items-center gap-1.5 text-xl text-foreground">
           <ProjectIcon iconEmoji={project.iconEmoji} size="inherit" />
           <span className="truncate">{project.name}</span>
         </span>
         {project.firstTermCode && (
           <span className="flex items-center gap-2">
-            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-white">
+            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-foreground">
               {project.firstTermCode}
             </span>
             <span className="text-xs text-os-grey">Start term</span>

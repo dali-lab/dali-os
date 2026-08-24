@@ -216,7 +216,7 @@ export default function MentorNoteEditor() {
                   active
                     ? VIBE_META[v].pill
                     : os
-                    ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-white"
+                    ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground"
                     : "border-border text-muted-foreground hover:text-foreground",
                   data.canEdit ? "" : "cursor-default opacity-70",
                 )}

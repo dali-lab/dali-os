@@ -347,7 +347,7 @@ export function PageDocPage({
             aria-label="Close guide"
             className={
               os
-                ? "flex h-10 w-10 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-container hover:text-white"
+                ? "flex h-10 w-10 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
                 : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
             }
           >
@@ -592,8 +592,8 @@ function SectionSidebar({
                     os ? "px-3 py-2 text-base" : "px-2.5 py-1.5 text-sm",
                     os
                       ? selected
-                        ? "font-medium text-white"
-                        : "text-os-grey hover:text-white"
+                        ? "font-medium text-foreground"
+                        : "text-os-grey hover:text-foreground"
                       : selected
                         ? "font-semibold text-accent-coral"
                         : "text-foreground/80",

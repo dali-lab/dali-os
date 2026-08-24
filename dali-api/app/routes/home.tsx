@@ -303,7 +303,7 @@ function HomeOS() {
   return (
     <div className="mx-auto flex w-full max-w-[750px] flex-col gap-12 pt-6">
       <div className="flex flex-col items-center gap-8">
-        <h1 className="text-center text-3xl font-medium text-white">
+        <h1 className="text-center text-3xl font-medium text-foreground">
           {greeting}, {fullName}.
         </h1>
         <HomeSearch />
@@ -353,7 +353,7 @@ function RecentGrid({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-center text-sm tracking-wider text-white uppercase">{caption}</p>
+      <p className="text-center text-sm tracking-wider text-foreground uppercase">{caption}</p>
       {/* Wrapping row rather than a grid: the row rarely divides evenly into
           columns (six shortcuts, four across), and a grid pins the remainder
           flush left under a centered search box. */}
@@ -379,7 +379,7 @@ function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => 
         <span className="flex items-center justify-center">
           <FavoriteIcon page={page} size="lg" />
         </span>
-        <span className="w-full truncate text-base text-white">{page.title || "Untitled"}</span>
+        <span className="w-full truncate text-base text-foreground">{page.title || "Untitled"}</span>
         <span className="w-full truncate text-xs font-semibold tracking-wide text-os-grey uppercase">
           {OS_WORKSPACE_CAPTION[page.workspaceType] ?? page.workspaceType}
         </span>

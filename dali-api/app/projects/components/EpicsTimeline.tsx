@@ -384,7 +384,7 @@ function TimelineBarHover({
                 <span className="text-[11px] font-semibold uppercase tracking-widest text-os-grey">
                   {r.label}
                 </span>
-                <span className="text-sm break-words text-white">{r.value}</span>
+                <span className="text-sm break-words text-foreground">{r.value}</span>
               </div>
             ))}
             {assignees && assignees.length > 0 && (
@@ -394,8 +394,8 @@ function TimelineBarHover({
                 </span>
                 <span className="flex flex-wrap items-center gap-3">
                   {assignees.map((a) => (
-                    <span key={a.id} className="flex items-center gap-2 text-sm text-white">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-os-container text-[9px] font-bold text-white">
+                    <span key={a.id} className="flex items-center gap-2 text-sm text-foreground">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-os-container text-[9px] font-bold text-foreground">
                         {a.name.slice(0, 1).toUpperCase()}
                       </span>
                       {a.name}

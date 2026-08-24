@@ -1014,7 +1014,7 @@ export function DriveBrowser({
                 os ? "px-3.5 py-2.5" : "p-1.5",
                 viewMode === "columns"
                   ? os
-                    ? "bg-os-container text-white"
+                    ? "bg-os-container text-foreground"
                     : "bg-accent-coral/10 text-accent-coral"
                   : "text-muted-foreground hover:bg-muted/50",
               )}
@@ -1034,7 +1034,7 @@ export function DriveBrowser({
                 os ? "px-3.5 py-2.5" : "p-1.5",
                 viewMode === "list"
                   ? os
-                    ? "bg-os-container text-white"
+                    ? "bg-os-container text-foreground"
                     : "bg-accent-coral/10 text-accent-coral"
                   : "text-muted-foreground hover:bg-muted/50",
               )}
@@ -1054,7 +1054,7 @@ export function DriveBrowser({
                 os ? "px-3.5 py-2.5" : "p-1.5",
                 viewMode === "grid"
                   ? os
-                    ? "bg-os-container text-white"
+                    ? "bg-os-container text-foreground"
                     : "bg-accent-coral/10 text-accent-coral"
                   : "text-muted-foreground hover:bg-muted/50",
               )}
@@ -1077,7 +1077,7 @@ export function DriveBrowser({
               os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
               detailsOpen
                 ? os
-                  ? "bg-os-container text-white"
+                  ? "bg-os-container text-foreground"
                   : "bg-accent-coral/10 text-accent-coral"
                 : "text-muted-foreground hover:bg-muted/50",
             )}
