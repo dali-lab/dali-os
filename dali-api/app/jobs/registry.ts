@@ -86,6 +86,7 @@ import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";
 import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";
+import { runOutboundDrain } from "~/lib/outbound.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -316,6 +317,34 @@ export const JOBS: JobDefinition[] = [
       "Re-issues recurring (per-term) agreements each term: for every per-term document already put in force once, materializes the current term's binding and notifies its audience to sign.",
     intervalMinutes: 1440,
     handler: runSigningIssuance,
+  },
+  {
+    name: "outbound-drain",
+    description:
+      "Drains the outbound message queue (email + Slack): sends Pending messages, retries transient failures with exponential backoff, defers over-cap sends to the next UTC day, and dead-letters exhausted ones. Single-leased, so it also paces egress. Runs inline after each enqueue too.",
+    intervalMinutes: 1,
+    settings: [
+      { key: "batchSize", label: "Messages per run", unit: "", min: 1, max: 500, default: 50 },
+      { key: "maxConcurrency", label: "Concurrent sends", unit: "", min: 1, max: 50, default: 5 },
+      {
+        key: "maxAttempts",
+        label: "Attempts before dead-letter",
+        unit: "",
+        min: 1,
+        max: 20,
+        default: 6,
+      },
+      {
+        key: "baseBackoffSeconds",
+        label: "Base retry backoff",
+        unit: "s",
+        min: 5,
+        max: 3600,
+        default: 60,
+      },
+      { key: "lockSeconds", label: "Claim lock TTL", unit: "s", min: 30, max: 900, default: 120 },
+    ],
+    handler: runOutboundDrain,
   },
   {
     name: "slack-identity-sync",

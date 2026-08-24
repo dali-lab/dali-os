@@ -36,6 +36,7 @@ export async function runSessionReminderSweep({ now, settings }: JobContext): Pr
   for (const session of sessions) {
     try {
       await notifySessionReminder({
+        sessionId: session.id,
         offeringId: session.offeringId,
         offeringTitle: session.offering.title,
         sequence: session.sequence,

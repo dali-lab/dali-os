@@ -7,21 +7,12 @@
 // Requires authenticated user.
 
 import { requireAuth } from "~/lib/auth";
-import { sendEmail } from '~/lib/gmail'
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { logAuditEvent } from '~/lib/audit'
 import { checkRateLimit } from '~/lib/rate-limit'
 
 const RATE_LIMIT_MAX = 100
 const RATE_LIMIT_WINDOW_MS = 60_000
-
-async function getGmailRefreshToken(): Promise<string> {
-  const token = await getApplicationsGmailRefreshToken();
-  if (!token) {
-    throw new Error('Gmail not authorized. Visit /admin/authorize-gmail first.')
-  }
-  return token;
-}
 
 export async function action({ request }: { request: Request }) {
   const auth = await requireAuth(request)
@@ -52,8 +43,21 @@ export async function action({ request }: { request: Request }) {
   }
 
   try {
-    const refreshToken = await getGmailRefreshToken()
-    await sendEmail({ refreshToken, to, subject, html })
+    // Onto the outbox (sends as the applications/Hiring identity, resolved at
+    // drain). No dedupKey — this is arbitrary user-composed mail and a legit
+    // resend of the same subject must go through; the outbox adds retry, a
+    // per-sender daily cap, and an audit trail (Admin → Communications).
+    // drainNow attempts it inline so the common case still sends in-request.
+    const { id } = await enqueueOutbound({
+      channel: "email",
+      purpose: "Hiring",
+      target: to,
+      subject,
+      bodyHtml: html,
+      eventType: "email.send",
+      createdByUserId: auth.user.sub,
+    })
+    await drainNow([id])
     await logAuditEvent({
       action: 'email.send',
       userId: auth.user.sub,

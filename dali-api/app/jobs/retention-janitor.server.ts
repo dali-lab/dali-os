@@ -7,7 +7,12 @@
 // only look at a window around `now`, far inside any whole-month cutoff.
 
 import { prisma } from "~/lib/db";
+import { Prisma } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
+
+// Strip the heavy rendered payload off Sent outbound rows this soon after
+// delivery — the lightweight metadata row lives on for the audit trail.
+const OUTBOUND_PAYLOAD_STRIP_HOURS = 24;
 
 export async function runRetentionJanitor({
   now,
@@ -31,8 +36,33 @@ export async function runRetentionJanitor({
     where: { sentAt: { lt: cutoff } },
   });
 
+  // Outbound queue: strip rendered bodies/attachments off delivered rows (keep
+  // the metadata for the Admin → Communications history), then delete terminal
+  // rows past the retention window. Dead rows are LEFT for operator attention.
+  const payloadCutoff = new Date(now.getTime() - OUTBOUND_PAYLOAD_STRIP_HOURS * 3_600_000);
+  const outboundStripped = await prisma.outboundMessage.updateMany({
+    where: {
+      status: "Sent",
+      sentAt: { lt: payloadCutoff },
+      OR: [{ bodyHtml: { not: null } }, { attachments: { not: Prisma.DbNull } }],
+    },
+    data: {
+      bodyHtml: null,
+      bodyText: null,
+      slackText: null,
+      ics: null,
+      attachments: Prisma.DbNull,
+    },
+  });
+  const outboundDeleted = await prisma.outboundMessage.deleteMany({
+    where: { status: { in: ["Sent", "Canceled"] }, createdAt: { lt: cutoff } },
+  });
+
   return {
-    items: notifications.count + taskReminders.count + meetingLogs.count,
-    note: `notifications=${notifications.count} taskReminders=${taskReminders.count} meetingLogs=${meetingLogs.count}`,
+    items: notifications.count + taskReminders.count + meetingLogs.count + outboundDeleted.count,
+    note:
+      `notifications=${notifications.count} taskReminders=${taskReminders.count} ` +
+      `meetingLogs=${meetingLogs.count} outboundStripped=${outboundStripped.count} ` +
+      `outboundDeleted=${outboundDeleted.count}`,
   };
 }

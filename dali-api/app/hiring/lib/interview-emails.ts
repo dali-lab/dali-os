@@ -10,6 +10,7 @@ import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 const ORGANIZER: IcsAttendee = {
   email: "applications@dali.dartmouth.edu",
@@ -185,11 +186,9 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
 export async function sendInterviewInviteEmails(
   interviewId: string,
   domainApplicationId: string,
+  opts: { dedupKey?: null } = {},
 ): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) return;
 
@@ -238,7 +237,11 @@ export async function sendInterviewInviteEmails(
       attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
-    const sends: Promise<any>[] = [];
+    // Whether to use a stable dedupKey (initial invite) or omit it (intentional
+    // resend). Caller passes opts.dedupKey=null for resends.
+    const useDedup = !("dedupKey" in opts);
+
+    const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
       const rendered = await renderFromBinding(
@@ -247,13 +250,20 @@ export async function sendInterviewInviteEmails(
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: applicant.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          ics: applicantIcs,
-        }));
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            dedupKey: useDedup
+              ? `hiring.interview.invite:${interviewId}:${applicant.email.toLowerCase()}`
+              : null,
+            target: applicant.email,
+            subject: rendered.subject,
+            bodyHtml: rendered.html,
+            ics: applicantIcs,
+            eventType: "hiring.interview.invite",
+          }).then(({ id }) => id),
+        );
       }
     }
 
@@ -264,17 +274,25 @@ export async function sendInterviewInviteEmails(
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: interviewer.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          ics: interviewerIcs,
-        }));
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            dedupKey: useDedup
+              ? `hiring.interview.invite:${interviewId}:${interviewer.email.toLowerCase()}`
+              : null,
+            target: interviewer.email,
+            subject: rendered.subject,
+            bodyHtml: rendered.html,
+            ics: interviewerIcs,
+            eventType: "hiring.interview.invite",
+          }).then(({ id }) => id),
+        );
       }
     }
 
-    await Promise.allSettled(sends);
+    const ids = await Promise.all(enqueues);
+    await drainNow(ids);
   } catch (err) {
     console.error("Failed to send interview invite emails:", err);
   }

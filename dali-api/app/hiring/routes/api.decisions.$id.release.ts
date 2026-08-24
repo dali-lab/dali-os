@@ -2,8 +2,6 @@ import type { Route } from "./+types/api.decisions.$id.release";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -16,6 +14,7 @@ import {
 } from "~/hiring/lib/internal-cycles.server";
 import { notify } from "~/lib/notify.server";
 import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -171,6 +170,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Sent whenever a template is bound (always for email-channel cycles;
   // optional for in-app cycles like Core).
   let emailSent = false;
+  let _releaseEmailId: string | null = null;
   try {
     const user = domainApp.application.user;
     const intendedEmail =
@@ -183,39 +183,40 @@ export async function action({ request, params }: Route.ActionArgs) {
     const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
 
     if (binding && to && user) {
-      const refreshToken = await getApplicationsGmailRefreshToken();
+      const { subject, html } = renderForSlot(
+        decisionSlot(decision.type),
+        binding.emailTemplateVersion,
+        {
+          firstName: user.firstName,
+          domain: domainName,
+        },
+      );
 
-      if (refreshToken) {
-        const { subject, html } = renderForSlot(
-          decisionSlot(decision.type),
-          binding.emailTemplateVersion,
-          {
-            firstName: user.firstName,
-            domain: domainName,
-          },
-        );
+      // For member-producing acceptances (Standard/Fellowship), append the
+      // onboarding block (account details + login link + logo) so the new
+      // member gets a single email instead of a separate welcome message. The
+      // temporary password is rendered ONLY into this email — never logged
+      // (see the audit metadata below, which omits it). Core acceptances don't
+      // provision an account, so there's no onboarding block.
+      const onboarding = provisionResult
+        ? onboardingEmailHtml(
+            provisionResult.daliEmail ?? null,
+            provisionResult.daliTempPassword ?? null,
+          )
+        : "";
 
-        // For member-producing acceptances (Standard/Fellowship), append the
-        // onboarding block (account details + login link + logo) so the new
-        // member gets a single email instead of a separate welcome message. The
-        // temporary password is rendered ONLY into this email — never logged
-        // (see the audit metadata below, which omits it). Core acceptances don't
-        // provision an account, so there's no onboarding block.
-        const onboarding = provisionResult
-          ? onboardingEmailHtml(
-              provisionResult.daliEmail ?? null,
-              provisionResult.daliTempPassword ?? null,
-            )
-          : "";
-
-        await sendEmail({
-          refreshToken,
-          to,
-          subject,
-          html: redirectBannerHtml(redirectedFrom) + html + onboarding,
-        });
-        emailSent = true;
-      }
+      const { id, deduped } = await enqueueOutbound({
+        channel: "email",
+        purpose: "Hiring",
+        dedupKey: `hiring.decision.release:${released.id}:${domainApp.application.userId}`,
+        target: to,
+        recipientUserId: domainApp.application.userId,
+        subject,
+        bodyHtml: redirectBannerHtml(redirectedFrom) + html + onboarding,
+        eventType: "hiring.decision.release",
+      });
+      _releaseEmailId = id;
+      emailSent = !deduped;
     }
   } catch (err) {
     // Log but don't fail the release if email sending fails.
@@ -271,6 +272,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
     request,
   });
+
+  await drainNow([_releaseEmailId]);
 
   return Response.json(released, { status: 201 });
 }

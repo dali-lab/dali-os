@@ -2,11 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { getFrontendUrl } from "~/lib/app-env";
-import {
-  sendPartnerMagicLinkEmail,
-  sendMemberEmailConflictEmail,
-} from "./partner-emails.server";
+import { getFrontendUrl, getAppEnv } from "~/lib/app-env";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { sendMemberEmailConflictEmail } from "./partner-emails.server";
 
 export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
 
@@ -105,7 +103,7 @@ export async function issuePartnerMagicLink(
   });
 
   const raw = generateRawToken();
-  await prisma.oneTimeToken.create({
+  const token = await prisma.oneTimeToken.create({
     data: {
       userId,
       tokenHash: hashToken(raw),
@@ -113,10 +111,36 @@ export async function issuePartnerMagicLink(
       expiresAt: new Date(Date.now() + MAGIC_LINK_TTL_MS),
       metadata: { email },
     },
+    select: { id: true },
   });
 
   const url = `${getFrontendUrl()}/partner/auth/verify?token=${raw}`;
-  await sendPartnerMagicLinkEmail(email, url);
+  // Surface the link in dev so the flow stays manually testable without a
+  // mail sender (mirrors the original sendPartnerMagicLinkEmail dev guard).
+  if (getAppEnv() === "dev") {
+    console.info(`[partner-magic-link:dev] ${url}`);
+  }
+  const { id: outboundId } = await enqueueOutbound({
+    channel: "email",
+    purpose: "Partners",
+    dedupKey: `partner.magiclink:${token.id}`,
+    target: email,
+    recipientUserId: userId,
+    subject: "Sign in to DALI OS",
+    bodyHtml: `
+  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
+    <p>Use the button below to sign in to the DALI Lab partner portal. This link works once and expires in 15 minutes.</p>
+    <p style="margin: 24px 0;">
+      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Sign in to DALI OS</a>
+    </p>
+    <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
+      DALI Lab · Dartmouth College
+    </p>
+  </div>`,
+    eventType: "partner.magiclink",
+  });
+  await drainNow([outboundId]);
   await logAuditEvent({
     action: "partner.magic_link.requested",
     userId,

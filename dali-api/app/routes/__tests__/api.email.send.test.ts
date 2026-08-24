@@ -4,15 +4,19 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/db");
-vi.mock("~/lib/gmail", () => ({
-  sendEmail: vi.fn().mockResolvedValue(undefined),
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(async () => ({ id: "om-test", deduped: false })),
+  drainNow: vi.fn(async () => {}),
 }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { action } from "~/routes/api.email.send";
+
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
+const mockDrain = drainNow as unknown as ReturnType<typeof vi.fn>;
 
 const USER_ID = "user-1";
 const OTHER_USER_ID = "user-2";
@@ -43,9 +47,6 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
-  (mockPrisma as any).gmailIntegration = {
-    findFirst: vi.fn().mockResolvedValue({ oauthTokens: "refresh-token" }),
-  };
 });
 
 describe("POST /api/email/send rate limiting", () => {
@@ -54,7 +55,7 @@ describe("POST /api/email/send rate limiting", () => {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(200);
     }
-    expect(sendEmail).toHaveBeenCalledTimes(100);
+    expect(mockEnqueue).toHaveBeenCalledTimes(100);
   });
 
   it("returns 429 with Retry-After once the limit is exceeded", async () => {
@@ -87,7 +88,7 @@ describe("POST /api/email/send rate limiting", () => {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(401);
     }
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
 
@@ -95,20 +96,23 @@ describe("POST /api/email/send recipient and header validation", () => {
   it("accepts a syntactically valid recipient", async () => {
     const res = await action({ request: makeRequest({ to: "applicant@example.com" }) } as any);
     expect(res.status).toBe(200);
-    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    const call = mockEnqueue.mock.calls[0][0];
+    expect(call.channel).toBe("email");
+    expect(call.target).toBe("applicant@example.com");
   });
 
   it("rejects a recipient missing an @", async () => {
     const res = await action({ request: makeRequest({ to: "not-an-email" }) } as any);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "Invalid recipient email" });
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("rejects a recipient missing a TLD", async () => {
     const res = await action({ request: makeRequest({ to: "user@host" }) } as any);
     expect(res.status).toBe(400);
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("rejects CRLF in the recipient", async () => {
@@ -119,7 +123,7 @@ describe("POST /api/email/send recipient and header validation", () => {
     expect(await res.json()).toEqual({
       error: "to and subject must not contain line breaks",
     });
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("rejects CRLF in the subject", async () => {
@@ -130,7 +134,7 @@ describe("POST /api/email/send recipient and header validation", () => {
     expect(await res.json()).toEqual({
       error: "to and subject must not contain line breaks",
     });
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("rejects a bare LF in the recipient", async () => {
@@ -138,6 +142,6 @@ describe("POST /api/email/send recipient and header validation", () => {
       request: makeRequest({ to: "x@y.com\nBcc: attacker@evil.com" }),
     } as any);
     expect(res.status).toBe(400);
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });

@@ -74,6 +74,7 @@ export default [
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
+    route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
