@@ -92,6 +92,17 @@ describe("parseOfferingsFilter", () => {
     expect(parse("term=%20%20")).toEqual({ filter: { scope: undefined } });
   });
 
+  it("maps type to the DB enum, case-insensitively", () => {
+    expect(parse("type=workshop")).toEqual({ filter: { scope: undefined, type: "Workshop" } });
+    expect(parse("type=Miniseries")).toEqual({ filter: { scope: undefined, type: "Miniseries" } });
+  });
+
+  it("rejects an unknown type", () => {
+    expect(parse("type=seminar")).toEqual({
+      error: "Invalid 'type' (use miniseries or workshop)",
+    });
+  });
+
   it("rejects an unparseable date", () => {
     expect(parse("from=not-a-date")).toEqual({ error: "Invalid 'from' date" });
     expect(parse("to=13/13/2026")).toEqual({ error: "Invalid 'to' date" });
@@ -151,6 +162,25 @@ describe("listPublicOfferings query shape", () => {
     expect(whereOf()).toEqual({
       status: "Published",
       term: { code: "26F" },
+      endsAt: { lt: NOW },
+    });
+  });
+
+  it("type filters to one offering type, keeping the upcoming default", async () => {
+    await listPublicOfferings({ type: "Workshop" }, NOW);
+    expect(whereOf()).toEqual({
+      status: "Published",
+      type: "Workshop",
+      startsAt: { gt: NOW },
+    });
+  });
+
+  it("type composes with term and scope", async () => {
+    await listPublicOfferings({ type: "Miniseries", term: "26F", scope: "past" }, NOW);
+    expect(whereOf()).toEqual({
+      status: "Published",
+      term: { code: "26F" },
+      type: "Miniseries",
       endsAt: { lt: NOW },
     });
   });

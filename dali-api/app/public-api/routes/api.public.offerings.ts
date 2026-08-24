@@ -10,6 +10,7 @@ import {
 //   ?scope=upcoming|past|all   which slice (default upcoming)
 //   ?from=<ISO>&to=<ISO>       calendar window (overlap); overrides scope
 //   ?term=26F                  limit to one term (defaults scope to "all")
+//   ?type=miniseries|workshop  limit to one offering type
 
 export async function loader({ request }: Route.LoaderArgs) {
   const denied = requireShowcaseSecret(request);
