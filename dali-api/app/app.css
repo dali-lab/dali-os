@@ -149,6 +149,8 @@
   --color-os-shadow:       rgba(0, 0, 0, 0.5);
   --color-os-add-bg:       #1e1e1f;  /* the add-pill fill */
   --color-os-add-bg-hover: #2b2b2c;
+  --color-os-sprint-a:     #4a4670;  /* timeline sprint lane (even) */
+  --color-os-sprint-b:     #3a5c58;  /* timeline sprint lane (odd) */
 
   --radius-os-card: 24px;
   --radius-os-item: 12px;
@@ -903,6 +905,8 @@ html.light.os-shell,
   --color-os-shadow:       rgba(20, 22, 28, 0.14);
   --color-os-add-bg:       #ffffff;  /* the add-pill fill */
   --color-os-add-bg-hover: #eef0f2;
+  --color-os-sprint-a:     #e4e0f1;  /* soft lavender lane */
+  --color-os-sprint-b:     #dcece7;  /* soft mint lane */
 }
 
 /* The date picker's indicator is inverted so it reads white on the dark
