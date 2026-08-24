@@ -1,7 +1,7 @@
 # Outbound Message Layer — Design & Plan
 
-**Status:** Planning (design locked with Kiran 2026-08-23) · **Author:** planning
-pass with Kiran · **Date:** 2026-08-23 · **Branch:** _tbd_ (`feat/outbound-messages`) ·
+**Status:** BUILT 2026-08-23 — PR #1368 → staging · **Author:** planning
+pass with Kiran · **Date:** 2026-08-23 · **Branch:** `feat/outbound-messages` ·
 **Flag:** none (schema-additive; behavior opt-in per call)
 
 > Companion doc: [transactional-email-consolidation.md](transactional-email-consolidation.md)

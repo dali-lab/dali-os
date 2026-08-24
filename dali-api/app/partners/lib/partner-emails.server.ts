@@ -25,50 +25,9 @@ const wrap = (body: string) => `
     </p>
   </div>`;
 
-export async function sendPartnerMagicLinkEmail(
-  to: string,
-  url: string,
-): Promise<void> {
-  // sendEmail no-ops in dev; surface the link so the flow stays manually
-  // testable without a mail sender.
-  if (getAppEnv() === "dev") {
-    console.info(`[partner-magic-link:dev] ${url}`);
-  }
-  await send(
-    to,
-    "Sign in to DALI OS",
-    wrap(`
-      <p>Use the button below to sign in to the DALI Lab partner portal. This link works once and expires in 15 minutes.</p>
-      <p style="margin: 24px 0;">
-        <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Sign in to DALI OS</a>
-      </p>
-      <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
-    `),
-  );
-}
-
-export async function sendPartnerInviteEmail(
-  to: string,
-  orgName: string,
-  inviterName: string | null,
-  url: string,
-): Promise<void> {
-  if (getAppEnv() === "dev") {
-    console.info(`[partner-invite:dev] ${url}`);
-  }
-  const invitedBy = inviterName ? `${inviterName} invited you` : "You've been invited";
-  await send(
-    to,
-    `You've been invited to join ${orgName} on DALI OS`,
-    wrap(`
-      <p>${invitedBy} to join <strong>${orgName}</strong> on DALI OS, the DALI Lab partner portal.</p>
-      <p style="margin: 24px 0;">
-        <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Accept invitation</a>
-      </p>
-      <p style="color: #6b7280; font-size: 13px;">This invitation expires in 7 days.</p>
-    `),
-  );
-}
+// Magic-link and invite emails now render inline at their outbound-message
+// enqueue sites (magic-link.server.ts / invites.server.ts) — see the outbox
+// layer (app/lib/outbound.server.ts).
 
 const greeting = (name: string | null) => `<p>Hi ${name || "there"},</p>`;
 

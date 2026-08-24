@@ -1,7 +1,7 @@
 # Transactional Email Consolidation — Design & Plan
 
-**Status:** Planning (design locked with Kiran 2026-08-23) · **Author:** planning
-pass with Kiran · **Date:** 2026-08-23 · **Branch:** _tbd_ (`feat/outbound-messages`,
+**Status:** BUILT 2026-08-23 — PR #1368 → staging (bespoke-ledger retirement deferred) · **Author:** planning
+pass with Kiran · **Date:** 2026-08-23 · **Branch:** `feat/outbound-messages` (
 shared with the spine) · **Flag:** none
 
 > **Phase 3** of [communication-idempotency.md](communication-idempotency.md) —
