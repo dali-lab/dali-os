@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Form,
   Link,
@@ -23,7 +23,12 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
+import { EmptyState } from "../components/EmptyState";
 import { Select } from "~/components/ui/floating";
+import { SearchInput } from "~/components/ui/SearchInput";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import {
   buildGrid,
   type MentorGridResult,
@@ -41,8 +46,9 @@ type FilterOption = { id: string; label: string };
 
 type LoaderData = {
   filters: {
-    mentorId: string;
-    menteeId: string;
+    // Free-text people search, matched against the mentor and the mentee of
+    // every row. Seeded from the URL; typing filters in the browser.
+    query: string;
     projectId: string;
     domainId: string;
     termId: string;
@@ -51,8 +57,6 @@ type LoaderData = {
     status: string;
   };
   options: {
-    mentors: FilterOption[];
-    mentees: FilterOption[];
     projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
@@ -83,9 +87,22 @@ export async function loader({ request }: Route.LoaderArgs) {
   // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
   const termParam = url.searchParams.get("termId");
   const defaultTerm = termParam === null ? await currentTerm() : null;
+  // A person search used to be two id-valued pickers, and the Members profile
+  // still links here with ?menteeId=<id>. Both id params are accepted as a
+  // seed for the search box so those links keep landing on the right person.
+  const seedId =
+    url.searchParams.get("menteeId") ?? url.searchParams.get("mentorId");
+  const seeded = seedId
+    ? await prisma.user.findUnique({
+        where: { id: seedId },
+        select: { firstName: true, lastName: true },
+      })
+    : null;
+
   const filters = {
-    mentorId: pickFilter(url.searchParams.get("mentorId")),
-    menteeId: pickFilter(url.searchParams.get("menteeId")),
+    query:
+      url.searchParams.get("q") ??
+      (seeded ? `${seeded.firstName} ${seeded.lastName}`.trim() : ""),
     projectId: pickFilter(url.searchParams.get("projectId")),
     domainId: pickFilter(url.searchParams.get("domainId")),
     termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
@@ -98,25 +115,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     mentorNoteWhere(auth.user.sub),
   ]);
 
-  // Build pickers from people/projects/domains/terms touched by notes or
-  // pairs. Skipping pure-lookup tables keeps the option lists short and
-  // relevant — no Domain picker entries for domains never mentored.
-  const [pairUsers, noteUsers, projectsWithPairs, domainsWithPairs, terms] =
+  // Build pickers from projects/domains/terms touched by pairs. Skipping
+  // pure-lookup tables keeps the option lists short and relevant — no Domain
+  // picker entries for domains never mentored. People need no list: the search
+  // box reads the names off the grid it is filtering.
+  const [projectsWithPairs, domainsWithPairs, terms] =
     await Promise.all([
-      prisma.mentorshipPair.findMany({
-        where: pairScope,
-        select: {
-          mentor: { select: { id: true, firstName: true, lastName: true } },
-          mentee: { select: { id: true, firstName: true, lastName: true } },
-        },
-      }),
-      prisma.mentorNote.findMany({
-        where: noteScope,
-        select: {
-          mentor: { select: { id: true, firstName: true, lastName: true } },
-          mentee: { select: { id: true, firstName: true, lastName: true } },
-        },
-      }),
       prisma.project.findMany({
         where: { mentorshipPairs: { some: pairScope } },
         select: { id: true, name: true },
@@ -136,34 +140,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // The selected term (defaulted to current) drives the grid's week axis.
   const selectedTerm = terms.find((t) => t.id === filters.termId) ?? null;
 
-  function uniquePeople(
-    ...lists: { id: string; firstName: string; lastName: string }[][]
-  ): FilterOption[] {
-    const map = new Map<string, FilterOption>();
-    for (const list of lists) {
-      for (const p of list) {
-        if (!map.has(p.id)) {
-          map.set(p.id, {
-            id: p.id,
-            label: `${p.firstName} ${p.lastName}`.trim(),
-          });
-        }
-      }
-    }
-    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }
-
-  const mentors = uniquePeople(
-    pairUsers.map((p) => p.mentor),
-    noteUsers.map((n) => n.mentor),
-  );
-  const mentees = uniquePeople(
-    pairUsers.map((p) => p.mentee),
-    noteUsers.map((n) => n.mentee),
-  );
   const options = {
-    mentors,
-    mentees,
     projects: projectsWithPairs.map((p) => ({ id: p.id, label: p.name })),
     domains: domainsWithPairs.map((d) => ({
       id: d.id,
@@ -222,12 +199,46 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 const FILTERS_STORAGE_KEY = "mentorship.browse.filters";
 
+function nameOf(p: { firstName: string; lastName: string }) {
+  return `${p.firstName} ${p.lastName}`.trim().toLowerCase();
+}
+
+// One search box across both sides of a pairing: a hit on the mentor keeps the
+// whole group (all of their mentees), a hit on a mentee keeps just that row.
+// Matching runs here rather than in the loader because the grid already holds
+// every row the viewer may see, so the results land without a round trip.
+function searchGrid(
+  mentors: MentorGridResult["mentors"],
+  query: string,
+): MentorGridResult["mentors"] {
+  const q = query.trim().toLowerCase();
+  if (!q) return mentors;
+  return mentors
+    .map((m) =>
+      nameOf(m.mentor).includes(q)
+        ? m
+        : { ...m, rows: m.rows.filter((r) => nameOf(r.mentee).includes(q)) },
+    )
+    .filter((m) => m.rows.length > 0);
+}
+
 export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
+  const { os, pageTitle } = useOsChrome();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [query, setQuery] = useState(data.filters.query);
   const restored = useRef(false);
+
+  // `q` only enters the URL on Apply / Clear / a deep link, so re-syncing on
+  // its value can't fight the keystrokes it isn't recording.
+  useEffect(() => setQuery(data.filters.query), [data.filters.query]);
+
+  const groups = useMemo(
+    () => searchGrid(data.grid.mentors, query),
+    [data.grid.mentors, query],
+  );
 
   // Remember the last-applied filter query and restore it on a fresh visit (no
   // filter params). Running once guards against clobbering an explicit "Clear".
@@ -256,17 +267,22 @@ export default function MentorshipBrowse() {
     <main className="flex flex-col gap-6">
       <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Mentorship notes
-        </h1>
+        <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
           {data.isCore && (
             <button
               type="button"
               onClick={() => setTemplatesOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+              className={
+                os
+                  ? "os-edit-btn"
+                  : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+              }
             >
-              <LayoutTemplate className="w-4 h-4 text-accent-coral" aria-hidden />
+              <LayoutTemplate
+                className={cn("w-4 h-4", os ? "text-os-grey" : "text-accent-coral")}
+                aria-hidden
+              />
               Templates
             </button>
           )}
@@ -282,7 +298,7 @@ export default function MentorshipBrowse() {
               { value: "", label: "Any term" },
               ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
             ]}
-            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            buttonClassName={cn(filterPillClass(os), "sm:w-40")}
           />
         </div>
       </header>
@@ -296,26 +312,22 @@ export default function MentorshipBrowse() {
         />
       )}
 
+      <SearchInput
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search mentors and mentees…"
+        aria-label="Search mentors and mentees"
+        containerClassName="sm:max-w-sm"
+      />
+
       <Form
         method="get"
         className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
       >
-        {/* Keep the header term when applying secondary filters. */}
+        {/* Keep the header term and the live search when applying secondary
+            filters — neither is a field of this form. */}
         <input type="hidden" name="termId" value={data.filters.termId} />
-        <FilterAutocomplete
-          name="mentorId"
-          label="Mentor"
-          options={data.options.mentors}
-          value={data.filters.mentorId}
-          placeholder="Search mentors…"
-        />
-        <FilterAutocomplete
-          name="menteeId"
-          label="Mentee"
-          options={data.options.mentees}
-          value={data.filters.menteeId}
-          placeholder="Search mentees…"
-        />
+        <input type="hidden" name="q" value={query} />
         <FilterSelect
           name="projectId"
           label="Project"
@@ -337,7 +349,11 @@ export default function MentorshipBrowse() {
         <div className="ml-auto flex items-center gap-2">
           <button
             type="submit"
-            className="px-3 py-1 rounded-md bg-accent-coral text-white text-sm hover:opacity-90"
+            className={
+              os
+                ? "os-btn-primary"
+                : "px-3 py-1 rounded-md bg-accent-coral text-white text-sm hover:opacity-90"
+            }
           >
             Apply
           </button>
@@ -349,7 +365,11 @@ export default function MentorshipBrowse() {
                   window.localStorage.removeItem(FILTERS_STORAGE_KEY);
                 }
               }}
-              className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
+              className={
+                os
+                  ? "os-btn-ghost"
+                  : "px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
+              }
             >
               Clear
             </Link>
@@ -359,10 +379,14 @@ export default function MentorshipBrowse() {
 
       {!data.grid.termSelected ? (
         <EmptyState>Pick a term to see the weekly mentorship grid.</EmptyState>
-      ) : data.grid.mentors.length === 0 ? (
-        <EmptyState>No mentorship pairs match these filters.</EmptyState>
+      ) : groups.length === 0 ? (
+        <EmptyState>
+          {data.grid.mentors.length > 0
+            ? `No mentors or mentees match "${query.trim()}".`
+            : "No mentorship pairs match these filters."}
+        </EmptyState>
       ) : (
-        data.grid.mentors.map((group) => (
+        groups.map((group) => (
           <MentorGrid
             key={group.mentor.id}
             group={group}
@@ -377,15 +401,6 @@ export default function MentorshipBrowse() {
   );
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <p className="text-sm text-muted-foreground">{children}</p>
-    </section>
-  );
-}
-
-
 function FilterSelect({
   name,
   label,
@@ -397,8 +412,9 @@ function FilterSelect({
   options: FilterOption[];
   value: string;
 }) {
+  const { os, bodyText } = useOsChrome();
   return (
-    <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+    <label className={cn("inline-flex items-center gap-1.5", bodyText)}>
       {label}
       <Select
         name={name}
@@ -407,129 +423,8 @@ function FilterSelect({
           { value: "", label: "Any" },
           ...options.map((o) => ({ value: o.id, label: o.label })),
         ]}
-        buttonClassName="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        buttonClassName={filterPillClass(os)}
       />
-    </label>
-  );
-}
-
-// Searchable person filter (mentor / mentee). Keeps a hidden input so the
-// existing GET form still submits mentorId / menteeId.
-function FilterAutocomplete({
-  name,
-  label,
-  options,
-  value,
-  placeholder,
-}: {
-  name: string;
-  label: string;
-  options: FilterOption[];
-  value: string;
-  placeholder: string;
-}) {
-  const selected = options.find((o) => o.id === value) ?? null;
-  const [selectedId, setSelectedId] = useState(value);
-  const [selectedLabel, setSelectedLabel] = useState(selected?.label ?? "");
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLLabelElement>(null);
-
-  useEffect(() => {
-    setSelectedId(value);
-    setSelectedLabel(options.find((o) => o.id === value)?.label ?? "");
-  }, [value, options]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
-
-  const q = query.trim().toLowerCase();
-  const filtered = options.filter((o) =>
-    q ? o.label.toLowerCase().includes(q) : true,
-  );
-
-  function choose(option: FilterOption | null) {
-    setSelectedId(option?.id ?? "");
-    setSelectedLabel(option?.label ?? "");
-    setQuery("");
-    setOpen(false);
-  }
-
-  return (
-    <label
-      ref={rootRef}
-      className="relative inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-    >
-      {label}
-      <input type="hidden" name={name} value={selectedId} />
-      <input
-        type="text"
-        value={open ? query : selectedLabel}
-        placeholder={selectedLabel || placeholder}
-        autoComplete="off"
-        onFocus={() => {
-          setOpen(true);
-          setQuery("");
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setOpen(false);
-            setQuery("");
-          }
-          if (e.key === "Backspace" && !open && selectedId) {
-            choose(null);
-          }
-        }}
-        className="w-44 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-      />
-      {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-56 overflow-auto rounded-md border border-border bg-card py-1 text-sm shadow-brand-2">
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              choose(null);
-            }}
-            className="flex w-full px-3 py-1.5 text-left text-muted-foreground hover:bg-muted/60"
-          >
-            Any
-          </button>
-          {filtered.length === 0 ? (
-            <div className="px-3 py-1.5 text-muted-foreground">No matches</div>
-          ) : (
-            filtered.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  choose(o);
-                }}
-                className={`flex w-full px-3 py-1.5 text-left hover:bg-muted/60 ${
-                  o.id === selectedId
-                    ? "bg-muted/40 font-medium text-foreground"
-                    : "text-foreground"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
     </label>
   );
 }

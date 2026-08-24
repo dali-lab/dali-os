@@ -472,7 +472,7 @@ function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 border border-border p-1 w-fit",
+        "inline-flex items-center border border-border p-1 w-fit",
         os ? "rounded-full bg-os-card" : "rounded-md bg-muted/30",
       )}
     >
@@ -483,12 +483,12 @@ function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
           onClick={() => set(t.key)}
           aria-pressed={status === t.key}
           className={cn(
-            "text-xs font-medium transition-colors",
+            "text-sm transition-colors",
             os ? "rounded-full px-4 py-1.5" : "rounded-sm px-3 py-1",
             status === t.key
               ? os
-                ? "bg-os-container text-white"
-                : "bg-background text-foreground shadow-sm"
+                ? "bg-os-container font-medium text-white"
+                : "bg-background font-medium text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -566,12 +566,13 @@ function DomainFilter({
 
 function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatus }) {
   const navigate = useNavigate();
+  const os = useFeatureFlag("os-redesign");
   // Alumni view swaps the Roles column for Class — roles are largely historical
   // for alumni, and class year is the more useful axis.
   const showClass = status === "alumni";
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[640px]">
+      <table className={cn("w-full min-w-[640px]", os ? "text-base" : "text-sm")}>
         <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
           <tr>
             <th className="text-left font-medium px-4 py-2">Name</th>
@@ -614,7 +615,12 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                     <BirthdayBadge />
                   )}
                   {m.isStaff && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0",
+                        os ? "text-xs" : "text-[10px]",
+                      )}
+                    >
                       Staff
                     </span>
                   )}
@@ -629,7 +635,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                       : (m.gradProgram ?? "—")}
                   </span>
                 ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
-                  <span className="text-muted-foreground text-xs">—</span>
+                  <span className={cn("text-muted-foreground", os ? "text-sm" : "text-xs")}>—</span>
                 ) : (
                   <RolePills
                     coreTitles={m.coreTitles}

@@ -12,9 +12,9 @@ import { fullName } from "~/lib/display";
 // link, submitting the attached form, or hitting "mark all read") clears it
 // from tasks. Meeting invites are the exception: they only clear once the
 // recipient RSVPs (Accept/Maybe/Decline), and they drop off automatically once
-// the meeting is Cancelled — see TASK_WHERE. Meeting reminders ("Starting
-// soon") are dismissible like any other ping, and also drop off once their
-// occurrence time (dueAt) has passed.
+// the meeting is Cancelled or — for a one-off — once it has already happened;
+// see TASK_WHERE. Meeting reminders ("Starting soon") are dismissible like any
+// other ping, and also drop off once their occurrence time (dueAt) has passed.
 //
 //   MeetingInvite + scheduledMeetingId → "meeting"  (carries RSVP target)
 //   kind === MeetingReminder           → "reminder" (calendar fan-out)
@@ -172,6 +172,21 @@ const TASK_WHERE = (
             },
           ],
         },
+      ],
+    },
+    // An un-RSVP'd invite to a meeting that has already happened is no longer
+    // something anyone can act on, so it dismisses itself rather than sitting
+    // in Tasks forever waiting for an answer the meeting no longer needs. Only
+    // one-offs: a recurring series' selectedAt is its *first* occurrence, and
+    // future ones are still worth answering. A meeting still in Searching has
+    // no time yet (selectedAt null) and stays open.
+    {
+      OR: [
+        { kind: { not: "MeetingInvite" } },
+        { scheduledMeetingId: null },
+        { scheduledMeeting: { recurrenceRule: { not: null } } },
+        { scheduledMeeting: { selectedAt: null } },
+        { scheduledMeeting: { selectedAt: { gt: now } } },
       ],
     },
   ],

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Plus } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { VIBE_META } from "../lib/vibe";
 import type {
   GridCell,
@@ -34,15 +36,16 @@ export function MentorGrid({
   highlightMissing: boolean;
   heading?: string;
 }) {
+  const { os, panel, panelPad, heading: headingClass } = useOsChrome();
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
+    <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
+      <h2 className={headingClass}>
         {heading ?? (
           <>
             <Avatar
               photoUrl={group.mentor.photoUrl}
               name={fullName(group.mentor)}
-              size="sm"
+              size={os ? "xs" : "sm"}
               userId={group.mentor.id}
             />
             {fullName(group.mentor)}
@@ -59,9 +62,14 @@ export function MentorGrid({
               {weeks.map((w) => (
                 <th
                   key={w}
-                  className={`w-9 text-center text-[11px] font-medium pb-1 ${
-                    w === currentWeek ? "text-accent-coral" : "text-muted-foreground"
-                  }`}
+                  className={cn(
+                    "w-9 text-center text-[11px] font-medium pb-1",
+                    w === currentWeek
+                      ? os
+                        ? "text-os-accent"
+                        : "text-accent-coral"
+                      : "text-muted-foreground",
+                  )}
                   title={w === currentWeek ? `Week ${w} (current)` : `Week ${w}`}
                 >
                   {w}
