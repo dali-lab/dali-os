@@ -2,8 +2,8 @@
 // signatory data (buried one-agreement-at-a-time in the Drive detail page) up
 // across every non-archived agreement: completion per binding, what needs a
 // binding this term, and a recent-signatures feed. Read-only — authoring,
-// versioning, and config all stay in the Drive detail. Gated by the
-// `agreements-console` flag at the route.
+// versioning, and config all stay in the Drive detail. Rendered by the
+// permanent /core/agreements route.
 
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
@@ -52,10 +52,16 @@ export interface ConsoleActivity {
 export interface AgreementsOverview {
   agreements: ConsoleAgreement[];
   activity: ConsoleActivity[];
-  currentTermCode: string | null;
+  // The term the console is focused on (the selected term, or the current term
+  // when none is chosen). Drives needs-activation, pending recipients, and which
+  // bindings count as "current".
+  termId: string | null;
+  termCode: string | null;
 }
 
-export async function getAgreementsOverview(): Promise<AgreementsOverview> {
+export async function getAgreementsOverview(
+  opts: { termId?: string } = {},
+): Promise<AgreementsOverview> {
   const [docs, term] = await Promise.all([
     prisma.signingDocument.findMany({
       where: { archivedAt: null },
@@ -85,10 +91,12 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
       },
       orderBy: { createdAt: "desc" },
     }),
-    currentTerm(),
+    opts.termId
+      ? prisma.term.findUnique({ where: { id: opts.termId }, select: { id: true, code: true } })
+      : currentTerm(),
   ]);
 
-  const currentTermId = term?.id ?? null;
+  const focusTermId = term?.id ?? null;
   const rosterFor = makeAudienceRosterCache();
 
   const agreements: ConsoleAgreement[] = [];
@@ -99,10 +107,10 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     for (const b of doc.bindings) {
       const audience = await rosterFor(doc.audience, b.termId ?? undefined, doc.audienceGroupId);
       const roster = computeRoster(audience, b);
-      // App- and cycle-scoped bindings (termId null) are always "current"; a
-      // term-scoped binding is current only for the active term. Prior-term
-      // bindings linger in place, so the console defaults to hiding them.
-      const isCurrent = b.termId == null || b.termId === currentTermId;
+      // App- and cycle-scoped bindings (termId null) always show; a term-scoped
+      // binding is "current" only for the focus term. Other terms' bindings
+      // linger in place, so the console defaults to hiding them.
+      const isCurrent = b.termId == null || b.termId === focusTermId;
       if (isCurrent) hasCurrentBinding = true;
       bindings.push({
         bindingId: b.id,
@@ -135,7 +143,7 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     // exists yet, so nobody has signed — the whole audience is pending.
     let pendingRecipients: string[] | null = null;
     if (needsActivation) {
-      const scopeTermId = doc.cadence === "PerTerm" ? (currentTermId ?? undefined) : undefined;
+      const scopeTermId = doc.cadence === "PerTerm" ? (focusTermId ?? undefined) : undefined;
       const audience = await rosterFor(doc.audience, scopeTermId, doc.audienceGroupId);
       pendingRecipients = audience
         ? audience.map((p) => `${p.firstName} ${p.lastName}`.trim()).sort()
@@ -184,5 +192,5 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     signedAt: s.signedAt,
   }));
 
-  return { agreements, activity, currentTermCode: term?.code ?? null };
+  return { agreements, activity, termId: focusTermId, termCode: term?.code ?? null };
 }

@@ -10,6 +10,10 @@ vi.mock("~/lib/submission-check", () => ({
   checkFigmaUrl: vi.fn(),
 }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(),
+  drainNow: vi.fn(),
+}));
 vi.mock("~/hiring/lib/email-variables", async () => {
   const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
     "~/hiring/lib/email-variables",
@@ -22,7 +26,7 @@ vi.mock("~/hiring/lib/email-variables", async () => {
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound } from "~/lib/outbound.server";
 import { action } from "~/routes/portal.apply";
 
 const mockPrisma = prisma as unknown as {
@@ -354,7 +358,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   const CYCLE_ID = "cycle-1";
 
   function mockApplicantsAndGmail() {
-    (mockPrisma as any).gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "rt" });
+    vi.mocked(enqueueOutbound).mockResolvedValue({ id: "om-x", deduped: false });
     (mockPrisma as any).user.findUnique.mockResolvedValueOnce({
       id: USER_ID,
       firstName: "Ada",
@@ -391,9 +395,9 @@ describe("POST /portal/apply (submit) confirmation email", () => {
       },
       include: { emailTemplateVersion: true },
     });
-    expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ refreshToken: "rt", to: "ada@dartmouth.edu" }),
+    expect(enqueueOutbound).toHaveBeenCalledTimes(1);
+    expect(enqueueOutbound).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "email", target: "ada@dartmouth.edu" }),
     );
   });
 
@@ -415,7 +419,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
 
     expect((res as Response).status).toBe(302);
     expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(enqueueOutbound).not.toHaveBeenCalled();
   });
 
   it("submits successfully when no ApplicationReceived binding is set", async () => {
@@ -435,10 +439,10 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     } as any);
 
     expect((res as Response).status).toBe(302);
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(enqueueOutbound).not.toHaveBeenCalled();
   });
 
-  it("does not block the redirect when sendEmail throws", async () => {
+  it("does not block the redirect when the confirmation enqueue throws", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
       applicationFormVersion: { questions: [] },
@@ -449,7 +453,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     (mockPrisma as any).cycleNotificationEmail.findUnique.mockResolvedValue({
       emailTemplateVersion: { subject: "s", body: "b" },
     });
-    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("Gmail send failed: 401"));
+    vi.mocked(enqueueOutbound).mockRejectedValueOnce(new Error("Gmail send failed: 401"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await action({

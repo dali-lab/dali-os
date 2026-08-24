@@ -2,11 +2,10 @@ import type { Route } from "./+types/api.domain-applications.$id.resend-invite";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -117,14 +116,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  const refreshToken = await getApplicationsGmailRefreshToken();
-  if (!refreshToken) {
-    return Response.json(
-      { error: "Applications Gmail is not configured — cannot send email." },
-      { status: 503 },
-    );
-  }
-
   const domainName = targetDomain.displayName ?? targetDomain.name ?? "";
 
   const { subject, html } = renderForSlot(
@@ -136,13 +127,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   );
 
+  // Intentional resend — no dedupKey so it always delivers regardless of prior sends.
+  let enqueueId: string | null = null;
   try {
-    await sendEmail({
-      refreshToken,
-      to: email,
+    const { id } = await enqueueOutbound({
+      channel: "email",
+      purpose: "Hiring",
+      dedupKey: null,
+      target: email,
+      recipientUserId: domainApp.application.userId,
       subject,
-      html,
+      bodyHtml: html,
+      eventType: "hiring.interview.invite",
     });
+    enqueueId = id;
   } catch (err) {
     console.error("Failed to send invite reminder:", err);
     return Response.json(
@@ -150,6 +148,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       { status: 502 },
     );
   }
+  await drainNow([enqueueId]);
 
   await logAuditEvent({
     action: "interview.invite-reminder.sent",

@@ -5,16 +5,21 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
   postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
 }));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(async () => ({ id: "om-test", deduped: false })),
+  drainNow: vi.fn(async () => {}),
+}));
 
 import { prisma } from "~/lib/db";
-import { postMessage } from "~/slack/lib/slack-client";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
 >;
-const mockPost = postMessage as unknown as ReturnType<typeof vi.fn>;
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
+const mockDrain = drainNow as unknown as ReturnType<typeof vi.fn>;
 
 // Wednesday 2026-07-15, 14:30 UTC = 10:30 ET.
 const WEEKDAY_1030_ET = new Date("2026-07-15T14:30:00Z");
@@ -47,7 +52,13 @@ describe("standup-prompts", () => {
         where: { status: "Active", slackChannelId: { not: null } },
       }),
     );
-    expect(mockPost).toHaveBeenCalledTimes(2);
+    // One enqueueOutbound call per project channel, each with channel:"slack_channel"
+    const channelCalls = mockEnqueue.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((a: any) => a.channel === "slack_channel");
+    expect(channelCalls).toHaveLength(2);
+    expect(channelCalls.find((c: any) => c.target === "C1")).toBeDefined();
+    expect(channelCalls.find((c: any) => c.target === "C2")).toBeDefined();
     expect(result.items).toBe(2);
   });
 
@@ -58,7 +69,7 @@ describe("standup-prompts", () => {
       settings: { sendHourEt: 10 },
     });
 
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
 
@@ -69,7 +80,7 @@ describe("standup-prompts", () => {
       settings: { sendHourEt: 10 },
     });
 
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
 
@@ -80,7 +91,7 @@ describe("standup-prompts", () => {
       settings: { sendHourEt: 10 },
     });
 
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.note).toContain("weekend");
   });
 
@@ -93,12 +104,15 @@ describe("standup-prompts", () => {
       settings: { sendHourEt: 10 },
     });
 
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
 
-  it("keeps posting to other channels when one post fails", async () => {
-    mockPost.mockRejectedValueOnce(new Error("channel_not_found"));
+  it("keeps posting to other channels when one enqueue fails", async () => {
+    // If the first enqueue rejects, the job catches the error and continues
+    // enqueuing the remaining projects. The failed enqueue doesn't push an id,
+    // so it's not counted.
+    mockEnqueue.mockRejectedValueOnce(new Error("channel_not_found"));
 
     const result = await runStandupPrompts({
       now: WEEKDAY_1030_ET,
@@ -106,7 +120,9 @@ describe("standup-prompts", () => {
       settings: { sendHourEt: 10 },
     });
 
-    expect(mockPost).toHaveBeenCalledTimes(2);
+    // Both projects were attempted (enqueue called twice: once throwing, once succeeding).
+    expect(mockEnqueue).toHaveBeenCalledTimes(2);
+    // Only the successful enqueue contributes an id → items = 1.
     expect(result.items).toBe(1);
   });
 });

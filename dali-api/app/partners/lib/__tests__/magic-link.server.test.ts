@@ -15,17 +15,18 @@ vi.mock("~/lib/db", () => ({
 
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(),
+  drainNow: vi.fn(),
+}));
 vi.mock("../partner-emails.server", () => ({
-  sendPartnerMagicLinkEmail: vi.fn(),
   sendMemberEmailConflictEmail: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import {
-  sendPartnerMagicLinkEmail,
-  sendMemberEmailConflictEmail,
-} from "../partner-emails.server";
+import { enqueueOutbound } from "~/lib/outbound.server";
+import { sendMemberEmailConflictEmail } from "../partner-emails.server";
 import {
   classifyPartnerEmail,
   consumePartnerMagicLink,
@@ -34,11 +35,13 @@ import {
 } from "../magic-link.server";
 
 const mockPrisma = prisma as any;
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
 const req = () => new Request("http://localhost/partner/login", { method: "POST" });
 
 beforeEach(() => {
   vi.resetAllMocks();
   (checkRateLimit as any).mockReturnValue(null);
+  mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
@@ -136,9 +139,10 @@ describe("issuePartnerMagicLink", () => {
     });
     const createArg = mockPrisma.oneTimeToken.create.mock.calls[0][0];
     expect(createArg.data.purpose).toBe("PartnerMagicLink");
-    // Hash at rest: the stored value must not be the raw token in the link.
-    const url: string = (sendPartnerMagicLinkEmail as any).mock.calls[0][1];
-    const raw = new URL(url).searchParams.get("token")!;
+    // Hash at rest: the stored value must not be the raw token in the link. The
+    // magic link is enqueued to the outbox; the raw token lives in its bodyHtml.
+    const bodyHtml: string = mockEnqueue.mock.calls[0][0].bodyHtml;
+    const raw = bodyHtml.match(/token=([^"&\s]+)/)![1];
     expect(createArg.data.tokenHash).toBe(hashToken(raw));
     expect(createArg.data.tokenHash).not.toBe(raw);
   });

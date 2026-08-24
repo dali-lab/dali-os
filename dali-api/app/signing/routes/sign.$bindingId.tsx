@@ -2,7 +2,7 @@
 // sign page: renders the in-force version with the member's fields interactive,
 // validates + records the signature, and shows the signed copy afterward.
 
-import { redirect, Link, useLoaderData } from "react-router";
+import { redirect, Link, useLoaderData, useActionData } from "react-router";
 import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
 import { prisma } from "~/lib/db";
@@ -13,7 +13,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { collectSigningFields } from "~/lib/signing-fields";
-import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
+import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { recordSignature } from "~/signing/lib/sign.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
@@ -42,8 +42,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       versionId: true,
+      termId: true,
       document: { select: { name: true, audience: true } },
       version: { select: { body: true } },
+      term: { select: { code: true } },
       signatures: {
         where: { roleKey: "supervisor" },
         select: { typedName: true },
@@ -55,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [state, cohorts] = await Promise.all([
     getBindingStateForUser(userId, bindingId),
-    getSignerCohorts(userId),
+    getSignerCohortsForBinding(userId, binding.termId),
   ]);
 
   // Gate direct access: only members in the audience (or someone who already
@@ -64,7 +66,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (state.status !== "signed" && !inAudience) return redirect("/");
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";
-  const variables = await resolveSigningVariablesForSigner(userId, { supervisorName });
+  const variables = await resolveSigningVariablesForSigner(userId, {
+    supervisorName,
+    termCode: binding.term?.code ?? undefined,
+  });
 
   // Convert-on-read: the fill surface and field validation walk block JSON;
   // legacy ProseMirror version rows are normalized here (never rewritten).
@@ -131,18 +136,28 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!result.ok) return { error: result.error };
 
-  return redirect(next ?? "/sign");
+  // Land on the signed confirmation view (not the inbox) so the signer gets an
+  // explicit "you're done" screen with the emailed-copy note + download. Carry
+  // `next` so Continue still returns them to where they came from.
+  const signedUrl = `/sign/${bindingId}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+  return redirect(signedUrl);
 }
 
 export default function SignBindingPage() {
   const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
 
   if (data.status === "signed") {
     return (
       <div className="max-w-3xl mx-auto py-10 space-y-6">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="w-6 h-6 text-green-600" />
-          <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-6 h-6 text-green-600" />
+            <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Thanks for signing. A copy has been emailed to you and is available to download below.
+          </p>
         </div>
         <article className="bg-card border border-border rounded-lg p-6">
           {data.signedLegacyHtml != null ? (
@@ -190,6 +205,7 @@ export default function SignBindingPage() {
         variables={data.variables}
         fields={data.fields}
         next={data.next}
+        error={actionData?.error}
       />
     </div>
   );

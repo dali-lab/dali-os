@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, Form, useLoaderData } from "react-router";
 import { Plus, FileSignature, ChevronRight } from "lucide-react";
-import type { loader } from "~/signing/routes/admin.agreements";
+import type { loader } from "~/signing/routes/core.agreements";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -138,7 +138,7 @@ export function SigningDocumentsPage() {
             return (
               <Link
                 key={doc.id}
-                to={`/admin/agreements/${doc.id}`}
+                to={`/core/agreements/${doc.id}`}
                 className={cn(
                   "group block p-6",
                   os

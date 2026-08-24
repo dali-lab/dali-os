@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -1139,7 +1140,9 @@ function AttentionBanner({
 
 function TaskCard({ task: t }: { task: Task }) {
   const revalidator = useRevalidator();
+  const { confirm: confirmDialog } = useDialog();
   const [confirming, setConfirming] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const cls =
     "flex-shrink-0 w-56 bg-card border border-border shadow-brand-1 rounded-md px-3 py-2";
 
@@ -1172,8 +1175,59 @@ function TaskCard({ task: t }: { task: Task }) {
     );
   }
 
-  // Form tasks self-clear on submit, so the whole tile is the form link and
-  // there's no Confirm.
+  // A form todo self-clears on submit, so the tile links to the form. But a
+  // recipient who won't (or can't) fill it would otherwise be stuck with it
+  // forever — the /read endpoint refuses a plain read — so offer a confirmed
+  // Dismiss that clears the reminder without submitting (intent=dismiss).
+  async function dismissForm() {
+    const ok = await confirmDialog({
+      title: "Dismiss this reminder?",
+      description:
+        "You haven't submitted this form. Dismissing removes it from your tasks — you can still find it in History.",
+      confirmLabel: "Dismiss",
+    });
+    if (!ok) return;
+    setDismissing(true);
+    try {
+      await fetch(`/api/notifications/${t.id}/read`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ intent: "dismiss" }),
+      });
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch {
+      setDismissing(false);
+    }
+  }
+
+  if (t.formTodo) {
+    return (
+      <div className={cls}>
+        <a
+          href={t.link!}
+          onClick={(e) => openTaskLink(e, t.link!, t.title)}
+          className="block hover:opacity-80 transition-opacity"
+        >
+          {title}
+          {meta}
+        </a>
+        <button
+          type="button"
+          onClick={dismissForm}
+          disabled={dismissing}
+          className="inline-flex items-center gap-1 mt-2 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+        >
+          <X className="w-3 h-3" />
+          {dismissing ? "Dismissing…" : "Dismiss"}
+        </button>
+      </div>
+    );
+  }
+
+  // Other self-clearing tasks that merely link (onboarding, an apply-to-cycle
+  // task): the whole tile is the link and there's no Confirm.
   if (t.hasAction && t.link) {
     return (
       <a

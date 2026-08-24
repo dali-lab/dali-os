@@ -1,18 +1,18 @@
-// Drive-namespaced signature view route — wraps the admin implementation with
+// Drive-namespaced signature view route — wraps the core implementation with
 // a Drive-rooted breadcrumb trail so the signed-copy viewer shows
 // "Drive › Folder › … › <agreement name> › Signed copy" rather than no crumb.
 import type { Route } from "./+types/documents.agreement.$id.signature.$sigId";
-import { loader as adminLoader } from "./admin.agreements.$id.signature.$sigId";
+import { loader as coreLoader } from "./core.agreements.$id.signature.$sigId";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { requireAuth } from "~/lib/auth";
 import { PageIcon } from "~/components/PageIcon";
 import { prisma } from "~/lib/db";
 
-export { default } from "./admin.agreements.$id.signature.$sigId";
+export { default } from "./core.agreements.$id.signature.$sigId";
 
 export async function loader(args: Route.LoaderArgs) {
-  const result = await adminLoader(args as unknown as Parameters<typeof adminLoader>[0]);
+  const result = await coreLoader(args as unknown as Parameters<typeof coreLoader>[0]);
   if (result instanceof Response) return result;
 
   // Look up the agreement's folderPageId so we can build the Drive crumb trail.

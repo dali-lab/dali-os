@@ -47,6 +47,11 @@ export type EventDef = {
   // Only admins ever receive this event, so its settings row is shown only to
   // admins (and the save action ignores it for non-admins).
   adminOnly?: boolean;
+  // Opt-in coalescing window (ms). When set, notify() suppresses a second
+  // notification for the same (recipient, eventType, link) inside the window —
+  // taming a burst (e.g. many comments on one task) into one. Best-effort; it
+  // drops the extras, it does not aggregate them into a "N new" summary.
+  coalesceWindowMs?: number;
   // `desktop` gates the native banner the desktop app raises for an in-app
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
@@ -96,6 +101,7 @@ export const EVENT_TYPES = {
     area: "Tasks",
     label: "Task comments",
     description: "New comments on tasks you're assigned.",
+    coalesceWindowMs: 60 * 60_000, // one ping per task per hour
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.status_changed": {
@@ -117,6 +123,7 @@ export const EVENT_TYPES = {
     area: "Documents",
     label: "Comment replies",
     description: "Replies in document and file comment threads you're part of.",
+    coalesceWindowMs: 30 * 60_000, // one ping per thread per half hour
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "file.comment": {
@@ -124,6 +131,7 @@ export const EVENT_TYPES = {
     area: "Documents",
     label: "File feedback",
     description: "New comments on files you uploaded or are working on via a task.",
+    coalesceWindowMs: 60 * 60_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "file.new_version": {
@@ -261,6 +269,7 @@ export const EVENT_TYPES = {
     area: "Education",
     label: "Discussion replies",
     description: "Replies in discussion threads you're part of.",
+    coalesceWindowMs: 30 * 60_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.feedback_request": {

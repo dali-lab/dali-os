@@ -49,6 +49,12 @@ export type Task = {
   // notification with a link) — is false: opening the link doesn't mean the
   // user is done, so the UI offers a "Confirm" button that marks it read.
   hasAction: boolean;
+  // True for a self-clearing form todo (isSelfClearingFormTodo): it clears on
+  // submit and so carries no plain "Mark as read", but a recipient who won't
+  // (or can't) fill it shouldn't be stuck with it forever. The UI offers a
+  // "Dismiss" button that POSTs `intent=dismiss` after a confirm — the one
+  // escape hatch the read endpoint honors for these rows.
+  formTodo: boolean;
 };
 
 // Server-derived display state for a single notification row. Mirrors the
@@ -270,6 +276,7 @@ async function getInternalCycleApplyTask(
     dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
     // Clears by self-action (submit / withdraw in the portal) — no Confirm button.
     hasAction: true,
+    formTodo: false,
   };
 }
 
@@ -284,6 +291,7 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
         id: true,
         kind: true,
         eventType: true,
+        isTodo: true,
         title: true,
         body: true,
         link: true,
@@ -360,6 +368,14 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
     const isMeetingInvite =
       n.kind === "MeetingInvite" && !!n.scheduledMeetingId;
     const hasAction = isMeetingInvite || !!formLink || isOnboarding;
+    // A self-clearing form todo has no plain mark-read but is dismissible via
+    // the confirm-gated `intent=dismiss` path — mirror the server predicate
+    // exactly so the button only shows when the endpoint will honor it.
+    const formTodo = isSelfClearingFormTodo({
+      kind: n.kind,
+      isTodo: n.isTodo,
+      form: n.form,
+    });
 
     return {
       id: n.id,
@@ -370,6 +386,7 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
       source,
       dueAt,
       hasAction,
+      formTodo,
     };
   });
 

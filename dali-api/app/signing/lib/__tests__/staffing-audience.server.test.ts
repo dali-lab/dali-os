@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/hiring/lib/new-member-cohort.server", () => ({
+  getNewMemberCohortIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
+import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import {
   partitionStaffedMembers,
   listStaffedMentors,
   isStaffedInTerm,
-  hasPriorStaffing,
   isStaffedMentorInTerm,
 } from "~/signing/lib/staffing-audience.server";
 
@@ -35,20 +38,17 @@ beforeEach(() => {
 
 describe("partitionStaffedMembers", () => {
   beforeEach(() => {
-    mockPrisma.term.findUnique.mockResolvedValue({ sortKey: 300 });
-    // The proj/core queries branch on the where shape: {termId} = this term's
-    // roster, {term:{sortKey}} = staffing in earlier terms.
-    mockPrisma.projectAssignment.findMany.mockImplementation(async (args: any) =>
-      args.where.termId
-        ? [{ userId: "u1" }, { userId: "u2" }] // staffed this term
-        : [{ userId: "u2" }], // prior staffing
-    );
-    mockPrisma.coreAssignment.findMany.mockImplementation(async (args: any) =>
-      args.where.termId ? [{ userId: "u3" }] : [],
-    );
+    // Staffed roster this term: u1, u2 (project) + u3 (core).
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([
+      { userId: "u1" },
+      { userId: "u2" },
+    ]);
+    mockPrisma.coreAssignment.findMany.mockResolvedValue([{ userId: "u3" }]);
+    // Incoming hire cohort: u1, u3 (accepted this cycle); u2 is a returner.
+    vi.mocked(getNewMemberCohortIds).mockResolvedValue(new Set(["u1", "u3"]));
   });
 
-  it("splits the staffed roster into first-timers (new) and returning", async () => {
+  it("splits the staffed roster into the incoming hire cohort (new) and returning", async () => {
     const { newMembers, returning } = await partitionStaffedMembers("t1");
     expect(newMembers.map((p) => p.id).sort()).toEqual(["u1", "u3"]);
     expect(returning.map((p) => p.id)).toEqual(["u2"]);
@@ -62,17 +62,18 @@ describe("partitionStaffedMembers", () => {
     expect([...newIds].some((id) => retIds.has(id))).toBe(false);
   });
 
+  it("keeps staffed members outside the hire cohort in returning (pre-DALIOS, no history)", async () => {
+    // A staffed member with no accept record must not be miscounted as new.
+    vi.mocked(getNewMemberCohortIds).mockResolvedValue(new Set());
+    const { newMembers, returning } = await partitionStaffedMembers("t1");
+    expect(newMembers).toEqual([]);
+    expect(returning.map((p) => p.id).sort()).toEqual(["u1", "u2", "u3"]);
+  });
+
   it("is empty when the term has no staffing", async () => {
     mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
     mockPrisma.coreAssignment.findMany.mockResolvedValue([]);
     const { newMembers, returning } = await partitionStaffedMembers("t1");
-    expect(newMembers).toEqual([]);
-    expect(returning).toEqual([]);
-  });
-
-  it("is empty when the term does not exist", async () => {
-    mockPrisma.term.findUnique.mockResolvedValue(null);
-    const { newMembers, returning } = await partitionStaffedMembers("nope");
     expect(newMembers).toEqual([]);
     expect(returning).toEqual([]);
   });
@@ -93,13 +94,6 @@ describe("single-user gates", () => {
     expect(await isStaffedInTerm("u1", "t1")).toBe(true);
     mockPrisma.user.findFirst.mockResolvedValue(null);
     expect(await isStaffedInTerm("u1", "t1")).toBe(false);
-  });
-
-  it("hasPriorStaffing checks strictly-earlier terms", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({ id: "u1" });
-    expect(await hasPriorStaffing("u1", 300)).toBe(true);
-    const arg = mockPrisma.user.findFirst.mock.calls[0][0] as any;
-    expect(arg.where.OR[0].projectAssignments.some.term.sortKey.lt).toBe(300);
   });
 
   it("isStaffedMentorInTerm is true for a P3 or an external-mentor row", async () => {

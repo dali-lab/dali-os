@@ -951,9 +951,9 @@ function NewMenu({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
-    const res = await fetch("/admin/agreements", { method: "POST", body: formData, credentials: "include" });
+    const res = await fetch("/core/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
-      const driveUrl = res.url.replace(/\/admin\/agreements\/([^/]+)$/, "/documents/agreement/$1");
+      const driveUrl = res.url.replace(/\/core\/agreements\/([^/]+)$/, "/documents/agreement/$1");
       window.location.assign(driveUrl);
     }
   }

@@ -1,20 +1,26 @@
-import { sendEmail } from "~/lib/gmail";
-import { getSender } from "~/lib/gmail-integration";
-import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { getFrontendUrl } from "~/lib/app-env";
 
-// All partner-facing mail goes through the lab's applications Gmail
-// integration — the same sender hiring and education use. Recipients can be
-// on any provider; nothing here requires the partner to have a Google
-// account.
-async function send(to: string, subject: string, html: string): Promise<void> {
-  const sender = await getSender("Partners");
-  if (!sender) {
-    if (getAppEnv() !== "dev") {
-      console.error("partner email skipped: applications Gmail not connected");
-    }
-    return;
-  }
-  await sendEmail({ refreshToken: sender.refreshToken, from: sender.sendAsEmail, to, subject, html });
+// All partner-facing mail goes through the outbox as the Partners Gmail
+// identity (resolved at drain — retry, per-sender cap, and history come with
+// it). Recipients can be on any provider; nothing here requires the partner to
+// have a Google account.
+async function send(
+  to: string,
+  subject: string,
+  html: string,
+  opts: { dedupKey?: string | null; eventType?: string } = {},
+): Promise<void> {
+  const { id } = await enqueueOutbound({
+    channel: "email",
+    purpose: "Partners",
+    dedupKey: opts.dedupKey ?? null,
+    target: to,
+    subject,
+    bodyHtml: html,
+    eventType: opts.eventType ?? "partner.email",
+  });
+  await drainNow([id]);
 }
 
 const wrap = (body: string) => `
@@ -25,50 +31,9 @@ const wrap = (body: string) => `
     </p>
   </div>`;
 
-export async function sendPartnerMagicLinkEmail(
-  to: string,
-  url: string,
-): Promise<void> {
-  // sendEmail no-ops in dev; surface the link so the flow stays manually
-  // testable without a mail sender.
-  if (getAppEnv() === "dev") {
-    console.info(`[partner-magic-link:dev] ${url}`);
-  }
-  await send(
-    to,
-    "Sign in to DALI OS",
-    wrap(`
-      <p>Use the button below to sign in to the DALI Lab partner portal. This link works once and expires in 15 minutes.</p>
-      <p style="margin: 24px 0;">
-        <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Sign in to DALI OS</a>
-      </p>
-      <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
-    `),
-  );
-}
-
-export async function sendPartnerInviteEmail(
-  to: string,
-  orgName: string,
-  inviterName: string | null,
-  url: string,
-): Promise<void> {
-  if (getAppEnv() === "dev") {
-    console.info(`[partner-invite:dev] ${url}`);
-  }
-  const invitedBy = inviterName ? `${inviterName} invited you` : "You've been invited";
-  await send(
-    to,
-    `You've been invited to join ${orgName} on DALI OS`,
-    wrap(`
-      <p>${invitedBy} to join <strong>${orgName}</strong> on DALI OS, the DALI Lab partner portal.</p>
-      <p style="margin: 24px 0;">
-        <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Accept invitation</a>
-      </p>
-      <p style="color: #6b7280; font-size: 13px;">This invitation expires in 7 days.</p>
-    `),
-  );
-}
+// Magic-link and invite emails now render inline at their outbound-message
+// enqueue sites (magic-link.server.ts / invites.server.ts) — see the outbox
+// layer (app/lib/outbound.server.ts).
 
 const greeting = (name: string | null) => `<p>Hi ${name || "there"},</p>`;
 
@@ -88,6 +53,7 @@ export async function sendTriageNextStepsEmail(
       <p style="white-space: pre-wrap;">${nextSteps}</p>
       <p style="color: #6b7280; font-size: 13px;">Just reply to this email with any questions.</p>
     `),
+    { eventType: "partner.triage" },
   );
 }
 
@@ -108,6 +74,7 @@ export async function sendMeetingInviteEmail(
       ${details ? `<p style="white-space: pre-wrap;">${details}</p>` : ""}
       <p style="color: #6b7280; font-size: 13px;">Reply to confirm or suggest another time.</p>
     `),
+    { eventType: "partner.meeting_invite" },
   );
 }
 
@@ -125,6 +92,7 @@ export async function sendDecisionAcceptedEmail(
       <p>We're excited to move forward with your project${projectName ? ` — <strong>${projectName}</strong>` : ""}! Our team will be in touch shortly with next steps, including scope, timeline, and a Statement of Work.</p>
       <p style="color: #6b7280; font-size: 13px;">We're looking forward to working together.</p>
     `),
+    { eventType: "partner.decision.accepted" },
   );
 }
 
@@ -143,6 +111,7 @@ export async function sendDecisionRejectedEmail(
       ${reason ? `<p style="white-space: pre-wrap;">${reason}</p>` : ""}
       <p>We'd genuinely welcome hearing from you again in the future.</p>
     `),
+    { eventType: "partner.decision.rejected" },
   );
 }
 
@@ -161,6 +130,7 @@ export async function sendLearnMoreRequestEmail(
       <p style="white-space: pre-wrap;">${whatWeNeed}</p>
       <p style="color: #6b7280; font-size: 13px;">Just reply to this email — thank you!</p>
     `),
+    { eventType: "partner.learn_more" },
   );
 }
 
@@ -173,5 +143,6 @@ export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
       <p>If that was you: lab members and Dartmouth students sign in at the regular <a href="${getFrontendUrl()}/login">DALI OS sign-in page</a>. To create a separate partner account, use a different (work) email address.</p>
       <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
     `),
+    { eventType: "partner.member_conflict" },
   );
 }

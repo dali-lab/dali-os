@@ -10,7 +10,7 @@ import { getUserRoles } from "~/lib/roles";
  * Call this at the top of the SOURCE route's loader, never the alias's. The
  * alias modules re-export that same loader, so the `from`-prefix guard is what
  * keeps it inert on the new path — the same redirect-loop guard shape
- * admin.agreements.$id.tsx uses for its Drive aliases. Sub-paths and the query
+ * core.agreements.$id.tsx uses for its Drive aliases. Sub-paths and the query
  * string carry over, which is what makes in-page links
  * (/projects/intent-to-work → /projects/intent-to-work/:userId) land inside
  * Core without every link site needing to know about the flag.

@@ -15,9 +15,12 @@ export async function activateVersion(opts: {
   documentId: string;
   versionId: string;
   userId: string;
+  // Target term for PerTerm cadence (defaults to the current term). Lets the
+  // staffing board issue a not-yet-started term's agreements early.
+  termId?: string;
   request?: Request;
 }): Promise<ActivateResult> {
-  const { documentId, versionId, userId, request } = opts;
+  const { documentId, versionId, userId, termId, request } = opts;
 
   const version = await prisma.signingDocumentVersion.findUnique({
     where: { id: versionId },
@@ -30,7 +33,7 @@ export async function activateVersion(opts: {
     where: { id: documentId },
     select: { cadence: true },
   });
-  const scope = await resolveAdminScope(doc);
+  const scope = await resolveAdminScope(doc, { termId });
   if ("error" in scope) return { error: scope.error };
 
   // One binding per (document, scopeKey): re-activating swaps the version.

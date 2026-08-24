@@ -2,6 +2,9 @@
 // email purpose (Hiring / Education / Partners / General). Purposes with no
 // integration of their own fall back to Hiring, so the page shows both the
 // connected state and what actually happens today.
+//
+// Also exposes per-sender daily cap (GmailIntegration.dailyCap) and today's
+// SenderDailyUsage count so operators can see and adjust egress limits.
 
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
@@ -47,9 +50,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (row.enabled && !byPurpose.has(row.purpose)) byPurpose.set(row.purpose, row);
   }
 
+  // Today's usage for each connected sender (by id, not purpose).
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const connectedIds = [...byPurpose.values()].map((r) => r.id);
+  const usageRows =
+    connectedIds.length === 0
+      ? []
+      : await prisma.senderDailyUsage.findMany({
+          where: {
+            senderId: { in: connectedIds },
+            day: todayUtc,
+          },
+          select: { senderId: true, count: true },
+        });
+  const usageById = new Map(usageRows.map((u) => [u.senderId, u.count]));
+
   const senders = EMAIL_PURPOSE_KEYS.map((purpose) => {
     const row = byPurpose.get(purpose);
     const hiring = byPurpose.get("Hiring");
+    const todayCount = row ? (usageById.get(row.id) ?? 0) : 0;
+    const dailyCap = row?.dailyCap ?? null;
     return {
       purpose,
       label: EMAIL_PURPOSES[purpose].label,
@@ -59,6 +79,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       linkedAt: row?.linkedAt?.toISOString() ?? null,
       lastUsedAt: row?.lastUsedAt?.toISOString() ?? null,
       syncError: row?.syncError ?? null,
+      dailyCap,
+      todayCount,
+      capped: dailyCap != null && todayCount >= dailyCap,
       // What actually sends when this purpose has no row of its own.
       fallbackEmail: !row && purpose !== "Hiring" ? (hiring?.sendAsEmail ?? null) : null,
     };
@@ -77,14 +100,34 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = form.get("intent");
-  const id = form.get("id");
-  if (intent !== "disable" || typeof id !== "string" || !id) {
-    return Response.json({ error: "Invalid input" }, { status: 400 });
+
+  if (intent === "disable") {
+    const id = form.get("id");
+    if (typeof id !== "string" || !id) {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    // Soft-disable, matching the model's convention — the row (and its token)
+    // stays for re-enable via reconnect.
+    await prisma.gmailIntegration.update({ where: { id }, data: { enabled: false } });
+    return Response.json({ ok: true });
   }
-  // Soft-disable, matching the model's convention — the row (and its token)
-  // stays for re-enable via reconnect.
-  await prisma.gmailIntegration.update({ where: { id }, data: { enabled: false } });
-  return Response.json({ ok: true });
+
+  if (intent === "save-cap") {
+    const id = form.get("id");
+    const capRaw = form.get("dailyCap");
+    if (typeof id !== "string" || !id) {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    // Empty string or "0" → null (uncapped); positive integer → cap value.
+    const cap =
+      typeof capRaw === "string" && capRaw.trim() !== "" && Number(capRaw) > 0
+        ? Number(capRaw)
+        : null;
+    await prisma.gmailIntegration.update({ where: { id }, data: { dailyCap: cap } });
+    return Response.json({ ok: true });
+  }
+
+  return Response.json({ error: "Invalid intent" }, { status: 400 });
 }
 
 function formatTime(iso: string | null): string {
@@ -95,6 +138,70 @@ function formatTime(iso: string | null): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function DailyCapRow({
+  integrationId,
+  dailyCap,
+  todayCount,
+  capped,
+}: {
+  integrationId: string;
+  dailyCap: number | null;
+  todayCount: number;
+  capped: boolean;
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const busy = fetcher.state !== "idle";
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+      {/* Today's usage indicator */}
+      <span className="text-xs text-muted-foreground">
+        Today:{" "}
+        <span className={capped ? "font-semibold text-red-600" : "font-medium text-foreground"}>
+          {todayCount}
+        </span>
+        {dailyCap != null ? ` / ${dailyCap}` : ""}
+        {capped && (
+          <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+            capped
+          </span>
+        )}
+      </span>
+
+      {/* Cap editor */}
+      <fetcher.Form method="post" className="ml-auto flex items-center gap-2">
+        <input type="hidden" name="intent" value="save-cap" />
+        <input type="hidden" name="id" value={integrationId} />
+        <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+          Daily cap
+          <input
+            type="number"
+            name="dailyCap"
+            min={1}
+            defaultValue={dailyCap ?? ""}
+            placeholder="uncapped"
+            className="w-24 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
+            title="Maximum emails per UTC day. Leave blank for uncapped."
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={busy}
+          className={buttonClasses("ghost", "sm")}
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+        {fetcher.data?.error && (
+          <span className="text-xs text-red-600">{fetcher.data.error}</span>
+        )}
+        {fetcher.data?.ok && (
+          <span className="text-xs text-emerald-600">Saved</span>
+        )}
+      </fetcher.Form>
+    </div>
+  );
 }
 
 export default function EmailSendersAdmin() {
@@ -179,6 +286,16 @@ export default function EmailSendersAdmin() {
                 )}
               </div>
             </div>
+
+            {/* Daily cap + today's usage — only shown for connected senders */}
+            {s.integrationId && (
+              <DailyCapRow
+                integrationId={s.integrationId}
+                dailyCap={s.dailyCap}
+                todayCount={s.todayCount}
+                capped={s.capped}
+              />
+            )}
           </div>
         ))}
       </div>

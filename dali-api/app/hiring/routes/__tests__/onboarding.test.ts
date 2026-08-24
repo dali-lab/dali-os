@@ -20,6 +20,10 @@ vi.mock("~/lib/notify.server", () => ({
   renderNotificationEmail: vi.fn(() => "<p>email</p>"),
 }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(),
+  drainNow: vi.fn(),
+}));
 vi.mock("~/lib/gmail-integration", () => ({
   getSender: vi.fn().mockResolvedValue({
     id: "g-1",
@@ -45,6 +49,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { notify } from "~/lib/notify.server";
 import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound } from "~/lib/outbound.server";
 import { sendDm } from "~/slack/lib/slack-client";
 import { loader, action } from "~/hiring/routes/onboarding";
 
@@ -113,6 +118,7 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(getUserRoles).mockResolvedValue(CORE_ROLES as any);
   vi.mocked(notify).mockResolvedValue(undefined as any);
+  vi.mocked(enqueueOutbound).mockResolvedValue({ id: "om-x", deduped: false });
 });
 
 describe("hiring/onboarding loader", () => {
@@ -558,8 +564,8 @@ describe("hiring/onboarding action (remind)", () => {
       via: "emailDartmouth",
     });
     expect(notify).not.toHaveBeenCalled();
-    expect(sendEmail).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(sendEmail).mock.calls.map((c) => c[0].to).sort()).toEqual([
+    expect(enqueueOutbound).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(enqueueOutbound).mock.calls.map((c) => c[0].target).sort()).toEqual([
       "ada.t@dartmouth.edu",
       "bea.t@dartmouth.edu",
     ]);
@@ -592,8 +598,8 @@ describe("hiring/onboarding action (remind)", () => {
     const body = await res.json();
     expect(body).toMatchObject({ ok: true, count: 1, skipped: 1, via: "emailDali" });
     expect(notify).not.toHaveBeenCalled();
-    expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(sendEmail).mock.calls[0][0].to).toBe("ada@dali.dartmouth.edu");
+    expect(enqueueOutbound).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(enqueueOutbound).mock.calls[0][0].target).toBe("ada@dali.dartmouth.edu");
   });
 
   it("Slack DMs only — never creates an in-app notification", async () => {

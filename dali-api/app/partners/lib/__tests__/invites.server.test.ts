@@ -17,12 +17,13 @@ vi.mock("~/lib/db", () => ({
 }));
 
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("../partner-emails.server", () => ({
-  sendPartnerInviteEmail: vi.fn(),
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(),
+  drainNow: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
-import { sendPartnerInviteEmail } from "../partner-emails.server";
+import { enqueueOutbound } from "~/lib/outbound.server";
 import {
   acceptPartnerInvite,
   createPartnerInvite,
@@ -30,9 +31,11 @@ import {
 } from "../invites.server";
 
 const mockPrisma = prisma as any;
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.user.findUnique.mockResolvedValue({ firstName: "Ada", lastName: "L" });
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
@@ -101,9 +104,12 @@ describe("createPartnerInvite", () => {
     });
     const createArg = mockPrisma.partnerInvite.create.mock.calls[0][0];
     expect(createArg.data.email).toBe("new@example.com");
-    const url: string = (sendPartnerInviteEmail as any).mock.calls[0][3];
-    expect(url).toContain("/partner/invite/");
-    expect(url).not.toContain(createArg.data.tokenHash);
+    // The invite email is enqueued to the outbox; the raw-token link lives in
+    // its bodyHtml, and the stored hash is never exposed.
+    const emailArg = mockEnqueue.mock.calls[0][0];
+    expect(emailArg.channel).toBe("email");
+    expect(emailArg.bodyHtml).toContain("/partner/invite/");
+    expect(emailArg.bodyHtml).not.toContain(createArg.data.tokenHash);
   });
 });
 

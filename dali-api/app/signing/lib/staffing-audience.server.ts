@@ -1,16 +1,24 @@
 // Staffing-derived signing audiences. The new-member and returning-member
 // agreements partition the term's *staffed roster* — everyone with a
-// ProjectAssignment or CoreAssignment in the term. "New" = this is the first
-// term they've ever been staffed; everyone else staffed is "returning". Their
-// union is the whole roster and the two never overlap (returning = staffed
-// minus new). The mentor agreement's audience is the people actually mentoring
-// the term: P3 project mentors plus external mentors. All of these exclude
-// full-time staff, who are exempt from signing (see getSignerCohorts).
+// ProjectAssignment or CoreAssignment in the term. "New" = in the incoming hire
+// cohort (accepted in the latest General/Fellowship cycle — see
+// getNewMemberCohortIds); everyone else staffed is "returning". Their union is
+// the whole roster and the two never overlap (returning = staffed minus new).
+// The mentor agreement's audience is the people actually mentoring the term: P3
+// project mentors plus external mentors. All of these exclude full-time staff,
+// who are exempt from signing (see getSignerCohorts).
+//
+// Keying "new" off the hire cohort — not off "never staffed before" — is
+// deliberate: Fellowship hires were staffed as interns (so a prior-staffing test
+// wrongly calls them returning), and pre-DALIOS members have no assignment
+// history at all (so a prior-staffing test wrongly calls them new). The accept
+// cohort is the correct signal for both.
 //
 // The bulk fns feed the admin roster, proactive notifications, and the issuance
 // job; the single-user gates feed the live app-gate. Keep the two paths in sync.
 
 import { prisma } from "~/lib/db";
+import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import type { AudiencePerson } from "./audiences";
 
 // Hydrate userIds into AudiencePerson rows, dropping full-time staff.
@@ -38,46 +46,21 @@ async function staffedUserIds(termId: string): Promise<Set<string>> {
   return set;
 }
 
-// The staffed roster split into first-timers ("new") and everyone else
-// ("returning"). new ∪ returning = the roster; the two are disjoint.
+// The staffed roster split into the incoming hire cohort ("new") and everyone
+// else ("returning"). new ∪ returning = the roster; the two are disjoint.
 export async function partitionStaffedMembers(
   termId: string,
 ): Promise<{ newMembers: AudiencePerson[]; returning: AudiencePerson[] }> {
-  const term = await prisma.term.findUnique({
-    where: { id: termId },
-    select: { sortKey: true },
-  });
-  if (!term) return { newMembers: [], returning: [] };
   const staffed = await staffedUserIds(termId);
   if (staffed.size === 0) return { newMembers: [], returning: [] };
 
-  const prior = await priorStaffedIds(term.sortKey, [...staffed]);
+  const cohort = await getNewMemberCohortIds();
   const newIds = new Set<string>();
   const returningIds = new Set<string>();
-  for (const id of staffed) (prior.has(id) ? returningIds : newIds).add(id);
+  for (const id of staffed) (cohort.has(id) ? newIds : returningIds).add(id);
 
   const [newMembers, returning] = await Promise.all([hydrate(newIds), hydrate(returningIds)]);
   return { newMembers, returning };
-}
-
-// Of the given users, those staffed (project/core) in any earlier term.
-async function priorStaffedIds(termSortKey: number, userIds: string[]): Promise<Set<string>> {
-  if (userIds.length === 0) return new Set();
-  const priorTerm = { sortKey: { lt: termSortKey } };
-  const [proj, core] = await Promise.all([
-    prisma.projectAssignment.findMany({
-      where: { userId: { in: userIds }, term: priorTerm },
-      select: { userId: true },
-    }),
-    prisma.coreAssignment.findMany({
-      where: { userId: { in: userIds }, term: priorTerm },
-      select: { userId: true },
-    }),
-  ]);
-  const set = new Set<string>();
-  for (const r of proj) set.add(r.userId);
-  for (const r of core) set.add(r.userId);
-  return set;
 }
 
 // People mentoring the term: P3 project assignments ∪ external mentors.
@@ -108,22 +91,6 @@ export async function isStaffedInTerm(userId: string, termId: string): Promise<b
       OR: [
         { projectAssignments: { some: { termId } } },
         { coreAssignments: { some: { termId } } },
-      ],
-    },
-    select: { id: true },
-  });
-  return hit !== null;
-}
-
-// Was this user staffed (project/core) in any term before termSortKey?
-export async function hasPriorStaffing(userId: string, termSortKey: number): Promise<boolean> {
-  const priorTerm = { sortKey: { lt: termSortKey } };
-  const hit = await prisma.user.findFirst({
-    where: {
-      id: userId,
-      OR: [
-        { projectAssignments: { some: { term: priorTerm } } },
-        { coreAssignments: { some: { term: priorTerm } } },
       ],
     },
     select: { id: true },
