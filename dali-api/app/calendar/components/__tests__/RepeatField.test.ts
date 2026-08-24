@@ -42,6 +42,19 @@ describe("repeatSpecToRRule", () => {
     expect(rule).toBe("FREQ=WEEKLY;BYDAY=MO,WE,TH");
   });
 
+  it("expands custom into a weekly rule on the chosen weekdays", () => {
+    expect(repeatSpecToRRule(spec({ freq: "custom", byDay: [1, 3, 5] }))).toBe(
+      "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+    );
+  });
+
+  it("carries interval and count through a custom rule", () => {
+    const rule = repeatSpecToRRule(
+      spec({ freq: "custom", interval: 2, byDay: [1, 4], end: { type: "after", count: 8 } }),
+    );
+    expect(rule).toBe("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH;COUNT=8");
+  });
+
   it("drops BYDAY when no day is picked, so the start's weekday wins", () => {
     expect(repeatSpecToRRule(spec({ freq: "weekly", byDay: [] }))).toBe("FREQ=WEEKLY");
   });

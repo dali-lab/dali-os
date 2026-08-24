@@ -18,8 +18,17 @@ import { cn } from "~/lib/cn";
 // grid and the Ends switch is a segmented group — both borrowed from DateField
 // (its calendar grid and its AM/PM toggle), so the two controls read as one
 // family when they sit side by side in a form.
+//
+// The frequency choices mirror Google Calendar: Daily / Weekly / Monthly are
+// simple presets that recur on the day the series starts, and "Custom weekdays"
+// is the multi-day mode — pick any combination of weekdays (Mon/Wed/Fri) and an
+// every-N-weeks interval. Only Custom shows the weekday strip.
 
-export type RepeatFreq = "none" | "daily" | "weekly" | "monthly";
+// "custom" is a weekly rule whose selected weekdays are the whole point — the
+// Google-Calendar-style "pick any combination of days" mode. It expands to
+// FREQ=WEEKLY;BYDAY=… (see `repeatSpecToRRule`); "weekly" stays the simple
+// "every N weeks on the day it starts" preset.
+export type RepeatFreq = "none" | "daily" | "weekly" | "monthly" | "custom";
 
 export type RepeatEnd =
   | { type: "never" }
@@ -50,6 +59,7 @@ const FREQ_OPTIONS: { value: RepeatFreq; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
+  { value: "custom", label: "Custom weekdays…" },
 ];
 
 const END_SEGMENTS: { value: RepeatEnd["type"]; label: string }[] = [
@@ -62,6 +72,7 @@ const UNIT_LABEL: Record<Exclude<RepeatFreq, "none">, [string, string]> = {
   daily: ["day", "days"],
   weekly: ["week", "weeks"],
   monthly: ["month", "months"],
+  custom: ["week", "weeks"],
 };
 
 const RRULE_DAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -99,10 +110,12 @@ function untilStamp(date: string): string | null {
 /** Build the RRULE for a spec, or null when it doesn't repeat. */
 export function repeatSpecToRRule(spec: RepeatSpec): string | null {
   if (spec.freq === "none") return null;
-  const parts = [`FREQ=${spec.freq.toUpperCase()}`];
+  // "Custom" is a weekly rule; its point is the explicit weekday set.
+  const freqToken = spec.freq === "custom" ? "WEEKLY" : spec.freq.toUpperCase();
+  const parts = [`FREQ=${freqToken}`];
   const interval = clampInt(spec.interval, 1, 52);
   if (interval > 1) parts.push(`INTERVAL=${interval}`);
-  if (spec.freq === "weekly" && spec.byDay.length > 0) {
+  if ((spec.freq === "weekly" || spec.freq === "custom") && spec.byDay.length > 0) {
     const days = [...new Set(spec.byDay)].sort((a, b) => a - b);
     parts.push(`BYDAY=${days.map((d) => RRULE_DAYS[d]).join(",")}`);
   }
@@ -137,12 +150,17 @@ export function RepeatField({
   const anchorDate = anchorLocal?.slice(0, 10);
 
   function pickFreq(freq: RepeatFreq) {
-    // Weekly with no days chosen would silently fall back to the start's
-    // weekday, so seed it visibly instead.
+    // Only "custom" edits specific weekdays; seed it with the start's weekday so
+    // it's never empty. Every other mode recurs on the start day, so drop any
+    // selection carried over from custom.
     const byDay =
-      freq === "weekly" && value.byDay.length === 0 && anchorDay !== null
-        ? [anchorDay]
-        : value.byDay;
+      freq === "custom"
+        ? value.byDay.length > 0
+          ? value.byDay
+          : anchorDay !== null
+            ? [anchorDay]
+            : []
+        : [];
     onChange({ ...value, freq, byDay });
   }
 
@@ -196,7 +214,7 @@ export function RepeatField({
               </span>
             </div>
 
-            {value.freq === "weekly" && (
+            {value.freq === "custom" && (
               <>
                 <span className={RAIL_LABEL}>On</span>
                 <div className="flex flex-col gap-1.5 py-1">
