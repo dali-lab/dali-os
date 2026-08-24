@@ -350,7 +350,6 @@ model ApplicationCycle {
   delibsSessions     DelibsSession[]
   decisionEmails     CycleDecisionEmail[]
   notificationEmails CycleNotificationEmail[]
-  notificationSends  CycleNotificationSend[]
 
   signingBindings SigningBinding[]
 }
@@ -406,7 +405,6 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
-  notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
   // By-cycle listings can't use the unique above (wrong leading column).
@@ -1432,22 +1430,6 @@ model CycleNotificationEmail {
 // One row per (cycle, notificationType, applicant). Enforces single-send
 // per applicant per cycle per notification type even though an applicant
 // can have multiple DomainApplications.
-model CycleNotificationSend {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  notificationType NotificationType
-
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id])
-
-  @@unique([applicationCycleId, notificationType, applicationId])
-  @@index([applicationCycleId, notificationType])
-}
-
 // ─── Audit Logging ───────────────────────────────────────────────────────────
 
 // Append-only audit trail of security-relevant events (auth, role changes,
@@ -1640,29 +1622,10 @@ model SigningBinding {
   lastRemindedAt DateTime?
 
   signatures               SigningSignature[]
-  signRequestNotifications SignRequestNotification[]
 
   @@unique([documentId, scopeKey])
   @@index([cycleId])
   @@index([termId])
-}
-
-// Records that a "please sign" notification was sent to a member for a specific
-// binding + in-force version. Lets re-issuing a term's agreements skip anyone
-// already notified (the default) instead of re-nudging still-unsigned members —
-// while a NEW version in force (different versionId) resets the set so everyone
-// is notified to re-sign. The console "remind" action bypasses this (force).
-// signerUserId is a plain column (no FK) — orphaned rows are harmless markers.
-model SignRequestNotification {
-  id           String         @id @default(cuid())
-  createdAt    DateTime       @default(now())
-  bindingId    String
-  binding      SigningBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
-  versionId    String
-  signerUserId String
-
-  @@unique([bindingId, versionId, signerUserId])
-  @@index([bindingId, versionId])
 }
 
 // One party's signature on one binding. Generalizes
