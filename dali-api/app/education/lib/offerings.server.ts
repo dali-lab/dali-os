@@ -20,6 +20,7 @@ const offeringListInclude = {
     orderBy: { sequence: "asc" as const },
     select: { id: true, datetime: true },
   },
+  term: { select: { code: true } },
 };
 
 export type CatalogOffering = Awaited<ReturnType<typeof listCatalog>>[number];
@@ -163,6 +164,7 @@ export async function getOfferingDetail(offeringId: string) {
         },
       },
       sessions: { orderBy: { sequence: "asc" } },
+      term: { select: { code: true } },
     },
   });
   if (!offering) return null;
@@ -174,8 +176,10 @@ export async function getOfferingDetail(offeringId: string) {
       photoUrl: await resolvePhotoUrl(i.user.photoUrl),
     })),
   );
+  const { term, ...rest } = offering;
   return {
-    ...offering,
+    ...rest,
+    termCode: term?.code ?? null,
     approvedCount: counts.get(offering.id) ?? 0,
     instructors,
   };
@@ -208,6 +212,7 @@ function shapeOffering(o: {
     user: { firstName: string; lastName: string; photoUrl: string | null };
   }[];
   sessions: { id: string; datetime: Date }[];
+  term: { code: string } | null;
 }) {
   return {
     id: o.id,
@@ -221,6 +226,7 @@ function shapeOffering(o: {
     startsAt: o.startsAt,
     endsAt: o.endsAt,
     closedOutAt: o.closedOutAt,
+    termCode: o.term?.code ?? null,
     sessionCount: o.sessions.length,
     // Kept as plain strings for the cert/PDF servers that render names only.
     instructorNames: o.instructors.map((i) =>
@@ -383,6 +389,21 @@ function validateDates(o: {
 }
 
 /**
+ * The term an offering belongs to, derived from its start date: the term whose
+ * date window contains it. Null when the date falls outside every seeded term.
+ * Mirrors the backfill in the education-offering-term migration, so create/
+ * update stay consistent with the one-time backfill.
+ */
+async function termIdForDate(date: Date): Promise<string | null> {
+  const term = await prisma.term.findFirst({
+    where: { startDate: { lte: date }, endDate: { gte: date } },
+    orderBy: { sortKey: "desc" },
+    select: { id: true },
+  });
+  return term?.id ?? null;
+}
+
+/**
  * All offering/session/instructor mutations behind one formData dispatcher.
  * Callers gate access first: `create-offering` and `set-instructors` and
  * `delete-offering` are Core-only (re-checked here since one route action
@@ -425,6 +446,7 @@ export async function runOfferingAction(
         // Checkbox is authoritative: absent (unchecked) = RSVP auto-approve.
         requiresReview: formData.get("requiresReview") === "true",
         status: "Draft",
+        termId: await termIdForDate(dates.startsAt!),
       },
       select: { id: true },
     });
@@ -491,6 +513,7 @@ export async function runOfferingAction(
           startsAt: src.startsAt,
           endsAt: src.endsAt,
           status: "Draft",
+          termId: await termIdForDate(src.startsAt),
           sessions: {
             create: src.sessions.map((s) => ({
               sequence: s.sequence,
@@ -557,6 +580,8 @@ export async function runOfferingAction(
           endsAt,
           requiresReview: formData.get("requiresReview") === "true",
           calendarEmail: String(formData.get("calendarEmail") ?? "").trim() || null,
+          // Dates can move an offering into a different term; keep it in sync.
+          termId: await termIdForDate(startsAt),
         },
       });
       await logAuditEvent({
