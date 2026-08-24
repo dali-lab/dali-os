@@ -50,7 +50,7 @@ import {
   saveAttendance,
 } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
+import { closeOutOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -201,6 +201,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const attendanceMatrix = await getAttendanceMatrix(params.offeringId!);
 
+  // Performance view: submissions keyed by (studentId, assignmentId) for the
+  // approved roster. Assignments already loaded above; this is just submissions.
+  const approvedStudentIds = attendanceMatrix.students.map((s) => s.applicationId);
+  // applicationId == student application id — fetch via applicantUserId.
+  const approvedApplications = await prisma.educationApplication.findMany({
+    where: {
+      id: { in: approvedStudentIds },
+    },
+    select: { id: true, applicantUserId: true },
+  });
+  const studentIdByApp = new Map(approvedApplications.map((a) => [a.id, a.applicantUserId]));
+  const studentUserIds = [...new Set(approvedApplications.map((a) => a.applicantUserId))];
+
+  const submissionsForRoster =
+    assignments.length > 0 && studentUserIds.length > 0
+      ? await prisma.educationSubmission.findMany({
+          where: {
+            assignmentId: { in: assignments.map((a) => a.id) },
+            studentId: { in: studentUserIds },
+          },
+          select: { assignmentId: true, studentId: true, grade: true, score: true },
+        })
+      : [];
+
+  // Build a map: applicationId → (assignmentId → {grade, score}) for component use.
+  // The matrix students are keyed by applicationId, so we translate via studentIdByApp.
+  const userIdToAppId = new Map(
+    approvedApplications.map((a) => [a.applicantUserId, a.id]),
+  );
+  const performanceByApp: Record<string, Record<string, { grade: string | null; score: number | null }>> = {};
+  for (const sub of submissionsForRoster) {
+    const appId = userIdToAppId.get(sub.studentId);
+    if (!appId) continue;
+    if (!performanceByApp[appId]) performanceByApp[appId] = {};
+    performanceByApp[appId][sub.assignmentId] = { grade: sub.grade, score: sub.score };
+  }
+
   return {
     publishedForms,
     feedbackBindings,
@@ -219,6 +256,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     roster,
     attendanceMatrix,
+    // Performance view data (plain — no Prisma types, safe to pass to client).
+    performanceByApp,
+    assignmentsForPerformance: assignments.map((a) => ({
+      id: a.id,
+      title: a.title,
+      points: a.points,
+    })),
+    // Pre-computed completion eligibility per student (attendance-driven; scores are informational).
+    completionByApp: Object.fromEntries(
+      attendanceMatrix.students.map((st) => {
+        const present = Object.values(st.marks).filter((m) => m === "Present").length;
+        const excused = Object.values(st.marks).filter((m) => m === "Excused").length;
+        return [
+          st.applicationId,
+          certificateEligibility({
+            type: offering.type as "Miniseries" | "Workshop",
+            totalSessions: attendanceMatrix.sessions.length,
+            present,
+            excused,
+            threshold: offering.completionThreshold,
+          }),
+        ];
+      }),
+    ),
     materials,
     offeringFiles: offeringFiles.map((f) => ({
       id: f.id,
@@ -345,24 +406,30 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case "create-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const pointsRaw = String(formData.get("points") ?? "");
+        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
         const result = await createAssignment({
           offeringId: params.offeringId!,
           sessionId: String(formData.get("sessionId") ?? "") || null,
           title: String(formData.get("title") ?? ""),
           dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
+          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
       case "update-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const pointsRaw = String(formData.get("points") ?? "");
+        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
         const result = await updateAssignment({
           assignmentId: String(formData.get("assignmentId") ?? ""),
           offeringId: params.offeringId!,
           title: String(formData.get("title") ?? ""),
           dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
+          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -497,6 +564,9 @@ export default function ManageOffering() {
     collabToken,
     userName,
     currentUserId,
+    performanceByApp,
+    assignmentsForPerformance,
+    completionByApp,
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
@@ -509,6 +579,7 @@ export default function ManageOffering() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [addSessionOpen, setAddSessionOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const tab = searchParams.get("tab") ?? "details";
 
   const [appFilter, setAppFilter] = useState("all");
@@ -563,6 +634,16 @@ export default function ManageOffering() {
               {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
             </Button>
           </Form>
+          {core && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setDuplicateOpen(true)}
+            >
+              Duplicate
+            </Button>
+          )}
           {nextStatuses.map((s) => (
             <Form key={s.to} method="post">
               <input type="hidden" name="intent" value="set-status" />
@@ -1106,6 +1187,9 @@ export default function ManageOffering() {
               )
             }
             formatSessionDate={(d) => formatDateTime(d as never, tz)}
+            assignments={assignmentsForPerformance}
+            submissionsByApp={performanceByApp}
+            completionByApp={completionByApp}
           />
         </div>
       )}
@@ -1132,6 +1216,33 @@ export default function ManageOffering() {
 
       {tab === "announcements" && (
         <OfferingDiscussion posts={announcements} currentUserId={currentUserId} canAnnounce />
+      )}
+
+      {/* Duplicate modal — Core-only, shown from the header button regardless of tab. */}
+      {core && (
+        <AddFormModal
+          open={duplicateOpen}
+          onClose={() => setDuplicateOpen(false)}
+          title="Duplicate offering"
+          subtitle="Creates a draft copy with sessions shifted to the new start date. You can adjust sessions and registration dates before publishing."
+          intent="duplicate-offering"
+          submitLabel="Create duplicate"
+        >
+          <label className="block">
+            <span className="text-xs font-semibold text-muted-foreground">
+              New first session date
+            </span>
+            <DateField
+              mode="datetime-local"
+              name="firstSessionDate"
+              className="mt-1 w-full"
+              ariaLabel="New first session date"
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Leave blank to copy session dates as-is.
+          </p>
+        </AddFormModal>
       )}
 
       {tab === "feedback" && (

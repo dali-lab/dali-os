@@ -458,6 +458,12 @@ export async function runOfferingAction(
     );
     if (dateError) return bad(dateError);
 
+    const createThresholdPct = Number(formData.get("completionThresholdPct"));
+    const createCompletionThreshold =
+      type === "Miniseries" && Number.isFinite(createThresholdPct) && createThresholdPct > 0
+        ? Math.min(100, Math.max(1, createThresholdPct)) / 100
+        : undefined;
+
     const offering = await prisma.educationOffering.create({
       data: {
         type,
@@ -468,6 +474,9 @@ export async function runOfferingAction(
         // Checkbox is authoritative: absent (unchecked) = RSVP auto-approve.
         requiresReview: formData.get("requiresReview") === "true",
         status: "Draft",
+        ...(createCompletionThreshold !== undefined
+          ? { completionThreshold: createCompletionThreshold }
+          : {}),
       },
       select: { id: true },
     });
@@ -516,6 +525,7 @@ export async function runOfferingAction(
           capacity: true,
           requiresReview: true,
           calendarEmail: true,
+          completionThreshold: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
           sessions: {
@@ -526,6 +536,29 @@ export async function runOfferingAction(
         },
       });
       if (!src) return bad("Offering not found", 404);
+
+      // Compute the time delta to shift all sessions and registration dates.
+      // The caller supplies a new datetime for the first session; we preserve
+      // the spacing between all sessions and between registration window + first
+      // session. If the source has no sessions, we copy dates as-is.
+      const firstSessionDateRaw = formData.get("firstSessionDate");
+      const newFirstSession =
+        typeof firstSessionDateRaw === "string" && firstSessionDateRaw
+          ? new Date(firstSessionDateRaw)
+          : null;
+
+      const oldFirstSession =
+        src.sessions.length > 0 ? src.sessions[0].datetime : null;
+
+      // deltaMs > 0 means the clone is shifted into the future; null means no shift.
+      const deltaMs =
+        newFirstSession && oldFirstSession && !Number.isNaN(newFirstSession.getTime())
+          ? newFirstSession.getTime() - oldFirstSession.getTime()
+          : null;
+
+      const shiftDate = (d: Date) =>
+        deltaMs !== null ? new Date(d.getTime() + deltaMs) : d;
+
       const created = await prisma.educationOffering.create({
         data: {
           type: src.type,
@@ -533,14 +566,15 @@ export async function runOfferingAction(
           capacity: src.capacity,
           requiresReview: src.requiresReview,
           calendarEmail: src.calendarEmail,
-          registrationOpensAt: src.registrationOpensAt,
-          registrationClosesAt: src.registrationClosesAt,
+          completionThreshold: src.completionThreshold,
+          registrationOpensAt: shiftDate(src.registrationOpensAt),
+          registrationClosesAt: shiftDate(src.registrationClosesAt),
           status: "Draft",
           sessions: {
             create: src.sessions.map((s) => ({
               sequence: s.sequence,
               title: s.title,
-              datetime: s.datetime,
+              datetime: shiftDate(s.datetime),
               location: s.location,
             })),
           },
@@ -592,6 +626,15 @@ export async function runOfferingAction(
         registrationClosesAt,
       });
       if (dateError) return bad(dateError);
+
+      // Parse completion threshold for Miniseries only; Workshops use a fixed
+      // "≥1 Present" rule so the threshold column is irrelevant for them.
+      const thresholdPct = Number(formData.get("completionThresholdPct"));
+      const completionThreshold =
+        offering.type === "Miniseries" && Number.isFinite(thresholdPct)
+          ? Math.min(100, Math.max(1, thresholdPct)) / 100
+          : undefined;
+
       await prisma.educationOffering.update({
         where: { id: offeringId },
         data: {
@@ -601,6 +644,7 @@ export async function runOfferingAction(
           registrationClosesAt,
           requiresReview: formData.get("requiresReview") === "true",
           calendarEmail: String(formData.get("calendarEmail") ?? "").trim() || null,
+          ...(completionThreshold !== undefined ? { completionThreshold } : {}),
         },
       });
       await logAuditEvent({

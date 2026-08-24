@@ -1,5 +1,6 @@
 // Shared field set for the create + edit offering forms. Values are posted as
 // plain form fields and parsed server-side in runOfferingAction.
+import { useState } from "react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 
@@ -13,6 +14,7 @@ type Values = {
   registrationClosesAt?: string | Date;
   requiresReview?: boolean;
   calendarEmail?: string | null;
+  completionThreshold?: number | null;
 };
 
 /** Date → the local `datetime-local` input format (YYYY-MM-DDTHH:mm). */
@@ -35,6 +37,13 @@ export function OfferingFields({
   values?: Values;
   typeLocked?: boolean;
 }) {
+  // Track type locally so the threshold field can show/hide reactively when
+  // the type selector changes on the create form (edit locks the type).
+  const [selectedType, setSelectedType] = useState<"Miniseries" | "Workshop">(
+    values.type ?? "Workshop",
+  );
+  const isMiniseries = selectedType === "Miniseries";
+
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -44,6 +53,7 @@ export function OfferingFields({
             name="type"
             defaultValue={values.type ?? "Workshop"}
             disabled={typeLocked}
+            onChange={(v) => setSelectedType(v as "Miniseries" | "Workshop")}
             options={[
               { value: "Workshop", label: "Workshop (single session, RSVP)" },
               { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
@@ -111,6 +121,24 @@ export function OfferingFields({
         label="Applications need instructor review (uncheck for RSVP auto-approval up to capacity)"
         className="text-sm text-foreground"
       />
+
+      {isMiniseries && (
+        <label className="block">
+          <span className={LABEL}>Completion threshold (%)</span>
+          <input
+            type="number"
+            name="completionThresholdPct"
+            min={1}
+            max={100}
+            defaultValue={Math.round((values.completionThreshold ?? 0.8) * 100)}
+            className={INPUT}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Students must attend this percentage of sessions (including excused) to earn a
+            certificate. Default is 80%.
+          </p>
+        </label>
+      )}
     </>
   );
 }

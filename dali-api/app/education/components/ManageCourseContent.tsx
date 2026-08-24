@@ -475,6 +475,8 @@ export type ManageAssignment = {
   instructionsDocId: string | null;
   sessionId: string | null;
   sessionSequence: number | null;
+  /** Null = complete/incomplete; non-null = numeric grading out of this many points. */
+  points: number | null;
   _count: { submissions: number };
 };
 
@@ -524,7 +526,7 @@ export function ManageAssignments({
           </summary>
 
           <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
-            <Form method="post" className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto] items-end">
+            <Form method="post" className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_20ch_auto] items-end">
               <input type="hidden" name="intent" value="update-assignment" />
               <input type="hidden" name="assignmentId" value={a.id} />
               <label className="block">
@@ -552,6 +554,17 @@ export function ManageAssignments({
                     { value: "Mixed", label: "Text + files" },
                   ]}
                   buttonClassName={INPUT}
+                />
+              </label>
+              <label className="block">
+                <span className={LABEL}>Points (optional)</span>
+                <input
+                  type="number"
+                  name="points"
+                  min={1}
+                  defaultValue={a.points ?? ""}
+                  placeholder="—"
+                  className={INPUT}
                 />
               </label>
               <div className="flex justify-end">
@@ -638,19 +651,31 @@ export function ManageAssignments({
             />
           </label>
         </div>
-        <label className="block">
-          <span className={LABEL}>Session (optional)</span>
-          <Select
-            name="sessionId"
-            defaultValue=""
-            placeholder="Whole offering"
-            options={[
-              { value: "", label: "Whole offering" },
-              ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
-            ]}
-            buttonClassName={INPUT}
-          />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className={LABEL}>Session (optional)</span>
+            <Select
+              name="sessionId"
+              defaultValue=""
+              placeholder="Whole offering"
+              options={[
+                { value: "", label: "Whole offering" },
+                ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
+              ]}
+              buttonClassName={INPUT}
+            />
+          </label>
+          <label className="block">
+            <span className={LABEL}>Points (optional)</span>
+            <input
+              type="number"
+              name="points"
+              min={1}
+              placeholder="Leave blank for complete/incomplete"
+              className={INPUT}
+            />
+          </label>
+        </div>
       </AddFormModal>
     </div>
   );
