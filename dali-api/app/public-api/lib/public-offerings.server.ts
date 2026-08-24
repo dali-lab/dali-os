@@ -2,11 +2,15 @@ import { prisma } from "~/lib/db";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
-// Upcoming (not-yet-started) published education offerings for dali.website's
-// offerings calendar. This module's exported types ARE the contract the site
-// renders from — an offering spans a date range with multiple sessions, so the
-// payload carries the range, the full session schedule, and the registration
-// window rather than a single date.
+// Published education offerings for dali.website — the offerings section and a
+// calendar view both read from here. This module's exported types ARE the
+// contract the site renders from: an offering spans a date range with multiple
+// sessions, so the payload carries the range, the full session schedule, and
+// the registration window rather than a single date.
+//
+// Which slice of the catalog comes back is controlled by query params (see
+// parseOfferingsFilter). Only Published offerings are ever returned — Draft and
+// Archived stay private, matching what the in-app catalog shows.
 
 export type PublicOfferingDate = {
   day: number;
@@ -28,6 +32,7 @@ export type PublicOffering = {
   name: string;
   description: string;
   type: string; // lowercased offering type: "miniseries" | "workshop"
+  term: string | null; // term code (e.g. "26F"), null if outside any term
   startDate: PublicOfferingDate;
   endDate: PublicOfferingDate;
   sessions: PublicOfferingSession[];
@@ -37,6 +42,17 @@ export type PublicOffering = {
     open: boolean;
   };
   signUpLink: string;
+};
+
+// `upcoming` = not yet started, `past` = already ended, `all` = the whole
+// published catalog (including currently-running offerings).
+export type OfferingScope = "upcoming" | "past" | "all";
+
+export type OfferingsFilter = {
+  scope?: OfferingScope; // defaults to "upcoming"; ignored when from/to are set
+  from?: Date; // calendar window lower bound (interval overlap)
+  to?: Date; // calendar window upper bound (interval overlap)
+  term?: string; // term code (e.g. "26F"); limits to offerings in that term
 };
 
 const MONTHS = [
@@ -72,14 +88,75 @@ function toDateParts(d: Date): PublicOfferingDate {
   };
 }
 
+type OfferingWhere = {
+  status: "Published";
+  term?: { code: string };
+  startsAt?: { gt?: Date; lte?: Date };
+  endsAt?: { lt?: Date; gte?: Date };
+};
+
+function buildWhere(filter: OfferingsFilter, now: Date): OfferingWhere {
+  const where: OfferingWhere = { status: "Published" };
+  // Term composes with the date filters below (e.g. term=26F&scope=past).
+  if (filter.term) where.term = { code: filter.term };
+
+  // An explicit calendar window wins over scope: return every offering whose
+  // run overlaps [from, to]. Either bound may be omitted (open-ended window).
+  if (filter.from || filter.to) {
+    if (filter.to) where.startsAt = { lte: filter.to };
+    if (filter.from) where.endsAt = { gte: filter.from };
+    return where;
+  }
+
+  // A term implies "the whole term" unless the caller narrows it; without a
+  // term the default is the upcoming feed.
+  switch (filter.scope ?? (filter.term ? "all" : "upcoming")) {
+    case "upcoming":
+      where.startsAt = { gt: now }; // hasn't started yet
+      break;
+    case "past":
+      where.endsAt = { lt: now }; // already ended
+      break;
+    case "all":
+      break; // whole published catalog
+  }
+  return where;
+}
+
+// Parse and validate the offerings query params. Returns the filter or a
+// human-readable error the route turns into a 400.
+export function parseOfferingsFilter(
+  params: URLSearchParams,
+): { filter: OfferingsFilter } | { error: string } {
+  let scope: OfferingScope | undefined;
+  const scopeRaw = params.get("scope");
+  if (scopeRaw != null) {
+    if (scopeRaw !== "upcoming" && scopeRaw !== "past" && scopeRaw !== "all") {
+      return { error: "Invalid 'scope' (use upcoming, past, or all)" };
+    }
+    scope = scopeRaw;
+  }
+
+  const filter: OfferingsFilter = { scope };
+  const term = params.get("term")?.trim();
+  if (term) filter.term = term;
+  for (const key of ["from", "to"] as const) {
+    const raw = params.get(key);
+    if (raw == null) continue;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return { error: `Invalid '${key}' date` };
+    filter[key] = d;
+  }
+
+  return { filter };
+}
+
 export async function listPublicOfferings(
+  filter: OfferingsFilter = {},
   now: Date = new Date(),
 ): Promise<PublicOffering[]> {
   const rows = await prisma.educationOffering.findMany({
-    // "Upcoming" = published and not yet started. An offering drops off the
-    // public feed the moment its first session begins, even if it's still
-    // mid-run or accepting late registration.
-    where: { status: "Published", startsAt: { gt: now } },
+    where: buildWhere(filter, now),
     orderBy: { startsAt: "asc" },
     select: {
       id: true,
@@ -91,6 +168,7 @@ export async function listPublicOfferings(
       endsAt: true,
       registrationOpensAt: true,
       registrationClosesAt: true,
+      term: { select: { code: true } },
       sessions: {
         orderBy: { sequence: "asc" },
         select: { sequence: true, title: true, location: true, datetime: true },
@@ -112,6 +190,7 @@ export async function listPublicOfferings(
         description,
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
+        term: o.term?.code ?? null,
         startDate: toDateParts(o.startsAt),
         endDate: toDateParts(o.endsAt),
         sessions: o.sessions.map((s) => ({
