@@ -15,7 +15,7 @@
 //      who already received the email.
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
@@ -115,6 +115,7 @@ async function blastExtensionNotice(ctx: BlastContext): Promise<SendResult> {
   let succeeded = 0;
   let failed = 0;
   let alreadySent = 0;
+  const ids: Array<string | null> = [];
   for (const r of recipients) {
     if (alreadySentIds.has(r.applicationId)) {
       alreadySent++;
@@ -126,7 +127,18 @@ async function blastExtensionNotice(ctx: BlastContext): Promise<SendResult> {
         ctx.binding.emailTemplateVersion,
         { firstName: r.firstName, originalCloseDate, newCloseDate },
       );
-      await sendEmail({ refreshToken: ctx.refreshToken, to: r.email, subject, html });
+      // Onto the outbox (dedupKey is a second guard alongside the
+      // CycleNotificationSend ledger below).
+      const { id } = await enqueueOutbound({
+        channel: "email",
+        purpose: "Hiring",
+        dedupKey: `hiring.extension:${ctx.cycleId}:${r.applicationId}`,
+        target: r.email,
+        subject,
+        bodyHtml: html,
+        eventType: "hiring.extension_notice",
+      });
+      ids.push(id);
       try {
         await prisma.cycleNotificationSend.create({
           data: {
@@ -148,6 +160,7 @@ async function blastExtensionNotice(ctx: BlastContext): Promise<SendResult> {
       console.error(`Failed to send extension notice to ${r.email}:`, err);
     }
   }
+  await drainNow(ids);
   return { attempted: recipients.length, succeeded, failed, alreadySent };
 }
 

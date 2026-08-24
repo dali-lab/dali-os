@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db";
 import { notify, renderNotificationEmail } from "~/lib/notify.server";
-import { sendEmail } from "~/lib/gmail";
-import { getSender } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 
@@ -212,33 +211,33 @@ export async function sendOnboardingReminders(args: {
     },
   });
 
-  const sender = await getSender("General").catch(() => null);
-  if (!sender) {
-    throw new Error("Email sender is not configured");
-  }
-
   let count = 0;
   let skipped = 0;
+  const ids: Array<string | null> = [];
   for (const u of users) {
     const to = args.via === "emailDali" ? u.daliEmail : u.dartmouthEmail;
     if (!to) {
       skipped++;
       continue;
     }
-    await sendEmail({
-      refreshToken: sender.refreshToken,
-      from: sender.sendAsEmail,
-      to,
+    const { id } = await enqueueOutbound({
+      channel: "email",
+      purpose: "General",
+      target: to,
       subject: copy.title,
-      html: renderNotificationEmail({
+      bodyHtml: renderNotificationEmail({
         firstName: u.firstName,
         title: copy.title,
         body: copy.body,
         link: absLink,
       }),
+      recipientUserId: u.id,
+      eventType: "member.onboarding",
     });
+    ids.push(id);
     count++;
   }
+  await drainNow(ids);
 
   return { count, skipped };
 }

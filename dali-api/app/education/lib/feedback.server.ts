@@ -2,8 +2,7 @@ import { prisma } from "~/lib/db";
 import type { Prisma } from "~/generated/prisma/client";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
-import { sendEmail } from "~/lib/gmail";
-import { getSender } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import {
   resolveCandidateEmail,
   redirectBannerHtml,
@@ -222,23 +221,25 @@ export async function requestSessionFeedback(args: {
         });
       } else {
         // Portal students don't see the member notification bell — email the
-        // fill link directly.
-        const sender = await getSender("Education");
-        if (sender) {
-          const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(user));
-          if (to) {
-            await sendEmail({
-              refreshToken: sender.refreshToken,
-              from: sender.sendAsEmail,
-              to,
-              subject: title,
-              html:
-                redirectBannerHtml(redirectedFrom) +
-                bodyToHtml(
-                  `Hi ${user.firstName},\n\nThanks for coming to ${offering.title}! Could you take two minutes to share feedback on session ${session.sequence}?\n\n${getFrontendUrl()}${link}\n\n— DALI Education`,
-                ),
-            });
-          }
+        // fill link directly (via the outbox; keyed so a re-sweep can't
+        // double-ask the same student for the same session).
+        const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(user));
+        if (to) {
+          const { id } = await enqueueOutbound({
+            channel: "email",
+            purpose: "Education",
+            dedupKey: `education.session.feedback:${args.sessionId}:${user.id}`,
+            target: to,
+            subject: title,
+            bodyHtml:
+              redirectBannerHtml(redirectedFrom) +
+              bodyToHtml(
+                `Hi ${user.firstName},\n\nThanks for coming to ${offering.title}! Could you take two minutes to share feedback on session ${session.sequence}?\n\n${getFrontendUrl()}${link}\n\n— DALI Education`,
+              ),
+            recipientUserId: user.id,
+            eventType: "education.feedback_request",
+          });
+          await drainNow([id]);
         }
       }
     } catch (err) {

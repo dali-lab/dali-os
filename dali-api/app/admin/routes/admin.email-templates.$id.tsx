@@ -14,8 +14,7 @@ import { driveFolderCrumbs } from '~/lib/drive-crumbs.server'
 import { driveRootCrumbs } from '~/lib/drive-crumbs'
 import { PageIcon } from '~/components/PageIcon'
 import { renderEmail } from '~/lib/email'
-import { sendEmail } from '~/lib/gmail'
-import { getApplicationsGmailRefreshToken } from '~/lib/gmail-integration'
+import { enqueueOutbound, drainNow } from '~/lib/outbound.server'
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.template?.name
@@ -141,10 +140,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     const { subject: renderedSubject, html } = renderEmail({ subject, body }, sampleVars)
 
-    const refreshToken = await getApplicationsGmailRefreshToken()
-    if (!refreshToken) return { error: 'Gmail integration not configured.' }
-
-    await sendEmail({ refreshToken, to: toEmail, subject: renderedSubject, html })
+    // No dedupKey — a test send should go through every time it's clicked.
+    const { id } = await enqueueOutbound({
+      channel: 'email',
+      purpose: 'Hiring',
+      target: toEmail,
+      subject: renderedSubject,
+      bodyHtml: html,
+      eventType: 'admin.test_email',
+    })
+    await drainNow([id])
     return { testSent: true as const }
   }
 
