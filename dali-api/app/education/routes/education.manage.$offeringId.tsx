@@ -12,7 +12,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
-import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import {
   requireOfferingManager,
   redirectDartmouthToPortal,
@@ -124,7 +124,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ] = await Promise.all([
     core
       ? prisma.user.findMany({
-          where: await currentTermMemberWhere(),
+          // Any lab member is eligible as an instructor — not just those active
+          // in the current term. Alums, future-term members, and anyone not
+          // staffed this cycle should still be addable.
+          where: { daliMember: { isNot: null } },
           select: { id: true, firstName: true, lastName: true },
           orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
         })
@@ -152,6 +155,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     listDiscussion(params.offeringId!),
     favoritePageIds(gate.auth.user.sub),
   ]);
+
+  // Uploaded file materials for this offering (S3-backed, not Page records).
+  const offeringFiles = await prisma.projectFile.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: params.offeringId!,
+      archivedAt: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true },
+  });
 
   const notes = await notesForOffering(params.offeringId!);
 
@@ -206,6 +220,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     roster,
     attendanceMatrix,
     materials,
+    offeringFiles: offeringFiles.map((f) => ({
+      id: f.id,
+      title: f.title,
+      href: `/documents/file/${f.id}`,
+    })),
     workspaceDocs,
     favoriteIds: [...favoriteIds],
     assignments,
@@ -249,6 +268,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "decide-application",
     "create-page",
     "move-page",
+    "set-material-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
@@ -300,9 +320,28 @@ export async function action({ request, params }: Route.ActionArgs) {
           parentPageId: String(formData.get("parentPageId") ?? "") || null,
           studentEditable: formData.get("studentEditable") === "true",
           kind: formData.get("kind") === "Folder" ? "Folder" : "FreeForm",
+          sessionId: String(formData.get("sessionId") ?? "") || null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
+      }
+      case "set-material-session": {
+        const pageId = String(formData.get("pageId") ?? "");
+        const sessionId = String(formData.get("sessionId") ?? "") || null;
+        // Guard: page must belong to this offering's workspace.
+        const page = await prisma.page.findUnique({
+          where: { id: pageId },
+          select: { workspaceType: true, workspaceId: true },
+        });
+        if (
+          !page ||
+          page.workspaceType !== "EducationOffering" ||
+          page.workspaceId !== params.offeringId
+        ) {
+          return Response.json({ error: "Page not found" }, { status: 404 });
+        }
+        await prisma.page.update({ where: { id: pageId }, data: { sessionId } });
+        return { ok: true };
       }
       case "create-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
@@ -440,6 +479,7 @@ export default function ManageOffering() {
     roster,
     attendanceMatrix,
     materials,
+    offeringFiles,
     workspaceDocs,
     favoriteIds,
     assignments,
@@ -1071,7 +1111,14 @@ export default function ManageOffering() {
       )}
 
       {tab === "materials" && (
-        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} favoriteIds={favoriteIds} />
+        <ManageMaterials
+          offeringId={offering.id}
+          materials={materials}
+          files={offeringFiles}
+          workspaceDocs={workspaceDocs}
+          sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
+          favoriteIds={favoriteIds}
+        />
       )}
 
       {tab === "assignments" && (

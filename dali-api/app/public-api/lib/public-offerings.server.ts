@@ -171,7 +171,9 @@ export async function listPublicOfferings(
 ): Promise<PublicOffering[]> {
   const rows = await prisma.educationOffering.findMany({
     where: buildWhere(filter, now),
-    orderBy: { startsAt: { sort: "asc", nulls: "last" } },
+    // Published offerings always have sessions (publish gate), so startsAt is
+    // non-null here — a plain ascending sort is sufficient.
+    orderBy: { startsAt: "asc" },
     select: {
       id: true,
       title: true,

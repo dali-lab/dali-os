@@ -550,6 +550,91 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
   return { id: rootId };
 }
 
+/**
+ * Auto-provisioned Drive folder for a single EducationOffering — a top-level
+ * folder in that offering's workspace where uploaded files (ProjectFile rows)
+ * are placed. Idempotent via systemKey. Best-effort adoption of unplaced
+ * ProjectFile rows runs on every call (cheap no-op once all rows are placed).
+ *
+ * Returns null only if the offering doesn't exist; throws on genuine DB errors
+ * so callers can decide whether to swallow or propagate.
+ */
+export async function ensureOfferingDriveFolder(
+  offeringId: string,
+  createdById: string,
+): Promise<{ id: string } | null> {
+  const systemKey = `drive:offering:${offeringId}`;
+
+  // ── 1. Ensure the root exists ────────────────────────────────────────────
+  let rootId: string;
+
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) {
+    rootId = existing.id;
+  } else {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id: offeringId },
+      select: { title: true },
+    });
+    if (!offering) return null;
+
+    try {
+      const last = await prisma.page.findFirst({
+        where: {
+          workspaceType: "EducationOffering",
+          workspaceId: offeringId,
+          parentPageId: null,
+        },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      const root = await prisma.page.create({
+        data: {
+          workspaceType: "EducationOffering",
+          workspaceId: offeringId,
+          title: offering.title,
+          kind: "Folder",
+          position: last ? last.position + 1 : 0,
+          parentPageId: null,
+          createdById,
+          systemKey,
+          linkAccess: "Restricted",
+          linkPermission: "View",
+        },
+        select: { id: true },
+      });
+      rootId = root.id;
+    } catch {
+      // Race: another request created it between our lookup and create.
+      const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+      if (retry) {
+        rootId = retry.id;
+      } else {
+        throw new Error(`Failed to ensure Drive folder for offering ${offeringId}`);
+      }
+    }
+  }
+
+  // ── 2. Idempotent adoption — runs on every call ──────────────────────────
+  // Adopt unplaced ProjectFile rows for this offering so uploaded files land
+  // in the folder without a separate backfill. No-op once all rows are placed.
+  try {
+    await prisma.projectFile.updateMany({
+      where: {
+        workspaceType: "EducationOffering",
+        workspaceId: offeringId,
+        folderPageId: null,
+        archivedAt: null,
+      },
+      data: { folderPageId: rootId },
+    });
+  } catch {
+    // Adoption is best-effort; don't surface errors to the caller.
+  }
+
+  return { id: rootId };
+}
+
 /** Move rubrics from the old Core ▸ Rubrics folder (and any unplaced ones)
  *  into the new Hiring ▸ Rubrics folder. Only touches rubrics that are either
  *  unplaced or still in the legacy Core rubrics folder — manual re-files by
