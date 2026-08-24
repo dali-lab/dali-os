@@ -3139,6 +3139,10 @@ model EducationOffering {
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
   requiresReview       Boolean
+  // Fraction of sessions a student must attend (Present + Excused) to earn a
+  // completion certificate. Miniseries only; workshops need one Present mark.
+  completionThreshold  Float          @default(0.8)
+
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
   calendarEmail        String?
@@ -3325,6 +3329,9 @@ model EducationAssignment {
   instructionsDocId String?
   dueAt             DateTime?
   submissionType    SubmissionType
+  // Optional max points. Null = complete/incomplete (free-form grade only).
+  // Informational — points never gate course completion.
+  points            Int?
 
   offering    EducationOffering?    @relation(fields: [offeringId], references: [id])
   session     EducationSession?     @relation(fields: [sessionId], references: [id])
@@ -3354,6 +3361,9 @@ model EducationSubmission {
   textContent  String?
   // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
   grade        String?
+  // Optional numeric score, set when the assignment defines points. Paired with
+  // the free-form grade; informational only (never gates completion).
+  score        Int?
   // Instructor feedback on this submission, shown to the student.
   feedbackText String?
 
@@ -3992,6 +4002,11 @@ model Page {
   // (and collaboratively edit) this page from the partner portal. Meaningless
   // for Lab/EducationOffering workspaces (stays false).
   partnerVisible Boolean @default(false)
+
+  // Optional link to an EducationSession, for offering materials scoped to one
+  // session (groups the student Materials view by session). Loose FK — only
+  // meaningful when workspaceType == EducationOffering; null = offering-wide.
+  sessionId String?
 
   // Education collaborative doc: when true and workspaceType == EducationOffering,
   // students with an Approved application to workspaceId may collaboratively
