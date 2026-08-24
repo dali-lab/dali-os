@@ -48,8 +48,8 @@ export default function EducationCatalog() {
   const { offerings, myApplications, ceStanding, canManage, isCore } =
     useLoaderData<typeof loader>();
   const now = Date.now();
-  const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date }) =>
-    o.closedOutAt != null || new Date(o.endsAt).getTime() < now;
+  const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date | null }) =>
+    o.closedOutAt != null || (o.endsAt != null && new Date(o.endsAt).getTime() < now);
 
   const enrolled = offerings.filter((o) => o.myStatus === "Approved" && !isPast(o));
   const upcoming = offerings.filter((o) => !isPast(o));

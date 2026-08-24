@@ -15,8 +15,8 @@ export type OfferingCardData = {
   requiresReview: boolean;
   registrationOpensAt: string | Date;
   registrationClosesAt: string | Date;
-  startsAt: string | Date;
-  endsAt: string | Date;
+  startsAt: string | Date | null;
+  endsAt: string | Date | null;
   sessionCount: number;
   instructorNames: string[];
   instructors: { userId: string; name: string; photoUrl: string | null }[];
@@ -136,7 +136,9 @@ export function OfferingCard({
           {offering.title}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
+          {offering.startsAt && offering.endsAt
+            ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
+            : "Sessions TBD"}
           {" · "}
           {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
         </p>

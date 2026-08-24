@@ -3132,8 +3132,8 @@ model EducationOffering {
   capacity             Int
   registrationOpensAt  DateTime
   registrationClosesAt DateTime
-  startsAt             DateTime
-  endsAt               DateTime
+  startsAt             DateTime?
+  endsAt               DateTime?
   status               OfferingStatus @default(Draft)
   // True for typical miniseries (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
@@ -3143,8 +3143,8 @@ model EducationOffering {
   // education identity if not set.
   calendarEmail        String?
 
-  // The term this offering runs in — derived server-side from startsAt on
-  // create/update. Nullable for legacy rows outside any seeded term window.
+  // The term this offering runs in — derived server-side from the first
+  // session's date; null until sessions are added.
   termId               String?
   term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
 

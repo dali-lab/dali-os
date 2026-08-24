@@ -11,8 +11,6 @@ type Values = {
   capacity?: number;
   registrationOpensAt?: string | Date;
   registrationClosesAt?: string | Date;
-  startsAt?: string | Date;
-  endsAt?: string | Date;
   requiresReview?: boolean;
   calendarEmail?: string | null;
 };
@@ -101,29 +99,10 @@ export function OfferingFields({
             ariaLabel="Registration closes"
           />
         </label>
-        <label className="block">
-          <span className={LABEL}>Starts</span>
-          <DateField
-            mode="datetime-local"
-            name="startsAt"
-            required
-            defaultValue={toDatetimeLocal(values.startsAt)}
-            className="w-full"
-            ariaLabel="Starts"
-          />
-        </label>
-        <label className="block">
-          <span className={LABEL}>Ends</span>
-          <DateField
-            mode="datetime-local"
-            name="endsAt"
-            required
-            defaultValue={toDatetimeLocal(values.endsAt)}
-            className="w-full"
-            ariaLabel="Ends"
-          />
-        </label>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Course start and end dates are set automatically from the sessions you add.
+      </p>
 
       <Checkbox
         name="requiresReview"
