@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useFetcher } from "react-router";
+import { Handshake, FileText } from "lucide-react";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 type Person = { id: string; firstName: string; lastName: string };
 
@@ -46,6 +49,7 @@ interface Props {
 // the project loader's canViewMentorshipTab. Note/pair APIs further scope
 // non-Core mentors to their own domains.
 export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
+  const { panel, panelPad, heading, headingIcon } = useOsChrome();
   const pairsFetcher = useFetcher<PairsResponse>();
   const notesFetcher = useFetcher<NotesResponse>();
   const [loaded, setLoaded] = useState(false);
@@ -88,8 +92,9 @@ export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-foreground">
+      <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
+        <h2 className={heading}>
+          <Handshake className={headingIcon} aria-hidden />
           Pairings ({pairs.length})
           {currentTermId ? "" : " — no current term"}
         </h2>
@@ -128,9 +133,10 @@ export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
         )}
       </section>
 
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
         <div className="flex items-center justify-between">
-          <h2 className="font-heading font-semibold text-foreground">
+          <h2 className={heading}>
+            <FileText className={headingIcon} aria-hidden />
             Recent notes
           </h2>
           <Link

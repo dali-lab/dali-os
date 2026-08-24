@@ -53,6 +53,7 @@ beforeEach(() => {
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notification.findFirst.mockResolvedValue(null); // no coalesce suppression by default
+  mockPrisma.notification.update.mockResolvedValue({}); // merge path awaits + .catch()es this
   mockPrisma.notification.createManyAndReturn.mockImplementation(
     ({ data }: { data: { recipientUserId: string }[] }) =>
       Promise.resolve(
@@ -422,5 +423,64 @@ describe("notify", () => {
     expect(html).toContain("Open the form");
     // Body present → the duplicate title heading is suppressed.
     expect(html).not.toContain("<strong>Please sign</strong>");
+  });
+});
+
+describe("notify — coalescing / merge", () => {
+  // task.comment has coalesceWindowMs + coalesceNoun "comment". When a recent
+  // row for the same (recipient, eventType, link) exists, the burst merges into
+  // it instead of writing a new row.
+  it("merges into an existing row instead of writing a new one", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.notification.findFirst.mockResolvedValue({ id: "existing-1", coalesceCount: 1 });
+
+    const res = await notify({
+      eventType: "task.comment",
+      message: { title: "New comment on: Task X", body: "second comment", link: "/t/1" },
+      recipients: [{ userId: "u1" }],
+    });
+
+    // No fresh in-app row, no email/Slack — only the existing row is updated.
+    expect(mockPrisma.notification.createManyAndReturn).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(res.inApp).toBe(0);
+
+    expect(mockPrisma.notification.update).toHaveBeenCalledTimes(1);
+    const { where, data } = mockPrisma.notification.update.mock.calls[0][0];
+    expect(where).toEqual({ id: "existing-1" });
+    // Re-lit unread, bumped to top, count incremented, preview refreshed.
+    expect(data.readAt).toBeNull();
+    expect(data.createdAt).toBeInstanceOf(Date);
+    expect(data.coalesceCount).toEqual({ increment: 1 });
+    expect(data.body).toBe("2 new comments · latest: second comment");
+    expect(data.title).toBe("New comment on: Task X");
+  });
+
+  it("writes a fresh row when nothing recent exists (no suppression)", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.notification.findFirst.mockResolvedValue(null);
+
+    await notify({
+      eventType: "task.comment",
+      message: { title: "New comment on: Task X", body: "first comment", link: "/t/1" },
+      recipients: [{ userId: "u1" }],
+    });
+
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+    expect(mockPrisma.notification.createManyAndReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it("reflects the running count in the merged body", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.notification.findFirst.mockResolvedValue({ id: "existing-1", coalesceCount: 4 });
+
+    await notify({
+      eventType: "task.comment",
+      message: { title: "New comment on: Task X", body: "fifth comment", link: "/t/1" },
+      recipients: [{ userId: "u1" }],
+    });
+
+    const { data } = mockPrisma.notification.update.mock.calls[0][0];
+    expect(data.body).toBe("5 new comments · latest: fifth comment");
   });
 });

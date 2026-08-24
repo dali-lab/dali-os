@@ -9,7 +9,9 @@ import type { Page, Locator } from '@playwright/test';
 //     row (or deep-link ?scope=<id>) to enter it.
 //   - Location is URL state: /drive?scope=<id>&folder=<pageId>. No params = root.
 //   - Breadcrumb bar: data-testid="drive-breadcrumb" with crumbs
-//     drive-crumb-root / drive-crumb-scope / drive-crumb-<folderId>.
+//     drive-crumb-scope / drive-crumb-<folderId>. Under the redesign the trail
+//     starts at the scope: the page's own <h1>Drive</h1> is the root, so there
+//     is no drive-crumb-root button repeating the word beneath it.
 //   - Search box: data-testid="drive-search" (client-side, across all drives);
 //     results container drive-search-results, hit rows drive-search-hit-<id>.
 //   - Type filter: a Select dropdown (data-testid="drive-filter"); options
@@ -44,9 +46,11 @@ test.describe('Drive hub', () => {
     await page.goto('/drive?embed=1');
     await page.waitForLoadState('networkidle');
 
-    // The browser surface + breadcrumb root are present.
+    // The browser surface is present, and the page names the location you are
+    // at. That name is the redesign's root affordance — the breadcrumb opens at
+    // the scope once you enter one, and carries no root crumb of its own.
     await expect(page.getByTestId('drive-browser')).toBeVisible();
-    await expect(page.getByTestId('drive-crumb-root')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Drive', level: 1 })).toBeVisible();
 
     // The drives are listed as rows (My Drive + Lab always; Core for Core users).
     await expect(page.getByTestId('drive-scope-mine')).toBeVisible();

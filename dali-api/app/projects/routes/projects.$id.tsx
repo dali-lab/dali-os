@@ -774,7 +774,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: e.status as EpicStatus,
       startsAt: startMs != null ? new Date(startMs).toISOString() : null,
       endsAt: endMs != null ? new Date(endMs).toISOString() : null,
-      sprintCount: epicSprints.length,
       stories,
     };
   });
@@ -1661,10 +1660,15 @@ export default function ProjectDetail() {
         prev.set("task", taskId);
         return prev;
       },
-      { replace: true },
+      { replace: true, preventScrollReset: true },
     );
   };
 
+  // Sub-tabs are a ?tab= param, so switching one is a navigation and
+  // <ScrollRestoration> would land it at the top — you'd lose your place in the
+  // page every time you looked at another tab. The tab strip stays put, so the
+  // view should too; the other hubs (education, the board's own filters) pass
+  // this for the same reason.
   const setTab = (next: Tab | OsTab) => {
     if (next === tab) return;
     closeOpenedDocumentTabs();
@@ -1673,7 +1677,7 @@ export default function ProjectDetail() {
         prev.set("tab", next);
         return prev;
       },
-      { replace: true },
+      { replace: true, preventScrollReset: true },
     );
   };
 
@@ -1850,29 +1854,38 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {/* Progress (os): the timeline and the board are one surface — the plan
-          above, the work under it — rather than two tabs you flip between to
-          answer one question. */}
-      {tab === "progress" && (
-        <div className="flex flex-col gap-6">
-          {planningNode}
-          {board}
-        </div>
-      )}
+      {/* One panel well for every tab, floored at the viewport height. Switching
+          tabs keeps your scroll position (see setTab's preventScrollReset), but
+          only while there is somewhere to keep it: a short tab used to collapse
+          the document under the current offset, and the browser clamped you
+          back to the top — the header scrolling itself into view again read as
+          the page snapping. The floor keeps that scroll range alive, so the tab
+          strip stays put whichever tab you land on. */}
+      <div className={cn("flex flex-col", os ? "gap-6 min-h-[70vh]" : "gap-4")}>
+        {/* Progress (os): the timeline and the board are one surface — the plan
+            above, the work under it — rather than two tabs you flip between to
+            answer one question. */}
+        {tab === "progress" && (
+          <div className="flex flex-col gap-6">
+            {planningNode}
+            {board}
+          </div>
+        )}
 
-      {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
+        {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
 
-      {/* Board keys off the raw edit permission, not the page-level Edit-mode
-          toggle: epics/sprints/tasks each gate their own inline edit
-          affordances, so there's nothing to "turn on" first. */}
-      {tab === "board" && board}
+        {/* Board keys off the raw edit permission, not the page-level Edit-mode
+            toggle: epics/sprints/tasks each gate their own inline edit
+            affordances, so there's nothing to "turn on" first. */}
+        {tab === "board" && board}
 
-      {tab === "mentorship" && canViewMentorshipTab && (
-        <ProjectMentorshipTab
-          projectId={project.id}
-          currentTermId={currentTerm?.id ?? null}
-        />
-      )}
+        {tab === "mentorship" && canViewMentorshipTab && (
+          <ProjectMentorshipTab
+            projectId={project.id}
+            currentTermId={currentTerm?.id ?? null}
+          />
+        )}
+      </div>
     </div>
   );
 

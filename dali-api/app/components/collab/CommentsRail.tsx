@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Trash2, RotateCcw, MessageSquare } from "lucide-react";
-import { MentionTextInput } from "~/components/MentionTextInput";
+import { Check, Trash2, RotateCcw } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { CommentComposer } from "~/components/collab/CommentComposer";
 
 export type Comment = {
   id: string;
@@ -46,7 +46,7 @@ function VersionChip({
   const label = comment.versionId ? versionLabels?.[comment.versionId] : undefined;
   if (!label) return null;
   return (
-    <span className="mr-1.5 px-1 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+    <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground">
       {label}
     </span>
   );
@@ -271,16 +271,14 @@ export function CommentsRail({
   const resolvedCount = threads.filter((t) => t.root.resolved).length;
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-3 text-sm">
+    <div ref={containerRef} className="flex flex-col gap-2 text-sm">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-foreground flex items-center gap-1.5">
-          <MessageSquare className="w-4 h-4" /> Comments
-        </h3>
+        <h3 className="text-xs font-medium text-muted-foreground">Comments</h3>
         {resolvedCount > 0 && (
           <button
             type="button"
             onClick={() => setShowResolved((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
           >
             {showResolved ? "Hide resolved" : `Show resolved (${resolvedCount})`}
           </button>
@@ -289,192 +287,173 @@ export function CommentsRail({
 
       {error && <div className="text-xs text-destructive">{error}</div>}
 
-      {/* New inline comment composer — appears when the editor has a pending
-          selection anchor awaiting a comment. */}
-      {canComment && pendingAnchor && (
-        <div className="rounded-md border border-accent-coral/40 bg-accent-coral/5 p-2">
-          <p className="text-[11px] text-muted-foreground mb-1">Comment on selection</p>
-          <MentionTextInput
-            autoFocus
-            multiline
-            value={draft}
-            onChange={setDraft}
-            rows={2}
-            className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
-          />
-          <div className="flex justify-end gap-2 mt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setDraft("");
-                onClearPendingAnchor?.();
-              }}
-              className="text-xs px-2 py-1 rounded border border-border hover:bg-muted"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={busy || !draft.trim()}
-              onClick={async () => {
-                const ok = await post(draft.trim(), null, pendingAnchor);
-                if (ok) {
+      {/* Composer — anchored to the editor selection when the host has one
+          waiting, otherwise a plain doc/file-level comment. */}
+      {canComment && (
+        <div className="flex flex-col gap-1">
+          {pendingAnchor && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span>Commenting on the selection</span>
+              <button
+                type="button"
+                onClick={() => {
                   setDraft("");
                   onClearPendingAnchor?.();
-                }
-              }}
-              className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50"
-            >
-              Comment
-            </button>
-          </div>
+                }}
+                className="hover:text-foreground hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          <CommentComposer
+            currentUserId={currentUserId}
+            value={draft}
+            onChange={setDraft}
+            busy={busy}
+            autoFocus={Boolean(pendingAnchor)}
+            onCancel={
+              pendingAnchor
+                ? () => {
+                    setDraft("");
+                    onClearPendingAnchor?.();
+                  }
+                : undefined
+            }
+            onSubmit={async () => {
+              const ok = await post(draft.trim(), null, pendingAnchor ?? null);
+              if (ok) {
+                setDraft("");
+                if (pendingAnchor) onClearPendingAnchor?.();
+              }
+            }}
+          />
         </div>
       )}
 
-      {/* Doc/file-level composer (no anchor). */}
-      {canComment && !pendingAnchor && (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!draft.trim()) return;
-            const ok = await post(draft.trim(), null, null);
-            if (ok) setDraft("");
-          }}
-          className="flex flex-col gap-1"
-        >
-          <MentionTextInput
-            multiline
-            value={draft}
-            onChange={setDraft}
-            rows={2}
-            placeholder="Add a comment…"
-            className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
-          />
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={busy || !draft.trim()}
-              className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50"
-            >
-              Comment
-            </button>
-          </div>
-        </form>
-      )}
-
-      {visible.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No comments yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {visible.map((t) => (
-            <li
-              key={t.root.id}
-              data-comment-id={t.root.id}
-              className={`rounded-md border p-2 ${
-                t.root.resolved ? "border-border bg-muted/40 opacity-70" : "border-border bg-card"
-              }`}
-            >
-              <button
-                type="button"
-                disabled={!isJumpable(t.root, onFocusAnchor, onFocusInlineThread)}
-                onClick={() => handleJump(t.root, onFocusAnchor, onFocusInlineThread)}
-                className={`block w-full text-left ${isJumpable(t.root, onFocusAnchor, onFocusInlineThread) ? "hover:bg-muted/50 rounded" : ""}`}
+      {visible.length > 0 && (
+        <ul className="flex flex-col">
+          {visible.map((t) => {
+            const jumpable = isJumpable(t.root, onFocusAnchor, onFocusInlineThread);
+            return (
+              <li
+                key={t.root.id}
+                data-comment-id={t.root.id}
+                className={`group border-b border-border/60 py-3 last:border-b-0 ${
+                  t.root.resolved ? "opacity-60" : ""
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    <Avatar photoUrl={t.root.authorPhotoUrl} name={t.root.author} size="xs" className="shrink-0" />
-                    {t.root.author}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    <VersionChip comment={t.root} versionLabels={versionLabels} />
-                    {formatCommentDate(t.root.createdAt)}
-                  </span>
-                </div>
-                {t.root.anchor && (
-                  <span className="text-[10px] text-accent-coral">inline</span>
-                )}
-                <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{t.root.body}</p>
-              </button>
+                <button
+                  type="button"
+                  disabled={!jumpable}
+                  onClick={() => handleJump(t.root, onFocusAnchor, onFocusInlineThread)}
+                  className={`block w-full text-left ${jumpable ? "cursor-pointer" : "cursor-default"}`}
+                >
+                  <CommentHead comment={t.root} versionLabels={versionLabels} inline={Boolean(t.root.anchor)} />
+                  <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
+                    {t.root.body}
+                  </p>
+                </button>
 
-              {t.replies.map((r) => (
-                <div key={r.id} data-comment-id={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                      <Avatar photoUrl={r.authorPhotoUrl} name={r.author} size="xs" className="shrink-0" />
-                      {r.author}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      <VersionChip comment={r} versionLabels={versionLabels} />
-                      {formatCommentDate(r.createdAt)}
-                    </span>
+                {t.replies.map((r) => (
+                  <div key={r.id} data-comment-id={r.id} className="mt-3 pl-7">
+                    <CommentHead comment={r} versionLabels={versionLabels} />
+                    <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
+                      {r.body}
+                    </p>
                   </div>
-                  <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
-                </div>
-              ))}
+                ))}
 
-              {canComment && (
-                <div className="flex items-center gap-3 mt-1.5">
-                  {replyTo === t.root.id ? (
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (!replyDraft.trim()) return;
+                {canComment && replyTo === t.root.id ? (
+                  <div className="mt-2 pl-7">
+                    <CommentComposer
+                      autoFocus
+                      currentUserId={currentUserId}
+                      value={replyDraft}
+                      onChange={setReplyDraft}
+                      busy={busy}
+                      placeholder="Reply…"
+                      submitLabel="Post reply"
+                      onCancel={() => {
+                        setReplyDraft("");
+                        setReplyTo(null);
+                      }}
+                      onSubmit={async () => {
                         const ok = await post(replyDraft.trim(), t.root.id, null);
                         if (ok) {
                           setReplyDraft("");
                           setReplyTo(null);
                         }
                       }}
-                      className="flex-1 flex items-end gap-1"
-                    >
-                      <MentionTextInput
-                        autoFocus
-                        value={replyDraft}
-                        onChange={setReplyDraft}
-                        placeholder="Reply…"
-                        wrapperClassName="relative flex-1"
-                        className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
-                      />
-                      <button type="submit" disabled={busy} className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50">
+                    />
+                  </div>
+                ) : (
+                  // Actions stay out of the way until the thread is hovered or
+                  // keyboard-focused, so the list reads as plain conversation.
+                  <div className="mt-1.5 flex items-center gap-3 pl-7 text-[11px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                    {canComment && (
+                      <button
+                        type="button"
+                        onClick={() => setReplyTo(t.root.id)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
                         Reply
                       </button>
-                      <button type="button" onClick={() => setReplyTo(null)} className="text-xs px-1 text-muted-foreground">
-                        ✕
+                    )}
+                    {canComment && canResolve && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => mutate(t.root.id, "POST", t.root.resolved ? "reopen" : "resolve")}
+                        className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
+                      >
+                        {t.root.resolved ? (
+                          <><RotateCcw className="h-3 w-3" /> Reopen</>
+                        ) : (
+                          <><Check className="h-3 w-3" /> Resolve</>
+                        )}
                       </button>
-                    </form>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => setReplyTo(t.root.id)} className="text-[11px] text-muted-foreground hover:text-foreground">
-                        Reply
+                    )}
+                    {canComment && t.root.authorId === currentUserId && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => mutate(t.root.id, "DELETE")}
+                        className="flex items-center gap-0.5 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete
                       </button>
-                      {canResolve && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => mutate(t.root.id, "POST", t.root.resolved ? "reopen" : "resolve")}
-                          className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-                        >
-                          {t.root.resolved ? <><RotateCcw className="w-3 h-3" /> Reopen</> : <><Check className="w-3 h-3" /> Resolve</>}
-                        </button>
-                      )}
-                      {t.root.authorId === currentUserId && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => mutate(t.root.id, "DELETE")}
-                          className="text-[11px] text-destructive hover:underline flex items-center gap-0.5"
-                        >
-                          <Trash2 className="w-3 h-3" /> Delete
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Avatar + author + timestamp line shared by roots and replies.
+function CommentHead({
+  comment,
+  versionLabels,
+  inline = false,
+}: {
+  comment: Comment;
+  versionLabels?: Record<string, string>;
+  inline?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Avatar photoUrl={comment.authorPhotoUrl} name={comment.author} size="xs" className="shrink-0" />
+      <span className="text-xs font-medium text-foreground">{comment.author}</span>
+      <span className="text-[11px] text-muted-foreground">
+        <VersionChip comment={comment} versionLabels={versionLabels} />
+        {formatCommentDate(comment.createdAt)}
+      </span>
+      {inline && <span className="text-[11px] text-muted-foreground">· on selection</span>}
     </div>
   );
 }

@@ -1,4 +1,12 @@
-import { useRef, useState, type KeyboardEvent, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type Ref,
+} from "react";
 
 export type MentionUser = {
   id: string;
@@ -35,6 +43,14 @@ function activeMention(text: string, caret: number): { start: number; query: str
   return { start: caret - query.length - 1, query };
 }
 
+/** Imperative handle for composers that drive the input from a toolbar
+ *  button (the minimal comment composer's "@" affordance). */
+export type MentionInputHandle = {
+  focus: () => void;
+  /** Inserts an "@" at the caret and opens the mention dropdown. */
+  insertMentionTrigger: () => void;
+};
+
 type Props = {
   value: string;
   onChange: (value: string) => void;
@@ -51,6 +67,10 @@ type Props = {
   /** Forwarded for keys the mention dropdown doesn't consume (e.g. an
    *  Enter-to-submit handler). Not called while the dropdown handles the key. */
   onKeyDown?: (e: KeyboardEvent) => void;
+  /** Multiline only: grow the textarea with its content instead of scrolling
+   *  inside a fixed `rows` box. Cap the growth with a max-height class. */
+  autoGrow?: boolean;
+  inputRef?: Ref<MentionInputHandle>;
 };
 
 export function MentionTextInput({
@@ -65,6 +85,8 @@ export function MentionTextInput({
   className,
   wrapperClassName = "relative",
   onKeyDown,
+  autoGrow = false,
+  inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -92,6 +114,41 @@ export function MentionTextInput({
       }
     });
   }
+
+  // Grow to fit the content on every value change (including programmatic
+  // ones, e.g. clearing the draft after a successful post).
+  useEffect(() => {
+    if (!autoGrow || !multiline) return;
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value, autoGrow, multiline]);
+
+  useImperativeHandle(
+    inputRef,
+    () => ({
+      focus: () => ref.current?.focus(),
+      insertMentionTrigger: () => {
+        const el = ref.current;
+        const caret = el?.selectionStart ?? value.length;
+        // The dropdown only fires when "@" starts a word, so add the space.
+        const token = caret > 0 && !/\s$/.test(value.slice(0, caret)) ? " @" : "@";
+        const pos = caret + token.length;
+        onChange(value.slice(0, caret) + token + value.slice(caret));
+        // The value is controlled — wait for the re-render before placing the
+        // caret and asking for suggestions off the (now current) element.
+        requestAnimationFrame(() => {
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(pos, pos);
+          refreshMention(el);
+        });
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [value],
+  );
 
   function handleChange(e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) {
     onChange(e.target.value);

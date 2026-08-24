@@ -63,9 +63,6 @@ export type TimelineEpic = {
   // from — rendered as "unscheduled" rather than as a bar.
   startsAt: string | null;
   endsAt: string | null;
-  // Sprints under this epic. Not drawn as bars any more — the sprint grid is
-  // the header band — but still reported in the epic's hover card.
-  sprintCount: number;
   // Stories under this epic, drawn as bars nested inside the epic bar.
   stories: TimelineStory[];
 };
@@ -1277,7 +1274,6 @@ export function EpicsTimeline({
                             label: "Stories",
                             value: String(b.epic.stories.length),
                           },
-                          { label: "Sprints", value: String(b.epic.sprintCount) },
                           ...(counts
                             ? [
                                 {
