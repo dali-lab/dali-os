@@ -196,31 +196,60 @@ export async function notify(args: {
   // announcement still shows it, so the email is never empty).
   const isAnnouncement = args.eventType === "announcement";
 
-  // Coalescing (best-effort, opt-in per event): drop a recipient who already got
-  // a row for this event+link inside the window — suppresses a burst (5 comments
-  // → 1 notification). It never aggregates; a rare race just delivers the burst,
-  // which is the un-coalesced behavior, so a plain findFirst (not an atomic
-  // claim) is fine.
+  // Coalescing (best-effort, opt-in per event): when a recipient already got a
+  // row for this event+link inside the window, merge the new activity into that
+  // row instead of writing a second one — taming a burst (5 comments → 1 row).
+  // The surviving row is refreshed to the latest preview, re-lit unread, bumped
+  // to the top of the feed (which also slides the window forward), and its
+  // coalesceCount incremented; only the in-app row re-surfaces, so email/Slack
+  // stay suppressed to one-per-window. Best-effort: a rare race just delivers
+  // the burst (the un-coalesced behaviour), so a plain findFirst — not an atomic
+  // claim — is fine, and a merge-write failure must not lose the row already shown.
   if (def.coalesceWindowMs && resolved.length > 0) {
     const since = new Date(Date.now() - def.coalesceWindowMs);
     const kept: Resolved[] = [];
+    const mergedInto: string[] = [];
     for (const r of resolved) {
-      const link = merged(r.recipient).link;
-      if (link) {
+      const m = merged(r.recipient);
+      if (m.link) {
         const recent = await prisma.notification.findFirst({
           where: {
             recipientUserId: r.user.id,
             eventType: args.eventType,
-            link,
+            link: m.link,
             createdAt: { gte: since },
           },
-          select: { id: true },
+          select: { id: true, coalesceCount: true },
         });
-        if (recent) continue;
+        if (recent) {
+          const count = recent.coalesceCount + 1;
+          const summary =
+            def.coalesceNoun && count > 1
+              ? `${count} new ${def.coalesceNoun}s${m.body ? ` · latest: ${m.body}` : ""}`
+              : m.body;
+          await prisma.notification
+            .update({
+              where: { id: recent.id },
+              data: {
+                title: m.title,
+                body: summary,
+                createdByUserId: args.createdByUserId ?? null,
+                readAt: null,
+                createdAt: new Date(),
+                coalesceCount: { increment: 1 },
+              },
+            })
+            .catch((err) => console.error("[notify] coalesce merge failed:", err));
+          mergedInto.push(r.user.id);
+          continue;
+        }
       }
       kept.push(r);
     }
     resolved = kept;
+    // Re-ping streams so a re-surfaced row reaches the desktop app / bell
+    // without waiting for the sync backstop, same as a fresh insert.
+    if (mergedInto.length > 0) publishNotificationChange(mergedInto);
   }
 
   // In-app: unkeyed recipients keep the fast bulk insert; keyed recipients each
