@@ -7,13 +7,11 @@ import {
   Check,
   CalendarDays,
   ChevronLeft,
-  ChevronRight,
   ExternalLink,
   Search,
   CalendarClock,
   GraduationCap,
   MapPin,
-  Milestone,
   Star,
   UserRound,
   X,
@@ -293,22 +291,14 @@ export default function Home() {
 /* ------------------------------------------------------------------ */
 /* dali.os home (behind `os-redesign`). The design's front door: a       */
 /* time-of-day greeting, one wide search field, and the pages you were   */
-/* last in as cards. The attention surfaces the search-first home already */
-/* carries (milestones, tasks/invites needing an answer, your project     */
-/* tasks, your courses) keep their place underneath — the design has no   */
-/* panel for them, but they are the reason home is worth opening.         */
+/* last in as cards. The only other surface is the attention banner for  */
+/* the tasks and invites still waiting on an answer.                     */
 /* ------------------------------------------------------------------ */
 
 function HomeOS() {
-  const { user, greeting, notifications, tasks, myProjectTasks, education, pages } =
-    useLoaderData<typeof loader>();
+  const { user, greeting, notifications, tasks, pages } = useLoaderData<typeof loader>();
   const fullName =
     [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
-
-  const compactBlocks = [
-    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
-    hasEducationContent(education) && <EducationPanel education={education} />,
-  ].filter(Boolean);
 
   return (
     <div className="mx-auto flex w-full max-w-[750px] flex-col gap-12 pt-6">
@@ -321,27 +311,7 @@ function HomeOS() {
 
       <RecentGrid pages={pages} />
 
-      <div className="flex flex-col gap-6">
-        <MilestonesBanner />
-        <AttentionBanner tasks={tasks} notifications={notifications} />
-        {compactBlocks.length > 1 ? (
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-            {[0, 1].map((col) => (
-              <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
-                {compactBlocks
-                  .filter((_, i) => i % 2 === col)
-                  .map((block, i) => (
-                    <div key={i} className="min-w-0">
-                      {block}
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="min-w-0">{compactBlocks[0]}</div>
-        )}
-      </div>
+      <AttentionBanner tasks={tasks} notifications={notifications} />
     </div>
   );
 }
@@ -474,8 +444,6 @@ function HomeRedesign() {
       </div>
 
       <div className="flex flex-col gap-6">
-        <MilestonesBanner />
-
         <AttentionBanner tasks={tasks} notifications={notifications} />
 
         {compactBlocks.length > 1 ? (
@@ -497,32 +465,6 @@ function HomeRedesign() {
         )}
       </div>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Milestones — a pointer to the term timeline. Sits at the top of the   */
-/* attention column so the shape of the term is one click from the front */
-/* door.                                                                 */
-/* ------------------------------------------------------------------ */
-
-function MilestonesBanner() {
-  return (
-    <Link
-      to="/milestones"
-      className="group flex items-center gap-3 rounded-lg border border-accent-coral/30 bg-accent-coral/10 p-3 transition-colors hover:bg-accent-coral/15"
-    >
-      <Milestone className="h-4 w-4 flex-shrink-0 text-accent-coral" aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="block font-heading text-sm font-semibold text-foreground">
-          Check out our new milestones
-        </span>
-        <span className="block text-xs text-muted-foreground">
-          The term week by week — lab-wide events, team milestones, and what each domain owns.
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 flex-shrink-0 text-accent-coral transition-transform group-hover:translate-x-0.5" />
-    </Link>
   );
 }
 

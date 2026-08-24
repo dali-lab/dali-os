@@ -15,6 +15,8 @@ import { useDialog } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { mentorshipPills } from "../components/mentorshipPills";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
 
 type LoaderData = {
@@ -136,6 +138,7 @@ const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
   const dialog = useDialog();
+  const { os, pageTitle, bodyText, iconBtn } = useOsChrome();
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -183,16 +186,12 @@ export default function MentorNoteEditor() {
     <main className="flex flex-col gap-4 w-full min-w-0">
       <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-bold text-foreground">
-          Notes on {fullName(data.mentee)}
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Author: {fullName(data.mentor)}
-        </p>
+        <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
+        <p className={bodyText}>Author: {fullName(data.mentor)}</p>
       </header>
 
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">
+        <span className={bodyText}>
           Vibe check
           <span className="text-accent-coral ml-0.5" aria-hidden>
             *
@@ -211,11 +210,16 @@ export default function MentorNoteEditor() {
                 disabled={!data.canEdit}
                 aria-pressed={active}
                 title={VIBE_META[v].label}
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border transition",
+                  os ? "px-3.5 py-1.5 text-sm font-medium" : "px-2.5 py-1 text-xs",
                   active
                     ? VIBE_META[v].pill
-                    : "border-border text-muted-foreground hover:text-foreground"
-                } ${data.canEdit ? "" : "cursor-default opacity-70"}`}
+                    : os
+                    ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-white"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                  data.canEdit ? "" : "cursor-default opacity-70",
+                )}
               >
                 <Icon className="h-3.5 w-3.5" aria-hidden />
                 {VIBE_META[v].label}
@@ -225,7 +229,7 @@ export default function MentorNoteEditor() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className={cn("flex items-center justify-between", bodyText)}>
         <span>
           {data.canEdit
             ? status === "saving"
@@ -243,7 +247,10 @@ export default function MentorNoteEditor() {
               type="button"
               onClick={handleDelete}
               aria-label="Delete"
-              className="inline-flex items-center justify-center p-1.5 text-accent-coral hover:underline"
+              className={cn(
+                "inline-flex items-center justify-center",
+                os ? iconBtn : "p-1.5 text-accent-coral hover:underline",
+              )}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

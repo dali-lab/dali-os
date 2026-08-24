@@ -1626,7 +1626,8 @@ function Breadcrumb({
 }) {
   const t = useDriveText();
   // Under the redesign the page renders its own "Drive" h1, so the root crumb
-  // drops to the icon alone rather than repeating the word right beneath it.
+  // goes entirely rather than repeating the word right beneath it — the scope
+  // crumb leads, and the h1 is the way back to the root.
   const os = useContext(DriveScale);
   const collapse = folderCrumbs.length > 3;
   const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
@@ -1638,20 +1639,20 @@ function Breadcrumb({
       data-testid="drive-breadcrumb"
       className={`flex items-center gap-1 min-w-0 flex-1 ${t.row}`}
     >
-      <button
-        type="button"
-        data-testid="drive-crumb-root"
-        aria-label="Drive"
-        title="Drive"
-        onClick={(e) => {
-          e.stopPropagation();
-          onNavigate(null, null);
-        }}
-        className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-muted/50"
-      >
-        <HardDrive className="w-4 h-4 text-accent-coral" />
-        {!os && "Drive"}
-      </button>
+      {!os && (
+        <button
+          type="button"
+          data-testid="drive-crumb-root"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(null, null);
+          }}
+          className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-muted/50"
+        >
+          <HardDrive className="w-4 h-4 text-accent-coral" />
+          Drive
+        </button>
+      )}
       {currentScope && (
         <Crumb
           label={currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label}
@@ -1660,6 +1661,7 @@ function Breadcrumb({
           destFolderId={null}
           onNavigate={() => onNavigate(currentScope.id, null)}
           dragging={dragging}
+          first={os}
         />
       )}
       {collapse && (
@@ -1708,6 +1710,7 @@ function Crumb({
   destFolderId,
   onNavigate,
   dragging,
+  first = false,
 }: {
   label: string;
   testid: string;
@@ -1715,6 +1718,8 @@ function Crumb({
   destFolderId: string | null;
   onNavigate: () => void;
   dragging: boolean;
+  /** Leads the trail (no root crumb before it), so it takes no separator. */
+  first?: boolean;
 }) {
   const drop = useDroppable({
     id: `crumb::${scopeId}::${destFolderId ?? "_root_"}`,
@@ -1723,7 +1728,7 @@ function Crumb({
   });
   return (
     <>
-      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+      {!first && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
       <button
         type="button"
         ref={drop.setNodeRef}
