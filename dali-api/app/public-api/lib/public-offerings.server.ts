@@ -53,6 +53,7 @@ export type OfferingsFilter = {
   from?: Date; // calendar window lower bound (interval overlap)
   to?: Date; // calendar window upper bound (interval overlap)
   term?: string; // term code (e.g. "26F"); limits to offerings in that term
+  type?: "Miniseries" | "Workshop"; // limits to one offering type (DB enum)
 };
 
 const MONTHS = [
@@ -91,14 +92,17 @@ function toDateParts(d: Date): PublicOfferingDate {
 type OfferingWhere = {
   status: "Published";
   term?: { code: string };
+  type?: "Miniseries" | "Workshop";
   startsAt?: { gt?: Date; lte?: Date };
   endsAt?: { lt?: Date; gte?: Date };
 };
 
 function buildWhere(filter: OfferingsFilter, now: Date): OfferingWhere {
   const where: OfferingWhere = { status: "Published" };
-  // Term composes with the date filters below (e.g. term=26F&scope=past).
+  // Term and type compose with the date filters below (independent ANDs, e.g.
+  // term=26F&type=workshop&scope=past).
   if (filter.term) where.term = { code: filter.term };
+  if (filter.type) where.type = filter.type;
 
   // An explicit calendar window wins over scope: return every offering whose
   // run overlaps [from, to]. Either bound may be omitted (open-ended window).
@@ -140,6 +144,16 @@ export function parseOfferingsFilter(
   const filter: OfferingsFilter = { scope };
   const term = params.get("term")?.trim();
   if (term) filter.term = term;
+
+  // `type` comes in lowercase (matching the payload) but maps to the DB enum.
+  const typeRaw = params.get("type");
+  if (typeRaw != null && typeRaw.trim() !== "") {
+    const t = typeRaw.trim().toLowerCase();
+    if (t === "miniseries") filter.type = "Miniseries";
+    else if (t === "workshop") filter.type = "Workshop";
+    else return { error: "Invalid 'type' (use miniseries or workshop)" };
+  }
+
   for (const key of ["from", "to"] as const) {
     const raw = params.get(key);
     if (raw == null) continue;
