@@ -6,13 +6,13 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { sendEmail, type EmailAttachment } from "~/lib/gmail";
-import { getSender } from "~/lib/gmail-integration";
+import { type EmailAttachment } from "~/lib/gmail";
 import { getFrontendUrl } from "~/lib/app-env";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 function escapeHtml(s: string): string {
   return s
@@ -59,9 +59,6 @@ export async function sendSignatureReceipt(args: {
     (user.netId ? `${user.netId}@dartmouth.edu` : null);
   if (!to) return;
 
-  const sender = await getSender("General").catch(() => null);
-  if (!sender) return;
-
   // Render the frozen archival body to a PDF copy. If it fails, still send the
   // thank-you (with a link) rather than nothing.
   let attachments: EmailAttachment[] | undefined;
@@ -90,14 +87,18 @@ export async function sendSignatureReceipt(args: {
     `<p style="color:#71717a;font-size:12px;">— DALI OS</p>`,
   ].join("\n");
 
-  await sendEmail({
-    refreshToken: sender.refreshToken,
-    from: sender.sendAsEmail,
-    to,
+  const { id } = await enqueueOutbound({
+    channel: "email",
+    purpose: "General",
+    dedupKey: `signing.receipt:${args.bindingId}:${args.signerUserId}`,
+    target: to,
+    recipientUserId: args.signerUserId,
     subject: `Signed: ${args.documentName}`,
-    html,
+    bodyHtml: html,
     attachments,
+    eventType: "signing.receipt",
   });
+  await drainNow([id]);
 }
 
 // Send the "please sign" notification to a binding's outstanding signers.

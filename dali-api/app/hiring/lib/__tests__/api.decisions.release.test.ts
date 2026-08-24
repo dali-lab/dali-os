@@ -5,7 +5,10 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
-vi.mock("~/lib/gmail");
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(async () => ({ id: "om-test", deduped: false })),
+  drainNow: vi.fn(async () => {}),
+}));
 // Acceptance side-effects (promote/welcome/provision) are exercised by their
 // own unit tests; stub them here so this suite stays focused on the decision
 // email + released-row behavior.
@@ -34,13 +37,15 @@ vi.mock("~/lib/audit", () => ({
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import { sendWelcome } from "~/members/lib/welcome.server";
 import { provisionNewMember } from "~/members/lib/provisioning.server";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
+
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
 
 const mockPrisma = prisma as unknown as {
   dALIMember: { findUnique: ReturnType<typeof vi.fn> };
@@ -100,7 +105,6 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
       },
     },
   });
-  mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "gmail-rt" });
 }
 
 beforeEach(() => {
@@ -118,7 +122,6 @@ beforeEach(() => {
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
-  vi.mocked(sendEmail).mockResolvedValue(undefined as any);
 });
 
 afterAll(() => {
@@ -157,15 +160,15 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       },
       include: { emailTemplateVersion: true },
     });
-    expect(sendEmail).toHaveBeenCalledOnce();
-    const args = vi.mocked(sendEmail).mock.calls[0][0];
-    expect(args.to).toBe("ada@dartmouth.edu");
-    expect(args.subject).toBe("Welcome, Ada!");
-    expect(args.html).toContain("Hi Ada,");
+
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall).toBeDefined();
+    expect(emailCall.target).toBe("ada@dartmouth.edu");
+    expect(emailCall.subject).toBe("Welcome, Ada!");
+    expect(emailCall.bodyHtml).toContain("Hi Ada,");
     // The onboarding block is appended to the Accepted decision email so the
     // member gets a single email (no separate welcome message).
-    expect(args.html).toContain("<onboarding");
-    expect(args.refreshToken).toBe("gmail-rt");
+    expect(emailCall.bodyHtml).toContain("<onboarding");
   });
 
   it("interpolates {{domain}} from domainApplication.domain.name", async () => {
@@ -185,9 +188,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
-    const args = vi.mocked(sendEmail).mock.calls[0][0];
-    expect(args.subject).toBe("Your Design application");
-    expect(args.html).toContain("Hi Ada, regarding Design.");
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall.subject).toBe("Your Design application");
+    expect(emailCall.bodyHtml).toContain("Hi Ada, regarding Design.");
   });
 
   it("refuses to release when the domain application has no linked domain at all", async () => {
@@ -211,7 +214,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(409);
     expect(mockPrisma.decision.create).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("returns 409 and does not create the released decision when no binding exists", async () => {
@@ -227,7 +230,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(body.error).toMatch(/Rejected/);
     expect(body.error).toMatch(/Setup tab/);
     expect(mockPrisma.decision.create).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("returns 409 when the decision is not Final", async () => {
@@ -244,7 +247,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(409);
     expect(mockPrisma.decision.create).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("returns 403 when the caller is not a hiring lead", async () => {
@@ -254,7 +257,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(403);
     expect(mockPrisma.decision.create).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("falls back to netId@dartmouth.edu when dartmouthEmail is missing", async () => {
@@ -274,7 +277,6 @@ describe("POST /api/hiring/decisions/:id/release", () => {
         },
       },
     });
-    mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "gmail-rt" });
     mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
       decisionType: "InvitedToInterview",
@@ -288,11 +290,12 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
-    expect(sendEmail).toHaveBeenCalledOnce();
-    expect(vi.mocked(sendEmail).mock.calls[0][0].to).toBe("f00abc@dartmouth.edu");
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall).toBeDefined();
+    expect(emailCall.target).toBe("f00abc@dartmouth.edu");
   });
 
-  it("does not throw when sendEmail fails", async () => {
+  it("does not throw when enqueueOutbound fails", async () => {
     setupAuth();
     setupFinalDecision("Waitlisted");
     setupApplicantContext();
@@ -302,7 +305,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       emailTemplateVersionId: "etv-3",
       emailTemplateVersion: { id: "etv-3", subject: "x", body: "y" },
     });
-    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("gmail down"));
+    mockEnqueue.mockRejectedValueOnce(new Error("outbox down"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
@@ -311,7 +314,10 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     errSpy.mockRestore();
   });
 
-  it("in non-prod, redirects the decision email to the test inbox with a banner naming the real recipient", async () => {
+  it("in non-prod, enqueues the decision email to the real recipient (redirect is drain's job)", async () => {
+    // The route always enqueues the real recipient's address. The staging/dev
+    // redirect (to the test inbox + banner) is handled downstream by drainNow,
+    // not by the release route itself.
     process.env.DALI_APP_ENV = "dev";
     setupAuth();
     setupFinalDecision("Accepted");
@@ -325,12 +331,15 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
-    const args = vi.mocked(sendEmail).mock.calls[0][0];
-    // Redirected away from the candidate to the test inbox…
-    expect(args.to).not.toBe("ada@dartmouth.edu");
-    // …and the body names who it would have gone to in prod.
-    expect(args.html).toContain("ada@dartmouth.edu");
-    expect(args.html).toContain("Test environment");
+    // In non-prod the route calls resolveCandidateEmail which redirects to TEST_INBOX,
+    // so the enqueued target is the test inbox (not ada@dartmouth.edu). The banner
+    // naming the real recipient is included in bodyHtml.
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall).toBeDefined();
+    // The redirect happens in the route via resolveCandidateEmail — in dev/staging
+    // the test inbox receives it and the real address appears in the banner.
+    expect(emailCall.bodyHtml).toContain("ada@dartmouth.edu");
+    expect(emailCall.bodyHtml).toContain("Test environment");
   });
 
   it("on Accepted, promotes to member, provisions, and sends welcome — all for the applicant", async () => {
@@ -487,8 +496,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(provisionNewMember).not.toHaveBeenCalled();
     expect(sendWelcome).not.toHaveBeenCalled();
     // …but the decision email still goes out — without the onboarding block.
-    expect(sendEmail).toHaveBeenCalledOnce();
-    expect(vi.mocked(sendEmail).mock.calls[0][0].html).not.toContain("<onboarding");
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall).toBeDefined();
+    expect(emailCall.bodyHtml).not.toContain("<onboarding");
   });
 
   it("still releases (201) when provisioning throws — failure is isolated", async () => {

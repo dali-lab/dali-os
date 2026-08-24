@@ -1,15 +1,16 @@
 // Sends ICS calendar invite emails for interview booking, rescheduling, and cancellation.
 // Email bodies come from per-cycle CycleNotificationEmail template bindings — no binding = no email.
 // All sends are best-effort — failures are logged but never block the booking flow.
+// Every send goes through the outbox (app/lib/outbound.server.ts): enqueue +
+// inline drain, so delivery gets retry + per-sender cap + history for free.
 
 import type { NotificationType } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
 import { type InterpolationVars } from "~/lib/email";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 const ORGANIZER: IcsAttendee = {
   email: "applications@dali.dartmouth.edu",
@@ -114,12 +115,9 @@ async function renderFromBinding(
 // Reminder emails for the interview-reminders job. Same per-cycle
 // CycleNotificationEmail binding flow as every other hiring email — no
 // binding = no email for that audience. No ICS — recipients already hold
-// the calendar event from the invite. Returns the number of emails sent.
+// the calendar event from the invite. Returns the number of emails enqueued.
 export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return 0;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     // Re-check status: the job claims its ledger row first, and the interview
     // may have been cancelled in between.
@@ -139,7 +137,10 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     const applicant = await getApplicantRecipient(interview.domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const sends: Promise<unknown>[] = [];
+    // No dedupKey: the interview-reminders job already claims an
+    // InterviewReminderLog(interviewId, kind) row before calling this, and the
+    // 24h + 1h reminders legitimately both send.
+    const enqueues: Promise<string | null>[] = [];
     if (applicant) {
       const rendered = await renderFromBinding(
         interview.applicationCycleId,
@@ -147,13 +148,15 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(
-          sendEmail({
-            refreshToken,
-            to: applicant.email,
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            target: applicant.email,
             subject: rendered.subject,
-            html: rendered.html,
-          }),
+            bodyHtml: rendered.html,
+            eventType: "hiring.interview.reminder",
+          }).then((r) => r.id),
         );
       }
     }
@@ -164,18 +167,21 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(
-          sendEmail({
-            refreshToken,
-            to: interviewer.email,
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            target: interviewer.email,
             subject: rendered.subject,
-            html: rendered.html,
-          }),
+            bodyHtml: rendered.html,
+            eventType: "hiring.interview.reminder",
+          }).then((r) => r.id),
         );
       }
     }
-    const results = await Promise.allSettled(sends);
-    return results.filter((r) => r.status === "fulfilled").length;
+    const ids = await Promise.all(enqueues);
+    await drainNow(ids);
+    return ids.filter(Boolean).length;
   } catch (err) {
     console.error("Failed to send interview reminder emails:", err);
     return 0;
@@ -185,11 +191,9 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
 export async function sendInterviewInviteEmails(
   interviewId: string,
   domainApplicationId: string,
+  opts: { dedupKey?: null } = {},
 ): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) return;
 
@@ -238,7 +242,11 @@ export async function sendInterviewInviteEmails(
       attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
-    const sends: Promise<any>[] = [];
+    // Whether to use a stable dedupKey (initial invite) or omit it (intentional
+    // resend). Caller passes opts.dedupKey=null for resends.
+    const useDedup = !("dedupKey" in opts);
+
+    const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
       const rendered = await renderFromBinding(
@@ -247,13 +255,20 @@ export async function sendInterviewInviteEmails(
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: applicant.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          ics: applicantIcs,
-        }));
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            dedupKey: useDedup
+              ? `hiring.interview.invite:${interviewId}:${applicant.email.toLowerCase()}`
+              : null,
+            target: applicant.email,
+            subject: rendered.subject,
+            bodyHtml: rendered.html,
+            ics: applicantIcs,
+            eventType: "hiring.interview.invite",
+          }).then(({ id }) => id),
+        );
       }
     }
 
@@ -264,17 +279,25 @@ export async function sendInterviewInviteEmails(
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: interviewer.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          ics: interviewerIcs,
-        }));
+        enqueues.push(
+          enqueueOutbound({
+            channel: "email",
+            purpose: "Hiring",
+            dedupKey: useDedup
+              ? `hiring.interview.invite:${interviewId}:${interviewer.email.toLowerCase()}`
+              : null,
+            target: interviewer.email,
+            subject: rendered.subject,
+            bodyHtml: rendered.html,
+            ics: interviewerIcs,
+            eventType: "hiring.interview.invite",
+          }).then(({ id }) => id),
+        );
       }
     }
 
-    await Promise.allSettled(sends);
+    const ids = await Promise.all(enqueues);
+    await drainNow(ids);
   } catch (err) {
     console.error("Failed to send interview invite emails:", err);
   }
@@ -285,9 +308,6 @@ export async function sendInterviewCancelEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) return;
 
@@ -334,7 +354,8 @@ export async function sendInterviewCancelEmails(
       attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
-    const sends: Promise<any>[] = [];
+    // Terminal event → forever dedupKey per recipient (dedups a double-cancel).
+    const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
       const rendered = await renderFromBinding(
@@ -343,13 +364,16 @@ export async function sendInterviewCancelEmails(
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: applicant.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          dedupKey: `hiring.interview.cancel:${interviewId}:${applicant.email.toLowerCase()}`,
+          target: applicant.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: applicantIcs,
-        }));
+          eventType: "hiring.interview.cancel",
+        }).then((r) => r.id));
       }
     }
 
@@ -360,17 +384,20 @@ export async function sendInterviewCancelEmails(
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: interviewer.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          dedupKey: `hiring.interview.cancel:${interviewId}:${interviewer.email.toLowerCase()}`,
+          target: interviewer.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: interviewerIcs,
-        }));
+          eventType: "hiring.interview.cancel",
+        }).then((r) => r.id));
       }
     }
 
-    await Promise.allSettled(sends);
+    await drainNow(await Promise.all(enqueues));
   } catch (err) {
     console.error("Failed to send interview cancel emails:", err);
   }
@@ -383,9 +410,6 @@ export async function sendReassignmentEmails(
   newCycleInterviewerId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) return;
 
@@ -407,7 +431,8 @@ export async function sendReassignmentEmails(
     // SEQUENCE (both strictly greater than the previous publish).
     const sequence = await bumpIcsSequence(interview.id);
 
-    const sends: Promise<any>[] = [];
+    // No dedupKey: reassignments legitimately recur (A→B→C).
+    const enqueues: Promise<string | null>[] = [];
 
     // Cancel ICS to removed interviewer
     const removedCI = await prisma.cycleInterviewer.findUnique({
@@ -432,13 +457,15 @@ export async function sendReassignmentEmails(
         { firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: removedCI.user.daliEmail,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          target: removedCI.user.daliEmail,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: cancelIcs,
-        }));
+          eventType: "hiring.interview.reassignment",
+        }).then((r) => r.id));
       }
     }
 
@@ -483,13 +510,15 @@ export async function sendReassignmentEmails(
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: applicant.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          target: applicant.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: applicantIcs,
-        }));
+          eventType: "hiring.interview.reassignment",
+        }).then((r) => r.id));
       }
     }
 
@@ -500,17 +529,19 @@ export async function sendReassignmentEmails(
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: interviewer.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          target: interviewer.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: interviewerIcs,
-        }));
+          eventType: "hiring.interview.reassignment",
+        }).then((r) => r.id));
       }
     }
 
-    await Promise.allSettled(sends);
+    await drainNow(await Promise.all(enqueues));
   } catch (err) {
     console.error("Failed to send reassignment emails:", err);
   }
@@ -521,9 +552,6 @@ export async function sendLocationChangeEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
-    if (!refreshToken) return;
-
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) return;
 
@@ -574,7 +602,8 @@ export async function sendLocationChangeEmails(
       attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
-    const sends: Promise<any>[] = [];
+    // No dedupKey: the location can change repeatedly.
+    const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
       const rendered = await renderFromBinding(
@@ -583,13 +612,15 @@ export async function sendLocationChangeEmails(
         { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: applicant.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          target: applicant.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: applicantIcs,
-        }));
+          eventType: "hiring.interview.location",
+        }).then((r) => r.id));
       }
     }
 
@@ -600,17 +631,19 @@ export async function sendLocationChangeEmails(
         { firstName: interviewer.firstName, ...baseVars },
       );
       if (rendered) {
-        sends.push(sendEmail({
-          refreshToken,
-          to: interviewer.email,
+        enqueues.push(enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          target: interviewer.email,
           subject: rendered.subject,
-          html: rendered.html,
+          bodyHtml: rendered.html,
           ics: interviewerIcs,
-        }));
+          eventType: "hiring.interview.location",
+        }).then((r) => r.id));
       }
     }
 
-    await Promise.allSettled(sends);
+    await drainNow(await Promise.all(enqueues));
   } catch (err) {
     console.error("Failed to send location change emails:", err);
   }

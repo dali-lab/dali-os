@@ -8,6 +8,7 @@ import {
   Mail,
   Megaphone,
   Receipt,
+  SendHorizonal,
   Shield,
   Sparkles,
   Users,
@@ -109,6 +110,14 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
           { key: "email-templates", label: "Templates", to: "/admin/email-templates" },
           { key: "email-senders", label: "Senders", to: "/admin/email-senders" },
         ],
+      },
+      {
+        key: "outbound-messages",
+        label: "Outbound Messages",
+        to: "/admin/outbound-messages",
+        icon: SendHorizonal,
+        description:
+          "Transactional outbox — inspect, retry, and cancel outbound email and Slack messages.",
       },
     ],
   },
