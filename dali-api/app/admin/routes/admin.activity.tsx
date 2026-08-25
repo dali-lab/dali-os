@@ -1,4 +1,5 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
+import { useState } from "react";
 import type { Route } from "./+types/admin.activity";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -14,9 +15,10 @@ import {
   activeFilterParams,
   hasAnyFilter,
 } from "~/lib/audit-query";
-import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ListTodo, ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { DateField } from "~/components/ui/DateField";
+import { StatusDot, type Tone } from "~/admin/components/console-ui";
 
 export const handle = adminHandle("activity");
 
@@ -134,6 +136,120 @@ function displayTarget(u: PersonRow | null, fallbackId: string | null) {
 const inputClass =
   "bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
 
+// Maps an audit action string to a status tone by keyword.
+function toneForAction(action: string): Tone {
+  const a = action.toLowerCase();
+  if (/delete|remove|archive|cancel|revoke|disable/.test(a)) return "bad";
+  if (/grant|create|add|accept|enable|promote/.test(a)) return "ok";
+  if (/update|edit|toggle|flag|set|config/.test(a)) return "warn";
+  return "idle";
+}
+
+// Format a date string as a friendly day heading.
+function dayLabel(isoDate: string): string {
+  const d = new Date(isoDate);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Group entries by calendar day (day key = YYYY-MM-DD in local time).
+function groupByDay<T extends { createdAt: string }>(
+  entries: T[],
+): Array<{ dayKey: string; label: string; items: T[] }> {
+  const groups: Array<{ dayKey: string; label: string; items: T[] }> = [];
+  const seen = new Map<string, number>();
+  for (const e of entries) {
+    const d = new Date(e.createdAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!seen.has(key)) {
+      seen.set(key, groups.length);
+      groups.push({ dayKey: key, label: dayLabel(e.createdAt), items: [] });
+    }
+    groups[seen.get(key)!].items.push(e);
+  }
+  return groups;
+}
+
+type EntryRow = ReturnType<typeof useLoaderData<typeof loader>>["entries"][number];
+
+function TimelineEntry({ e }: { e: EntryRow }) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = !!(e.metadata || e.ip);
+  const time = new Date(e.createdAt).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  return (
+    <div className="group">
+      <div className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-muted/40 transition-colors">
+        {/* Dot */}
+        <StatusDot tone={toneForAction(e.action)} className="shrink-0" />
+
+        {/* Time */}
+        <span className="tabular-nums text-xs text-muted-foreground/70 w-[72px] shrink-0">
+          {time}
+        </span>
+
+        {/* Actor */}
+        <span className="text-sm font-medium text-foreground min-w-[120px] shrink-0">
+          {displayActor(e.actor, e.actorId)}
+        </span>
+
+        {/* Action chip */}
+        <span className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] text-foreground shrink-0">
+          {e.action}
+        </span>
+
+        {/* Target (when present) */}
+        {(e.target || e.targetId) && (
+          <span className="text-sm text-muted-foreground flex items-center gap-1 min-w-0">
+            <span className="text-muted-foreground/50">→</span>
+            {displayTarget(e.target, e.targetId)}
+          </span>
+        )}
+
+        {/* Spacer */}
+        <span className="flex-1" />
+
+        {/* Expand toggle */}
+        {hasDetail && (
+          <button
+            type="button"
+            aria-label={open ? "Collapse details" : "Expand details"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
+          >
+            {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        )}
+      </div>
+
+      {/* Expanded detail panel */}
+      {open && hasDetail && (
+        <div className="ml-[calc(12px+12px+72px+12px)] mb-2 mr-3 rounded-md border border-border bg-muted/30 p-3 space-y-2">
+          {e.metadata && (
+            <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+              {JSON.stringify(e.metadata, null, 2)}
+            </pre>
+          )}
+          {e.ip && (
+            <p className="text-[11px] font-mono text-muted-foreground/60">
+              IP: {e.ip}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminConsoleActivity() {
   const { page, hasNext, filters, anyFilter, actions, entries } = useLoaderData<typeof loader>();
 
@@ -144,6 +260,8 @@ export default function AdminConsoleActivity() {
     const qs = params.toString();
     return qs ? `?${qs}` : "?";
   }
+
+  const groups = groupByDay(entries);
 
   return (
     <div className="space-y-4">
@@ -224,51 +342,29 @@ export default function AdminConsoleActivity() {
         </div>
       </Form>
 
-      <div className="bg-card border border-border rounded-lg overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/50">
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">When</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Actor</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Action</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Target</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Metadata</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {entries.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">
-                  {anyFilter
-                    ? "No activity matches these filters."
-                    : "No activity on this page."}
-                </td>
-              </tr>
-            )}
-            {entries.map((e) => (
-              <tr key={e.id} className="hover:bg-muted/50">
-                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                  {new Date(e.createdAt).toLocaleString()}
-                </td>
-                <td className="px-4 py-3">{displayActor(e.actor, e.actorId)}</td>
-                <td className="px-4 py-3 font-mono text-xs text-foreground">{e.action}</td>
-                <td className="px-4 py-3">{displayTarget(e.target, e.targetId)}</td>
-                <td className="px-4 py-3">
-                  {e.metadata ? (
-                    <code
-                      className="block text-[11px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5 max-w-md truncate"
-                      title={JSON.stringify(e.metadata)}
-                    >
-                      {JSON.stringify(e.metadata)}
-                    </code>
-                  ) : (
-                    <span className="text-muted-foreground/50">—</span>
-                  )}
-                </td>
-              </tr>
+      <div className="bg-card border border-border rounded-lg py-2">
+        {entries.length === 0 ? (
+          <p className="px-4 py-8 text-center text-muted-foreground/70">
+            {anyFilter ? "No activity matches these filters." : "No activity on this page."}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {groups.map(({ dayKey, label, items }) => (
+              <div key={dayKey} className="py-2">
+                {/* Day heading */}
+                <div className="px-3 pb-1 pt-0.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    {label}
+                  </span>
+                </div>
+                {/* Entries for this day */}
+                {items.map((e) => (
+                  <TimelineEntry key={e.id} e={e} />
+                ))}
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
 
       <nav className="flex items-center justify-between" aria-label="Activity pagination">

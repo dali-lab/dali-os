@@ -17,6 +17,7 @@ import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { UsageGauge } from "~/admin/components/console-ui";
 import {
   EMAIL_PURPOSES,
   EMAIL_PURPOSE_KEYS,
@@ -147,51 +148,56 @@ function DailyCapRow({
   const busy = fetcher.state !== "idle";
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-      {/* Today's usage indicator */}
-      <span className="text-xs text-muted-foreground">
-        Today:{" "}
-        <span className={capped ? "font-semibold text-red-600" : "font-medium text-foreground"}>
-          {todayCount}
-        </span>
-        {dailyCap != null ? ` / ${dailyCap}` : ""}
-        {capped && (
-          <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-            capped
-          </span>
-        )}
-      </span>
+    <div className="mt-3 border-t border-border pt-3">
+      {/* Usage gauge — spans full width */}
+      <UsageGauge value={todayCount} max={dailyCap} />
 
-      {/* Cap editor */}
-      <fetcher.Form method="post" className="ml-auto flex items-center gap-2">
-        <input type="hidden" name="intent" value="save-cap" />
-        <input type="hidden" name="id" value={integrationId} />
-        <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-          Daily cap
-          <input
-            type="number"
-            name="dailyCap"
-            min={1}
-            defaultValue={dailyCap ?? ""}
-            placeholder="uncapped"
-            className="w-24 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
-            title="Maximum emails per UTC day. Leave blank for uncapped."
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={busy}
-          className={buttonClasses("ghost", "sm")}
-        >
-          {busy ? "Saving…" : "Save"}
-        </button>
-        {fetcher.data?.error && (
-          <span className="text-xs text-red-600">{fetcher.data.error}</span>
-        )}
-        {fetcher.data?.ok && (
-          <span className="text-xs text-emerald-600">Saved</span>
-        )}
-      </fetcher.Form>
+      {/* Today's usage indicator + cap editor */}
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <span className="text-xs text-muted-foreground">
+          Today:{" "}
+          <span className={capped ? "font-semibold text-red-600" : "font-medium text-foreground"}>
+            {todayCount}
+          </span>
+          {dailyCap != null ? ` / ${dailyCap}` : ""}
+          {capped && (
+            <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+              capped
+            </span>
+          )}
+        </span>
+
+        {/* Cap editor */}
+        <fetcher.Form method="post" className="ml-auto flex items-center gap-2">
+          <input type="hidden" name="intent" value="save-cap" />
+          <input type="hidden" name="id" value={integrationId} />
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Daily cap
+            <input
+              type="number"
+              name="dailyCap"
+              min={1}
+              defaultValue={dailyCap ?? ""}
+              placeholder="uncapped"
+              className="w-24 rounded-md border border-border bg-page px-1.5 py-0.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              title="Maximum emails per UTC day. Leave blank for uncapped."
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={busy}
+            className={buttonClasses("ghost", "sm")}
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+          {fetcher.data?.error && (
+            <span className="text-xs text-red-600">{fetcher.data.error}</span>
+          )}
+          {fetcher.data?.ok && (
+            <span className="text-xs text-emerald-600">Saved</span>
+          )}
+        </fetcher.Form>
+      </div>
     </div>
   );
 }
@@ -243,7 +249,7 @@ export default function EmailSendersAdmin() {
                       falls back to {s.fallbackEmail}
                     </span>
                   ) : (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                       not connected
                     </span>
                   )}
