@@ -41,9 +41,9 @@ test.describe('education catalog', () => {
     await expect(page.getByText('Figma Crash Course')).toBeVisible();
 
     await page.goto(`/education/manage/${WORKSHOP_ID}?embed=1`);
-    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'People' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Content' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Sessions' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'People' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Content' })).toBeVisible();
   });
 });
 
