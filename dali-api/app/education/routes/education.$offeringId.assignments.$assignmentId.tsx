@@ -1,4 +1,4 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/education.$offeringId.assignments.$assignmentId";
 import { requireEnrollment } from "~/education/lib/access.server";
 import {
@@ -147,19 +147,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberAssignment() {
-  const { offeringId, assignment, submission, canSubmit, collabToken, userName } =
+  const { assignment, submission, canSubmit, collabToken, userName } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
 
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <p className="text-xs text-muted-foreground">
-          <Link to={`/education/${offeringId}/hub?tab=assignments`} className="hover:underline">
-            ← Assignments
-          </Link>
-        </p>
-        <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+        <h1 className="font-heading text-2xl font-bold text-foreground">
           {assignment.title}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">

@@ -1,11 +1,10 @@
-import { redirect, Link, useLoaderData, useNavigate } from "react-router";
+import { redirect, useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/drive.templates";
 import { useState } from "react";
 import {
   FileText,
   FolderKanban,
   LayoutTemplate,
-  ArrowLeft,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -73,12 +72,6 @@ export default function DriveTemplates() {
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col gap-6 p-4">
       <div className="flex flex-col gap-1">
-        <Link
-          to="/drive"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
-        >
-          <ArrowLeft className="w-4 h-4" /> Drive
-        </Link>
         <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
           <LayoutTemplate className="w-5 h-5 text-muted-foreground" /> Templates
         </h1>

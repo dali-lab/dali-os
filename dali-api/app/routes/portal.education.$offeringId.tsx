@@ -99,7 +99,12 @@ export default function PortalOfferingDetail() {
   return (
     <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
-        <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-muted-foreground">
+          <Link to="/portal/education" className="hover:underline">
+            ← Education
+          </Link>
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <TypeBadge type={offering.type} />
           <MyStatusChip status={myStatus} />
         </div>

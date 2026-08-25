@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, Form, Link } from "react-router";
+import { redirect, useLoaderData, Form } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.assignments.$assignmentId";
 import { requireAuth } from "~/lib/auth";
@@ -22,8 +22,24 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
-  breadcrumb: (data: { assignment: { title: string } } | undefined) =>
-    data?.assignment.title ?? "Assignment",
+  // The manage-assignment URL has no offering segment (flat route), so the
+  // offering vanishes from the segment walk — declare the full trail back to
+  // the offering's Assignments tab (replacing the old inline back link).
+  breadcrumbTrail: (
+    data:
+      | { offeringId: string; offeringTitle: string; assignment: { title: string } }
+      | undefined,
+  ) => {
+    if (!data) return null;
+    const manage = `/education/manage/${data.offeringId}`;
+    return [
+      { label: "Education", to: "/education" },
+      { label: "Manage", to: "/education/manage" },
+      { label: data.offeringTitle, to: manage },
+      { label: "Assignments", to: `${manage}?tab=assignments` },
+      { label: data.assignment.title },
+    ];
+  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -35,12 +51,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const gate = await requireOfferingManager(request, offeringId);
   if (!gate.ok) return redirect("/portal");
 
-  const [assignment, submissions] = await Promise.all([
+  const [assignment, submissions, offering] = await Promise.all([
     prisma.educationAssignment.findUnique({
       where: { id: params.assignmentId },
       select: { id: true, title: true, dueAt: true, submissionType: true, points: true },
     }),
     listSubmissions(params.assignmentId!),
+    prisma.educationOffering.findUnique({
+      where: { id: offeringId },
+      select: { title: true },
+    }),
   ]);
   if (!assignment) throw new Response("Not found", { status: 404 });
 
@@ -60,6 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     offeringId,
+    offeringTitle: offering?.title ?? "Offering",
     assignment,
     submissions: submissionsWithDocs,
     collabToken: parseSessionCookie(request),
@@ -93,22 +114,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function GradeAssignment() {
-  const { offeringId, assignment, submissions, collabToken, userName } =
+  const { assignment, submissions, collabToken, userName } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <header>
-        <p className="text-xs text-muted-foreground">
-          <Link
-            to={`/education/manage/${offeringId}?tab=assignments`}
-            className="hover:underline"
-          >
-            ← Assignments
-          </Link>
-        </p>
-        <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+        <h1 className="font-heading text-2xl font-bold text-foreground">
           {assignment.title}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
