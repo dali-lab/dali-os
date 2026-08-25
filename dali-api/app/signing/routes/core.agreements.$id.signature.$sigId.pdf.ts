@@ -1,14 +1,14 @@
-// Resource route — streams an admin's view of a member's signed copy as PDF.
-// Auth mirrors admin.agreements.$id.signature.$sigId.tsx loader exactly.
+// Resource route — streams a Core view of a member's signed copy as PDF.
+// Auth mirrors core.agreements.$id.signature.$sigId.tsx loader exactly.
 
 import { redirect } from "react-router";
-import type { Route } from "./+types/admin.agreements.$id.signature.$sigId.pdf";
+import type { Route } from "./+types/core.agreements.$id.signature.$sigId.pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 
@@ -35,14 +35,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!sig || sig.binding.documentId !== params.id) {
-    return redirect(`/admin/agreements/${params.id}`);
+    return redirect(`/core/agreements/${params.id}`);
   }
 
   const body = sig.frozenBody ?? sig.version.body;
   const title = sig.version.document.name;
-  const filename = `${safeFilename(title)}-${safeFilename(sig.typedName || fullName(sig.signer))}.pdf`;
+  // Prefer the account name for the file name; typedName (often initials) is the
+  // fallback only when the signer relation is missing.
+  const filename = `${safeFilename(title)}-${safeFilename(fullName(sig.signer) || sig.typedName)}.pdf`;
 
-  const pdf = await renderProseMirrorToPdf(title, body as PMNode | DocBlock[]);
+  // A render failure must return a readable error, not the SPA's HTML error
+  // document (a component-less resource route otherwise falls through to the
+  // root error boundary, and the browser "downloads" that HTML as the PDF).
+  let pdf: Buffer;
+  try {
+    pdf = await renderDocumentPdf(title, body as PMNode | DocBlock[]);
+  } catch (err) {
+    console.error("[signing] signed-copy PDF render failed:", err);
+    return new Response("Could not render this signed copy as a PDF.", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

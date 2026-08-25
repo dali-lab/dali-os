@@ -11,11 +11,10 @@
 // request state (Gmail token comes from the DB, URLs from env).
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
-import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { bodyToHtml, sanitizeRichEmailHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
-import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
+import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
 import type { NotificationKind } from "~/generated/prisma/client";
@@ -33,6 +32,11 @@ export type NotifyMessage = {
   interviewAssignmentId?: string | null;
   sourceGroupId?: string | null;
   kind?: NotificationKind; // rare override of the registry kind
+  // Opt-in idempotency key. When set, the in-app row claims (recipientUserId,
+  // dedupKey) — a re-fired notify() with the same key no-ops instead of
+  // duplicating — and the email/Slack channels ride the outbox with a derived
+  // forever key. Null/omitted → today's behavior (always delivers).
+  dedupKey?: string | null;
   // RFC 5545 payload attached on the instant-email channel only (calendar
   // invite/cancel). Never persisted — the Notification row doesn't carry it.
   ics?: string | null;
@@ -146,7 +150,7 @@ export async function notify(args: {
     instantEmail: boolean;
     slackDm: boolean;
   };
-  const resolved: Resolved[] = [];
+  let resolved: Resolved[] = [];
   for (const [userId, recipient] of byUser) {
     const user = userById.get(userId);
     if (!user) continue; // stale id — nothing sensible to deliver
@@ -186,25 +190,111 @@ export async function notify(args: {
   const bodyHtmlFor = (r: NotifyRecipient) => r.bodyHtml ?? args.message.bodyHtml ?? null;
   const linkLabelFor = (r: NotifyRecipient) => r.linkLabel ?? args.message.linkLabel ?? null;
   const ccDartmouthFor = (r: NotifyRecipient) => r.ccDartmouth ?? args.message.ccDartmouth ?? false;
+  const dedupKeyFor = (r: NotifyRecipient) => r.dedupKey ?? args.message.dedupKey ?? null;
   // The title is always the email subject; for announcements that carry a body
   // the in-body title heading is redundant, so drop it (a body-less
   // announcement still shows it, so the email is never empty).
   const isAnnouncement = args.eventType === "announcement";
 
-  // In-app: one bulk insert. May throw — that's the caller's existing
-  // error-handling seam.
+  // Coalescing (best-effort, opt-in per event): when a recipient already got a
+  // row for this event+link inside the window, merge the new activity into that
+  // row instead of writing a second one — taming a burst (5 comments → 1 row).
+  // The surviving row is refreshed to the latest preview, re-lit unread, bumped
+  // to the top of the feed (which also slides the window forward), and its
+  // coalesceCount incremented; only the in-app row re-surfaces, so email/Slack
+  // stay suppressed to one-per-window. Best-effort: a rare race just delivers
+  // the burst (the un-coalesced behaviour), so a plain findFirst — not an atomic
+  // claim — is fine, and a merge-write failure must not lose the row already shown.
+  if (def.coalesceWindowMs && resolved.length > 0) {
+    const since = new Date(Date.now() - def.coalesceWindowMs);
+    const kept: Resolved[] = [];
+    const mergedInto: string[] = [];
+    for (const r of resolved) {
+      const m = merged(r.recipient);
+      if (m.link) {
+        const recent = await prisma.notification.findFirst({
+          where: {
+            recipientUserId: r.user.id,
+            eventType: args.eventType,
+            link: m.link,
+            createdAt: { gte: since },
+          },
+          select: { id: true, coalesceCount: true },
+        });
+        if (recent) {
+          const count = recent.coalesceCount + 1;
+          const summary =
+            def.coalesceNoun && count > 1
+              ? `${count} new ${def.coalesceNoun}s${m.body ? ` · latest: ${m.body}` : ""}`
+              : m.body;
+          await prisma.notification
+            .update({
+              where: { id: recent.id },
+              data: {
+                title: m.title,
+                body: summary,
+                createdByUserId: args.createdByUserId ?? null,
+                readAt: null,
+                createdAt: new Date(),
+                coalesceCount: { increment: 1 },
+              },
+            })
+            .catch((err) => console.error("[notify] coalesce merge failed:", err));
+          mergedInto.push(r.user.id);
+          continue;
+        }
+      }
+      kept.push(r);
+    }
+    resolved = kept;
+    // Re-ping streams so a re-surfaced row reaches the desktop app / bell
+    // without waiting for the sync backstop, same as a fresh insert.
+    if (mergedInto.length > 0) publishNotificationChange(mergedInto);
+  }
+
+  // In-app: unkeyed recipients keep the fast bulk insert; keyed recipients each
+  // claim (recipientUserId, dedupKey) with a per-recipient insert so a re-fire
+  // no-ops on the unique constraint instead of aborting the whole batch.
   const inAppTargets = resolved.filter((r) => r.inApp);
-  const rows = inAppTargets.length
-    ? await prisma.notification.createManyAndReturn({
-        data: inAppTargets.map((r) => ({
+  const rows: { id: string; recipientUserId: string }[] = [];
+
+  const unkeyed = inAppTargets.filter((r) => !dedupKeyFor(r.recipient));
+  if (unkeyed.length > 0) {
+    const created = await prisma.notification.createManyAndReturn({
+      data: unkeyed.map((r) => ({
+        recipientUserId: r.user.id,
+        createdByUserId: args.createdByUserId ?? null,
+        eventType: args.eventType,
+        ...merged(r.recipient),
+      })),
+      select: { id: true, recipientUserId: true },
+    });
+    rows.push(...created);
+  }
+
+  const keyed = inAppTargets.filter((r) => dedupKeyFor(r.recipient));
+  for (const r of keyed) {
+    try {
+      const row = await prisma.notification.create({
+        data: {
           recipientUserId: r.user.id,
           createdByUserId: args.createdByUserId ?? null,
           eventType: args.eventType,
+          dedupKey: dedupKeyFor(r.recipient),
           ...merged(r.recipient),
-        })),
+        },
         select: { id: true, recipientUserId: true },
-      })
-    : [];
+      });
+      rows.push(row);
+    } catch (err) {
+      // Already claimed by an earlier fire — a duplicate we absorb. Duck-type on
+      // the Prisma error code (no value-import of the generated client needed).
+      if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002")
+        continue;
+      throw err;
+    }
+  }
+
   const rowIdByUser = new Map(rows.map((row) => [row.recipientUserId, row.id]));
 
   // Ping open notification streams (desktop app) so new rows surface without
@@ -213,101 +303,92 @@ export async function notify(args: {
     publishNotificationChange(rows.map((row) => row.recipientUserId));
   }
 
-  // Instant email — best-effort per recipient.
+  // A keyed in-app recipient whose row was deduped away is a full duplicate —
+  // skip its email/Slack too. (Keyed email-only recipients aren't in `keyed`;
+  // their outbox dedupKey enforces idempotency instead.)
+  const dedupedInApp = new Set(
+    keyed.filter((r) => !rowIdByUser.has(r.user.id)).map((r) => r.user.id),
+  );
+
+  // Outbound (email + Slack DM) → the outbox. Enqueue is the claim; drainNow at
+  // the end attempts them inline so interactive sends still land in the request.
+  const enqueuedIds: Array<string | null> = [];
+
   let emailed = 0;
-  const emailTargets = resolved.filter((r) => r.instantEmail);
-  if (emailTargets.length > 0) {
-    const sender = await getSender("General").catch(() => null);
-    if (sender) {
-      const emailedRowIds: string[] = [];
-      let lastError: string | null = null;
-      for (const r of emailTargets) {
-        // Same chain as education's recipientEmail(): the netId fallback only
-        // ever fires for portal students (members always have daliEmail). When
-        // the caller opts in (announcement composer toggle) we instead deliver
-        // to both work addresses in one message — the To: header preserves the
-        // comma-joined list — deriving the Dartmouth address from netId when no
-        // dartmouthEmail is on file (personalEmail is deliberately excluded on
-        // this path).
-        const dartmouth =
-          r.user.dartmouthEmail ?? (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
-        const to = ccDartmouthFor(r.recipient)
-          ? Array.from(new Set([r.user.daliEmail, dartmouth].filter(Boolean))).join(", ") || null
-          : (r.user.daliEmail ??
-            r.user.dartmouthEmail ??
-            r.user.personalEmail ??
-            (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null));
-        if (!to) continue;
-        const m = merged(r.recipient);
-        const bodyHtml = bodyHtmlFor(r.recipient);
-        try {
-          await sendEmail({
-            refreshToken: sender.refreshToken,
-            from: sender.sendAsEmail,
-            to,
-            subject: m.title,
-            html: renderNotificationEmail({
-              firstName: r.user.firstName,
-              title: m.title,
-              body: m.body,
-              bodyHtml,
-              link: absoluteLink(m.link),
-              linkLabel: linkLabelFor(r.recipient),
-              titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
-            }),
-            ics: icsFor(r.recipient) ?? undefined,
-          });
-          emailed++;
-          const rowId = rowIdByUser.get(r.user.id);
-          if (rowId) emailedRowIds.push(rowId);
-        } catch (err) {
-          lastError = err instanceof Error ? err.message : String(err);
-          console.error(`[notify] email to ${r.user.id} failed:`, err);
-        }
-      }
-      // Surface sender health so a broken grant shows in Admin → Email Senders
-      // instead of silently dropping every notification email.
-      await noteSenderHealth(sender.id, emailed === 0 ? lastError : null);
-      if (emailedRowIds.length > 0) {
-        await prisma.notification
-          .updateMany({ where: { id: { in: emailedRowIds } }, data: { emailedAt: new Date() } })
-          .catch((err) => console.error("[notify] emailedAt mark failed:", err));
-      }
+  for (const r of resolved.filter((x) => x.instantEmail)) {
+    if (dedupedInApp.has(r.user.id)) continue;
+    // Same chain as education's recipientEmail(): the netId fallback only fires
+    // for portal students (members always have daliEmail). ccDartmouth delivers
+    // to both work addresses in one comma-joined To:.
+    const dartmouth =
+      r.user.dartmouthEmail ?? (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
+    const to = ccDartmouthFor(r.recipient)
+      ? Array.from(new Set([r.user.daliEmail, dartmouth].filter(Boolean))).join(", ") || null
+      : (r.user.daliEmail ??
+        r.user.dartmouthEmail ??
+        r.user.personalEmail ??
+        (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null));
+    if (!to) continue;
+    const m = merged(r.recipient);
+    const bodyHtml = bodyHtmlFor(r.recipient);
+    const key = dedupKeyFor(r.recipient);
+    const enq = await enqueueOutbound({
+      channel: "email",
+      purpose: "General",
+      dedupKey: key ? `notif:${key}:${r.user.id}:email` : null,
+      target: to,
+      recipientUserId: r.user.id,
+      notificationId: rowIdByUser.get(r.user.id) ?? null,
+      subject: m.title,
+      bodyHtml: renderNotificationEmail({
+        firstName: r.user.firstName,
+        title: m.title,
+        body: m.body,
+        bodyHtml,
+        link: absoluteLink(m.link),
+        linkLabel: linkLabelFor(r.recipient),
+        titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
+      }),
+      ics: icsFor(r.recipient),
+      eventType: args.eventType,
+      createdByUserId: args.createdByUserId ?? null,
+    });
+    if (!enq.deduped) {
+      enqueuedIds.push(enq.id);
+      emailed += 1;
     }
   }
 
-  // Slack DM — best-effort per recipient; null slackUserId silently skips
-  // (the established convention).
+  // Slack DM — prod-gated at enqueue so staging never writes a Slack row (the
+  // drain also refuses to send them, as defense-in-depth).
   let slackDmed = 0;
   const dmTargets = resolved.filter((r) => r.slackDm && r.user.slackUserId);
-  if (dmTargets.length > 0) {
-    if (slackConfigured() && slackDmAllowed()) {
-      const dmedRowIds: string[] = [];
-      for (const r of dmTargets) {
-        const m = merged(r.recipient);
-        try {
-          await sendDm(
-            r.user.slackUserId!,
-            slackDmText({ title: m.title, body: m.body, link: absoluteLink(m.link) }),
-          );
-          slackDmed++;
-          const rowId = rowIdByUser.get(r.user.id);
-          if (rowId) dmedRowIds.push(rowId);
-        } catch (err) {
-          console.error(`[notify] Slack DM to ${r.user.id} failed:`, err);
-        }
+  if (slackConfigured() && slackDmAllowed()) {
+    for (const r of dmTargets) {
+      if (dedupedInApp.has(r.user.id)) continue;
+      const m = merged(r.recipient);
+      const key = dedupKeyFor(r.recipient);
+      const enq = await enqueueOutbound({
+        channel: "slack_dm",
+        dedupKey: key ? `notif:${key}:${r.user.id}:slack` : null,
+        target: r.user.slackUserId!,
+        recipientUserId: r.user.id,
+        notificationId: rowIdByUser.get(r.user.id) ?? null,
+        slackText: slackDmText({ title: m.title, body: m.body, link: absoluteLink(m.link) }),
+        eventType: args.eventType,
+        createdByUserId: args.createdByUserId ?? null,
+      });
+      if (!enq.deduped) {
+        enqueuedIds.push(enq.id);
+        slackDmed += 1;
       }
-      if (dmedRowIds.length > 0) {
-        await prisma.notification
-          .updateMany({ where: { id: { in: dmedRowIds } }, data: { slackDmAt: new Date() } })
-          .catch((err) => console.error("[notify] slackDmAt mark failed:", err));
-      }
-    } else if (!slackDmAllowed()) {
-      console.info(
-        `[slack-dm:${getAppEnv()}] skipped ${dmTargets.length} DM(s) for ${args.eventType} (prod-only; set NOTIFY_SLACK_DM_OVERRIDE=1 to test)`,
-      );
     }
+  } else if (!slackDmAllowed() && dmTargets.length > 0) {
+    console.info(
+      `[slack-dm:${getAppEnv()}] skipped ${dmTargets.length} DM(s) for ${args.eventType} (prod-only; set NOTIFY_SLACK_DM_OVERRIDE=1 to test)`,
+    );
   }
 
+  await drainNow(enqueuedIds);
   return { inApp: rows.length, emailed, slackDmed };
 }

@@ -22,6 +22,7 @@ const offeringListInclude = {
     orderBy: { sequence: "asc" as const },
     select: { id: true, datetime: true },
   },
+  term: { select: { id: true, code: true } },
 };
 
 export type CatalogOffering = Awaited<ReturnType<typeof listCatalog>>[number];
@@ -34,7 +35,7 @@ export async function listCatalog(userId?: string) {
   const offerings = await prisma.educationOffering.findMany({
     where: { status: "Published" },
     include: offeringListInclude,
-    orderBy: { startsAt: "asc" },
+    orderBy: { startsAt: { sort: "asc", nulls: "last" } },
   });
   const counts = await approvedCounts(offerings.map((o) => o.id));
   const mine = userId
@@ -165,6 +166,7 @@ export async function getOfferingDetail(offeringId: string) {
         },
       },
       sessions: { orderBy: { sequence: "asc" } },
+      term: { select: { code: true } },
     },
   });
   if (!offering) return null;
@@ -176,8 +178,10 @@ export async function getOfferingDetail(offeringId: string) {
       photoUrl: await resolvePhotoUrl(i.user.photoUrl),
     })),
   );
+  const { term, ...rest } = offering;
   return {
-    ...offering,
+    ...rest,
+    termCode: term?.code ?? null,
     approvedCount: counts.get(offering.id) ?? 0,
     instructors,
   };
@@ -202,14 +206,15 @@ function shapeOffering(o: {
   requiresReview: boolean;
   registrationOpensAt: Date;
   registrationClosesAt: Date;
-  startsAt: Date;
-  endsAt: Date;
+  startsAt: Date | null;
+  endsAt: Date | null;
   closedOutAt: Date | null;
   instructors: {
     userId: string;
     user: { firstName: string; lastName: string; photoUrl: string | null };
   }[];
   sessions: { id: string; datetime: Date }[];
+  term: { id: string; code: string } | null;
 }) {
   return {
     id: o.id,
@@ -223,6 +228,8 @@ function shapeOffering(o: {
     startsAt: o.startsAt,
     endsAt: o.endsAt,
     closedOutAt: o.closedOutAt,
+    termId: o.term?.id ?? null,
+    termCode: o.term?.code ?? null,
     sessionCount: o.sessions.length,
     // Kept as plain strings for the cert/PDF servers that render names only.
     instructorNames: o.instructors.map((i) =>
@@ -370,18 +377,55 @@ function parseDate(value: FormDataEntryValue | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function validateDates(o: {
+function validateRegistrationWindow(o: {
   registrationOpensAt: Date;
   registrationClosesAt: Date;
-  startsAt: Date;
-  endsAt: Date;
 }): string | null {
   if (o.registrationOpensAt >= o.registrationClosesAt)
     return "Registration must open before it closes";
-  if (o.registrationClosesAt > o.startsAt)
-    return "Registration must close on or before the start date";
-  if (o.startsAt > o.endsAt) return "Start date must be on or before the end date";
   return null;
+}
+
+/**
+ * The term an offering belongs to, derived from its start date: the term whose
+ * date window contains it. Null when the date falls outside every seeded term.
+ * Mirrors the backfill in the education-offering-term migration, so create/
+ * update stay consistent with the one-time backfill.
+ */
+async function termIdForDate(date: Date): Promise<string | null> {
+  const term = await prisma.term.findFirst({
+    where: { startDate: { lte: date }, endDate: { gte: date } },
+    orderBy: { sortKey: "desc" },
+    select: { id: true },
+  });
+  return term?.id ?? null;
+}
+
+/**
+ * Recompute startsAt, endsAt, and termId from the offering's sessions.
+ * Called after every session add/update/delete so the catalog dates stay
+ * in sync with what instructors actually scheduled.
+ * Zero sessions → all three set to null (offering is a draft stub).
+ */
+export async function recomputeOfferingDates(offeringId: string): Promise<void> {
+  const sessions = await prisma.educationSession.findMany({
+    where: { offeringId },
+    orderBy: { datetime: "asc" },
+    select: { datetime: true },
+  });
+  if (sessions.length === 0) {
+    await prisma.educationOffering.update({
+      where: { id: offeringId },
+      data: { startsAt: null, endsAt: null, termId: null },
+    });
+    return;
+  }
+  const startsAt = sessions[0].datetime;
+  const endsAt = sessions[sessions.length - 1].datetime;
+  await prisma.educationOffering.update({
+    where: { id: offeringId },
+    data: { startsAt, endsAt, termId: await termIdForDate(startsAt) },
+  });
 }
 
 /**
@@ -408,25 +452,33 @@ export async function runOfferingAction(
     const dates = {
       registrationOpensAt: parseDate(formData.get("registrationOpensAt")),
       registrationClosesAt: parseDate(formData.get("registrationClosesAt")),
-      startsAt: parseDate(formData.get("startsAt")),
-      endsAt: parseDate(formData.get("endsAt")),
     };
-    if (Object.values(dates).some((d) => d === null)) return bad("All dates are required");
-    const dateError = validateDates(dates as Record<keyof typeof dates, Date>);
+    if (!dates.registrationOpensAt || !dates.registrationClosesAt)
+      return bad("Registration dates are required");
+    const dateError = validateRegistrationWindow(
+      dates as { registrationOpensAt: Date; registrationClosesAt: Date },
+    );
     if (dateError) return bad(dateError);
+
+    const createThresholdPct = Number(formData.get("completionThresholdPct"));
+    const createCompletionThreshold =
+      type === "Miniseries" && Number.isFinite(createThresholdPct) && createThresholdPct > 0
+        ? Math.min(100, Math.max(1, createThresholdPct)) / 100
+        : undefined;
 
     const offering = await prisma.educationOffering.create({
       data: {
         type,
         title,
         capacity,
-        registrationOpensAt: dates.registrationOpensAt!,
-        registrationClosesAt: dates.registrationClosesAt!,
-        startsAt: dates.startsAt!,
-        endsAt: dates.endsAt!,
+        registrationOpensAt: dates.registrationOpensAt,
+        registrationClosesAt: dates.registrationClosesAt,
         // Checkbox is authoritative: absent (unchecked) = RSVP auto-approve.
         requiresReview: formData.get("requiresReview") === "true",
         status: "Draft",
+        ...(createCompletionThreshold !== undefined
+          ? { completionThreshold: createCompletionThreshold }
+          : {}),
       },
       select: { id: true },
     });
@@ -469,10 +521,9 @@ export async function runOfferingAction(
           capacity: true,
           requiresReview: true,
           calendarEmail: true,
+          completionThreshold: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
-          startsAt: true,
-          endsAt: true,
           sessions: {
             orderBy: { sequence: "asc" },
             select: { sequence: true, title: true, datetime: true, location: true },
@@ -481,6 +532,29 @@ export async function runOfferingAction(
         },
       });
       if (!src) return bad("Offering not found", 404);
+
+      // Compute the time delta to shift all sessions and registration dates.
+      // The caller supplies a new datetime for the first session; we preserve
+      // the spacing between all sessions and between registration window + first
+      // session. If the source has no sessions, we copy dates as-is.
+      const firstSessionDateRaw = formData.get("firstSessionDate");
+      const newFirstSession =
+        typeof firstSessionDateRaw === "string" && firstSessionDateRaw
+          ? new Date(firstSessionDateRaw)
+          : null;
+
+      const oldFirstSession =
+        src.sessions.length > 0 ? src.sessions[0].datetime : null;
+
+      // deltaMs > 0 means the clone is shifted into the future; null means no shift.
+      const deltaMs =
+        newFirstSession && oldFirstSession && !Number.isNaN(newFirstSession.getTime())
+          ? newFirstSession.getTime() - oldFirstSession.getTime()
+          : null;
+
+      const shiftDate = (d: Date) =>
+        deltaMs !== null ? new Date(d.getTime() + deltaMs) : d;
+
       const created = await prisma.educationOffering.create({
         data: {
           type: src.type,
@@ -488,16 +562,15 @@ export async function runOfferingAction(
           capacity: src.capacity,
           requiresReview: src.requiresReview,
           calendarEmail: src.calendarEmail,
-          registrationOpensAt: src.registrationOpensAt,
-          registrationClosesAt: src.registrationClosesAt,
-          startsAt: src.startsAt,
-          endsAt: src.endsAt,
+          completionThreshold: src.completionThreshold,
+          registrationOpensAt: shiftDate(src.registrationOpensAt),
+          registrationClosesAt: shiftDate(src.registrationClosesAt),
           status: "Draft",
           sessions: {
             create: src.sessions.map((s) => ({
               sequence: s.sequence,
               title: s.title,
-              datetime: s.datetime,
+              datetime: shiftDate(s.datetime),
               location: s.location,
             })),
           },
@@ -521,6 +594,7 @@ export async function runOfferingAction(
         });
       }
       await createOfferingApplicationForm(created.id, actorId);
+      await recomputeOfferingDates(created.id);
       await logAuditEvent({
         action: "education.offering.create",
         userId: actorId,
@@ -537,17 +611,22 @@ export async function runOfferingAction(
         return bad("Capacity must be a positive integer");
       const registrationOpensAt = parseDate(formData.get("registrationOpensAt"));
       const registrationClosesAt = parseDate(formData.get("registrationClosesAt"));
-      const startsAt = parseDate(formData.get("startsAt"));
-      const endsAt = parseDate(formData.get("endsAt"));
-      if (!registrationOpensAt || !registrationClosesAt || !startsAt || !endsAt)
-        return bad("All dates are required");
-      const dateError = validateDates({
+      if (!registrationOpensAt || !registrationClosesAt)
+        return bad("Registration dates are required");
+      const dateError = validateRegistrationWindow({
         registrationOpensAt,
         registrationClosesAt,
-        startsAt,
-        endsAt,
       });
       if (dateError) return bad(dateError);
+
+      // Parse completion threshold for Miniseries only; Workshops use a fixed
+      // "≥1 Present" rule so the threshold column is irrelevant for them.
+      const thresholdPct = Number(formData.get("completionThresholdPct"));
+      const completionThreshold =
+        offering.type === "Miniseries" && Number.isFinite(thresholdPct)
+          ? Math.min(100, Math.max(1, thresholdPct)) / 100
+          : undefined;
+
       await prisma.educationOffering.update({
         where: { id: offeringId },
         data: {
@@ -555,10 +634,9 @@ export async function runOfferingAction(
           capacity,
           registrationOpensAt,
           registrationClosesAt,
-          startsAt,
-          endsAt,
           requiresReview: formData.get("requiresReview") === "true",
           calendarEmail: String(formData.get("calendarEmail") ?? "").trim() || null,
+          ...(completionThreshold !== undefined ? { completionThreshold } : {}),
         },
       });
       await logAuditEvent({
@@ -581,10 +659,11 @@ export async function runOfferingAction(
       if (!allowed[offering.status].includes(status))
         return bad(`Cannot move from ${offering.status} to ${status}`);
       if (status === "Published") {
-        const dateError = validateDates(offering);
-        if (dateError) return bad(`Fix before publishing: ${dateError.toLowerCase()}`);
-        if (offering.type === "Miniseries" && offering.sessions.length === 0)
-          return bad("Add at least one session before publishing a miniseries");
+        if (offering.sessions.length === 0)
+          return bad("Add at least one session before publishing");
+        await recomputeOfferingDates(offeringId);
+        const regError = validateRegistrationWindow(offering);
+        if (regError) return bad(`Fix before publishing: ${regError.toLowerCase()}`);
       }
       await prisma.educationOffering.update({
         where: { id: offeringId },
@@ -642,6 +721,7 @@ export async function runOfferingAction(
         targetId: session.id,
         metadata: { offeringId },
       });
+      await recomputeOfferingDates(offeringId);
       return { ok: true, id: session.id };
     }
 
@@ -682,6 +762,7 @@ export async function runOfferingAction(
         targetId: offeringId,
         metadata: { offeringId, count, intervalDays, bulk: true },
       });
+      await recomputeOfferingDates(offeringId);
       return { ok: true };
     }
 
@@ -711,6 +792,7 @@ export async function runOfferingAction(
         targetId: sessionId,
         metadata: { offeringId },
       });
+      await recomputeOfferingDates(offeringId);
       return { ok: true, id: sessionId };
     }
 
@@ -731,6 +813,7 @@ export async function runOfferingAction(
         targetId: sessionId,
         metadata: { offeringId },
       });
+      await recomputeOfferingDates(offeringId);
       return { ok: true };
     }
 

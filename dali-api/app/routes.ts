@@ -11,10 +11,6 @@ export default [
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
-    // Lab term timeline: the ten weeks of a term, the milestones every team
-    // owes, and what each domain owns alongside them.
-    route("milestones", "routes/milestones.tsx"),
-
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -74,14 +70,15 @@ export default [
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
+    route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
-    route("admin/agreements", "signing/routes/admin.agreements.tsx"),
-    route("admin/agreements/:id", "signing/routes/admin.agreements.$id.tsx"),
-    route("admin/agreements/:id/signature/:sigId", "signing/routes/admin.agreements.$id.signature.$sigId.tsx"),
-    route("admin/agreements/:id/signature/:sigId/pdf", "signing/routes/admin.agreements.$id.signature.$sigId.pdf.ts"),
+    route("core/agreements", "signing/routes/core.agreements.tsx"),
+    route("core/agreements/:id", "signing/routes/core.agreements.$id.tsx"),
+    route("core/agreements/:id/signature/:sigId", "signing/routes/core.agreements.$id.signature.$sigId.tsx"),
+    route("core/agreements/:id/signature/:sigId/pdf", "signing/routes/core.agreements.$id.signature.$sigId.pdf.ts"),
     route("api/agreements/people", "signing/routes/api.agreements.people.ts"),
     route("api/agreements/issue", "signing/routes/api.agreements.issue.ts"),
     route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
@@ -452,6 +449,8 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   // Education offering documents (collab Pages scoped to the EducationOffering workspace)
   route("api/education/:offeringId/documents", "education/routes/api.education.$offeringId.documents.ts"),
+  // Education offering files (uploaded S3-backed materials, mirrors api/projects/:id/files)
+  route("api/education/:offeringId/files", "education/routes/api.education.$offeringId.files.ts"),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),

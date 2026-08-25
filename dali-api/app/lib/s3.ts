@@ -110,3 +110,17 @@ export async function getDownloadUrl(
   })
   return getSignedUrl(s3, command, { expiresIn })
 }
+
+// Read a private object's bytes + stored Content-Type directly (server-side).
+// Used to inline doc images as data URIs for headless-Chromium PDF rendering,
+// where a relative, session-authed <img src> can't be fetched from about:blank.
+export async function getObjectBytes(
+  key: string,
+): Promise<{ body: Buffer; contentType?: string }> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+  const bytes = await res.Body!.transformToByteArray()
+  return { body: Buffer.from(bytes), contentType: res.ContentType ?? undefined }
+}

@@ -119,6 +119,10 @@ function writeInline(doc: PDFKit.PDFDocument, runs: Run[], fontSize: number) {
 function renderBlockList(doc: PDFKit.PDFDocument, blocks: DocBlock[]) {
   let number = 0;
   for (const block of blocks) {
+    // Frozen signing bodies are stored block JSON and passed through
+    // ensureBlocks un-normalized, so a malformed/partial block can slip in —
+    // skip anything that isn't a real block rather than crash the whole render.
+    if (!block || typeof block !== "object") continue;
     if (block.type === "numberedListItem") {
       const start = Number(block.props?.start);
       number = number === 0 ? (Number.isFinite(start) && start > 0 ? start : 1) : number + 1;
@@ -131,11 +135,14 @@ function renderBlockList(doc: PDFKit.PDFDocument, blocks: DocBlock[]) {
 }
 
 function renderChildren(doc: PDFKit.PDFDocument, block: DocBlock) {
-  if (block.children.length === 0) return;
+  // `children` is absent on un-normalized passthrough blocks (see ensureBlocks);
+  // treat missing as no children instead of throwing on `.length`.
+  const children = block.children ?? [];
+  if (children.length === 0) return;
   // Indent nested content under its parent.
   const prev = doc.x;
   doc.x = prev + 18;
-  renderBlockList(doc, block.children);
+  renderBlockList(doc, children);
   doc.x = prev;
 }
 

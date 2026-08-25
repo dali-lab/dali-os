@@ -152,7 +152,9 @@ export default function PortalOfferingDetail() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
+          {offering.startsAt && offering.endsAt
+            ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
+            : "Sessions TBD"}
           {" · "}
           {registrationWindowLabel(offering)}
           {" · "}

@@ -120,21 +120,38 @@ describe("sprintBands", () => {
     expect(min - bands[0]!.key).toBeLessThan(SPRINT_DAYS * DAY);
   });
 
-  it("labels bands with the term code and a running letter", () => {
+  it("numbers a term's sprints from 1 at its first day", () => {
     const bands = sprintBands(day(2026, 8, 14), day(2026, 9, 11), [fallTerm], fmt);
     expect(bands.map((b) => b.label)).toEqual([
-      "Sprint 26FA",
-      "Sprint 26FB",
-      "Sprint 26FC",
-      "Sprint 26FD",
+      "Sprint 1",
+      "Sprint 2",
+      "Sprint 3",
+      "Sprint 4",
     ]);
+  });
+
+  it("runs Sprint 1 through Sprint 10 across a ten-week term", () => {
+    // fallTerm is Sep 14 – Nov 22: ten Mondays, so ten sprints.
+    const bands = sprintBands(day(2026, 8, 14), day(2026, 10, 22), [fallTerm], fmt);
+    expect(bands.map((b) => b.label)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `Sprint ${i + 1}`),
+    );
+  });
+
+  it("gives a week the same name whatever range asked for it", () => {
+    const wide = sprintBands(day(2026, 7, 31), day(2026, 9, 11), [fallTerm], fmt);
+    const narrow = sprintBands(day(2026, 8, 14), day(2026, 9, 11), [fallTerm], fmt);
+    const termStartWeek = day(2026, 8, 14);
+    expect(wide.find((b) => b.key === termStartWeek)!.label).toBe(
+      narrow.find((b) => b.key === termStartWeek)!.label,
+    );
   });
 
   it("falls back to a week-of label outside every term", () => {
     const bands = sprintBands(day(2026, 7, 24), day(2026, 8, 20), [fallTerm], fmt);
-    // Pre-term weeks get week-of labels; the term's own weeks get letters.
+    // Pre-term weeks get week-of labels; the term's own weeks get numbers.
     expect(bands[0]!.label).toMatch(/^Wk of /);
-    expect(bands.some((b) => b.label === "Sprint 26FA")).toBe(true);
+    expect(bands.some((b) => b.label === "Sprint 1")).toBe(true);
   });
 
   it("restarts lettering per term", () => {
@@ -144,21 +161,22 @@ describe("sprintBands", () => {
       endsAt: "2027-03-14T00:00:00.000Z",
     };
     const bands = sprintBands(day(2026, 8, 14), day(2027, 0, 17), [fallTerm, winter], fmt);
-    const labels = bands.map((b) => b.label);
-    expect(labels).toContain("Sprint 26FA");
-    expect(labels).toContain("Sprint 27WA");
-    expect(labels).toContain("Sprint 27WB");
+    // Each term restarts at 1 on its own first day.
+    expect(bands.find((b) => b.key === day(2026, 8, 14))!.label).toBe("Sprint 1");
+    expect(bands.find((b) => b.key === day(2027, 0, 4))!.label).toBe("Sprint 1");
+    expect(bands.find((b) => b.key === day(2027, 0, 11))!.label).toBe("Sprint 2");
   });
 
-  it("numbers past the 26th week rather than running off the alphabet", () => {
+  it("keeps counting past a ten-week term rather than wrapping", () => {
     const longTerm = {
       code: "26X",
       startsAt: "2026-01-05T00:00:00.000Z",
       endsAt: "2026-12-28T00:00:00.000Z", // ~51 weeks
     };
     const bands = sprintBands(day(2026, 0, 5), day(2026, 11, 28), [longTerm], fmt);
-    expect(bands[25]!.label).toBe("Sprint 26XZ");
-    expect(bands[26]!.label).toBe("Sprint 26X·27");
+    expect(bands[9]!.label).toBe("Sprint 10");
+    expect(bands[10]!.label).toBe("Sprint 11");
+    expect(bands[26]!.label).toBe("Sprint 27");
   });
 
   it("uses the range start as the anchor when the project has no terms", () => {
@@ -186,23 +204,23 @@ describe("sprintBandsForSpan", () => {
   };
   const iso = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString();
 
-  it("keeps the term-positional label rather than restarting at A", () => {
-    // Sep 28 opens the term's third week, so it must read C — tiling from the
-    // span alone would call it A.
+  it("keeps the term-positional number rather than restarting at 1", () => {
+    // Sep 28 opens the term's third week, so it must read 3 — tiling from the
+    // span alone would call it 1.
     const bands = sprintBandsForSpan(iso(2026, 8, 28), iso(2026, 9, 6), [fallTerm], fmt);
-    expect(bands.map((b) => b.label)).toEqual(["Sprint 26FC", "Sprint 26FD"]);
+    expect(bands.map((b) => b.label)).toEqual(["Sprint 3", "Sprint 4"]);
   });
 
   it("returns the single band a span inside one week sits in", () => {
     const bands = sprintBandsForSpan(iso(2026, 8, 15), iso(2026, 8, 17), [fallTerm], fmt);
-    expect(bands.map((b) => b.label)).toEqual(["Sprint 26FA"]);
+    expect(bands.map((b) => b.label)).toEqual(["Sprint 1"]);
   });
 
   it("covers every week a long span touches", () => {
     const bands = sprintBandsForSpan(iso(2026, 8, 14), iso(2026, 9, 5), [fallTerm], fmt);
     expect(bands).toHaveLength(4);
-    expect(bands[0]!.label).toBe("Sprint 26FA");
-    expect(bands.at(-1)!.label).toBe("Sprint 26FD");
+    expect(bands[0]!.label).toBe("Sprint 1");
+    expect(bands.at(-1)!.label).toBe("Sprint 4");
   });
 
   it("is empty when the span runs backwards", () => {

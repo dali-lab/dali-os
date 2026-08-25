@@ -7,12 +7,14 @@
 // cursor — a success before today's send moment means we haven't sent today.
 //
 // No per-user lastDigestAt exists anywhere: `emailedAt IS NULL` inside the
-// cadence window is the selection. Send-then-mark — a crash between the two
-// risks one duplicate digest, which beats silently marking unsent rows.
+// cadence window is the selection. Claim-before-send: the rows are marked
+// emailed AND the digest is enqueued to the outbox in one transaction, so a
+// crash can't leave rows unmarked (and re-sent); the outbox then owns delivery
+// (retry + dead-letter) and its `digest:{freq}:{user}:{day}` key is a second
+// guard against a same-day re-run.
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
-import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
@@ -176,9 +178,6 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const matched = rows.filter((r) => wantedByUser.get(r.recipientUserId)?.has(r.eventType));
   if (matched.length === 0) return { items: 0, note: "nothing unread" };
 
-  const sender = await getSender("General");
-  if (!sender) return { items: 0, note: "gmail not configured" };
-
   const users = await prisma.user.findMany({
     where: { id: { in: [...new Set(matched.map((r) => r.recipientUserId))] } },
     select: {
@@ -191,8 +190,9 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   });
   const userById = new Map(users.map((u) => [u.id, u]));
 
+  const day = now.toISOString().slice(0, 10);
+  const enqueuedIds: Array<string | null> = [];
   let sent = 0;
-  let lastError: string | null = null;
   for (const [userId, wanted] of wantedByUser) {
     const user = userById.get(userId);
     if (!user) continue;
@@ -203,26 +203,45 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
     );
     if (userRows.length === 0) continue; // no empty digests
 
+    const { subject, html } = renderDigestEmail({
+      firstName: user.firstName,
+      now,
+      rows: userRows,
+    });
     try {
-      const { subject, html } = renderDigestEmail({
-        firstName: user.firstName,
-        now,
-        rows: userRows,
+      // Mark-and-enqueue atomically: rows can't be marked without the digest
+      // being queued, nor queued without the rows being marked.
+      const id = await prisma.$transaction(async (tx) => {
+        await tx.notification.updateMany({
+          where: { id: { in: userRows.map((r) => r.id) } },
+          data: { emailedAt: now },
+        });
+        const enq = await enqueueOutbound(
+          {
+            channel: "email",
+            purpose: "General",
+            dedupKey: `digest:${freq}:${userId}:${day}`,
+            target: to,
+            recipientUserId: userId,
+            subject,
+            bodyHtml: html,
+            eventType: `digest.${freq.toLowerCase()}`,
+          },
+          tx,
+        );
+        return enq.id;
       });
-      await sendEmail({ refreshToken: sender.refreshToken, from: sender.sendAsEmail, to, subject, html });
-      await prisma.notification.updateMany({
-        where: { id: { in: userRows.map((r) => r.id) } },
-        data: { emailedAt: now },
-      });
-      sent += 1;
+      if (id) {
+        enqueuedIds.push(id);
+        sent += 1;
+      }
     } catch (err) {
       // Rows stay emailedAt-null and fall into the next run's window.
-      lastError = err instanceof Error ? err.message : String(err);
-      console.error(`[jobs] digest email to ${userId} failed:`, err);
+      console.error(`[jobs] digest enqueue for ${userId} failed:`, err);
     }
   }
 
-  await noteSenderHealth(sender.id, sent === 0 ? lastError : null);
+  await drainNow(enqueuedIds);
   return { items: sent };
 }
 

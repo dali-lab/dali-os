@@ -18,6 +18,22 @@ RUN npm run build
 
 FROM node:22-alpine
 WORKDIR /app
+# Headless Chromium for server-side PDF rendering (app/lib/pdf/render.server.ts).
+# Playwright's own Chromium build doesn't run on Alpine/musl, so install the
+# system package and point playwright-core at it (CHROMIUM_EXECUTABLE_PATH).
+# Fonts cover Latin text + emoji so rendered documents aren't tofu. Kept as an
+# early layer so it's cached across app-code changes.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont \
+      font-noto \
+      font-noto-emoji
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
 COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build

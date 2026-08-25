@@ -1,10 +1,10 @@
-// Admin view of ONE member's completed, signed copy of an agreement — the
+// Core view of ONE member's completed, signed copy of an agreement — the
 // frozen archival body (captured field values + resolved variables baked in)
 // plus signing metadata. PDF download lives at the sibling resource route.
 
 import { redirect, Link, useLoaderData } from "react-router";
 import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
-import type { Route } from "./+types/admin.agreements.$id.signature.$sigId";
+import type { Route } from "./+types/core.agreements.$id.signature.$sigId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -15,7 +15,7 @@ import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 
-export const meta: Route.MetaFunction = () => [{ title: "Signed copy · Admin · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Signed copy · Core · DALI OS" }];
 
 function safeFilename(s: string): string {
   return s.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "signed";
@@ -45,7 +45,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   // 404 → back to the agreement; also guard the signature belongs to this doc.
   if (!sig || sig.binding.documentId !== params.id) {
-    return redirect(`/admin/agreements/${params.id}`);
+    return redirect(`/core/agreements/${params.id}`);
   }
 
   // The frozen archival body is NEVER transcoded: pre-migration rows are
@@ -59,7 +59,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     signatureId: sig.id,
     documentName: sig.version.document.name,
     versionNumber: sig.version.versionNumber,
-    signerName: sig.typedName || fullName(sig.signer) || "Unknown",
+    // Label with the signer's ACCOUNT name (typedName often holds just the
+    // initials they typed into a field); fall back only if the relation is gone.
+    signerName: fullName(sig.signer) || sig.typedName || "Unknown",
     roleKey: sig.roleKey,
     signedAt: sig.signedAt,
     ip: sig.ip,
@@ -76,7 +78,7 @@ export default function SignatureViewPage() {
   return (
     <div className="max-w-3xl mx-auto py-8 space-y-6">
       <Link
-        to={`/admin/agreements/${data.documentId}`}
+        to={`/core/agreements/${data.documentId}`}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="w-4 h-4" /> Back to agreement
@@ -100,7 +102,7 @@ export default function SignatureViewPage() {
           )}
         </div>
         <a
-          href={`/admin/agreements/${data.documentId}/signature/${data.signatureId}/pdf`}
+          href={`/core/agreements/${data.documentId}/signature/${data.signatureId}/pdf`}
           className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg text-foreground bg-card border border-border hover:bg-muted/50 shrink-0"
         >
           <Download className="w-4 h-4" /> PDF

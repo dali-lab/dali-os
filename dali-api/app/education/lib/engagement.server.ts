@@ -14,8 +14,8 @@ export type EngagementEntry = {
   offeringId: string;
   title: string;
   type: "Miniseries" | "Workshop";
-  startsAt: Date;
-  endsAt: Date;
+  startsAt: Date | null;
+  endsAt: Date | null;
   status: string;
   attendance: { present: number; excused: number; total: number };
   certificateIssuedAt: Date | null;
@@ -77,7 +77,7 @@ export async function getEducationProfile(userId: string) {
         },
         term: { select: { code: true } },
       },
-      orderBy: { offering: { startsAt: "desc" } },
+      orderBy: { offering: { startsAt: { sort: "desc", nulls: "last" } } },
     }),
     prisma.cECredit.findMany({
       where: { userId },

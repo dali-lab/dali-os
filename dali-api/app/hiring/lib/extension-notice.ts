@@ -9,13 +9,14 @@
 //      first time a blast is initiated. Prevents thundering-herd: 50
 //      concurrent loaders all hitting the trigger at once result in exactly
 //      one running the loop (the rest see the marker and bail).
-//   2) CycleNotificationSend rows — per-recipient ledger. Created after a
-//      successful send. The blast loop skips any recipient with an existing
-//      row, so a partial-failure-then-resend cannot duplicate to recipients
-//      who already received the email.
+//   2) The outbox dedupKey `hiring.extension:{cycleId}:{applicationId}` — the
+//      per-recipient guard. A re-send (the manual resend bypasses the marker)
+//      no-ops for anyone already sent: enqueueOutbound returns { deduped: true }
+//      and we count them as alreadySent. (Replaced the CycleNotificationSend
+//      ledger.)
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
@@ -95,59 +96,44 @@ interface BlastContext {
 async function blastExtensionNotice(ctx: BlastContext): Promise<SendResult> {
   const recipients = await getDraftRecipients(ctx.cycleId);
 
-  // Prefetch existing send rows so we skip in-loop without a roundtrip per
-  // recipient. The cycle-level marker prevents concurrent blasts in the
-  // common case, so this snapshot is normally accurate for the duration of
-  // the loop. The post-send create() also acts as a final guard via the
-  // unique constraint — race-loser writes throw and we count as alreadySent.
-  const existing = await prisma.cycleNotificationSend.findMany({
-    where: {
-      applicationCycleId: ctx.cycleId,
-      notificationType: "ApplicationExtensionNotice",
-    },
-    select: { applicationId: true },
-  });
-  const alreadySentIds = new Set(existing.map((r) => r.applicationId));
-
   const originalCloseDate = formatCloseInstant(ctx.originalCloseDate);
   const newCloseDate = formatCloseInstant(ctx.closeDate);
 
   let succeeded = 0;
   let failed = 0;
   let alreadySent = 0;
+  const ids: Array<string | null> = [];
   for (const r of recipients) {
-    if (alreadySentIds.has(r.applicationId)) {
-      alreadySent++;
-      continue;
-    }
     try {
       const { subject, html } = renderForSlot(
         notificationSlot("ApplicationExtensionNotice"),
         ctx.binding.emailTemplateVersion,
         { firstName: r.firstName, originalCloseDate, newCloseDate },
       );
-      await sendEmail({ refreshToken: ctx.refreshToken, to: r.email, subject, html });
-      try {
-        await prisma.cycleNotificationSend.create({
-          data: {
-            applicationCycleId: ctx.cycleId,
-            notificationType: "ApplicationExtensionNotice",
-            applicationId: r.applicationId,
-          },
-        });
-      } catch (err) {
-        // Unique-constraint race with a concurrent blast — the email did
-        // go out, but treat as already-sent for the counters so the audit
-        // log doesn't claim a "fresh" send.
+      // The outbox dedupKey is the per-recipient guard: a recipient already
+      // sent for this cycle no-ops (deduped) instead of getting a duplicate,
+      // so the manual resend (which bypasses the cycle marker) is safe.
+      const enq = await enqueueOutbound({
+        channel: "email",
+        purpose: "Hiring",
+        dedupKey: `hiring.extension:${ctx.cycleId}:${r.applicationId}`,
+        target: r.email,
+        subject,
+        bodyHtml: html,
+        eventType: "hiring.extension_notice",
+      });
+      if (enq.deduped) {
         alreadySent++;
-        continue;
+      } else {
+        ids.push(enq.id);
+        succeeded++;
       }
-      succeeded++;
     } catch (err) {
       failed++;
       console.error(`Failed to send extension notice to ${r.email}:`, err);
     }
   }
+  await drainNow(ids);
   return { attempted: recipients.length, succeeded, failed, alreadySent };
 }
 
@@ -272,9 +258,9 @@ export async function sendExtensionNoticeIfDue(cycleId: string): Promise<void> {
 /**
  * Manual resend triggered from the lead cycle page. Bypasses the marker
  * idempotency check (so leads can re-send after a partial failure) but
- * relies on per-recipient `CycleNotificationSend` rows to skip recipients
- * who already received the email. Still requires preflight — caller gets
- * an `outcome: "preflight_skipped"` result if gmail/template isn't ready.
+ * relies on the per-recipient outbox dedupKey to skip recipients who already
+ * received the email. Still requires preflight — caller gets an
+ * `outcome: "preflight_skipped"` result if gmail/template isn't ready.
  */
 export async function resendExtensionNotice(cycleId: string): Promise<SendResult & { outcome: "ok" | "no_extension" | "preflight_skipped" }> {
   const ctx = await loadExtensionContext(cycleId);

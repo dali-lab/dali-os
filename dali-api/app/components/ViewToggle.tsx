@@ -88,7 +88,7 @@ function ToggleButton({
         os ? "px-3.5 py-2.5" : "px-2 py-1.5",
         active
           ? os
-            ? "bg-os-container text-white"
+            ? "bg-os-container text-foreground"
             : "bg-accent-coral/15 text-accent-coral"
           : "text-muted-foreground hover:bg-muted",
       )}

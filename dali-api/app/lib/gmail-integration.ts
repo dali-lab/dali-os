@@ -117,6 +117,7 @@ export async function listSenderIntegrations() {
       linkedAt: true,
       lastUsedAt: true,
       syncError: true,
+      dailyCap: true,
     },
   });
 }

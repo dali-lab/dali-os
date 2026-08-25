@@ -35,7 +35,9 @@ describe("retention-janitor", () => {
       where: { readAt: { not: null }, createdAt: { lt: cutoff } },
     });
     expect(result.items).toBe(6);
-    expect(result.note).toBe("notifications=3 taskReminders=2 meetingLogs=1");
+    expect(result.note).toBe(
+      "notifications=3 taskReminders=2 meetingLogs=1 outboundStripped=0 outboundDeleted=0",
+    );
   });
 
   it("sweeps sent and stale-unsent task reminders, and old meeting logs", async () => {

@@ -1,18 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
-vi.mock("~/lib/gmail-integration", () => ({
-  getSender: vi.fn(),
-  noteSenderHealth: vi.fn(),
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn(),
+  drainNow: vi.fn(),
 }));
 vi.mock("~/lib/app-env", () => ({
   getFrontendUrl: vi.fn(() => "https://os.dali.dartmouth.edu"),
 }));
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
-import { getSender } from "~/lib/gmail-integration";
+import { enqueueOutbound } from "~/lib/outbound.server";
 import {
   shouldRunDigest,
   runDigest,
@@ -23,8 +21,7 @@ const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
 >;
-const mockSendEmail = sendEmail as unknown as ReturnType<typeof vi.fn>;
-const mockGetSender = getSender as unknown as ReturnType<typeof vi.fn>;
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
 
 // July 2026 is EDT (UTC-4): 9am ET = 13:00 UTC. 2026-07-15 is a Wednesday;
 // 2026-07-13 is a Monday.
@@ -99,22 +96,26 @@ describe("runDigest", () => {
         personalEmail: null,
       },
     ]);
-    mockGetSender.mockResolvedValue({
-      id: "g-1",
-      refreshToken: "token",
-      sendAsEmail: "dalios@dali.dartmouth.edu",
-    });
-    mockSendEmail.mockResolvedValue({});
+    // Claim-in-transaction: run the callback against the same mock client.
+    // ($transaction is a Mock, but the loose mockPrisma type reads it as a
+    // nested record — cast so .mockImplementation resolves to the Mock method.)
+    (mockPrisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (fn: (tx: unknown) => unknown) => fn(mockPrisma),
+    );
+    mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });
   });
 
-  it("emails matched unread rows and marks exactly those emailedAt", async () => {
+  it("enqueues matched unread rows and marks exactly those emailedAt in one tx", async () => {
     const result = await runDigest("Daily", WED_0901_ET);
     expect(result.items).toBe(1);
-    expect(mockSendEmail).toHaveBeenCalledWith(
+    expect(mockEnqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: "ada@dali.dartmouth.edu",
+        channel: "email",
+        target: "ada@dali.dartmouth.edu",
         subject: "Your DALI digest — 1 update",
+        dedupKey: "digest:Daily:u1:2026-07-15",
       }),
+      mockPrisma, // enqueued on the transaction client
     );
     expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["n1"] } },
@@ -140,7 +141,7 @@ describe("runDigest", () => {
     ]);
     const result = await runDigest("Daily", WED_0901_ET);
     expect(result).toEqual({ items: 0, note: "nothing unread" });
-    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("no subscribers → no queries beyond prefs", async () => {
@@ -150,7 +151,7 @@ describe("runDigest", () => {
     expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
   });
 
-  it("a failed send leaves that user's rows unmarked but continues to others", async () => {
+  it("a failed enqueue for one user's tx doesn't stop the others", async () => {
     mockPrisma.notificationPreference.findMany.mockResolvedValue([
       { userId: "u1", eventType: "education.discussion" },
       { userId: "u2", eventType: "education.discussion" },
@@ -163,14 +164,14 @@ describe("runDigest", () => {
       { id: "u1", firstName: "Ada", daliEmail: "ada@d", dartmouthEmail: null, personalEmail: null },
       { id: "u2", firstName: "Bo", daliEmail: "bo@d", dartmouthEmail: null, personalEmail: null },
     ]);
-    mockSendEmail.mockRejectedValueOnce(new Error("bounce")).mockResolvedValueOnce({});
+    // u1's enqueue throws inside its tx (rolled back, uncounted); u2 still sends.
+    mockEnqueue
+      .mockRejectedValueOnce(new Error("db blip"))
+      .mockResolvedValueOnce({ id: "om-2", deduped: false });
 
     const result = await runDigest("Daily", WED_0901_ET);
     expect(result.items).toBe(1);
-    expect(mockPrisma.notification.updateMany).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: { in: ["n2"] } } }),
-    );
+    expect(mockEnqueue).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -143,32 +143,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   }));
 
   // Education workspaces. Access rule mirrors pageAccess.server: Core sees all
-  // offerings; instructors see offerings in the selected term; enrolled students
-  // (Approved application) see their enrolled offerings. When "all terms" is
-  // selected, no term filter is applied.
+  // offerings; non-Core sees offerings where they are an instructor (any term)
+  // OR have an Approved application. When a specific term is selected, the
+  // offering's own termId is used for scoping (not the instructor-assignment
+  // term) because offerings now carry a DERIVED termId from their sessions.
   const approvedOrInstructor = roles.isCore
-    ? // Core sees all offerings (term-filtered when a specific term is chosen).
+    ? // Core sees all offerings; filter by the offering's own termId when a
+      // specific term is selected, or show all when "all terms" is chosen.
       await prisma.educationOffering.findMany({
-        where: termId
-          ? { instructors: { some: { termId } } }
-          : undefined,
+        where: termId ? { termId } : undefined,
         orderBy: { title: "asc" },
         select: { id: true, title: true },
       })
-    : // Non-Core: union of (a) instructor offerings in the selected term and
-      // (b) offerings where the viewer has an Approved application.
+    : // Non-Core: instructor on the offering (any term) OR Approved application.
+      // When a specific term is selected, ALSO require offering.termId matches.
       await prisma.educationOffering.findMany({
         where: {
-          OR: [
+          AND: [
+            termId ? { termId } : {},
             {
-              instructors: {
-                some: {
-                  userId: auth.user.sub,
-                  ...(termId ? { termId } : {}),
-                },
-              },
+              OR: [
+                { instructors: { some: { userId: auth.user.sub } } },
+                { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
+              ],
             },
-            { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
           ],
         },
         orderBy: { title: "asc" },
@@ -951,9 +949,9 @@ function NewMenu({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
-    const res = await fetch("/admin/agreements", { method: "POST", body: formData, credentials: "include" });
+    const res = await fetch("/core/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
-      const driveUrl = res.url.replace(/\/admin\/agreements\/([^/]+)$/, "/documents/agreement/$1");
+      const driveUrl = res.url.replace(/\/core\/agreements\/([^/]+)$/, "/documents/agreement/$1");
       window.location.assign(driveUrl);
     }
   }

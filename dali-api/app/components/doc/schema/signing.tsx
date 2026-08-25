@@ -36,6 +36,20 @@ interface FieldProps {
   required: boolean;
 }
 
+// Fill-mode wrapper classes: a red required marker + an empty/filled affordance
+// (DocuSign-style) so a signer can see at a glance which fields still need them.
+function fillFieldClass(required: boolean, filled: boolean): string {
+  return [
+    "signing-field",
+    "signing-field--input",
+    required ? "signing-field--required" : "",
+    required && !filled ? "signing-field--empty" : "",
+    filled ? "signing-field--filled" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFieldType }) {
   const ctx = useContext(SigningContext);
   const { fieldId, role, label, required } = props;
@@ -68,14 +82,20 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
 
   if (isOwn) {
     if (type === "checkboxField") {
+      const checked = isCheckboxChecked(seeded ?? baked);
       return (
-        <span className="signing-field signing-field--input" data-field-id={fieldId}>
+        <span className={fillFieldClass(required, checked)} data-field-id={fieldId}>
           <input
             type="checkbox"
-            checked={isCheckboxChecked(seeded ?? baked)}
+            checked={checked}
             onChange={(e) => ctx.onFieldChange?.(fieldId, e.target.checked)}
           />
           {label ? <span className="signing-field__label"> {label}</span> : null}
+          {required ? (
+            <span className="signing-field__required" aria-hidden="true">
+              *
+            </span>
+          ) : null}
         </span>
       );
     }
@@ -88,8 +108,9 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
         </span>
       );
     }
+    const filled = seeded != null && String(seeded).trim() !== "";
     return (
-      <span className="signing-field signing-field--input" data-field-id={fieldId}>
+      <span className={fillFieldClass(required, filled)} data-field-id={fieldId}>
         <input
           type="text"
           className="signing-field__text"
@@ -104,6 +125,11 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
           }
           onChange={(e) => ctx.onFieldChange?.(fieldId, e.target.value)}
         />
+        {required ? (
+          <span className="signing-field__required" aria-hidden="true">
+            *
+          </span>
+        ) : null}
       </span>
     );
   }

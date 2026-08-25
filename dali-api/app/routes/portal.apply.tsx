@@ -4,8 +4,7 @@ import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { loadHiringForm } from "~/hiring/lib/application-form.server";
@@ -469,11 +468,11 @@ export async function action({ request }: Route.ActionArgs) {
         },
       });
 
-      // Best-effort confirmation email — Gmail failure must not block the submission.
+      // Best-effort confirmation email — enqueued to the outbox (keyed per
+      // application so a resubmit/retry can't double-send).
       try {
-        const refreshToken = await getApplicationsGmailRefreshToken();
         const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-        if (refreshToken && user) {
+        if (user) {
           const to = user.dartmouthEmail ?? user.daliEmail ?? "";
           if (to) {
             const binding = await prisma.cycleNotificationEmail.findUnique({
@@ -495,7 +494,17 @@ export async function action({ request }: Route.ActionArgs) {
                 binding.emailTemplateVersion,
                 { firstName: user.firstName },
               );
-              await sendEmail({ refreshToken, to, subject, html });
+              const { id } = await enqueueOutbound({
+                channel: "email",
+                purpose: "Hiring",
+                dedupKey: `hiring.apply.confirmation:${application.applicationCycleId}:${auth.user.sub}`,
+                target: to,
+                subject,
+                bodyHtml: html,
+                recipientUserId: auth.user.sub,
+                eventType: "hiring.apply.confirmation",
+              });
+              await drainNow([id]);
             }
           }
         }

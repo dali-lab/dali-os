@@ -350,7 +350,6 @@ model ApplicationCycle {
   delibsSessions     DelibsSession[]
   decisionEmails     CycleDecisionEmail[]
   notificationEmails CycleNotificationEmail[]
-  notificationSends  CycleNotificationSend[]
 
   signingBindings SigningBinding[]
 }
@@ -406,7 +405,6 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
-  notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
   // By-cycle listings can't use the unique above (wrong leading column).
@@ -1432,22 +1430,6 @@ model CycleNotificationEmail {
 // One row per (cycle, notificationType, applicant). Enforces single-send
 // per applicant per cycle per notification type even though an applicant
 // can have multiple DomainApplications.
-model CycleNotificationSend {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  notificationType NotificationType
-
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id])
-
-  @@unique([applicationCycleId, notificationType, applicationId])
-  @@index([applicationCycleId, notificationType])
-}
-
 // ─── Audit Logging ───────────────────────────────────────────────────────────
 
 // Append-only audit trail of security-relevant events (auth, role changes,
@@ -1639,7 +1621,7 @@ model SigningBinding {
   // N ago" in the UI. Null = never reminded.
   lastRemindedAt DateTime?
 
-  signatures SigningSignature[]
+  signatures               SigningSignature[]
 
   @@unique([documentId, scopeKey])
   @@index([cycleId])
@@ -1921,6 +1903,18 @@ model Notification {
   emailedAt DateTime?
   slackDmAt DateTime?
 
+  // Opt-in idempotency key for the in-app channel. Null → unconstrained (NULLs
+  // are distinct in a Postgres unique index), so unkeyed notifications behave
+  // exactly as before; a set key makes (recipientUserId, dedupKey) the claim a
+  // re-fired notify() collides with instead of writing a duplicate row.
+  dedupKey String?
+
+  // Number of notifications merged into this row. Starts at 1; for events with
+  // a coalesce window (notification-events.ts), a burst within the window
+  // increments this in place instead of writing new rows, and notify() surfaces
+  // the count in the body ("3 new comments · latest: …"). See notify.server.ts.
+  coalesceCount Int @default(1)
+
   // Announcement extras (kind == SystemAnnouncement). `dueAt` makes the
   // announcement a "todo" with a deadline; `isTodo` marks it as action-needed
   // so it surfaces in the Tasks sidebar / Home banner like a meeting invite.
@@ -1945,6 +1939,7 @@ model Notification {
   interviewAssignmentId String?
   interviewAssignment   InterviewAssignment? @relation(fields: [interviewAssignmentId], references: [id], onDelete: SetNull)
 
+  @@unique([recipientUserId, dedupKey])
   @@index([recipientUserId, readAt])
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
@@ -2160,6 +2155,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
+  educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
@@ -3136,16 +3132,25 @@ model EducationOffering {
   capacity             Int
   registrationOpensAt  DateTime
   registrationClosesAt DateTime
-  startsAt             DateTime
-  endsAt               DateTime
+  startsAt             DateTime?
+  endsAt               DateTime?
   status               OfferingStatus @default(Draft)
   // True for typical miniseries (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
   requiresReview       Boolean
+  // Fraction of sessions a student must attend (Present + Excused) to earn a
+  // completion certificate. Miniseries only; workshops need one Present mark.
+  completionThreshold  Float          @default(0.8)
+
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
   calendarEmail        String?
+
+  // The term this offering runs in — derived server-side from the first
+  // session's date; null until sessions are added.
+  termId               String?
+  term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
 
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
@@ -3173,6 +3178,8 @@ model EducationOffering {
   formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
+
+  @@index([termId])
 }
 
 enum OfferingType {
@@ -3322,6 +3329,9 @@ model EducationAssignment {
   instructionsDocId String?
   dueAt             DateTime?
   submissionType    SubmissionType
+  // Optional max points. Null = complete/incomplete (free-form grade only).
+  // Informational — points never gate course completion.
+  points            Int?
 
   offering    EducationOffering?    @relation(fields: [offeringId], references: [id])
   session     EducationSession?     @relation(fields: [sessionId], references: [id])
@@ -3332,25 +3342,36 @@ enum SubmissionType {
   Text
   File
   Mixed
+  // URL deliverable (Figma/GitHub/Drive link) — stored in EducationSubmission.link.
+  Link
+  // Student authors in a BlockNote collab doc (EducationSubmission.contentDocId).
+  Doc
+  // No artifact — the student marks the task done. Informational, like the rest.
+  Complete
 }
 
 model EducationSubmission {
   id            String    @id @default(cuid())
   assignmentId  String
   studentId     String
-  // DORMANT in v1 — students (incl. portal users) don't get collab editing;
-  // the plain-text columns below hold the body and feedback instead.
+  // Set for Doc submissions — the BlockNote collab room the student authors in
+  // (room id "edusubmission:<submissionId>:content"). Null for other types.
   contentDocId  String?
   files         Json?
   submittedAt   DateTime?
   gradedAt      DateTime?
-  // DORMANT in v1 — see contentDocId.
+  // DORMANT in v1 — instructor feedback lives in feedbackText below.
   feedbackDocId String?
 
   // Plain-text submission body (Text/Mixed submission types).
   textContent  String?
+  // URL deliverable body (Link submission type).
+  link         String?
   // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
   grade        String?
+  // Optional numeric score, set when the assignment defines points. Paired with
+  // the free-form grade; informational only (never gates completion).
+  score        Int?
   // Instructor feedback on this submission, shown to the student.
   feedbackText String?
 
@@ -3989,6 +4010,11 @@ model Page {
   // (and collaboratively edit) this page from the partner portal. Meaningless
   // for Lab/EducationOffering workspaces (stays false).
   partnerVisible Boolean @default(false)
+
+  // Optional link to an EducationSession, for offering materials scoped to one
+  // session (groups the student Materials view by session). Loose FK — only
+  // meaningful when workspaceType == EducationOffering; null = offering-wide.
+  sessionId String?
 
   // Education collaborative doc: when true and workspaceType == EducationOffering,
   // students with an Approved application to workspaceId may collaboratively
@@ -4783,6 +4809,10 @@ model GmailIntegration {
   lastUsedAt     DateTime?
   syncError      String?
   linkedAt       DateTime         @default(now())
+  // Per-day send cap for this identity (null = uncapped). The outbound-message
+  // drain checks the SenderDailyUsage counter before each send and defers
+  // over-cap messages to the next UTC day rather than dropping them.
+  dailyCap       Int?
 
   user User @relation(fields: [userId], references: [id])
 
@@ -4794,6 +4824,77 @@ enum EmailSendPurpose {
   Education
   Partners
   General
+}
+
+// ─── Outbound Message Layer (transactional outbox) ───────────────────────────
+// Every email / Slack send flows through this table. Producers (notify(), the
+// digest, and the transactional per-feature pipelines) enqueue a row instead of
+// calling Gmail/Slack directly; the enqueue is the idempotency claim (a re-fired
+// producer collides on the unique (channel, dedupKey) instead of sending twice).
+// A best-effort inline drain runs right after enqueue for low latency; the
+// single-leased outbound-drain job sweeps the rest, retrying with backoff,
+// respecting per-sender daily caps, and dead-lettering what it can't deliver.
+// See specs/communication-idempotency.md.
+model OutboundMessage {
+  id      String @id @default(cuid())
+  // "email" | "slack_dm" | "slack_channel"
+  channel String
+
+  // Opt-in idempotency claim. Null → NULLs are distinct in the unique index, so
+  // unkeyed sends never collide (always send — the pre-outbox behavior).
+  dedupKey String?
+
+  // Routing. For email: `purpose` resolves the Gmail sender at drain time (so
+  // token rotation / sender health apply at send), and `senderId` is stamped
+  // with the resolved GmailIntegration id for the cap counter + audit. For
+  // Slack: `target` is the user id (slack_dm) or channel id (slack_channel).
+  purpose         String?
+  senderId        String?
+  target          String
+  recipientUserId String?
+  // The in-app Notification this outbound row delivers for (notify() only), so
+  // the drain can stamp Notification.emailedAt / slackDmAt on success. Plain
+  // string (not an FK) so retention can delete notifications independently.
+  notificationId  String?
+
+  // Rendered payload — the layer carries content; features own rendering.
+  subject     String?
+  bodyHtml    String? @db.Text
+  bodyText    String? @db.Text
+  slackText   String?
+  ics         String? @db.Text
+  // [{ filename, mimeType, contentBase64 }] — decoded to Buffers at send.
+  attachments Json?
+
+  // Lifecycle. status: Pending | Sending | Sent | Dead | Canceled.
+  // nextAttemptAt doubles as the claim-lock stamp while Sending (a stale
+  // Sending row past nextAttemptAt is reclaimable after a crash).
+  status        String    @default("Pending")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  sentAt        DateTime?
+
+  // Provenance / audit.
+  eventType       String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@unique([channel, dedupKey])
+  @@index([status, nextAttemptAt])
+  @@index([recipientUserId])
+  @@index([senderId, sentAt])
+}
+
+// Per-sender, per-UTC-day send counter (mirrors AiUsage). The drain increments
+// it on each successful email send and defers when it reaches GmailIntegration.dailyCap.
+model SenderDailyUsage {
+  id       String @id @default(cuid())
+  senderId String
+  day      String // UTC "YYYY-MM-DD"
+  count    Int    @default(0)
+
+  @@unique([senderId, day])
 }
 
 // Slack bug-report bot. A draft is created when a teammate @-mentions the bot

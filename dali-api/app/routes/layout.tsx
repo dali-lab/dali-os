@@ -481,7 +481,7 @@ export default function AppLayoutRoute() {
           <div
             className={cn(
               'min-h-dvh overflow-x-hidden',
-              osRedesign ? 'os-shell bg-os-bg text-white' : 'bg-page',
+              osRedesign ? 'os-shell bg-os-bg text-foreground' : 'bg-page',
             )}
           >
             {pageContent}

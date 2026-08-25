@@ -36,10 +36,13 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     contexts: ["email"],
   },
   // ── Signing documents ───────────────────────────────────────────────────
-  term: { description: "The current term code, e.g. 26S.", contexts: ["signing"] },
-  upcomingTerm: {
+  term: {
     description:
-      "The term after the current one, e.g. 26F. Use for agreements sent near the end of the prior term (hiring paperwork, etc.).",
+      "The term the agreement is issued for, e.g. 26F. For per-term agreements this is the term you issue it from (often an upcoming one, sent before it starts); otherwise the current term.",
+    contexts: ["signing"],
+  },
+  upcomingTerm: {
+    description: "The term after the one the agreement is issued for, e.g. 27W.",
     contexts: ["signing"],
   },
   today: { description: "The date the document is signed (Eastern Time).", contexts: ["signing"] },

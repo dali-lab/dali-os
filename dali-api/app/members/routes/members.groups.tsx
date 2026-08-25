@@ -296,7 +296,7 @@ export default function AdminConsoleGroups() {
             className={cn(
               "rounded-full font-medium",
               os
-                ? "bg-os-container px-3 py-1 text-xs text-white"
+                ? "bg-os-container px-3 py-1 text-xs text-foreground"
                 : "bg-muted px-2.5 py-0.5 text-xs text-muted-foreground",
             )}
           >
@@ -418,7 +418,7 @@ function StatusTabs({
             os ? "rounded-full px-4 py-1.5" : "rounded px-3 py-1",
             status === t.value
               ? os
-                ? "bg-os-container font-medium text-white"
+                ? "bg-os-container font-medium text-foreground"
                 : "bg-accent-coral text-white"
               : "text-muted-foreground hover:text-foreground",
           )}
@@ -577,7 +577,7 @@ function CreateGroupForm({
                       type="button"
                       onClick={() => setSelected(selected.filter((s) => s !== id))}
                       aria-label={`Remove ${memberLabel(m)}`}
-                      className={os ? "hover:text-white" : "hover:text-purple-600"}
+                      className={os ? "hover:text-foreground" : "hover:text-purple-600"}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -758,7 +758,7 @@ function GroupCard({
               className={cn(
                 "font-medium",
                 os
-                  ? "rounded-full bg-os-container px-3 py-1 text-xs text-white"
+                  ? "rounded-full bg-os-container px-3 py-1 text-xs text-foreground"
                   : "rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
               )}
             >

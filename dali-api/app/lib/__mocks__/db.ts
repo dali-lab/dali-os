@@ -208,6 +208,7 @@ export const prisma = {
   notification: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
     createMany: vi.fn(),
@@ -364,6 +365,7 @@ export const prisma = {
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   gmailIntegration: {
+    findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     update: vi.fn(),
@@ -518,6 +520,10 @@ export const prisma = {
     delete: vi.fn(),
   },
   coreAssignment: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  externalMentor: {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -697,6 +703,18 @@ export const prisma = {
   aiUsage: {
     upsert: vi.fn(),
     update: vi.fn(),
+  },
+  outboundMessage: {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  senderDailyUsage: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
   },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),

@@ -57,9 +57,9 @@ export const SPRINT_DAYS = 7;
  *
  * The grid is anchored to the earliest term start (not to `min`) so band edges
  * line up with the academic calendar rather than with whatever date the first
- * epic happens to begin on, then stepped backwards to cover the whole range.
- * Bands are labelled with the term their first day falls in plus a letter
- * (26FA, 26FB, …); weeks outside every term get a week-of label.
+ * epic happens to begin on. A term's sprints run from its start date through
+ * its end date and are numbered from 1 — a ten-week term gives Sprint 1 through
+ * Sprint 10. Weeks outside every term get a week-of label.
  *
  * `terms` must be oldest-first. `min`/`max` are UTC-midnight ms.
  */
@@ -70,33 +70,26 @@ export function sprintBands(
   fmtDay: (d: Date) => string,
 ): SprintBand[] {
   const spans = terms.map((t) => ({
-    code: t.code,
     start: utcDayOf(t.startsAt),
     end: utcDayOf(t.endsAt),
   }));
   const stepMs = SPRINT_DAYS * DAY;
   const anchor = spans.length ? spans[0]!.start : min;
-  // Step back to the first band at or before `min`. Math.ceil on a positive
-  // gap lands on or before min; a negative gap (anchor already before min)
-  // clamps to zero steps.
-  const backSteps = Math.max(Math.ceil((anchor - min) / stepMs), 0);
+  // The band containing `min`, found by walking the anchor's phase in whichever
+  // direction `min` lies. Only the grid's *phase* comes from the anchor — the
+  // caller never gets bands outside its own range to draw off-canvas.
+  const first = anchor + Math.floor((min - anchor) / stepMs) * stepMs;
 
   const out: SprintBand[] = [];
-  const seenInTerm = new Map<string, number>();
-  for (let t = anchor - backSteps * stepMs; t <= max; t += stepMs) {
+  for (let t = first; t <= max; t += stepMs) {
     const term = spans.find((s) => t >= s.start && t <= s.end);
-    let label: string;
-    if (term) {
-      const idx = seenInTerm.get(term.code) ?? 0;
-      seenInTerm.set(term.code, idx + 1);
-      // Past 26 weeks in one term the letters would wrap; number those.
-      label =
-        idx < 26
-          ? `Sprint ${term.code}${String.fromCharCode(65 + idx)}`
-          : `Sprint ${term.code}·${idx + 1}`;
-    } else {
-      label = `Wk of ${fmtDay(new Date(t))}`;
-    }
+    // Counted off the term's own start, not off the bands this call happens to
+    // walk: which sprint a week *is* has to be a fact about the calendar, or
+    // the same Monday reads as a different sprint on two timelines whose ranges
+    // start in different places.
+    const label = term
+      ? `Sprint ${Math.floor((t - term.start) / stepMs) + 1}`
+      : `Wk of ${fmtDay(new Date(t))}`;
     out.push({ key: t, end: Math.min(t + stepMs - DAY, max), label });
   }
   return out;

@@ -4,9 +4,10 @@
 // like every unattended Slack send.
 
 import { prisma } from "~/lib/db";
-import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
+import { slackConfigured } from "~/slack/lib/slack-client";
 import { shouldRunDigest, weekdayInZone } from "~/lib/notification-digest.server";
 import { jobChannelPostAllowed } from "~/jobs/sprint-lifecycle.server";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const PROMPT =
@@ -33,14 +34,23 @@ export async function runStandupPrompts({
     select: { id: true, slackChannelId: true },
   });
 
-  let posted = 0;
+  const utcDay = new Date(now).toISOString().slice(0, 10);
+  const ids: Array<string | null> = [];
   for (const project of projects) {
     try {
-      await postMessage(project.slackChannelId!, PROMPT);
-      posted++;
+      const { id } = await enqueueOutbound({
+        channel: "slack_channel",
+        target: project.slackChannelId!,
+        slackText: PROMPT,
+        dedupKey: `slack.standup:${project.id}:${utcDay}`,
+        eventType: "standup",
+      });
+      ids.push(id);
     } catch (err) {
-      console.error(`[jobs] standup prompt for ${project.id} failed:`, err);
+      console.error(`[jobs] standup enqueue for ${project.id} failed:`, err);
     }
   }
-  return { items: posted };
+  await drainNow(ids);
+  // Count non-deduped enqueues (id non-null = newly enqueued this run).
+  return { items: ids.filter(Boolean).length };
 }

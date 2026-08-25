@@ -63,9 +63,6 @@ export type TimelineEpic = {
   // from — rendered as "unscheduled" rather than as a bar.
   startsAt: string | null;
   endsAt: string | null;
-  // Sprints under this epic. Not drawn as bars any more — the sprint grid is
-  // the header band — but still reported in the epic's hover card.
-  sprintCount: number;
   // Stories under this epic, drawn as bars nested inside the epic bar.
   stories: TimelineStory[];
 };
@@ -387,7 +384,7 @@ function TimelineBarHover({
                 <span className="text-[11px] font-semibold uppercase tracking-widest text-os-grey">
                   {r.label}
                 </span>
-                <span className="text-sm break-words text-white">{r.value}</span>
+                <span className="text-sm break-words text-foreground">{r.value}</span>
               </div>
             ))}
             {assignees && assignees.length > 0 && (
@@ -397,8 +394,8 @@ function TimelineBarHover({
                 </span>
                 <span className="flex flex-wrap items-center gap-3">
                   {assignees.map((a) => (
-                    <span key={a.id} className="flex items-center gap-2 text-sm text-white">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-os-container text-[9px] font-bold text-white">
+                    <span key={a.id} className="flex items-center gap-2 text-sm text-foreground">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-os-container text-[9px] font-bold text-foreground">
                         {a.name.slice(0, 1).toUpperCase()}
                       </span>
                       {a.name}
@@ -1171,8 +1168,8 @@ export function EpicsTimeline({
                             ? // The design alternates two solid bands with white
                               // ink instead of tinting one accent two ways.
                               cn(
-                                "border-r border-white/10 text-white",
-                                i % 2 === 1 ? "bg-[#3a5c58]" : "bg-[#4a4670]",
+                                "border-r border-white/10 text-os-fg",
+                                i % 2 === 1 ? "bg-os-sprint-b" : "bg-os-sprint-a",
                               )
                             : cn(
                                 "border-r-2 border-accent-teal/40 text-accent-teal",
@@ -1277,7 +1274,6 @@ export function EpicsTimeline({
                             label: "Stories",
                             value: String(b.epic.stories.length),
                           },
-                          { label: "Sprints", value: String(b.epic.sprintCount) },
                           ...(counts
                             ? [
                                 {

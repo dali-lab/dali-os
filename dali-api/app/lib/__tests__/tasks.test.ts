@@ -39,7 +39,8 @@ beforeEach(() => {
 
 // The where clause the Tasks views filter on. Cancelled-meeting invites and
 // stale interview-assignment notifications must both be excluded. Past
-// MeetingReminder rows (dueAt in the past) drop off live Tasks too.
+// MeetingReminder rows (dueAt in the past) and past one-off MeetingInvite rows
+// drop off live Tasks too.
 function expectedWhere(userId: string) {
   return {
     recipientUserId: userId,
@@ -66,6 +67,15 @@ function expectedWhere(userId: string) {
               },
             ],
           },
+        ],
+      },
+      {
+        OR: [
+          { kind: { not: "MeetingInvite" } },
+          { scheduledMeetingId: null },
+          { scheduledMeeting: { recurrenceRule: { not: null } } },
+          { scheduledMeeting: { selectedAt: null } },
+          { scheduledMeeting: { selectedAt: { gt: expect.any(Date) } } },
         ],
       },
     ],

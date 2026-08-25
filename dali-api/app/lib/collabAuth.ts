@@ -298,7 +298,7 @@ export async function authorizeCollabDoc(
   }
 
   // signing:{documentId}:draft — prose draft for a SigningDocument body.
-  // Edit gate matches the admin.agreements.$id loader: Core-only.
+  // Edit gate matches the core.agreements.$id loader: Core-only.
   if (entity === "signing") {
     const doc = await prisma.signingDocument.findUnique({
       where: { id },

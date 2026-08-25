@@ -62,7 +62,19 @@ function htmlToPlainText(html: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim()
 }
 
-function makeRawEmail(to: string, subject: string, htmlBody: string, from: string, ics?: string): string {
+// A generic file attachment (e.g. a signed-agreement PDF). Distinct from the
+// `ics` calendar payload, which has its own inline-alternative + attachment
+// dance below.
+export type EmailAttachment = { filename: string; mimeType: string; content: Buffer }
+
+function makeRawEmail(
+  to: string,
+  subject: string,
+  htmlBody: string,
+  from: string,
+  ics?: string,
+  attachments?: EmailAttachment[],
+): string {
   const headers = [
     `From: ${APPLICATIONS_FROM_NAME} <${sanitizeHeader(from)}>`,
     `To: ${sanitizeHeader(to)}`,
@@ -70,7 +82,8 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, from: strin
     'MIME-Version: 1.0',
   ]
 
-  if (!ics) {
+  const hasAttachments = !!attachments && attachments.length > 0
+  if (!ics && !hasAttachments) {
     const msg = [
       ...headers,
       'Content-Type: text/html; charset=utf-8',
@@ -80,40 +93,28 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, from: strin
     return Buffer.from(msg).toString('base64url')
   }
 
-  // Extract METHOD from the ICS content (e.g. REQUEST or CANCEL)
-  const methodMatch = ics.match(/METHOD:(\w+)/)
-  const method = methodMatch?.[1] ?? 'REQUEST'
-
-  // Calendar invite MIME — mirrors the structure Google Calendar itself
-  // emits, which is what triggers Gmail's inline RSVP card on the receiving
-  // side:
+  // Anything richer than a bare HTML body is a multipart/mixed envelope:
   //
   //   multipart/mixed
   //     ├─ multipart/alternative
   //     │    ├─ text/plain
   //     │    ├─ text/html
-  //     │    └─ text/calendar; method=REQUEST   (INLINE — Gmail reads this
-  //     │                                         to render Yes / Maybe / No
-  //     │                                         and add-to-calendar)
-  //     └─ application/ics; name=invite.ics      (separate attachment for
-  //                                                Outlook / Apple Mail —
-  //                                                application/ics, not
-  //                                                text/calendar, so Gmail
-  //                                                doesn't dedupe and drop
-  //                                                the inline part)
+  //     │    └─ text/calendar; method=REQUEST   (ics only — INLINE, so Gmail
+  //     │                                         renders the RSVP card)
+  //     ├─ application/ics; name=invite.ics      (ics only — separate part for
+  //     │                                          Outlook / Apple Mail)
+  //     └─ <mimeType>; name="file.pdf"           (each generic attachment)
   //
-  // The prior approach (only text/calendar as an attachment under
-  // multipart/mixed) preserved the ICS through Gmail's send-API rewriting
-  // but did NOT trigger the inline RSVP card — Gmail only renders that
-  // when text/calendar sits inside multipart/alternative as a body
-  // alternative.
+  // Calendar invites mirror the structure Google Calendar itself emits, which
+  // is what triggers Gmail's inline RSVP card: text/calendar has to sit inside
+  // multipart/alternative as a body alternative, with a second application/ics
+  // part so non-Gmail clients still get a real attachment.
   const ts = Date.now()
   const outer = `----=_Outer_${ts}`
   const inner = `----=_Inner_${ts}`
-  const icsBase64 = wrapBase64(Buffer.from(ics).toString('base64'))
   const plainText = htmlToPlainText(htmlBody)
 
-  const msg = [
+  const lines: string[] = [
     ...headers,
     `Content-Type: multipart/mixed; boundary="${outer}"`,
     '',
@@ -130,24 +131,50 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, from: strin
     '',
     htmlBody,
     '',
-    `--${inner}`,
-    `Content-Type: text/calendar; charset=utf-8; method=${method}`,
-    'Content-Transfer-Encoding: base64',
-    '',
-    icsBase64,
-    '',
-    `--${inner}--`,
-    '',
-    `--${outer}`,
-    'Content-Type: application/ics; name="invite.ics"',
-    'Content-Disposition: attachment; filename="invite.ics"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    icsBase64,
-    '',
-    `--${outer}--`,
-  ].join('\r\n')
-  return Buffer.from(msg).toString('base64url')
+  ]
+
+  let icsBase64 = ''
+  if (ics) {
+    const method = ics.match(/METHOD:(\w+)/)?.[1] ?? 'REQUEST'
+    icsBase64 = wrapBase64(Buffer.from(ics).toString('base64'))
+    lines.push(
+      `--${inner}`,
+      `Content-Type: text/calendar; charset=utf-8; method=${method}`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      icsBase64,
+      '',
+    )
+  }
+  lines.push(`--${inner}--`, '')
+
+  if (ics) {
+    lines.push(
+      `--${outer}`,
+      'Content-Type: application/ics; name="invite.ics"',
+      'Content-Disposition: attachment; filename="invite.ics"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      icsBase64,
+      '',
+    )
+  }
+
+  for (const att of attachments ?? []) {
+    const filename = sanitizeHeader(att.filename)
+    lines.push(
+      `--${outer}`,
+      `Content-Type: ${sanitizeHeader(att.mimeType)}; name="${filename}"`,
+      `Content-Disposition: attachment; filename="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      wrapBase64(att.content.toString('base64')),
+      '',
+    )
+  }
+
+  lines.push(`--${outer}--`)
+  return Buffer.from(lines.join('\r\n')).toString('base64url')
 }
 
 function stagingBanner(originalTo: string): string {
@@ -180,6 +207,7 @@ export async function sendEmail({
   subject,
   html,
   ics,
+  attachments,
   from = GMAIL_USER,
 }: {
   refreshToken: string
@@ -187,6 +215,9 @@ export async function sendEmail({
   subject: string
   html: string
   ics?: string
+  // Generic file attachments (e.g. a signed-agreement PDF receipt). Independent
+  // of `ics`; both may be present.
+  attachments?: EmailAttachment[]
   // Send-as identity for the From: header. Must match the account the
   // refreshToken authenticates as, or Gmail rejects the send. Defaults to the
   // applications@ identity for callers that pass its token.
@@ -214,7 +245,7 @@ export async function sendEmail({
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, from, actualIcs)
+  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, from, actualIcs, attachments)
 
   // `me` = the account the token authenticates as. Using the sender's own
   // mailbox (not a hardcoded address) is what lets non-applications@ senders

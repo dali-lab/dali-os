@@ -10,6 +10,7 @@ import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { bakeSigningBody, collectSigningFields } from "~/lib/signing-fields";
 import { resolveSigningVariablesForSigner } from "./variables.server";
+import { sendSignatureReceipt } from "./notify.server";
 
 export interface RecordSignatureArgs {
   bindingId: string;
@@ -27,7 +28,13 @@ export async function recordSignature(
 ): Promise<RecordSignatureResult> {
   const binding = await prisma.signingBinding.findUnique({
     where: { id: args.bindingId },
-    select: { id: true, versionId: true, version: { select: { body: true } } },
+    select: {
+      id: true,
+      versionId: true,
+      version: { select: { body: true } },
+      document: { select: { name: true } },
+      term: { select: { code: true } },
+    },
   });
   if (!binding) return { ok: false, error: "Agreement not found." };
 
@@ -61,7 +68,9 @@ export async function recordSignature(
     typedName = u ? fullName(u) : "";
   }
 
-  const variables = await resolveSigningVariablesForSigner(args.signerUserId);
+  const variables = await resolveSigningVariablesForSigner(args.signerUserId, {
+    termCode: binding.term?.code ?? undefined,
+  });
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
     variables,
@@ -104,6 +113,18 @@ export async function recordSignature(
     metadata: { versionId: binding.versionId },
     request: args.request,
   });
+
+  // Email the signer a thank-you with a PDF copy attached — FIRE-AND-FORGET.
+  // The signature is already durably recorded, and rendering the PDF (headless
+  // Chromium) + sending the mail can take a couple seconds; the signer must not
+  // wait on it. Runs in the background on the persistent server; errors are
+  // logged, never surfaced (a receipt failure never fails the sign).
+  void sendSignatureReceipt({
+    signerUserId: args.signerUserId,
+    bindingId: args.bindingId,
+    documentName: binding.document.name,
+    frozenBody,
+  }).catch((err) => console.error("[signing] receipt send failed:", err));
 
   return { ok: true };
 }

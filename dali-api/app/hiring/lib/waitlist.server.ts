@@ -21,10 +21,9 @@
 //     becomes inactive automatically because the latest-released record wins.
 
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import {
   sendWelcome,
@@ -409,6 +408,7 @@ export async function acceptFromWaitlist(args: {
   // Acceptance email — same template + onboarding block as the standard
   // release path, so the recipient sees one combined message.
   let emailSent = false;
+  let _waitlistEmailId: string | null = null;
   try {
     const user = da.application.user;
     const intendedEmail =
@@ -417,25 +417,27 @@ export async function acceptFromWaitlist(args: {
     const domainName = da.domain.displayName ?? da.domain.name ?? "";
     const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
     if (to && user) {
-      const refreshToken = await getApplicationsGmailRefreshToken();
-      if (refreshToken) {
-        const { subject, html } = renderForSlot(
-          decisionSlot("Accepted"),
-          binding.emailTemplateVersion,
-          { firstName: user.firstName, domain: domainName },
-        );
-        const onboarding = onboardingEmailHtml(
-          provisionResult?.daliEmail ?? null,
-          provisionResult?.daliTempPassword ?? null,
-        );
-        await sendEmail({
-          refreshToken,
-          to,
-          subject,
-          html: redirectBannerHtml(redirectedFrom) + html + onboarding,
-        });
-        emailSent = true;
-      }
+      const { subject, html } = renderForSlot(
+        decisionSlot("Accepted"),
+        binding.emailTemplateVersion,
+        { firstName: user.firstName, domain: domainName },
+      );
+      const onboarding = onboardingEmailHtml(
+        provisionResult?.daliEmail ?? null,
+        provisionResult?.daliTempPassword ?? null,
+      );
+      const { id, deduped } = await enqueueOutbound({
+        channel: "email",
+        purpose: "Hiring",
+        dedupKey: `hiring.waitlist.accept:${domainApplicationId}`,
+        target: to,
+        recipientUserId: da.application.userId,
+        subject,
+        bodyHtml: redirectBannerHtml(redirectedFrom) + html + onboarding,
+        eventType: "hiring.waitlist.accept",
+      });
+      _waitlistEmailId = id;
+      emailSent = !deduped;
     }
   } catch (err) {
     console.error("waitlist accept: email send failed:", err);
@@ -467,6 +469,8 @@ export async function acceptFromWaitlist(args: {
     },
     request,
   });
+
+  await drainNow([_waitlistEmailId]);
 
   return { ok: true, releasedDecisionId: released.id, cycleReopened: reopened };
 }

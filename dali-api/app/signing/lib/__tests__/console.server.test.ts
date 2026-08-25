@@ -183,9 +183,9 @@ describe("getAgreementsOverview", () => {
     expect(AUDIENCE_RESOLVERS.Manual.listMembers).not.toHaveBeenCalled();
   });
 
-  it("returns a recent-signature activity feed and the current term", async () => {
+  it("returns a recent-signature activity feed and the focus term", async () => {
     const overview = await getAgreementsOverview();
-    expect(overview.currentTermCode).toBe("26F");
+    expect(overview.termCode).toBe("26F");
     expect(overview.activity).toHaveLength(1);
     expect(overview.activity[0]).toMatchObject({
       documentId: "docA",

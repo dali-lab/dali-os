@@ -3,7 +3,7 @@ import { useRevalidator, useSearchParams } from "react-router";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, Eye, EyeOff, Github, Paperclip, Plus, X } from "lucide-react";
+import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -22,7 +22,6 @@ import {
   taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
-  type Priority,
 } from "../lib/task-board";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
@@ -44,25 +43,6 @@ type Props = {
   createNonce?: number;
 };
 
-const PRIORITY_TONE: Record<Priority, string> = {
-  Low: "text-muted-foreground",
-  Normal: "text-muted-foreground",
-  High: "text-accent-coral",
-  Urgent: "text-accent-coral font-semibold",
-};
-
-// The os palette has no coral in its chrome; urgency reads on its amber.
-const OS_PRIORITY_TONE: Record<Priority, string> = {
-  Low: "text-os-muted",
-  Normal: "text-os-grey",
-  High: "text-os-amber",
-  Urgent: "text-os-amber font-semibold",
-};
-
-function priorityTone(priority: Priority, os: boolean): string {
-  return os ? OS_PRIORITY_TONE[priority] : PRIORITY_TONE[priority];
-}
-
 // Card and list meta. 11px sits below the design's smallest step.
 const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
@@ -71,6 +51,17 @@ const NO_EPIC = "none";
 // The `?term=` filter value that shows every term (opts out of the default
 // current-term scoping).
 const ALL_TERMS = "all";
+// The sprint select's "no filter" option. A Select needs a value for it; the
+// URL keeps meaning "no sprint param at all".
+const ALL_SPRINTS = "all";
+// Same, for the epic select. `null` epicFilter means "every epic".
+const ALL_EPICS = "all";
+
+// The board's three filters are one set of controls, so they share a shape.
+const FILTER_CONTROL = (os: boolean): string =>
+  os
+    ? filterPillClass(true)
+    : "inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40";
 
 // Columns that may be collapsed away when empty via the "Hide empty" toggle.
 // Deliberately only the low-traffic ends of the flow — hiding an empty
@@ -332,7 +323,6 @@ export function TaskBoard({
             body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
           if ("title" in patch) body.title = patch.title;
           if ("description" in patch) body.description = patch.description;
-          if ("priority" in patch) body.priority = patch.priority;
           if ("status" in patch) body.status = patch.status;
           if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
           if ("epicId" in patch) body.epicId = patch.epicId ?? null;
@@ -414,7 +404,7 @@ export function TaskBoard({
   }
 
   // Create from the modal. The POST endpoint applies title/status/dates/
-  // sprint/epic/story; priority/domain/assignees are applied with a follow-up
+  // sprint/epic/story; domain/assignees are applied with a follow-up
   // PATCH via the same optimistic path the card edits use.
   async function handleCreate(values: NewTaskValues) {
     setError(null);
@@ -457,7 +447,9 @@ export function TaskBoard({
         title: values.title,
         description: values.description,
         status: values.status,
-        priority: values.priority,
+        // Server-owned since the modal stopped offering the field: the create
+        // endpoint applies the column default, and this mirrors it optimistically.
+        priority: "Normal",
         position: nextPositionInColumn(buildTaskBoard(cur), values.status),
         dueAt: values.dueAt,
         startsAt: values.startsAt,
@@ -482,7 +474,6 @@ export function TaskBoard({
     // Push the fields the create endpoint doesn't accept. patchTask owns its
     // own optimistic update + rollback, so the card already reflects them.
     const patch: Partial<TaskCardModel> = {};
-    if (values.priority !== "Normal") patch.priority = values.priority;
     if (domain) patch.domain = domain;
     if (assignees.length > 0) patch.assignees = assignees;
     if (Object.keys(patch).length > 0) {
@@ -522,18 +513,18 @@ export function TaskBoard({
   return (
     <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
-      <div className={cn("flex flex-wrap items-center", os ? "gap-3" : "gap-2")}>
+      <div className={cn("flex min-w-0 items-center", os ? "gap-3" : "gap-2")}>
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search tasks…"
           aria-label="Search tasks on this board"
-          containerClassName={os ? "w-full sm:w-72" : "w-full sm:w-56"}
+          containerClassName={cn("shrink-0", os ? "w-56 sm:w-72" : "w-44 sm:w-56")}
         />
         {termFilterEnabled && (
           <label
             className={cn(
-              "inline-flex items-center gap-1.5 text-muted-foreground",
+              "inline-flex shrink-0 items-center gap-2 text-muted-foreground",
               os ? "text-sm" : "text-xs",
             )}
           >
@@ -548,66 +539,38 @@ export function TaskBoard({
                 { value: ALL_TERMS, label: "All terms" },
               ]}
               ariaLabel="Filter board by term"
-              buttonClassName={
-                os
-                  ? filterPillClass(true)
-                  : "inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40"
-              }
+              buttonClassName={FILTER_CONTROL(os)}
               onChange={(value) => setTermFilter(value)}
             />
           </label>
         )}
         {showEpicFilter && (
-          <div
-            className={`flex flex-wrap items-center gap-1.5 ${
-              termFilterEnabled ? "pl-2 border-l border-border" : ""
-            }`}
-            role="group"
-            aria-label="Filter by epic"
-          >
-            <FilterPill
-              label="All"
-              active={epicFilter === null}
-              onClick={() => setEpicFilter(null)}
-            />
-            {visibleEpics.map((e) => (
-              <FilterPill
-                key={e.id}
-                label={e.title}
-                active={epicFilter === e.id}
-                onClick={() => setEpicFilter(epicFilter === e.id ? null : e.id)}
-              />
-            ))}
-            <FilterPill
-              label="No epic"
-              active={epicFilter === NO_EPIC}
-              onClick={() => setEpicFilter(epicFilter === NO_EPIC ? null : NO_EPIC)}
-            />
-          </div>
+          <Select
+            value={epicFilter ?? ALL_EPICS}
+            options={[
+              { value: ALL_EPICS, label: "All epics" },
+              ...visibleEpics.map((e) => ({ value: e.id, label: e.title })),
+              { value: NO_EPIC, label: "No epic" },
+            ]}
+            ariaLabel="Filter board by epic"
+            buttonClassName={FILTER_CONTROL(os)}
+            onChange={(value) => setEpicFilter(value === ALL_EPICS ? null : value)}
+          />
         )}
         {epicSprints.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-1.5 pl-2 border-l border-border"
-            role="group"
-            aria-label="Filter by sprint"
-          >
-            <FilterPill
-              label="All sprints"
-              active={sprintFilter === null}
-              onClick={() => setParam("sprint", null)}
-            />
-            {epicSprints.map((s) => (
-              <FilterPill
-                key={s.id}
-                label={s.name}
-                active={sprintFilter === s.id}
-                onClick={() => setParam("sprint", sprintFilter === s.id ? null : s.id)}
-              />
-            ))}
-          </div>
+          <Select
+            value={sprintFilter ?? ALL_SPRINTS}
+            options={[
+              { value: ALL_SPRINTS, label: "All sprints" },
+              ...epicSprints.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+            ariaLabel="Filter board by sprint"
+            buttonClassName={FILTER_CONTROL(os)}
+            onChange={(value) => setParam("sprint", value === ALL_SPRINTS ? null : value)}
+          />
         )}
         {(canManage || collapsibleEmptyCount > 0) && (
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {collapsibleEmptyCount > 0 && (
               <button
                 type="button"
@@ -621,7 +584,7 @@ export function TaskBoard({
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border transition-colors",
                   os
-                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-white"
+                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-foreground"
                     : "border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/30",
                 )}
               >
@@ -635,16 +598,6 @@ export function TaskBoard({
             )}
             {canManage && (
               <>
-                {os ? (
-                  <button type="button" className="os-add-btn" onClick={() => setIsCreating(true)}>
-                    <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-                    Add task
-                  </button>
-                ) : (
-                  <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
-                    + Add task
-                  </Button>
-                )}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -741,7 +694,6 @@ type ArchivedTask = {
   id: string;
   title: string;
   status: TaskStatus;
-  priority: Priority;
   dueAt: string | null;
   archivedAt: string;
   domain: { id: string; name: string } | null;
@@ -844,11 +796,11 @@ function ArchivedTasksModal({
                   META_TEXT(os),
                 )}
               >
-                <span className={priorityTone(t.priority, os)}>{t.priority}</span>
-                {t.domain && <span>· {t.domain.name}</span>}
+                {t.domain && <span>{t.domain.name}</span>}
                 {t.assignees.length > 0 && (
                   <span className="truncate">
-                    · {t.assignees.map((a) => a.name).join(", ")}
+                    {t.domain && "· "}
+                    {t.assignees.map((a) => a.name).join(", ")}
                   </span>
                 )}
                 <span className="ml-auto">
@@ -860,40 +812,6 @@ function ArchivedTasksModal({
         </ul>
       )}
     </Modal>
-  );
-}
-
-function FilterPill({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const { os } = useOsChrome();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border transition-colors",
-        os ? "px-4 py-2 text-sm" : "px-2.5 py-1 text-xs",
-        active
-          ? os
-            ? // The design marks a chosen filter with the container fill, as
-              // the segmented switchers do — not with a tinted brand outline.
-              "border-transparent bg-os-container text-white"
-            : "border-accent-coral bg-accent-coral/10 text-accent-coral"
-          : os
-            ? "border-border text-os-grey hover:text-white"
-            : "border-border text-muted-foreground hover:bg-muted/30",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -963,16 +881,13 @@ function TaskCard({
         )}
       >
         <div className="text-foreground">{card.title}</div>
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <span className={cn(META_TEXT(os), priorityTone(card.priority, os))}>
-            {card.priority}
-          </span>
-          {card.assignees.length > 0 && (
+        {card.assignees.length > 0 && (
+          <div className="mt-1.5 flex items-center gap-2">
             <span className={cn(META_TEXT(os), "text-muted-foreground truncate")}>
               {card.assignees.map((a) => a.name).join(", ")}
             </span>
-          )}
-        </div>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {card.dueAt && (
             <span

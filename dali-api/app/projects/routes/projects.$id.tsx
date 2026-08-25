@@ -774,7 +774,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: e.status as EpicStatus,
       startsAt: startMs != null ? new Date(startMs).toISOString() : null,
       endsAt: endMs != null ? new Date(endMs).toISOString() : null,
-      sprintCount: epicSprints.length,
       stories,
     };
   });
@@ -1661,10 +1660,15 @@ export default function ProjectDetail() {
         prev.set("task", taskId);
         return prev;
       },
-      { replace: true },
+      { replace: true, preventScrollReset: true },
     );
   };
 
+  // Sub-tabs are a ?tab= param, so switching one is a navigation and
+  // <ScrollRestoration> would land it at the top — you'd lose your place in the
+  // page every time you looked at another tab. The tab strip stays put, so the
+  // view should too; the other hubs (education, the board's own filters) pass
+  // this for the same reason.
   const setTab = (next: Tab | OsTab) => {
     if (next === tab) return;
     closeOpenedDocumentTabs();
@@ -1673,7 +1677,7 @@ export default function ProjectDetail() {
         prev.set("tab", next);
         return prev;
       },
-      { replace: true },
+      { replace: true, preventScrollReset: true },
     );
   };
 
@@ -1752,8 +1756,8 @@ export default function ProjectDetail() {
                     // plate that meets the rule below it, not an underline.
                     "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
                     tab === t
-                      ? "bg-os-container text-white"
-                      : "text-os-grey hover:text-white",
+                      ? "bg-os-container text-foreground"
+                      : "text-os-grey hover:text-foreground",
                   )
                 : `px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                     tab === t
@@ -1850,29 +1854,38 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {/* Progress (os): the timeline and the board are one surface — the plan
-          above, the work under it — rather than two tabs you flip between to
-          answer one question. */}
-      {tab === "progress" && (
-        <div className="flex flex-col gap-6">
-          {planningNode}
-          {board}
-        </div>
-      )}
+      {/* One panel well for every tab, floored at the viewport height. Switching
+          tabs keeps your scroll position (see setTab's preventScrollReset), but
+          only while there is somewhere to keep it: a short tab used to collapse
+          the document under the current offset, and the browser clamped you
+          back to the top — the header scrolling itself into view again read as
+          the page snapping. The floor keeps that scroll range alive, so the tab
+          strip stays put whichever tab you land on. */}
+      <div className={cn("flex flex-col", os ? "gap-6 min-h-[70vh]" : "gap-4")}>
+        {/* Progress (os): the timeline and the board are one surface — the plan
+            above, the work under it — rather than two tabs you flip between to
+            answer one question. */}
+        {tab === "progress" && (
+          <div className="flex flex-col gap-6">
+            {planningNode}
+            {board}
+          </div>
+        )}
 
-      {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
+        {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
 
-      {/* Board keys off the raw edit permission, not the page-level Edit-mode
-          toggle: epics/sprints/tasks each gate their own inline edit
-          affordances, so there's nothing to "turn on" first. */}
-      {tab === "board" && board}
+        {/* Board keys off the raw edit permission, not the page-level Edit-mode
+            toggle: epics/sprints/tasks each gate their own inline edit
+            affordances, so there's nothing to "turn on" first. */}
+        {tab === "board" && board}
 
-      {tab === "mentorship" && canViewMentorshipTab && (
-        <ProjectMentorshipTab
-          projectId={project.id}
-          currentTermId={currentTerm?.id ?? null}
-        />
-      )}
+        {tab === "mentorship" && canViewMentorshipTab && (
+          <ProjectMentorshipTab
+            projectId={project.id}
+            currentTermId={currentTerm?.id ?? null}
+          />
+        )}
+      </div>
     </div>
   );
 
@@ -1952,7 +1965,7 @@ function HeroChipPicker({
           <button
             type="button"
             aria-label={`Add ${label.toLowerCase()}`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-white"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-foreground"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1971,7 +1984,7 @@ function HeroChipPicker({
                   "rounded-full px-3 py-1 text-[13px] font-semibold transition-colors",
                   on
                     ? chipClass(o.label)
-                    : "bg-os-container/50 text-os-grey hover:text-white",
+                    : "bg-os-container/50 text-os-grey hover:text-foreground",
                 )}
               >
                 {o.label}
@@ -2072,7 +2085,7 @@ function ProjectHeader({
             options={termOptions}
             selected={termIds}
             onChange={setTermIds}
-            chipClass={() => "bg-os-container text-white"}
+            chipClass={() => "bg-os-container text-foreground"}
             emptyLabel="No terms yet"
           />
         ) : project.terms.length === 0 ? (
@@ -2082,7 +2095,7 @@ function ProjectHeader({
             {project.terms.map((t) => (
               <span
                 key={t.code}
-                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-white"
+                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground"
               >
                 {t.code}
               </span>
@@ -2232,7 +2245,7 @@ function ProjectHeader({
         options={STATUSES.map((s) => ({ value: s, label: s }))}
         buttonClassName={
           os
-            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-white"
+            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-foreground"
             : "text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         }
       />
