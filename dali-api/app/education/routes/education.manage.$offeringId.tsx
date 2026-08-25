@@ -786,7 +786,11 @@ export default function ManageOffering() {
       )}
 
       {/* Tab bar: four groups separated by thin dividers. Settings is pushed right. */}
-      <nav className="flex items-end border-b border-border">
+      <nav
+        className="flex items-end border-b border-border"
+        role="tablist"
+        aria-label="Offering sections"
+      >
         {TAB_GROUPS.map((group, gi) => (
           <div key={gi} className={cn("flex items-end", gi === TAB_GROUPS.length - 1 && "ml-auto")}>
             {/* Divider before groups 1+ (but not before the settings group which uses ml-auto) */}
@@ -797,6 +801,8 @@ export default function ManageOffering() {
               <button
                 key={t.key}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.key}
                 onClick={() => goTab(t.key as TabKey)}
                 className={cn(
                   "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-t-md",
