@@ -695,7 +695,7 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
     // the settle back out (300ms), which is what keeps it from feeling stepped.
     <Link
       to={`/projects/${project.id}`}
-      className="group flex flex-col overflow-hidden rounded-os-card bg-os-card transition-[background-color,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:bg-os-card-hover hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.6)] hover:duration-200 motion-safe:hover:-translate-y-1"
+      className="group flex flex-col overflow-hidden rounded-os-card bg-os-card transition-[background-color,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:bg-os-card-hover hover:shadow-[0_12px_28px_-10px_var(--color-os-shadow)] hover:duration-200 motion-safe:hover:-translate-y-1"
     >
       <div className="relative overflow-hidden">
         <ProjectCoverImage

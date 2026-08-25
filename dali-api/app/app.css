@@ -152,6 +152,17 @@
   --color-os-sprint-a:     #4a4670;  /* timeline sprint lane (even) */
   --color-os-sprint-b:     #3a5c58;  /* timeline sprint lane (odd) */
 
+  /* The pointer wash. A dark surface signals hover by *adding* light and a
+     light one by taking it away, so the overlay is an ink that flips with the
+     mode rather than a fixed white — the reason a `hover:bg-white/5` written
+     against the dark shell disappeared entirely once the shell went light.
+     Two weights: the quiet one for rows in a list, the strong one for a
+     control that has to answer the pointer on its own. */
+  --color-os-hover:        rgba(255, 255, 255, 0.055);
+  --color-os-hover-strong: rgba(255, 255, 255, 0.10);
+  /* The scrim behind a dialog or the mobile nav. */
+  --color-os-overlay:      rgba(10, 13, 10, 0.6);
+
   --radius-os-card: 24px;
   --radius-os-item: 12px;
 
@@ -873,40 +884,113 @@ html.os-shell {
   --font-heading: var(--font-os);
 
   --radius: var(--radius-os-item);
+
+  /* The three record levels, as one set of variables rather than three sets of
+     literals. Epic / story / task are named in CSS (the badge, the timeline
+     bar) *and* in JS (the level filter chips, the inline row borders in
+     EpicsTimeline) — declaring them here is what lets both read the same
+     colour and lets light mode restate it once. The dark fills are 0.8-alpha
+     over the shell's own ground; light mode solidifies them, because the same
+     alpha over white washes toward the pale ink the chip carries. */
+  --os-epic-fill:        rgba(109, 90, 158, 0.8);
+  --os-epic-fill-hover:  rgba(134, 115, 183, 0.95);
+  --os-epic-edge:        rgba(109, 90, 158, 0.8);
+  --os-epic-ink:         #d9c9f7;
+  --os-story-fill:       rgba(89, 149, 144, 0.8);
+  --os-story-fill-hover: rgba(110, 170, 165, 0.9);
+  --os-story-edge:       rgba(89, 149, 144, 0.6);
+  --os-story-ink:        #d7fdf5;
+  --os-task-fill:        rgba(125, 99, 99, 0.8);
+  --os-task-fill-hover:  rgba(150, 115, 115, 0.95);
+  --os-task-edge:        rgba(125, 99, 99, 0.8);
+  --os-task-ink:         #f5d9d9;
+
+  /* The "this field is required" mark. Pure #ff6b6b is a dark-surface red. */
+  --os-danger-ink:       #ff6b6b;
 }
 
-/* ── dali.os light mode ──────────────────────────────────────────────
- * The design honours the app's Appearance setting: when the shell resolves
- * to light (html.light), the os palette flips to a light read of the same
- * ramp — the dark grounds become light surfaces, the palette's deepest tone
- * (#24242a) becomes the ink, and the accent darkens so it stays legible on
- * white. Everything downstream — the semantic-token map above, every `os-`
- * utility, the furniture below — reads these variables, so this block is the
- * whole of it. Both arms, so portalled surfaces mirrored onto <html> flip too
- * (same reason the token map lists `html.os-shell`). */
+/* ── dali.os light mode ────────────────────────────────────
+ * The design honours the app's Appearance setting: when the shell resolves to
+ * light (html.light), the os palette flips to a light read of the same ramp.
+ * Everything downstream — the semantic-token map above, every `os-` utility,
+ * the furniture below — reads these variables, so this block is the whole of
+ * it. Both arms, so portalled surfaces mirrored onto <html> flip too (same
+ * reason the token map lists `html.os-shell`).
+ *
+ * Two things this is *not*, both of them mistakes the first pass made by
+ * taking the dark ramp and inverting it channel by channel:
+ *
+ * It is not neutral. The dark palette is a cool near-black and its accent is a
+ * pale cyan a step off DALI's teal; inverted straight, that becomes office
+ * grey — the one hue that says nothing about whose product this is. Every
+ * ground here sits on a ~205° axis between the brand's teal and its navy, at
+ * a saturation low enough to read as paper rather than as a tint. The ink is
+ * the navy, not charcoal.
+ *
+ * And it is not three whites. In dark, the nav is *recessed* below the page
+ * and the card sits *above* it — three planes you can see. Inverting that gave
+ * a white nav beside a white card on an almost-white page, so the sidebar
+ * stopped reading as a plane at all and the borderless cards lost their edges.
+ * The order is restored instead of mirrored: nav below page below card, with
+ * the card taking pure white as the one surface that earns it. That single
+ * step is what puts the cards back — they carry no border and no shadow by
+ * design, so their ground has to do the work. */
 html.light.os-shell,
 .light .os-shell {
   color-scheme: light;
 
-  --color-os-bg:           #f4f4f6;  /* page */
-  --color-os-nav:          #ffffff;  /* sidebar + top bar */
-  --color-os-card:         #ffffff;  /* cards, wells, menus */
-  --color-os-card-hover:   #eef0f2;
-  --color-os-well:         #eef0f2;  /* inputs, nested rows */
-  --color-os-container:    #dfe1e6;  /* borders, chips, active fill */
-  --color-os-container-hi: #c4c8d0;  /* hover border */
-  --color-os-accent:       #2f7c8c;  /* deeper cool blue — legible on white */
-  --color-os-accent-hover: #276577;
-  --color-os-grey:         #5b5f66;  /* secondary text */
-  --color-os-muted:        #8a8f98;  /* tertiary text / placeholders */
-  --color-os-green:        #1f7a44;  /* "Active" status */
-  --color-os-amber:        #b26a00;
-  --color-os-fg:           #24242a;  /* primary ink = the dark nav tone */
-  --color-os-shadow:       rgba(20, 22, 28, 0.14);
-  --color-os-add-bg:       #ffffff;  /* the add-pill fill */
-  --color-os-add-bg-hover: #eef0f2;
-  --color-os-sprint-a:     #e4e0f1;  /* soft lavender lane */
-  --color-os-sprint-b:     #dcece7;  /* soft mint lane */
+  --color-os-bg:           #e9eef3;  /* page — cool paper, deliberately not white */
+  --color-os-nav:          #dde5ed;  /* sidebar + top bar — the recessed frame */
+  --color-os-card:         #ffffff;  /* cards, wells, menus — the raised plane */
+  --color-os-card-hover:   #eaf3f8;  /* a wash toward the accent, not toward grey */
+  --color-os-well:         #eaeff5;  /* inputs, nested rows */
+  --color-os-container:    #ccd7e2;  /* borders, chips, active fill */
+  --color-os-container-hi: #a9b9c9;  /* hover border */
+  --color-os-accent:       #0f6e7d;  /* the pale cyan, darkened onto white */
+  --color-os-accent-hover: #0b5964;
+  --color-os-grey:         #4d5c69;  /* secondary text */
+  --color-os-muted:        #78899a;  /* tertiary text / placeholders */
+  --color-os-green:        #0f7a4d;  /* "Active" status */
+  --color-os-amber:        #8f5400;
+  --color-os-fg:           #13293a;  /* primary ink = the brand's deep navy */
+  --color-os-shadow:       rgba(19, 41, 58, 0.16);
+  --color-os-add-bg:       #d9e2ec;  /* the add-pill fill — a step under the page */
+  --color-os-add-bg-hover: #c6d3e0;
+  --color-os-sprint-a:     #ddd8f0;  /* soft lavender lane */
+  --color-os-sprint-b:     #d2e7e1;  /* soft mint lane */
+
+  /* The pointer wash inverts with the ground: ink, not light. */
+  --color-os-hover:        rgba(19, 41, 58, 0.06);
+  --color-os-hover-strong: rgba(19, 41, 58, 0.10);
+  /* A 60% near-black scrim is a dark-shell weight; over paper it reads as a
+     power cut. The dialog still has to be the only live surface, so the scrim
+     keeps the navy and gives up the density. */
+  --color-os-overlay:      rgba(19, 41, 58, 0.38);
+
+  /* Solid level fills — see the note in the block above. */
+  --os-epic-fill:        #5b4a86;
+  --os-epic-fill-hover:  #6c5a9c;
+  --os-epic-edge:        #5b4a86;
+  --os-story-fill:       #2f6f69;
+  --os-story-fill-hover: #3a857e;
+  --os-story-edge:       #2f6f69;
+  --os-task-fill:        #7a5555;
+  --os-task-fill-hover:  #8f6666;
+  --os-task-edge:        #7a5555;
+
+  --os-danger-ink:       #c0362f;
+}
+
+/* The nav is a plane, and on paper a plane wants an edge. In dark the tone
+   step alone draws it; light needs the hairline to keep the sidebar and top
+   bar from bleeding into the page at the seam. */
+html.light.os-shell .os-nav-edge-r,
+.light .os-shell .os-nav-edge-r {
+  border-right: 1px solid var(--color-os-container);
+}
+html.light.os-shell .os-nav-edge-b,
+.light .os-shell .os-nav-edge-b {
+  border-bottom: 1px solid var(--color-os-container);
 }
 
 /* The date picker's indicator is inverted so it reads white on the dark
@@ -914,22 +998,6 @@ html.light.os-shell,
 html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator,
 .light .os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicator {
   filter: none;
-}
-
-/* The type badges and timeline bars are category-coloured chips carrying pale
-   ink. Their dark fills are 0.8-alpha, which washes toward the ink over white
-   — solidify the fill so the pale ink keeps its contrast in light mode. */
-html.light.os-shell .os-type-badge--epic, .light .os-shell .os-type-badge--epic,
-html.light.os-shell .os-bar-label--epic, .light .os-shell .os-bar-label--epic {
-  background: #6d5a9e;
-}
-html.light.os-shell .os-type-badge--story, .light .os-shell .os-type-badge--story,
-html.light.os-shell .os-bar-label--story, .light .os-shell .os-bar-label--story {
-  background: #3f8a83;
-}
-html.light.os-shell .os-type-badge--task, .light .os-shell .os-type-badge--task,
-html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
-  background: #8a6b6b;
 }
 
 .os-shell ::-webkit-scrollbar {
@@ -1015,16 +1083,16 @@ html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
   text-transform: uppercase;
 }
 .os-type-badge--epic {
-  background: rgba(109, 90, 158, 0.8);
-  color: #d9c9f7;
+  background: var(--os-epic-fill);
+  color: var(--os-epic-ink);
 }
 .os-type-badge--story {
-  background: rgba(89, 149, 144, 0.8);
-  color: #d7fdf5;
+  background: var(--os-story-fill);
+  color: var(--os-story-ink);
 }
 .os-type-badge--task {
-  background: rgba(125, 99, 99, 0.8);
-  color: #f5d9d9;
+  background: var(--os-task-fill);
+  color: var(--os-task-ink);
 }
 
 /* A 32px square icon button — the modal's close and edit affordances. */
@@ -1176,7 +1244,7 @@ html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
   line-height: 1.4;
 }
 .os-shell .os-required-mark {
-  color: #ff6b6b;
+  color: var(--os-danger-ink);
   margin-left: 2px;
 }
 .os-shell .os-field-row {
@@ -1208,10 +1276,11 @@ html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
   text-transform: uppercase;
   margin-bottom: 14px;
 }
-/* The design dims the page behind a dialog to rgba(10,10,13,.6) — enough that
-   the modal reads as the only live surface. */
+/* The design dims the page behind a dialog — enough that the modal reads as
+   the only live surface. The weight is the mode's, not a constant: see
+   `--color-os-overlay`. */
 .os-shell .os-modal-overlay {
-  background: rgba(10, 13, 10, 0.6);
+  background: var(--color-os-overlay);
 }
 .os-shell .os-modal-title {
   font-size: 22px;
@@ -1298,28 +1367,28 @@ html.light.os-shell .os-bar-label--task, .light .os-shell .os-bar-label--task {
   text-transform: uppercase;
 }
 .os-shell .os-bar-label--epic {
-  background: rgba(109, 90, 158, 0.8);
-  color: #d9c9f7;
+  background: var(--os-epic-fill);
+  color: var(--os-epic-ink);
 }
 .os-shell .os-bar-label--epic:hover {
-  background: rgba(134, 115, 183, 0.95);
-  box-shadow: 0 0 0 1px rgba(217, 201, 247, 0.5);
+  background: var(--os-epic-fill-hover);
+  box-shadow: 0 0 0 1px var(--os-epic-ink);
 }
 .os-shell .os-bar-label--story {
-  background: rgba(89, 149, 144, 0.8);
-  color: #d7fdf5;
+  background: var(--os-story-fill);
+  color: var(--os-story-ink);
 }
 .os-shell .os-bar-label--story:hover {
-  background: rgba(110, 170, 165, 0.9);
-  box-shadow: 0 0 0 1px rgba(215, 253, 245, 0.5);
+  background: var(--os-story-fill-hover);
+  box-shadow: 0 0 0 1px var(--os-story-ink);
 }
 .os-shell .os-bar-label--task {
-  background: rgba(125, 99, 99, 0.8);
-  color: #f5d9d9;
+  background: var(--os-task-fill);
+  color: var(--os-task-ink);
 }
 .os-shell .os-bar-label--task:hover {
-  background: rgba(150, 115, 115, 0.95);
-  box-shadow: 0 0 0 1px rgba(245, 217, 217, 0.5);
+  background: var(--os-task-fill-hover);
+  box-shadow: 0 0 0 1px var(--os-task-ink);
 }
 /* The lift is the affordance, so it stays; only the tween goes. */
 @media (prefers-reduced-motion: reduce) {

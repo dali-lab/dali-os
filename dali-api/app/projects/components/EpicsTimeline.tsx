@@ -165,10 +165,14 @@ export const LEVEL_COLOR: Record<Level, string> = {
 // tinting the label — so each level needs a fill/ink pair, not one hue. These
 // are the design's own three (its modal type badges: epic purple, story teal,
 // task maroon), which keeps the levels as far apart here as LEVEL_COLOR does.
+// The level colours the shell declares, not a second copy of them: the badge
+// and the bar label are styled from `--os-*-fill` in app.css, and light mode
+// restates those variables once. Reading them here keeps a filter chip the same
+// colour as the bar it filters in both modes.
 export const OS_LEVEL: Record<Level, { fill: string; ink: string; edge: string }> = {
-  epic: { fill: "rgba(109,90,158,0.8)", ink: "#d9c9f7", edge: "rgba(109,90,158,0.8)" },
-  story: { fill: "rgba(89,149,144,0.8)", ink: "#d7fdf5", edge: "rgba(89,149,144,0.6)" },
-  task: { fill: "rgba(125,99,99,0.8)", ink: "#f5d9d9", edge: "rgba(125,99,99,0.8)" },
+  epic: { fill: "var(--os-epic-fill)", ink: "var(--os-epic-ink)", edge: "var(--os-epic-edge)" },
+  story: { fill: "var(--os-story-fill)", ink: "var(--os-story-ink)", edge: "var(--os-story-edge)" },
+  task: { fill: "var(--os-task-fill)", ink: "var(--os-task-ink)", edge: "var(--os-task-edge)" },
 };
 
 const LEVEL_LABEL: Record<Level, string> = {
@@ -337,7 +341,7 @@ function TimelineBarHover({
       className={cn(
         "pointer-events-none fixed z-50 max-w-[min(19rem,calc(100vw-1rem))] border border-border bg-card text-xs",
         os
-          ? "w-[300px] rounded-2xl p-4 shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          ? "w-[300px] rounded-2xl p-4 shadow-[0_12px_32px_var(--color-os-shadow)]"
           : "w-64 rounded-lg p-3 shadow-lg",
         // The design's .task-popover: it rises 4px into place as it fades.
         os && "os-bar-popover",
@@ -678,7 +682,7 @@ export function EpicsTimeline({
   const dragStyle = (kind: Level, id: string, width: number): CSSProperties => {
     if (!dragging || dragging.kind !== kind || dragging.id !== id) return {};
     const snapped = Math.round(dragging.dx / PX_PER_DAY) * PX_PER_DAY;
-    const lift = { zIndex: 40, boxShadow: "0 10px 24px rgba(0,0,0,0.45)" };
+    const lift = { zIndex: 40, boxShadow: "0 10px 24px var(--color-os-shadow)" };
     // Resizing keeps the opposite edge pinned and never lets the bar collapse
     // past a single day — the commit below clamps the same way, so what you
     // drag is what you get.
@@ -1168,7 +1172,7 @@ export function EpicsTimeline({
                             ? // The design alternates two solid bands with white
                               // ink instead of tinting one accent two ways.
                               cn(
-                                "border-r border-white/10 text-os-fg",
+                                "border-r border-os-hover-strong text-os-fg",
                                 i % 2 === 1 ? "bg-os-sprint-b" : "bg-os-sprint-a",
                               )
                             : cn(

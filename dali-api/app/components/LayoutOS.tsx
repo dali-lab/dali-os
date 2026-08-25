@@ -80,7 +80,7 @@ const LAST_AREA_KEY = 'dali:sidebar:area'
 // reads as a different surface from the card it drops out of, which is what
 // made the account menu look out of place against the rail.
 const osMenuClass =
-  'rounded-[14px] border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)]'
+  'rounded-[14px] border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]'
 
 // A row inside one. Full-strength text — a menu's rows are all equally
 // available, so greying them is a state that isn't true of any of them.
@@ -96,7 +96,7 @@ function railRowClass(active: boolean, collapsed: boolean) {
     collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
     active
       ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
-      : 'font-normal text-os-grey hover:bg-white/[0.03] hover:text-foreground',
+      : 'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
     collapsed && active && 'bg-os-container text-foreground',
   )
 }
@@ -436,7 +436,7 @@ export function LayoutOS({
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-white/5 hover:text-foreground"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
@@ -463,7 +463,7 @@ export function LayoutOS({
           {!collapsed && (
             <>
               <span>Search</span>
-              <kbd className="ml-auto rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-os-muted">
+              <kbd className="ml-auto rounded bg-os-container px-1.5 py-0.5 font-mono text-[10px] text-os-muted">
                 ⌘K
               </kbd>
             </>
@@ -632,7 +632,7 @@ export function LayoutOS({
                             'flex items-center gap-3 py-2 text-base text-left transition-colors',
                             active
                               ? 'os-subtab-active pl-[22px] font-medium text-foreground'
-                              : 'pl-6 font-normal text-os-grey hover:bg-white/[0.03] hover:text-foreground',
+                              : 'pl-6 font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
                           )}
                         >
                           <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
@@ -689,7 +689,7 @@ export function LayoutOS({
           aria-expanded={userMenuOpen}
           title={collapsed ? `${user.firstName ?? user.email} — account menu` : 'Account menu'}
           className={cn(
-            'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-white/5',
+            'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-os-hover',
             collapsed && 'justify-center px-0',
           )}
         >
@@ -707,7 +707,7 @@ export function LayoutOS({
   /* ---------------- Top bar ---------------- */
 
   const topBar = (
-    <div className="flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
+    <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
       {favorites.length === 0 ? (
         <div className="flex items-center gap-3 text-base text-os-muted">
           <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
@@ -755,7 +755,7 @@ export function LayoutOS({
             <span
               className={cn(
                 'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
-                taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-white/10 text-os-grey',
+                taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
               )}
             >
               {taskCount > 99 ? '99+' : taskCount}
@@ -774,7 +774,7 @@ export function LayoutOS({
       {!focusMode && (
         <aside
           className={cn(
-            'fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
+            'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
             sidebarWidth,
           )}
         >
@@ -783,7 +783,7 @@ export function LayoutOS({
       )}
 
       {/* Mobile top bar */}
-      <div className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between bg-os-nav px-4 md:hidden">
+      <div className="os-nav-edge-b fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between bg-os-nav px-4 md:hidden">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -828,13 +828,13 @@ export function LayoutOS({
       {mobileNavOpen && (
         <>
           <div
-            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            className="fixed inset-0 z-30 bg-os-overlay md:hidden"
             onClick={() => setMobileNavOpen(false)}
             aria-hidden="true"
           />
           <aside
             id="os-mobile-nav"
-            className="fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
+            className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
             {sidebarContent}
           </aside>
@@ -912,10 +912,10 @@ export function LayoutOS({
             onClick={() => setPaletteOpen(true)}
             title="Search (⌘K)"
             aria-label="Search"
-            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-white/10 hover:text-foreground"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-hover-strong hover:text-foreground"
           >
             <Search className="h-4 w-4" />
-            <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono text-[10px] text-os-muted">
+            <kbd className="rounded bg-os-container px-1 py-0.5 font-mono text-[10px] text-os-muted">
               ⌘K
             </kbd>
           </button>
@@ -927,7 +927,7 @@ export function LayoutOS({
             }}
             title="Show sidebar"
             aria-label="Show sidebar"
-            className="rounded-lg p-2 text-os-muted transition-colors hover:bg-white/10 hover:text-foreground"
+            className="rounded-lg p-2 text-os-muted transition-colors hover:bg-os-hover-strong hover:text-foreground"
           >
             <PanelLeftOpen className="h-4 w-4" />
           </button>

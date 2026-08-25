@@ -535,7 +535,7 @@ function SectionSidebar({
                 os
                   ? selected
                     ? "os-subtab-active"
-                    : "rounded-os-item border-l-2 border-transparent hover:bg-white/[0.03]"
+                    : "rounded-os-item border-l-2 border-transparent hover:bg-os-hover"
                   : cn(
                       "rounded-md border-l-2",
                       selected
