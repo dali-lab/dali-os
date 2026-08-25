@@ -69,14 +69,14 @@ export function useOsChrome() {
     /** A Select/menu trigger inside such a form. `.os-form` reaches inputs and
      *  textareas; a trigger is a button, so it copies that dress here. */
     formTrigger: os
-      ? "w-full rounded-[10px] border bg-os-well px-3.5 py-2.5 text-sm text-white inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
+      ? "w-full rounded-[10px] border bg-os-well px-3.5 py-2.5 text-sm text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
       : "w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40",
     /** The same dress for a field that has to keep its tight metrics — a
      *  pinned toolbar row or a table cell, where `.os-form`'s roomier padding
      *  would break the alignment. Pair it with a border colour at the call
      *  site; it sets none, so an error state can't lose a specificity race. */
     compactField: os
-      ? "rounded-[10px] bg-os-well text-white placeholder:text-os-muted focus:border-os-accent"
+      ? "rounded-[10px] bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
       : "rounded-md bg-background text-foreground",
     /** A stacked field label. The os design sets its forms in 14px, not 12px. */
     fieldLabel: os
@@ -91,7 +91,7 @@ export function useOsChrome() {
     cardPad: os ? "p-4" : "p-3",
     /** An icon-only control: week arrows, refresh, reset, remove. */
     iconBtn: os
-      ? "rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-white"
+      ? "rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
       : "p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors",
   };
 }

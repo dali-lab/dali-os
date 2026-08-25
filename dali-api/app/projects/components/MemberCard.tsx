@@ -501,7 +501,7 @@ function DomainLevelChip({
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
         isAssignment
           ? os
-            ? "bg-os-accent/15 text-white ring-1 ring-os-accent/40"
+            ? "bg-os-accent/15 text-foreground ring-1 ring-os-accent/40"
             : "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
           : "bg-muted text-foreground"
       }`}

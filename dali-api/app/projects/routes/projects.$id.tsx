@@ -1756,8 +1756,8 @@ export default function ProjectDetail() {
                     // plate that meets the rule below it, not an underline.
                     "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
                     tab === t
-                      ? "bg-os-container text-white"
-                      : "text-os-grey hover:text-white",
+                      ? "bg-os-container text-foreground"
+                      : "text-os-grey hover:text-foreground",
                   )
                 : `px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                     tab === t
@@ -1965,7 +1965,7 @@ function HeroChipPicker({
           <button
             type="button"
             aria-label={`Add ${label.toLowerCase()}`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-white"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-foreground"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1984,7 +1984,7 @@ function HeroChipPicker({
                   "rounded-full px-3 py-1 text-[13px] font-semibold transition-colors",
                   on
                     ? chipClass(o.label)
-                    : "bg-os-container/50 text-os-grey hover:text-white",
+                    : "bg-os-container/50 text-os-grey hover:text-foreground",
                 )}
               >
                 {o.label}
@@ -2085,7 +2085,7 @@ function ProjectHeader({
             options={termOptions}
             selected={termIds}
             onChange={setTermIds}
-            chipClass={() => "bg-os-container text-white"}
+            chipClass={() => "bg-os-container text-foreground"}
             emptyLabel="No terms yet"
           />
         ) : project.terms.length === 0 ? (
@@ -2095,7 +2095,7 @@ function ProjectHeader({
             {project.terms.map((t) => (
               <span
                 key={t.code}
-                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-white"
+                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground"
               >
                 {t.code}
               </span>
@@ -2245,7 +2245,7 @@ function ProjectHeader({
         options={STATUSES.map((s) => ({ value: s, label: s }))}
         buttonClassName={
           os
-            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-white"
+            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-foreground"
             : "text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         }
       />

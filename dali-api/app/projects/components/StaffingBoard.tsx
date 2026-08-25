@@ -640,7 +640,7 @@ export function StaffingBoard({
               className={cn(
                 "shrink-0 rounded p-0.5 transition-colors",
                 os
-                  ? "text-os-muted hover:text-white"
+                  ? "text-os-muted hover:text-foreground"
                   : "text-muted-foreground/70 hover:text-accent-coral",
               )}
             >

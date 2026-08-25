@@ -32,7 +32,7 @@ export function RoleBadge({
             ? "border-transparent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
             : "border-accent-coral/40 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
           : os
-            ? "border-transparent bg-os-container text-os-grey hover:text-white"
+            ? "border-transparent bg-os-container text-os-grey hover:text-foreground"
             : "border-border bg-muted text-muted-foreground hover:text-foreground",
       )}
     >
