@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// payrollAssignmentWhere is pure, but it lives alongside prisma-using helpers in
+// payroll-export.ts, so importing the module loads ~/lib/db. Use the shared
+// manual db mock (app/lib/__mocks__/db.ts) so the test doesn't need a generated
+// Prisma client — matching every other db-touching test in the suite.
+vi.mock("~/lib/db");
+
 import { payrollAssignmentWhere } from "~/admin/lib/payroll-export";
 
 describe("payrollAssignmentWhere", () => {
