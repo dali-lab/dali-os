@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// notifySignRequest's default "skip already-notified for this binding+version"
-// behaviour — so re-issuing a term's agreements only reaches newly-added,
-// still-unsigned members, while a new version or an explicit `force` re-nudges.
+// notifySignRequest now delegates dedup to notify()'s per-recipient dedupKey:
+// it passes a forever key `signing.request:{binding}:{version}:{signer}` (or no
+// key when force), and notify() collides re-fires on the Notification unique
+// constraint. These tests assert the keys, not a pre-filter (that moved into
+// notify(), which is mocked here). The signed-member filter still lives here.
 
-// Hoisted so the vi.mock factories below can reference them.
 const h = vi.hoisted(() => ({
   notify: vi.fn(),
   listMembers: vi.fn(),
-  store: [] as { bindingId: string; versionId: string; signerUserId: string }[],
   signatures: [] as { signerUserId: string; versionId: string }[],
   state: {
     bindingRow: null as null | {
@@ -30,46 +30,23 @@ vi.mock("~/lib/db", () => ({
         h.signatures.filter((s) => s.versionId === where.versionId).map((s) => ({ signerUserId: s.signerUserId })),
       ),
     },
-    signRequestNotification: {
-      findMany: vi.fn(
-        async ({ where }: { where: { bindingId: string; versionId: string; signerUserId: { in: string[] } } }) =>
-          h.store
-            .filter(
-              (r) =>
-                r.bindingId === where.bindingId &&
-                r.versionId === where.versionId &&
-                where.signerUserId.in.includes(r.signerUserId),
-            )
-            .map((r) => ({ signerUserId: r.signerUserId })),
-      ),
-      createMany: vi.fn(async ({ data }: { data: typeof h.store }) => {
-        for (const d of data) {
-          if (
-            !h.store.some(
-              (r) => r.bindingId === d.bindingId && r.versionId === d.versionId && r.signerUserId === d.signerUserId,
-            )
-          ) {
-            h.store.push(d);
-          }
-        }
-        return { count: data.length };
-      }),
-    },
   },
 }));
 
 import { notifySignRequest } from "~/signing/lib/notify.server";
 
-// The userIds from the most recent notify() call (empty if none).
-function lastRecipients(): string[] {
+// The recipients (userId + dedupKey) from the most recent notify() call.
+function lastRecipients(): { userId: string; dedupKey: string | null }[] {
   const call = h.notify.mock.calls.at(-1);
-  return call ? (call[0].recipients as { userId: string }[]).map((r) => r.userId).sort() : [];
+  if (!call) return [];
+  return (call[0].recipients as { userId: string; dedupKey: string | null }[])
+    .map((r) => ({ userId: r.userId, dedupKey: r.dedupKey }))
+    .sort((a, b) => a.userId.localeCompare(b.userId));
 }
 
 beforeEach(() => {
   h.notify.mockClear();
   h.listMembers.mockReset();
-  h.store.length = 0;
   h.signatures.length = 0;
   h.state.bindingRow = {
     id: "b1",
@@ -80,51 +57,58 @@ beforeEach(() => {
 });
 
 describe("notifySignRequest", () => {
-  it("first issue notifies all unsigned audience and records them", async () => {
+  it("notifies all unsigned audience with a per-signer forever key", async () => {
     h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
     await notifySignRequest("b1");
-    expect(lastRecipients()).toEqual(["u1", "u2"]);
-    expect(h.store.map((r) => r.signerUserId).sort()).toEqual(["u1", "u2"]);
+    expect(lastRecipients()).toEqual([
+      { userId: "u1", dedupKey: "signing.request:b1:v1:u1" },
+      { userId: "u2", dedupKey: "signing.request:b1:v1:u2" },
+    ]);
   });
 
-  it("re-issue of the same version skips already-notified members", async () => {
+  it("keys re-issues the same, so notify() dedups them for the in-force version", async () => {
     h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
     await notifySignRequest("b1");
-    h.notify.mockClear();
     await notifySignRequest("b1");
-    expect(h.notify).not.toHaveBeenCalled();
+    // Same forever keys on the re-issue — the actual skip happens in notify().
+    expect(lastRecipients()).toEqual([
+      { userId: "u1", dedupKey: "signing.request:b1:v1:u1" },
+      { userId: "u2", dedupKey: "signing.request:b1:v1:u2" },
+    ]);
   });
 
-  it("re-issue notifies only newly-added audience members", async () => {
-    h.listMembers.mockResolvedValue([{ id: "u1" }]);
-    await notifySignRequest("b1");
-    h.notify.mockClear();
+  it("force re-nudges everyone outstanding with no dedupKey", async () => {
     h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
-    await notifySignRequest("b1");
-    expect(lastRecipients()).toEqual(["u2"]);
-  });
-
-  it("force re-nudges everyone still outstanding", async () => {
-    h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
-    await notifySignRequest("b1");
-    h.notify.mockClear();
     await notifySignRequest("b1", { force: true });
-    expect(lastRecipients()).toEqual(["u1", "u2"]);
+    expect(lastRecipients()).toEqual([
+      { userId: "u1", dedupKey: null },
+      { userId: "u2", dedupKey: null },
+    ]);
   });
 
-  it("a new version in force resets the set — everyone is notified again", async () => {
+  it("a new version in force keys with the new versionId (everyone re-notified)", async () => {
     h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
-    await notifySignRequest("b1");
-    h.notify.mockClear();
     h.state.bindingRow!.versionId = "v2";
     await notifySignRequest("b1");
-    expect(lastRecipients()).toEqual(["u1", "u2"]);
+    expect(lastRecipients()).toEqual([
+      { userId: "u1", dedupKey: "signing.request:b1:v2:u1" },
+      { userId: "u2", dedupKey: "signing.request:b1:v2:u2" },
+    ]);
   });
 
   it("skips members who already signed the in-force version", async () => {
     h.listMembers.mockResolvedValue([{ id: "u1" }, { id: "u2" }]);
     h.signatures.push({ signerUserId: "u1", versionId: "v1" });
     await notifySignRequest("b1");
-    expect(lastRecipients()).toEqual(["u2"]);
+    expect(lastRecipients()).toEqual([
+      { userId: "u2", dedupKey: "signing.request:b1:v1:u2" },
+    ]);
+  });
+
+  it("does not notify when everyone eligible has signed", async () => {
+    h.listMembers.mockResolvedValue([{ id: "u1" }]);
+    h.signatures.push({ signerUserId: "u1", versionId: "v1" });
+    await notifySignRequest("b1");
+    expect(h.notify).not.toHaveBeenCalled();
   });
 });

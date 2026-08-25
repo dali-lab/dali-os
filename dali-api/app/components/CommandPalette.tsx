@@ -36,7 +36,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
-import { adminClustersFor } from "~/admin/adminNav";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
 import { visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
@@ -251,9 +251,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     // Admin + Core tools, generated from the same cluster registries their hubs
     // and pill rows use. Gated exactly like the pages: any Core member sees
     // every cluster except Finance, which is Admin-only. The "documents" cluster
-    // is hidden from the palette (agreements are authored in the Drive). Under
-    // nav-regroup, adminClustersFor has already handed People & Access and
-    // Communications over to CORE_CLUSTERS, so the two lists never overlap.
+    // is hidden from the palette (agreements are authored in the Drive). Admin is
+    // strictly system-level (ADMIN_CLUSTERS) and Core owns the process tools
+    // (CORE_CLUSTERS), so the two lists never overlap.
     const sectionItems = (prefix: string, clusters: readonly NavCluster[]) =>
       clusters
         .filter((c) => (roles.isAdmin || !c.adminOnly) && c.key !== "documents")
@@ -268,9 +268,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
         );
 
     const admin: PaletteItem[] = roles.isCore
-      ? sectionItems("admin", adminClustersFor(flags))
+      ? sectionItems("admin", ADMIN_CLUSTERS)
       : [];
-    const core: PaletteItem[] = roles.isCore && flags?.["nav-regroup"]
+    const core: PaletteItem[] = roles.isCore
       ? sectionItems("core", CORE_CLUSTERS)
       : [];
 

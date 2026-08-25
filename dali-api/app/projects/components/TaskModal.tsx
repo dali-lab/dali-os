@@ -1,11 +1,11 @@
 // Create/edit dialog for a project task. Opened by clicking a card on the
-// TaskBoard (edit) or the "+ Add task" button (create). In edit mode the
+// TaskBoard (edit) or the epic panel's Add ▸ Task item (create). In edit mode the
 // parent owns optimistic state, so this collects the changed fields and hands
 // them back via onPatch on Save — staying open (with the error inline) when
 // the save fails. In create mode there's no task yet, so it collects the full
 // set of fields and hands them to onCreate on submit.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { X, Pencil } from "lucide-react";
 import { Modal } from "~/components/Modal";
@@ -24,13 +24,10 @@ import {
   CHECKLIST_MAX_TEXT,
   type ChecklistItem,
 } from "../lib/task-checklist";
-import type { TaskBoardOptions, TaskCardModel, Priority, TaskStatus } from "../lib/task-board";
+import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
 import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
-import { sprintBandsForSpan } from "../lib/timeline-days";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
-
-const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
 
 // Borderless control for the Details property panel — the row supplies the
 // structure, so the control itself stays quiet.
@@ -50,12 +47,11 @@ type CommentModel = {
 
 // Field values collected by the modal in create mode. The board turns these
 // into a POST (title/dueAt/sprint/epic/github) plus follow-up patches
-// (priority/domain/assignees).
+// (domain/assignees).
 export type NewTaskValues = {
   title: string;
   description: string | null;
   status: TaskStatus;
-  priority: Priority;
   dueAt: string | null;
   // Timeline start, as a UTC-midnight day. Null = inherit from the story.
   startsAt: string | null;
@@ -115,7 +111,6 @@ export function TaskModal({
   const readOnly = os && !isCreate && !editing;
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [priority, setPriority] = useState<Priority>(task?.priority ?? "Normal");
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "Todo");
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
@@ -152,14 +147,6 @@ export function TaskModal({
     : epicId
       ? "This epic has no sprints yet."
       : "Pick an epic first.";
-  // A sprint is a fixed week, so which ones a task is in is a fact about its
-  // dates, not a choice — read off the same grid the timeline draws.
-  const taskSprints = useMemo(() => {
-    if (!startDate || !dueDate) return [];
-    return sprintBandsForSpan(startDate, dueDate, options.termSpans, (d) =>
-      d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
-    );
-  }, [startDate, dueDate, options.termSpans]);
   const storyHint = epicStories.length
     ? undefined
     : epicId
@@ -237,7 +224,6 @@ export function TaskModal({
     if (!task) return;
     setTitle(task.title);
     setDescription(task.description ?? "");
-    setPriority(task.priority);
     setStatus(task.status);
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
@@ -288,7 +274,6 @@ export function TaskModal({
     if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
     const nextDescription = description.trim() ? description : null;
     if (nextDescription !== current.description) patch.description = nextDescription;
-    if (priority !== current.priority) patch.priority = priority;
     if (status !== current.status) patch.status = status;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
     if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
@@ -335,7 +320,6 @@ export function TaskModal({
     return (
       title.trim() !== "" ||
       description.trim() !== "" ||
-      priority !== "Normal" ||
       status !== "Todo" ||
       dueDate !== "" ||
       domainId !== "" ||
@@ -391,7 +375,6 @@ export function TaskModal({
         title: trimmed,
         description: description.trim() ? description.trim() : null,
         status,
-        priority,
         dueAt: dueDate ? endOfDayIso(dueDate) : null,
         startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
@@ -797,11 +780,10 @@ export function TaskModal({
         </Field>
 
         {/* The task's properties. The design pairs the fields that answer one
-            question — status with priority, the two ends of a span — so the
+            question — the two ends of a span, domain with assignees — so the
             panel reads as a few decisions rather than a ladder of one-line
             rows, and fences the linked records off under their own heading. */}
         <div className={cn(!os && "rounded-lg border border-border divide-y divide-border")}>
-          <FieldPair os={os}>
           <PropRow label="Status">
             <Select
               value={status}
@@ -811,16 +793,6 @@ export function TaskModal({
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
-          <PropRow label="Priority">
-            <Select
-              value={priority}
-              disabled={!canManage}
-              onChange={(value) => setPriority(value as Priority)}
-              options={PRIORITIES.map((p) => ({ value: p, label: p }))}
-              buttonClassName={PROP_CONTROL}
-            />
-          </PropRow>
-          </FieldPair>
 
           <FieldPair os={os}>
           <PropRow label="Starts">
@@ -909,22 +881,6 @@ export function TaskModal({
           </PropRow>
           )}
           </FieldPair>
-
-          {os && (
-            <PropRow label="Sprints">
-              {taskSprints.length > 0 ? (
-                <div className="os-sprint-chip-row">
-                  {taskSprints.map((b) => (
-                    <span key={b.key} className="os-sprint-chip os-sprint-chip--active">
-                      {b.label}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-os-grey">Set a start and deadline.</p>
-              )}
-            </PropRow>
-          )}
 
           <PropRow label="User story" hint={storyHint}>
             <Select
@@ -1149,7 +1105,8 @@ export function TaskModal({
         {!isCreate && task && (
           <ModalSection
             os={os}
-            className="gap-3"
+            // os-live: commenting stays available on a read-only record.
+            className="gap-3 os-live"
             title={
               <>
                 Comments

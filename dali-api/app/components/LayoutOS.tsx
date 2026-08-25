@@ -25,7 +25,6 @@ import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
@@ -86,7 +85,7 @@ const osMenuClass =
 // A row inside one. Full-strength text — a menu's rows are all equally
 // available, so greying them is a state that isn't true of any of them.
 const osMenuItemClass =
-  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-white transition-colors hover:bg-os-container'
+  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container'
 
 // A rail row. The active state is the design's marker: a filled well whose
 // left border is the accent stripe, square on that edge so it reads as
@@ -96,9 +95,9 @@ function railRowClass(active: boolean, collapsed: boolean) {
     'flex items-center gap-3 text-base text-left transition-colors',
     collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
     active
-      ? cn('font-medium text-white', !collapsed && 'os-subtab-active pl-[10px]')
-      : 'font-normal text-os-grey hover:bg-white/[0.03] hover:text-white',
-    collapsed && active && 'bg-os-container text-white',
+      ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
+      : 'font-normal text-os-grey hover:bg-white/[0.03] hover:text-foreground',
+    collapsed && active && 'bg-os-container text-foreground',
   )
 }
 
@@ -234,8 +233,9 @@ export function LayoutOS({
     })
   }
 
-  const navRegroup = useFeatureFlag('nav-regroup')
-  const navFlags = { 'nav-regroup': navRegroup }
+  // The nav-regroup flag was retired; the nav-areas registry no longer branches
+  // on any flag, so an empty map is all the helpers need.
+  const navFlags = {}
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -391,7 +391,7 @@ export function LayoutOS({
       <img src={photoUrl} alt="" className={`${size} rounded-full object-cover`} />
     ) : (
       <span
-        className={`${size} flex items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-white`}
+        className={`${size} flex items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-foreground`}
       >
         {initials}
       </span>
@@ -436,7 +436,7 @@ export function LayoutOS({
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-white/5 hover:text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-white/5 hover:text-foreground"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
@@ -455,7 +455,7 @@ export function LayoutOS({
           title="Search (⌘K)"
           aria-label="Search"
           className={cn(
-            'flex shrink-0 items-center rounded-os-item bg-os-card text-base text-os-grey transition-colors hover:text-white',
+            'flex shrink-0 items-center rounded-os-item bg-os-card text-base text-os-grey transition-colors hover:text-foreground',
             collapsed ? 'justify-center p-2.5' : 'gap-3 p-3',
           )}
         >
@@ -486,6 +486,7 @@ export function LayoutOS({
             title={collapsed ? 'Calendar' : undefined}
             {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
             className={railRowClass(path.startsWith('/calendar'), collapsed)}
+
           >
             <Calendar className="h-5 w-5 flex-shrink-0 opacity-85" />
             {!collapsed && 'Calendar'}
@@ -519,7 +520,7 @@ export function LayoutOS({
                   type="button"
                   title={activeArea.label}
                   {...tabClickProps({ url: activeArea.hubPath, label: activeArea.label })}
-                  className="flex shrink-0 items-center justify-center rounded-os-item bg-os-card px-3 py-2.5 text-white transition-colors hover:bg-os-card-hover"
+                  className="flex shrink-0 items-center justify-center rounded-os-item bg-os-card px-3 py-2.5 text-foreground transition-colors hover:bg-os-card-hover"
                 >
                   <activeArea.icon className="h-5 w-5 flex-shrink-0" />
                 </button>
@@ -551,8 +552,8 @@ export function LayoutOS({
                     className={cn(
                       'flex w-full items-center justify-between rounded-os-item p-3 text-base transition-colors',
                       areaMenuOpen
-                        ? 'bg-os-card-hover text-white'
-                        : 'bg-os-card text-os-grey hover:text-white',
+                        ? 'bg-os-card-hover text-foreground'
+                        : 'bg-os-card text-os-grey hover:text-foreground',
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -630,8 +631,8 @@ export function LayoutOS({
                           className={cn(
                             'flex items-center gap-3 py-2 text-base text-left transition-colors',
                             active
-                              ? 'os-subtab-active pl-[22px] font-medium text-white'
-                              : 'pl-6 font-normal text-os-grey hover:bg-white/[0.03] hover:text-white',
+                              ? 'os-subtab-active pl-[22px] font-medium text-foreground'
+                              : 'pl-6 font-normal text-os-grey hover:bg-white/[0.03] hover:text-foreground',
                           )}
                         >
                           <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
@@ -722,7 +723,7 @@ export function LayoutOS({
                 type="button"
                 title={p.title || 'Untitled'}
                 {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-white"
+                className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
               >
                 <FavoriteIcon page={p} glyphClassName="text-os-accent" />
                 <span className="truncate">{p.title || 'Untitled'}</span>
@@ -769,7 +770,7 @@ export function LayoutOS({
   const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
 
   return (
-    <div className="os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-white md:flex-row md:pt-0">
+    <div className="os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0">
       {!focusMode && (
         <aside
           className={cn(
@@ -786,7 +787,7 @@ export function LayoutOS({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="-ml-1.5 p-1.5 text-os-grey hover:text-white"
+            className="-ml-1.5 p-1.5 text-os-grey hover:text-foreground"
             aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={mobileNavOpen}
             aria-controls="os-mobile-nav"
@@ -807,7 +808,7 @@ export function LayoutOS({
           <button
             type="button"
             {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-            className="relative p-1.5 text-os-grey hover:text-white"
+            className="relative p-1.5 text-os-grey hover:text-foreground"
             aria-label={`My Tasks — ${taskCount} open`}
           >
             <Bell className="h-5 w-5" />
@@ -911,7 +912,7 @@ export function LayoutOS({
             onClick={() => setPaletteOpen(true)}
             title="Search (⌘K)"
             aria-label="Search"
-            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-white/10 hover:text-white"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-white/10 hover:text-foreground"
           >
             <Search className="h-4 w-4" />
             <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono text-[10px] text-os-muted">
@@ -926,7 +927,7 @@ export function LayoutOS({
             }}
             title="Show sidebar"
             aria-label="Show sidebar"
-            className="rounded-lg p-2 text-os-muted transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-2 text-os-muted transition-colors hover:bg-white/10 hover:text-foreground"
           >
             <PanelLeftOpen className="h-4 w-4" />
           </button>

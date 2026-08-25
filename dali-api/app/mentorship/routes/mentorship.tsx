@@ -11,6 +11,9 @@ import { buildGrid, type MentorGridResult } from "../lib/mentor-grid.server";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 import { MentorGrid } from "../components/MentorGrid";
+import { EmptyState } from "../components/EmptyState";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "Mentorship · DALI OS" }];
 
@@ -107,15 +110,14 @@ async function behindOnNotesCount(termId: string, weekOf: Date): Promise<number>
 
 export default function MentorshipHub() {
   const data = useLoaderData() as LoaderData;
+  const { pageTitle, panel, panelPad } = useOsChrome();
   const group = data.grid.mentors[0] ?? null;
 
   return (
     <main className="flex flex-col gap-6">
       <AreaPillNav items={mentorshipPills({ active: "hub" })} />
       <header className="flex flex-col gap-1">
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Mentorship
-        </h1>
+        <h1 className={pageTitle}>Mentorship</h1>
         <p className="text-sm text-muted-foreground">
           {data.termCode
             ? `Your mentees this term · ${data.termCode}`
@@ -125,7 +127,9 @@ export default function MentorshipHub() {
 
       {/* Lab-wide oversight — Core/Admin only. */}
       {data.isCore && data.behindCount > 0 && (
-        <section className="bg-card border border-border rounded-lg p-4 flex items-center justify-between gap-3">
+        <section
+          className={cn(panel, panelPad, "flex items-center justify-between gap-3")}
+        >
           <div className="flex items-center gap-2 text-sm">
             <AlertCircle className="w-4 h-4 text-accent-coral" />
             <span>
@@ -165,10 +169,3 @@ export default function MentorshipHub() {
   );
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <p className="text-sm text-muted-foreground">{children}</p>
-    </section>
-  );
-}

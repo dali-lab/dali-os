@@ -78,7 +78,7 @@ function osSegmentedItemClass(active: boolean) {
   return cn(
     "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
     active
-      ? "bg-os-container text-white"
+      ? "bg-os-container text-foreground"
       : "text-muted-foreground hover:text-foreground",
   );
 }
@@ -180,10 +180,11 @@ export function UnderlineTabButtons({
   label?: string;
   /**
    * The page's own title, rendered as part of this row. Under dali.os it sits
-   * at the left with the switcher pushed to the far right — one line instead of
-   * a title stacked above a rail of pills. The brand shell's row is a
-   * full-width underline bar with no room beside it, so there the title renders
-   * above it.
+   * at the left — one line instead of a title stacked above a rail of pills.
+   * The switcher is pushed to the far right either way, so a row with no
+   * heading still ends on the same edge as one that has it. The brand shell's
+   * row is a full-width underline bar with no room beside it, so there the
+   * title renders above it.
    */
   heading?: ReactNode;
 }) {
@@ -204,7 +205,7 @@ export function UnderlineTabButtons({
         {showHistoryNav && <TablessHistoryNavInline />}
         {heading}
         <div
-          className={cn(osSegmentedTrackClass, Boolean(heading) && "ml-auto")}
+          className={cn(osSegmentedTrackClass, "ml-auto")}
           role="tablist"
           aria-label={label}
         >

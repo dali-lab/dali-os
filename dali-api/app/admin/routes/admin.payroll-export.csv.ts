@@ -4,6 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { csvResponse } from "~/lib/csv";
 import { isAdmin } from "~/lib/roles";
+import { isLevel, type Level } from "~/lib/level";
 import {
   buildCoreRows,
   buildInstructorRows,
@@ -16,6 +17,17 @@ import {
 function parseIdList(raw: string | null): Set<string> {
   if (!raw) return new Set();
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
+// Comma-separated value list → trimmed, deduped string array.
+function parseCsvParam(raw: string | null): string[] {
+  if (!raw) return [];
+  return [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))];
+}
+
+// Only accept the three real Level values; anything else is dropped.
+function parseLevels(raw: string | null): Level[] {
+  return parseCsvParam(raw).filter(isLevel);
 }
 
 // Resource route — no default export, no layout wrapping. Returning a Response
@@ -32,7 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const requestedTermId = url.searchParams.get("termId");
+  const requestedTermId = url.searchParams.get("term");
 
   const terms = await prisma.term.findMany({
     orderBy: { sortKey: "desc" },
@@ -48,13 +60,20 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response("No terms available", { status: 404 });
   }
 
-  // Project rows always included; Core + Instructor rows only for the
-  // user-ids the admin checked on the page (passed via ?core= / ?instructor=).
+  // Optional role filter on the project section (?domain= / ?level=). This
+  // narrows only the project-assignment rows — Core and Instructor are separate
+  // opt-in sections driven by their own checkboxes, so a domain/level filter
+  // leaves them untouched (e.g. "PMs + Core" = PM filter with Core checked).
+  const domainIds = parseCsvParam(url.searchParams.get("domain"));
+  const levels = parseLevels(url.searchParams.get("level"));
+
+  // Core + Instructor rows are included for the user-ids the admin checked on
+  // the page (passed via ?core= / ?instructor=), independent of the filter.
   const coreIds = parseIdList(url.searchParams.get("core"));
   const instructorIds = parseIdList(url.searchParams.get("instructor"));
 
   const [projectRows, coreRows, instructorRows] = await Promise.all([
-    buildPayrollRows(selectedTerm.id),
+    buildPayrollRows(selectedTerm.id, { domainIds, levels }),
     buildCoreRows(selectedTerm.id, coreIds),
     buildInstructorRows(selectedTerm.id, instructorIds),
   ]);

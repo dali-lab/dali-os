@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Form, Link, useFetcher } from "react-router";
-import { FileText, Folder, Users } from "lucide-react";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { FileText, Folder, Paperclip, Users, Plus, ChevronDown, Upload } from "lucide-react";
+import { Select, type SelectOption, Menu } from "~/components/ui/floating";
 import { AddFormModal } from "./AddFormModal";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -12,6 +12,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { toDatetimeLocal } from "./OfferingFields";
 import { DateField } from "~/components/ui/DateField";
 import { FavoriteStar } from "~/components/FavoriteStar";
+import { uploadFileToS3 } from "~/lib/upload-client";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
 // Assignments (CRUD + inline collab instructions), Announcements (composer).
@@ -22,17 +23,26 @@ const INPUT =
 const LABEL = "text-xs font-semibold text-muted-foreground";
 
 export function ManageMaterials({
+  offeringId,
   materials,
+  files = [],
   workspaceDocs,
+  sessions = [],
   favoriteIds = [],
 }: {
+  offeringId: string;
   materials: {
     id: string;
     title: string;
     isFolder: boolean;
-    children: { id: string; title: string }[];
+    /** Session this material is linked to (null = offering-wide). */
+    sessionId: string | null;
+    children: { id: string; title: string; sessionId: string | null }[];
   }[];
+  /** Uploaded S3-backed files for this offering. */
+  files?: { id: string; title: string; href: string }[];
   workspaceDocs: { id: string; title: string }[];
+  sessions?: { id: string; sequence: number }[];
   /** Page ids the viewer has starred, for the per-row favorite toggle. */
   favoriteIds?: string[];
 }) {
@@ -42,9 +52,44 @@ export function ManageMaterials({
   const favorites = new Set(favoriteIds);
   const folders = materials.filter((m) => m.isFolder);
 
+  // File upload: hidden input triggered by the "Upload file" button.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const meta = await uploadFileToS3(file, `offering/${offeringId}/materials`);
+      const res = await fetch(`/api/education/${offeringId}/files`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: file.name, ...meta }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Failed to register file");
+      }
+      // Reload the page so the new file appears in the list.
+      window.location.reload();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      // Reset so the same file can be re-selected if needed.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   // Drag a material onto a folder to nest it, or onto the top-level strip to
   // pull it back out. Folders don't move — they're always top-level.
   const moveFetcher = useFetcher();
+  // Session-change fetcher for per-row session select.
+  const sessionFetcher = useFetcher();
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
 
@@ -85,7 +130,12 @@ export function ManageMaterials({
       setDropTarget(null);
     },
   });
-  const empty = materials.length === 0 && workspaceDocs.length === 0;
+  const empty = materials.length === 0 && workspaceDocs.length === 0 && files.length === 0;
+
+  const sessionOptions: SelectOption[] = [
+    { value: "", label: "Whole offering" },
+    ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,23 +144,64 @@ export function ManageMaterials({
           Materials are read-only for students; shared docs are co-edited live. Drag a material
           onto a folder to file it.
         </p>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" onClick={() => setAddPageOpen(true)}>
-            Add material
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setAddFolderOpen(true)}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Hidden file input; triggered by the Upload file menu item. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileChange}
+            aria-hidden
+          />
+          {/* New ▾ menu — mirrors the unified Drive's create affordance, since
+              offering materials live in Drive. */}
+          <Menu
+            align="right"
+            ariaLabel="New material"
+            trigger={
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+              >
+                <Plus className="w-4 h-4" /> New
+                <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+              </button>
+            }
           >
-            Add folder
-          </Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => setAddDocOpen(true)}>
-            Add shared doc
-          </Button>
+            <Menu.Item
+              icon={<FileText className="w-3.5 h-3.5" />}
+              onSelect={() => setAddPageOpen(true)}
+            >
+              New material
+            </Menu.Item>
+            <Menu.Item
+              icon={<Folder className="w-3.5 h-3.5" />}
+              onSelect={() => setAddFolderOpen(true)}
+            >
+              New folder
+            </Menu.Item>
+            <Menu.Item
+              icon={<Users className="w-3.5 h-3.5" />}
+              onSelect={() => setAddDocOpen(true)}
+            >
+              Add shared doc
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Item
+              icon={<Upload className="w-3.5 h-3.5" />}
+              disabled={uploading}
+              onSelect={() => fileInputRef.current?.click()}
+            >
+              {uploading ? "Uploading…" : "Upload file"}
+            </Menu.Item>
+          </Menu>
         </div>
       </div>
+      {uploadError && (
+        <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+          {uploadError}
+        </p>
+      )}
 
       {empty ? (
         <p className="text-sm text-muted-foreground italic">
@@ -145,7 +236,22 @@ export function ManageMaterials({
                   </span>
                 </div>
               ) : (
-                <DocRow id={p.id} title={p.title} kind="material" favorited={favorites.has(p.id)} />
+                <div className="flex items-center justify-between gap-3">
+                  <DocRow id={p.id} title={p.title} kind="material" favorited={favorites.has(p.id)} />
+                  {sessions.length > 0 && (
+                    <SessionSelect
+                      pageId={p.id}
+                      sessionId={p.sessionId}
+                      options={sessionOptions}
+                      onSubmit={(pageId, sessionId) =>
+                        sessionFetcher.submit(
+                          { intent: "set-material-session", pageId, sessionId },
+                          { method: "post" },
+                        )
+                      }
+                    />
+                  )}
+                </div>
               )}
               {p.children.length > 0 && (
                 <ul className="mt-2 ml-6 flex flex-col gap-1.5">
@@ -157,11 +263,32 @@ export function ManageMaterials({
                         dragId === c.id ? "opacity-50" : ""
                       }`}
                     >
-                      <DocRow id={c.id} title={c.title} kind="material" nested favorited={favorites.has(c.id)} />
+                      <div className="flex items-center justify-between gap-3">
+                        <DocRow id={c.id} title={c.title} kind="material" nested favorited={favorites.has(c.id)} />
+                        {sessions.length > 0 && (
+                          <SessionSelect
+                            pageId={c.id}
+                            sessionId={c.sessionId}
+                            options={sessionOptions}
+                            onSubmit={(pageId, sessionId) =>
+                              sessionFetcher.submit(
+                                { intent: "set-material-session", pageId, sessionId },
+                                { method: "post" },
+                              )
+                            }
+                          />
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
+            </li>
+          ))}
+          {/* Uploaded files (S3-backed) rendered after pages */}
+          {files.map((f) => (
+            <li key={f.id} className="px-4 py-3">
+              <FileRow href={f.href} title={f.title} />
             </li>
           ))}
           {workspaceDocs.map((d) => (
@@ -190,6 +317,18 @@ export function ManageMaterials({
             className={INPUT}
           />
         </label>
+        {sessions.length > 0 && (
+          <label className="block">
+            <span className={LABEL}>Session (optional)</span>
+            <Select
+              name="sessionId"
+              defaultValue=""
+              placeholder="Whole offering"
+              options={sessionOptions}
+              buttonClassName={INPUT}
+            />
+          </label>
+        )}
         <label className="block">
           <span className={LABEL}>Folder (optional)</span>
           <Select
@@ -250,6 +389,54 @@ export function ManageMaterials({
   );
 }
 
+/** Controlled session-assignment picker for a single material row. Auto-submits
+ *  on change so the manager doesn't need a separate save button. */
+function SessionSelect({
+  pageId,
+  sessionId,
+  options,
+  onSubmit,
+}: {
+  pageId: string;
+  sessionId: string | null;
+  options: SelectOption[];
+  onSubmit: (pageId: string, sessionId: string) => void;
+}) {
+  const [value, setValue] = useState(sessionId ?? "");
+  return (
+    <Select
+      value={value}
+      options={options}
+      onChange={(v) => {
+        setValue(v);
+        onSubmit(pageId, v);
+      }}
+      buttonClassName="text-xs py-0.5 px-2 border border-border rounded min-w-[110px]"
+      ariaLabel="Assign to session"
+    />
+  );
+}
+
+/** An uploaded file in the materials list — opens via its Drive file viewer. */
+function FileRow({ href, title }: { href: string; title: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="truncate text-sm font-medium text-foreground hover:text-accent-coral"
+      >
+        {title}
+      </a>
+      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+        File
+      </span>
+    </div>
+  );
+}
+
 /**
  * One document in the materials list. The title is the link — clicking the name
  * is how you open a document everywhere else in the app, and making Edit the
@@ -303,10 +490,12 @@ export type ManageAssignment = {
   id: string;
   title: string;
   dueAt: string | Date | null;
-  submissionType: "Text" | "File" | "Mixed";
+  submissionType: "Text" | "File" | "Mixed" | "Link" | "Doc" | "Complete";
   instructionsDocId: string | null;
   sessionId: string | null;
   sessionSequence: number | null;
+  /** Null = complete/incomplete; non-null = numeric grading out of this many points. */
+  points: number | null;
   _count: { submissions: number };
 };
 
@@ -356,7 +545,7 @@ export function ManageAssignments({
           </summary>
 
           <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
-            <Form method="post" className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto] items-end">
+            <Form method="post" className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_20ch_auto] items-end">
               <input type="hidden" name="intent" value="update-assignment" />
               <input type="hidden" name="assignmentId" value={a.id} />
               <label className="block">
@@ -382,8 +571,22 @@ export function ManageAssignments({
                     { value: "Text", label: "Text" },
                     { value: "File", label: "File" },
                     { value: "Mixed", label: "Text + files" },
+                    { value: "Link", label: "Link / URL" },
+                    { value: "Doc", label: "Document (in-app)" },
+                    { value: "Complete", label: "Mark complete only" },
                   ]}
                   buttonClassName={INPUT}
+                />
+              </label>
+              <label className="block">
+                <span className={LABEL}>Points (optional)</span>
+                <input
+                  type="number"
+                  name="points"
+                  min={1}
+                  defaultValue={a.points ?? ""}
+                  placeholder="—"
+                  className={INPUT}
                 />
               </label>
               <div className="flex justify-end">
@@ -465,24 +668,39 @@ export function ManageAssignments({
                 { value: "Text", label: "Text" },
                 { value: "File", label: "File" },
                 { value: "Mixed", label: "Text + files" },
+                { value: "Link", label: "Link / URL" },
+                { value: "Doc", label: "Document (in-app)" },
+                { value: "Complete", label: "Mark complete only" },
               ]}
               buttonClassName={INPUT}
             />
           </label>
         </div>
-        <label className="block">
-          <span className={LABEL}>Session (optional)</span>
-          <Select
-            name="sessionId"
-            defaultValue=""
-            placeholder="Whole offering"
-            options={[
-              { value: "", label: "Whole offering" },
-              ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
-            ]}
-            buttonClassName={INPUT}
-          />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className={LABEL}>Session (optional)</span>
+            <Select
+              name="sessionId"
+              defaultValue=""
+              placeholder="Whole offering"
+              options={[
+                { value: "", label: "Whole offering" },
+                ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
+              ]}
+              buttonClassName={INPUT}
+            />
+          </label>
+          <label className="block">
+            <span className={LABEL}>Points (optional)</span>
+            <input
+              type="number"
+              name="points"
+              min={1}
+              placeholder="Leave blank for complete/incomplete"
+              className={INPUT}
+            />
+          </label>
+        </div>
       </AddFormModal>
     </div>
   );

@@ -168,7 +168,7 @@ function AddMenuItem({ label, onClick }: { label: string; onClick: () => void })
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-white transition-colors hover:bg-os-container"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
     >
       <Plus className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
       {label}
@@ -501,7 +501,7 @@ export function EpicSprintManager({
                           key={e.id}
                           type="button"
                           role="menuitem"
-                          className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-white transition-colors hover:bg-os-container"
+                          className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
                           onClick={() => {
                             setAddMenuOpen(false);
                             setAddStoryPicking(false);

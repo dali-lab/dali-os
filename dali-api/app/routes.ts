@@ -11,10 +11,6 @@ export default [
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
-    // Lab term timeline: the ten weeks of a term, the milestones every team
-    // owes, and what each domain owns alongside them.
-    route("milestones", "routes/milestones.tsx"),
-
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -453,6 +449,8 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   // Education offering documents (collab Pages scoped to the EducationOffering workspace)
   route("api/education/:offeringId/documents", "education/routes/api.education.$offeringId.documents.ts"),
+  // Education offering files (uploaded S3-backed materials, mirrors api/projects/:id/files)
+  route("api/education/:offeringId/files", "education/routes/api.education.$offeringId.files.ts"),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),

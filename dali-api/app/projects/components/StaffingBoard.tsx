@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, useRevalidator } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import type { TermOption } from "~/lib/terms.shared";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
@@ -43,7 +44,7 @@ type ProjectMeta = {
 type Props = {
   cycleId: string;
   termId: string;
-  terms: { id: string; code: string }[];
+  terms: TermOption[];
   // Domain filter: all domains for the dropdown, plus the currently-selected id
   // ("" = all). Selecting one narrows the board to members eligible in (or
   // already bid/staffed in) that domain. Driven server-side via ?domain=.
@@ -640,7 +641,7 @@ export function StaffingBoard({
               className={cn(
                 "shrink-0 rounded p-0.5 transition-colors",
                 os
-                  ? "text-os-muted hover:text-white"
+                  ? "text-os-muted hover:text-foreground"
                   : "text-muted-foreground/70 hover:text-accent-coral",
               )}
             >
@@ -745,20 +746,12 @@ export function StaffingBoard({
             }}
           />
           <div className="flex items-center gap-2">
-            <Select
-              value={termId}
-              options={terms.map((t) => ({ value: t.id, label: t.code }))}
-              ariaLabel="Term"
-              buttonClassName={cn(filterPillClass(os), "w-full sm:w-32")}
-              onChange={(value) => {
-                setSearchParams(
-                  (prev) => {
-                    prev.set("term", value);
-                    return prev;
-                  },
-                  { replace: true },
-                );
-              }}
+            <TermFilter
+              terms={terms}
+              selected={termId}
+              includeAll={false}
+              replace
+              buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
             />
           </div>
         </div>

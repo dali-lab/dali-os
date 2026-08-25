@@ -54,6 +54,10 @@ export const MANAGE_EDUCATION_ASSIGNMENT_TOOL = {
         type: "string",
         description: "If provided, scopes the assignment to a session (create only).",
       },
+      points: {
+        type: "number",
+        description: "Optional point value (≥ 1). Omit or null for complete/incomplete grading.",
+      },
     },
     required: ["action", "offeringId"],
     additionalProperties: false,
@@ -69,6 +73,7 @@ type Args = {
   dueAt?: string;
   submissionType?: string;
   sessionId?: string;
+  points?: number | null;
 };
 
 export async function runManageEducationAssignment(ctx: McpCtx, args: Args) {
@@ -90,6 +95,11 @@ export async function runManageEducationAssignment(ctx: McpCtx, args: Args) {
 
   let result: { ok: true; id?: string } | { error: string; status: number };
 
+  const parsePoints = (v: number | null | undefined): number | null => {
+    if (v == null || !Number.isFinite(v) || v < 1) return null;
+    return Math.round(v);
+  };
+
   if (args.action === "create") {
     result = await createAssignment({
       offeringId: args.offeringId,
@@ -97,6 +107,7 @@ export async function runManageEducationAssignment(ctx: McpCtx, args: Args) {
       title: args.title!,
       dueAt: parseDueAt(args.dueAt),
       submissionType: args.submissionType as SubmissionType,
+      points: parsePoints(args.points),
       actorId: ctx.user.id,
     });
   } else if (args.action === "update") {
@@ -106,6 +117,7 @@ export async function runManageEducationAssignment(ctx: McpCtx, args: Args) {
       title: args.title!,
       dueAt: parseDueAt(args.dueAt),
       submissionType: args.submissionType as SubmissionType,
+      points: parsePoints(args.points),
       actorId: ctx.user.id,
     });
   } else {

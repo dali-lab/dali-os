@@ -47,11 +47,16 @@ export type EventDef = {
   // Only admins ever receive this event, so its settings row is shown only to
   // admins (and the save action ignores it for non-admins).
   adminOnly?: boolean;
-  // Opt-in coalescing window (ms). When set, notify() suppresses a second
-  // notification for the same (recipient, eventType, link) inside the window —
-  // taming a burst (e.g. many comments on one task) into one. Best-effort; it
-  // drops the extras, it does not aggregate them into a "N new" summary.
+  // Opt-in coalescing window (ms). When set, notify() merges a second
+  // notification for the same (recipient, eventType, link) inside the window
+  // into the existing in-app row instead of writing a new one — taming a burst
+  // (e.g. many comments on one task) into one row that re-surfaces unread with
+  // a refreshed preview. Email/Slack stay suppressed to one-per-window.
   coalesceWindowMs?: number;
+  // Singular noun for the merged-body summary ("comment" → "3 new comments").
+  // Only read when coalesceWindowMs is set; omit to keep the latest preview
+  // without a count prefix.
+  coalesceNoun?: string;
   // `desktop` gates the native banner the desktop app raises for an in-app
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
@@ -102,6 +107,7 @@ export const EVENT_TYPES = {
     label: "Task comments",
     description: "New comments on tasks you're assigned.",
     coalesceWindowMs: 60 * 60_000, // one ping per task per hour
+    coalesceNoun: "comment",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.status_changed": {
@@ -124,6 +130,7 @@ export const EVENT_TYPES = {
     label: "Comment replies",
     description: "Replies in document and file comment threads you're part of.",
     coalesceWindowMs: 30 * 60_000, // one ping per thread per half hour
+    coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "file.comment": {
@@ -132,6 +139,7 @@ export const EVENT_TYPES = {
     label: "File feedback",
     description: "New comments on files you uploaded or are working on via a task.",
     coalesceWindowMs: 60 * 60_000,
+    coalesceNoun: "comment",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "file.new_version": {
@@ -270,6 +278,7 @@ export const EVENT_TYPES = {
     label: "Discussion replies",
     description: "Replies in discussion threads you're part of.",
     coalesceWindowMs: 30 * 60_000,
+    coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.feedback_request": {

@@ -14,6 +14,7 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    upsert: vi.fn(),
     delete: vi.fn(),
   },
   session: {
@@ -536,6 +537,7 @@ export const prisma = {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
     createMany: vi.fn(),
     deleteMany: vi.fn(),
   },

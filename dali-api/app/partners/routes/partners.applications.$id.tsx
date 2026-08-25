@@ -29,7 +29,7 @@ import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseSessionCookie } from "~/lib/cookies";
-import { canViewStaffing, isCore, getUserRoles, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { canViewStaffing, isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -43,7 +43,6 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   EVAL_CRITERIA,
   EVAL_CRITERIA_VERSION,
@@ -91,8 +90,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
-
-  const roles = await getUserRoles(auth.user.sub, request);
 
   const application = await prisma.partnerApplication.findUnique({
     where: { id: params.id },
@@ -178,34 +175,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;
 
-  // CRM feature flag + Core member list for pickers
-  const crmEnabled = await isFeatureEnabled("partner-crm", auth.user.sub, roles, request);
-
+  // Core member list for the meeter / attendee pickers.
   let coreMembers: { userId: string; name: string }[] = [];
-  if (crmEnabled) {
-    const cycleTermIds = await getActiveCoreCycleTermIds(request);
-    if (cycleTermIds.length > 0) {
-      const assignments = await prisma.coreAssignment.findMany({
-        where: { termId: { in: cycleTermIds } },
-        select: {
-          userId: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-        distinct: ["userId"],
-      });
-      coreMembers = assignments.map((a) => ({
-        userId: a.userId,
-        name:
-          [a.user.firstName, a.user.lastName].filter(Boolean).join(" ") ||
-          a.user.daliEmail ||
-          a.userId,
-      }));
-      coreMembers.sort((a, b) => a.name.localeCompare(b.name));
-    }
+  const cycleTermIds = await getActiveCoreCycleTermIds(request);
+  if (cycleTermIds.length > 0) {
+    const assignments = await prisma.coreAssignment.findMany({
+      where: { termId: { in: cycleTermIds } },
+      select: {
+        userId: true,
+        user: { select: { firstName: true, lastName: true, daliEmail: true } },
+      },
+      distinct: ["userId"],
+    });
+    coreMembers = assignments.map((a) => ({
+      userId: a.userId,
+      name:
+        [a.user.firstName, a.user.lastName].filter(Boolean).join(" ") ||
+        a.user.daliEmail ||
+        a.userId,
+    }));
+    coreMembers.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // Activity timeline (newest first) + a name map for the acting Core members.
-  // Only loaded behind the flag — the feed only renders when the CRM is on.
   let activities: {
     id: string;
     createdAt: string;
@@ -215,44 +207,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     metadata: Record<string, unknown> | null;
   }[] = [];
   let actorNames: Record<string, string> = {};
-  if (crmEnabled) {
-    const rows = await prisma.partnerActivity.findMany({
-      where: { applicationId: params.id },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        createdAt: true,
-        actorUserId: true,
-        type: true,
-        body: true,
-        metadata: true,
-      },
+  const rows = await prisma.partnerActivity.findMany({
+    where: { applicationId: params.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      createdAt: true,
+      actorUserId: true,
+      type: true,
+      body: true,
+      metadata: true,
+    },
+  });
+  activities = rows.map((r) => ({
+    id: r.id,
+    createdAt: r.createdAt.toISOString(),
+    actorUserId: r.actorUserId,
+    type: r.type,
+    body: r.body,
+    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+  }));
+  const actorIds = [
+    ...new Set(rows.map((r) => r.actorUserId).filter(Boolean)),
+  ] as string[];
+  if (actorIds.length > 0) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: actorIds } },
+      select: { id: true, firstName: true, lastName: true, daliEmail: true },
     });
-    activities = rows.map((r) => ({
-      id: r.id,
-      createdAt: r.createdAt.toISOString(),
-      actorUserId: r.actorUserId,
-      type: r.type,
-      body: r.body,
-      metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-    }));
-    const actorIds = [
-      ...new Set(rows.map((r) => r.actorUserId).filter(Boolean)),
-    ] as string[];
-    if (actorIds.length > 0) {
-      const users = await prisma.user.findMany({
-        where: { id: { in: actorIds } },
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-      });
-      actorNames = Object.fromEntries(
-        users.map((u) => [
+    actorNames = Object.fromEntries(
+      users.map((u) => [
+        u.id,
+        [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+          u.daliEmail ||
           u.id,
-          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
-            u.daliEmail ||
-            u.id,
-        ]),
-      );
-    }
+      ]),
+    );
   }
 
   return {
@@ -300,7 +290,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit,
     collabToken,
     userName,
-    crmEnabled,
     coreMembers,
     activities,
     actorNames,
@@ -491,7 +480,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     return redirect(`/projects/${project.id}`);
 
-  // ─── CRM intents (all gated by partner-crm flag) ────────────────────────
+  // ─── CRM intents ────────────────────────────────────────────────────────
 
   } else if (
     intent === "offer-meeting" ||
@@ -506,11 +495,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "meeting-debrief" ||
     intent === "note"
   ) {
-    // Re-check the flag server-side on every CRM write.
-    const actionRoles = await getUserRoles(auth.user.sub, request);
-    const crmOn = await isFeatureEnabled("partner-crm", auth.user.sub, actionRoles, request);
-    if (!crmOn) return { error: "CRM features are not enabled." };
-
     if (intent === "offer-meeting") {
       const when = (form.get("when") as string | null)?.trim() ?? "";
       const details = (form.get("details") as string | null)?.trim() || undefined;
@@ -813,7 +797,6 @@ export default function PartnerApplicationDetail() {
     canEdit: canEditPerm,
     collabToken,
     userName,
-    crmEnabled,
     coreMembers,
     activities,
     actorNames,
@@ -853,11 +836,7 @@ export default function PartnerApplicationDetail() {
     </div>
   ) : null;
   const promoteBlock = (
-    <PromoteBlock
-      application={application}
-      canEdit={canEdit}
-      crmEnabled={crmEnabled}
-    />
+    <PromoteBlock application={application} canEdit={canEdit} />
   );
   const answers =
     formAnswers.length > 0 ? (
@@ -896,25 +875,9 @@ export default function PartnerApplicationDetail() {
     />
   );
 
-  // Flag off → the pre-CRM single-column page, unchanged (triage / eval /
-  // meetings / activity are all CRM-only, so none render here).
-  if (!crmEnabled) {
-    return (
-      <div className="flex flex-col gap-4">
-        {topBar}
-        {header}
-        {details}
-        {promoteBlock}
-        {answers}
-        {domainScope}
-        {sow}
-      </div>
-    );
-  }
-
-  // Flag on → tabbed record (CRM convention): a top band holds identity + the
-  // stage stepper + advance/triage actions (always visible), and the body is
-  // tabbed so each heavy section gets full width. Overview (activity feed + key
+  // Tabbed record (CRM convention): a top band holds identity + the stage
+  // stepper + advance/triage actions (always visible), and the body is tabbed
+  // so each heavy section gets full width. Overview (activity feed + key
   // details) is the default, front-and-center, like every CRM record page.
   const assignedMeeterName =
     coreMembers.find((m) => m.userId === application.assignedMeeterId)?.name ??
@@ -1839,11 +1802,9 @@ function Header({
 function PromoteBlock({
   application,
   canEdit,
-  crmEnabled,
 }: {
   application: LoaderData["application"];
   canEdit: boolean;
-  crmEnabled: boolean;
 }) {
   const confirmSubmit = useConfirmSubmit();
   if (!canEdit || application.resultingProjectId) return null;
@@ -1868,7 +1829,7 @@ function PromoteBlock({
           className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
         />
       )}
-      {crmEnabled && <AcceptanceFields application={application} />}
+      <AcceptanceFields application={application} />
       <div className="mt-3">
         <button type="submit" className={buttonClasses("primary", "sm")}>
           Promote to project →

@@ -48,9 +48,14 @@ history from the outbox regardless of the key.
   is built; the drain defers on a Gmail quota error but doesn't pre-pace. Add a
   token-bucket in the (single-leased) drain if blast volume ever approaches
   Gmail's per-second limits.
-- **Coalescing aggregation** — windowed coalescing currently *drops* the 2nd–Nth
-  notification. A real "N new comments" summary (rewrite the surviving row's
-  body / re-render) is a separate feature.
+- ~~**Coalescing aggregation** — windowed coalescing currently *drops* the
+  2nd–Nth notification.~~ **BUILT 2026-08-24 (feat/notification-merging).**
+  A burst within an event's window now *merges* into the existing in-app row
+  instead of dropping: the row is refreshed to the latest preview, re-lit unread,
+  bumped to the top of the feed (sliding the window forward), and its new
+  `Notification.coalesceCount` column incremented; the body reads "N new
+  comments · latest: …" via a per-event `coalesceNoun` in the registry.
+  Email/Slack stay suppressed to one-per-window (in-app only re-surfaces).
 - **Bounce / deliverability tracking** — additive on `OutboundMessage` (a
   `bouncedAt` + a Gmail push/webhook or SMTP feedback loop). Would make Admin →
   Communications show hard bounces, not just send failures.
