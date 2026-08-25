@@ -10,6 +10,7 @@ import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { EpicsTimeline } from "~/projects/components/EpicsTimeline";
+import { EpicDetail } from "~/projects/components/EpicSprintManager";
 import type {
   PartnerDriveDoc,
   PartnerDriveFile,
@@ -234,9 +235,16 @@ export function PartnerProjectHubView({
     team,
     timelineEpics,
     timelineTerms,
+    editableEpics,
     recentlyDone,
     drive,
   } = data;
+
+  // Clicking a bar opens the project hub's own epic modal, read-only. A story
+  // bar opens its epic, same as the hub — the story's detail lives inside that
+  // modal, so there is no second dialog to route to.
+  const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  const openEpic = editableEpics.find((e) => e.id === openEpicId) ?? null;
 
   // Shared-file inline preview (mirrors the internal file view): clicking a
   // file opens it in a modal — image/PDF inline, everything else a download.
@@ -326,6 +334,8 @@ export function PartnerProjectHubView({
             terms={timelineTerms}
             hiddenLevels={["task"]}
             compact
+            onEpicClick={setOpenEpicId}
+            onStoryClick={(epicId) => setOpenEpicId(epicId)}
           />
         )}
       </section>
@@ -415,6 +425,37 @@ export function PartnerProjectHubView({
           onClose={() => setPreviewFile(null)}
         />
       )}
+
+      {/* The project hub's epic modal, in its read-only state. `canManage`
+          false is what makes it read-only — every control it gates is an
+          editor — so the write paths below can never fire; they satisfy the
+          props rather than doing anything. No collab token either: the epic
+          description's room isn't shared with partners, so the modal falls
+          back to the plain-text description. */}
+      <Modal
+        open={openEpic != null}
+        onClose={() => setOpenEpicId(null)}
+        labelledBy="epic-detail-title"
+        containerClassName="w-full max-w-[560px] my-auto os-modal-card"
+      >
+        {openEpic && (
+          <EpicDetail
+            projectId={project.id}
+            epic={openEpic}
+            storyOptions={[]}
+            terms={[]}
+            timelineTerms={timelineTerms}
+            canManage={false}
+            busy={false}
+            run={() => {}}
+            api={async () => {}}
+            collabToken={null}
+            userName=""
+            onClose={() => setOpenEpicId(null)}
+            onDeleted={() => setOpenEpicId(null)}
+          />
+        )}
+      </Modal>
         </div>
       </div>
     </div>

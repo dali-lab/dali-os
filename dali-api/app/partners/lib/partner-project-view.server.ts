@@ -8,6 +8,7 @@ import type {
   TimelineEpic,
   TimelineTerm,
 } from "~/projects/components/EpicsTimeline";
+import type { EditableEpic } from "~/projects/components/EpicSprintManager";
 
 // Which of the account's orgs holds the active partnership with this project —
 // used to surface the correct partnerSince date. Lives here (a .server helper)
@@ -79,6 +80,10 @@ export type PartnerProjectViewData = {
   // non-cancelled epic, in position order.
   timelineEpics: TimelineEpic[];
   timelineTerms: TimelineTerm[];
+  // The same epics again, in the shape the project hub's detail modal reads —
+  // clicking a bar opens that modal here too, read-only. Deliberately thinner
+  // than the hub's copy: see toEditableEpic.
+  editableEpics: EditableEpic[];
   recentlyDone: {
     id: string;
     title: string;
@@ -252,6 +257,40 @@ export async function loadPartnerProjectView(
     includeTasks: false,
   });
 
+  // What the read-only detail modal actually renders, and nothing else. The
+  // modal shows an epic's status, dates, plain-text description and the *names*
+  // of its stories; it never renders a story's success metric, acceptance
+  // criteria, category, priority or dependency edges, so those don't travel to
+  // a partner's browser just to satisfy the shape. `notes` does, because the
+  // "still needs its details" dot is derived from it.
+  //
+  // descriptionDocId is dropped for the same reason: the collab room behind an
+  // epic description isn't shared with partners, and passing the id would only
+  // buy them a "Sign in again to see the description" they can never satisfy.
+  const editableEpics: EditableEpic[] = epicsRaw.map((e) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    status: e.status,
+    startsAt: e.startsAt?.toISOString() ?? null,
+    endsAt: e.endsAt?.toISOString() ?? null,
+    targetTermId: null,
+    descriptionDocId: null,
+    stories: e.stories.map((st) => ({
+      id: st.id,
+      title: st.title,
+      notes: st.notes,
+      status: st.status,
+      startsAt: st.startsAt?.toISOString() ?? null,
+      endsAt: st.endsAt?.toISOString() ?? null,
+      dependsOn: [],
+      successMetric: null,
+      acceptanceCriteria: null,
+      category: null,
+      priority: null,
+    })),
+  }));
+
   // Term spans anchor the fixed one-week sprint grid and label its bands.
   const timelineTerms: TimelineTerm[] = [...project.projectTerms]
     .sort((a, b) => a.term.sortKey - b.term.sortKey)
@@ -354,6 +393,7 @@ export async function loadPartnerProjectView(
     team,
     timelineEpics,
     timelineTerms,
+    editableEpics,
     recentlyDone: recentlyDone.map((t) => ({
       id: t.id,
       title: t.title,

@@ -867,6 +867,24 @@ select:not(:disabled) {
   --os-task-fill-hover:  rgba(240, 169, 45, 0.95);
   --os-task-edge:        rgba(224, 147, 11, 0.8);
   --os-task-ink:         #2a1c02;
+
+  /* A sprint is not a fourth record level, but its chip sits in the same
+     modal as the epic and task badges and has to read as their sibling. It
+     used to take `--color-os-accent` flat, which is a *ground* colour: on
+     paper that is the darkened cyan, so a row of sprint chips came out as
+     dark slabs beside a mid-tone violet badge. The accent's hue at the
+     plates' tone instead. */
+  --os-sprint-fill:      rgba(108, 182, 202, 0.85);
+  --os-sprint-ink:       #04222a;
+
+  /* The "added by name, still needs its details" mark. Its own pair rather
+     than `--color-os-amber`, which is a text/status colour and goes to
+     #8f5400 in light — a brown coin with pale ink on it. This is the same
+     yellow in both modes: the mark means the same thing on either ground,
+     and it is the one place on the timeline that wants to be louder than
+     what surrounds it. */
+  --os-incomplete-fill:  #ffcf33;
+  --os-incomplete-ink:   #33240a;
 }
 
 .os-shell,
@@ -1028,6 +1046,8 @@ html.light,
   --os-task-fill-hover:  #f6c86e;
   --os-task-edge:        #e0930b;
   --os-task-ink:         #3b2400;
+  --os-sprint-fill:      #7ccbdc;
+  --os-sprint-ink:       #06333d;
 
   /* The six columns, same treatment. */
   --os-status-backlog-fill:    #bccbda;
@@ -1295,13 +1315,13 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
  * opens as a *record* — labels over plain values, no boxes, no footer — and
  * the pencil turns it into a form. That is why our modals still read as the
  * old ones even with the right colours on them: they are always a form. */
-.os-shell .os-field-group {
+.os-field-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 20px;
 }
-.os-shell .os-field-label {
+.os-field-label {
   font-size: 11px;
   font-weight: 700;
   color: var(--color-os-grey);
@@ -1318,28 +1338,28 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   color: var(--os-danger-ink);
   margin-left: 2px;
 }
-.os-shell .os-field-row {
+.os-field-row {
   display: flex;
   gap: 16px;
 }
-.os-shell .os-field-row .os-field-group {
+.os-field-row .os-field-group {
   flex: 1;
   margin-bottom: 0;
 }
 /* A .os-field-row carries no bottom margin of its own — its children gave
    theirs up — so the 20px between fields has to be restored on whatever
    follows it, and on the row itself when a plain field comes before. */
-.os-shell .os-field-row + .os-field-group,
-.os-shell .os-field-group + .os-field-row,
-.os-shell .os-field-row + .os-field-row {
+.os-field-row + .os-field-group,
+.os-field-group + .os-field-row,
+.os-field-row + .os-field-row {
   margin-top: 20px;
 }
-.os-shell .os-modal-divider {
+.os-modal-divider {
   height: 1px;
   background: var(--color-os-container);
   margin: 24px 0;
 }
-.os-shell .os-section-header {
+.os-section-header {
   font-size: 12px;
   font-weight: 700;
   color: var(--color-os-fg);
@@ -1369,7 +1389,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 
 /* A row in a list of linked items (the design's .quick-add-item): a task under
    a story, a story under an epic. */
-.os-shell .os-item-row {
+.os-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1381,7 +1401,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   font-size: 13px;
   color: var(--color-os-fg);
 }
-.os-shell .os-item-list {
+.os-item-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1398,8 +1418,8 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   height: 16px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--color-os-amber);
-  color: var(--color-os-bg);
+  background: var(--os-incomplete-fill);
+  color: var(--os-incomplete-ink);
   font-size: 11px;
   font-weight: 900;
   line-height: 1;
@@ -1432,9 +1452,9 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    come off the text-transform, so what was typed is what's saved.
    Deliberately not applied to the name *fields* in a create form — typing
    into a box that shouts back is a different thing from reading a label. */
-.os-shell .os-record-name,
+.os-record-name,
 .os-bar-label,
-.os-shell .os-item-row {
+.os-item-row {
   text-transform: uppercase;
 }
 .os-bar-label--epic {
@@ -1494,12 +1514,12 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    pick, so these are derived from the record's dates and read as a statement
    of which weeks it lands in — the accent fill marks the weeks it actually
    covers, the quiet ones its term's neighbours. */
-.os-shell .os-sprint-chip-row {
+.os-sprint-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.os-shell .os-sprint-chip {
+.os-sprint-chip {
   padding: 6px 14px;
   border-radius: 100px;
   font-size: 12px;
@@ -1508,10 +1528,10 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   border: 1px solid var(--color-os-container);
   color: var(--color-os-grey);
 }
-.os-shell .os-sprint-chip--active {
-  background: var(--color-os-accent);
-  border-color: var(--color-os-accent);
-  color: var(--color-os-bg);
+.os-sprint-chip--active {
+  background: var(--os-sprint-fill);
+  border-color: var(--os-sprint-fill);
+  color: var(--os-sprint-ink);
 }
 
 .os-shell .os-label-chip {
