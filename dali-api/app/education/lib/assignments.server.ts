@@ -3,6 +3,15 @@ import { logAuditEvent } from "~/lib/audit";
 import { notifyNewAssignment, notifyGraded } from "./notifications.server";
 import type { SubmissionType } from "~/generated/prisma/client";
 
+/**
+ * Deterministic collab room id for a student's Doc-type submission body.
+ * Format mirrors the instructions room (`eduassignment:{id}:instructions`) and
+ * the feedback room (`edusubmission:{id}:feedback`).
+ */
+export function submissionDocRoom(assignmentId: string, studentId: string): string {
+  return `edusubmission:${assignmentId}:${studentId}:body`;
+}
+
 // Assignments are scoped to the offering as a whole or to one session
 // (exactly one of offeringId/sessionId — app-level enforced here). Rich
 // instructions live in a bare collab room `eduassignment:{id}:instructions`
@@ -184,6 +193,8 @@ export async function getAssignmentForStudent(args: {
       id: true,
       textContent: true,
       files: true,
+      link: true,
+      contentDocId: true,
       submittedAt: true,
       gradedAt: true,
       grade: true,
@@ -199,6 +210,12 @@ export async function getAssignmentForStudent(args: {
  * enforce the submission-type shape and the due date (with a manager-side
  * regrade path via gradeSubmission). Files are S3 keys from the existing
  * presign flow, stored as JSON.
+ *
+ * New modes:
+ *  - Link: stores a validated http(s) URL in submission.link.
+ *  - Complete: no artifact; upserts with submittedAt set.
+ *  - Doc: the body lives in the collab room (contentDocId); we ensure the row
+ *    exists with contentDocId set and record submittedAt.
  */
 export async function submitAssignment(args: {
   assignmentId: string;
@@ -207,6 +224,7 @@ export async function submitAssignment(args: {
   applicationId: string;
   textContent: string;
   files: { key: string; name: string }[];
+  link?: string;
 }): Promise<MutationResult> {
   const owner = await offeringIdForAssignment(args.assignmentId);
   if (owner !== args.offeringId) return { error: "Assignment not found", status: 404 };
@@ -219,12 +237,57 @@ export async function submitAssignment(args: {
     return { error: "This assignment is past due", status: 400 };
 
   const text = args.textContent.trim();
-  if (assignment.submissionType === "Text" && !text)
-    return { error: "A text answer is required", status: 400 };
-  if (assignment.submissionType === "File" && args.files.length === 0)
-    return { error: "A file is required", status: 400 };
-  if (assignment.submissionType === "Mixed" && !text && args.files.length === 0)
-    return { error: "Add a text answer or a file", status: 400 };
+  const link = args.link?.trim() ?? "";
+
+  // Per-type validation and upsert payload.
+  let upsertData: {
+    textContent?: string | null;
+    files?: { key: string; name: string }[];
+    link?: string | null;
+    contentDocId?: string | null;
+    submittedAt: Date;
+  };
+
+  switch (assignment.submissionType) {
+    case "Text":
+      if (!text) return { error: "A text answer is required", status: 400 };
+      upsertData = { textContent: text, files: [], link: null, submittedAt: new Date() };
+      break;
+
+    case "File":
+      if (args.files.length === 0) return { error: "A file is required", status: 400 };
+      upsertData = { textContent: null, files: args.files, link: null, submittedAt: new Date() };
+      break;
+
+    case "Mixed":
+      if (!text && args.files.length === 0)
+        return { error: "Add a text answer or a file", status: 400 };
+      upsertData = { textContent: text || null, files: args.files, link: null, submittedAt: new Date() };
+      break;
+
+    case "Link": {
+      if (!link) return { error: "A deliverable link is required", status: 400 };
+      if (!/^https?:\/\/.+/.test(link))
+        return { error: "The link must be a valid http(s) URL", status: 400 };
+      upsertData = { textContent: null, files: [], link, submittedAt: new Date() };
+      break;
+    }
+
+    case "Complete":
+      // No artifact required; just record the completion timestamp.
+      upsertData = { submittedAt: new Date() };
+      break;
+
+    case "Doc": {
+      // The doc body lives in the collab room; submitting just sets submittedAt.
+      const contentDocId = submissionDocRoom(args.assignmentId, args.studentId);
+      upsertData = { contentDocId, submittedAt: new Date() };
+      break;
+    }
+
+    default:
+      return { error: "Unknown submission type", status: 400 };
+  }
 
   await prisma.educationSubmission.upsert({
     where: {
@@ -237,14 +300,18 @@ export async function submitAssignment(args: {
       assignmentId: args.assignmentId,
       studentId: args.studentId,
       educationApplicationId: args.applicationId,
-      textContent: text || null,
-      files: args.files,
-      submittedAt: new Date(),
+      textContent: upsertData.textContent ?? null,
+      files: upsertData.files ?? [],
+      link: upsertData.link ?? null,
+      contentDocId: upsertData.contentDocId ?? null,
+      submittedAt: upsertData.submittedAt,
     },
     update: {
-      textContent: text || null,
-      files: args.files,
-      submittedAt: new Date(),
+      ...("textContent" in upsertData ? { textContent: upsertData.textContent ?? null } : {}),
+      ...("files" in upsertData ? { files: upsertData.files } : {}),
+      ...("link" in upsertData ? { link: upsertData.link ?? null } : {}),
+      ...("contentDocId" in upsertData ? { contentDocId: upsertData.contentDocId ?? null } : {}),
+      submittedAt: upsertData.submittedAt,
     },
   });
   await logAuditEvent({
@@ -256,6 +323,39 @@ export async function submitAssignment(args: {
   return { ok: true };
 }
 
+/**
+ * Ensure a Doc-type submission row exists with contentDocId set so the collab
+ * editor has a room to bind to on first open (before the student turns in).
+ * No-op if the row already has a contentDocId.
+ */
+export async function ensureDocSubmissionRow(args: {
+  assignmentId: string;
+  studentId: string;
+  applicationId: string;
+}): Promise<void> {
+  const contentDocId = submissionDocRoom(args.assignmentId, args.studentId);
+  await prisma.educationSubmission.upsert({
+    where: {
+      assignmentId_studentId: {
+        assignmentId: args.assignmentId,
+        studentId: args.studentId,
+      },
+    },
+    create: {
+      assignmentId: args.assignmentId,
+      studentId: args.studentId,
+      educationApplicationId: args.applicationId,
+      contentDocId,
+      files: [],
+      submittedAt: null,
+    },
+    update: {
+      // Only set contentDocId if missing — don't stomp submittedAt.
+      contentDocId,
+    },
+  });
+}
+
 export async function listSubmissions(assignmentId: string) {
   return prisma.educationSubmission.findMany({
     where: { assignmentId },
@@ -264,6 +364,8 @@ export async function listSubmissions(assignmentId: string) {
       id: true,
       textContent: true,
       files: true,
+      link: true,
+      contentDocId: true,
       submittedAt: true,
       gradedAt: true,
       grade: true,

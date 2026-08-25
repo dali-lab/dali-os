@@ -471,7 +471,7 @@ export type ManageAssignment = {
   id: string;
   title: string;
   dueAt: string | Date | null;
-  submissionType: "Text" | "File" | "Mixed";
+  submissionType: "Text" | "File" | "Mixed" | "Link" | "Doc" | "Complete";
   instructionsDocId: string | null;
   sessionId: string | null;
   sessionSequence: number | null;
@@ -552,6 +552,9 @@ export function ManageAssignments({
                     { value: "Text", label: "Text" },
                     { value: "File", label: "File" },
                     { value: "Mixed", label: "Text + files" },
+                    { value: "Link", label: "Link / URL" },
+                    { value: "Doc", label: "Document (in-app)" },
+                    { value: "Complete", label: "Mark complete only" },
                   ]}
                   buttonClassName={INPUT}
                 />
@@ -646,6 +649,9 @@ export function ManageAssignments({
                 { value: "Text", label: "Text" },
                 { value: "File", label: "File" },
                 { value: "Mixed", label: "Text + files" },
+                { value: "Link", label: "Link / URL" },
+                { value: "Doc", label: "Document (in-app)" },
+                { value: "Complete", label: "Mark complete only" },
               ]}
               buttonClassName={INPUT}
             />

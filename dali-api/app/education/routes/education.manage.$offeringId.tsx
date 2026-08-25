@@ -7,6 +7,7 @@ import {
   Form,
   Link,
 } from "react-router";
+import { Settings } from "lucide-react";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
@@ -238,6 +239,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     performanceByApp[appId][sub.assignmentId] = { grade: sub.grade, score: sub.score };
   }
 
+  // Overview dashboard data: next upcoming session + enrollment stats.
+  const now = new Date();
+  const upcomingSessions = offering.sessions
+    .filter((s) => new Date(s.datetime) > now)
+    .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+  const nextSession = upcomingSessions[0] ?? null;
+
+  const enrolledCount = applications.filter((a) => a.status === "Approved").length;
+  const pendingCount = applications.filter((a) => a.status === "Submitted").length;
+
+  // Completion %: share of approved students currently certificate-eligible.
+  const approvedTotal = attendanceMatrix.students.length;
+  const eligibleCount = attendanceMatrix.students.filter((st) => {
+    const present = Object.values(st.marks).filter((m) => m === "Present").length;
+    const excused = Object.values(st.marks).filter((m) => m === "Excused").length;
+    return certificateEligibility({
+      type: offering.type as "Miniseries" | "Workshop",
+      totalSessions: attendanceMatrix.sessions.length,
+      present,
+      excused,
+      threshold: offering.completionThreshold,
+    });
+  }).length;
+
   return {
     publishedForms,
     feedbackBindings,
@@ -316,6 +341,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     collabToken: parseSessionCookie(request),
     userName: `${gate.auth.user.firstName ?? ""} ${gate.auth.user.lastName ?? ""}`.trim(),
     currentUserId: gate.auth.user.sub,
+    // Overview stats
+    nextSession: nextSession
+      ? { id: nextSession.id, datetime: nextSession.datetime, title: nextSession.title ?? null }
+      : null,
+    enrolledCount,
+    pendingCount,
+    approvedTotal,
+    eligibleCount,
   };
 }
 
@@ -528,16 +561,46 @@ export async function action({ request, params }: Route.ActionArgs) {
   return result;
 }
 
-const TABS = [
-  { key: "details", label: "Details" },
-  { key: "sessions", label: "Sessions" },
-  { key: "applications", label: "Applications" },
-  { key: "roster", label: "Roster" },
-  { key: "materials", label: "Materials" },
-  { key: "assignments", label: "Assignments" },
-  { key: "announcements", label: "Discussion" },
-  { key: "feedback", label: "Feedback" },
+// Tab groups with dividers between them.
+// Group 0: overview
+// Group 1: sessions, people, content
+// Group 2: announcements, feedback
+// Group 3: settings (pinned right)
+const TAB_GROUPS = [
+  [{ key: "overview", label: "Overview" }],
+  [
+    { key: "sessions", label: "Sessions" },
+    { key: "people", label: "People" },
+    { key: "content", label: "Content" },
+  ],
+  [
+    { key: "announcements", label: "Discussion" },
+    { key: "feedback", label: "Feedback" },
+  ],
+  // Settings is in its own group, pushed right.
+  [{ key: "settings", label: "Settings", icon: true }],
 ] as const;
+
+type TabKey = "overview" | "sessions" | "people" | "content" | "announcements" | "feedback" | "settings";
+
+// Remap legacy deep-link tab keys so old bookmarks still land somewhere sensible.
+function normalizeTab(raw: string | null): { tab: TabKey; view?: string } {
+  switch (raw) {
+    case "details":       return { tab: "settings" };
+    case "applications":  return { tab: "people", view: "applicants" };
+    case "roster":        return { tab: "people", view: "roster" };
+    case "materials":     return { tab: "content", view: "materials" };
+    case "assignments":   return { tab: "content", view: "assignments" };
+    case "sessions":      return { tab: "sessions" };
+    case "announcements": return { tab: "announcements" };
+    case "feedback":      return { tab: "feedback" };
+    case "settings":      return { tab: "settings" };
+    case "overview":      return { tab: "overview" };
+    case "people":        return { tab: "people" };
+    case "content":       return { tab: "content" };
+    default:              return { tab: "overview" };
+  }
+}
 
 export default function ManageOffering() {
   const {
@@ -567,6 +630,11 @@ export default function ManageOffering() {
     performanceByApp,
     assignmentsForPerformance,
     completionByApp,
+    nextSession,
+    enrolledCount,
+    pendingCount,
+    approvedTotal,
+    eligibleCount,
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
@@ -579,8 +647,15 @@ export default function ManageOffering() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [addSessionOpen, setAddSessionOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
-  const [duplicateOpen, setDuplicateOpen] = useState(false);
-  const tab = searchParams.get("tab") ?? "details";
+
+  // Normalize the incoming ?tab= param (handles legacy keys too).
+  const rawTab = searchParams.get("tab");
+  const normalized = normalizeTab(rawTab);
+  const tab = normalized.tab;
+
+  // If the URL had a legacy key, apply the canonical view hint from the remap.
+  const rawView = searchParams.get("view");
+  const view = rawView ?? normalized.view ?? null;
 
   const [appFilter, setAppFilter] = useState("all");
   const appCounts = applications.reduce<Record<string, number>>((m, a) => {
@@ -601,6 +676,26 @@ export default function ManageOffering() {
             { to: "Archived", label: "Archive", variant: "destructive" },
           ]
         : [{ to: "Published", label: "Re-publish", variant: "secondary" }];
+
+  // People tab: determine whether to show the Applicants sub-toggle.
+  const now = new Date();
+  const regOpen =
+    offering.registrationOpensAt != null &&
+    offering.registrationClosesAt != null &&
+    new Date(offering.registrationOpensAt) <= now &&
+    now <= new Date(offering.registrationClosesAt);
+  const showApplicantToggle = regOpen || applications.length > 0;
+
+  // People tab default view: applicants if there are pending, else roster.
+  const defaultPeopleView = pendingCount > 0 ? "applicants" : "roster";
+  const peopleView = (view === "applicants" || view === "roster") ? view : defaultPeopleView;
+
+  // Content tab default view: materials.
+  const contentView = (view === "materials" || view === "assignments") ? view : "materials";
+
+  function goTab(key: TabKey, extra?: Record<string, string>) {
+    setSearchParams({ tab: key, ...extra }, { preventScrollReset: true });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -634,16 +729,6 @@ export default function ManageOffering() {
               {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
             </Button>
           </Form>
-          {core && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setDuplicateOpen(true)}
-            >
-              Duplicate
-            </Button>
-          )}
           {nextStatuses.map((s) => (
             <Form key={s.to} method="post">
               <input type="hidden" name="intent" value="set-status" />
@@ -700,201 +785,102 @@ export default function ManageOffering() {
         </p>
       )}
 
-      <nav className="flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
-            className={cn(
-              "px-4 py-2 text-sm font-semibold rounded-t-md",
-              tab === t.key
-                ? "text-accent-coral border-b-2 border-accent-coral"
-                : "text-muted-foreground hover:text-foreground",
+      {/* Tab bar: four groups separated by thin dividers. Settings is pushed right. */}
+      <nav className="flex items-end border-b border-border">
+        {TAB_GROUPS.map((group, gi) => (
+          <div key={gi} className={cn("flex items-end", gi === TAB_GROUPS.length - 1 && "ml-auto")}>
+            {/* Divider before groups 1+ (but not before the settings group which uses ml-auto) */}
+            {gi > 0 && gi < TAB_GROUPS.length - 1 && (
+              <span className="self-center mx-1 h-4 w-px bg-border" aria-hidden />
             )}
-          >
-            {t.label}
-          </button>
+            {group.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => goTab(t.key as TabKey)}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-t-md",
+                  tab === t.key
+                    ? "text-accent-coral border-b-2 border-accent-coral"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {"icon" in t && t.icon && (
+                  <Settings className="size-3.5" />
+                )}
+                {t.label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
 
-      {tab === "details" && (
-        <div className="flex flex-col gap-6">
-          {offering.applicationFormId && (
-            <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+      {/* ── Overview ─────────────────────────────────────────────────────────── */}
+      {tab === "overview" && (
+        <div className="flex flex-col gap-5">
+          {/* Stats card grid */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <OverviewCard label="Status">
+              <StatusBadge status={offering.status} />
+            </OverviewCard>
+            <OverviewCard label="Enrolled">
+              <span className="text-2xl font-bold text-foreground">{enrolledCount}</span>
+              <span className="text-xs text-muted-foreground">
+                {" "}of {offering.capacity}
+              </span>
+            </OverviewCard>
+            <OverviewCard label="Pending applications">
+              <span className={cn("text-2xl font-bold", pendingCount > 0 ? "text-amber-600" : "text-foreground")}>
+                {pendingCount}
+              </span>
+            </OverviewCard>
+            <OverviewCard label="Completion">
+              {approvedTotal > 0 ? (
+                <>
+                  <span className="text-2xl font-bold text-foreground">
+                    {Math.round((eligibleCount / approvedTotal) * 100)}%
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {" "}({eligibleCount}/{approvedTotal})
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm text-muted-foreground italic">No students yet</span>
+              )}
+            </OverviewCard>
+          </div>
+
+          {/* Next session */}
+          <div className="bg-card border border-border rounded-lg px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-1">Next session</p>
+            {nextSession ? (
               <p className="text-sm text-foreground">
-                Applicants answer this offering&apos;s application form.
-                Fillers always see the latest saved version.
+                <span className="font-semibold">{formatDateTime(nextSession.datetime, tz)}</span>
+                {nextSession.title && (
+                  <span className="text-muted-foreground"> — {nextSession.title}</span>
+                )}
               </p>
-              <Link
-                to={`/forms/edit/${offering.applicationFormId}`}
-                className={buttonClasses("secondary", "sm") + " shrink-0"}
-              >
-                Edit application form
-              </Link>
-            </div>
-          )}
-
-          <Form
-            method="post"
-            className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4"
-          >
-            <input type="hidden" name="intent" value="update-offering" />
-            <OfferingFields values={offering} typeLocked />
-            <div className="flex justify-end">
-              <Button type="submit" size="sm">
-                Save details
-              </Button>
-            </div>
-          </Form>
-
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Description
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Shown on the catalog listing. Edits save live.
-            </p>
-            {collabToken && offering.descriptionDocId ? (
-              <PresenceProvider
-                pageId={`eduoffering:${offering.id}`}
-                token={collabToken}
-                userName={userName}
-              >
-                <DocEditor
-                  features="notes"
-                  aiEnabled
-                  collab={{
-                    documentName: offering.descriptionDocId,
-                    token: collabToken,
-                    userName,
-                  }}
-                  placeholder="What this offering covers, who it's for, what attendees build…"
-                  className="border border-border rounded-md"
-                />
-              </PresenceProvider>
             ) : (
-              <p className="text-xs text-muted-foreground italic">
-                Sign in again to edit the description.
-              </p>
+              <p className="text-sm text-muted-foreground italic">No upcoming sessions.</p>
             )}
-          </section>
+          </div>
 
-          {core && (
-            <Form
-              method="post"
-              className="bg-card border border-border rounded-lg p-5"
-            >
-              <input type="hidden" name="intent" value="set-instructors" />
-              <h2 className="text-sm font-semibold text-foreground mb-1">
-                Instructors
-              </h2>
-              <p className="text-xs text-muted-foreground mb-3">
-                Instructors can edit this offering, review applications, and
-                take attendance.
-              </p>
-              <InstructorPicker
-                candidates={instructorCandidates}
-                initialSelectedIds={offering.instructors.map((i) => i.userId)}
-              />
-              <div className="mt-3 flex justify-end">
-                <Button type="submit" variant="secondary" size="sm">
-                  Save instructors
-                </Button>
-              </div>
-            </Form>
-          )}
-
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Decision emails
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Pick a template to email applicants when their status changes.
-              Unbound statuses fall back to a short built-in message.
-              Templates are shared across areas — manage them in{" "}
-              <Link to="/admin/email-templates" className="underline">
-                Admin → Email Templates
-              </Link>
-              . <code className="text-[11px]">{"{{domain}}"}</code> carries the
-              offering title.
-            </p>
-            <div className="flex flex-col gap-3">
-              {(["Approved", "Waitlisted", "Rejected"] as const).map((status) => (
-                <DecisionEmailRow
-                  key={status}
-                  status={status}
-                  boundVersionId={
-                    decisionEmailBindings.find((b) => b.status === status)
-                      ?.emailTemplateVersionId ?? ""
-                  }
-                  emailTemplates={emailTemplates}
-                  builtinCopy={builtinDecisionCopy[status]}
-                  offeringTitle={offering.title}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Feedback forms
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Bind published forms from the Forms system. Session feedback is
-              requested automatically from everyone marked Present; the exit
-              survey goes to instructors at close-out.
-            </p>
-            <div className="flex flex-col gap-3">
-              {(
-                [
-                  { slot: "session-feedback", label: "Session feedback" },
-                  { slot: "instructor-exit", label: "Instructor exit survey" },
-                ] as const
-              ).map(({ slot, label }) => (
-                <Form key={slot} method="post" className="flex items-center gap-3">
-                  <input type="hidden" name="intent" value="set-form-binding" />
-                  <input type="hidden" name="slot" value={slot} />
-                  <span className="text-sm text-foreground w-44">{label}</span>
-                  <Select
-                    name="formId"
-                    defaultValue={
-                      feedbackBindings.find((b) => b.slot === slot)?.formId ?? ""
-                    }
-                    placeholder="None"
-                    options={[
-                      { value: "", label: "None" },
-                      ...publishedForms.map((f) => ({ value: f.id, label: f.name })),
-                    ]}
-                    buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                  <Button type="submit" variant="secondary" size="sm">
-                    Save
-                  </Button>
-                </Form>
-              ))}
-            </div>
-          </section>
-
-          {core && offering.status === "Draft" && (
-            <Form
-              method="post"
-              onSubmit={confirmSubmit({
-                title: "Delete this draft offering?",
-                description: "This can't be undone.",
-                confirmLabel: "Delete",
-                tone: "destructive",
-              })}
-            >
-              <input type="hidden" name="intent" value="delete-offering" />
-              <Button type="submit" variant="destructive" size="sm">
-                Delete draft
-              </Button>
-            </Form>
-          )}
+          {/* Quick links */}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={() => goTab("people")}>
+              People
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => goTab("content")}>
+              Content
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => goTab("sessions")}>
+              Sessions
+            </Button>
+          </div>
         </div>
       )}
 
+      {/* ── Sessions ─────────────────────────────────────────────────────────── */}
       {tab === "sessions" && (
         <div className="flex flex-col gap-4">
           {offering.sessions.length === 0 ? (
@@ -1126,125 +1112,171 @@ export default function ManageOffering() {
         </div>
       )}
 
-      {tab === "applications" && (
-        <div className="flex flex-col gap-3">
-          {applications.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">
-              No applications yet.
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                {(["all", "Submitted", "Approved", "Waitlisted", "Rejected", "Withdrawn"] as const)
-                  .filter((s) => s === "all" || (appCounts[s] ?? 0) > 0)
-                  .map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setAppFilter(s)}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        appFilter === s
-                          ? "bg-accent-coral text-white"
-                          : "bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {s === "all" ? `All ${applications.length}` : `${s} ${appCounts[s] ?? 0}`}
-                    </button>
-                  ))}
-                {(appCounts["Submitted"] ?? 0) > 0 && (
-                  <Form method="post" className="ml-auto">
-                    <input type="hidden" name="intent" value="approve-all-pending" />
-                    <Button type="submit" size="sm">
-                      Approve all {appCounts["Submitted"]} pending
-                    </Button>
-                  </Form>
-                )}
-              </div>
-              <ApplicationsReview
-                applications={filteredApps}
-                statusChip={(status) => <MyStatusChip status={status as never} />}
-                formatSubmitted={(at) => formatDateTime(at as never, tz)}
+      {/* ── People (Applications + Roster merged) ────────────────────────────── */}
+      {tab === "people" && (
+        <div className="flex flex-col gap-4">
+          {/* Sub-toggle: only shown when enrollment is open or there are applications. */}
+          {showApplicantToggle && (
+            <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 self-start">
+              {(["roster", "applicants"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() =>
+                    setSearchParams(
+                      { tab: "people", view: v },
+                      { preventScrollReset: true },
+                    )
+                  }
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    peopleView === v
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {v === "roster" ? "Roster" : (
+                    <>
+                      Applicants
+                      {pendingCount > 0 && (
+                        <span className="ml-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Applicants view */}
+          {(!showApplicantToggle || peopleView === "applicants") && showApplicantToggle && (
+            <div className="flex flex-col gap-3">
+              {applications.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No applications yet.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(["all", "Submitted", "Approved", "Waitlisted", "Rejected", "Withdrawn"] as const)
+                      .filter((s) => s === "all" || (appCounts[s] ?? 0) > 0)
+                      .map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setAppFilter(s)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            appFilter === s
+                              ? "bg-accent-coral text-white"
+                              : "bg-muted text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {s === "all" ? `All ${applications.length}` : `${s} ${appCounts[s] ?? 0}`}
+                        </button>
+                      ))}
+                    {(appCounts["Submitted"] ?? 0) > 0 && (
+                      <Form method="post" className="ml-auto">
+                        <input type="hidden" name="intent" value="approve-all-pending" />
+                        <Button type="submit" size="sm">
+                          Approve all {appCounts["Submitted"]} pending
+                        </Button>
+                      </Form>
+                    )}
+                  </div>
+                  <ApplicationsReview
+                    applications={filteredApps}
+                    statusChip={(status) => <MyStatusChip status={status as never} />}
+                    formatSubmitted={(at) => formatDateTime(at as never, tz)}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Roster view (shown when toggle is hidden OR roster is selected) */}
+          {(!showApplicantToggle || peopleView === "roster") && (
+            <div className="flex flex-col gap-4">
+              <RosterMatrix
+                sessions={attendanceMatrix.sessions.map((s) => ({
+                  id: s.id,
+                  sequence: s.sequence,
+                  datetime: s.datetime,
+                }))}
+                students={attendanceMatrix.students}
+                activeSessionId={roster?.session.id ?? attendanceMatrix.sessions[0]?.id ?? null}
+                onSelectSession={(sessionId) =>
+                  setSearchParams(
+                    { tab: "people", view: "roster", session: sessionId },
+                    { preventScrollReset: true },
+                  )
+                }
+                formatSessionDate={(d) => formatDateTime(d as never, tz)}
+                assignments={assignmentsForPerformance}
+                submissionsByApp={performanceByApp}
+                completionByApp={completionByApp}
               />
-            </>
+            </div>
           )}
         </div>
       )}
 
-      {tab === "roster" && (
+      {/* ── Content (Materials + Assignments merged) ──────────────────────────── */}
+      {tab === "content" && (
         <div className="flex flex-col gap-4">
-          <RosterMatrix
-            sessions={attendanceMatrix.sessions.map((s) => ({
-              id: s.id,
-              sequence: s.sequence,
-              datetime: s.datetime,
-            }))}
-            students={attendanceMatrix.students}
-            activeSessionId={roster?.session.id ?? attendanceMatrix.sessions[0]?.id ?? null}
-            onSelectSession={(sessionId) =>
-              setSearchParams(
-                { tab: "roster", session: sessionId },
-                { preventScrollReset: true },
-              )
-            }
-            formatSessionDate={(d) => formatDateTime(d as never, tz)}
-            assignments={assignmentsForPerformance}
-            submissionsByApp={performanceByApp}
-            completionByApp={completionByApp}
-          />
+          {/* Sub-toggle */}
+          <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 self-start">
+            {(["materials", "assignments"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() =>
+                  setSearchParams(
+                    { tab: "content", view: v },
+                    { preventScrollReset: true },
+                  )
+                }
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                  contentView === v
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {v === "materials" ? "Materials" : "Assignments"}
+              </button>
+            ))}
+          </div>
+
+          {contentView === "materials" && (
+            <ManageMaterials
+              offeringId={offering.id}
+              materials={materials}
+              files={offeringFiles}
+              workspaceDocs={workspaceDocs}
+              sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
+              favoriteIds={favoriteIds}
+            />
+          )}
+
+          {contentView === "assignments" && (
+            <ManageAssignments
+              assignments={assignments}
+              sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
+              collabToken={collabToken}
+              userName={userName}
+            />
+          )}
         </div>
       )}
 
-      {tab === "materials" && (
-        <ManageMaterials
-          offeringId={offering.id}
-          materials={materials}
-          files={offeringFiles}
-          workspaceDocs={workspaceDocs}
-          sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
-          favoriteIds={favoriteIds}
-        />
-      )}
-
-      {tab === "assignments" && (
-        <ManageAssignments
-          assignments={assignments}
-          sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
-          collabToken={collabToken}
-          userName={userName}
-        />
-      )}
-
+      {/* ── Discussion ───────────────────────────────────────────────────────── */}
       {tab === "announcements" && (
         <OfferingDiscussion posts={announcements} currentUserId={currentUserId} canAnnounce />
       )}
 
-      {/* Duplicate modal — Core-only, shown from the header button regardless of tab. */}
-      {core && (
-        <AddFormModal
-          open={duplicateOpen}
-          onClose={() => setDuplicateOpen(false)}
-          title="Duplicate offering"
-          subtitle="Creates a draft copy with sessions shifted to the new start date. You can adjust sessions and registration dates before publishing."
-          intent="duplicate-offering"
-          submitLabel="Create duplicate"
-        >
-          <label className="block">
-            <span className="text-xs font-semibold text-muted-foreground">
-              New first session date
-            </span>
-            <DateField
-              mode="datetime-local"
-              name="firstSessionDate"
-              className="mt-1 w-full"
-              ariaLabel="New first session date"
-            />
-          </label>
-          <p className="text-xs text-muted-foreground">
-            Leave blank to copy session dates as-is.
-          </p>
-        </AddFormModal>
-      )}
-
+      {/* ── Feedback ─────────────────────────────────────────────────────────── */}
       {tab === "feedback" && (
         <div className="flex flex-col gap-5">
           <div className="flex items-center gap-2">
@@ -1269,8 +1301,15 @@ export default function ManageOffering() {
 
           {!sessionFeedback ? (
             <p className="text-sm text-muted-foreground italic">
-              No session-feedback form is bound yet — pick one on the Details
-              tab.
+              No session-feedback form is bound yet — pick one in{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => goTab("settings")}
+              >
+                Settings
+              </button>
+              .
             </p>
           ) : (
             <FeedbackResults
@@ -1289,6 +1328,194 @@ export default function ManageOffering() {
           )}
         </div>
       )}
+
+      {/* ── Settings (was: Details) ───────────────────────────────────────────── */}
+      {tab === "settings" && (
+        <div className="flex flex-col gap-6">
+          {offering.applicationFormId && (
+            <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-foreground">
+                Applicants answer this offering&apos;s application form.
+                Fillers always see the latest saved version.
+              </p>
+              <Link
+                to={`/forms/edit/${offering.applicationFormId}`}
+                className={buttonClasses("secondary", "sm") + " shrink-0"}
+              >
+                Edit application form
+              </Link>
+            </div>
+          )}
+
+          <Form
+            method="post"
+            className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4"
+          >
+            <input type="hidden" name="intent" value="update-offering" />
+            <OfferingFields values={offering} typeLocked />
+            <div className="flex justify-end">
+              <Button type="submit" size="sm">
+                Save details
+              </Button>
+            </div>
+          </Form>
+
+          <section className="bg-card border border-border rounded-lg p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
+              Description
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Shown on the catalog listing. Edits save live.
+            </p>
+            {collabToken && offering.descriptionDocId ? (
+              <PresenceProvider
+                pageId={`eduoffering:${offering.id}`}
+                token={collabToken}
+                userName={userName}
+              >
+                <DocEditor
+                  features="notes"
+                  aiEnabled
+                  collab={{
+                    documentName: offering.descriptionDocId,
+                    token: collabToken,
+                    userName,
+                  }}
+                  placeholder="What this offering covers, who it's for, what attendees build…"
+                  className="border border-border rounded-md"
+                />
+              </PresenceProvider>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                Sign in again to edit the description.
+              </p>
+            )}
+          </section>
+
+          {core && (
+            <Form
+              method="post"
+              className="bg-card border border-border rounded-lg p-5"
+            >
+              <input type="hidden" name="intent" value="set-instructors" />
+              <h2 className="text-sm font-semibold text-foreground mb-1">
+                Instructors
+              </h2>
+              <p className="text-xs text-muted-foreground mb-3">
+                Instructors can edit this offering, review applications, and
+                take attendance.
+              </p>
+              <InstructorPicker
+                candidates={instructorCandidates}
+                initialSelectedIds={offering.instructors.map((i) => i.userId)}
+              />
+              <div className="mt-3 flex justify-end">
+                <Button type="submit" variant="secondary" size="sm">
+                  Save instructors
+                </Button>
+              </div>
+            </Form>
+          )}
+
+          <section className="bg-card border border-border rounded-lg p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
+              Decision emails
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Pick a template to email applicants when their status changes.
+              Unbound statuses fall back to a short built-in message.
+              Templates are shared across areas — manage them in{" "}
+              <Link to="/admin/email-templates" className="underline">
+                Admin → Email Templates
+              </Link>
+              . <code className="text-[11px]">{"{{domain}}"}</code> carries the
+              offering title.
+            </p>
+            <div className="flex flex-col gap-3">
+              {(["Approved", "Waitlisted", "Rejected"] as const).map((status) => (
+                <DecisionEmailRow
+                  key={status}
+                  status={status}
+                  boundVersionId={
+                    decisionEmailBindings.find((b) => b.status === status)
+                      ?.emailTemplateVersionId ?? ""
+                  }
+                  emailTemplates={emailTemplates}
+                  builtinCopy={builtinDecisionCopy[status]}
+                  offeringTitle={offering.title}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="bg-card border border-border rounded-lg p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
+              Feedback forms
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Bind published forms from the Forms system. Session feedback is
+              requested automatically from everyone marked Present; the exit
+              survey goes to instructors at close-out.
+            </p>
+            <div className="flex flex-col gap-3">
+              {(
+                [
+                  { slot: "session-feedback", label: "Session feedback" },
+                  { slot: "instructor-exit", label: "Instructor exit survey" },
+                ] as const
+              ).map(({ slot, label }) => (
+                <Form key={slot} method="post" className="flex items-center gap-3">
+                  <input type="hidden" name="intent" value="set-form-binding" />
+                  <input type="hidden" name="slot" value={slot} />
+                  <span className="text-sm text-foreground w-44">{label}</span>
+                  <Select
+                    name="formId"
+                    defaultValue={
+                      feedbackBindings.find((b) => b.slot === slot)?.formId ?? ""
+                    }
+                    placeholder="None"
+                    options={[
+                      { value: "", label: "None" },
+                      ...publishedForms.map((f) => ({ value: f.id, label: f.name })),
+                    ]}
+                    buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
+                  <Button type="submit" variant="secondary" size="sm">
+                    Save
+                  </Button>
+                </Form>
+              ))}
+            </div>
+          </section>
+
+          {core && offering.status === "Draft" && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Delete this draft offering?",
+                description: "This can't be undone.",
+                confirmLabel: "Delete",
+                tone: "destructive",
+              })}
+            >
+              <input type="hidden" name="intent" value="delete-offering" />
+              <Button type="submit" variant="destructive" size="sm">
+                Delete draft
+              </Button>
+            </Form>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small stat card for the overview dashboard.
+function OverviewCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-1">
+      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+      <div className="flex items-baseline gap-1">{children}</div>
     </div>
   );
 }
@@ -1467,7 +1694,7 @@ function DecisionEmailRow({
       {showPreview && (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
           <p className="text-muted-foreground">
-            {selected ? "Bound template" : "Built-in message"} — sample for “Alex”:
+            {selected ? "Bound template" : "Built-in message"} — sample for "Alex":
           </p>
           <p className="mt-1 font-medium text-foreground">{preview.subject}</p>
           <div

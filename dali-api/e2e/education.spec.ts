@@ -42,8 +42,8 @@ test.describe('education catalog', () => {
 
     await page.goto(`/education/manage/${WORKSHOP_ID}?embed=1`);
     await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Applications' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Roster' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'People' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Content' })).toBeVisible();
   });
 });
 

@@ -5,7 +5,6 @@ import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { manageableOfferingIds, isOfferingManager } from "./access.server";
 import { createOfferingApplicationForm } from "./application-form.server";
-import { ensureOfferingDriveFolder } from "~/lib/pages";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
@@ -21,7 +20,7 @@ const offeringListInclude = {
     orderBy: { sequence: "asc" as const },
     select: { id: true, datetime: true },
   },
-  term: { select: { code: true } },
+  term: { select: { id: true, code: true } },
 };
 
 export type CatalogOffering = Awaited<ReturnType<typeof listCatalog>>[number];
@@ -213,7 +212,7 @@ function shapeOffering(o: {
     user: { firstName: string; lastName: string; photoUrl: string | null };
   }[];
   sessions: { id: string; datetime: Date }[];
-  term: { code: string } | null;
+  term: { id: string; code: string } | null;
 }) {
   return {
     id: o.id,
@@ -227,6 +226,7 @@ function shapeOffering(o: {
     startsAt: o.startsAt,
     endsAt: o.endsAt,
     closedOutAt: o.closedOutAt,
+    termId: o.term?.id ?? null,
     termCode: o.term?.code ?? null,
     sessionCount: o.sessions.length,
     // Kept as plain strings for the cert/PDF servers that render names only.
@@ -488,12 +488,6 @@ export async function runOfferingAction(
     // Every offering gets its own application form, cloned from the education
     // template for its type. Instructors edit it at /forms/edit/:formId.
     await createOfferingApplicationForm(offering.id, actorId);
-    // Auto-provision a Drive folder for uploaded file materials. Best-effort:
-    // a failure here doesn't block offering creation — it self-heals on the
-    // next Drive visit or file upload.
-    await ensureOfferingDriveFolder(offering.id, actorId).catch((err) =>
-      console.error("ensureOfferingDriveFolder failed on create", err),
-    );
     await logAuditEvent({
       action: "education.offering.create",
       userId: actorId,
@@ -599,10 +593,6 @@ export async function runOfferingAction(
       }
       await createOfferingApplicationForm(created.id, actorId);
       await recomputeOfferingDates(created.id);
-      // Best-effort Drive folder for the clone (same as fresh create).
-      await ensureOfferingDriveFolder(created.id, actorId).catch((err) =>
-        console.error("ensureOfferingDriveFolder failed on duplicate", err),
-      );
       await logAuditEvent({
         action: "education.offering.create",
         userId: actorId,

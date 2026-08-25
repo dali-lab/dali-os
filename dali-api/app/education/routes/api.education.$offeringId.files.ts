@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { ensureOfferingDriveFolder } from "~/lib/pages";
 import { logAuditEvent } from "~/lib/audit";
 import { parseJson } from "~/lib/validate";
 
@@ -66,17 +65,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // Ensure the Drive folder exists and get its id for placement.
-  const folder = await ensureOfferingDriveFolder(offeringId, auth.user.sub);
-
   // Create the file + first version atomically, then point the file at it.
+  // folderPageId is null so drive-scopes.server reparents this file under the
+  // synthetic offering folder (the Projects pattern — no real folder Page needed).
   const file = await prisma.$transaction(async (tx) => {
     const created = await tx.projectFile.create({
       data: {
         workspaceType: "EducationOffering",
         workspaceId: offeringId,
         title: body.title,
-        folderPageId: folder?.id ?? null,
+        folderPageId: null,
       },
       select: { id: true },
     });

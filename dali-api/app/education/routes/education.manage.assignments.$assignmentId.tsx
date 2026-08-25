@@ -12,8 +12,9 @@ import {
   listSubmissions,
   gradeSubmission,
 } from "~/education/lib/assignments.server";
+import { readDocAsBlocks } from "~/collab/read";
 import { Button } from "~/components/ui/Button";
-import { DocEditor } from "~/components/doc";
+import { DocEditor, countWords } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { parseSessionCookie } from "~/lib/cookies";
 import { formatDateTime } from "~/lib/display";
@@ -48,13 +49,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ]);
   if (!assignment) throw new Response("Not found", { status: 404 });
 
+  // For Doc-type assignments, read each student's collab doc server-side so
+  // the instructor sees the content read-only. readDocAsBlocks handles missing
+  // rows (doc never opened) by returning []. This avoids decoding a live Y.Doc
+  // (CLAUDE.md rule) — reads go through the read.ts helper.
+  const submissionsWithDocs = await Promise.all(
+    submissions.map(async (s) => ({
+      ...s,
+      files: (s.files as { key: string; name: string }[]) ?? [],
+      docContent: s.contentDocId
+        ? await readDocAsBlocks(s.contentDocId)
+        : null,
+    })),
+  );
+
   return {
     offeringId,
     assignment,
-    submissions: submissions.map((s) => ({
-      ...s,
-      files: (s.files as { key: string; name: string }[]) ?? [],
-    })),
+    submissions: submissionsWithDocs,
     collabToken: parseSessionCookie(request),
     userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
@@ -128,11 +140,13 @@ export default function GradeAssignment() {
               </p>
             </div>
 
+            {/* Text / Mixed */}
             {s.textContent && (
               <p className="mt-2 text-sm text-foreground whitespace-pre-wrap border-l-2 border-border pl-3">
                 {s.textContent}
               </p>
             )}
+            {/* File / Mixed */}
             {s.files.length > 0 && (
               <ul className="mt-2 flex flex-col gap-1">
                 {s.files.map((f) => (
@@ -148,6 +162,41 @@ export default function GradeAssignment() {
                   </li>
                 ))}
               </ul>
+            )}
+            {/* Link */}
+            {s.link && (
+              <p className="mt-2">
+                <a
+                  href={s.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-accent-coral hover:underline break-all"
+                >
+                  {s.link}
+                </a>
+              </p>
+            )}
+            {/* Complete */}
+            {assignment.submissionType === "Complete" && s.submittedAt && (
+              <p className="mt-2 text-sm text-muted-foreground italic">
+                Marked complete on {formatDateTime(s.submittedAt, tz)}
+              </p>
+            )}
+            {/* Doc — read-only server-rendered blocks */}
+            {s.docContent !== null && s.docContent !== undefined && (
+              <div className="mt-2 border-l-2 border-border pl-3">
+                {countWords(s.docContent) > 0 ? (
+                  <DocEditor
+                    features="notes"
+                    editable={false}
+                    initialContent={s.docContent}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">
+                    No content written yet.
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="mt-3 pt-3 border-t border-border flex flex-col gap-3">
