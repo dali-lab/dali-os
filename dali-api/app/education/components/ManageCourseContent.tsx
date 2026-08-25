@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Form, Link, useFetcher } from "react-router";
-import { FileText, Folder, Paperclip, Users } from "lucide-react";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { FileText, Folder, Paperclip, Users, Plus, ChevronDown, Upload } from "lucide-react";
+import { Select, type SelectOption, Menu } from "~/components/ui/floating";
 import { AddFormModal } from "./AddFormModal";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -144,22 +144,8 @@ export function ManageMaterials({
           Materials are read-only for students; shared docs are co-edited live. Drag a material
           onto a folder to file it.
         </p>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" onClick={() => setAddPageOpen(true)}>
-            Add material
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setAddFolderOpen(true)}
-          >
-            Add folder
-          </Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => setAddDocOpen(true)}>
-            Add shared doc
-          </Button>
-          {/* Hidden file input; triggered by the Upload file button below. */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Hidden file input; triggered by the Upload file menu item. */}
           <input
             ref={fileInputRef}
             type="file"
@@ -167,15 +153,48 @@ export function ManageMaterials({
             onChange={handleFileChange}
             aria-hidden
           />
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
+          {/* New ▾ menu — mirrors the unified Drive's create affordance, since
+              offering materials live in Drive. */}
+          <Menu
+            align="right"
+            ariaLabel="New material"
+            trigger={
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+              >
+                <Plus className="w-4 h-4" /> New
+                <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+              </button>
+            }
           >
-            {uploading ? "Uploading…" : "Upload file"}
-          </Button>
+            <Menu.Item
+              icon={<FileText className="w-3.5 h-3.5" />}
+              onSelect={() => setAddPageOpen(true)}
+            >
+              New material
+            </Menu.Item>
+            <Menu.Item
+              icon={<Folder className="w-3.5 h-3.5" />}
+              onSelect={() => setAddFolderOpen(true)}
+            >
+              New folder
+            </Menu.Item>
+            <Menu.Item
+              icon={<Users className="w-3.5 h-3.5" />}
+              onSelect={() => setAddDocOpen(true)}
+            >
+              Add shared doc
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Item
+              icon={<Upload className="w-3.5 h-3.5" />}
+              disabled={uploading}
+              onSelect={() => fileInputRef.current?.click()}
+            >
+              {uploading ? "Uploading…" : "Upload file"}
+            </Menu.Item>
+          </Menu>
         </div>
       </div>
       {uploadError && (
