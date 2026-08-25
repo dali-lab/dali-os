@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Download, Eye, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Eye, Folder, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
@@ -9,249 +9,16 @@ import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { EpicsTimeline } from "~/projects/components/EpicsTimeline";
 import type {
-  PartnerProjectEpic,
-  PartnerProjectSprint,
-  PartnerProjectStory,
+  PartnerDriveDoc,
+  PartnerDriveFile,
+  PartnerDriveFolder,
   PartnerProjectViewData,
-  PartnerWorkState,
 } from "~/partners/lib/partner-project-view.server";
-
-type SharedFile = PartnerProjectViewData["sharedFiles"][number];
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-
-const EPIC_STATUS_LABEL: Record<PartnerProjectEpic["status"], string> = {
-  Backlog: "Backlog",
-  Open: "Open",
-  InProgress: "In progress",
-  Done: "Done",
-  Cancelled: "Cancelled",
-};
-
-// Colour language, matched to the internal EpicsTimeline so both hubs read the
-// same way: coral is the epic hue, teal the sprint hue, and a story inherits
-// its epic's coral. Work that hasn't started is muted/dashed; finished work
-// fades. Every pill also carries a word, so hue never has to carry state alone.
-const EPIC_PILL: Record<PartnerProjectEpic["status"], string> = {
-  Backlog: "bg-muted text-muted-foreground",
-  Open: "bg-accent-coral/10 text-accent-coral",
-  InProgress: "bg-accent-coral/10 text-accent-coral",
-  Done: "bg-accent-coral/10 text-accent-coral",
-  Cancelled: "bg-muted text-muted-foreground",
-};
-
-// Story dots inherit the epic's coral: dashed grey before it starts, solid
-// coral in progress, faded coral once done.
-const STORY_DOT: Record<PartnerProjectStory["status"], string> = {
-  Todo: "border-2 border-dashed border-brand-gray",
-  InProgress: "bg-accent-coral",
-  Done: "bg-accent-coral/50",
-};
-
-const sprintState = (s: PartnerProjectSprint): PartnerWorkState =>
-  s.status === "Active" ? "current" : s.status === "Planned" ? "planned" : "past";
-
-const STORY_PRIORITY_TONE: Record<
-  NonNullable<PartnerProjectStory["priority"]>,
-  string
-> = {
-  Must: "text-accent-coral font-semibold",
-  Should: "text-foreground",
-  Could: "text-muted-foreground",
-  Wont: "text-muted-foreground line-through",
-};
-
-// Scope: the product requirements the epic delivers, as a read-only table with
-// every column partners can see (success metric, acceptance criteria, etc.).
-function StoryList({ stories }: { stories: PartnerProjectStory[] }) {
-  if (stories.length === 0) return null;
-  const done = stories.filter((s) => s.status === "Done").length;
-  return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
-        Requirements · {done}/{stories.length} done
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <th className="py-1.5 pr-3">Requirement</th>
-              <th className="py-1.5 px-3">Category</th>
-              <th className="py-1.5 px-3">Priority</th>
-              <th className="py-1.5 px-3">Success metric</th>
-              <th className="py-1.5 px-3">Acceptance criteria</th>
-              <th className="py-1.5 pl-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stories.map((story) => (
-              <tr key={story.id} className="border-b border-border/60 align-top">
-                <td
-                  className={`min-w-[160px] py-2 pr-3 ${
-                    story.status === "Done"
-                      ? "text-muted-foreground line-through"
-                      : "text-foreground"
-                  }`}
-                >
-                  {story.title}
-                </td>
-                <td className="py-2 px-3 text-muted-foreground">
-                  {story.category ?? "—"}
-                </td>
-                <td className="py-2 px-3">
-                  {story.priority ? (
-                    <span className={`text-xs ${STORY_PRIORITY_TONE[story.priority]}`}>
-                      {story.priority}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                  {story.successMetric ?? "—"}
-                </td>
-                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                  {story.acceptanceCriteria ?? "—"}
-                </td>
-                <td className="whitespace-nowrap py-2 pl-3 text-[11px] text-muted-foreground">
-                  {story.status}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// A live or upcoming sprint — the sprints a partner should actually look at.
-// Active sprints carry a teal progress bar (teal is the sprint hue); planned
-// ones stay dashed and quiet until they start.
-function SprintCard({ s }: { s: PartnerProjectSprint }) {
-  const state = sprintState(s);
-  const total = s.done + s.open;
-  const pct = total > 0 ? Math.round((s.done / total) * 100) : 0;
-  return (
-    <div
-      className={`rounded-xl p-4 ${
-        state === "current"
-          ? "bg-accent-teal/5 border border-accent-teal/30"
-          : "border border-dashed border-border"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-heading font-semibold text-dark-blue text-sm">
-          {s.name}
-        </span>
-        <span
-          className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${
-            state === "current"
-              ? "bg-accent-teal/15 text-accent-teal"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {state === "current" ? "In progress" : "Planned"}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mt-1">
-        {fmtDate(s.startsAt)} – {fmtDate(s.endsAt)}
-      </p>
-      {state === "current" && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>
-              {s.done} of {total} tasks done
-            </span>
-            <span>{pct}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full bg-accent-teal rounded-full"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      )}
-      {state === "planned" && total > 0 && (
-        <p className="text-xs text-muted-foreground mt-2">
-          {total} task{total === 1 ? "" : "s"} queued
-        </p>
-      )}
-    </div>
-  );
-}
-
-// A wrapped sprint — history, so it collapses to one settled line.
-function PastSprintRow({ s }: { s: PartnerProjectSprint }) {
-  const total = s.done + s.open;
-  return (
-    <div className="flex items-center gap-2 py-1.5 text-sm">
-      <span className="text-accent-teal flex-shrink-0">✓</span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.name}</span>
-      <span className="text-xs text-muted-foreground flex-shrink-0">
-        {s.done}/{total} · {fmtDate(s.endsAt)}
-      </span>
-    </div>
-  );
-}
-
-// Sprints of one epic (or the epic-less bucket), ordered by attention: what's
-// live, then what's next, then completed history tucked behind a disclosure.
-function SprintGroup({ sprints }: { sprints: PartnerProjectSprint[] }) {
-  if (sprints.length === 0) return null;
-  const current = sprints.filter((s) => sprintState(s) === "current");
-  const planned = sprints.filter((s) => sprintState(s) === "planned");
-  const past = sprints.filter((s) => sprintState(s) === "past");
-  return (
-    <div className="flex flex-col gap-3 border-l-2 border-border pl-4">
-      {current.map((s) => (
-        <SprintCard key={s.id} s={s} />
-      ))}
-      {planned.map((s) => (
-        <SprintCard key={s.id} s={s} />
-      ))}
-      {past.length > 0 && (
-        <details>
-          <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground">
-            {past.length} completed sprint{past.length === 1 ? "" : "s"}
-          </summary>
-          <div className="mt-1 flex flex-col divide-y divide-border">
-            {past.map((s) => (
-              <PastSprintRow key={s.id} s={s} />
-            ))}
-          </div>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function EpicCard({ epic }: { epic: PartnerProjectEpic }) {
-  return (
-    <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4">
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-heading font-semibold text-dark-blue text-base">
-            {epic.title}
-          </h3>
-          <span className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${EPIC_PILL[epic.status]}`}>
-            {EPIC_STATUS_LABEL[epic.status]}
-          </span>
-        </div>
-        {epic.startsAt && epic.endsAt && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {fmtDate(epic.startsAt)} – {fmtDate(epic.endsAt)}
-          </p>
-        )}
-      </div>
-      <StoryList stories={epic.stories} />
-      <SprintGroup sprints={epic.sprints} />
-    </div>
-  );
-}
 
 // Hero readout: names the live sprint so a partner lands on "where are we
 // right now" before anything else.
@@ -268,6 +35,127 @@ function MomentumReadout({
       <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
         {momentum.label}
       </p>
+    </div>
+  );
+}
+
+// One shared document. Indented when it sits inside a folder, so the tree
+// reads the same way the project hub's Drive does.
+function DriveDocRow({
+  doc,
+  pageHref,
+  indent = false,
+}: {
+  doc: PartnerDriveDoc;
+  pageHref: (pageId: string) => string;
+  indent?: boolean;
+}) {
+  return (
+    <Link
+      to={pageHref(doc.id)}
+      className={`flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-muted/20 ${
+        indent ? "pl-10" : ""
+      }`}
+    >
+      <span>{doc.iconEmoji ?? "📄"}</span>
+      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        {doc.title}
+      </span>
+      <span className="flex-shrink-0 text-xs text-muted-foreground">
+        Updated {fmtDate(doc.updatedAt)}
+      </span>
+    </Link>
+  );
+}
+
+// One shared upload. Opens the inline preview rather than navigating — the
+// signed URL is already resolved in the loader.
+function DriveFileRow({
+  file,
+  onPreview,
+  indent = false,
+}: {
+  file: PartnerDriveFile;
+  onPreview: (f: PartnerDriveFile) => void;
+  indent?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(file)}
+      disabled={!file.downloadUrl}
+      className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition ${
+        indent ? "pl-10" : ""
+      } ${
+        file.downloadUrl
+          ? "cursor-pointer hover:bg-muted/20"
+          : "cursor-not-allowed opacity-60"
+      }`}
+    >
+      <Eye className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-foreground">
+          {file.title}
+        </span>
+        {(file.fileName || file.sizeBytes != null) && (
+          <span className="block truncate text-xs text-muted-foreground">
+            {[file.fileName, file.sizeBytes != null ? formatBytes(file.sizeBytes) : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
+      </span>
+      <span className="flex-shrink-0 text-xs text-muted-foreground">
+        {file.downloadUrl ? "Preview" : "Unavailable"}
+      </span>
+    </button>
+  );
+}
+
+// A folder, collapsed until opened (the Finder/Drive convention the project
+// hub follows). It only ever lists the items inside it that were shared.
+function DriveFolderRow({
+  folder,
+  pageHref,
+  onPreviewFile,
+}: {
+  folder: PartnerDriveFolder;
+  pageHref: (pageId: string) => string;
+  onPreviewFile: (f: PartnerDriveFile) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const count = folder.docs.length + folder.files.length;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm transition hover:bg-muted/20"
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        )}
+        <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+          {folder.title}
+        </span>
+        <span className="flex-shrink-0 text-xs text-muted-foreground">
+          {count} item{count === 1 ? "" : "s"}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-border divide-y divide-border bg-muted/10">
+          {folder.docs.map((d) => (
+            <DriveDocRow key={d.id} doc={d} pageHref={pageHref} indent />
+          ))}
+          {folder.files.map((f) => (
+            <DriveFileRow key={f.id} file={f} onPreview={onPreviewFile} indent />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -364,28 +252,20 @@ export function PartnerProjectHubView({
     currentTermCode,
     team,
     momentum,
-    epics,
-    ungroupedSprints,
+    timelineEpics,
+    timelineTerms,
     recentlyDone,
-    sharedPages,
-    sharedFiles,
+    drive,
   } = data;
-
-  const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
 
   // Shared-file inline preview (mirrors the internal file view): clicking a
   // file opens it in a modal — image/PDF inline, everything else a download.
-  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+  const [previewFile, setPreviewFile] = useState<PartnerDriveFile | null>(null);
 
-  // The roadmap opens on live work — epics that are Open or In progress. The
-  // rest (Backlog, Done) sit behind a toggle so a partner isn't wading through
-  // finished or not-yet-started epics to see what's happening now.
-  const [showAllEpics, setShowAllEpics] = useState(false);
-  const activeEpics = epics.filter(
-    (e) => e.status === "Open" || e.status === "InProgress",
-  );
-  const hiddenEpicCount = epics.length - activeEpics.length;
-  const visibleEpics = showAllEpics ? epics : activeEpics;
+  const isDriveEmpty =
+    drive.folders.length === 0 &&
+    drive.docs.length === 0 &&
+    drive.files.length === 0;
 
   // Section anchors for the side nav — only the ones actually rendered.
   const sections: NavSection[] = [
@@ -393,8 +273,7 @@ export function PartnerProjectHubView({
     ...(recentlyDone.length > 0
       ? [{ id: "recently-completed", label: "Recently completed" }]
       : []),
-    { id: "shared-documents", label: "Shared documents" },
-    { id: "shared-files", label: "Shared files" },
+    { id: "drive", label: "Drive" },
     ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
   ];
   const activeSection = useActiveSection(sections.map((s) => s.id));
@@ -455,63 +334,28 @@ export function PartnerProjectHubView({
           <SectionNav sections={sections} active={activeSection} />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-8">
-      {/* The roadmap — active epics by default, each showing its stories
-          (scope) and its sprints across past, current, and planned. Backlog
-          and done epics live behind the "Show all" toggle. */}
+      {/* The roadmap — the project hub's own planning timeline, drawn from the
+          same resolver, with the task level hidden. Partners want the shape of
+          the work and when it lands, not the card-by-card breakdown. */}
       <section id="roadmap" className="scroll-mt-24">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue">
-            Roadmap
-          </h2>
-          {hiddenEpicCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAllEpics((v) => !v)}
-              className="text-xs font-medium text-accent-coral hover:underline"
-            >
-              {showAllEpics
-                ? "Show active only"
-                : `Show all epics (${epics.length})`}
-            </button>
-          )}
-        </div>
-        {!hasWork ? (
+        <h2 className="mb-3 font-heading text-lg font-semibold text-dark-blue">
+          Roadmap
+        </h2>
+        {timelineEpics.length === 0 ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            Nothing on the roadmap yet. Epics and sprints will appear here once
-            the team plans the work.
+            Nothing on the roadmap yet. Work will appear here once the team
+            plans it.
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {visibleEpics.map((epic) => (
-              <EpicCard key={epic.id} epic={epic} />
-            ))}
-            {visibleEpics.length === 0 && (
-              <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-                Nothing in progress right now.
-                {hiddenEpicCount > 0 && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => setShowAllEpics(true)}
-                      className="font-medium text-accent-coral hover:underline"
-                    >
-                      Show all {epics.length} epic{epics.length === 1 ? "" : "s"}
-                    </button>
-                    .
-                  </>
-                )}
-              </div>
-            )}
-            {ungroupedSprints.length > 0 && (
-              <div className="bg-card border border-border rounded-2xl p-5">
-                <h3 className="font-heading font-semibold text-dark-blue text-base mb-3">
-                  Other sprints
-                </h3>
-                <SprintGroup sprints={ungroupedSprints} />
-              </div>
-            )}
-          </div>
+          // `compact` because this is a read-only roadmap sitting among the
+          // portal's own rounded-2xl cards, not the planning surface: the grid
+          // sizes to its bars rather than holding the planning floor.
+          <EpicsTimeline
+            epics={timelineEpics}
+            terms={timelineTerms}
+            hiddenLevels={["task"]}
+            compact
+          />
         )}
       </section>
 
@@ -539,81 +383,34 @@ export function PartnerProjectHubView({
         </section>
       )}
 
-      {/* Shared docs */}
-      <section id="shared-documents" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared documents
+      {/* Drive — one shelf for shared documents and shared files, the way the
+          project hub's own Drive block reads. Folders hold whatever inside
+          them was shared; everything else sits at the root. */}
+      <section id="drive" className="scroll-mt-24">
+        <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold text-dark-blue">
+          <Folder className="h-4 w-4" /> Drive
         </h2>
-        {sharedPages.length === 0 ? (
+        {isDriveEmpty ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            The team hasn't shared any documents yet.
+            The team hasn't shared any documents or files yet.
           </div>
         ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
-            {sharedPages.map((p) => (
-              <li key={p.id}>
-                <Link
-                  to={pageHref(p.id)}
-                  className="px-4 py-3 flex items-center gap-3 text-sm hover:bg-muted/20 transition"
-                >
-                  <span>{p.iconEmoji ?? "📄"}</span>
-                  <span className="flex-1 min-w-0 truncate font-medium text-foreground">
-                    {p.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    Updated {fmtDate(p.updatedAt)}
-                  </span>
-                </Link>
-              </li>
+          <div className="bg-card border border-border rounded-2xl divide-y divide-border">
+            {drive.folders.map((f) => (
+              <DriveFolderRow
+                key={f.id}
+                folder={f}
+                pageHref={pageHref}
+                onPreviewFile={setPreviewFile}
+              />
             ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Shared files — uploads the team has shared, downloaded via a
-          short-lived signed URL resolved in the loader. */}
-      <section id="shared-files" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared files
-        </h2>
-        {sharedFiles.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            The team hasn't shared any files yet.
+            {drive.docs.map((d) => (
+              <DriveDocRow key={d.id} doc={d} pageHref={pageHref} />
+            ))}
+            {drive.files.map((f) => (
+              <DriveFileRow key={f.id} file={f} onPreview={setPreviewFile} />
+            ))}
           </div>
-        ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
-            {sharedFiles.map((f) => (
-              <li key={f.id}>
-                <button
-                  type="button"
-                  onClick={() => setPreviewFile(f)}
-                  disabled={!f.downloadUrl}
-                  className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition ${
-                    f.downloadUrl
-                      ? "hover:bg-muted/20 cursor-pointer"
-                      : "opacity-60 cursor-not-allowed"
-                  }`}
-                >
-                  <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
-                  <span className="flex-1 min-w-0">
-                    <span className="block truncate font-medium text-foreground">
-                      {f.title}
-                    </span>
-                    {(f.fileName || f.sizeBytes != null) && (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {[f.fileName, f.sizeBytes != null ? formatBytes(f.sizeBytes) : null]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {f.downloadUrl ? "Preview" : "Unavailable"}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
 
@@ -660,7 +457,7 @@ function SharedFilePreviewModal({
   file,
   onClose,
 }: {
-  file: SharedFile;
+  file: PartnerDriveFile;
   onClose: () => void;
 }) {
   const ct = file.contentType ?? "";

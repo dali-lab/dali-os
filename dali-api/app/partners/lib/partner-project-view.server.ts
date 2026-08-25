@@ -3,6 +3,11 @@ import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
+import { buildTimelineEpics } from "~/projects/lib/timeline-epics";
+import type {
+  TimelineEpic,
+  TimelineTerm,
+} from "~/projects/components/EpicsTimeline";
 
 // Which of the account's orgs holds the active partnership with this project —
 // used to surface the correct partnerSince date. Lives here (a .server helper)
@@ -21,11 +26,10 @@ export async function resolvePartnerProjectOrgId(
   return link?.partnerOrgId ?? null;
 }
 
-// The three time states every work item collapses to, so the UI can speak one
-// visual language: past (teal/settled), current (coral/live), planned (dashed).
-export type PartnerWorkState = "past" | "current" | "planned";
-
-export type PartnerProjectSprint = {
+// A sprint reduced to its progress counts. Sprints are no longer a surface of
+// their own on the partner hub — the timeline draws the work — but the live
+// ones still feed the hero readout at the top of the page.
+type SprintProgress = {
   id: string;
   name: string;
   startsAt: string;
@@ -35,27 +39,40 @@ export type PartnerProjectSprint = {
   open: number;
 };
 
-export type PartnerProjectStory = {
+// One shelf of the partner's Drive: collab-doc pages and uploaded files
+// together, the way the project hub's own Drive block reads.
+export type PartnerDriveDoc = {
   id: string;
   title: string;
-  status: "Todo" | "InProgress" | "Done";
-  successMetric: string | null;
-  acceptanceCriteria: string | null;
-  category: string | null;
-  priority: "Must" | "Should" | "Could" | "Wont" | null;
+  iconEmoji: string | null;
+  updatedAt: string;
 };
 
-export type PartnerProjectEpic = {
+// Partner-visible file uploads, each with a short-lived signed download URL
+// resolved server-side — the partner never sees a file id or an API surface.
+export type PartnerDriveFile = {
   id: string;
   title: string;
-  status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
-  startsAt: string | null;
-  endsAt: string | null;
-  // Scope (what we're building) and schedule (when) — the two parallel
-  // children of an epic. Sprints carry every status so the epic reads as a
-  // mini past→current→planned timeline.
-  stories: PartnerProjectStory[];
-  sprints: PartnerProjectSprint[];
+  fileName: string | null;
+  sizeBytes: number | null;
+  contentType: string | null;
+  downloadUrl: string | null;
+};
+
+export type PartnerDriveFolder = {
+  id: string;
+  title: string;
+  docs: PartnerDriveDoc[];
+  files: PartnerDriveFile[];
+};
+
+export type PartnerDrive = {
+  // Folders holding at least one shared item, in tree order. A folder is never
+  // listed for its own sake — it appears because something inside it was
+  // shared, and it shows only the shared items in it.
+  folders: PartnerDriveFolder[];
+  docs: PartnerDriveDoc[];
+  files: PartnerDriveFile[];
 };
 
 export type PartnerProjectViewData = {
@@ -79,11 +96,11 @@ export type PartnerProjectViewData = {
     endsAt: string;
     daysLeft: number;
   } | null;
-  // Roadmap: every non-cancelled epic (position order), each carrying its
-  // stories and its full sprint history. Sprints with no epic sit in
-  // ungroupedSprints.
-  epics: PartnerProjectEpic[];
-  ungroupedSprints: PartnerProjectSprint[];
+  // The same bars the project hub's planning timeline draws, built by the same
+  // resolver — minus the task level, which the partner hub hides. Every
+  // non-cancelled epic, in position order.
+  timelineEpics: TimelineEpic[];
+  timelineTerms: TimelineTerm[];
   nextSprint: { name: string; startsAt: string; endsAt: string } | null;
   recentlyDone: {
     id: string;
@@ -91,26 +108,11 @@ export type PartnerProjectViewData = {
     doneAt: string;
     domain: string | null;
   }[];
-  sharedPages: {
-    id: string;
-    title: string;
-    iconEmoji: string | null;
-    updatedAt: string;
-  }[];
-  // Partner-visible file uploads, each with a short-lived signed download URL
-  // resolved server-side — the partner never sees a file id or an API surface.
-  sharedFiles: {
-    id: string;
-    title: string;
-    fileName: string | null;
-    sizeBytes: number | null;
-    contentType: string | null;
-    downloadUrl: string | null;
-  }[];
+  drive: PartnerDrive;
 };
 
-// The whole partner read-surface for a project: current epics/sprints, roster,
-// recently-closed tasks, and partner-shared docs. Shared by the real partner
+// The whole partner read-surface for a project: the planning timeline, roster,
+// recently-closed tasks, and the shared Drive. Shared by the real partner
 // portal (partner.projects.$id.tsx, scoped to the signed-in partner's org)
 // and the in-app preview any signed-in member can open from the project page
 // (projects.$id.partner-view.tsx, which has no partnerOrgId of its own —
@@ -132,7 +134,11 @@ export async function loadPartnerProjectView(
       status: true,
       imageUrl: true,
       projectTerms: {
-        select: { term: { select: { code: true, sortKey: true } } },
+        select: {
+          term: {
+            select: { code: true, sortKey: true, startDate: true, endDate: true },
+          },
+        },
       },
     },
   });
@@ -152,9 +158,10 @@ export async function loadPartnerProjectView(
     partnership,
     assignments,
     epicsRaw,
-    ungroupedSprintRows,
+    sprintRows,
+    storyTaskRows,
     recentlyDone,
-    sharedPages,
+    pageRows,
     sharedFileRows,
   ] = await Promise.all([
       partnerOrgId
@@ -179,14 +186,15 @@ export async function loadPartnerProjectView(
             },
           })
         : Promise.resolve([]),
-      // Cancelled epics are dropped work — partners never see them. Each epic
-      // carries its stories (scope) and every sprint (schedule/history).
+      // Cancelled epics are dropped work — partners never see them. Stories
+      // come along because they're the timeline's second level of bars.
       prisma.epic.findMany({
         where: { projectId: project.id, status: { not: "Cancelled" } },
         orderBy: { position: "asc" },
         select: {
           id: true,
           title: true,
+          description: true,
           status: true,
           startsAt: true,
           endsAt: true,
@@ -195,20 +203,25 @@ export async function loadPartnerProjectView(
             select: {
               id: true,
               title: true,
+              notes: true,
               status: true,
-              successMetric: true,
-              acceptanceCriteria: true,
-              category: true,
-              priority: true,
+              startsAt: true,
+              endsAt: true,
             },
           },
-          sprints: { orderBy: { startsAt: "asc" }, select: sprintSelect },
         },
       }),
       prisma.sprint.findMany({
-        where: { projectId: project.id, epicId: null },
+        where: { projectId: project.id },
         orderBy: { startsAt: "asc" },
-        select: sprintSelect,
+        select: { ...sprintSelect, epicId: true },
+      }),
+      // Dates only. Tasks never reach the partner — they're read here because a
+      // story with no dates of its own is placed by the tasks under it, and a
+      // partner's story bar has to land where the internal timeline puts it.
+      prisma.task.findMany({
+        where: { projectId: project.id, archivedAt: null, storyId: { not: null } },
+        select: { id: true, storyId: true, startsAt: true, dueAt: true },
       }),
       prisma.task.findMany({
         where: { projectId: project.id, status: "Done" },
@@ -221,15 +234,26 @@ export async function loadPartnerProjectView(
           domain: { select: { displayName: true } },
         },
       }),
+      // Shared docs, plus every folder — folders carry no partnerVisible flag
+      // of their own, so which ones a partner sees falls out of what's in them
+      // (filtered below).
       prisma.page.findMany({
         where: {
           workspaceType: "Project",
           workspaceId: project.id,
           archivedAt: null,
-          partnerVisible: true,
+          OR: [{ partnerVisible: true }, { kind: "Folder" }],
         },
         orderBy: { position: "asc" },
-        select: { id: true, title: true, iconEmoji: true, updatedAt: true },
+        select: {
+          id: true,
+          title: true,
+          kind: true,
+          parentPageId: true,
+          partnerVisible: true,
+          iconEmoji: true,
+          updatedAt: true,
+        },
       }),
       prisma.projectFile.findMany({
         where: {
@@ -241,6 +265,7 @@ export async function loadPartnerProjectView(
         select: {
           id: true,
           title: true,
+          folderPageId: true,
           currentVersion: {
             select: { fileName: true, sizeBytes: true, s3Key: true, contentType: true },
           },
@@ -248,25 +273,20 @@ export async function loadPartnerProjectView(
       }),
     ]);
 
-  // One count pass over every sprint on the board — cheap, and it lets each
-  // sprint (past, current, or planned) show its own done/total.
-  const allSprintRows = [
-    ...epicsRaw.flatMap((e) => e.sprints),
-    ...ungroupedSprintRows,
-  ];
-  const counts = allSprintRows.length
+  // One count pass over every sprint on the board — cheap, and it's what the
+  // hero readout aggregates.
+  const counts = sprintRows.length
     ? await prisma.task.groupBy({
         by: ["sprintId", "status"],
         where: {
           projectId: project.id,
-          sprintId: { in: allSprintRows.map((s) => s.id) },
+          sprintId: { in: sprintRows.map((s) => s.id) },
         },
         _count: { _all: true },
       })
     : [];
 
-  type SprintRow = (typeof allSprintRows)[number];
-  function toSprintCard(s: SprintRow): PartnerProjectSprint {
+  const sprintProgress: SprintProgress[] = sprintRows.map((s) => {
     const mine = counts.filter((c) => c.sprintId === s.id);
     const total = mine.reduce((sum, c) => sum + c._count._all, 0);
     const done = mine
@@ -284,18 +304,25 @@ export async function loadPartnerProjectView(
       done,
       open: Math.max(0, total - cancelled - done),
     };
-  }
+  });
 
-  const epics: PartnerProjectEpic[] = epicsRaw.map((e) => ({
-    id: e.id,
-    title: e.title,
-    status: e.status,
-    startsAt: e.startsAt?.toISOString() ?? null,
-    endsAt: e.endsAt?.toISOString() ?? null,
-    stories: e.stories,
-    sprints: e.sprints.map(toSprintCard),
-  }));
-  const ungroupedSprints = ungroupedSprintRows.map(toSprintCard);
+  // The same span resolution the project hub runs, with the task level left
+  // empty: partners see what's being built and when, not who is on which card.
+  const timelineEpics = buildTimelineEpics({
+    epics: epicsRaw,
+    sprints: sprintRows,
+    tasks: storyTaskRows,
+    includeTasks: false,
+  });
+
+  // Term spans anchor the fixed one-week sprint grid and label its bands.
+  const timelineTerms: TimelineTerm[] = [...project.projectTerms]
+    .sort((a, b) => a.term.sortKey - b.term.sortKey)
+    .map((t) => ({
+      code: t.term.code,
+      startsAt: t.term.startDate.toISOString(),
+      endsAt: t.term.endDate.toISOString(),
+    }));
 
   // Dedupe the roster: one row per person, domains joined.
   const roster = new Map<
@@ -319,11 +346,9 @@ export async function loadPartnerProjectView(
     })),
   );
 
-  const allCards = allSprintRows.map(toSprintCard);
-
   // Aggregate the in-flight sprints into a single hero readout. One active
   // sprint → its name; several → a count. Deadline is the soonest end.
-  const activeCards = allCards.filter((c) => c.status === "Active");
+  const activeCards = sprintProgress.filter((c) => c.status === "Active");
   const momentum =
     activeCards.length > 0
       ? (() => {
@@ -349,9 +374,64 @@ export async function loadPartnerProjectView(
 
   // Soonest planned sprint anywhere on the board — the "what's next" pointer.
   const nextSprint =
-    allCards
+    sprintProgress
       .filter((c) => c.status === "Planned")
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
+
+  const toDriveFile = async (
+    f: (typeof sharedFileRows)[number],
+  ): Promise<PartnerDriveFile> => ({
+    id: f.id,
+    title: f.title,
+    fileName: f.currentVersion?.fileName ?? null,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
+    contentType: f.currentVersion?.contentType ?? null,
+    downloadUrl: f.currentVersion?.s3Key
+      ? await getDownloadUrl(f.currentVersion.s3Key)
+      : null,
+  });
+
+  const folderRows = pageRows.filter((p) => p.kind === "Folder");
+  const folderIds = new Set(folderRows.map((f) => f.id));
+  const sharedDocRows = pageRows.filter(
+    (p) => p.kind !== "Folder" && p.partnerVisible,
+  );
+  const driveFiles = await Promise.all(sharedFileRows.map(toDriveFile));
+  const filesById = new Map(driveFiles.map((f, i) => [sharedFileRows[i].id, f]));
+
+  const toDriveDoc = (p: (typeof sharedDocRows)[number]): PartnerDriveDoc => ({
+    id: p.id,
+    title: p.title,
+    iconEmoji: p.iconEmoji,
+    updatedAt: p.updatedAt.toISOString(),
+  });
+
+  // A doc or file whose folder isn't in the tree (archived out from under it)
+  // falls back to the root rather than disappearing.
+  const inFolder = (id: string | null) => (id && folderIds.has(id) ? id : null);
+
+  const folders = folderRows
+    .map((f) => ({
+      id: f.id,
+      title: f.title,
+      docs: sharedDocRows
+        .filter((p) => inFolder(p.parentPageId) === f.id)
+        .map(toDriveDoc),
+      files: sharedFileRows
+        .filter((r) => inFolder(r.folderPageId) === f.id)
+        .map((r) => filesById.get(r.id)!),
+    }))
+    .filter((f) => f.docs.length > 0 || f.files.length > 0);
+
+  const drive: PartnerDrive = {
+    folders,
+    docs: sharedDocRows
+      .filter((p) => inFolder(p.parentPageId) === null)
+      .map(toDriveDoc),
+    files: sharedFileRows
+      .filter((r) => inFolder(r.folderPageId) === null)
+      .map((r) => filesById.get(r.id)!),
+  };
 
   return {
     project: {
@@ -368,8 +448,8 @@ export async function loadPartnerProjectView(
     currentTermCode: current?.code ?? null,
     team,
     momentum,
-    epics,
-    ungroupedSprints,
+    timelineEpics,
+    timelineTerms,
     nextSprint: nextSprint
       ? {
           name: nextSprint.name,
@@ -383,23 +463,6 @@ export async function loadPartnerProjectView(
       doneAt: t.updatedAt.toISOString(),
       domain: t.domain?.displayName ?? null,
     })),
-    sharedPages: sharedPages.map((p) => ({
-      id: p.id,
-      title: p.title,
-      iconEmoji: p.iconEmoji,
-      updatedAt: p.updatedAt.toISOString(),
-    })),
-    sharedFiles: await Promise.all(
-      sharedFileRows.map(async (f) => ({
-        id: f.id,
-        title: f.title,
-        fileName: f.currentVersion?.fileName ?? null,
-        sizeBytes: f.currentVersion?.sizeBytes ?? null,
-        contentType: f.currentVersion?.contentType ?? null,
-        downloadUrl: f.currentVersion?.s3Key
-          ? await getDownloadUrl(f.currentVersion.s3Key)
-          : null,
-      })),
-    ),
+    drive,
   };
 }

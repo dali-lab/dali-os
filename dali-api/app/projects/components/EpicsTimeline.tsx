@@ -585,6 +585,8 @@ export function EpicsTimeline({
   taskCounts,
   terms = [],
   storyDependencies = [],
+  hiddenLevels,
+  compact = false,
   actions,
   editMode = false,
   onReschedule,
@@ -603,6 +605,18 @@ export function EpicsTimeline({
   // arrows between story bars. Edges whose endpoints aren't currently laid out
   // (epic scrolled out of view, or story level hidden) are skipped.
   storyDependencies?: StoryDependencyEdge[];
+  // Levels this timeline doesn't have at all — dropped from the legend, from
+  // the bars, and from the hover rows that count them. Distinct from the
+  // legend's own on/off toggles: those are the viewer's choice, this is the
+  // surface saying the level isn't part of what it shows. The partner hub
+  // hides tasks — a partner wants the shape of the work, not its granularity.
+  hiddenLevels?: Level[];
+  // A read-only roadmap rather than the planning surface. The grid sizes to
+  // its bars instead of holding the planning floor — that floor exists so the
+  // internal timeline doesn't change height every time an epic is added, and a
+  // hub showing one or two epics just gets an empty box out of it — and the
+  // card takes the wider radius the brand shells set their sections in.
+  compact?: boolean;
   // Rendered flush right on the level-toggle row, so the page's primary action
   // shares a line with the legend instead of taking a toolbar of its own.
   actions?: ReactNode;
@@ -726,6 +740,12 @@ export function EpicsTimeline({
     story: true,
     task: true,
   });
+
+  // A hidden level is off the surface entirely, so it outranks the viewer's
+  // toggle: `shown` is what actually draws, `levels` what the legend offers.
+  const hidden = (lvl: Level) => hiddenLevels?.includes(lvl) ?? false;
+  const shown = (lvl: Level) => !hidden(lvl) && visibleLevels[lvl];
+  const levels = (["epic", "story", "task"] as const).filter((l) => !hidden(l));
 
   const bounds = useMemo(() => {
     // All day math is in UTC days (see ../lib/timeline-days): dates arrive as
@@ -1014,7 +1034,11 @@ export function EpicsTimeline({
   // one thing that was still true. The note below floats over the empty grid
   // instead.
   const unscheduled = epics.filter((e) => !e.startsAt || !e.endsAt);
-  const gridHeight = Math.max(committedHeight, layout.height, MIN_GRID_H);
+  const gridHeight = Math.max(
+    committedHeight,
+    layout.height,
+    compact ? 0 : MIN_GRID_H,
+  );
   // Width of the scroll box, so the empty note can centre in what you can see
   // rather than in the (much wider) day grid.
   const viewWidth = Number.isFinite(view.end)
@@ -1024,7 +1048,7 @@ export function EpicsTimeline({
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        {(["epic", "story", "task"] as const).map((lvl) => {
+        {levels.map((lvl) => {
           const on = visibleLevels[lvl];
           return (
             <button
@@ -1074,7 +1098,7 @@ export function EpicsTimeline({
       <div
         className={cn(
           "overflow-hidden border border-border bg-card",
-          os ? "rounded-2xl" : "rounded-lg",
+          os || compact ? "rounded-2xl" : "rounded-lg",
         )}
       >
         {/* Scrolls in both axes. Giving the box a vertical scrollport is also
@@ -1246,7 +1270,7 @@ export function EpicsTimeline({
                     the bars, pointer-events-none keeps the bars clickable. A
                     backward edge (dependent starts before its blocker ends)
                     still draws — the bezier simply loops leftward. */}
-                {visibleLevels.story && storyDependencies.length > 0 && (
+                {shown("story") && storyDependencies.length > 0 && (
                   <svg
                     className="pointer-events-none absolute inset-0 z-20 overflow-visible"
                     width={bounds.width}
@@ -1291,7 +1315,7 @@ export function EpicsTimeline({
                 )}
 
                 {/* Bars, outermost first so nested levels paint on top. */}
-                {visibleLevels.epic &&
+                {shown("epic") &&
                   layout.epicBars.map((b) => {
                     const counts = taskCounts?.[b.epic.id];
                     return (
@@ -1324,11 +1348,18 @@ export function EpicsTimeline({
                             label: "Dates",
                             value: rangeLabel(b.epic.startsAt!, b.epic.endsAt!),
                           },
-                          {
-                            label: "Stories",
-                            value: String(b.epic.stories.length),
-                          },
-                          ...(counts
+                          // A hidden level is counted nowhere either — a card
+                          // reading "Tasks 0/0" on a surface with no task bars
+                          // is worse than no row at all.
+                          ...(hidden("story")
+                            ? []
+                            : [
+                                {
+                                  label: "Stories",
+                                  value: String(b.epic.stories.length),
+                                },
+                              ]),
+                          ...(counts && !hidden("task")
                             ? [
                                 {
                                   label: "Tasks",
@@ -1358,7 +1389,7 @@ export function EpicsTimeline({
                     );
                   })}
 
-                {visibleLevels.story &&
+                {shown("story") &&
                   layout.storyBars.map((b) => (
                     <HoverBar
                       key={b.story.id}
@@ -1389,7 +1420,9 @@ export function EpicsTimeline({
                           label: "Dates",
                           value: rangeLabel(b.story.startsAt, b.story.endsAt),
                         },
-                        { label: "Tasks", value: String(b.story.tasks.length) },
+                        ...(hidden("task")
+                          ? []
+                          : [{ label: "Tasks", value: String(b.story.tasks.length) }]),
                       ]}
                       onClick={guardClick(
                         onStoryClick
@@ -1413,7 +1446,7 @@ export function EpicsTimeline({
                     </HoverBar>
                   ))}
 
-                {visibleLevels.task &&
+                {shown("task") &&
                   layout.taskBars.map((b) => (
                     <HoverBar
                       key={b.task.id}

@@ -4077,9 +4077,10 @@ async function main() {
         });
       }
 
-      // Partner-portal demo data on Pat Tuck's project: an active sprint with
-      // mixed task statuses (sprint summary), a planned next sprint, and a
-      // shared + an internal page (share-toggle / partner-page visibility).
+      // Partner-portal demo data on Pat Tuck's project: an epic with two
+      // stories (the roadmap timeline the partner hub draws), an active sprint
+      // with mixed task statuses, a planned next sprint, and a shared + an
+      // internal page (share-toggle / partner-page visibility).
       const tuckProject = await prisma.project.findUnique({
         where: { id: "project-tuck-alumni" },
         select: { id: true },
@@ -4087,12 +4088,52 @@ async function main() {
       if (tuckProject) {
         await prisma.task.deleteMany({ where: { projectId: tuckProject.id } });
         await prisma.sprint.deleteMany({ where: { projectId: tuckProject.id } });
+        await prisma.userStory.deleteMany({
+          where: { epic: { projectId: tuckProject.id } },
+        });
+        await prisma.epic.deleteMany({ where: { projectId: tuckProject.id } });
+
+        // The roadmap the partner hub draws. Its timeline hides the task
+        // level, so what a partner sees is this epic bar and the two story
+        // bars inside it — one running now, one queued behind it.
+        const tuckEpic = await prisma.epic.create({
+          data: {
+            projectId: tuckProject.id,
+            title: "Mentor matching",
+            description: "Match alumni mentors to current Tuck students.",
+            status: "InProgress",
+            startsAt: new Date(Date.now() - 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 21 * 86_400_000),
+          },
+        });
+        const tuckStory = await prisma.userStory.create({
+          data: {
+            epicId: tuckEpic.id,
+            title: "An alumnus can be matched to a student",
+            status: "InProgress",
+            position: 0,
+            startsAt: new Date(Date.now() - 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 7 * 86_400_000),
+          },
+        });
+        await prisma.userStory.create({
+          data: {
+            epicId: tuckEpic.id,
+            title: "Mentors get a weekly digest",
+            status: "Todo",
+            position: 1,
+            startsAt: new Date(Date.now() + 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 21 * 86_400_000),
+          },
+        });
+
         // Relative dates, same reason as Sprint 1 above: Active must span
         // "now" or the sprint-lifecycle job closes it out from under the
         // partner-portal e2e expectations.
         const tuckSprint = await prisma.sprint.create({
           data: {
             projectId: tuckProject.id,
+            epicId: tuckEpic.id,
             name: "Sprint 3 — Matching flow",
             startsAt: new Date(Date.now() - 7 * 86_400_000),
             endsAt: new Date(Date.now() + 7 * 86_400_000),
@@ -4102,6 +4143,7 @@ async function main() {
         await prisma.sprint.create({
           data: {
             projectId: tuckProject.id,
+            epicId: tuckEpic.id,
             name: "Sprint 4 — Notifications",
             startsAt: new Date(Date.now() + 7 * 86_400_000),
             endsAt: new Date(Date.now() + 21 * 86_400_000),
@@ -4123,6 +4165,8 @@ async function main() {
             data: {
               projectId: tuckProject.id,
               sprintId: tuckSprint.id,
+              epicId: tuckEpic.id,
+              storyId: tuckStory.id,
               title: t.title,
               status: t.status,
               createdById: admin.id,
