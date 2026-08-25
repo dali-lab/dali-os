@@ -26,7 +26,7 @@ export const SELECT_TRIGGER_CLASS =
  *  hand-rolled popovers (the calendar's event and time-entry cards) wear the
  *  same one, so it lives here rather than being re-typed per page. */
 export const OS_SURFACE_CLASS =
-  "rounded-os-item border border-os-container bg-os-card shadow-[0_16px_40px_rgba(0,0,0,0.45)]";
+  "rounded-os-item border border-os-container bg-os-card shadow-[0_16px_40px_var(--color-os-shadow)]";
 
 export const OS_PANEL_CLASS = `z-[60] overflow-y-auto ${OS_SURFACE_CLASS} p-1.5 focus:outline-none`;
 

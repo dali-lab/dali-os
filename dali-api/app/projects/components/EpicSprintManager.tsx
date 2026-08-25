@@ -484,7 +484,7 @@ export function EpicSprintManager({
             {addMenuOpen && (
               <div
                 role="menu"
-                className="absolute bottom-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.45)]"
+                className="absolute bottom-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_-12px_32px_var(--color-os-shadow)]"
               >
                 {addStoryPicking ? (
                   epics.length === 0 ? (
@@ -1139,7 +1139,7 @@ function EpicDetail({
                       type="button"
                       disabled={busy}
                       aria-label={`Remove ${story.title}`}
-                      className="flex flex-shrink-0 text-os-grey transition-colors hover:text-white"
+                      className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
                       onClick={async () => {
                         if (
                           !(await dialog.confirm({
