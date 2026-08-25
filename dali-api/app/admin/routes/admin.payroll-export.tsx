@@ -43,7 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isAdmin(auth.user.sub))) return redirect("/admin/members");
 
   const url = new URL(request.url);
-  const requestedTermId = url.searchParams.get("termId");
+  const requestedTermId = url.searchParams.get("term");
   const selectedDomainIds = parseCsvParam(url.searchParams.get("domain"));
   const selectedLevels = parseCsvParam(url.searchParams.get("level")).filter(isLevel);
 
@@ -83,8 +83,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       listTermDomains(selectedTerm.id),
     ]);
 
+  // Flag the term bracketing now() so the picker can mark it "· current",
+  // matching every other term filter. The default term stays pickDefaultTermId.
+  const now = new Date();
+  const currentTermId =
+    terms.find((t) => t.startDate <= now && now <= t.endDate)?.id ?? null;
+
   return {
-    terms: terms.map((t) => ({ id: t.id, code: t.code })),
+    terms: terms.map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === currentTermId })),
     selectedTermId: selectedTerm.id,
     selectedTermCode: selectedTerm.code,
     projectRows,
@@ -157,7 +163,7 @@ export default function PayrollExport() {
     (filterActive ? 0 : coreSelected.size + instructorSelected.size);
 
   const csvHref = useMemo(() => {
-    const params = new URLSearchParams({ termId: selectedTermId });
+    const params = new URLSearchParams({ term: selectedTermId });
     if (selectedDomainIds.length > 0)
       params.set("domain", selectedDomainIds.join(","));
     if (selectedLevels.length > 0) params.set("level", selectedLevels.join(","));
@@ -213,13 +219,16 @@ export default function PayrollExport() {
             <Select
               value={selectedTermId}
               ariaLabel="Term"
-              options={terms.map((t) => ({ value: t.id, label: t.code }))}
+              options={terms.map((t) => ({
+                value: t.id,
+                label: t.isCurrent ? `${t.code} · current` : t.code,
+              }))}
               // Submit the picked value explicitly (a GET nav that preserves any
               // other params) — don't re-submit the form's DOM, which would still
               // hold the old value in the same tick.
               onChange={(value) => {
                 const params = new URLSearchParams(searchParams);
-                params.set("termId", value);
+                params.set("term", value);
                 // Domain pills are drawn from the selected term's assignments,
                 // so a term switch resets the role filter to avoid stale ids.
                 params.delete("domain");
