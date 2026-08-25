@@ -1423,12 +1423,23 @@ function TaskCard({
             META_TEXT(os),
           )}
         >
+          {/* Overdue tints the icon, not the date. Recolouring the text made
+              the one meta item you always read sit in a different ink from the
+              counts beside it, so the row read as broken rather than as a
+              warning — and on a card whose dates are simply set, that colour
+              had no meaning at all. */}
           {dateRange && (
             <MetaItem
-              icon={<CalendarDays aria-hidden className="w-3.5 h-3.5" />}
-              className={
-                overdue ? (os ? "text-os-amber" : "text-accent-coral") : undefined
+              icon={
+                <CalendarDays
+                  aria-hidden
+                  className={cn(
+                    "w-3.5 h-3.5",
+                    overdue && (os ? "text-os-amber" : "text-accent-coral"),
+                  )}
+                />
               }
+              title={overdue ? `Overdue — ${dateRange}` : undefined}
             >
               {dateRange}
             </MetaItem>

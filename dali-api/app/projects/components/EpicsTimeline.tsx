@@ -91,6 +91,14 @@ const BODY_BOTTOM_PAD = 20;
 // viewports, where 70vh alone would leave almost nothing.
 const MAX_BODY_H = "clamp(360px, 70vh, 880px)";
 
+// Floor on the grid itself, not just the scroll box. A project with one epic —
+// or none at all — used to draw a box only as tall as its bars, so the timeline
+// changed height every time an epic was added and read as a stray strip rather
+// than a surface. Flooring the *grid* (rather than the scroller) is what keeps
+// the day columns, sprint dividers and today marker ruled the whole way down;
+// a min-height on the box alone would leave blank card under them.
+const MIN_GRID_H = 420;
+
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
 const STORY_BOTTOM_PAD = 10;
@@ -376,8 +384,14 @@ function TimelineBarHover({
               </span>
             )}
           </div>
+          {/* Clamped, not "in full": an epic carried over from before the
+              description became a collab doc can hold several paragraphs of
+              plain text, and a popover that tall covers the bars you were
+              comparing it against. The modal has the whole thing. */}
           {description && (
-            <p className="mb-4 text-sm leading-relaxed text-os-grey">{description}</p>
+            <p className="mb-4 line-clamp-4 text-sm leading-relaxed text-os-grey">
+              {description}
+            </p>
           )}
           <div className="flex flex-col">
             {rows.map((r) => (
@@ -994,20 +1008,18 @@ export function EpicsTimeline({
     });
   }
 
-  // Empty state is returned only AFTER every hook above has run. Bailing out
-  // earlier changes the hook count between renders, so adding a project's
-  // first epic — 0 -> 1 — would crash the page with "Rendered more hooks than
-  // during the previous render".
-  if (epics.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground italic py-8 text-center border border-border rounded-lg bg-card">
-        No epics yet.
-      </div>
-    );
-  }
-
+  // A project with no epics still gets the whole grid — months, days, sprint
+  // bands and the today marker. The timeline is the project's calendar before
+  // it is a list of bars, so replacing it with "No epics yet." took away the
+  // one thing that was still true. The note below floats over the empty grid
+  // instead.
   const unscheduled = epics.filter((e) => !e.startsAt || !e.endsAt);
-  const gridHeight = Math.max(committedHeight, layout.height);
+  const gridHeight = Math.max(committedHeight, layout.height, MIN_GRID_H);
+  // Width of the scroll box, so the empty note can centre in what you can see
+  // rather than in the (much wider) day grid.
+  const viewWidth = Number.isFinite(view.end)
+    ? (view.end - view.start) * PX_PER_DAY
+    : 0;
 
   return (
     <div className="space-y-2.5">
@@ -1107,13 +1119,25 @@ export function EpicsTimeline({
                       style={{ left: b.left }}
                     />
                   ))}
-                  {todayLeft != null && (
-                    <div
-                      className="absolute inset-y-0 w-px bg-accent-coral/70"
-                      style={{ left: todayLeft }}
-                    />
-                  )}
                 </div>
+
+                {/* Today. It used to be a hairline in the background layer,
+                    which put it under every bar and under the header — on a
+                    busy month you could not find the date you were standing on.
+                    It draws above the bars now (below the header, so the header
+                    still wins) and starts under the header rather than behind
+                    them. */}
+                {todayLeft != null && (
+                  <div
+                    className="pointer-events-none absolute z-[25] w-0.5 -ml-px bg-accent-coral/80"
+                    style={{
+                      left: todayLeft,
+                      top: HEADER_ROWS * HEADER_ROW_H,
+                      bottom: 0,
+                    }}
+                    aria-hidden
+                  />
+                )}
 
                 {/* Sticky three-row header: month / day / sprint band. */}
                 <div
@@ -1204,6 +1228,18 @@ export function EpicsTimeline({
                       </div>
                     ))}
                   </div>
+
+                  {/* Rides in the sticky header so the label stays put while
+                      the body scrolls, and hangs off its bottom edge onto the
+                      line below. */}
+                  {todayLeft != null && (
+                    <div
+                      className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-full bg-accent-coral px-2 py-[3px] text-[10px] font-bold uppercase leading-none tracking-wide text-white"
+                      style={{ left: todayLeft, top: HEADER_ROWS * HEADER_ROW_H - 8 }}
+                    >
+                      Today
+                    </div>
+                  )}
                 </div>
 
                 {/* Dependency arrows between story bars. z-20 lifts them above
@@ -1431,6 +1467,35 @@ export function EpicsTimeline({
                       </span>
                     </HoverBar>
                   ))}
+                {/* Sits over the empty grid rather than replacing it. `sticky
+                    left-0` at the scroll box's own width is what centres it in
+                    what you can see — the grid behind it is months wide. */}
+                {epics.length === 0 && (
+                  <div
+                    className="pointer-events-none absolute left-0 z-[26]"
+                    style={{
+                      top: HEADER_ROWS * HEADER_ROW_H,
+                      bottom: 0,
+                      width: bounds.width,
+                    }}
+                  >
+                    <div
+                      className="sticky left-0 flex h-full items-center justify-center"
+                      style={{ width: viewWidth || "100%" }}
+                    >
+                      <p
+                        className={cn(
+                          "rounded-full border px-4 py-2 text-sm",
+                          os
+                            ? "border-os-container bg-os-card text-os-muted"
+                            : "border-border bg-card text-muted-foreground",
+                        )}
+                      >
+                        No epics yet — add one and it lands on this grid.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
