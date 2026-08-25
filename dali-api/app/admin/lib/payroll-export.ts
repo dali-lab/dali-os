@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
+import type { Level } from "~/lib/level";
 
 // ─── Constants per payroll spec ──────────────────────────────────────────────
 // Single hardcoded primary/secondary supervisor for the whole lab. Per spec,
@@ -46,11 +47,63 @@ export type PayrollRow = {
   hireEnd: string;
   chartStringType: string;
   chartString: string;
+  // Domain / level for the preview UI so admins can see what a role filter is
+  // narrowing to. Blank for Core/Instructor rows (they carry no domain/level).
+  // Not written to the CSV — payroll's column set is fixed.
+  domain: string;
+  level: string;
   // Tracked for the preview UI so admins can spot misconfigured projects /
   // missing job-code lookups before downloading. Omitted from CSV cells, where
   // a missing value is just an empty string.
   warnings: string[];
 };
+
+// Optional narrowing of the project-assignment section by domain and/or level.
+// Empty arrays / undefined mean "no narrowing". Used by admins who need to
+// submit one slice of hires (e.g. PMs, or all P1s) to payroll ahead of the
+// rest of the term's roster.
+export type PayrollFilter = {
+  domainIds?: string[];
+  levels?: Level[];
+};
+
+type AssignmentWhere = {
+  termId: string;
+  domainId?: { in: string[] };
+  level?: { in: Level[] };
+};
+
+// Build the Prisma `where` for the project-assignment payroll query. Pure and
+// exported so the filter semantics are unit-testable without a database.
+export function payrollAssignmentWhere(
+  termId: string,
+  filter: PayrollFilter = {},
+): AssignmentWhere {
+  const where: AssignmentWhere = { termId };
+  if (filter.domainIds && filter.domainIds.length > 0) {
+    where.domainId = { in: filter.domainIds };
+  }
+  if (filter.levels && filter.levels.length > 0) {
+    where.level = { in: filter.levels };
+  }
+  return where;
+}
+
+// Distinct domains that actually appear in a term's project assignments —
+// drives the domain filter pills on the export page so admins only see options
+// they can slice (no PM pill when nobody's a PM that term). Sorted by label.
+export async function listTermDomains(
+  termId: string,
+): Promise<{ id: string; displayName: string }[]> {
+  const rows = await prisma.projectAssignment.findMany({
+    where: { termId },
+    select: { domain: { select: { id: true, displayName: true } } },
+    distinct: ["domainId"],
+  });
+  return rows
+    .map((r) => ({ id: r.domain.id, displayName: r.domain.displayName }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
 
 export function formatDate(d: Date): string {
   // MMDDYY with no separators — the format JobX expects for hire dates. UTC to
@@ -221,6 +274,8 @@ async function buildNonProjectRows(
         hireEnd,
         chartStringType: CORE_INSTRUCTOR_CHART_STRING_TYPE,
         chartString: CORE_INSTRUCTOR_CHART_STRING,
+        domain: "",
+        level: "",
         warnings,
       };
     });
@@ -242,15 +297,19 @@ export async function buildInstructorRows(
   return buildNonProjectRows(termId, selectedUserIds, candidates, "Instructor");
 }
 
-export async function buildPayrollRows(termId: string): Promise<PayrollRow[]> {
+export async function buildPayrollRows(
+  termId: string,
+  filter: PayrollFilter = {},
+): Promise<PayrollRow[]> {
   const [assignments, jobLookups, term] = await Promise.all([
     prisma.projectAssignment.findMany({
-      where: { termId },
+      where: payrollAssignmentWhere(termId, filter),
       include: {
         user: { select: { netId: true, firstName: true, lastName: true } },
         project: {
           select: { name: true, chartStringType: true, chartString: true },
         },
+        domain: { select: { displayName: true } },
       },
       orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
     }),
@@ -286,6 +345,8 @@ export async function buildPayrollRows(termId: string): Promise<PayrollRow[]> {
       hireEnd,
       chartStringType: a.project.chartStringType ?? "",
       chartString: a.project.chartString ?? "",
+      domain: a.domain.displayName,
+      level: a.level,
       warnings,
     };
   });
