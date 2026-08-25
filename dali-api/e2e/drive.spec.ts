@@ -11,7 +11,9 @@ import type { Page, Locator } from '@playwright/test';
 //   - Breadcrumb bar: data-testid="drive-breadcrumb" with crumbs
 //     drive-crumb-scope / drive-crumb-<folderId>. Under the redesign the trail
 //     starts at the scope: the page's own <h1>Drive</h1> is the root, so there
-//     is no drive-crumb-root button repeating the word beneath it.
+//     is no drive-crumb-root button repeating the word beneath it — and the
+//     scope crumb itself only appears once you are inside a folder, where it
+//     is the way back up. At a drive's top level the trail is empty.
 //   - Search box: data-testid="drive-search" (client-side, across all drives);
 //     results container drive-search-results, hit rows drive-search-hit-<id>.
 //   - Type filter: a Select dropdown (data-testid="drive-filter"); options
@@ -56,11 +58,10 @@ test.describe('Drive hub', () => {
     await expect(page.getByTestId('drive-scope-mine')).toBeVisible();
     await expect(page.getByTestId('drive-scope-lab')).toBeVisible();
 
-    // Type filter control (Select dropdown) + view/details toolbar controls.
+    // Type filter control (Select dropdown) + view toolbar controls.
     await expect(page.getByTestId('drive-filter')).toBeVisible();
     await expect(page.getByTestId('drive-view-list')).toBeVisible();
     await expect(page.getByTestId('drive-view-grid')).toBeVisible();
-    await expect(page.getByTestId('drive-details-toggle')).toBeVisible();
 
     // No contextual New menu at the Drive root — you pick a drive first.
     await expect(page.getByTestId('drive-new-menu-lab')).toHaveCount(0);
@@ -97,8 +98,10 @@ test.describe('Drive hub', () => {
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
-    // Breadcrumb now shows the Lab scope crumb, and the New menu is present.
-    await expect(page.getByTestId('drive-crumb-scope')).toBeVisible();
+    // The contextual New menu is present. No crumb assertion here: at a
+    // drive's top level the redesign's trail is empty (the h1 is the root and
+    // the scope crumb would only lead back to this very page) — test C covers
+    // the crumb where it does navigate, one level down.
     await expect(page.getByTestId('drive-new-menu-lab')).toBeVisible();
 
     // Opening the New menu shows the Lab items.

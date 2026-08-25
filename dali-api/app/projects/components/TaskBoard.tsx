@@ -1,14 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
-import { Select } from "~/components/ui/floating";
-import { Button } from "~/components/ui/Button";
+import { Menu, MenuItem, Popover } from "~/components/ui/floating";
+import { Toggle } from "~/components/ui/Toggle";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
+import {
+  Archive,
+  Bell,
+  CalendarDays,
+  CheckSquare,
+  ChevronsLeft,
+  ChevronsRight,
+  Link2,
+  MessageSquare,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import {
+  FilterCountBadge,
+  FilterGroup,
+  FilterPill,
+  FilterResetButton,
+  FilterSectionLabel,
+  customizeButtonClass,
+  filterPanelClass,
+} from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import { ALL_TERMS, termFilterOrder } from "~/lib/terms.shared";
@@ -49,17 +71,79 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
-// The sprint select's "no filter" option. A Select needs a value for it; the
-// URL keeps meaning "no sprint param at all".
-const ALL_SPRINTS = "all";
-// Same, for the epic select. `null` epicFilter means "every epic".
-const ALL_EPICS = "all";
+// Each status owns a hue. The column header wears it as a solid bar and the
+// card carries it on its left edge, so a card still reads as belonging to its
+// column once it's dragged out of one. Brand palette, not the reference's —
+// the board's surfaces, borders and radii are unchanged.
+// Status colour. The os shell reads it from app.css rather than from utility
+// classes: a tint that works over the dark ground is a wash over light mode's
+// paper, and only a variable can say "tint here, solid there" — the same split
+// the timeline's level plates make. Values, and the reasoning, live beside
+// those plates in app.css.
+//
+// `fill`/`ink` dress the column header; `edge` is the hue at full strength for
+// the card's left border, which the dark tint is too faint to draw. They're
+// CSS values rather than classes because app.css closes with an unlayered
+// `* { border-color: var(--color-border) }` that outranks every border-colour
+// utility Tailwind emits — an inline style is what beats it.
+type StatusAccent = { fill: string; ink: string; edge: string };
 
-// The board's three filters are one set of controls, so they share a shape.
-const FILTER_CONTROL = (os: boolean): string =>
-  os
-    ? filterPillClass(true)
-    : "inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40";
+const osToken = (name: string): StatusAccent => ({
+  fill: `var(--os-status-${name}-fill)`,
+  ink: `var(--os-status-${name}-ink)`,
+  edge: `var(--os-status-${name}-edge)`,
+});
+
+const STATUS_ACCENT_OS: Record<TaskStatus, StatusAccent> = {
+  Backlog: osToken("backlog"),
+  Todo: osToken("todo"),
+  InProgress: osToken("progress"),
+  InReview: osToken("review"),
+  Done: osToken("done"),
+  Cancelled: osToken("cancelled"),
+};
+
+// The classic shell keeps its own light-only treatment — it has no dark ground
+// to tint against, so the soft fill it always used still reads.
+const STATUS_ACCENT_CLASSIC: Record<TaskStatus, StatusAccent> = {
+  Backlog: {
+    fill: "var(--color-muted)",
+    ink: "var(--color-foreground)",
+    edge: "var(--color-brand-gray)",
+  },
+  // Violet, not the brand coral: coral is the classic shell's primary action
+  // and its avatar fallback, so spending it on a column too made the board
+  // read as one wash of pink. It's also the hue the timeline gives an epic,
+  // which keeps the two views on one set.
+  Todo: {
+    fill: "color-mix(in srgb, #7c5ce0 22%, transparent)",
+    ink: "#5734b8",
+    edge: "#7c5ce0",
+  },
+  InProgress: {
+    fill: "color-mix(in srgb, var(--color-accent-teal) 22%, transparent)",
+    ink: "#00706f",
+    edge: "var(--color-accent-teal)",
+  },
+  InReview: {
+    fill: "color-mix(in srgb, var(--color-accent-yellow) 30%, transparent)",
+    ink: "#8a5300",
+    edge: "var(--color-accent-yellow)",
+  },
+  Done: {
+    fill: "color-mix(in srgb, var(--color-accent-green) 30%, transparent)",
+    ink: "#166a41",
+    edge: "var(--color-accent-green)",
+  },
+  Cancelled: {
+    fill: "color-mix(in srgb, var(--color-muted) 50%, transparent)",
+    ink: "var(--color-muted-foreground)",
+    edge: "var(--color-border)",
+  },
+};
+
+const statusAccent = (status: TaskStatus, os: boolean): StatusAccent =>
+  (os ? STATUS_ACCENT_OS : STATUS_ACCENT_CLASSIC)[status];
 
 // Columns that may be collapsed away when empty via the "Hide empty" toggle.
 // Deliberately only the low-traffic ends of the flow — hiding an empty
@@ -67,6 +151,9 @@ const FILTER_CONTROL = (os: boolean): string =>
 // actually drag into, whereas an empty Backlog/Cancelled is just wasted width.
 const COLLAPSIBLE_EMPTY_STATUSES: TaskStatus[] = ["Backlog", "Cancelled"];
 const HIDE_EMPTY_KEY = "taskboard:hideEmptyCols";
+// Columns the viewer has folded to a spine via the column menu. Per-browser,
+// like the hide-empty preference — a board layout choice, not a shared one.
+const COLLAPSED_KEY = "taskboard:collapsedCols";
 
 export function TaskBoard({
   projectId,
@@ -84,9 +171,15 @@ export function TaskBoard({
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
+  // Which column the open create form was launched from — its "Add task"
+  // seeds the modal's status so the card lands where you asked for it.
+  const [createStatus, setCreateStatus] = useState<TaskStatus>("Todo");
 
   useEffect(() => {
-    if (createNonce > 0) setIsCreating(true);
+    if (createNonce > 0) {
+      setCreateStatus("Todo");
+      setIsCreating(true);
+    }
   }, [createNonce]);
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -115,6 +208,35 @@ export function TaskBoard({
       return next;
     });
   }, []);
+  // Columns folded to a spine from their own ⋯ menu. A collapsed column stays
+  // a drop target (dropping on the spine appends to it) — it just stops
+  // spending width on cards you're not working in.
+  const [collapsedCols, setCollapsedCols] = useState<TaskStatus[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COLLAPSED_KEY);
+      if (raw) setCollapsedCols((JSON.parse(raw) as string[]).filter(isTaskStatus));
+    } catch {
+      /* unreadable / malformed: start expanded */
+    }
+  }, []);
+  const persistCollapsed = useCallback((next: TaskStatus[]) => {
+    setCollapsedCols(next);
+    try {
+      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
+    } catch {
+      /* private-mode / storage-disabled: fall back to in-memory only */
+    }
+  }, []);
+  const toggleCollapsed = useCallback(
+    (status: TaskStatus) =>
+      persistCollapsed(
+        collapsedCols.includes(status)
+          ? collapsedCols.filter((s) => s !== status)
+          : [...collapsedCols, status],
+      ),
+    [collapsedCols, persistCollapsed],
+  );
   const revalidator = useRevalidator();
 
   // Pull fresh board state after each successful mutation (so GitHub issue
@@ -156,6 +278,9 @@ export function TaskBoard({
   const epicFilter = searchParams.get("epic");
   const sprintFilter = searchParams.get("sprint");
   const termParam = searchParams.get("term");
+  // "Only my tasks" is a filter like the others, so it lives in the URL too —
+  // a board sliced to one person is a link worth sending.
+  const onlyMine = searchParams.get("mine") === "1";
 
   // The term filter only makes sense once the project spans more than one term
   // (its options are the project's terms + any term a sprint lands in). With
@@ -275,9 +400,21 @@ export function TaskBoard({
           : sprintTermById.get(t.sprintId) === effectiveTerm,
       );
     }
+    if (onlyMine) {
+      ts = ts.filter((t) => t.assignees.some((a) => a.id === currentUserId));
+    }
     if (query.trim()) ts = ts.filter((t) => taskMatchesQuery(t, query));
     return ts;
-  }, [tasks, epicFilter, sprintFilter, effectiveTerm, sprintTermById, query]);
+  }, [
+    tasks,
+    epicFilter,
+    sprintFilter,
+    effectiveTerm,
+    sprintTermById,
+    onlyMine,
+    currentUserId,
+    query,
+  ]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
@@ -462,8 +599,10 @@ export function TaskBoard({
         githubIssueUrl: null,
         githubIssueNumber: null,
         files: [],
+        commentCount: 0,
         createdBy: { id: currentUserId, name: currentUserName },
         createdAt: new Date().toISOString(),
+        activityAt: new Date().toISOString(),
         hasUnread: false,
       },
     ]);
@@ -481,12 +620,10 @@ export function TaskBoard({
     }
   }
 
-  // How many collapsible columns are currently empty (drives the toggle's
-  // visibility + its "Show empty (N)" count). Uses the filtered board so it
-  // reflects what's actually on screen under the active epic/sprint/term slice.
-  const collapsibleEmptyCount = COLLAPSIBLE_EMPTY_STATUSES.filter(
-    (s) => (board[s]?.length ?? 0) === 0,
-  ).length;
+  const startCreate = useCallback((status: TaskStatus) => {
+    setCreateStatus(status);
+    setIsCreating(true);
+  }, []);
 
   const columns: KanbanColumn<TaskCardModel>[] = TASK_STATUSES.filter(
     (status) =>
@@ -495,18 +632,175 @@ export function TaskBoard({
         COLLAPSIBLE_EMPTY_STATUSES.includes(status) &&
         (board[status]?.length ?? 0) === 0
       ),
-  ).map((status) => ({
-    id: status,
-    title: TASK_STATUS_LABELS[status],
-    cards: board[status] ?? [],
-    // The status columns keep the original taller drop zone.
-    listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
-  }));
+  ).map((status) => {
+    const accent = statusAccent(status, os);
+    const label = TASK_STATUS_LABELS[status];
+    const cards = board[status] ?? [];
+    const collapsed = collapsedCols.includes(status);
+    const roundedTop = os ? "rounded-t-os-item" : "rounded-t-lg";
+    // No overflow-hidden: the header rounds its own top corners, and clipping
+    // the shell would cut the unread dot off the corner of a card.
+    const shell = os
+      ? "flex-shrink-0 border border-transparent rounded-os-item bg-os-card flex flex-col"
+      : "flex-shrink-0 border rounded-lg border-border bg-card flex flex-col";
 
-  // Epic pills slice the board to one epic's tasks, plus "No epic" for tasks
-  // that aren't in any epic. Under a term filter the pill set is pruned to
-  // epics with work in that term.
+    if (collapsed) {
+      return {
+        id: status,
+        title: null,
+        // A spine: the column's colour, its name turned on its side, and its
+        // count — enough to aim a drag at without spending a column's width.
+        className: cn(shell, "w-11"),
+        headerClassName: cn("flex items-center justify-center px-1 py-2", roundedTop),
+        headerStyle: { background: accent.fill, color: accent.ink },
+        headerExtra: (
+          <button
+            type="button"
+            onClick={() => toggleCollapsed(status)}
+            className="rounded p-0.5 text-current hover:bg-current/10"
+            aria-label={`Expand ${label} column`}
+            title={`Expand ${label}`}
+          >
+            <ChevronsRight className="h-4 w-4" aria-hidden />
+          </button>
+        ),
+        cards: [],
+        listClassName: "flex flex-1 flex-col items-center gap-2 py-3",
+        renderEmpty: () => (
+          <button
+            type="button"
+            onClick={() => toggleCollapsed(status)}
+            className="flex flex-1 flex-col items-center gap-2 text-muted-foreground hover:text-foreground"
+            title={`Expand ${label}`}
+          >
+            <span className={cn(META_TEXT(os), "font-medium")}>{cards.length}</span>
+            <span
+              className={cn("whitespace-nowrap", os ? "text-sm" : "text-xs")}
+              style={{ writingMode: "vertical-rl" }}
+            >
+              {label}
+            </span>
+          </button>
+        ),
+      };
+    }
+
+    return {
+      id: status,
+      // The title carries the band's ink itself: BoardColumn puts
+      // `text-foreground` on its title slot, which would otherwise win over
+      // the colour inherited from the header.
+      title: <span style={{ color: accent.ink }}>{label}</span>,
+      className: cn(shell, "w-64"),
+      headerClassName: cn(
+        "flex items-center justify-between gap-2 px-3 py-2",
+        roundedTop,
+      ),
+      headerStyle: { background: accent.fill, color: accent.ink },
+      headerExtra: (
+        <div className="flex shrink-0 items-center gap-1 text-current">
+          <span
+            className={cn(
+              "rounded-full border border-current/30 px-2 py-0.5 font-medium tabular-nums",
+              META_TEXT(os),
+            )}
+          >
+            {cards.length}
+          </span>
+          <Menu
+            align="right"
+            ariaLabel={`${label} column actions`}
+            trigger={
+              <button
+                type="button"
+                className="rounded p-0.5 text-current hover:bg-current/10"
+                aria-label={`${label} column actions`}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </button>
+            }
+          >
+            {canManage && (
+              <MenuItem
+                icon={<Plus className="h-4 w-4" aria-hidden />}
+                onSelect={() => startCreate(status)}
+              >
+                Add task
+              </MenuItem>
+            )}
+            <MenuItem
+              icon={<ChevronsLeft className="h-4 w-4" aria-hidden />}
+              onSelect={() => toggleCollapsed(status)}
+            >
+              Collapse column
+            </MenuItem>
+          </Menu>
+        </div>
+      ),
+      cards,
+      // The status columns keep the original taller drop zone.
+      listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
+      listHeader: canManage ? (
+        <button
+          type="button"
+          onClick={() => startCreate(status)}
+          className={cn(
+            "mb-2 flex w-full items-center justify-center gap-1.5 border border-dashed transition-colors",
+            META_TEXT(os),
+            os
+              ? "rounded-os-item border-os-container py-2 text-os-grey hover:border-os-container-hi hover:bg-os-container/30 hover:text-foreground"
+              : "rounded-md border-border py-1.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+          )}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          Add new task
+        </button>
+      ) : null,
+    };
+  });
+
+  // The epic control only earns its place when the project has epics to slice
+  // by. Under a term filter the option set is pruned to epics with work in it.
   const showEpicFilter = visibleEpics.length > 0;
+
+  // What the Customize badge counts: every active slice bar the search box,
+  // which has its own visible field. The term filter counts only when it isn't
+  // sitting on its default (this term, or All when the project doesn't run it).
+  const defaultTerm = options.currentTermId ?? ALL_TERMS;
+  const activeFilterCount =
+    (epicFilter ? 1 : 0) +
+    (sprintFilter ? 1 : 0) +
+    (onlyMine ? 1 : 0) +
+    (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
+
+  // Option lists for the two comboboxes. `null` is the "no filter" row in
+  // both, and leads so it's the first thing an empty query offers.
+  const epicOptions: ComboOption[] = useMemo(
+    () => [
+      { value: null, label: "All epics" },
+      ...visibleEpics.map((e) => ({ value: e.id as string | null, label: e.title })),
+      { value: NO_EPIC as string | null, label: "No epic" },
+    ],
+    [visibleEpics],
+  );
+  const sprintOptions: ComboOption[] = useMemo(
+    () => [
+      { value: null, label: "All sprints" },
+      ...epicSprints.map((sp) => ({ value: sp.id as string | null, label: sp.name })),
+    ],
+    [epicSprints],
+  );
+
+  const resetFilters = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const key of ["epic", "sprint", "term", "mine"]) next.delete(key);
+        return next;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  }, [setSearchParams]);
 
   return (
     <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
@@ -519,107 +813,154 @@ export function TaskBoard({
           aria-label="Search tasks on this board"
           containerClassName={cn("shrink-0", os ? "w-56 sm:w-72" : "w-44 sm:w-56")}
         />
-        {termFilterEnabled && (
-          <label
-            className={cn(
-              "inline-flex shrink-0 items-center gap-2 text-muted-foreground",
-              os ? "text-sm" : "text-xs",
-            )}
-          >
-            <span className="font-medium">Term</span>
-            <Select
-              value={effectiveTerm}
-              // Shared ordering/labelling ("All terms" first, current term
-              // marked "· current"); kept as a bare Select rather than
-              // <TermFilter> so setTermFilter can also clear the sprint sub-filter.
-              options={termFilterOrder(
-                options.terms.map((t) => ({
-                  id: t.id,
-                  code: t.code,
-                  isCurrent: t.id === options.currentTermId,
-                })),
-              )}
-              ariaLabel="Filter board by term"
-              buttonClassName={FILTER_CONTROL(os)}
-              onChange={(value) => setTermFilter(value)}
-            />
-          </label>
-        )}
-        {showEpicFilter && (
-          <Select
-            value={epicFilter ?? ALL_EPICS}
-            options={[
-              { value: ALL_EPICS, label: "All epics" },
-              ...visibleEpics.map((e) => ({ value: e.id, label: e.title })),
-              { value: NO_EPIC, label: "No epic" },
-            ]}
-            ariaLabel="Filter board by epic"
-            buttonClassName={FILTER_CONTROL(os)}
-            onChange={(value) => setEpicFilter(value === ALL_EPICS ? null : value)}
-          />
-        )}
-        {epicSprints.length > 0 && (
-          <Select
-            value={sprintFilter ?? ALL_SPRINTS}
-            options={[
-              { value: ALL_SPRINTS, label: "All sprints" },
-              ...epicSprints.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-            ariaLabel="Filter board by sprint"
-            buttonClassName={FILTER_CONTROL(os)}
-            onChange={(value) => setParam("sprint", value === ALL_SPRINTS ? null : value)}
-          />
-        )}
-        {(canManage || collapsibleEmptyCount > 0) && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {collapsibleEmptyCount > 0 && (
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Every slice lives behind this one control. The filters used to sit
+              in the toolbar as a row of selects that grew with the project;
+              folding them into a panel keeps the board's own width for the
+              board, and the badge says how many are on so a filtered board is
+              never silently filtered. */}
+          <Popover
+            align="right"
+            ariaLabel="Customize board"
+            panelClassName={filterPanelClass(os)}
+            trigger={
               <button
                 type="button"
-                onClick={toggleHideEmpty}
-                aria-pressed={hideEmptyCols}
-                title={
-                  hideEmptyCols
-                    ? "Show empty Backlog / Cancelled columns"
-                    : "Hide empty Backlog / Cancelled columns"
-                }
+                className={customizeButtonClass(os, activeFilterCount > 0)}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                Customize
+                <FilterCountBadge os={os} count={activeFilterCount} />
+              </button>
+            }
+          >
+            <div className="flex flex-col gap-4">
+              <section className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <FilterSectionLabel os={os}>Filters</FilterSectionLabel>
+                  {activeFilterCount > 0 && (
+                    <FilterResetButton os={os} onClick={resetFilters} />
+                  )}
+                </div>
+
+                {termFilterEnabled && (
+                  <FilterGroup label="Term" os={os}>
+                    {termFilterOrder(
+                      options.terms.map((t) => ({
+                        id: t.id,
+                        code: t.code,
+                        isCurrent: t.id === options.currentTermId,
+                      })),
+                    ).map((opt) => (
+                      <FilterPill
+                        key={opt.value}
+                        os={os}
+                        selected={effectiveTerm === opt.value}
+                        onClick={() => setTermFilter(opt.value)}
+                      >
+                        {opt.label}
+                      </FilterPill>
+                    ))}
+                  </FilterGroup>
+                )}
+
+                {showEpicFilter && (
+                  <FilterCombobox
+                    id="taskboard-epic-options"
+                    label="Epic"
+                    ariaLabel="Filter board by epic"
+                    placeholder="Search epics…"
+                    os={os}
+                    options={epicOptions}
+                    value={epicFilter}
+                    onChange={setEpicFilter}
+                  />
+                )}
+
+                {epicSprints.length > 0 && (
+                  <FilterCombobox
+                    id="taskboard-sprint-options"
+                    label="Sprint"
+                    ariaLabel="Filter board by sprint"
+                    placeholder="Search sprints…"
+                    os={os}
+                    options={sprintOptions}
+                    value={sprintFilter}
+                    onChange={(next) => setParam("sprint", next)}
+                  />
+                )}
+
+                <Toggle
+                  label="Only my tasks"
+                  checked={onlyMine}
+                  onChange={(e) => setParam("mine", e.target.checked ? "1" : null)}
+                />
+              </section>
+
+              <section
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border transition-colors",
-                  os
-                    ? "border-border px-4 py-2 text-sm text-os-grey hover:bg-os-container hover:text-foreground"
-                    : "border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/30",
+                  "flex flex-col gap-3 border-t pt-3",
+                  os ? "border-os-container" : "border-border",
                 )}
               >
-                {hideEmptyCols ? (
-                  <Eye className="w-3.5 h-3.5" aria-hidden />
-                ) : (
-                  <EyeOff className="w-3.5 h-3.5" aria-hidden />
+                <FilterSectionLabel os={os}>Layout</FilterSectionLabel>
+                <Toggle
+                  label="Hide empty Backlog / Cancelled"
+                  checked={hideEmptyCols}
+                  onChange={toggleHideEmpty}
+                />
+                {collapsedCols.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => persistCollapsed([])}
+                    className={cn(
+                      "self-start text-xs underline-offset-2 hover:underline",
+                      os ? "text-os-accent" : "text-accent-coral",
+                    )}
+                  >
+                    Expand {collapsedCols.length} collapsed column
+                    {collapsedCols.length === 1 ? "" : "s"}
+                  </button>
                 )}
-                {hideEmptyCols ? `Show empty (${collapsibleEmptyCount})` : "Hide empty"}
-              </button>
-            )}
-            {canManage && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void runArchive()}
-                  disabled={archiving}
+              </section>
+            </div>
+          </Popover>
+
+          {canManage && (
+            <Menu
+              align="right"
+              ariaLabel="Board actions"
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Board actions"
+                  className={
+                    os
+                      ? "os-icon-btn"
+                      : "rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }
                 >
-                  <Archive className="w-3.5 h-3.5" />
-                  {archiving ? "Archiving…" : "Archive"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowArchived(true)}
-                >
-                  <Archive className="w-3.5 h-3.5" />
-                  Archived
-                </Button>
-              </>
-            )}
-          </div>
-        )}
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </button>
+              }
+            >
+              <MenuItem
+                icon={<Archive className="h-4 w-4" aria-hidden />}
+                onSelect={() => void runArchive()}
+                disabled={archiving}
+              >
+                {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+              </MenuItem>
+              <MenuItem
+                icon={<Archive className="h-4 w-4" aria-hidden />}
+                onSelect={() => setShowArchived(true)}
+              >
+                View archived tasks
+              </MenuItem>
+            </Menu>
+          )}
+        </div>
       </div>
 
       {query.trim() && filteredTasks.length === 0 && (
@@ -635,6 +976,7 @@ export function TaskBoard({
         getCardData={(t) => ({ taskId: t.id, fromStatus: t.status })}
         draggable={canManage}
         sortable
+        dropPlaceholder
         onDragEnd={handleDragEnd}
         error={error}
         renderOverlay={(activeId) => {
@@ -676,6 +1018,7 @@ export function TaskBoard({
           defaultEpicId={
             epicFilter && epicFilter !== NO_EPIC ? epicFilter : null
           }
+          defaultStatus={createStatus}
           onClose={() => setIsCreating(false)}
           onCreate={handleCreate}
         />
@@ -690,6 +1033,178 @@ export function TaskBoard({
     </div>
   );
 }
+
+// ── Customize panel furniture ────────────────────────────────────────────
+// The filters are pills rather than <Select>s on purpose: the panel is itself
+// a floating layer, and a select's own portaled listbox counts as an outside
+// press against it — picking an option would dismiss the panel it was picked
+// in. Pills also let the whole slice be read at a glance, which is the point
+// of collecting the filters in one place.
+
+// A pill per option stops working once a project has more than a handful of
+// epics (or a long-running epic more than a handful of sprints) — the panel
+// turns into a wall you have to read — so both are type-to-filter comboboxes.
+//
+// Hand-rolled rather than <Select>: the panel it sits in is itself a floating
+// layer, and a portaled listbox counts as an outside press against it, so
+// choosing an option would dismiss the panel it was chosen in. For the same
+// reason the list is in flow rather than floating — the panel is a scroll
+// container and would clip it.
+export type ComboOption = { value: string | null; label: string };
+
+function FilterCombobox({
+  label,
+  os,
+  options,
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  id,
+}: {
+  label: string;
+  os: boolean;
+  options: ComboOption[];
+  value: string | null;
+  onChange: (next: string | null) => void;
+  placeholder: string;
+  ariaLabel: string;
+  /** Unique per mounted combobox — the listbox and its rows are keyed off it. */
+  id: string;
+}) {
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? options[0]?.label ?? "";
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  }, [options, query]);
+
+  // A stale index from the previous query would highlight the wrong row (or
+  // none), so every narrowing puts the cursor back on the first match.
+  useEffect(() => setActiveIndex(0), [query]);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+  }, []);
+
+  const commit = (next: string | null) => {
+    onChange(next);
+    close();
+  };
+
+  return (
+    <div
+      className="flex flex-col gap-1.5"
+      // Blur is scoped to the whole control, not the input: closing on the
+      // input's own blur meant a press anywhere in the list — its padding, the
+      // gap between rows, the scrollbar — tore the list down mid-click, which
+      // is what read as the field flickering.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) close();
+      }}
+    >
+      <span className={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}>
+        {label}
+      </span>
+      <div>
+        <input
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={id}
+          aria-autocomplete="list"
+          aria-label={ariaLabel}
+          aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
+          value={open ? query : selectedLabel}
+          placeholder={placeholder}
+          // Opened by an actual press, not by focus: the panel moves focus to
+          // its first control when it opens, and opening on focus meant the
+          // list unfurled on its own the moment you hit Customize.
+          onMouseDown={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              if (!open) return setOpen(true);
+              setActiveIndex((i) => {
+                const n = matches.length;
+                if (n === 0) return 0;
+                return e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+              });
+            } else if (e.key === "Enter") {
+              if (!open || !matches[activeIndex]) return;
+              e.preventDefault();
+              commit(matches[activeIndex].value);
+            } else if (e.key === "Escape" && open) {
+              // Close the list, not the whole Customize panel behind it.
+              e.preventDefault();
+              e.stopPropagation();
+              close();
+            }
+          }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          className={cn(
+            "w-full rounded-full border px-3 py-1.5 text-xs transition-colors focus:outline-none",
+            os
+              ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
+              : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+          )}
+        />
+        {open && (
+          <ul
+            id={id}
+            role="listbox"
+            // Nothing inside the list should move focus off the input — a blur
+            // and re-focus between mousedown and click is exactly the flicker.
+            onMouseDown={(e) => e.preventDefault()}
+            className={cn(
+              "mt-1 max-h-40 w-full overflow-y-auto rounded-lg border p-1",
+              os ? "border-os-container bg-os-well" : "border-border bg-background",
+            )}
+          >
+            {matches.length === 0 && (
+              <li className="px-2 py-1.5 text-xs text-muted-foreground">
+                Nothing matches &ldquo;{query.trim()}&rdquo;.
+              </li>
+            )}
+            {matches.map((o, i) => (
+              <li key={o.value ?? "__all"}>
+                <button
+                  type="button"
+                  id={`${id}-${i}`}
+                  role="option"
+                  aria-selected={o.value === value}
+                  tabIndex={-1}
+                  onClick={() => commit(o.value)}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  className={cn(
+                    "block w-full truncate rounded px-2 py-1.5 text-left text-xs transition-colors",
+                    i === activeIndex && (os ? "bg-os-container" : "bg-muted"),
+                    o.value === value
+                      ? os
+                        ? "text-os-accent"
+                        : "text-accent-coral"
+                      : "text-foreground",
+                  )}
+                >
+                  {o.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 type ArchivedTask = {
   id: string;
@@ -843,29 +1358,21 @@ function TaskCard({
 
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
+  const dateRange = formatDateRange(card.startsAt, card.dueAt);
 
   return (
     <div
       {...dragHandleProps}
       data-testid="task-card"
+      style={{ borderLeftColor: statusAccent(card.status, os).edge }}
       className={cn(
-        "relative border flex focus-within:ring-2",
+        "relative border border-l-4 flex focus-within:ring-2",
         os
           ? "rounded-os-item border-transparent bg-os-well text-[15px] focus-within:ring-os-accent/40"
           : "rounded-md border-border bg-background text-sm focus-within:ring-accent-coral/30",
         isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
       )}
     >
-      {card.hasUnread && (
-        <span
-          className={cn(
-            "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2",
-            os ? "bg-os-accent ring-os-card" : "bg-accent-coral ring-background",
-          )}
-          title="New updates since you last opened this task"
-          aria-label="New updates since you last opened this task"
-        />
-      )}
       <div
         role="button"
         tabIndex={0}
@@ -881,82 +1388,145 @@ function TaskCard({
           os ? "p-3" : "p-2.5",
         )}
       >
-        <div className="text-foreground">{card.title}</div>
+        {/* Title line — a bell ahead of the name when the task has moved on
+            since you last opened it (a field or description edit, a comment,
+            an attached file, a GitHub link: anything that stamps activityAt). */}
+        <div className="flex items-start gap-1.5">
+          {card.hasUnread && (
+            <Bell
+              aria-label={`Updated ${formatSince(card.activityAt)} ago — you haven't opened it since`}
+              className={cn(
+                "mt-0.5 h-3.5 w-3.5 shrink-0",
+                os ? "text-os-accent" : "text-accent-coral",
+              )}
+            />
+          )}
+          <span className="min-w-0 text-foreground">{card.title}</span>
+        </div>
+
         {card.assignees.length > 0 && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className={cn(META_TEXT(os), "text-muted-foreground truncate")}>
-              {card.assignees.map((a) => a.name).join(", ")}
-            </span>
+          <div
+            className={cn(
+              "mt-1 truncate text-muted-foreground",
+              META_TEXT(os),
+            )}
+            title={card.assignees.map((a) => a.name).join(", ")}
+          >
+            {card.assignees.map((a) => a.name).join(", ")}
           </div>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {card.dueAt && (
-            <span
-              className={cn(
-                META_TEXT(os),
-                "px-1.5 py-0.5 border",
-                os ? "rounded-full" : "rounded-md",
-                overdue
-                  ? os
-                    ? "border-transparent bg-os-amber/20 text-os-amber"
-                    : "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
-                  : os
-                    ? "border-transparent bg-os-container text-os-grey"
-                    : "border-border text-muted-foreground",
-              )}
+
+        {/* Counts and dates, each an icon beside its value. */}
+        <div
+          className={cn(
+            "mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-muted-foreground",
+            META_TEXT(os),
+          )}
+        >
+          {dateRange && (
+            <MetaItem
+              icon={<CalendarDays aria-hidden className="w-3.5 h-3.5" />}
+              className={
+                overdue ? (os ? "text-os-amber" : "text-accent-coral") : undefined
+              }
             >
-              Due {formatDuePill(card.dueAt)}
-            </span>
+              {dateRange}
+            </MetaItem>
+          )}
+          {checklist && checklist.length > 0 && (
+            <MetaItem
+              icon={<CheckSquare aria-hidden className="w-3.5 h-3.5" />}
+              title={`${checklistDone} of ${checklist.length} subtasks done`}
+            >
+              {checklistDone}/{checklist.length}
+            </MetaItem>
+          )}
+          {card.commentCount > 0 && (
+            <MetaItem
+              icon={<MessageSquare aria-hidden className="w-3.5 h-3.5" />}
+              title={`${card.commentCount} comment${card.commentCount === 1 ? "" : "s"}`}
+            >
+              {card.commentCount}
+            </MetaItem>
+          )}
+          {card.files.length > 0 && (
+            <MetaItem
+              icon={<Paperclip aria-hidden className="w-3.5 h-3.5" />}
+              title={`${card.files.length} attached file${card.files.length === 1 ? "" : "s"}`}
+            >
+              {card.files.length}
+            </MetaItem>
+          )}
+          {card.githubIssueNumber !== null && (
+            <MetaItem
+              icon={<Link2 aria-hidden className="w-3.5 h-3.5" />}
+              title={`GitHub issue #${card.githubIssueNumber}`}
+            >
+              {card.githubIssueNumber}
+            </MetaItem>
           )}
           {card.domain && (
             <span
               className={cn(
-                META_TEXT(os),
                 "px-1.5 py-0.5 border",
                 os
                   ? "rounded-full border-transparent bg-os-accent/15 text-os-accent"
-                  : "rounded-md bg-blue-50 text-blue-700 border-blue-100",
+                  : "rounded-md border-blue-100 bg-blue-50 text-blue-700",
               )}
             >
               {card.domain.name}
-            </span>
-          )}
-          {checklist && checklist.length > 0 && (
-            <span
-              className={cn(
-                META_TEXT(os),
-                "px-1.5 py-0.5 border text-muted-foreground",
-                os ? "rounded-full border-transparent bg-os-container" : "rounded-md border-border",
-              )}
-            >
-              {checklistDone}/{checklist.length}
-            </span>
-          )}
-          {card.githubIssueNumber !== null && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-0.5 text-muted-foreground",
-                META_TEXT(os),
-              )}
-            >
-              <Github aria-hidden className="w-3 h-3" />#{card.githubIssueNumber}
-            </span>
-          )}
-          {card.files.length > 0 && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-0.5 text-muted-foreground",
-                META_TEXT(os),
-              )}
-            >
-              <Paperclip aria-hidden className="w-3 h-3" />
-              {card.files.length}
             </span>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+// One fact on the card's bottom line: an icon and its value, nothing else.
+// Borderless on purpose — a row of bordered pills competes with the title,
+// and these are counts, not labels.
+function MetaItem({
+  icon,
+  title,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span title={title} className={cn("inline-flex items-center gap-1", className)}>
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+// The card's date line. A task with both bounds shows its span ("Sep 1 –
+// Sep 30"); one bound names which end it is, so a start-only task doesn't
+// read as a deadline.
+function formatDateRange(startsAt: string | null, dueAt: string | null): string | null {
+  if (startsAt && dueAt) return `${formatDuePill(startsAt)} – ${formatDuePill(dueAt)}`;
+  if (dueAt) return `Due ${formatDuePill(dueAt)}`;
+  if (startsAt) return `Start ${formatDuePill(startsAt)}`;
+  return null;
+}
+
+// Compact age for the "Updated" chip — "3h", "2d", "5w". Anything older than
+// a year is just "1y+"; the exact stamp is in the chip's title.
+function formatSince(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 52) return `${weeks}w`;
+  return "1y+";
 }
 
 // Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".

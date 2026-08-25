@@ -151,13 +151,13 @@ function barX(level: Level, left: number, width: number, os: boolean) {
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 // One hue per level, held as raw hex because the bars mix border, translucent
-// fill and label ink from the same value. All three are brand tokens
-// (accent-coral / accent-teal / accent-pink) and hold their value in both
-// themes, so the bars read the same light or dark.
+// fill and label ink from the same value. The same three the os plates carry
+// (`--os-*-fill` in app.css) so both shells tell the same story, and all three
+// are brand values that hold in either theme.
 export const LEVEL_COLOR: Record<Level, string> = {
-  epic: "#FF8B81",
+  epic: "#7C5CE0",
   story: "#00ADAB",
-  task: "#E68FBE",
+  task: "#E0930B",
 };
 
 // The dali.os plates for the same three levels. The design colours a bar by
@@ -487,6 +487,14 @@ function HoverBar({
 }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const os = useFeatureFlag("os-redesign");
+  // The grip takes the level's ink, not white: an epic or story bar is an
+  // outline over the page in the os shell, so a white pill on it vanished
+  // against light mode's paper. Ink is by construction the readable extreme
+  // for that level — deep on paper, pale on the dark ground — so it holds on
+  // an outlined bar and on the filled task plate alike. Opacity, not a second
+  // colour, does the at-rest fade.
+  const gripColor = os ? OS_LEVEL[kind].ink : LEVEL_COLOR[kind];
   return (
     <>
       <div
@@ -532,7 +540,10 @@ function HoverBar({
                 onPointerDown={onResizeStart(edge)}
                 aria-hidden
               >
-                <span className="h-1/2 max-h-3 min-h-2 w-[3px] rounded-full bg-white/45 transition-colors group-hover/grip:bg-white" />
+                <span
+                  className="h-1/2 max-h-3 min-h-2 w-[3px] rounded-full opacity-70 transition-opacity group-hover/grip:opacity-100"
+                  style={{ background: gripColor }}
+                />
               </span>
             ))}
           </>
@@ -1014,27 +1025,32 @@ export function EpicsTimeline({
               className={cn(
                 "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-opacity",
                 on
-                  ? os
-                    ? "text-white"
-                    : "text-foreground"
+                  ? "text-foreground"
                   : os
                     ? "border-os-container bg-os-well text-os-grey opacity-60"
                     : "border-border text-muted-foreground opacity-50",
               )}
+              // A wash of the level's hue behind the page's own ink, rather
+              // than the plate itself. Filling the chip with the plate made the
+              // legend flip polarity hue by hue: the violet and teal plates
+              // take pale ink and the amber one takes dark, so two chips read
+              // light-on-colour and the third dark-on-colour — in both themes.
+              // The dot carries the hue at full strength; the chip only has to
+              // say which level it is and whether it's on.
               style={
                 on
-                  ? os
-                    ? { borderColor: OS_LEVEL[lvl].edge, background: OS_LEVEL[lvl].fill }
-                    : {
-                        borderColor: LEVEL_COLOR[lvl],
-                        background: `color-mix(in srgb, ${LEVEL_COLOR[lvl]} 14%, transparent)`,
-                      }
+                  ? {
+                      borderColor: os ? OS_LEVEL[lvl].edge : LEVEL_COLOR[lvl],
+                      background: `color-mix(in srgb, ${
+                        os ? OS_LEVEL[lvl].edge : LEVEL_COLOR[lvl]
+                      } 16%, transparent)`,
+                    }
                   : undefined
               }
             >
               <span
                 className="h-2 w-2 rounded-full flex-shrink-0"
-                style={{ background: os ? OS_LEVEL[lvl].ink : LEVEL_COLOR[lvl] }}
+                style={{ background: os ? OS_LEVEL[lvl].edge : LEVEL_COLOR[lvl] }}
               />
               {LEVEL_PLURAL[lvl]}
             </button>
@@ -1162,23 +1178,21 @@ export function EpicsTimeline({
                     className="relative bg-card"
                     style={{ height: HEADER_ROW_H }}
                   >
-                    {sprintBands.map((b, i) => (
+                    {sprintBands.map((b) => (
                       <div
                         key={b.key}
                         className={cn(
                           "absolute top-0 flex items-center border-b font-semibold tracking-wide",
                           os ? "text-sm" : "text-[11px]",
+                          // One band colour for every sprint. It used to
+                          // alternate two, but the pair were the epic plate and
+                          // the story plate — so a sprint read as an epic on odd
+                          // weeks and as a story on even ones. The band sits
+                          // behind the bars, so it stays neutral and lets the
+                          // three levels carry the hue.
                           os
-                            ? // The design alternates two solid bands with white
-                              // ink instead of tinting one accent two ways.
-                              cn(
-                                "border-r border-os-hover-strong text-os-fg",
-                                i % 2 === 1 ? "bg-os-sprint-b" : "bg-os-sprint-a",
-                              )
-                            : cn(
-                                "border-r-2 border-accent-teal/40 text-accent-teal",
-                                i % 2 === 1 ? "bg-accent-teal/5" : "bg-accent-teal/10",
-                              ),
+                            ? "border-r border-os-hover-strong bg-os-sprint-band text-os-sprint-ink"
+                            : "border-r-2 border-border bg-muted/60 text-muted-foreground",
                         )}
                         style={{ left: b.left, width: b.width, height: HEADER_ROW_H }}
                       >

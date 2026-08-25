@@ -149,8 +149,13 @@
   --color-os-shadow:       rgba(0, 0, 0, 0.5);
   --color-os-add-bg:       #1e1e1f;  /* the add-pill fill */
   --color-os-add-bg-hover: #2b2b2c;
-  --color-os-sprint-a:     #4a4670;  /* timeline sprint lane (even) */
-  --color-os-sprint-b:     #3a5c58;  /* timeline sprint lane (odd) */
+  /* The timeline's sprint band. One colour, not two alternating: the pair it
+     used to alternate between were the epic plate and the story plate, so a
+     sprint read as an epic on odd weeks and as a story on even ones. It is a
+     lane *behind* the bars, so it stays neutral and lets the levels carry the
+     hue. */
+  --color-os-sprint-band:  #35353f;
+  --color-os-sprint-ink:   #bababa;
 
   /* The pointer wash. A dark surface signals hover by *adding* light and a
      light one by taking it away, so the overlay is an ink that flips with the
@@ -892,18 +897,45 @@ html.os-shell {
      colour and lets light mode restate it once. The dark fills are 0.8-alpha
      over the shell's own ground; light mode solidifies them, because the same
      alpha over white washes toward the pale ink the chip carries. */
-  --os-epic-fill:        rgba(109, 90, 158, 0.8);
-  --os-epic-fill-hover:  rgba(134, 115, 183, 0.95);
-  --os-epic-edge:        rgba(109, 90, 158, 0.8);
-  --os-epic-ink:         #d9c9f7;
-  --os-story-fill:       rgba(89, 149, 144, 0.8);
-  --os-story-fill-hover: rgba(110, 170, 165, 0.9);
-  --os-story-edge:       rgba(89, 149, 144, 0.6);
-  --os-story-ink:        #d7fdf5;
-  --os-task-fill:        rgba(125, 99, 99, 0.8);
-  --os-task-fill-hover:  rgba(150, 115, 115, 0.95);
-  --os-task-edge:        rgba(125, 99, 99, 0.8);
-  --os-task-ink:         #f5d9d9;
+  --os-epic-fill:        rgba(124, 92, 214, 0.8);
+  --os-epic-fill-hover:  rgba(146, 118, 226, 0.95);
+  --os-epic-edge:        rgba(124, 92, 214, 0.8);
+  --os-epic-ink:         #ece3ff;
+  --os-story-fill:       rgba(0, 173, 171, 0.8);
+  --os-story-fill-hover: rgba(0, 200, 197, 0.9);
+  --os-story-edge:       rgba(0, 173, 171, 0.6);
+  --os-story-ink:        #e0fffb;
+  --os-task-fill:        rgba(224, 147, 11, 0.8);
+  --os-task-fill-hover:  rgba(240, 169, 45, 0.95);
+  --os-task-edge:        rgba(224, 147, 11, 0.8);
+  --os-task-ink:         #2a1c02;
+
+  /* The task board's six columns, on the same axis as the level plates above
+     and for the same reason: the header is a band of colour with ink printed
+     on it, so each status needs a fill/ink pair rather than one hue, and the
+     dark tint has to become a solid in light — a 15% wash over white paper on
+     an already-pale page is no band at all. `edge` is the hue at full
+     strength for the card's left border, which the tint is too faint to draw.
+     Hues are the brand accents, so a column here and a bar on the timeline
+     sit in the same register. */
+  --os-status-backlog-fill:    #3f3f48;
+  --os-status-backlog-ink:     #e8e8ee;
+  --os-status-backlog-edge:    #54545f;
+  --os-status-todo-fill:       rgba(124, 92, 214, 0.22);
+  --os-status-todo-ink:        #c3aef7;
+  --os-status-todo-edge:       #7c5ce0;
+  --os-status-progress-fill:   rgba(0, 173, 171, 0.20);
+  --os-status-progress-ink:    #5fd6d3;
+  --os-status-progress-edge:   #2fc7c4;
+  --os-status-review-fill:     rgba(242, 184, 75, 0.18);
+  --os-status-review-ink:      #f2b84b;
+  --os-status-review-edge:     #f2b84b;
+  --os-status-done-fill:       rgba(159, 224, 168, 0.18);
+  --os-status-done-ink:        #9fe0a8;
+  --os-status-done-edge:       #9fe0a8;
+  --os-status-cancelled-fill:  rgba(63, 63, 72, 0.5);
+  --os-status-cancelled-ink:   #bababa;
+  --os-status-cancelled-edge:  #3f3f48;
 
   /* The "this field is required" mark. Pure #ff6b6b is a dark-surface red. */
   --os-danger-ink:       #ff6b6b;
@@ -956,8 +988,8 @@ html.light.os-shell,
   --color-os-shadow:       rgba(19, 41, 58, 0.16);
   --color-os-add-bg:       #d9e2ec;  /* the add-pill fill — a step under the page */
   --color-os-add-bg-hover: #c6d3e0;
-  --color-os-sprint-a:     #ddd8f0;  /* soft lavender lane */
-  --color-os-sprint-b:     #d2e7e1;  /* soft mint lane */
+  --color-os-sprint-band:  #dbe3ec;
+  --color-os-sprint-ink:   #4d5c69;
 
   /* The pointer wash inverts with the ground: ink, not light. */
   --color-os-hover:        rgba(19, 41, 58, 0.06);
@@ -967,16 +999,44 @@ html.light.os-shell,
      keeps the navy and gives up the density. */
   --color-os-overlay:      rgba(19, 41, 58, 0.38);
 
-  /* Solid level fills — see the note in the block above. */
-  --os-epic-fill:        #5b4a86;
-  --os-epic-fill-hover:  #6c5a9c;
-  --os-epic-edge:        #5b4a86;
-  --os-story-fill:       #2f6f69;
-  --os-story-fill-hover: #3a857e;
-  --os-story-edge:       #2f6f69;
-  --os-task-fill:        #7a5555;
-  --os-task-fill-hover:  #8f6666;
-  --os-task-edge:        #7a5555;
+  /* Light takes the same three hues at mid tone: vivid enough to be a plate
+     rather than a wash, light enough not to be a slab on a page this pale.
+     Both edges of that were tried and neither works — a 15% tint over white
+     disappears, and a fully saturated solid reads as a dark bar. The ink is a
+     deep shade of the plate's own hue, which is what carries the contrast at
+     this luminance. */
+  --os-epic-fill:        #a48bf0;
+  --os-epic-fill-hover:  #b7a3f5;
+  --os-epic-edge:        #7c5ce0;
+  --os-epic-ink:         #241056;
+  --os-story-fill:       #4fc7c3;
+  --os-story-fill-hover: #66d3d0;
+  --os-story-edge:       #00a3a1;
+  --os-story-ink:        #023b3a;
+  --os-task-fill:        #f2b94e;
+  --os-task-fill-hover:  #f6c86e;
+  --os-task-edge:        #e0930b;
+  --os-task-ink:         #3b2400;
+
+  /* The six columns, same treatment. */
+  --os-status-backlog-fill:    #bccbda;
+  --os-status-backlog-ink:     #13293a;
+  --os-status-backlog-edge:    #8fa3b5;
+  --os-status-todo-fill:       #a48bf0;
+  --os-status-todo-ink:        #241056;
+  --os-status-todo-edge:       #7c5ce0;
+  --os-status-progress-fill:   #4fc7c3;
+  --os-status-progress-ink:    #023b3a;
+  --os-status-progress-edge:   #00a3a1;
+  --os-status-review-fill:     #f2b94e;
+  --os-status-review-ink:      #3b2400;
+  --os-status-review-edge:     #e0930b;
+  --os-status-done-fill:       #5ccb99;
+  --os-status-done-ink:        #05331e;
+  --os-status-done-edge:       #2ba173;
+  --os-status-cancelled-fill:  #d3dce5;
+  --os-status-cancelled-ink:   #48586a;
+  --os-status-cancelled-edge:  #a9b9c9;
 
   --os-danger-ink:       #c0362f;
 }

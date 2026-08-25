@@ -171,6 +171,40 @@ export function AreaPillNav({
   );
 }
 
+// The os switcher on its own, for pages that host it inside a controls row
+// they already have (the Partners hub puts it beside its search field) rather
+// than on a row of its own above the page title.
+export function SegmentedTabButtons({
+  items,
+  label = "Section",
+  className,
+}: {
+  items: UnderlineTabButton[];
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(osSegmentedTrackClass, className)}
+      role="tablist"
+      aria-label={label}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="tab"
+          aria-selected={item.active ?? false}
+          onClick={item.onClick}
+          className={osSegmentedItemClass(!!item.active)}
+        >
+          <SubtabLabel label={item.label} icon={item.icon} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function UnderlineTabButtons({
   items,
   label = "Section",
@@ -204,24 +238,7 @@ export function UnderlineTabButtons({
       <div className="mb-6 flex flex-wrap items-center gap-3">
         {showHistoryNav && <TablessHistoryNavInline />}
         {heading}
-        <div
-          className={cn(osSegmentedTrackClass, "ml-auto")}
-          role="tablist"
-          aria-label={label}
-        >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="tab"
-              aria-selected={item.active ?? false}
-              onClick={item.onClick}
-              className={osSegmentedItemClass(!!item.active)}
-            >
-              <SubtabLabel label={item.label} icon={item.icon} />
-            </button>
-          ))}
-        </div>
+        <SegmentedTabButtons items={items} label={label} className="ml-auto" />
       </div>
     );
   }

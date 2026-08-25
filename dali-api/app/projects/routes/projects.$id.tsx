@@ -28,6 +28,8 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
+import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
+import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
@@ -410,6 +412,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               },
             },
           },
+          _count: { select: { comments: true } },
         },
       },
       // Declared domains for this project — editable from the Overview tab.
@@ -854,8 +857,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: l.file.title,
       versionCount: l.file._count.versions,
     })),
+    commentCount: t._count.comments,
     createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
     createdAt: t.createdAt.toISOString(),
+    activityAt: t.activityAt.toISOString(),
     hasUnread: (() => {
       const viewedAt = viewedAtByTaskId.get(t.id);
       return !!viewedAt && t.activityAt > viewedAt;
@@ -1191,6 +1196,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
   const recentActivity = activityRows;
 
+  // The Meetings tab's month grid. Gated on the tab: it costs a viewer lookup
+  // and a meetings query, and every other tab would pay for a grid it never
+  // renders. Deadlines reuse `epics`, already built for the timeline.
+  const projectCalendar =
+    new URL(request.url).searchParams.get("tab") === "meetings"
+      ? await buildProjectCalendar({
+          request,
+          viewerId: auth.user.sub,
+          projectId: project.id,
+          calendarEmail: project.calendarEmail,
+          epics,
+        })
+      : null;
+
   return {
     project: {
       id: project.id,
@@ -1243,6 +1262,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    projectCalendar,
     recentActivity,
     epics,
     editableEpics,
@@ -1591,6 +1611,7 @@ export default function ProjectDetail() {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    projectCalendar,
     recentActivity,
     epics,
     editableEpics,
@@ -1872,7 +1893,14 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {tab === "meetings" && <MeetingsSection meetings={upcomingMeetings} standalone />}
+        {tab === "meetings" && (
+          <MeetingsSection
+            meetings={upcomingMeetings}
+            calendar={projectCalendar}
+            projectId={project.id}
+            standalone
+          />
+        )}
 
         {/* Board keys off the raw edit permission, not the page-level Edit-mode
             toggle: epics/sprints/tasks each gate their own inline edit
@@ -3264,21 +3292,52 @@ function TeamLevelEditor({
    broken in a way a hidden card never did. */
 function MeetingsSection({
   meetings,
+  calendar,
+  projectId,
   standalone = false,
 }: {
   meetings: LoaderData["upcomingMeetings"];
+  // Present only on the standalone Meetings tab — the loader builds the grid
+  // for that tab alone.
+  calendar?: LoaderData["projectCalendar"];
+  projectId?: string;
   standalone?: boolean;
 }) {
   const tz = useUserTimeZone();
+
+  const grid =
+    calendar && projectId ? (
+      <MonthCalendarPanel
+        days={calendar.monthDays}
+        events={calendar.events}
+        monthOffset={calendar.monthOffset}
+        monthLabel={calendar.monthLabel}
+        timeZone={calendar.timeZone}
+        basePath={`/projects/${projectId}?tab=meetings`}
+        sourceLabel={
+          calendar.calendarEmail
+            ? `${calendar.calendarEmail} · epic and story deadlines`
+            : "Project meetings · epic and story deadlines"
+        }
+      />
+    ) : null;
+
   if (meetings.length === 0) {
     if (!standalone) return null;
     return (
-      <section className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-        No meetings scheduled for this project.
-      </section>
+      <div className="flex flex-col gap-4">
+        {grid}
+        <section className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          {calendar && !calendar.calendarEmail
+            ? "No meetings scheduled for this project. Set a calendar email in Details to tie this grid to the project's calendar identity."
+            : "No meetings scheduled for this project."}
+        </section>
+      </div>
     );
   }
   return (
+    <div className="flex flex-col gap-4">
+      {grid}
     <section className="bg-card border border-border rounded-lg p-4">
       <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
         <CalendarDays className="w-4 h-4" /> Meetings
@@ -3300,6 +3359,7 @@ function MeetingsSection({
         ))}
       </div>
     </section>
+    </div>
   );
 }
 

@@ -6,10 +6,11 @@ import {
   useActionData,
   useLoaderData,
   useNavigate,
+  useSearchParams,
 } from "react-router";
-import { Select } from "~/components/ui/floating";
-import { TermFilter } from "~/components/TermFilter";
+import { Popover, Select } from "~/components/ui/floating";
 import { resolveTermFilter } from "~/lib/terms";
+import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
@@ -36,12 +37,29 @@ import {
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
-import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
+import { SegmentedTabButtons, UnderlineTabButtons } from "~/components/AreaPillNav";
+import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import {
+  FilterCountBadge,
+  FilterGroup,
+  FilterPill,
+  FilterResetButton,
+  FilterSectionLabel,
+  customizeButtonClass,
+  filterPanelClass,
+} from "~/components/ui/filter-panel";
+import { cn } from "~/lib/cn";
+import { ChevronRight, FileText, LayoutGrid, Plus, SlidersHorizontal } from "lucide-react";
 
-// areaSubnav (not areaPills): this page renders its own UnderlineTabButtons row
-// unconditionally, so it reserves the flush top spacing regardless of the flag.
-export const handle = { areaSubnav: true };
+// areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
+// switcher itself under either shell — a full-width underline row above the
+// title in the brand shell, the segmented pill in its own toolbar under os —
+// so it reserves the flush top spacing regardless of the flag. That row is also
+// this page's trail back to Organizations, so it stands the breadcrumbs down —
+// otherwise the header carries "Partners › Applications" above a switcher that
+// says the same thing, and the two Partners tabs no longer start the same way.
+export const handle = { areaSubnav: true, hideBreadcrumbs: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -275,8 +293,9 @@ export default function PartnersApplications() {
   // Term filter for planning — projects/applications are planned several terms
   // out and can target multiple terms, so a row matches if ANY target term is
   // in the selected scope. Applies in both list and board views. Persisted in
-  // the URL (?term=) via TermFilter so a shared/reloaded link keeps the scope;
-  // the loader defaults it to "Current & upcoming" (isAll/termIds come thence).
+  // the URL (?term=) by the Customize panel so a shared/reloaded link keeps the
+  // scope; the loader defaults it to "Current & upcoming" (isAll/termIds come
+  // thence).
   const [view, setView] = useState<"list" | "board">("list");
   const [creating, setCreating] = useState(false);
   // Board drag applies a status change here and persists it via the API.
@@ -286,6 +305,50 @@ export default function PartnersApplications() {
   const [pendingStatus, setPendingStatus] = useState<Record<string, Status>>(
     {},
   );
+  // The Organizations hub's dress, worn here too: scaled title, the design's
+  // plus button, a pill toolbar with the area switcher leading it. Chrome only —
+  // both views, every filter and the projection chart stay as they are.
+  const os = useFeatureFlag("os-redesign");
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // What the Customize badge counts: every slice bar the search box, which has
+  // its own visible field. Term counts only when it isn't sitting on the
+  // loader's default scope (current & upcoming); status is always "all" in
+  // board view, so it drops out of the count there on its own.
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (domainFilter !== "all" ? 1 : 0) +
+    (selected !== UPCOMING ? 1 : 0);
+
+  const setTerm = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("term", value);
+    setSearchParams(next);
+  };
+
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setDomainFilter("all");
+    const next = new URLSearchParams(searchParams);
+    next.delete("term");
+    setSearchParams(next);
+  };
+
+  const areaTabs = [
+    {
+      label: "Organizations",
+      icon: LayoutGrid,
+      active: false,
+      onClick: () => navigate("/partners"),
+    },
+    {
+      label: "Applications",
+      icon: FileText,
+      active: true,
+      onClick: () => navigate("/partners/applications"),
+    },
+  ];
 
   const effectiveRows = useMemo(
     () =>
@@ -324,39 +387,36 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
-      <UnderlineTabButtons
-        label="Partners"
-        items={[
-          {
-            label: "Organizations",
-            icon: LayoutGrid,
-            active: false,
-            onClick: () => navigate("/partners"),
-          },
-          {
-            label: "Pipeline",
-            icon: FileText,
-            active: true,
-            onClick: () => navigate("/partners/applications"),
-          },
-        ]}
-      />
+      {!os && <UnderlineTabButtons label="Partners" items={areaTabs} />}
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1
+            className={cn(
+              "font-heading text-foreground",
+              os ? "text-4xl font-medium" : "text-2xl font-bold",
+            )}
+          >
             Partner Applications
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Inbound partner pitches and where they sit in review.
-          </p>
         </div>
         {canEdit && !creating && (
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={
+              os
+                ? "os-add-btn"
+                : "px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            }
           >
-            + New application
+            {os ? (
+              <>
+                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+                New application
+              </>
+            ) : (
+              "+ New application"
+            )}
           </button>
         )}
       </header>
@@ -411,19 +471,182 @@ export default function PartnersApplications() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={
+                os
+                  ? "os-btn-ghost"
+                  : "px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              }
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              className={
+                os
+                  ? "os-btn-primary"
+                  : "px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              }
             >
               Create
             </button>
           </div>
         </Form>
       )}
+
+      {/* Same controls row the Organizations hub wears, in the same place: the
+          area switcher leads it under os instead of sitting on a rail above the
+          title, and the count moves out of the list header so the board view
+          carries it too. Everything this page has that Organizations doesn't —
+          the extra slices, the form binding, the projection chart — is folded
+          behind Customize or sits below this row, so switching tabs leaves the
+          header and the switcher exactly where they were. The history arrows
+          come with the switcher: this page still owns its subnav row, so the
+          shell's standalone arrow bar is standing down for it. */}
+      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
+        {os && <TablessHistoryNavInline />}
+        {os && <SegmentedTabButtons label="Partners" items={areaTabs} />}
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by title, partner, or domain"
+          className={cn(
+            "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+            os
+              ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+              : "max-w-sm px-3 py-2 rounded-md bg-background",
+          )}
+        />
+        {/* Status, domain and term used to sit here as a row of selects that
+            grew with the lab's domains and every term ever seeded. Behind one
+            control the toolbar stays the width of the page, and the badge says
+            how many slices are on so a filtered list is never silently
+            filtered. */}
+        <Popover
+          align="left"
+          ariaLabel="Customize applications"
+          panelClassName={filterPanelClass(os)}
+          trigger={
+            <button
+              type="button"
+              className={customizeButtonClass(os, activeFilterCount > 0)}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+              Customize
+              <FilterCountBadge os={os} count={activeFilterCount} />
+            </button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <FilterSectionLabel os={os}>Filters</FilterSectionLabel>
+              {activeFilterCount > 0 && (
+                <FilterResetButton os={os} onClick={resetFilters} />
+              )}
+            </div>
+
+            {/* The board shows every status as a column, so slicing by one
+                would silently hide columns — list view only. */}
+            {view === "list" && (
+              <FilterGroup label="Status" os={os}>
+                <FilterPill
+                  os={os}
+                  selected={statusFilter === "all"}
+                  onClick={() => setStatusFilter("all")}
+                >
+                  All
+                </FilterPill>
+                {STATUSES.map((st) => (
+                  <FilterPill
+                    key={st}
+                    os={os}
+                    selected={statusFilter === st}
+                    onClick={() => setStatusFilter(st)}
+                  >
+                    {STATUS_LABEL[st]}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+            )}
+
+            {domainOptions.length > 0 && (
+              <FilterGroup label="Domain" os={os}>
+                <FilterPill
+                  os={os}
+                  selected={domainFilter === "all"}
+                  onClick={() => setDomainFilter("all")}
+                >
+                  All
+                </FilterPill>
+                {domainOptions.map((d) => (
+                  <FilterPill
+                    key={d.id}
+                    os={os}
+                    selected={domainFilter === d.id}
+                    onClick={() => setDomainFilter(d.id)}
+                  >
+                    {d.name}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+            )}
+
+            {terms.length > 0 && (
+              <FilterGroup label="Term" os={os}>
+                {termFilterOrder(terms, { includeUpcoming: true }).map((opt) => (
+                  <FilterPill
+                    key={opt.value}
+                    os={os}
+                    selected={selected === opt.value}
+                    onClick={() => setTerm(opt.value)}
+                  >
+                    {opt.label}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+            )}
+          </div>
+        </Popover>
+        <div
+          className={cn(
+            "inline-flex items-center border border-border overflow-hidden",
+            os ? "rounded-full bg-card" : "rounded-md",
+          )}
+        >
+          {(["list", "board"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => {
+                setView(v);
+                // The board shows every status as a column; a lingering
+                // status filter would silently hide columns.
+                if (v === "board") setStatusFilter("all");
+              }}
+              aria-pressed={view === v}
+              className={cn(
+                "font-medium transition-colors",
+                os ? "px-4 py-2.5 text-sm" : "px-3 py-1.5 text-xs",
+                view === v
+                  ? os
+                    ? "bg-os-container text-foreground"
+                    : "bg-accent-coral text-white"
+                  : cn(
+                      "text-muted-foreground hover:bg-muted",
+                      !os && "bg-background",
+                    ),
+              )}
+            >
+              {v === "list" ? "List" : "Board"}
+            </button>
+          ))}
+        </div>
+        <span className={cn("ml-auto text-muted-foreground", os ? "text-base" : "text-xs")}>
+          {filtered.length}{" "}
+          {filtered.length === 1 ? "application" : "applications"}
+          {filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+        </span>
+      </div>
 
       {canEdit && (
         <details className="group bg-card border border-border rounded-lg">
@@ -508,77 +731,10 @@ export default function PartnersApplications() {
 
       <TermProjection rows={effectiveRows} requiredCells={requiredCells} />
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by title, partner, or domain"
-          className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-        {view === "list" && (
-          <Select
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value as Status | "all")}
-            ariaLabel="Filter by status"
-            options={[
-              { value: "all", label: "All statuses" },
-              ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
-            ]}
-            buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        )}
-        <Select
-          value={domainFilter}
-          onChange={(value) => setDomainFilter(value)}
-          ariaLabel="Filter by domain"
-          options={[
-            { value: "all", label: "All domains" },
-            ...domainOptions.map((d) => ({ value: d.id, label: d.name })),
-          ]}
-          buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-        />
-        {terms.length > 0 && (
-          <TermFilter
-            terms={terms}
-            selected={selected}
-            includeUpcoming
-            buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        )}
-        <div className="flex rounded-md border border-border overflow-hidden">
-          {(["list", "board"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => {
-                setView(v);
-                // The board shows every status as a column; a lingering
-                // status filter would silently hide columns.
-                if (v === "board") setStatusFilter("all");
-              }}
-              aria-pressed={view === v}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                view === v
-                  ? "bg-accent-coral text-white"
-                  : "bg-background text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {v === "list" ? "List" : "Board"}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {view === "list" ? (
         <div className="bg-card border border-border rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-foreground">Applications</h2>
-            <span className="text-xs text-muted-foreground">
-              {filtered.length}{" "}
-              {filtered.length === 1 ? "application" : "applications"}
-              {filtered.length !== rows.length ? ` of ${rows.length}` : ""}
-            </span>
           </div>
 
           {filtered.length === 0 ? (

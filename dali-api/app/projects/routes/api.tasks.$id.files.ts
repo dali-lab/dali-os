@@ -36,9 +36,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
 
   if (request.method === "DELETE") {
-    await prisma.taskFileLink.deleteMany({
+    const { count } = await prisma.taskFileLink.deleteMany({
       where: { taskId: task.id, fileId: body.fileId },
     });
+    // Attaching or detaching work is an update to the task like any other, so
+    // it feeds the board's new-updates indicator (see Task.activityAt). Only
+    // when something actually changed — an unlink of an already-unlinked file
+    // shouldn't re-flag the card for everyone.
+    if (count > 0) {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { activityAt: new Date() },
+      });
+    }
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -56,10 +66,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
 
-  await prisma.taskFileLink.createMany({
+  const { count } = await prisma.taskFileLink.createMany({
     data: [{ taskId: task.id, fileId: file.id }],
     skipDuplicates: true,
   });
+  if (count > 0) {
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { activityAt: new Date() },
+    });
+  }
 
   // The linked-artifact shape TaskCardModel carries, so the modal can update
   // its local list without a refetch.

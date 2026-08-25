@@ -15,16 +15,19 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons, UnderlineTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
 
-// areaSubnav (not areaPills): this page renders its own UnderlineTabButtons row
-// unconditionally, so it reserves the flush top spacing regardless of the flag.
+// areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
+// switcher itself under either shell — a full-width underline row above the
+// title in the brand shell, the segmented pill in its own toolbar under os —
+// so it reserves the flush top spacing regardless of the flag.
 export const handle = { areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
@@ -139,25 +142,24 @@ export default function PartnersOrganizations() {
     return rows.filter((r) => r.name.toLowerCase().includes(q));
   }, [rows, query]);
 
+  const areaTabs = [
+    {
+      label: "Organizations",
+      icon: LayoutGrid,
+      active: true,
+      onClick: () => navigate("/partners"),
+    },
+    {
+      label: "Applications",
+      icon: FileText,
+      active: false,
+      onClick: () => navigate("/partners/applications"),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
-      <UnderlineTabButtons
-        label="Partners"
-        items={[
-          {
-            label: "Organizations",
-            icon: LayoutGrid,
-            active: true,
-            onClick: () => navigate("/partners"),
-          },
-          {
-            label: "Pipeline",
-            icon: FileText,
-            active: false,
-            onClick: () => navigate("/partners/applications"),
-          },
-        ]}
-      />
+      {!os && <UnderlineTabButtons label="Partners" items={areaTabs} />}
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1
@@ -248,7 +250,14 @@ export default function PartnersOrganizations() {
         </Form>
       )}
 
+      {/* Under os the switcher leads this row instead of sitting on a rail of
+          its own above the title — one control row, like the People directory's
+          Active/Alumni switch, so Partners reads like every other hub. The
+          history arrows come with it: this page still owns its subnav row, so
+          the shell's standalone arrow bar is standing down for it. */}
       <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
+        {os && <TablessHistoryNavInline />}
+        {os && <SegmentedTabButtons label="Partners" items={areaTabs} />}
         <input
           type="search"
           value={query}

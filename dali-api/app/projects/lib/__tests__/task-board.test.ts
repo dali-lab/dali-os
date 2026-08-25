@@ -33,8 +33,10 @@ function task(
     githubIssueUrl: null,
     githubIssueNumber: null,
     files: [],
+    commentCount: 0,
     createdBy: { id: "u1", name: "U" },
     createdAt: "2026-07-01T00:00:00.000Z",
+    activityAt: "2026-07-01T00:00:00.000Z",
     hasUnread: false,
   };
 }

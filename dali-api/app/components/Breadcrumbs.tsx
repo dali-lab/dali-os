@@ -44,6 +44,10 @@ type Handle = {
   breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
   breadcrumbTrail?: (data: unknown) => Crumb[] | null | undefined
   areaPills?: boolean
+  /** Same contract as `areaPills`, for a page whose switcher row renders under
+   *  either shell (Partners' Organizations / Applications pill) — the row names
+   *  both destinations, so a trail above it only repeats where you are. */
+  hideBreadcrumbs?: boolean
   headerAction?: (data: unknown) => ReactNode
   // A page opts into a documentation guide by declaring a stable docKey (and an
   // optional human title). PageDocButton (rendered globally in the layout)
@@ -248,6 +252,11 @@ export function Breadcrumbs() {
   // layout's header row is left holding the Guide button and nothing else,
   // which reads as a button stranded above the page.
   if (!redesign && matches.some((m) => (m as { handle?: Handle }).handle?.areaPills)) {
+    return null
+  }
+
+  // The same contract without the flag, for a row that renders either way.
+  if (matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)) {
     return null
   }
 

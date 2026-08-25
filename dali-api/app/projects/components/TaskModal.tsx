@@ -81,6 +81,7 @@ export function TaskModal({
   onCreate,
   onDelete,
   defaultEpicId,
+  defaultStatus,
   onArtifactsChanged,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
@@ -97,6 +98,9 @@ export function TaskModal({
   onDelete?: () => void;
   // Create mode: seeds the epic picker (e.g. from the board's epic filter).
   defaultEpicId?: string | null;
+  // Create mode: seeds the status picker, so a column's own Add task lands the
+  // new card in that column rather than always in To do.
+  defaultStatus?: TaskStatus;
   // Edit mode: lets the board revalidate so the card's artifact chip catches
   // up after a link/unlink/upload (artifacts bypass the onPatch path).
   onArtifactsChanged?: () => void;
@@ -111,7 +115,9 @@ export function TaskModal({
   const readOnly = os && !isCreate && !editing;
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "Todo");
+  const [status, setStatus] = useState<TaskStatus>(
+    task?.status ?? defaultStatus ?? "Todo",
+  );
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
   );

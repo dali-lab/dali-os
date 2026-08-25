@@ -7,6 +7,8 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import { initialsFromName } from "~/lib/display";
+import { useInitialsTint } from "~/components/ui/Avatar";
+import { cn } from "~/lib/cn";
 import { PhotoCropModal } from "./PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
@@ -30,6 +32,7 @@ export function ProfilePhotoAvatar({
 }) {
   const fetcher = useFetcher();
   const fileRef = useRef<HTMLInputElement>(null);
+  const tint = useInitialsTint();
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialPreviewUrl ?? null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -156,7 +159,12 @@ export function ProfilePhotoAvatar({
             className="w-32 h-32 rounded-lg object-cover border border-border"
           />
         ) : (
-          <div className="w-32 h-32 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-3xl">
+          <div
+            className={cn(
+              "w-32 h-32 rounded-lg border border-border flex items-center justify-center font-bold text-3xl",
+              tint,
+            )}
+          >
             {initialsFromName(name)}
           </div>
         )}

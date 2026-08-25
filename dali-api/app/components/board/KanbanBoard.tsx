@@ -1,10 +1,11 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   closestCorners,
   pointerWithin,
+  useDndContext,
   useDraggable,
   useDroppable,
   useSensor,
@@ -33,10 +34,15 @@ export type KanbanColumn<TCard> = {
   className?: string;
   /** Override the header container classes (delibs header theming). */
   headerClassName?: string;
+  /** Inline header styles, for theming that comes from CSS variables rather
+   *  than utility classes (the task board's per-status bands). */
+  headerStyle?: CSSProperties;
   /** Override the card-list container classes (staffing scroll, delibs spacing). */
   listClassName?: string;
   /** Finalize button, count badge — rendered on the right of the header. */
   headerExtra?: ReactNode;
+  /** Rendered inside the card list, above the cards (TaskBoard's per-column Add task). */
+  listHeader?: ReactNode;
   /** Per-column count badge content. Defaults to the card count. */
   count?: ReactNode;
   /** Custom empty-state markup (delibs dashed box, staffing tall drop target). */
@@ -77,6 +83,11 @@ export type KanbanBoardProps<TCard> = {
   activationDistance?: number;
   /** Collision strategy. Sortable boards default to pointerFirstCollision. */
   collisionDetection?: CollisionDetection;
+  /**
+   * Draw a dashed "drops here" outline at the slot the dragged card would take.
+   * Opt-in: only the task board's tall columns have the room for it.
+   */
+  dropPlaceholder?: boolean;
   error?: string | null;
   emptyLabel?: ReactNode;
 };
@@ -118,6 +129,7 @@ export function KanbanBoard<TCard>({
   layout = "row",
   activationDistance = 6,
   collisionDetection,
+  dropPlaceholder = false,
   error,
   emptyLabel = "Empty",
 }: KanbanBoardProps<TCard>) {
@@ -182,6 +194,7 @@ export function KanbanBoard<TCard>({
               usesOverlay={!!renderOverlay}
               layout={layout}
               emptyLabel={emptyLabel}
+              dropPlaceholder={dropPlaceholder}
             />
           ))}
         </div>
@@ -202,6 +215,7 @@ function BoardColumn<TCard>({
   usesOverlay,
   layout,
   emptyLabel,
+  dropPlaceholder,
 }: {
   column: KanbanColumn<TCard>;
   getCardId: (card: TCard) => string;
@@ -212,10 +226,27 @@ function BoardColumn<TCard>({
   usesOverlay: boolean;
   layout: "row" | "grid";
   emptyLabel: ReactNode;
+  dropPlaceholder: boolean;
 }) {
   const os = useFeatureFlag("os-redesign");
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
   const cardIds = column.cards.map(getCardId);
+
+  // Where the dragged card would land in THIS column, or -1 for "not here".
+  // `isOver` alone isn't enough: pointerFirstCollision resolves to the card
+  // under the pointer, so a column whose cards you're hovering never reports
+  // itself as over. Reading the context's `over` covers both — the column
+  // shell (append) and one of its cards (insert at that card's index).
+  const { over, active } = useDndContext();
+  const overId = over ? String(over.id) : null;
+  const activeId = active ? String(active.id) : null;
+  const overCardIndex = overId ? cardIds.indexOf(overId) : -1;
+  const dropIndex =
+    !dropPlaceholder || overId === null || overId === activeId
+      ? -1
+      : overId === column.id
+        ? column.cards.length
+        : overCardIndex;
 
   // The flex-row shell every dnd-kit board shared (the three near-identical
   // spellings the boards had drifted into); grid columns (delibs) bring their
@@ -228,34 +259,57 @@ function BoardColumn<TCard>({
         "flex-shrink-0 w-64 border border-transparent rounded-os-item bg-os-card flex flex-col"
       : "flex-shrink-0 w-64 border rounded-lg border-border bg-card flex flex-col");
 
+  // The dashed "it lands here" outline, spliced in at `dropIndex`. On an empty
+  // column it stands in for the Empty label entirely, so a drop target that
+  // looks like nothing still looks like somewhere to drop.
+  const placeholder = dropIndex >= 0 && (
+    <div
+      key="drop-placeholder"
+      aria-hidden
+      className={cn(
+        "h-16 shrink-0 border-2 border-dashed",
+        os
+          ? "rounded-os-item border-os-accent/50 bg-os-accent/5"
+          : "rounded-md border-accent-coral/40 bg-accent-coral/5",
+      )}
+    />
+  );
+
   const list = (
     <>
       {column.cards.length === 0 ? (
-        column.renderEmpty ? (
-          column.renderEmpty()
-        ) : (
-          <div
-            className={cn(
-              "text-muted-foreground italic text-center py-4",
-              os ? "text-sm" : "text-xs",
-            )}
-          >
-            {emptyLabel}
-          </div>
+        placeholder || (
+          column.renderEmpty ? (
+            column.renderEmpty()
+          ) : (
+            <div
+              className={cn(
+                "text-muted-foreground italic text-center py-4",
+                os ? "text-sm" : "text-xs",
+              )}
+            >
+              {emptyLabel}
+            </div>
+          )
         )
       ) : (
-        column.cards.map((card) => (
-          <CardWrapper
-            key={getCardId(card)}
-            card={card}
-            getCardId={getCardId}
-            getCardData={getCardData}
-            renderCard={renderCard}
-            draggable={draggable}
-            sortable={sortable}
-            usesOverlay={usesOverlay}
-          />
-        ))
+        <>
+          {column.cards.map((card, i) => (
+            <Fragment key={getCardId(card)}>
+              {i === dropIndex && placeholder}
+              <CardWrapper
+                card={card}
+                getCardId={getCardId}
+                getCardData={getCardData}
+                renderCard={renderCard}
+                draggable={draggable}
+                sortable={sortable}
+                usesOverlay={usesOverlay}
+              />
+            </Fragment>
+          ))}
+          {dropIndex >= column.cards.length && placeholder}
+        </>
       )}
     </>
   );
@@ -264,9 +318,14 @@ function BoardColumn<TCard>({
     <div
       ref={setNodeRef}
       data-testid="board-column"
-      className={cn(shellClass, isOver && (os ? "ring-2 ring-os-accent/50" : "ring-2 ring-accent-coral/40"))}
+      className={cn(
+        shellClass,
+        (isOver || dropIndex >= 0) &&
+          (os ? "ring-2 ring-os-accent/50" : "ring-2 ring-accent-coral/40"),
+      )}
     >
       <div
+        style={column.headerStyle}
         className={
           column.headerClassName ??
           "px-3 py-2 border-b border-border flex items-center justify-between"
@@ -308,6 +367,7 @@ function BoardColumn<TCard>({
           (layout === "grid" ? "space-y-2" : "flex flex-col gap-2 p-2 min-h-[120px]")
         }
       >
+        {column.listHeader}
         {sortable ? (
           <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
             {list}

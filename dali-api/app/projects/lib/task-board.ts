@@ -64,13 +64,19 @@ export type TaskCardModel = {
   // lives in (graphics, animation, design exports). Card shows a count chip;
   // the modal lists them with links to the file page.
   files: { id: string; title: string; versionCount: number }[];
+  // Number of comments on the task — the card's comment chip. The modal owns
+  // the thread itself; this is just the count the board shows.
+  commentCount: number;
   createdBy: { id: string; name: string };
   // ISO timestamp (UTC).
   createdAt: string;
-  // True when the task has meaningful activity (status/field edit, assignee
-  // change, comment, GitHub link — see Task.activityAt) since the viewer
-  // last opened it. False for tasks the viewer has never opened, so a fresh
-  // board isn't flagged "new" wall-to-wall. Drives the board's unread dot.
+  // Last meaningful activity on the task (status/field edit, description
+  // change, assignee change, comment, attached file, GitHub link — see
+  // Task.activityAt), as an ISO timestamp. Dates the card's "Updated" chip.
+  activityAt: string;
+  // True when `activityAt` is newer than the viewer's last open. False for
+  // tasks the viewer has never opened, so a fresh board isn't flagged "new"
+  // wall-to-wall. Drives the card's "Updated" chip.
   hasUnread: boolean;
 };
 
