@@ -60,23 +60,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response("No terms available", { status: 404 });
   }
 
-  // Optional role filter on the project section (?domain= / ?level=). When
-  // either is active the admin is slicing out one domain/level group (e.g. PMs
-  // ahead of the rest), so Core + Instructor rows — which carry no domain or
-  // level — are excluded to keep the slice clean.
+  // Optional role filter on the project section (?domain= / ?level=). This
+  // narrows only the project-assignment rows — Core and Instructor are separate
+  // opt-in sections driven by their own checkboxes, so a domain/level filter
+  // leaves them untouched (e.g. "PMs + Core" = PM filter with Core checked).
   const domainIds = parseCsvParam(url.searchParams.get("domain"));
   const levels = parseLevels(url.searchParams.get("level"));
-  const roleFilterActive = domainIds.length > 0 || levels.length > 0;
 
-  // Project rows always included; Core + Instructor rows only for the
-  // user-ids the admin checked on the page (passed via ?core= / ?instructor=),
-  // and only when no role filter is narrowing the export.
-  const coreIds = roleFilterActive
-    ? new Set<string>()
-    : parseIdList(url.searchParams.get("core"));
-  const instructorIds = roleFilterActive
-    ? new Set<string>()
-    : parseIdList(url.searchParams.get("instructor"));
+  // Core + Instructor rows are included for the user-ids the admin checked on
+  // the page (passed via ?core= / ?instructor=), independent of the filter.
+  const coreIds = parseIdList(url.searchParams.get("core"));
+  const instructorIds = parseIdList(url.searchParams.get("instructor"));
 
   const [projectRows, coreRows, instructorRows] = await Promise.all([
     buildPayrollRows(selectedTerm.id, { domainIds, levels }),
