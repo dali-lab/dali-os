@@ -1,11 +1,9 @@
 import { redirect } from "react-router";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 
 /**
- * Send a viewer who has nav-regroup on from a page's pre-regroup URL to its
- * canonical /core (or /projects) one, so each viewer sees exactly one address
- * for a page and the sidebar highlights the right area.
+ * Send a request on a page's pre-regroup URL to its canonical /core (or
+ * /projects) one, so each page has exactly one address and the sidebar
+ * highlights the right area.
  *
  * Call this at the top of the SOURCE route's loader, never the alias's. The
  * alias modules re-export that same loader, so the `from`-prefix guard is what
@@ -13,21 +11,20 @@ import { getUserRoles } from "~/lib/roles";
  * core.agreements.$id.tsx uses for its Drive aliases. Sub-paths and the query
  * string carry over, which is what makes in-page links
  * (/projects/intent-to-work → /projects/intent-to-work/:userId) land inside
- * Core without every link site needing to know about the flag.
+ * Core without every link site needing to know the canonical path.
  *
- * Returns null when the viewer is flag-off or already on the canonical path.
- * The path check runs first, so a request that is already on /core costs
- * nothing — the roles + flag lookups only happen on the redirecting hop.
+ * The nav-regroup flag was retired, so this now redirects unconditionally: the
+ * regrouped nav is the only nav. `userId` is retained on the signature so the
+ * ~dozen call sites (which pass `auth.user.sub`) need no change. Returns null
+ * when the request is already on the canonical path.
  */
-export async function regroupRedirect(
+export function regroupRedirect(
   request: Request,
-  userId: string,
+  _userId: string,
   from: string,
   to: string,
-): Promise<Response | null> {
+): Response | null {
   const url = new URL(request.url);
   if (url.pathname !== from && !url.pathname.startsWith(from + "/")) return null;
-  const roles = await getUserRoles(userId);
-  if (!(await isFeatureEnabled("nav-regroup", userId, roles))) return null;
   return redirect(to + url.pathname.slice(from.length) + url.search);
 }

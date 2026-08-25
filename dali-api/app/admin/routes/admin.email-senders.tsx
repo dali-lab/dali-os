@@ -6,7 +6,6 @@
 // Also exposes per-sender daily cap (GmailIntegration.dailyCap) and today's
 // SenderDailyUsage count so operators can see and adjust egress limits.
 
-import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin.email-senders";
 import { adminHandle } from "~/admin/adminNav";
@@ -33,13 +32,6 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const regrouped = await regroupRedirect(
-    request,
-    auth.user.sub,
-    "/admin/email-senders",
-    "/core/communications/email-senders",
-  );
-  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const rows = await listSenderIntegrations();

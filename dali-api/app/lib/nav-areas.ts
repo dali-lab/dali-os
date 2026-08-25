@@ -30,7 +30,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { ADMIN_CLUSTERS, adminClustersFor } from "~/admin/adminNav";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import { clusterEntryPath } from "~/lib/cluster-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
@@ -84,8 +84,8 @@ export type NavArea = {
   subtabs: SubTab[];
 };
 
-// Admin's five clusters as sub-tabs, derived (not duplicated) from
-// ADMIN_CLUSTERS. Finance carries adminOnly; every other cluster is Core-visible.
+// Admin's system-level clusters as sub-tabs, derived (not duplicated) from
+// ADMIN_CLUSTERS. Finance carries adminOnly; System & Insights is Core-visible.
 const adminSubtabs: SubTab[] = [
   { label: "Hub", href: "/admin", icon: LayoutGrid },
   ...ADMIN_CLUSTERS.map((c) => ({
@@ -284,23 +284,11 @@ const REGROUPED_AREAS: NavArea[] = [
     icon: Settings,
     hubPath: "/admin",
     gate: (r) => r.isCore,
-    subtabs: [],
+    // Same system-level clusters as the flag-off nav — Admin's structure no
+    // longer depends on the (retired) nav-regroup flag.
+    subtabs: adminSubtabs,
   },
 ];
-
-// Admin's sub-tabs depend on the flag (People & Access + Communications move to
-// Core), so they are resolved per viewer rather than baked into the array.
-function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
-  return [
-    { label: "Hub", href: "/admin", icon: LayoutGrid },
-    ...adminClustersFor(flags).map((c) => ({
-      label: c.label,
-      href: clusterEntryPath(c),
-      icon: c.icon,
-      gate: c.adminOnly ? (r: RoleFlags) => r.isAdmin : undefined,
-    })),
-  ];
-}
 
 // The card-grid list for email templates is retired; its sidebar entry
 // deep-links directly into the Drive folder. (Agreements keeps a dedicated Core
@@ -321,25 +309,24 @@ function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
   });
 }
 
-/** The area set for one viewer: regrouped when nav-regroup is on, else today's. */
-export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  if (!flags["nav-regroup"]) return NAV_AREAS;
-  const base = REGROUPED_AREAS.map((a) => {
-    if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
-    return a;
-  });
+/**
+ * The area set for one viewer. The role-grouped set (REGROUPED_AREAS) is now
+ * the only nav — the nav-regroup flag was retired, so there is no flag-off
+ * branch. `flags` is kept on the signature because the matchers below thread it
+ * through, and NAV_AREAS survives only to keep favourites saved under the old
+ * nav resolvable (see ALL_AREAS).
+ */
+export function areasFor(_flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   // Deep-link email templates directly into Drive (agreements has its own Core
   // console page at /core/agreements).
-  return applyDriveSpacesSubstitutions(base);
+  return applyDriveSpacesSubstitutions(REGROUPED_AREAS);
 }
 
 /**
  * The nav items pinned above the area dropdown. Home / My Tasks / Calendar are
- * rendered inline by Layout; this is the tail the flags decide. Drive is pinned
- * under nav-regroup; with the flag off it stays an area, exactly as it is today.
+ * rendered inline by Layout; Drive is the pinned tail.
  */
-export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
-  if (!flags["nav-regroup"]) return [];
+export function pinnedNavItems(_flags: Partial<FeatureFlagMap> = {}): SubTab[] {
   return [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
