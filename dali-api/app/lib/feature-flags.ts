@@ -111,12 +111,6 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
-  {
-    key: "partner-crm",
-    label: "Partner CRM lifecycle",
-    description:
-      "Account-first partner lifecycle: log inquiries, triage (meet / apply / reject / learn more), record discovery meetings + an evaluation rubric, and an accept→promote checklist that creates the org only when a project is spun up. Gates the new Core CRM surfaces + account-first onboarding. Default off; flip on for Core first.",
-  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

@@ -3,10 +3,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.assignments.$assignmentId";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import {
-  requireOfferingManager,
-  redirectDartmouthToPortal,
-} from "~/education/lib/access.server";
+import { requireOfferingManager } from "~/education/lib/access.server";
 import {
   offeringIdForAssignment,
   listSubmissions,
@@ -32,13 +29,11 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
 
   const offeringId = await offeringIdForAssignment(params.assignmentId!);
   if (!offeringId) throw new Response("Not found", { status: 404 });
   const gate = await requireOfferingManager(request, offeringId);
-  if (!gate.ok) return redirect("/education");
+  if (!gate.ok) return redirect("/portal");
 
   const [assignment, submissions] = await Promise.all([
     prisma.educationAssignment.findUnique({

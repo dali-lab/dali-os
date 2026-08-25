@@ -13,10 +13,7 @@ import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { isCore } from "~/lib/roles";
-import {
-  requireOfferingManager,
-  redirectDartmouthToPortal,
-} from "~/education/lib/access.server";
+import { requireOfferingManager } from "~/education/lib/access.server";
 import {
   getOfferingDetail,
   runOfferingAction,
@@ -71,6 +68,8 @@ import type {
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { Avatar } from "~/components/ui/Avatar";
+import { X } from "lucide-react";
 import { renderEmail } from "~/lib/email";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
@@ -94,11 +93,9 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const authOrRedirect = await requireAuth(request);
   if (!authOrRedirect.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(authOrRedirect);
-  if (portalRedirect) return portalRedirect;
 
   const gate = await requireOfferingManager(request, params.offeringId!);
-  if (!gate.ok) return redirect("/education");
+  if (!gate.ok) return redirect("/portal");
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering) throw new Response("Not found", { status: 404 });
@@ -200,6 +197,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]);
 
   const attendanceMatrix = await getAttendanceMatrix(params.offeringId!);
+
+  // Instructors split by membership: members flow through the checkbox picker
+  // (set-instructors), external Dartmouth instructors through the invite
+  // controls below it. Both lists are Core-only (who owns the section).
+  const memberInstructorRows = core
+    ? await prisma.instructorAssignment.findMany({
+        where: {
+          offeringId: params.offeringId!,
+          user: { daliMember: { isNot: null } },
+        },
+        select: { userId: true },
+      })
+    : [];
+  const externalInstructorRows = core
+    ? await prisma.instructorAssignment.findMany({
+        where: {
+          offeringId: params.offeringId!,
+          user: { daliMember: { is: null } },
+        },
+        select: {
+          userId: true,
+          user: { select: { firstName: true, lastName: true } },
+        },
+      })
+    : [];
+  const memberInstructorIds = [
+    ...new Set(memberInstructorRows.map((r) => r.userId)),
+  ];
+  const externalInstructors = Array.from(
+    new Map(
+      externalInstructorRows.map((r) => [
+        r.userId,
+        {
+          userId: r.userId,
+          name: `${r.user.firstName} ${r.user.lastName}`.trim(),
+        },
+      ]),
+    ).values(),
+  );
 
   // Performance view: submissions keyed by (studentId, assignmentId) for the
   // approved roster. Assignments already loaded above; this is just submissions.
@@ -313,6 +349,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: u.id,
       name: `${u.firstName} ${u.lastName}`.trim(),
     })),
+    memberInstructorIds,
+    externalInstructors,
     collabToken: parseSessionCookie(request),
     userName: `${gate.auth.user.firstName ?? ""} ${gate.auth.user.lastName ?? ""}`.trim(),
     currentUserId: gate.auth.user.sub,
@@ -561,6 +599,8 @@ export default function ManageOffering() {
     feedbackSessionId,
     isCore: core,
     instructorCandidates,
+    memberInstructorIds,
+    externalInstructors,
     collabToken,
     userName,
     currentUserId,
@@ -770,28 +810,109 @@ export default function ManageOffering() {
           </section>
 
           {core && (
-            <Form
-              method="post"
-              className="bg-card border border-border rounded-lg p-5"
-            >
-              <input type="hidden" name="intent" value="set-instructors" />
-              <h2 className="text-sm font-semibold text-foreground mb-1">
-                Instructors
-              </h2>
-              <p className="text-xs text-muted-foreground mb-3">
-                Instructors can edit this offering, review applications, and
-                take attendance.
-              </p>
-              <InstructorPicker
-                candidates={instructorCandidates}
-                initialSelectedIds={offering.instructors.map((i) => i.userId)}
-              />
-              <div className="mt-3 flex justify-end">
-                <Button type="submit" variant="secondary" size="sm">
-                  Save instructors
-                </Button>
-              </div>
-            </Form>
+            <>
+              <Form
+                method="post"
+                className="bg-card border border-border rounded-lg p-5"
+              >
+                <input type="hidden" name="intent" value="set-instructors" />
+                <h2 className="text-sm font-semibold text-foreground mb-1">
+                  Instructors
+                </h2>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Instructors can edit this offering, review applications, and
+                  take attendance.
+                </p>
+                <InstructorPicker
+                  candidates={instructorCandidates}
+                  initialSelectedIds={memberInstructorIds}
+                />
+                <div className="mt-3 flex justify-end">
+                  <Button type="submit" variant="secondary" size="sm">
+                    Save instructors
+                  </Button>
+                </div>
+              </Form>
+
+              <section className="bg-card border border-border rounded-lg p-5">
+                <h2 className="text-sm font-semibold text-foreground mb-1">
+                  External instructors
+                </h2>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Dartmouth students who aren&apos;t DALI members. They sign in
+                  with Dartmouth and get the same management access for this
+                  offering.
+                </p>
+
+                {externalInstructors.length > 0 && (
+                  <ul className="flex flex-col gap-1.5 mb-3">
+                    {externalInstructors.map((x) => (
+                      <li
+                        key={x.userId}
+                        className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground"
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <Avatar name={x.name} size="xs" />
+                          <span className="truncate">{x.name}</span>
+                          <span className="rounded bg-accent-coral/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-coral">
+                            External
+                          </span>
+                        </span>
+                        <Form method="post">
+                          <input
+                            type="hidden"
+                            name="intent"
+                            value="remove-external-instructor"
+                          />
+                          <input type="hidden" name="userId" value={x.userId} />
+                          <button
+                            type="submit"
+                            aria-label={`Remove ${x.name}`}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </Form>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <Form
+                  method="post"
+                  className="flex flex-col gap-2 sm:flex-row sm:items-end"
+                >
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="invite-external-instructor"
+                  />
+                  <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+                    <input
+                      name="firstName"
+                      required
+                      placeholder="First name"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    />
+                    <input
+                      name="lastName"
+                      required
+                      placeholder="Last name"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    />
+                    <input
+                      name="netId"
+                      required
+                      placeholder="NetID"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-[8rem]"
+                    />
+                  </div>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Invite
+                  </Button>
+                </Form>
+              </section>
+            </>
           )}
 
           <section className="bg-card border border-border rounded-lg p-5">

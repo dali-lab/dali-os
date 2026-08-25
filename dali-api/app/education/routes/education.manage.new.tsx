@@ -3,7 +3,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.new";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { Button } from "~/components/ui/Button";
 import { OfferingFields } from "~/education/components/OfferingFields";
@@ -15,9 +14,9 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) return redirect("/education");
+  // Creating an offering is Core-only — an instructor (member or external) lands
+  // back on their manageable list.
+  if (!(await isCore(auth.user.sub))) return redirect("/education/manage");
   return null;
 }
 

@@ -4,7 +4,9 @@ import type { Route } from "./+types/partner.settings";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { isValidTimezone } from "~/lib/timezone";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {
@@ -22,6 +24,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Settings are org-scoped to the first active membership.
   const membership = ctx.memberships[0];
   const org = membership?.org ?? null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: ctx.auth.user.sub },
+    select: { photoUrl: true, pronouns: true, timeZone: true },
+  });
 
   const [members, pendingInvites] = await Promise.all([
     org
@@ -47,7 +54,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastName: ctx.contact.name.split(" ").slice(1).join(" ") ?? "",
       role: membership?.role ?? null,
       membershipId: membership?.id ?? null,
+      pronouns: user?.pronouns ?? null,
+      timeZone: user?.timeZone ?? null,
+      photoUrl: user?.photoUrl ?? null,
     },
+    photoPreviewUrl: await resolvePhotoUrl(user?.photoUrl),
     org,
     logoPreviewUrl: org ? await resolvePhotoUrl(org.logoUrl) : null,
     members,
@@ -71,11 +82,21 @@ export async function action({ request }: Route.ActionArgs) {
     if (!firstName || !lastName) {
       return { error: "First and last name are required." };
     }
+    const tzRaw = (form.get("timeZone") as string | null)?.trim() || null;
+    if (tzRaw && !isValidTimezone(tzRaw)) {
+      return { error: "Choose a valid time zone." };
+    }
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
     await prisma.$transaction([
       prisma.user.update({
         where: { id: ctx.auth.user.sub },
-        data: { firstName, lastName },
+        data: {
+          firstName,
+          lastName,
+          pronouns: (form.get("pronouns") as string | null)?.trim() || null,
+          timeZone: tzRaw,
+          photoUrl: (form.get("photoUrl") as string | null)?.trim() || null,
+        },
       }),
       prisma.partnerContact.update({
         where: { id: ctx.contact.id },
@@ -201,7 +222,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerSettings({ actionData }: Route.ComponentProps) {
-  const { me, org, logoPreviewUrl, members, pendingInvites, hasOrg } =
+  const { me, org, logoPreviewUrl, photoPreviewUrl, members, pendingInvites, hasOrg } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -228,6 +249,13 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         <h2 className="font-heading font-semibold text-dark-blue mb-4">Profile</h2>
         <Form method="post" className="flex flex-col gap-4">
           <input type="hidden" name="intent" value="profile" />
+          <PhotoUploadField
+            userId={me.userId}
+            name={`${me.firstName} ${me.lastName}`.trim()}
+            initialKey={me.photoUrl}
+            initialPreviewUrl={photoPreviewUrl}
+            readOnly={false}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>First name</label>
@@ -238,14 +266,47 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
               <input name="lastName" required defaultValue={me.lastName} className={inputClass} />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Role</label>
+              <input name="displayRole" defaultValue={me.role ?? ""} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Pronouns</label>
+              <input
+                name="pronouns"
+                placeholder="e.g. they/them"
+                defaultValue={me.pronouns ?? ""}
+                className={inputClass}
+              />
+            </div>
+          </div>
           <div>
-            <label className={labelClass}>Role</label>
-            <input name="displayRole" defaultValue={me.role ?? ""} className={inputClass} />
+            <label className={labelClass}>Time zone</label>
+            <select
+              name="timeZone"
+              defaultValue={me.timeZone ?? "America/New_York"}
+              className={inputClass}
+            >
+              {Intl.supportedValuesOf("timeZone").map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your local time zone, used when scheduling meetings with the lab.
+            </p>
           </div>
           <button type="submit" disabled={submitting} className={saveClass}>
             Save profile
           </button>
         </Form>
+      </section>
+
+      <section className="bg-card border border-border rounded-2xl p-5">
+        <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
+        <AppearanceSettingsBlock />
       </section>
 
       {hasOrg && org && (

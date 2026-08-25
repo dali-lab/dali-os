@@ -1,16 +1,15 @@
-import { redirect, useLoaderData, Link, useSearchParams, useFetcher } from "react-router";
+import { redirect, useLoaderData, Link, useFetcher } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { getUserRoles, isCore, currentTerm } from "~/lib/roles";
-import { redirectDartmouthToPortal } from "~/education/lib/access.server";
+import { getUserRoles, isCore } from "~/lib/roles";
 import { listManageable, runOfferingAction } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { educationPills } from "~/education/components/educationPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select } from "~/components/ui/floating";
-import { prisma } from "~/lib/db";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
 import { useEffect } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -24,30 +23,27 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isCore && !roles.isInstructor) return redirect("/education");
+  // Non-managers (incl. a Dartmouth non-member who isn't an instructor) go to
+  // their /portal home — not /education, which bounces non-members straight back.
+  if (!roles.isCore && !roles.isInstructor) return redirect("/portal");
 
-  const [offerings, terms, activeTerm] = await Promise.all([
+  const [offerings, termFilter] = await Promise.all([
     listManageable(auth.user.sub),
-    prisma.term.findMany({
-      orderBy: { sortKey: "asc" },
-      select: { id: true, code: true, sortKey: true, startDate: true, endDate: true },
-    }),
-    currentTerm(request),
+    // Instructors/Core plan offerings ahead of the term, so default to the
+    // current term plus upcoming ones (history a click away under "All terms").
+    resolveTermFilter(request, { default: "upcoming" }),
   ]);
-
-  const url = new URL(request.url);
-  const selectedTermId = url.searchParams.get("term") ?? "all";
 
   return {
     offerings,
     isCore: roles.isCore,
-    terms,
-    currentTermId: activeTerm?.id ?? null,
-    selectedTermId,
+    isExternal: !roles.isLabMember,
+    terms: termFilter.terms,
+    selected: termFilter.selected,
+    termIds: termFilter.termIds,
+    isAll: termFilter.isAll,
   };
 }
 
@@ -80,9 +76,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ManageEducation() {
-  const { offerings, isCore, terms, currentTermId, selectedTermId } =
+  const { offerings, isCore, isExternal, terms, selected, termIds, isAll } =
     useLoaderData<typeof loader>();
-  const [, setSearchParams] = useSearchParams();
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const dialog = useDialog();
   const toast = useToast();
@@ -94,18 +89,12 @@ export default function ManageEducation() {
     }
   }, [fetcher.data, toast]);
 
-  const termOptions: { value: string; label: string }[] = [
-    { value: "all", label: "All terms" },
-    ...terms.map((t) => ({
-      value: t.id,
-      label: t.id === currentTermId ? `${t.code} · current` : t.code,
-    })),
-  ];
-
-  const filtered =
-    selectedTermId === "all"
-      ? offerings
-      : offerings.filter((o) => o.termId === selectedTermId);
+  // termIds is the resolved scope: null for "All terms", [id] for one term, or
+  // the current+upcoming set. Offerings carry a termId, so one membership check
+  // covers all three cases.
+  const filtered = termIds
+    ? offerings.filter((o) => o.termId && termIds.includes(o.termId))
+    : offerings;
 
   async function handleDuplicate(offeringId: string, offeringTitle: string) {
     const raw = await dialog.prompt({
@@ -159,9 +148,13 @@ export default function ManageEducation() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AreaPillNav
-        items={educationPills({ canManage: true, isCore, active: "manage" })}
-      />
+      {/* The education area pills assume the member shell; an external instructor
+          runs in the lightweight InstructorChrome, so the pill row is hidden. */}
+      {!isExternal && (
+        <AreaPillNav
+          items={educationPills({ canManage: true, isCore, active: "manage" })}
+        />
+      )}
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -183,26 +176,7 @@ export default function ManageEducation() {
       {/* Term filter */}
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground shrink-0">Term</span>
-        <Select
-          value={selectedTermId}
-          options={termOptions}
-          onChange={(v) => {
-            if (v === "all") {
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.delete("term");
-                return next;
-              });
-            } else {
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("term", v);
-                return next;
-              });
-            }
-          }}
-          ariaLabel="Filter by term"
-        />
+        <TermFilter terms={terms} selected={selected} includeUpcoming />
       </div>
 
       {filtered.length === 0 ? (
@@ -211,8 +185,8 @@ export default function ManageEducation() {
             No offerings yet
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            {selectedTermId !== "all"
-              ? 'No offerings for this term. Try "All terms" or create a new one.'
+            {!isAll
+              ? 'No offerings in this term range. Try "All terms" or create a new one.'
               : isCore
                 ? 'Create the first miniseries or workshop with "New offering".'
                 : "You'll see offerings here once Core assigns you as an instructor."}

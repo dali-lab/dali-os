@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { Link, useFetcher, useLoaderData, useSearchParams } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { Link, useFetcher, useLoaderData } from "react-router";
+import { TermFilter } from "~/components/TermFilter";
 import { IssueTermAgreementsButton } from "~/signing/components/IssueTermAgreementsButton";
 import {
   FileSignature,
@@ -68,11 +68,10 @@ export function AgreementsConsole() {
   const data = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const [showPast, setShowPast] = useState(false);
-  const [, setSearchParams] = useSearchParams();
 
   // The route renders this only in console mode; guard keeps the types honest.
   if (data.mode !== "console") return null;
-  const { agreements, activity, termId, termCode, terms } = data;
+  const { agreements, activity, termId, termCode, terms, selected } = data;
 
   const needsAttention = agreements.filter((a) => a.needsActivation || a.draftPending);
 
@@ -114,20 +113,7 @@ export function AgreementsConsole() {
           {/* Focus term: switch which term the console manages (issue an upcoming
               term's agreements early, track its completion). */}
           {terms.length > 0 && termId && (
-            <Select
-              value={termId}
-              options={terms.map((t) => ({ value: t.id, label: t.code }))}
-              ariaLabel="Term"
-              onChange={(value) =>
-                setSearchParams(
-                  (prev) => {
-                    prev.set("term", value);
-                    return prev;
-                  },
-                  { replace: true },
-                )
-              }
-            />
+            <TermFilter terms={terms} selected={selected} includeAll={false} replace />
           )}
           {/* Bulk: issue every per-term agreement for the focus term at once. */}
           {termId && (

@@ -21,15 +21,27 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
 
-  const [cycle, offerings, me, upcomingSessions] = await Promise.all([
-    getActiveCycle(),
-    listCatalog(auth.user.sub),
-    prisma.user.findUnique({
-      where: { id: auth.user.sub },
-      select: { timeZone: true },
-    }),
-    listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
-  ]);
+  const [cycle, offerings, me, upcomingSessions, instructorAssignments] =
+    await Promise.all([
+      getActiveCycle(),
+      listCatalog(auth.user.sub),
+      prisma.user.findUnique({
+        where: { id: auth.user.sub },
+        select: { timeZone: true },
+      }),
+      listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
+      // A non-member can hold instructor assignments (external instructor) — the
+      // Teaching card is their door into the management surface.
+      prisma.instructorAssignment.findMany({
+        where: { userId: auth.user.sub },
+        select: { offering: { select: { id: true, title: true } } },
+      }),
+    ]);
+  const teachingOfferings = Array.from(
+    new Map(
+      instructorAssignments.map((a) => [a.offering.id, a.offering]),
+    ).values(),
+  );
   // Portal students can't set a timezone yet — Eastern is the safe default for
   // a Dartmouth cohort.
   const tz = me?.timeZone ?? "America/New_York";
@@ -95,6 +107,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         location: s.location,
       })),
     },
+    teaching: {
+      offerings: teachingOfferings,
+    },
   };
 }
 
@@ -119,7 +134,7 @@ function CardShell({
 }
 
 export default function PortalHome() {
-  const { firstName, hiring, education } = useLoaderData<typeof loader>();
+  const { firstName, hiring, education, teaching } = useLoaderData<typeof loader>();
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-8">
@@ -216,6 +231,30 @@ export default function PortalHome() {
             </ul>
           )}
         </CardShell>
+
+        {teaching.offerings.length > 0 && (
+          <CardShell
+            title="Teaching"
+            blurb={
+              teaching.offerings.length === 1
+                ? `You're an instructor for ${teaching.offerings[0].title}. Manage sessions, applications, attendance, and grading.`
+                : `You're an instructor for ${teaching.offerings.length} offerings. Manage sessions, applications, attendance, and grading.`
+            }
+          >
+            <Link
+              to={
+                teaching.offerings.length === 1
+                  ? `/education/manage/${teaching.offerings[0].id}`
+                  : "/education/manage"
+              }
+              className={buttonClasses("primary", "sm")}
+            >
+              {teaching.offerings.length === 1
+                ? "Manage my offering"
+                : "Manage offerings"}
+            </Link>
+          </CardShell>
+        )}
       </div>
     </div>
   );

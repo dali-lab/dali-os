@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_TERMS, termFilterOrder, type TermOption } from "~/lib/terms.shared";
+import { ALL_TERMS, UPCOMING, termFilterOrder, type TermOption } from "~/lib/terms.shared";
 
 // sortKey-desc, the order resolveTermFilter hands back.
 const TERMS: TermOption[] = [
@@ -10,10 +10,10 @@ const TERMS: TermOption[] = [
 ];
 
 describe("termFilterOrder", () => {
-  it("leads with All terms, then the current term, then older ones", () => {
+  it("leads with All terms, then the current term (labelled), then older ones", () => {
     expect(termFilterOrder(TERMS).map((o) => o.label)).toEqual([
       "All terms",
-      "25F",
+      "25F · current",
       "26W",
       "25X",
       "25S",
@@ -42,5 +42,19 @@ describe("termFilterOrder", () => {
 
   it("handles an empty term list", () => {
     expect(termFilterOrder([])).toEqual([{ value: ALL_TERMS, label: "All terms" }]);
+  });
+
+  it("prepends Current & upcoming when opted in, ahead of All terms", () => {
+    const opts = termFilterOrder(TERMS, { includeUpcoming: true });
+    expect(opts.slice(0, 2)).toEqual([
+      { value: UPCOMING, label: "Current & upcoming" },
+      { value: ALL_TERMS, label: "All terms" },
+    ]);
+  });
+
+  it("omits All terms for a mandatory single-term switcher", () => {
+    const opts = termFilterOrder(TERMS, { includeAll: false });
+    expect(opts.map((o) => o.value)).not.toContain(ALL_TERMS);
+    expect(opts[0]).toEqual({ value: "t-25f", label: "25F · current" });
   });
 });
