@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import type { WeekEventKind } from "~/components/WeekCalendarPanel";
 import { cn } from "~/lib/cn";
 
 // Month companion to WeekCalendarPanel. A month can't carry an hour grid, so
@@ -19,7 +20,7 @@ export type MonthDayDTO = {
 
 export type MonthEvent = {
   id: string;
-  kind: "general" | "meeting";
+  kind: WeekEventKind;
   /** Index into the panel's day cells. */
   dayIdx: number;
   label: string;
@@ -36,6 +37,10 @@ const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_FILLS: Record<MonthEvent["kind"], string> = {
   general: `bg-accent-teal-light ${EVENT_TEXT}`,
   meeting: `bg-accent-coral-light ${EVENT_TEXT}`,
+  // The timeline's level hues, so an epic deadline here and an epic bar there
+  // are the same colour. Light tints, because the chip's ink is fixed dark.
+  epic: `bg-[#c9b6ff] ${EVENT_TEXT}`,
+  story: `bg-[#8fdedb] ${EVENT_TEXT}`,
 };
 // Past three chips a cell stops being scannable; the rest go behind a count
 // that opens the week.
@@ -59,8 +64,12 @@ export function MonthCalendarPanel({
   basePath?: string;
   sourceLabel?: string;
 }) {
+  // basePath may already carry a query (the project page's `?tab=meetings`),
+  // so the month param joins with & rather than always starting a new query.
   const monthHref = (offset: number) =>
-    offset === 0 ? basePath : `${basePath}?month=${offset}`;
+    offset === 0
+      ? basePath
+      : `${basePath}${basePath.includes("?") ? "&" : "?"}month=${offset}`;
 
   const byDay = new Map<number, MonthEvent[]>();
   for (const ev of events) {

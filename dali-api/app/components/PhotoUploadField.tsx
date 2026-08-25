@@ -5,6 +5,8 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import { initialsFromName } from "~/lib/display";
+import { useInitialsTint } from "~/components/ui/Avatar";
+import { cn } from "~/lib/cn";
 import { PhotoCropModal } from "./PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
@@ -35,6 +37,7 @@ export function PhotoUploadField({
   keyPrefix?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const tint = useInitialsTint();
   const [key, setKey] = useState(initialKey ?? "");
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     initialPreviewUrl ?? null,
@@ -165,7 +168,12 @@ export function PhotoUploadField({
               className="w-20 h-20 rounded-lg object-cover border border-border"
             />
           ) : (
-            <div className="w-20 h-20 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-xl">
+            <div
+              className={cn(
+                "w-20 h-20 rounded-lg border border-border flex items-center justify-center font-bold text-xl",
+                tint,
+              )}
+            >
               {initialsFromName(name)}
             </div>
           )}

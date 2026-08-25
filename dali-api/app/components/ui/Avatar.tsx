@@ -2,6 +2,7 @@ import { cn } from "~/lib/cn";
 import { initialsFromName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { formatLastActive } from "~/lib/presence";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg";
@@ -29,10 +30,25 @@ const DOT_SIZE: Partial<Record<AvatarSize, string>> = {
   lg: "w-3.5 h-3.5",
 };
 
+/**
+ * Tint for an initials placeholder standing in for a missing photo.
+ *
+ * The os shell deliberately leaves coral unmapped (it's the brand's, and the
+ * primary button needs it), but a coral-tinted chip on every photoless person
+ * reads as pink chrome the palette doesn't have. Under the flag these take the
+ * same neutral tint the partner org placeholders already use. Exported so the
+ * larger profile-page placeholders stay in step with the avatar.
+ */
+export function useInitialsTint(): string {
+  const os = useFeatureFlag("os-redesign");
+  return os ? "bg-brand-tint text-dark-blue" : "bg-accent-coral/15 text-accent-coral";
+}
+
 export function Avatar({ photoUrl, name, size = "md", className, userId }: AvatarProps) {
   // Only sizes that have visual weight warrant a presence dot; xs contexts
   // (stacked avatar groups, tight lists) are too small and too numerous.
   const showDot = !!userId && size !== "xs";
+  const tint = useInitialsTint();
 
   const avatarEl = photoUrl ? (
     <img
@@ -43,7 +59,8 @@ export function Avatar({ photoUrl, name, size = "md", className, userId }: Avata
   ) : (
     <div
       className={cn(
-        "bg-accent-coral/15 text-accent-coral font-medium rounded-full flex items-center justify-center",
+        "font-medium rounded-full flex items-center justify-center",
+        tint,
         SIZES[size],
         className,
       )}

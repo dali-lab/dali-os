@@ -15,7 +15,7 @@ const TASK_ID = "task-1";
 const CALLER = "user-1";
 
 const mockPrisma = prisma as unknown as {
-  task: { findUnique: ReturnType<typeof vi.fn> };
+  task: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   projectFile: { findUnique: ReturnType<typeof vi.fn> };
   taskFileLink: {
     createMany: ReturnType<typeof vi.fn>;
@@ -39,6 +39,8 @@ beforeEach(() => {
     auth: { user: { sub: CALLER } },
   } as any);
   mockPrisma.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: "p1" });
+  mockPrisma.taskFileLink.createMany.mockResolvedValue({ count: 1 });
+  mockPrisma.taskFileLink.deleteMany.mockResolvedValue({ count: 1 });
   mockPrisma.projectFile.findUnique.mockResolvedValue({
     id: "f1",
     title: "Poster draft",
@@ -58,6 +60,23 @@ describe("POST /api/tasks/:id/files", () => {
       data: [{ taskId: TASK_ID, fileId: "f1" }],
       skipDuplicates: true,
     });
+  });
+
+  it("stamps activityAt so the board flags the task as updated", async () => {
+    await send("POST", { fileId: "f1" });
+
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { activityAt: expect.any(Date) },
+    });
+  });
+
+  it("leaves activityAt alone when the file was already linked", async () => {
+    mockPrisma.taskFileLink.createMany.mockResolvedValue({ count: 0 });
+
+    await send("POST", { fileId: "f1" });
+
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
   });
 
   it("rejects a file from another project", async () => {
@@ -119,6 +138,23 @@ describe("DELETE /api/tasks/:id/files", () => {
     expect(mockPrisma.taskFileLink.deleteMany).toHaveBeenCalledWith({
       where: { taskId: TASK_ID, fileId: "f1" },
     });
+  });
+
+  it("stamps activityAt when a link was actually removed", async () => {
+    await send("DELETE", { fileId: "f1" });
+
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { activityAt: expect.any(Date) },
+    });
+  });
+
+  it("leaves activityAt alone when nothing was linked", async () => {
+    mockPrisma.taskFileLink.deleteMany.mockResolvedValue({ count: 0 });
+
+    await send("DELETE", { fileId: "f1" });
+
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
   });
 });
 

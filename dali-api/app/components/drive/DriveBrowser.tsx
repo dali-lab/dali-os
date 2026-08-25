@@ -11,7 +11,7 @@
 // ALL pre-existing features are preserved:
 //   • Type filter, search, create folder/doc, drag-and-drop internal move,
 //     drag-to-upload from desktop, favorites, rename, move, delete, bulk delete,
-//     context menu, keyboard navigation, details pane, breadcrumb, sort.
+//     context menu, keyboard navigation, breadcrumb, sort.
 
 import {
   createContext,
@@ -57,7 +57,6 @@ import {
   Star,
   List as ListIcon,
   LayoutGrid,
-  PanelRight,
   Upload,
   FolderOpen,
   Download,
@@ -523,7 +522,6 @@ export function DriveBrowser({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [viewMode, setViewMode] = useState<ViewMode>("columns");
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [uploadOver, setUploadOver] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DriveItem | null>(null);
   const dragDepth = useRef(0);
@@ -945,15 +943,19 @@ export function DriveBrowser({
     <DriveScale.Provider value={os}>
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={() => setSelected(new Set())}>
-        {/* ── Toolbar row: breadcrumb · filter · search · view · details · New ── */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <Breadcrumb
-            currentScope={currentScope}
-            folderCrumbs={folderCrumbs}
-            onNavigate={onNavigate}
-            dragging={!!activeDrag}
-          />
+        {/* The trail gets its own line. Sharing the toolbar row, it was the one
+            flexible item among half a dozen shrink-0 controls, so it took
+            whatever width was left over — at a couple of levels deep that was
+            "Pro… › Hood M…", which is not a hierarchy anyone can read. */}
+        <Breadcrumb
+          currentScope={currentScope}
+          folderCrumbs={folderCrumbs}
+          onNavigate={onNavigate}
+          dragging={!!activeDrag}
+        />
 
+        {/* ── Toolbar row: filter · search · view · New ── */}
+        <div className="flex items-center gap-3 flex-wrap">
           {filterControl}
 
           <div className="relative w-full sm:w-56 shrink-0">
@@ -1063,29 +1065,7 @@ export function DriveBrowser({
             </button>
           </div>
 
-          <button
-            type="button"
-            data-testid="drive-details-toggle"
-            aria-label="Toggle details"
-            aria-pressed={detailsOpen}
-            onClick={(e) => {
-              e.stopPropagation();
-              setDetailsOpen((v) => !v);
-            }}
-            className={cn(
-              "shrink-0 border border-border",
-              os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
-              detailsOpen
-                ? os
-                  ? "bg-os-container text-foreground"
-                  : "bg-accent-coral/10 text-accent-coral"
-                : "text-muted-foreground hover:bg-muted/50",
-            )}
-          >
-            <PanelRight className="w-4 h-4" />
-          </button>
-
-          {newMenu}
+          <div className="ml-auto flex shrink-0 items-center gap-3">{newMenu}</div>
         </div>
 
         {tagChips}
@@ -1229,7 +1209,7 @@ export function DriveBrowser({
         )}
 
         {/* ── Body ── */}
-        <div className={detailsOpen ? "flex gap-3 items-start" : ""}>
+        <div>
           {viewMode === "columns" && !searching ? (
             /* ── MILLER COLUMNS ─────────────────────────────────────────── */
             <div
@@ -1384,15 +1364,6 @@ export function DriveBrowser({
             </div>
           )}
 
-          {detailsOpen && (
-            <DetailsPane
-              currentScope={currentScope}
-              currentFolderId={currentFolderId}
-              listing={listing}
-              selectedItems={selectedItems}
-              onOpen={onOpenItem}
-            />
-          )}
         </div>
       </div>
 
@@ -1629,6 +1600,10 @@ function Breadcrumb({
   // goes entirely rather than repeating the word right beneath it — the scope
   // crumb leads, and the h1 is the way back to the root.
   const os = useContext(DriveScale);
+  // On its own row an empty trail would still spend a row gap. Off-flag the
+  // root crumb always renders, so this only bites at a drive's top level under
+  // the redesign — where there is deliberately nothing to show.
+  if (os && folderCrumbs.length === 0) return null;
   const collapse = folderCrumbs.length > 3;
   const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
   const shown = collapse ? folderCrumbs.slice(folderCrumbs.length - 2) : folderCrumbs;
@@ -1637,7 +1612,7 @@ function Breadcrumb({
     <nav
       aria-label="Breadcrumb"
       data-testid="drive-breadcrumb"
-      className={`flex items-center gap-1 min-w-0 flex-1 ${t.row}`}
+      className={`flex flex-wrap items-center gap-1 min-w-0 ${t.row}`}
     >
       {!os && (
         <button
@@ -1653,7 +1628,13 @@ function Breadcrumb({
           Drive
         </button>
       )}
-      {currentScope && (
+      {/* The scope crumb only earns its place once you're inside a folder,
+          where it is the way back up. Sitting at the scope root under the
+          redesign it led the trail with no chevron and nothing after it — a
+          lone button beneath the page title whose only destination was the
+          page you were already on. It still leads the trail off-flag, where
+          the root "Drive" crumb above makes it read as a trail. */}
+      {currentScope && (!os || folderCrumbs.length > 0) && (
         <Crumb
           label={currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label}
           testid="drive-crumb-scope"
@@ -2169,75 +2150,6 @@ function SearchResults({
           />
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Details pane ─────────────────────────────────────────────────────────────
-
-function DetailsPane({
-  currentScope,
-  currentFolderId,
-  listing,
-  selectedItems,
-  onOpen,
-}: {
-  currentScope: DriveTreeScope | null;
-  currentFolderId: string | null;
-  listing: DriveItem[];
-  selectedItems: DriveItem[];
-  onOpen: (item: DriveItem) => void;
-}) {
-  const t = useDriveText();
-  const one = selectedItems.length === 1 ? selectedItems[0] : null;
-  const path = currentScope
-    ? [currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label, ...crumbsFor(currentScope.items, currentFolderId).map((c) => c.title)].join(" › ")
-    : "Drive";
-
-  return (
-    <aside
-      className={`w-64 shrink-0 rounded-lg border border-border bg-card p-4 ${t.row}`}
-      data-testid="drive-details"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {selectedItems.length > 1 ? (
-        <p className="font-medium text-foreground">{selectedItems.length} items selected</p>
-      ) : one ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col items-center gap-2 py-2">
-            {itemIcon(one, true)}
-            <p className="text-center font-semibold text-foreground break-words">{one.title || "Untitled"}</p>
-          </div>
-          <dl className={`flex flex-col gap-1.5 ${t.meta}`}>
-            <Row label="Kind" value={kindLabel(one)} />
-            <Row label="Modified" value={relativeTime(one.updatedAt as unknown as string)} />
-            {one.type === "file" && <Row label="Size" value={formatSize(one.sizeBytes) || "—"} />}
-            <Row label="Location" value={path} />
-          </dl>
-          <button
-            type="button"
-            onClick={() => onOpen(one)}
-            className={`mt-1 inline-flex items-center justify-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 ${t.meta} font-medium text-white hover:bg-accent-coral/90`}
-          >
-            <FolderOpen className="w-3.5 h-3.5" /> Open
-          </button>
-        </div>
-      ) : (
-        <div className={`flex flex-col gap-1.5 ${t.meta}`}>
-          <p className={`font-medium text-foreground ${t.row}`}>{path}</p>
-          <p className="text-muted-foreground">{listing.length} item{listing.length === 1 ? "" : "s"}</p>
-          <p className="text-muted-foreground mt-2">Select an item to see its details.</p>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-foreground text-right break-words min-w-0">{value}</dd>
     </div>
   );
 }
