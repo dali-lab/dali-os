@@ -960,6 +960,21 @@ function EpicDetail({
         >
           Description
         </h3>
+        {/* The plain-text `description` column predates the collab doc and
+            nothing in this modal writes it any more — but the timeline's hover
+            card still reads it, so an epic carried over from before the switch
+            showed a paragraph on hover that vanished the moment you clicked the
+            bar. It reads here too now, above the doc, so the two agree. */}
+        {epic.description && (
+          <p
+            className={cn(
+              "whitespace-pre-wrap text-sm text-foreground",
+              os ? "mb-3" : "mb-2",
+            )}
+          >
+            {epic.description}
+          </p>
+        )}
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -977,14 +992,18 @@ function EpicDetail({
               className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-accent-coral/30"
             />
           </PresenceProvider>
-        ) : (
+        ) : canManage ? (
+          <p className="text-sm text-muted-foreground italic">Preparing editor…</p>
+        ) : !collabToken ? (
           <p className="text-sm text-muted-foreground italic">
-            {canManage
-              ? "Preparing editor…"
-              : collabToken
-                ? "No description yet."
-                : "Sign in again to see the description."}
+            Sign in again to see the description.
           </p>
+        ) : (
+          // With the legacy paragraph above, "No description yet." would
+          // contradict what the reader is looking at — the doc is just empty.
+          !epic.description && (
+            <p className="text-sm text-muted-foreground italic">No description yet.</p>
+          )
         )}
       </section>
 

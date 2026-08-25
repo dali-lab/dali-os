@@ -1290,10 +1290,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-// The loader doesn't depend on search params, so a pure search-param change
-// (opening/closing the task modal via ?task=, switching the ?epic= filter or
-// ?tab=) shouldn't re-run it. Skipping that revalidation avoids a needless
-// DB round-trip and the re-render that otherwise bounces the board's scroll
+// Search params the loader actually reads. `tab` gates the Meetings month grid
+// and `month` pages it — a navigation that changes either has to re-run the
+// loader or the tab renders with data built for the previous URL. Everything
+// else on this page (?task=, ?epic=, ?sprint=, ?view=) is client-only.
+const LOADER_SEARCH_PARAMS = ["tab", "month"] as const;
+
+// The loader depends on only the params above, so any other search-param change
+// (opening/closing the task modal via ?task=, switching the ?epic= filter)
+// shouldn't re-run it. Skipping that revalidation avoids a needless DB
+// round-trip and the re-render that otherwise bounces the board's scroll
 // position to the top when you open a task.
 export function shouldRevalidate({
   currentUrl,
@@ -1312,7 +1318,10 @@ export function shouldRevalidate({
   if (
     !formMethod &&
     currentUrl.pathname === nextUrl.pathname &&
-    currentUrl.search !== nextUrl.search
+    currentUrl.search !== nextUrl.search &&
+    LOADER_SEARCH_PARAMS.every(
+      (key) => currentUrl.searchParams.get(key) === nextUrl.searchParams.get(key),
+    )
   ) {
     return false;
   }
@@ -1875,14 +1884,19 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {/* One panel well for every tab, floored at the viewport height. Switching
-          tabs keeps your scroll position (see setTab's preventScrollReset), but
-          only while there is somewhere to keep it: a short tab used to collapse
-          the document under the current offset, and the browser clamped you
-          back to the top — the header scrolling itself into view again read as
-          the page snapping. The floor keeps that scroll range alive, so the tab
-          strip stays put whichever tab you land on. */}
-      <div className={cn("flex flex-col", os ? "gap-6 min-h-[70vh]" : "gap-4")}>
+      {/* One panel well for every tab, with a floor under it. Switching tabs
+          keeps your scroll position (see setTab's preventScrollReset), but only
+          while there is somewhere to keep it: a short tab used to collapse the
+          document under the current offset, and the browser clamped you back to
+          the top — the header scrolling itself into view again read as the page
+          snapping. The floor keeps that scroll range alive.
+
+          It was 70vh, which bought that at the price of most of a screen of
+          empty card under Project details — the floor is not free space, it is
+          space every tab pays for whether or not it needs it. A quarter of the
+          viewport is enough to keep the scroll range alive without the page
+          ending in a void. */}
+      <div className={cn("flex flex-col", os ? "gap-6 min-h-[25vh]" : "gap-4")}>
         {/* Progress (os): the timeline and the board are one surface — the plan
             above, the work under it — rather than two tabs you flip between to
             answer one question. */}
