@@ -3342,23 +3342,31 @@ enum SubmissionType {
   Text
   File
   Mixed
+  // URL deliverable (Figma/GitHub/Drive link) — stored in EducationSubmission.link.
+  Link
+  // Student authors in a BlockNote collab doc (EducationSubmission.contentDocId).
+  Doc
+  // No artifact — the student marks the task done. Informational, like the rest.
+  Complete
 }
 
 model EducationSubmission {
   id            String    @id @default(cuid())
   assignmentId  String
   studentId     String
-  // DORMANT in v1 — students (incl. portal users) don't get collab editing;
-  // the plain-text columns below hold the body and feedback instead.
+  // Set for Doc submissions — the BlockNote collab room the student authors in
+  // (room id "edusubmission:<submissionId>:content"). Null for other types.
   contentDocId  String?
   files         Json?
   submittedAt   DateTime?
   gradedAt      DateTime?
-  // DORMANT in v1 — see contentDocId.
+  // DORMANT in v1 — instructor feedback lives in feedbackText below.
   feedbackDocId String?
 
   // Plain-text submission body (Text/Mixed submission types).
   textContent  String?
+  // URL deliverable body (Link submission type).
+  link         String?
   // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
   grade        String?
   // Optional numeric score, set when the assignment defines points. Paired with

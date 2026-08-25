@@ -4,12 +4,14 @@ import { requireEnrollment } from "~/education/lib/access.server";
 import {
   getAssignmentForStudent,
   submitAssignment,
+  ensureDocSubmissionRow,
 } from "~/education/lib/assignments.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { prisma } from "~/lib/db";
+import { parseSessionCookie } from "~/lib/cookies";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI OS` },
@@ -51,6 +53,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!result) throw new Response("Not found", { status: 404 });
 
+  // For Doc-type assignments, ensure a submission row exists with contentDocId
+  // set so the collab editor has a room to bind to before the student submits.
+  if (
+    result.assignment.submissionType === "Doc" &&
+    applicationId !== null &&
+    !result.submission?.contentDocId
+  ) {
+    await ensureDocSubmissionRow({
+      assignmentId: params.assignmentId!,
+      studentId: auth.user.sub,
+      applicationId,
+    });
+    // Re-fetch after upsert so contentDocId is present in the returned data.
+    const refreshed = await getAssignmentForStudent({
+      assignmentId: params.assignmentId!,
+      offeringId: params.offeringId!,
+      studentId: auth.user.sub,
+    });
+    if (refreshed) result.submission = refreshed.submission;
+  }
+
   const instructionsContent = result.assignment.instructionsDocId
     ? await readDocAsBlocks(result.assignment.instructionsDocId)
     : null;
@@ -80,6 +103,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : null,
     canSubmit: applicationId !== null,
     isManager,
+    collabToken: parseSessionCookie(request),
+    userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
 }
 
@@ -114,6 +139,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     applicationId,
     textContent: String(formData.get("textContent") ?? ""),
     files,
+    link: String(formData.get("link") ?? ""),
   });
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
@@ -121,7 +147,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberAssignment() {
-  const { offeringId, assignment, submission, canSubmit } =
+  const { offeringId, assignment, submission, canSubmit, collabToken, userName } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
 
@@ -144,6 +170,8 @@ export default function MemberAssignment() {
         assignment={assignment}
         submission={submission}
         canSubmit={canSubmit}
+        collabToken={collabToken}
+        userName={userName}
       />
     </div>
   );
