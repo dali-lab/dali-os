@@ -21,7 +21,7 @@ export async function listMaterialPages(offeringId: string) {
       studentEditable: false,
     },
     orderBy: [{ position: "asc" }],
-    select: { id: true, title: true, kind: true, parentPageId: true, updatedAt: true },
+    select: { id: true, title: true, kind: true, parentPageId: true, updatedAt: true, sessionId: true },
   });
   // 2-level tree, top-level pages first with their children inline after.
   const topLevel = pages.filter((p) => p.parentPageId === null);
@@ -36,10 +36,12 @@ export async function listMaterialPages(offeringId: string) {
     id: p.id,
     title: p.title,
     isFolder: p.kind === "Folder",
+    sessionId: p.sessionId,
     updatedAt: p.updatedAt,
     children: (childrenByParent.get(p.id) ?? []).map((c) => ({
       id: c.id,
       title: c.title,
+      sessionId: c.sessionId,
       updatedAt: c.updatedAt,
     })),
   }));
@@ -101,6 +103,8 @@ export async function createMaterialPage(args: {
   studentEditable?: boolean;
   /** A Folder groups materials and is never opened as a document itself. */
   kind?: "FreeForm" | "Folder";
+  /** Optional link to a specific session — null/undefined = offering-wide. */
+  sessionId?: string | null;
   actorId: string;
 }): Promise<{ id: string } | { error: string; status: number }> {
   const title = args.title.trim();
@@ -139,6 +143,17 @@ export async function createMaterialPage(args: {
     orderBy: { position: "desc" },
     select: { position: true },
   });
+  // Validate sessionId belongs to this offering when provided.
+  if (args.sessionId) {
+    const session = await prisma.educationSession.findUnique({
+      where: { id: args.sessionId },
+      select: { offeringId: true },
+    });
+    if (!session || session.offeringId !== args.offeringId) {
+      return { error: "Session not found", status: 404 };
+    }
+  }
+
   const page = await prisma.page.create({
     data: {
       workspaceType: "EducationOffering",
@@ -149,6 +164,7 @@ export async function createMaterialPage(args: {
       position: (last?.position ?? -1) + 1,
       studentEditable: args.studentEditable ?? false,
       createdById: args.actorId,
+      sessionId: args.sessionId ?? null,
     },
     select: { id: true },
   });

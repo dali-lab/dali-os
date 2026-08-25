@@ -42,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [assignment, submissions] = await Promise.all([
     prisma.educationAssignment.findUnique({
       where: { id: params.assignmentId },
-      select: { id: true, title: true, dueAt: true, submissionType: true },
+      select: { id: true, title: true, dueAt: true, submissionType: true, points: true },
     }),
     listSubmissions(params.assignmentId!),
   ]);
@@ -71,10 +71,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   if (formData.get("intent") !== "grade-submission")
     return Response.json({ error: "Unknown intent" }, { status: 400 });
+  const scoreRaw = String(formData.get("score") ?? "");
+  const scoreParsed = scoreRaw !== "" ? parseInt(scoreRaw, 10) : null;
   const result = await gradeSubmission({
     submissionId: String(formData.get("submissionId") ?? ""),
     offeringId,
     grade: String(formData.get("grade") ?? ""),
+    score: Number.isFinite(scoreParsed) ? scoreParsed : null,
     actorId: auth.user.sub,
   });
   if ("error" in result)
@@ -178,6 +181,22 @@ export default function GradeAssignment() {
               <Form method="post" className="flex items-end gap-3">
                 <input type="hidden" name="intent" value="grade-submission" />
                 <input type="hidden" name="submissionId" value={s.id} />
+                {assignment.points != null && (
+                  <label className="block">
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Score (out of {assignment.points})
+                    </span>
+                    <input
+                      type="number"
+                      name="score"
+                      min={0}
+                      max={assignment.points}
+                      defaultValue={s.score ?? ""}
+                      placeholder="—"
+                      className="mt-1 w-24 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                )}
                 <label className="block">
                   <span className="text-xs font-semibold text-muted-foreground">Grade</span>
                   <input

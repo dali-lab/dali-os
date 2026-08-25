@@ -51,6 +51,45 @@ describe("certificateEligibility", () => {
       certificateEligibility({ type: "Workshop", totalSessions: 0, present: 0, excused: 0 }),
     ).toBe(false);
   });
+
+  it("uses a non-default threshold when provided", () => {
+    // 3/6 = 50%, which is below 80% but passes a 50% threshold.
+    expect(
+      certificateEligibility({
+        type: "Miniseries",
+        totalSessions: 6,
+        present: 3,
+        excused: 0,
+        threshold: 0.5,
+      }),
+    ).toBe(true);
+    // 2/6 ≈ 33%, still below 50%.
+    expect(
+      certificateEligibility({
+        type: "Miniseries",
+        totalSessions: 6,
+        present: 2,
+        excused: 0,
+        threshold: 0.5,
+      }),
+    ).toBe(false);
+  });
+
+  it("defaults to 80% when threshold is omitted", () => {
+    // Matches the existing boundary test — explicit check that omitting threshold
+    // is identical to passing 0.8.
+    expect(
+      certificateEligibility({ type: "Miniseries", totalSessions: 5, present: 4, excused: 0 }),
+    ).toBe(
+      certificateEligibility({
+        type: "Miniseries",
+        totalSessions: 5,
+        present: 4,
+        excused: 0,
+        threshold: 0.8,
+      }),
+    );
+  });
 });
 
 describe("closeOutOffering", () => {
@@ -69,6 +108,7 @@ describe("closeOutOffering", () => {
       title: "Test Workshop",
       type: "Workshop",
       closedOutAt: null,
+      completionThreshold: 0.8,
       _count: { sessions: 1 },
       applications: [
         {

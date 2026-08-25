@@ -38,7 +38,8 @@ export type HubData = {
     id: string;
     title: string;
     isFolder: boolean;
-    children: { id: string; title: string }[];
+    sessionId: string | null;
+    children: { id: string; title: string; sessionId: string | null }[];
   }[];
   workspaceDocs: { id: string; title: string }[];
   assignments: {
@@ -280,49 +281,7 @@ export function CourseHub({
       )}
 
       {tab === "materials" && (
-        <div>
-          {data.materials.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">
-              No materials posted yet.
-            </p>
-          ) : (
-            // Each material is a card you click, not a text link in a list:
-            // a document icon to say what it is, the whole row as the target,
-            // and a chevron so it reads as somewhere to go.
-            <ul className="flex flex-col gap-4">
-              {data.materials.map((p) => (
-                <li key={p.id} className="flex flex-col gap-1.5">
-                  {p.isFolder ? (
-                    // A folder groups materials; there's nothing to open, so it
-                    // reads as a heading rather than a card.
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      <Folder className="h-3.5 w-3.5" aria-hidden />
-                      {p.title}
-                    </p>
-                  ) : (
-                    <MaterialLink to={`${basePath}/page/${p.id}`} title={p.title} />
-                  )}
-                  {p.children.length > 0 && (
-                    <ul className={`flex flex-col gap-1.5 ${p.isFolder ? "" : "ml-6"}`}>
-                      {p.children.map((c) => (
-                        <li key={c.id}>
-                          <MaterialLink
-                            to={`${basePath}/page/${c.id}`}
-                            title={c.title}
-                            nested={!p.isFolder}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {p.isFolder && p.children.length === 0 && (
-                    <p className="text-sm text-muted-foreground italic">Nothing in here yet.</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <MaterialsTab materials={data.materials} sessions={data.sessions} basePath={basePath} />
       )}
 
       {tab === "workspace" && (
@@ -403,6 +362,115 @@ export function CourseHub({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Student Materials tab: groups materials by session with an "All / general"
+ * bucket for those not linked to a specific session. Sessions are ordered by
+ * sequence; within each group the original position order is preserved.
+ */
+function MaterialsTab({
+  materials,
+  sessions,
+  basePath,
+}: {
+  materials: HubData["materials"];
+  sessions: HubData["sessions"];
+  basePath: string;
+}) {
+  if (materials.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground italic">No materials posted yet.</p>
+    );
+  }
+
+  // Build a stable session label map (id → "Session N — title or date").
+  const sessionLabel = new Map(
+    sessions.map((s) => [s.id, s.title ? `Session ${s.sequence} — ${s.title}` : `Session ${s.sequence}`]),
+  );
+
+  // Partition into general (no sessionId) and per-session buckets, preserving
+  // the original display order within each bucket.
+  const general: HubData["materials"] = [];
+  const bySession = new Map<string, HubData["materials"]>();
+
+  for (const m of materials) {
+    const sid = m.sessionId;
+    if (!sid) {
+      general.push(m);
+    } else {
+      const bucket = bySession.get(sid) ?? [];
+      bucket.push(m);
+      bySession.set(sid, bucket);
+    }
+  }
+
+  // Sessions that have at least one material, in sequence order.
+  const usedSessionIds = sessions.map((s) => s.id).filter((id) => bySession.has(id));
+
+  // Render a flat material list (folders + their children) for a given bucket.
+  function MaterialList({ items }: { items: HubData["materials"] }) {
+    return (
+      <ul className="flex flex-col gap-4">
+        {items.map((p) => (
+          <li key={p.id} className="flex flex-col gap-1.5">
+            {p.isFolder ? (
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Folder className="h-3.5 w-3.5" aria-hidden />
+                {p.title}
+              </p>
+            ) : (
+              <MaterialLink to={`${basePath}/page/${p.id}`} title={p.title} />
+            )}
+            {p.children.length > 0 && (
+              <ul className={`flex flex-col gap-1.5 ${p.isFolder ? "" : "ml-6"}`}>
+                {p.children.map((c) => (
+                  <li key={c.id}>
+                    <MaterialLink
+                      to={`${basePath}/page/${c.id}`}
+                      title={c.title}
+                      nested={!p.isFolder}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {p.isFolder && p.children.length === 0 && (
+              <p className="text-sm text-muted-foreground italic">Nothing in here yet.</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  // If nothing is session-linked, skip headings and render flat.
+  const hasGroups = usedSessionIds.length > 0;
+
+  if (!hasGroups) {
+    return <MaterialList items={general} />;
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {general.length > 0 && (
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            All sessions
+          </h3>
+          <MaterialList items={general} />
+        </section>
+      )}
+      {usedSessionIds.map((sid) => (
+        <section key={sid}>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {sessionLabel.get(sid) ?? `Session`}
+          </h3>
+          <MaterialList items={bySession.get(sid) ?? []} />
+        </section>
+      ))}
     </div>
   );
 }

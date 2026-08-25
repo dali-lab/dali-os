@@ -9,8 +9,8 @@ export function renderCertificatePdf(cert: {
   studentName: string;
   offeringTitle: string;
   offeringType: "Miniseries" | "Workshop";
-  startsAt: Date;
-  endsAt: Date;
+  startsAt: Date | null;
+  endsAt: Date | null;
   instructorNames: string[];
   issuedAt: Date;
 }): Promise<Buffer> {
@@ -59,7 +59,9 @@ export function renderCertificatePdf(cert: {
 
     doc.font("Times-Roman").fontSize(12).fillColor("#1c2b4a");
     doc.text(
-      `${formatDateShort(cert.startsAt)} – ${formatDateShort(cert.endsAt)}`,
+      cert.startsAt && cert.endsAt
+        ? `${formatDateShort(cert.startsAt)} – ${formatDateShort(cert.endsAt)}`
+        : "Date TBD",
       0,
       330,
       { align: "center" },

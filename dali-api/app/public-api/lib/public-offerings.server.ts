@@ -171,6 +171,8 @@ export async function listPublicOfferings(
 ): Promise<PublicOffering[]> {
   const rows = await prisma.educationOffering.findMany({
     where: buildWhere(filter, now),
+    // Published offerings always have sessions (publish gate), so startsAt is
+    // non-null here — a plain ascending sort is sufficient.
     orderBy: { startsAt: "asc" },
     select: {
       id: true,
@@ -205,8 +207,10 @@ export async function listPublicOfferings(
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
         term: o.term?.code ?? null,
-        startDate: toDateParts(o.startsAt),
-        endDate: toDateParts(o.endsAt),
+        // Published offerings always have sessions, so startsAt/endsAt are
+        // guaranteed non-null by the publish gate.
+        startDate: toDateParts(o.startsAt!),
+        endDate: toDateParts(o.endsAt!),
         sessions: o.sessions.map((s) => ({
           sequence: s.sequence,
           title: s.title,

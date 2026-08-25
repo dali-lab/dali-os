@@ -33,6 +33,7 @@ export async function listAssignments(offeringId: string) {
       submissionType: true,
       instructionsDocId: true,
       sessionId: true,
+      points: true,
       _count: { select: { submissions: true } },
     },
   });
@@ -51,6 +52,8 @@ export async function createAssignment(args: {
   title: string;
   dueAt: Date | null;
   submissionType: SubmissionType;
+  /** Optional point value (≥1). Null = complete/incomplete grading. */
+  points?: number | null;
   actorId: string;
 }): Promise<MutationResult> {
   const title = args.title.trim();
@@ -71,6 +74,7 @@ export async function createAssignment(args: {
       title,
       dueAt: args.dueAt,
       submissionType: args.submissionType,
+      points: args.points ?? null,
     },
     select: { id: true },
   });
@@ -107,6 +111,8 @@ export async function updateAssignment(args: {
   title: string;
   dueAt: Date | null;
   submissionType: SubmissionType;
+  /** Optional point value (≥1). Null = complete/incomplete grading. */
+  points?: number | null;
   actorId: string;
 }): Promise<MutationResult> {
   const owner = await offeringIdForAssignment(args.assignmentId);
@@ -115,7 +121,7 @@ export async function updateAssignment(args: {
   if (!title) return { error: "Title is required", status: 400 };
   await prisma.educationAssignment.update({
     where: { id: args.assignmentId },
-    data: { title, dueAt: args.dueAt, submissionType: args.submissionType },
+    data: { title, dueAt: args.dueAt, submissionType: args.submissionType, points: args.points ?? null },
   });
   await logAuditEvent({
     action: "education.assignment.update",
@@ -163,6 +169,7 @@ export async function getAssignmentForStudent(args: {
       dueAt: true,
       submissionType: true,
       instructionsDocId: true,
+      points: true,
     },
   });
   if (!assignment) return null;
@@ -180,6 +187,7 @@ export async function getAssignmentForStudent(args: {
       submittedAt: true,
       gradedAt: true,
       grade: true,
+      score: true,
       feedbackText: true,
     },
   });
@@ -259,6 +267,7 @@ export async function listSubmissions(assignmentId: string) {
       submittedAt: true,
       gradedAt: true,
       grade: true,
+      score: true,
       feedbackText: true,
       student: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -269,6 +278,8 @@ export async function gradeSubmission(args: {
   submissionId: string;
   offeringId: string;
   grade: string;
+  /** Numeric score (0..points). Only persisted when the assignment has a points value. */
+  score?: number | null;
   actorId: string;
 }): Promise<MutationResult> {
   const submission = await prisma.educationSubmission.findUnique({
@@ -276,7 +287,7 @@ export async function gradeSubmission(args: {
     select: {
       assignmentId: true,
       studentId: true,
-      assignment: { select: { title: true } },
+      assignment: { select: { title: true, points: true } },
     },
   });
   if (!submission) return { error: "Submission not found", status: 404 };
@@ -284,11 +295,15 @@ export async function gradeSubmission(args: {
   if (owner !== args.offeringId) return { error: "Submission not found", status: 404 };
   // feedbackText is owned by the collab feedback doc (edusubmission:{id}:feedback)
   // and mirrored on save; grading only sets the grade + release timestamp.
+  // score is only stored when the assignment carries a points value.
+  const scoreValue =
+    submission.assignment.points != null && args.score != null ? args.score : null;
   await prisma.educationSubmission.update({
     where: { id: args.submissionId },
     data: {
       grade: args.grade.trim() || null,
       gradedAt: new Date(),
+      score: scoreValue,
     },
   });
   await logAuditEvent({

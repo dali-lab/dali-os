@@ -17,6 +17,8 @@ export type AssignmentView = {
   dueAt: string | Date | null;
   submissionType: "Text" | "File" | "Mixed";
   instructionsContent: unknown;
+  /** Null = complete/incomplete; non-null = scored out of this many points. */
+  points?: number | null;
 };
 
 export type SubmissionView = {
@@ -25,6 +27,8 @@ export type SubmissionView = {
   submittedAt: string | Date | null;
   gradedAt: string | Date | null;
   grade: string | null;
+  /** Numeric score recorded alongside the grade (only when assignment has points). */
+  score?: number | null;
   feedbackText: string | null;
   // Released instructor feedback as BlockNote blocks (read server-side); falls
   // back to the feedbackText mirror for pre-migration submissions.
@@ -122,7 +126,11 @@ export function AssignmentWorkArea({
       {submission?.gradedAt != null && (
         <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">
           <p className="text-xs font-semibold text-accent-teal">
-            {submission.grade ? `Grade · ${submission.grade}` : "Graded"}
+            {submission.score != null && assignment.points != null
+              ? `Grade · ${submission.score}/${assignment.points}${submission.grade ? ` · ${submission.grade}` : ""}`
+              : submission.grade
+                ? `Grade · ${submission.grade}`
+                : "Graded"}
             {` · ${formatDateTime(submission.gradedAt, tz)}`}
           </p>
           {countWords(submission.feedbackContent) > 0 ? (

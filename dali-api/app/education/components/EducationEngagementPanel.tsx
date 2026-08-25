@@ -11,8 +11,8 @@ export type EngagementRow = {
   offeringId: string;
   title: string;
   type: "Miniseries" | "Workshop";
-  startsAt: string | Date;
-  endsAt: string | Date;
+  startsAt: string | Date | null;
+  endsAt: string | Date | null;
   status: string;
   attendance: { present: number; excused: number; total: number };
   certificateIssuedAt: string | Date | null;
@@ -42,7 +42,9 @@ export function EducationEngagementPanel({ entries }: { entries: EngagementRow[]
               <span className="text-sm font-semibold text-foreground">{e.title}</span>
               <MyStatusChip status={e.status} />
               <span className="text-xs text-muted-foreground">
-                {formatDateShort(e.startsAt, tz)} – {formatDateShort(e.endsAt, tz)}
+                {e.startsAt && e.endsAt
+                ? `${formatDateShort(e.startsAt, tz)} – ${formatDateShort(e.endsAt, tz)}`
+                : "Sessions TBD"}
               </span>
               {e.certificateIssuedAt && (
                 <span className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold">
