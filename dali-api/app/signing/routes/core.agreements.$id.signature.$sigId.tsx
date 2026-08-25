@@ -2,8 +2,8 @@
 // frozen archival body (captured field values + resolved variables baked in)
 // plus signing metadata. PDF download lives at the sibling resource route.
 
-import { redirect, Link, useLoaderData } from "react-router";
-import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
+import { redirect, useLoaderData } from "react-router";
+import { Download, ShieldCheck } from "lucide-react";
 import type { Route } from "./+types/core.agreements.$id.signature.$sigId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -16,6 +16,22 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 
 export const meta: Route.MetaFunction = () => [{ title: "Signed copy · Core · DALI OS" }];
+
+export const handle = {
+  // Flat route: the opaque :id/:sigId segments carry no readable trail, so
+  // declare it explicitly back to the agreement (replaces the inline back link).
+  breadcrumbTrail: (
+    data: { documentId: string; documentName: string } | undefined,
+  ) => {
+    if (!data) return null;
+    return [
+      { label: "Core", to: "/core" },
+      { label: "Agreements", to: "/core/agreements" },
+      { label: data.documentName, to: `/core/agreements/${data.documentId}` },
+      { label: "Signed copy" },
+    ];
+  },
+};
 
 function safeFilename(s: string): string {
   return s.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "signed";
@@ -77,13 +93,6 @@ export default function SignatureViewPage() {
 
   return (
     <div className="max-w-3xl mx-auto py-8 space-y-6">
-      <Link
-        to={`/core/agreements/${data.documentId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to agreement
-      </Link>
-
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
