@@ -39,8 +39,8 @@ export async function runGetEducationOffering(ctx: McpCtx, input: Input) {
     ...offering,
     registrationOpensAt: offering.registrationOpensAt.toISOString(),
     registrationClosesAt: offering.registrationClosesAt.toISOString(),
-    startsAt: offering.startsAt.toISOString(),
-    endsAt: offering.endsAt.toISOString(),
+    startsAt: offering.startsAt?.toISOString() ?? null,
+    endsAt: offering.endsAt?.toISOString() ?? null,
     closedOutAt: offering.closedOutAt?.toISOString() ?? null,
     sessions: offering.sessions.map((s) => ({
       ...s,

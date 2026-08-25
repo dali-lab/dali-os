@@ -2,19 +2,13 @@ import {
   Activity,
   BarChart3,
   Clock,
-  ClipboardCheck,
   Flag,
-  Globe,
   Mail,
-  Megaphone,
   Receipt,
   SendHorizonal,
-  Shield,
   Sparkles,
-  Users,
 } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
-import type { FeatureFlagMap } from "~/lib/feature-flags";
 import {
   clusterTrail,
   findCluster,
@@ -24,103 +18,29 @@ import {
 } from "~/lib/cluster-nav";
 
 // The Admin area is a nested hub: /admin groups its tools into clusters, each
-// cluster carries its own short pill row, and consolidated tools (Email,
-// Payroll) expose their views through an in-page sub-tab strip. This module is
-// the single source of truth for that structure — the hub cards, the cluster
-// hubs, the pill rows, and the sub-tabs all derive from ADMIN_CLUSTERS. The
+// cluster carries its own short pill row, and consolidated tools (Payroll)
+// expose their views through an in-page sub-tab strip. This module is the
+// single source of truth for that structure — the hub cards, the cluster hubs,
+// the pill rows, and the sub-tabs all derive from ADMIN_CLUSTERS. The
 // cluster/section/trail types and the card grid itself are shared with Core
 // (app/lib/cluster-nav.ts, app/components/ClusterHub.tsx).
 //
-// Every cluster is uniformly Core-visible except Finance (Admin-only), so pill
-// rows never need per-item role filtering — only the hub hides the Finance
-// group from non-admins.
+// Admin is strictly system-level: the lab *process* clusters (People & Access,
+// Communications) live in the Core area (app/core/coreNav.tsx), and the email
+// transport plumbing (Senders, the outbound outbox) sits under System &
+// Insights here — process vs. system, one home per tool.
 //
-// Under the nav-regroup flag, People & Access and Communications leave Admin
-// for the Core area (they are lab *process*, not system administration) — see
-// adminClustersFor() and app/core/coreNav.tsx. They stay listed here so the
-// flag-off nav is unchanged.
+// Every cluster is Core-visible except Finance (Admin-only), so pill rows never
+// need per-item role filtering — only the hub hides the Finance group from
+// non-admins.
 
 export type AdminSubtab = NavSubtab;
 export type AdminSection = NavSection;
 export type AdminCluster = NavCluster;
 
-export type AdminClusterKey =
-  | "people"
-  | "communications"
-  | "finance"
-  | "system";
-
-// The clusters that move to Core when nav-regroup is on.
-const CORE_OWNED_CLUSTERS: readonly AdminClusterKey[] = ["people", "communications"];
+export type AdminClusterKey = "finance" | "system";
 
 export const ADMIN_CLUSTERS: AdminCluster[] = [
-  {
-    key: "people",
-    label: "People & Access",
-    description: "Members, the roles they hold, domains, and attendance.",
-    icon: Users,
-    hubPath: "/admin/people",
-    sections: [
-      {
-        key: "members",
-        label: "Roles & Permissions",
-        to: "/admin/members",
-        icon: Shield,
-        description: "Assign Admin, Core, and Domain Lead roles per term.",
-      },
-      {
-        key: "domains",
-        label: "Domains",
-        to: "/admin/domains",
-        icon: Globe,
-        description: "The lab's domains, who leads them, and member eligibility.",
-      },
-      {
-        key: "attendance",
-        label: "Attendance",
-        to: "/admin/attendance",
-        icon: ClipboardCheck,
-        description: "Self check-in events — who was invited and who checked in.",
-      },
-    ],
-  },
-  {
-    key: "communications",
-    label: "Communications",
-    description: "Reach the lab and manage outbound email.",
-    icon: Megaphone,
-    hubPath: "/admin/communications",
-    sections: [
-      {
-        key: "announcements",
-        label: "Announcements",
-        to: "/admin/announcements",
-        icon: Megaphone,
-        description:
-          "Send an announcement to the lab, with an optional due date and attached form.",
-      },
-      {
-        key: "email",
-        label: "Email",
-        to: "/admin/email-templates",
-        icon: Mail,
-        description:
-          "Shared email templates and the Google accounts each area sends from.",
-        subtabs: [
-          { key: "email-templates", label: "Templates", to: "/admin/email-templates" },
-          { key: "email-senders", label: "Senders", to: "/admin/email-senders" },
-        ],
-      },
-      {
-        key: "outbound-messages",
-        label: "Outbound Messages",
-        to: "/admin/outbound-messages",
-        icon: SendHorizonal,
-        description:
-          "Transactional outbox — inspect, retry, and cancel outbound email and Slack messages.",
-      },
-    ],
-  },
   {
     key: "finance",
     label: "Finance",
@@ -146,7 +66,8 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
   {
     key: "system",
     label: "System & Insights",
-    description: "Site usage, AI consumption, the audit log, and background jobs.",
+    description:
+      "Site usage, AI consumption, the audit log, background jobs, and the email transport.",
     icon: Activity,
     hubPath: "/admin/system",
     sections: [
@@ -185,21 +106,25 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         icon: Flag,
         description: "Roll features out gradually — target everyone, specific roles, or named users.",
       },
+      {
+        key: "email-senders",
+        label: "Email Senders",
+        to: "/admin/email-senders",
+        icon: Mail,
+        description:
+          "The Gmail send-as account and daily cap backing each email purpose.",
+      },
+      {
+        key: "outbound-messages",
+        label: "Outbound Messages",
+        to: "/admin/outbound-messages",
+        icon: SendHorizonal,
+        description:
+          "Transactional outbox — inspect, retry, and cancel outbound email and Slack messages.",
+      },
     ],
   },
 ];
-
-/**
- * The clusters Admin owns for one viewer. With nav-regroup on, the lab-process
- * clusters have moved to Core and Admin is strictly system-level; with it off,
- * Admin keeps everything it has today.
- */
-export function adminClustersFor(
-  flags: Partial<FeatureFlagMap> = {},
-): AdminCluster[] {
-  if (!flags["nav-regroup"]) return ADMIN_CLUSTERS;
-  return ADMIN_CLUSTERS.filter((c) => !CORE_OWNED_CLUSTERS.includes(c.key as AdminClusterKey));
-}
 
 export function clusterByKey(key: string): AdminCluster | undefined {
   return findCluster(ADMIN_CLUSTERS, key);

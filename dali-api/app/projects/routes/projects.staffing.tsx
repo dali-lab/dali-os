@@ -392,7 +392,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: cycle.id,
       termId: selectedTermId,
     },
-    terms: terms.map((t) => ({ id: t.id, code: t.code })),
+    terms: terms.map((t) => ({
+      id: t.id,
+      code: t.code,
+      isCurrent: t.id === currentTermRow?.id,
+    })),
     domains: [...domains]
       .sort((a, b) => a.displayName.localeCompare(b.displayName))
       .map((d) => ({ id: d.id, name: d.displayName })),

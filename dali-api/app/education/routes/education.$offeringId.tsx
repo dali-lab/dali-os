@@ -184,7 +184,9 @@ export default function OfferingDetail() {
       </header>
       <div className="-mt-4">
         <p className="text-sm text-muted-foreground">
-          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
+          {offering.startsAt && offering.endsAt
+            ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
+            : "Sessions TBD"}
           {" · "}
           {registrationWindowLabel(offering, tz)}
           {" · "}

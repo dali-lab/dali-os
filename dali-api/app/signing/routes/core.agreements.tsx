@@ -21,6 +21,7 @@ import type {
   SigningCadence,
 } from "~/generated/prisma/enums";
 import { getAgreementsOverview } from "~/signing/lib/console.server";
+import { resolveTermFilter } from "~/lib/terms";
 import { activateVersion } from "~/signing/lib/activate.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
@@ -65,13 +66,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (url.pathname.startsWith("/core/agreements")) {
     // Focus term: ?term=<id> lets Core manage a not-yet-current term (issue an
     // upcoming term's agreements early, track its completion). Defaults to the
-    // current term. The term list feeds the console's selector.
-    const termId = url.searchParams.get("term") ?? undefined;
-    const [overview, terms] = await Promise.all([
-      getAgreementsOverview({ termId }),
-      prisma.term.findMany({ select: { id: true, code: true }, orderBy: { sortKey: "desc" } }),
-    ]);
-    return { mode: "console" as const, ...overview, terms, isAdmin: roles.isAdmin };
+    // current term. resolveTermFilter feeds the shared TermFilter selector (with
+    // the current term flagged) and its resolved termId scopes the overview.
+    const termFilter = await resolveTermFilter(request);
+    const overview = await getAgreementsOverview({
+      termId: termFilter.termId ?? undefined,
+    });
+    return {
+      mode: "console" as const,
+      ...overview,
+      terms: termFilter.terms,
+      selected: termFilter.selected,
+      isAdmin: roles.isAdmin,
+    };
   }
 
   const documents = await prisma.signingDocument.findMany({

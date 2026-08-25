@@ -6,9 +6,10 @@
 // zeroed after send by the retention janitor and are not useful for triage.
 
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
-import { SendHorizonal } from "lucide-react";
+import { SendHorizonal, Mail, MessageSquare } from "lucide-react";
 import type { Route } from "./+types/admin.outbound-messages";
 import { adminHandle } from "~/admin/adminNav";
+import { StatusDot } from "~/admin/components/console-ui";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -36,6 +37,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get("status") ?? "";
   const q = url.searchParams.get("q")?.trim() ?? "";
+
+  // Per-status counts — honor text search but ignore the status filter so every
+  // segment shows its true size.
+  const grouped = await prisma.outboundMessage.groupBy({
+    by: ["status"],
+    where: {
+      ...(q
+        ? {
+            OR: [
+              { target: { contains: q, mode: "insensitive" } },
+              { recipientUserId: { contains: q, mode: "insensitive" } },
+              { eventType: { contains: q, mode: "insensitive" } },
+              { subject: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    _count: true,
+  });
+  const counts: Record<string, number> = {};
+  for (const g of grouped) counts[g.status] = g._count;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   // Lightweight columns only — bodyHtml/attachments are heavy and stripped post-send.
   const rows = await prisma.outboundMessage.findMany({
@@ -99,7 +122,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   const admin = await isAdmin(auth.user.sub);
-  return { messages, statusFilter, q, isAdmin: admin };
+  return { messages, statusFilter, q, isAdmin: admin, counts, total };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -158,6 +181,14 @@ const STATUS_BADGE: Record<string, string> = {
   Canceled: "bg-zinc-100 text-zinc-600",
 };
 
+const STATUS_DOT_TONE: Record<string, "ok" | "warn" | "bad" | "idle"> = {
+  Sent: "ok",
+  Pending: "warn",
+  Sending: "warn",
+  Dead: "bad",
+  Canceled: "idle",
+};
+
 type MessageRow = {
   id: string;
   channel: string;
@@ -172,43 +203,56 @@ type MessageRow = {
   createdAt: string;
 };
 
+function ChannelIcon({ channel }: { channel: string }) {
+  if (channel === "email") {
+    return <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />;
+  }
+  return <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />;
+}
+
 function Row({ msg }: { msg: MessageRow }) {
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const busy = fetcher.state !== "idle";
 
   return (
-    <tr className="border-b border-zinc-100 last:border-b-0 align-top">
+    <tr className="border-b border-border last:border-b-0 align-top">
       <td className="px-3 py-3">
-        <span
-          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[msg.status] ?? "bg-zinc-100 text-zinc-600"}`}
-        >
-          {msg.status}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <StatusDot tone={STATUS_DOT_TONE[msg.status] ?? "idle"} />
+          <span
+            className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[msg.status] ?? "bg-zinc-100 text-zinc-600"}`}
+          >
+            {msg.status}
+          </span>
+        </div>
       </td>
-      <td className="px-3 py-3 text-xs text-zinc-600 whitespace-nowrap">
-        {msg.channel}
+      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+        <div className="flex items-center gap-1">
+          <ChannelIcon channel={msg.channel} />
+          {msg.channel}
+        </div>
       </td>
       <td className="px-3 py-3">
         {msg.recipientName ? (
           <>
-            <div className="text-sm text-zinc-900">{msg.recipientName}</div>
-            <div className="text-xs text-zinc-400">{msg.target}</div>
+            <div className="text-sm text-foreground">{msg.recipientName}</div>
+            <div className="text-xs text-muted-foreground/70">{msg.target}</div>
           </>
         ) : (
-          <div className="text-sm text-zinc-900">{msg.target}</div>
+          <div className="text-sm text-foreground">{msg.target}</div>
         )}
       </td>
       <td className="px-3 py-3">
         {msg.subject && (
-          <div className="text-sm text-zinc-900 truncate max-w-[200px]" title={msg.subject}>
+          <div className="text-sm text-foreground truncate max-w-[200px]" title={msg.subject}>
             {msg.subject}
           </div>
         )}
         {msg.eventType && (
-          <div className="font-mono text-xs text-zinc-500">{msg.eventType}</div>
+          <div className="font-mono text-xs text-muted-foreground">{msg.eventType}</div>
         )}
       </td>
-      <td className="px-3 py-3 text-center text-xs text-zinc-600">
+      <td className="px-3 py-3 text-center text-xs text-muted-foreground">
         {msg.attempts}
       </td>
       <td className="px-3 py-3 max-w-[220px]">
@@ -223,10 +267,10 @@ function Row({ msg }: { msg: MessageRow }) {
           </p>
         )}
       </td>
-      <td className="px-3 py-3 text-xs text-zinc-500 whitespace-nowrap">
+      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
         <div>{formatTime(msg.createdAt)}</div>
         {msg.sentAt && (
-          <div className="text-zinc-400">sent {formatTime(msg.sentAt)}</div>
+          <div className="text-muted-foreground/70">sent {formatTime(msg.sentAt)}</div>
         )}
       </td>
       <td className="px-3 py-3 whitespace-nowrap">
@@ -262,7 +306,7 @@ function Row({ msg }: { msg: MessageRow }) {
 }
 
 export default function AdminOutboundMessages() {
-  const { messages, statusFilter, q } = useLoaderData<typeof loader>();
+  const { messages, statusFilter, q, counts, total } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
 
   function buildUrl(overrides: Record<string, string>) {
@@ -273,6 +317,9 @@ export default function AdminOutboundMessages() {
     }
     return `?${next.toString()}`;
   }
+
+  const pillLabel = (s: string) =>
+    s === "" ? `All ${total}` : `${s} ${counts[s] ?? 0}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -300,11 +347,11 @@ export default function AdminOutboundMessages() {
               href={buildUrl({ status: s, q })}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 s === statusFilter
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70"
               }`}
             >
-              {s || "All"}
+              {pillLabel(s)}
             </a>
           ))}
         </div>
@@ -315,7 +362,7 @@ export default function AdminOutboundMessages() {
           name="q"
           defaultValue={q}
           placeholder="Search target / recipient / event / subject…"
-          className="ml-auto min-w-[240px] rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+          className="ml-auto min-w-[240px] rounded-md border border-border bg-page px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
         <button type="submit" className={buttonClasses("ghost", "sm")}>
@@ -324,10 +371,10 @@ export default function AdminOutboundMessages() {
       </form>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full min-w-[900px] text-left">
           <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
+            <tr className="border-b border-border bg-muted/50 text-xs font-medium text-muted-foreground">
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Channel</th>
               <th className="px-3 py-2">Recipient / Target</th>
@@ -343,7 +390,7 @@ export default function AdminOutboundMessages() {
               <tr>
                 <td
                   colSpan={8}
-                  className="px-3 py-8 text-center text-sm text-zinc-500"
+                  className="px-3 py-8 text-center text-sm text-muted-foreground"
                 >
                   No messages match this filter.
                 </td>

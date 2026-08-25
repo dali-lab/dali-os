@@ -55,8 +55,12 @@ export default function CertificatePage() {
               {certificate.offeringTitle}
             </p>
             <p className="mt-5 text-sm text-foreground">
-              {formatDateShort(certificate.startsAt)} –{" "}
-              {formatDateShort(certificate.endsAt)}
+              {certificate.startsAt && certificate.endsAt ? (
+                <>
+                  {formatDateShort(certificate.startsAt)} –{" "}
+                  {formatDateShort(certificate.endsAt)}
+                </>
+              ) : null}
             </p>
             {certificate.instructorNames.length > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">

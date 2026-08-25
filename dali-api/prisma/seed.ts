@@ -4249,9 +4249,13 @@ async function main() {
       // A published RSVP workshop with an open registration window and a tiny
       // capacity, so the auto-approve → waitlist → promotion flow is
       // exercisable straight from the seed (E2E leans on this).
+      // termId is normally derived from the session date via
+      // recomputeOfferingDates(); the seed inserts directly, so pin it to the
+      // current term (26S) here. Without it the offering has a null termId and
+      // is hidden by the manage surface's "Current & upcoming" default filter.
       const workshop = await prisma.educationOffering.upsert({
         where: { id: "offering-figma-workshop" },
-        update: { title: "Figma Crash Course" },
+        update: { title: "Figma Crash Course", termId: term26S.id },
         create: {
           id: "offering-figma-workshop",
           type: "Workshop",
@@ -4261,6 +4265,7 @@ async function main() {
           registrationClosesAt: new Date("2027-06-01"),
           startsAt: new Date("2027-06-02"),
           endsAt: new Date("2027-06-02"),
+          termId: term26S.id,
           status: "Published",
           requiresReview: false,
           descriptionDocId: "eduoffering:offering-figma-workshop:description",

@@ -12,22 +12,25 @@ import { currentTerm } from "~/lib/roles";
 // get fixed first, and idempotent — re-running only issues missing
 // certificates.
 
-const MINISERIES_THRESHOLD = 0.8;
-
 /**
- * Completion policy: Miniseries — (Present + Excused) / total sessions ≥ 80%
+ * Completion policy: Miniseries — (Present + Excused) / total sessions ≥ threshold
  * (excused absences are forgiven for completion; they still don't earn CE
  * credit). Workshops — at least one Present mark. No sessions → not eligible.
+ *
+ * `threshold` defaults to 0.8 (80%) but can be overridden per-offering via
+ * EducationOffering.completionThreshold.
  */
 export function certificateEligibility(args: {
   type: "Miniseries" | "Workshop";
   totalSessions: number;
   present: number;
   excused: number;
+  threshold?: number;
 }): boolean {
   if (args.totalSessions === 0) return false;
   if (args.type === "Workshop") return args.present >= 1;
-  return (args.present + args.excused) / args.totalSessions >= MINISERIES_THRESHOLD;
+  const threshold = args.threshold ?? 0.8;
+  return (args.present + args.excused) / args.totalSessions >= threshold;
 }
 
 export type CloseOutResult =
@@ -45,6 +48,7 @@ export async function closeOutOffering(args: {
       title: true,
       type: true,
       closedOutAt: true,
+      completionThreshold: true,
       _count: { select: { sessions: true } },
       applications: {
         where: { status: "Approved" },
@@ -88,7 +92,7 @@ export async function closeOutOffering(args: {
     }
     const present = application.attendances.filter((a) => a.status === "Present").length;
     const excused = application.attendances.filter((a) => a.status === "Excused").length;
-    if (!certificateEligibility({ type: offering.type, totalSessions, present, excused })) {
+    if (!certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold })) {
       ineligible += 1;
       continue;
     }
@@ -202,6 +206,7 @@ export async function previewCloseOut(offeringId: string): Promise<CloseOutPrevi
     where: { id: offeringId },
     select: {
       type: true,
+      completionThreshold: true,
       _count: { select: { sessions: true } },
       applications: {
         where: { status: "Approved" },
@@ -226,7 +231,7 @@ export async function previewCloseOut(offeringId: string): Promise<CloseOutPrevi
     }
     const present = app.attendances.filter((a) => a.status === "Present").length;
     const excused = app.attendances.filter((a) => a.status === "Excused").length;
-    if (certificateEligibility({ type: offering.type, totalSessions, present, excused })) {
+    if (certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold })) {
       eligible.push(name);
     } else {
       belowThreshold.push(name);

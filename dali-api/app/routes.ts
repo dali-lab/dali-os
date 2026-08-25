@@ -450,6 +450,8 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   // Education offering documents (collab Pages scoped to the EducationOffering workspace)
   route("api/education/:offeringId/documents", "education/routes/api.education.$offeringId.documents.ts"),
+  // Education offering files (uploaded S3-backed materials, mirrors api/projects/:id/files)
+  route("api/education/:offeringId/files", "education/routes/api.education.$offeringId.files.ts"),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),

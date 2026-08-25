@@ -4,6 +4,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -24,10 +26,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       classYear: true,
       major: true,
       timeZone: true,
+      photoUrl: true,
     },
   });
   if (!me) return redirectToLogin(request);
-  return { me };
+  return {
+    me,
+    userId: auth.user.sub,
+    photoPreviewUrl: await resolvePhotoUrl(me.photoUrl),
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -57,13 +64,14 @@ export async function action({ request }: Route.ActionArgs) {
       classYear,
       major: (form.get("major") as string | null)?.trim() || null,
       timeZone,
+      photoUrl: (form.get("photoUrl") as string | null)?.trim() || null,
     },
   });
   return { ok: true };
 }
 
 export default function PortalSettings({ actionData }: Route.ComponentProps) {
-  const { me } = useLoaderData<typeof loader>();
+  const { me, userId, photoPreviewUrl } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
@@ -85,6 +93,13 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
       <section className="bg-card border border-border rounded-2xl p-5">
         <h2 className="font-heading font-semibold text-dark-blue mb-4">Profile</h2>
         <Form method="post" className="flex flex-col gap-4">
+          <PhotoUploadField
+            userId={userId}
+            name={`${me.firstName ?? ""} ${me.lastName ?? ""}`.trim()}
+            initialKey={me.photoUrl}
+            initialPreviewUrl={photoPreviewUrl}
+            readOnly={false}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="firstName" className={labelClass}>

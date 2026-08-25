@@ -7,6 +7,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { Sparkles } from "lucide-react";
+import { Sparkline, MiniBar } from "~/admin/components/console-ui";
 
 export const handle = adminHandle("ai-usage");
 
@@ -83,12 +84,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
+  const dayRows = await prisma.aiUsage.groupBy({
+    by: ["day"],
+    where: { day: { gte: since } },
+    _sum: { count: true },
+  });
+  const byDay = new Map(dayRows.map((r) => [r.day, r._sum.count ?? 0]));
+  const series: number[] = [];
+  for (let i = range.days - 1; i >= 0; i--) {
+    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    series.push(byDay.get(key) ?? 0);
+  }
+
   const admin = await isAdmin(auth.user.sub);
   return {
     rangeKey: range.key,
     rangeLabel: range.label,
     rows,
     totals,
+    series,
     isAdmin: admin,
   };
 }
@@ -114,7 +128,10 @@ function StatCard({
 }
 
 export default function AdminConsoleAiUsage() {
-  const { rangeKey, rangeLabel, rows, totals } = useLoaderData<typeof loader>();
+  const { rangeKey, rangeLabel, rows, totals, series } =
+    useLoaderData<typeof loader>();
+
+  const maxRequests = rows[0]?.requests || 1;
 
   return (
     <div className="space-y-6">
@@ -165,64 +182,52 @@ export default function AdminConsoleAiUsage() {
         />
       </div>
 
-      <section className="bg-card border border-border rounded-lg overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/50">
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">
-                Member
-              </th>
-              <th className="text-right px-4 py-3 font-medium text-muted-foreground">
-                Requests
-              </th>
-              <th className="text-right px-4 py-3 font-medium text-muted-foreground">
-                Input tokens
-              </th>
-              <th className="text-right px-4 py-3 font-medium text-muted-foreground">
-                Output tokens
-              </th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">
-                Last used
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-8 text-center text-muted-foreground/70"
-                >
-                  No AI usage in this window.
-                </td>
-              </tr>
-            )}
-            {rows.map((r) => (
-              <tr key={r.userId} className="hover:bg-muted/50">
-                <td className="px-4 py-3">
-                  <div className="text-foreground">{r.name}</div>
+      <section className="bg-card border border-border rounded-lg px-4 py-3">
+        <p className="text-xs text-muted-foreground mb-2">
+          Requests / day · last {rangeLabel}
+        </p>
+        <Sparkline values={series} />
+      </section>
+
+      <section className="bg-card border border-border rounded-lg divide-y divide-border">
+        {rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground/70">
+            No AI usage in this window.
+          </div>
+        ) : (
+          rows.map((r) => {
+            const share =
+              totals.requests > 0
+                ? Math.round((r.requests / totals.requests) * 100)
+                : 0;
+            return (
+              <div key={r.userId} className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-foreground truncate">{r.name}</div>
                   {r.email && r.email !== r.name && (
-                    <div className="text-xs text-muted-foreground">{r.email}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {r.email}
+                    </div>
                   )}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {r.requests.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {r.inputTokens.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {r.outputTokens.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                  {r.lastUsed ?? (
-                    <span className="text-muted-foreground/50">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <div className="mt-1.5">
+                    <MiniBar fraction={r.requests / maxRequests} />
+                  </div>
+                </div>
+                <div className="text-right shrink-0 space-y-0.5">
+                  <div className="text-sm font-semibold text-foreground tabular-nums">
+                    {r.requests.toLocaleString()}{" "}
+                    <span className="text-xs font-normal text-accent-coral tabular-nums">
+                      {share}%
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {compact.format(r.inputTokens + r.outputTokens)} tok
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </section>
 
       <p className="text-[11px] text-muted-foreground/70">

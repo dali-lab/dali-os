@@ -237,10 +237,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
-  const navRegroup = useFeatureFlag("nav-regroup")
-  const navFlags = {
-    "nav-regroup": navRegroup,
-  }
+  // The nav-regroup flag was retired; the nav-areas registry no longer branches
+  // on any flag, so an empty map is all the helpers need.
+  const navFlags = {}
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
