@@ -148,32 +148,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  // Load the domain rubric. Convention: rubric named "Growth:<domainId>" or
-  // "Growth" (fallback). Core manages these in /hiring/rubrics — no new UI needed.
+  // Load the domain's rubric via Domain.levelUpRubricId (the proper association).
+  // Falls back gracefully to no criteria when null — reviewer can still approve/decline.
   let rubricCriteria: RubricCriterion[] = [];
   let rubricVersionId: string | null = null;
 
   if (resolvedDomainId) {
-    const rubric = await prisma.rubric.findFirst({
-      where: {
-        OR: [
-          { name: `Growth:${resolvedDomainId}` },
-          { name: "Growth" },
-        ],
-      },
-      orderBy: { name: "desc" }, // prefer domain-specific (longer name)
-      select: {
-        versions: {
-          orderBy: { versionNumber: "desc" },
-          take: 1,
-          select: { id: true, criteria: true },
-        },
-      },
+    const domain = await prisma.domain.findUnique({
+      where: { id: resolvedDomainId },
+      select: { levelUpRubricId: true },
     });
-    const latestVersion = rubric?.versions[0];
-    if (latestVersion) {
-      rubricVersionId = latestVersion.id;
-      rubricCriteria = (latestVersion.criteria as unknown as RubricCriterion[]) ?? [];
+    if (domain?.levelUpRubricId) {
+      const rubric = await prisma.rubric.findUnique({
+        where: { id: domain.levelUpRubricId },
+        include: {
+          versions: {
+            orderBy: { versionNumber: "desc" },
+            take: 1,
+            select: { id: true, criteria: true },
+          },
+        },
+      });
+      const latestVersion = rubric?.versions[0];
+      if (latestVersion) {
+        rubricVersionId = latestVersion.id;
+        rubricCriteria = (latestVersion.criteria as unknown as RubricCriterion[]) ?? [];
+      }
     }
   }
 
@@ -394,7 +394,16 @@ export default function GrowthRequestDetail() {
               value={JSON.stringify(scores)}
             />
 
-            {/* Rubric criteria scoring */}
+            {/* Rubric criteria scoring. If no rubric is configured for this
+                domain, show a hint so reviewers know to set one up. */}
+            {data.rubricCriteria.length === 0 && data.resolvedDomainId && (
+              <p className="text-xs text-muted-foreground">
+                No rubric configured for this domain.{" "}
+                <a href="/hiring/library?tab=rubrics" className="underline hover:text-foreground">
+                  Manage rubrics →
+                </a>
+              </p>
+            )}
             {data.rubricCriteria.length > 0 && (
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">

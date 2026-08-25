@@ -1,5 +1,5 @@
-import { redirect, useLoaderData, Link } from "react-router";
-import { useState } from "react";
+import { redirect, useLoaderData, Link, useRevalidator } from "react-router";
+import { useState, useCallback } from "react";
 import { Plus, FileText } from "lucide-react";
 import type { Route } from "./+types/domains.$domainId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -151,13 +151,35 @@ export default function DomainHubPage() {
   } = useLoaderData<typeof loader>();
 
   const [addingPage, setAddingPage] = useState(false);
+  const revalidator = useRevalidator();
+
+  // "/page" slash item in the Overview: create a doc in this domain's folder,
+  // then the editor inserts a page-mention chip linking to it. Revalidate so the
+  // new page also shows in the Pages navigator. Only wired for Core (the editor
+  // is read-only for everyone else).
+  const onCreatePage = useCallback(
+    async (title: string) => {
+      const res = await fetch("/api/lab-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title, parentPageId: hub.folderId }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { id?: string };
+      if (!data.id) return null;
+      revalidator.revalidate();
+      return { id: data.id, title };
+    },
+    [hub.folderId, revalidator],
+  );
 
   // Which Growth flow applies and what its state is.
   const growthState = inDomain ? levelUpState : joinState;
   const ctaLabel = inDomain ? "Request a level up" : "Request to join";
   const ctaHref =
     growthState.open && growthState.publicToken
-      ? `/forms/fill/${growthState.publicToken}`
+      ? `/forms/fill/${growthState.publicToken}?domain=${encodeURIComponent(domain.id)}`
       : null;
 
   return (
@@ -252,9 +274,10 @@ export default function DomainHubPage() {
                 photoUrl={photoUrl}
               >
                 <DocEditor
-                  features="notes"
+                  features="document"
                   editable={isCore}
                   aiEnabled={isCore}
+                  onCreatePage={isCore ? onCreatePage : undefined}
                   collab={{
                     documentName: hub.overviewDocId,
                     token: collabToken,

@@ -30,6 +30,7 @@ import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import {
   areaForPath,
   pinnedNavItems,
@@ -120,6 +121,7 @@ export function LayoutOS({
 }: LayoutOSProps) {
   const location = useLocation()
   const matches = useMatches()
+  const domainHubs = useFeatureFlag('domain-hubs')
   useRecordTablessHistory()
   const tabless = children !== undefined
   // This shell always owns the sub-tabs in its rail, so the in-page pill row is
@@ -233,9 +235,9 @@ export function LayoutOS({
     })
   }
 
-  // The nav-regroup flag was retired; the nav-areas registry no longer branches
-  // on any flag, so an empty map is all the helpers need.
-  const navFlags = {}
+  // nav-areas injects the flag-gated Domains sub-tab into General, so thread the
+  // domain-hubs flag through. (nav-regroup was retired; nothing else branches.)
+  const navFlags = { 'domain-hubs': domainHubs }
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -940,6 +942,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={navFlags}
         onOpen={openFromPalette}
       />
     </div>

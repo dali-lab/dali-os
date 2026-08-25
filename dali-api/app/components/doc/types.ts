@@ -112,4 +112,13 @@ export interface DocEditorProps {
    * (applicant/partner) or signing surfaces.
    */
   aiEnabled?: boolean;
+  /**
+   * When provided (and features.mentions is on), adds a "New page" slash-menu
+   * item: it calls this to create a page — the HOST decides where the page lands
+   * — then inserts a page-mention chip linking to it. Returns null to abort
+   * (e.g. the create failed). Omitted → no page-creation item.
+   */
+  onCreatePage?: (
+    title: string,
+  ) => Promise<{ id: string; title: string } | null>;
 }

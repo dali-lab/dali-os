@@ -532,6 +532,10 @@ model Domain {
   // Short one-line blurb shown on the domain hub index card + hub header.
   // Optional; hubs render fine without it.
   description     String?
+  // Loose FK → Rubric used to score this domain's Growth requests (level-up +
+  // domain-join). Null = no rubric configured (scored review shows no criteria).
+  // Loose (no relation) per the folderPageId/promotedBy convention.
+  levelUpRubricId String?
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]

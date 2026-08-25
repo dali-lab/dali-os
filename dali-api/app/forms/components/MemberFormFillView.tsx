@@ -39,12 +39,18 @@ export function MemberFormFillView({
   // Optional extra fields merged into the submit body (e.g. the education
   // session/offering context the fill URL carried).
   extraBody,
+  // Optional initial answers (question key → value) — e.g. the target domain a
+  // Growth request CTA pre-fills from the hub it launched from.
+  prefill,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
   extraBody?: Record<string, string | null>;
+  prefill?: Record<string, string>;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(() => ({
+    ...prefill,
+  }));
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;

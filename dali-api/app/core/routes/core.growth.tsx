@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/core.growth";
 import { useFilteredList } from "~/hooks/useFilteredList";
@@ -29,6 +29,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { Select } from "~/components/ui/floating/Select";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
@@ -207,6 +208,20 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
+  // For the Level-up rubrics settings section: skill domains + their current
+  // rubric association, and the full rubric list for the picker.
+  const [skillDomains, allRubrics] = await Promise.all([
+    prisma.domain.findMany({
+      where: { active: true, isSystem: false, isInternProgram: false },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true, levelUpRubricId: true },
+    }),
+    prisma.rubric.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName, id: singleCycleId },
@@ -216,6 +231,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     canManage,
     domainOptions,
     domainHubsEnabled,
+    skillDomains,
+    allRubrics,
     // Level-up slot
     levelUpSubmissions,
     levelUpTableColumns: levelUpData.tableColumns,
@@ -432,6 +449,20 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  if (intent === "set-domain-rubric") {
+    if (!(await canManageStaffing(auth.user.sub)))
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    const domainId = String(form.get("domainId") ?? "");
+    const rubricId = String(form.get("rubricId") ?? "") || null;
+    if (!domainId)
+      return Response.json({ error: "domainId required" }, { status: 400 });
+    await prisma.domain.update({
+      where: { id: domainId },
+      data: { levelUpRubricId: rubricId },
+    });
+    return Response.json({ ok: true });
+  }
+
   if (intent === "level-up-member") {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -563,6 +594,14 @@ function Loaded({ data }: { data: LoadedData }) {
         <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
+
+      {/* ── Level-up rubrics (Core managers only) ── */}
+      {data.canManage && (
+        <LevelUpRubricsSection
+          skillDomains={data.skillDomains}
+          allRubrics={data.allRubrics}
+        />
+      )}
 
       {/* ── Level Up section ── */}
       <section className="flex flex-col gap-3">
@@ -981,6 +1020,91 @@ function LevelUpConfirmDialog({
         </div>
       </>
     </Modal>
+  );
+}
+
+// ─── Level-up rubrics settings ────────────────────────────────────────────────
+
+// One row in the rubric picker table. Uses its own fetcher so concurrent saves
+// per domain don't collide on a single fetcher's state.
+function DomainRubricRow({
+  domain,
+  rubricOptions,
+  fetcher,
+}: {
+  domain: LoadedData["skillDomains"][number];
+  rubricOptions: { value: string; label: string }[];
+  fetcher: ReturnType<typeof useFetcher>;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <span className="text-sm text-foreground font-medium shrink-0">{domain.displayName}</span>
+      <fetcher.Form method="post" ref={formRef} className="flex items-center gap-2">
+        <input type="hidden" name="intent" value="set-domain-rubric" />
+        <input type="hidden" name="domainId" value={domain.id} />
+        <Select
+          name="rubricId"
+          options={rubricOptions}
+          defaultValue={domain.levelUpRubricId ?? ""}
+          placeholder="None"
+          onChange={() => {
+            // Select writes the hidden <select>.value before calling onChange,
+            // so FormData reads the fresh value synchronously.
+            if (formRef.current) fetcher.submit(formRef.current);
+          }}
+        />
+      </fetcher.Form>
+    </div>
+  );
+}
+
+// Core-only section: associates a Rubric (created in /hiring/library) with each
+// skill domain so the per-user growth review page shows scored criteria instead
+// of the old name-based fallback.
+function LevelUpRubricsSection({
+  skillDomains,
+  allRubrics,
+}: {
+  skillDomains: LoadedData["skillDomains"];
+  allRubrics: LoadedData["allRubrics"];
+}) {
+  const fetcher = useFetcher();
+
+  const rubricOptions = [
+    { value: "", label: "None" },
+    ...allRubrics.map((r) => ({ value: r.id, label: r.name })),
+  ];
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-base font-semibold text-foreground">Level-up rubrics</h2>
+        <p className="text-xs text-muted-foreground">
+          Choose which rubric is used to score each domain&apos;s growth requests.{" "}
+          <a
+            href="/hiring/library?tab=rubrics"
+            className="underline hover:text-foreground"
+          >
+            Manage rubric criteria →
+          </a>
+        </p>
+      </div>
+      <div className="rounded-lg border border-border bg-card divide-y divide-border overflow-hidden">
+        {skillDomains.length === 0 && (
+          <p className="px-4 py-4 text-sm text-muted-foreground">No skill domains configured.</p>
+        )}
+        {skillDomains.map((domain) => (
+          <DomainRubricRow
+            key={domain.id}
+            domain={domain}
+            rubricOptions={rubricOptions}
+            fetcher={fetcher}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
