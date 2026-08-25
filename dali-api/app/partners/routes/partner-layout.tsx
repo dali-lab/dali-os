@@ -12,6 +12,7 @@ import { prisma } from "~/lib/db";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 import { Menu } from "~/components/ui/floating";
@@ -23,6 +24,12 @@ import { Menu } from "~/components/ui/floating";
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requirePartnerAccount(request);
   const orgIds = ctx.memberships.map((m) => m.orgId);
+
+  const me = await prisma.user.findUnique({
+    where: { id: ctx.auth.user.sub },
+    select: { photoUrl: true },
+  });
+  const avatarUrl = await resolvePhotoUrl(me?.photoUrl);
 
   // The account's projects across ALL memberships feed the Projects nav item.
   // A partner in more than one org over time gets a two-level org→project menu;
@@ -69,7 +76,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const orgName =
     ctx.memberships.length === 1 ? ctx.memberships[0].org.name : null;
 
-  return { user: ctx.auth.user, orgName, orgGroups };
+  return { user: ctx.auth.user, orgName, orgGroups, avatarUrl };
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -78,7 +85,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function PartnerLayout() {
-  const { user, orgName, orgGroups } = useLoaderData<typeof loader>();
+  const { user, orgName, orgGroups, avatarUrl } = useLoaderData<typeof loader>();
 
   const displayName = user.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
@@ -107,6 +114,7 @@ export default function PartnerLayout() {
           displayName={displayName}
           subtitle={orgName}
           settingsTo="/partner/settings"
+          avatarUrl={avatarUrl}
         />
       </nav>
 

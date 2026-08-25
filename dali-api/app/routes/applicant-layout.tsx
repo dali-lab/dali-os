@@ -3,6 +3,8 @@ import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { userInitials } from "~/lib/display";
+import { prisma } from "~/lib/db";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 
@@ -11,12 +13,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  return { user: auth.user };
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { photoUrl: true },
+  });
+  const avatarUrl = await resolvePhotoUrl(me?.photoUrl);
+  return { user: auth.user, avatarUrl };
 }
 
 export default function ApplicantLayout() {
-  const { user } = useLoaderData<typeof loader>() as {
+  const { user, avatarUrl } = useLoaderData<typeof loader>() as {
     user: { sub: string; email: string; type: string; firstName?: string; lastName?: string };
+    avatarUrl: string | null;
   };
 
   const displayName = user.firstName
@@ -51,6 +59,7 @@ export default function ApplicantLayout() {
           displayName={displayName}
           subtitle={user.email}
           settingsTo="/portal/settings"
+          avatarUrl={avatarUrl}
         />
       </nav>
 
