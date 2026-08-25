@@ -86,7 +86,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Term defaults to the current term when the URL doesn't pin one (first load).
   // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
   const termParam = url.searchParams.get("termId");
-  const defaultTerm = termParam === null ? await currentTerm() : null;
+  const current = await currentTerm(request);
+  const defaultTerm = termParam === null ? current : null;
   // A person search used to be two id-valued pickers, and the Members profile
   // still links here with ?menteeId=<id>. Both id params are accepted as a
   // seed for the search box so those links keep landing on the right person.
@@ -146,7 +147,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: d.id,
       label: `${d.displayName} (${d.code})`,
     })),
-    terms: terms.map((t) => ({ id: t.id, label: t.code })),
+    // Mentorship keeps its own single-term grid + "Any term" escape hatch (the
+    // grid's week axis needs exactly one term), so it isn't the shared
+    // TermFilter — but it labels the current term the same way for consistency.
+    terms: terms.map((t) => ({
+      id: t.id,
+      label: t.id === current?.id ? `${t.code} · current` : t.code,
+    })),
     // Vibe filter options — the note's at-a-glance status.
     statuses: VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
   };
