@@ -3,7 +3,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
-import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listManageable, runOfferingAction } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { educationPills } from "~/education/components/educationPills";
@@ -24,11 +23,11 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isCore && !roles.isInstructor) return redirect("/education");
+  // Non-managers (incl. a Dartmouth non-member who isn't an instructor) go to
+  // their /portal home — not /education, which bounces non-members straight back.
+  if (!roles.isCore && !roles.isInstructor) return redirect("/portal");
 
   const [offerings, termFilter] = await Promise.all([
     listManageable(auth.user.sub),
@@ -40,6 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     offerings,
     isCore: roles.isCore,
+    isExternal: !roles.isLabMember,
     terms: termFilter.terms,
     selected: termFilter.selected,
     termIds: termFilter.termIds,
@@ -76,7 +76,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ManageEducation() {
-  const { offerings, isCore, terms, selected, termIds, isAll } =
+  const { offerings, isCore, isExternal, terms, selected, termIds, isAll } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const dialog = useDialog();
@@ -148,9 +148,13 @@ export default function ManageEducation() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AreaPillNav
-        items={educationPills({ canManage: true, isCore, active: "manage" })}
-      />
+      {/* The education area pills assume the member shell; an external instructor
+          runs in the lightweight InstructorChrome, so the pill row is hidden. */}
+      {!isExternal && (
+        <AreaPillNav
+          items={educationPills({ canManage: true, isCore, active: "manage" })}
+        />
+      )}
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

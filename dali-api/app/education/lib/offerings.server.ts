@@ -3,7 +3,9 @@ import { currentTerm, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { peopleByNetId } from "~/lib/dartmouth-people";
 import { manageableOfferingIds, isOfferingManager } from "./access.server";
+import { notifyExternalInstructorInvite } from "./notifications.server";
 import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 
@@ -862,8 +864,13 @@ export async function runOfferingAction(
           })
         ).map((i) => i.userId),
       );
+      // Only member instructors are managed by this picker — external
+      // (non-DALI) instructors are added/removed via the dedicated intents
+      // below, so the destructive replace must not sweep them out.
       await prisma.$transaction([
-        prisma.instructorAssignment.deleteMany({ where: { offeringId } }),
+        prisma.instructorAssignment.deleteMany({
+          where: { offeringId, user: { daliMember: { isNot: null } } },
+        }),
         prisma.instructorAssignment.createMany({
           data: userIds.map((userId) => ({ userId, offeringId, termId: term.id })),
           skipDuplicates: true,
@@ -885,6 +892,93 @@ export async function runOfferingAction(
           summary: `was made an instructor for ${offering.title}`,
         }).catch((err) => console.error("promotion notify (instructor) failed", err));
       }
+      return { ok: true, id: offeringId };
+    }
+
+    case "invite-external-instructor": {
+      // Core-only: bring a non-DALI Dartmouth person in as an instructor for
+      // this offering. Provisions a shell User keyed on NetID (converges with
+      // any existing applicant/student row), assigns them for the current term,
+      // and emails an invite. They authenticate with Dartmouth SSO — no dali
+      // email is issued.
+      if (!(await isCore(actorId))) return bad("Core only", 403);
+      const netId = String(formData.get("netId") ?? "").trim().toLowerCase();
+      const firstName = String(formData.get("firstName") ?? "").trim();
+      const lastName = String(formData.get("lastName") ?? "").trim();
+      if (!netId) return bad("NetID is required");
+      if (!firstName || !lastName) return bad("First and last name are required");
+      const term = await currentTerm();
+      if (!term) return bad("No current term configured", 500);
+
+      // Verify a real Dartmouth account exists before creating a shell user.
+      // peopleByNetId returns null on 404 and throws on transport errors.
+      const person = await peopleByNetId(netId).catch(() => undefined);
+      if (person === undefined)
+        return bad("Couldn't reach the Dartmouth directory — try again", 502);
+      if (person === null)
+        return bad(`No Dartmouth account found for NetID "${netId}"`, 404);
+
+      // Upsert by netId: whether they applied first or are invited first, it's
+      // one account. CAS overwrites the name from the authoritative claim on
+      // first login.
+      const user = await prisma.user.upsert({
+        where: { netId },
+        update: {},
+        create: {
+          netId,
+          firstName,
+          lastName,
+          dartmouthEmail: `${netId}@dartmouth.edu`,
+        },
+        select: { id: true, firstName: true, dartmouthEmail: true, netId: true },
+      });
+
+      const already = await prisma.instructorAssignment.findFirst({
+        where: { userId: user.id, offeringId, termId: term.id },
+        select: { id: true },
+      });
+      if (already) return { ok: true, id: offeringId };
+
+      await prisma.instructorAssignment.create({
+        data: { userId: user.id, offeringId, termId: term.id },
+      });
+      await logAuditEvent({
+        action: "education.instructors.invite",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { userId: user.id, netId },
+      });
+      // Instructor = pay-affecting promotion (mirrors set-instructors).
+      void notifyAdminsOfPromotion({
+        userId: user.id,
+        actorId,
+        summary: `was invited as an external instructor for ${offering.title}`,
+      }).catch((err) =>
+        console.error("promotion notify (external instructor) failed", err),
+      );
+      void notifyExternalInstructorInvite({
+        user,
+        offeringId,
+        offeringTitle: offering.title,
+      }).catch((err) =>
+        console.error("external instructor invite email failed", err),
+      );
+      return { ok: true, id: offeringId };
+    }
+
+    case "remove-external-instructor": {
+      if (!(await isCore(actorId))) return bad("Core only", 403);
+      const userId = String(formData.get("userId") ?? "");
+      if (!userId) return bad("userId is required");
+      await prisma.instructorAssignment.deleteMany({
+        where: { offeringId, userId },
+      });
+      await logAuditEvent({
+        action: "education.instructors.removeExternal",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { userId },
+      });
       return { ok: true, id: offeringId };
     }
   }
