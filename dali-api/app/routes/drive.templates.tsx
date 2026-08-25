@@ -3,18 +3,12 @@ import type { Route } from "./+types/drive.templates";
 import { useState } from "react";
 import {
   FileText,
-  ClipboardList,
-  NotebookPen,
-  Mail,
-  FileSignature,
+  FolderKanban,
   LayoutTemplate,
   ArrowLeft,
-  ArrowRight,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadTemplates, type TemplateItem, type TemplateKind } from "~/lib/drive-templates.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Templates · DALI OS" }];
@@ -24,20 +18,15 @@ export const handle = {
   docTitle: "Templates",
 };
 
-// The unified Drive Templates gallery: every template system (documents, forms,
-// mentor notes, email, agreements) in one browseable place, role-gated per kind
-// by loadTemplates. Gated behind the `templates` feature flag.
+// The Drive Templates gallery: the things you genuinely "start something new"
+// from — documents (any lab member) and projects (Core). Reusable-by-nature
+// objects (email, agreements, mentor notes) live in their own areas, not here.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-
-  const roles = await getUserRoles(auth.user.sub);
-  if (!(await isFeatureEnabled("templates", auth.user.sub, roles))) {
-    return redirect("/drive");
-  }
 
   const templates = await loadTemplates(auth.user.sub);
   return { templates };
@@ -46,10 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 // Display metadata per kind. Order here is the section order in the gallery.
 const KIND_META: { kind: TemplateKind; label: string; icon: React.ReactNode; blurb: string }[] = [
   { kind: "page", label: "Documents", icon: <FileText className="w-4 h-4" />, blurb: "Start a new document pre-filled with this layout." },
-  { kind: "form", label: "Forms", icon: <ClipboardList className="w-4 h-4" />, blurb: "Open the form to duplicate it as a starting point." },
-  { kind: "mentorNote", label: "Mentor notes", icon: <NotebookPen className="w-4 h-4" />, blurb: "Applied automatically when a mentor starts a weekly note." },
-  { kind: "email", label: "Email", icon: <Mail className="w-4 h-4" />, blurb: "Reusable email bodies bound to hiring & education decisions." },
-  { kind: "signing", label: "Agreements", icon: <FileSignature className="w-4 h-4" />, blurb: "Signable agreement templates with placeable fields." },
+  { kind: "project", label: "Projects", icon: <FolderKanban className="w-4 h-4" />, blurb: "Start a new project with these epics, sprints, and tasks." },
 ];
 
 export default function DriveTemplates() {
@@ -57,9 +43,14 @@ export default function DriveTemplates() {
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
 
-  // Spin a new Lab document off a page template, then open it. Mirrors the
-  // TemplatePicker create flow in drive.hub.
-  async function createFromPage(item: TemplateItem) {
+  // Both kinds "start" something. Page templates duplicate into the Lab
+  // workspace then open the new doc (mirrors the TemplatePicker create flow);
+  // project templates hand off to the projects hub create flow prefilled.
+  async function onUse(item: TemplateItem) {
+    if (item.action === "startProject") {
+      navigate(item.useHref);
+      return;
+    }
     setCreating(item.id);
     try {
       const res = await fetch("/api/page-templates", {
@@ -92,14 +83,14 @@ export default function DriveTemplates() {
           <LayoutTemplate className="w-5 h-5 text-muted-foreground" /> Templates
         </h1>
         <p className="text-sm text-muted-foreground">
-          Reusable starting points across the lab. What you see depends on your role.
+          Reusable starting points: documents and projects.
         </p>
       </div>
 
       {!hasAny && (
         <p className="text-sm text-muted-foreground italic py-8 text-center">
-          No templates are available to you yet. Mark any Lab document as a template
-          (its ⋯ menu → “Save as template”) to see it here.
+          No templates yet. Open any Lab document and choose “Mark as template” from its
+          ⋯ menu, or save a project as a template from its settings.
         </p>
       )}
 
@@ -122,7 +113,7 @@ export default function DriveTemplates() {
                     item={item}
                     creating={creating === item.id}
                     disabled={creating !== null}
-                    onCreate={() => void createFromPage(item)}
+                    onUse={() => void onUse(item)}
                   />
                 </li>
               ))}
@@ -138,12 +129,12 @@ function TemplateCard({
   item,
   creating,
   disabled,
-  onCreate,
+  onUse,
 }: {
   item: TemplateItem;
   creating: boolean;
   disabled: boolean;
-  onCreate: () => void;
+  onUse: () => void;
 }) {
   const inner = (
     <span className="flex items-center gap-2 min-w-0">
@@ -166,22 +157,13 @@ function TemplateCard({
   const cardClass =
     "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-border bg-background text-left hover:bg-muted/50 hover:border-muted-foreground/30 transition-colors disabled:opacity-50";
 
-  // "create" kinds spin off a new artifact in place; "open" kinds link to the
-  // template's own manager/editor.
-  if (item.action === "create") {
-    return (
-      <button type="button" onClick={onCreate} disabled={disabled} className={cardClass}>
-        {inner}
-        <span className="text-xs text-muted-foreground shrink-0">
-          {creating ? "Creating…" : "Use"}
-        </span>
-      </button>
-    );
-  }
+  const cta = item.action === "startProject" ? "Start" : "Use";
   return (
-    <Link to={item.useHref} className={cardClass}>
+    <button type="button" onClick={onUse} disabled={disabled} className={cardClass}>
       {inner}
-      <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
-    </Link>
+      <span className="text-xs text-muted-foreground shrink-0">
+        {creating ? "Creating…" : cta}
+      </span>
+    </button>
   );
 }

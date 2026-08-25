@@ -275,6 +275,8 @@ export type TemplateTarget = {
   targetParentPageId?: string;
 };
 
+type TemplateRow = { id: string; title: string; iconEmoji: string | null };
+
 function TemplatePicker({
   open,
   onClose,
@@ -285,34 +287,47 @@ function TemplatePicker({
   target: TemplateTarget;
 }) {
   const titleId = useId();
-  const [templates, setTemplates] = useState<{ id: string; title: string; iconEmoji: string | null }[]>([]);
+  const [labTemplates, setLabTemplates] = useState<TemplateRow[]>([]);
+  const [scopeTemplates, setScopeTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
-  const fetched = useRef(false);
+  // Last workspace scope we loaded for, so reopening after a scope change
+  // refetches while StrictMode's double-invoke (same key) is deduped.
+  const loadedKey = useRef<string | null>(null);
 
-  // Fetch once on first open.
+  // In a project drive, offer that project's own templates alongside the Lab
+  // set. Elsewhere (Lab/Core/Hiring/Education) it's Lab-only.
+  const scopeProjectId =
+    target.targetWorkspaceType === "Project" ? target.targetWorkspaceId ?? null : null;
+
   const onModalOpen = useCallback(async () => {
-    if (fetched.current) return;
-    fetched.current = true;
+    const key = scopeProjectId ?? "lab";
+    if (loadedKey.current === key) return;
+    loadedKey.current = key;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/page-templates?workspaceType=Lab", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to load templates");
-      const data = await res.json() as { templates: { id: string; title: string; iconEmoji: string | null }[] };
-      setTemplates(data.templates);
+      const load = async (qs: string) => {
+        const res = await fetch(`/api/page-templates?${qs}`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to load templates");
+        const data = (await res.json()) as { templates: TemplateRow[] };
+        return data.templates;
+      };
+      const [lab, scope] = await Promise.all([
+        load("workspaceType=Lab"),
+        scopeProjectId ? load(`workspaceType=Project&workspaceId=${scopeProjectId}`) : Promise.resolve([]),
+      ]);
+      setLabTemplates(lab);
+      setScopeTemplates(scope);
     } catch (err) {
+      loadedKey.current = null; // allow a retry on reopen
       setError(err instanceof Error ? err.message : "Failed to load templates");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scopeProjectId]);
 
-  // Fetch on first open; `fetched` ref inside onModalOpen deduplicates across
-  // StrictMode double-invocations.
   useEffect(() => {
     if (open) void onModalOpen();
   }, [open, onModalOpen]);
@@ -345,36 +360,32 @@ function TemplatePicker({
       {error && (
         <p className="text-sm text-red-600 py-2">{error}</p>
       )}
-      {!loading && !error && templates.length === 0 && (
+      {!loading && !error && labTemplates.length === 0 && scopeTemplates.length === 0 && (
         <p className="text-sm text-muted-foreground italic py-4 text-center">
-          No page templates are available in the Lab drive yet.
+          No page templates are available yet.
         </p>
       )}
-      {!loading && templates.length > 0 && (
-        <ul className="flex flex-col gap-1.5 max-h-72 overflow-y-auto -mx-1 px-1">
-          {templates.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                disabled={creating !== null}
-                onClick={() => void selectTemplate(t.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-muted/60 transition-colors disabled:opacity-50"
-              >
-                {t.iconEmoji ? (
-                  <span className="text-base leading-none shrink-0">{t.iconEmoji}</span>
-                ) : (
-                  <LayoutTemplate className="w-4 h-4 text-muted-foreground shrink-0" />
-                )}
-                <span className="text-sm font-medium text-foreground truncate">
-                  {t.title || "Untitled template"}
-                </span>
-                {creating === t.id && (
-                  <span className="ml-auto text-xs text-muted-foreground shrink-0">Creating…</span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {!loading && (labTemplates.length > 0 || scopeTemplates.length > 0) && (
+        <div className="flex flex-col gap-3 max-h-72 overflow-y-auto -mx-1 px-1">
+          {/* Only label the groups when there are two of them; a single Lab
+              list needs no heading. */}
+          {scopeTemplates.length > 0 && (
+            <TemplateGroup
+              label="This project"
+              rows={scopeTemplates}
+              creating={creating}
+              onSelect={selectTemplate}
+            />
+          )}
+          {labTemplates.length > 0 && (
+            <TemplateGroup
+              label={scopeTemplates.length > 0 ? "Lab" : null}
+              rows={labTemplates}
+              creating={creating}
+              onSelect={selectTemplate}
+            />
+          )}
+        </div>
       )}
       <div className="mt-4 flex justify-end">
         <button
@@ -386,6 +397,52 @@ function TemplatePicker({
         </button>
       </div>
     </Modal>
+  );
+}
+
+function TemplateGroup({
+  label,
+  rows,
+  creating,
+  onSelect,
+}: {
+  label: string | null;
+  rows: TemplateRow[];
+  creating: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {label && (
+        <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+      )}
+      <ul className="flex flex-col gap-1.5">
+        {rows.map((t) => (
+          <li key={t.id}>
+            <button
+              type="button"
+              disabled={creating !== null}
+              onClick={() => void onSelect(t.id)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-muted/60 transition-colors disabled:opacity-50"
+            >
+              {t.iconEmoji ? (
+                <span className="text-base leading-none shrink-0">{t.iconEmoji}</span>
+              ) : (
+                <LayoutTemplate className="w-4 h-4 text-muted-foreground shrink-0" />
+              )}
+              <span className="text-sm font-medium text-foreground truncate">
+                {t.title || "Untitled template"}
+              </span>
+              {creating === t.id && (
+                <span className="ml-auto text-xs text-muted-foreground shrink-0">Creating…</span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -1022,7 +1079,6 @@ export default function DriveHub() {
   const toast = useToast();
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const templatesEnabled = useFeatureFlag("templates");
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -1591,22 +1647,20 @@ export default function DriveHub() {
       />
     ) : null;
 
-  // Toolbar actions: the Templates gallery link (flag-gated, shown at every
-  // scope including the root) alongside the scope's New menu.
+  // Toolbar actions: the Templates gallery link (shown at every scope including
+  // the root) alongside the scope's New menu.
   const toolbarActions = (
     <>
-      {templatesEnabled && (
-        <Link
-          to="/drive/templates"
-          className={cn(
-            "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
-            os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
-          )}
-        >
-          <LayoutTemplate className="w-3.5 h-3.5" />
-          Templates
-        </Link>
-      )}
+      <Link
+        to="/drive/templates"
+        className={cn(
+          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
+          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
+        )}
+      >
+        <LayoutTemplate className="w-3.5 h-3.5" />
+        Templates
+      </Link>
       {newMenuNode}
     </>
   );

@@ -3521,8 +3521,8 @@ function OverviewTab({
 // project has any history, so the affordance stays tucked inside settings and
 // asks for the project name typed back before it fires.
 // Save the project's structure (epics, sprints, tasks, checklists) as a
-// reusable template. Posts to the /projects action (intent=capture). Gated by
-// the `templates` flag. Sibling of the Danger zone in the settings modal.
+// reusable template. Posts to the /projects action (intent=capture). Rendered
+// for Core (canEditScope) as a sibling of the Danger zone in the settings modal.
 function SaveAsTemplateSection({
   projectId,
   projectName,
@@ -3530,8 +3530,6 @@ function SaveAsTemplateSection({
   projectId: string;
   projectName: string;
 }) {
-  const templatesEnabled = useFeatureFlag("templates");
-  if (!templatesEnabled) return null;
   return (
     <section className="mt-6 border-t border-border pt-5">
       <h3 className="text-sm font-semibold text-foreground">Save as template</h3>
