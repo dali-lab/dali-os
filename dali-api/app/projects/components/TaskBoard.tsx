@@ -11,6 +11,7 @@ import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
+import { ALL_TERMS, termFilterOrder } from "~/lib/terms.shared";
 import {
   buildTaskBoard,
   moveTaskInBoard,
@@ -48,9 +49,6 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
-// The `?term=` filter value that shows every term (opts out of the default
-// current-term scoping).
-const ALL_TERMS = "all";
 // The sprint select's "no filter" option. A Select needs a value for it; the
 // URL keeps meaning "no sprint param at all".
 const ALL_SPRINTS = "all";
@@ -531,13 +529,16 @@ export function TaskBoard({
             <span className="font-medium">Term</span>
             <Select
               value={effectiveTerm}
-              options={[
-                ...options.terms.map((t) => ({
-                  value: t.id,
-                  label: t.code + (t.id === options.currentTermId ? " · current" : ""),
+              // Shared ordering/labelling ("All terms" first, current term
+              // marked "· current"); kept as a bare Select rather than
+              // <TermFilter> so setTermFilter can also clear the sprint sub-filter.
+              options={termFilterOrder(
+                options.terms.map((t) => ({
+                  id: t.id,
+                  code: t.code,
+                  isCurrent: t.id === options.currentTermId,
                 })),
-                { value: ALL_TERMS, label: "All terms" },
-              ]}
+              )}
               ariaLabel="Filter board by term"
               buttonClassName={FILTER_CONTROL(os)}
               onChange={(value) => setTermFilter(value)}
