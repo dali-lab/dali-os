@@ -54,21 +54,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function MaterialPage() {
-  const { offeringId, page, isManager } = useLoaderData<typeof loader>();
+  const { page, isManager } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs text-muted-foreground">
-            <Link
-              to={`/education/${offeringId}/hub?tab=materials`}
-              className="hover:underline"
-            >
-              ← Materials
-            </Link>
-          </p>
-          <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+          <h1 className="font-heading text-2xl font-bold text-foreground">
             {page.title}
           </h1>
         </div>
