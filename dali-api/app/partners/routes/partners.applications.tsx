@@ -8,6 +8,8 @@ import {
   useNavigate,
 } from "react-router";
 import { Select } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
@@ -61,7 +63,7 @@ type ApplicationRow = {
   // The partner's pitch prose: first textarea answer from their form
   // submission, falling back to the (Core-written) internal summary.
   excerpt: string | null;
-  targetTerms: { code: string; sortKey: number }[];
+  targetTerms: { id: string; code: string; sortKey: number }[];
   domains: DomainScopeOut[];
   totalExpectedMembers: number;
 };
@@ -82,7 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  const [applications, canEdit, roleRequests] =
+  const [applications, canEdit, roleRequests, termFilter] =
     await Promise.all([
     prisma.partnerApplication.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -101,7 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
         targetTerms: {
           orderBy: { term: { sortKey: "asc" } },
-          select: { term: { select: { code: true, sortKey: true } } },
+          select: { term: { select: { id: true, code: true, sortKey: true } } },
         },
         domains: {
           select: {
@@ -123,6 +125,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         domain: { select: { id: true, displayName: true } },
       },
     }),
+    // Partner projects are planned several terms out, so default to the current
+    // term plus every upcoming one; history stays under "All terms".
+    resolveTermFilter(request, { default: "upcoming" }),
   ]);
 
   const rows: ApplicationRow[] = await Promise.all(applications.map(async (a) => {
@@ -146,6 +151,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Uploaded logos are stored as S3 keys; presign for display.
       partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg?.logoUrl ?? null),
       targetTerms: a.targetTerms.map((t) => ({
+        id: t.term.id,
         code: t.term.code,
         sortKey: t.term.sortKey,
       })),
@@ -180,7 +186,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
     : [null, []];
 
-  return { rows, canEdit, requiredCells, formBinding, selectableForms };
+  return {
+    rows,
+    canEdit,
+    requiredCells,
+    formBinding,
+    selectableForms,
+    terms: termFilter.terms,
+    selected: termFilter.selected,
+    termIds: termFilter.termIds,
+    isAll: termFilter.isAll,
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -249,7 +265,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersApplications() {
-  const { rows, canEdit, requiredCells, formBinding, selectableForms } =
+  const { rows, canEdit, requiredCells, formBinding, selectableForms, terms, selected, termIds, isAll } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
@@ -258,8 +274,9 @@ export default function PartnersApplications() {
   const [domainFilter, setDomainFilter] = useState<string>("all");
   // Term filter for planning — projects/applications are planned several terms
   // out and can target multiple terms, so a row matches if ANY target term is
-  // the selected one. Applies in both list and board views.
-  const [termFilter, setTermFilter] = useState<string>("all");
+  // in the selected scope. Applies in both list and board views. Persisted in
+  // the URL (?term=) via TermFilter so a shared/reloaded link keeps the scope;
+  // the loader defaults it to "Current & upcoming" (isAll/termIds come thence).
   const [view, setView] = useState<"list" | "board">("list");
   const [creating, setCreating] = useState(false);
   // Board drag applies a status change here and persists it via the API.
@@ -288,30 +305,22 @@ export default function PartnersApplications() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
-  // Distinct target terms across all applications, newest term first (sortKey
-  // desc) — matches the Term ordering used elsewhere.
-  const termOptions = useMemo(() => {
-    const seen = new Map<string, number>();
-    for (const r of rows) {
-      for (const t of r.targetTerms) if (!seen.has(t.code)) seen.set(t.code, t.sortKey);
-    }
-    return [...seen.entries()].sort((a, b) => b[1] - a[1]).map(([code]) => code);
-  }, [rows]);
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return effectiveRows.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (domainFilter !== "all" && !r.domains.some((d) => d.domainId === domainFilter))
         return false;
-      if (termFilter !== "all" && !r.targetTerms.some((t) => t.code === termFilter))
+      // isAll → no term scope; otherwise a row matches if any target term is in
+      // the resolved id set (single term or the current+upcoming set).
+      if (!isAll && termIds && !r.targetTerms.some((t) => termIds.includes(t.id)))
         return false;
       if (!q) return true;
       if (r.title.toLowerCase().includes(q)) return true;
       if (r.partnerName.toLowerCase().includes(q)) return true;
       return r.domains.some((d) => d.domainName.toLowerCase().includes(q));
     });
-  }, [effectiveRows, query, statusFilter, domainFilter, termFilter]);
+  }, [effectiveRows, query, statusFilter, domainFilter, isAll, termIds]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -529,15 +538,11 @@ export default function PartnersApplications() {
           ]}
           buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
-        {termOptions.length > 0 && (
-          <Select
-            value={termFilter}
-            onChange={(value) => setTermFilter(value)}
-            ariaLabel="Filter by term"
-            options={[
-              { value: "all", label: "All terms" },
-              ...termOptions.map((code) => ({ value: code, label: code })),
-            ]}
+        {terms.length > 0 && (
+          <TermFilter
+            terms={terms}
+            selected={selected}
+            includeUpcoming
             buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         )}
