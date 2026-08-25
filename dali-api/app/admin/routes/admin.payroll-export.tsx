@@ -144,8 +144,10 @@ export default function PayrollExport() {
     selectedLevels,
   } = data;
 
-  // A role filter narrows the export to a domain/level slice. Core + Instructor
-  // rows carry no domain/level, so they're excluded whenever a filter is on.
+  // A role filter narrows only the Project assignments section. Core and
+  // Instructor are independent opt-in sections (their own checkboxes), so a
+  // domain/level filter leaves them untouched — e.g. "PMs + Core" is the PM
+  // filter with the Core people checked.
   const filterActive = selectedDomainIds.length > 0 || selectedLevels.length > 0;
   const filterSummary = [
     termDomains
@@ -159,25 +161,21 @@ export default function PayrollExport() {
 
   const projectWarnings = projectRows.filter((r) => r.warnings.length > 0).length;
   const totalRows =
-    projectRows.length +
-    (filterActive ? 0 : coreSelected.size + instructorSelected.size);
+    projectRows.length + coreSelected.size + instructorSelected.size;
 
   const csvHref = useMemo(() => {
     const params = new URLSearchParams({ term: selectedTermId });
     if (selectedDomainIds.length > 0)
       params.set("domain", selectedDomainIds.join(","));
     if (selectedLevels.length > 0) params.set("level", selectedLevels.join(","));
-    if (!filterActive) {
-      if (coreSelected.size > 0) params.set("core", [...coreSelected].join(","));
-      if (instructorSelected.size > 0)
-        params.set("instructor", [...instructorSelected].join(","));
-    }
+    if (coreSelected.size > 0) params.set("core", [...coreSelected].join(","));
+    if (instructorSelected.size > 0)
+      params.set("instructor", [...instructorSelected].join(","));
     return `/admin/payroll-export.csv?${params.toString()}`;
   }, [
     selectedTermId,
     selectedDomainIds,
     selectedLevels,
-    filterActive,
     coreSelected,
     instructorSelected,
   ]);
@@ -308,10 +306,10 @@ export default function PayrollExport() {
         </div>
         {filterActive && (
           <p className="text-xs text-muted-foreground">
-            Showing only project assignments in{" "}
+            Project assignments narrowed to{" "}
             <strong className="text-foreground">{filterSummary}</strong>. Core
-            and Instructor rows are excluded while a filter is active — they
-            aren't domain- or level-scoped.
+            and Instructor selections below are unaffected — check them to
+            include those people too (e.g. PMs + Core).
           </p>
         )}
       </section>
@@ -391,7 +389,6 @@ export default function PayrollExport() {
         selected={coreSelected}
         setSelected={setCoreSelected}
         emptyLabel="No Core assignments for this term."
-        excluded={filterActive}
       />
 
       <CandidateSection
@@ -400,7 +397,6 @@ export default function PayrollExport() {
         selected={instructorSelected}
         setSelected={setInstructorSelected}
         emptyLabel="No Instructor assignments for this term."
-        excluded={filterActive}
       />
     </div>
   );
@@ -415,32 +411,14 @@ function CandidateSection({
   selected,
   setSelected,
   emptyLabel,
-  excluded = false,
 }: {
   title: string;
   candidates: RoleCandidate[];
   selected: Set<string>;
   setSelected: (s: Set<string>) => void;
   emptyLabel: string;
-  // Greyed out and dropped from the export while a role filter is active —
-  // Core/Instructor rows carry no domain or level to filter on.
-  excluded?: boolean;
 }) {
   const allChecked = candidates.length > 0 && selected.size === candidates.length;
-
-  if (excluded) {
-    return (
-      <section className="space-y-2 opacity-60">
-        <header className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-foreground/70" />
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        </header>
-        <p className="text-xs text-muted-foreground">
-          Excluded while a role filter is active.
-        </p>
-      </section>
-    );
-  }
 
   function toggle(userId: string) {
     const next = new Set(selected);
