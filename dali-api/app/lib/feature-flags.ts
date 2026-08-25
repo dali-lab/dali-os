@@ -105,6 +105,12 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
+  {
+    key: "domain-hubs",
+    label: "Domain hubs",
+    description:
+      "Per-domain knowledge hubs at General ▸ Domains, plus the Growth request flows (request a level up / request to join a domain) surfaced on them. Off = no Domains nav, no hub pages, no Growth request CTAs. The Growth board rename (formerly Level Up) is unaffected by this flag.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

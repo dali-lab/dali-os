@@ -10,6 +10,10 @@ export const SLOTS = {
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
   "level-up": "Level Up",
+  // Growth: a member requests to JOIN a domain they hold no eligibility in
+  // (→ P1). Distinct slot from level-up so it's independently bindable +
+  // openable/closable by Core. Shares the Level Up review board.
+  "domain-join": "Domain Join",
 } as const;
 
 export type Slot = keyof typeof SLOTS;
@@ -37,7 +41,8 @@ export function pickStaffingBinding<
       (b) =>
         b.slot === "project-bids" ||
         b.slot === "intent-to-work" ||
-        b.slot === "level-up",
+        b.slot === "level-up" ||
+        b.slot === "domain-join",
     )
     .sort((a, b) => {
       if (currentTermId) {
@@ -57,6 +62,9 @@ export type SlotBinding = {
   published: boolean;
   publicToken: string | null;
   updatedAt: string;
+  // Core's per-flow open/closed switch (Growth flows: level-up, domain-join).
+  // Non-Growth slots ignore it; defaults true so their behavior is unchanged.
+  enabled: boolean;
   // The saved question→column mapping for this binding, parsed/defended.
   // null = not mapped yet (the slot can't interpret submissions).
   mapping: ColumnMapping | null;
@@ -71,6 +79,7 @@ export async function getSlotBinding(
     select: {
       updatedAt: true,
       columnMapping: true,
+      enabled: true,
       form: {
         select: { id: true, name: true, published: true, publicToken: true },
       },
@@ -83,6 +92,7 @@ export async function getSlotBinding(
     published: row.form.published,
     publicToken: row.form.publicToken,
     updatedAt: row.updatedAt.toISOString(),
+    enabled: row.enabled,
     mapping: parseColumnMapping(row.columnMapping),
   };
 }
@@ -128,6 +138,28 @@ export async function setSlotBinding(
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
     create: { staffingCycleId, slot, formId, updatedById: userId },
     update: { formId, updatedById: userId },
+  });
+  return { ok: true };
+}
+
+// Toggle a Growth flow open/closed for a cycle. The binding must exist (a form
+// is bound first). The member-facing CTA and the submit endpoint both read this
+// via getSlotBinding().enabled — a closed flow hides its CTA and rejects submits.
+export async function setSlotEnabled(
+  staffingCycleId: string,
+  slot: Slot,
+  enabled: boolean,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { id: true },
+  });
+  if (!binding)
+    return { ok: false, error: "Bind a form before opening this flow." };
+  await prisma.staffingCycleFormBinding.update({
+    where: { id: binding.id },
+    data: { enabled, updatedById: userId },
   });
   return { ok: true };
 }

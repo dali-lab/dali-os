@@ -43,7 +43,7 @@ const CARDS = [
   {
     to: "/help/staffing",
     title: "Staffing",
-    body: "Intent to work, project bids, level-up, and how PMs see them.",
+    body: "Intent to work, project bids, Growth (level-up and domain join), and how PMs see them.",
     icon: Users,
   },
   {

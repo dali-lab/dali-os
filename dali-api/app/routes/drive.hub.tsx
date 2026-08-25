@@ -23,6 +23,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
@@ -178,6 +179,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     kind: "education" as const,
   }));
 
+  const domainHubsEnabled = await isFeatureEnabled(
+    "domain-hubs",
+    auth.user.sub,
+    roles,
+    request,
+  );
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
     projectWorkspaces,
@@ -186,6 +193,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
     hasHiringAccess,
+    domainHubsEnabled,
     request,
   });
 

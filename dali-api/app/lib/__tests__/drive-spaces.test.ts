@@ -50,6 +50,7 @@ describe("DRIVE_SPACES registry", () => {
       "education",
       "core",
       "hiring",
+      "domains",
     ]);
   });
 

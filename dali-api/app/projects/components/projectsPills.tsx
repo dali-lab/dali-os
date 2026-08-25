@@ -1,5 +1,4 @@
 import {
-  ArrowUpCircle,
   ClipboardPen,
   Gavel,
   Kanban,
@@ -14,7 +13,7 @@ import type { AreaPill } from "~/components/AreaPillNav";
 // the nav appear to vanish.
 export function projectsPills(args: {
   canViewStaffing: boolean;
-  active: "hub" | "staffing" | "intent" | "bids" | "level-up";
+  active: "hub" | "staffing" | "intent" | "bids";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/projects", active: args.active === "hub", icon: LayoutGrid },
@@ -37,12 +36,6 @@ export function projectsPills(args: {
             to: "/projects/project-bids",
             active: args.active === "bids",
             icon: Gavel,
-          },
-          {
-            label: "Level Up",
-            to: "/projects/level-up",
-            active: args.active === "level-up",
-            icon: ArrowUpCircle,
           },
         ]
       : []),

@@ -56,9 +56,9 @@ describe("deriveSlotStatus", () => {
     expect(itw.bound).toBe(true);
     expect(itw.mappingComplete).toBe(true);
     expect(itw.sentToCount).toBe(3);
-    // All three slots are reported.
+    // All staffing slots are reported (incl. the Growth domain-join slot).
     expect(out.map((s) => s.slot).sort()).toEqual(
-      ["intent-to-work", "level-up", "project-bids"].sort(),
+      ["domain-join", "intent-to-work", "level-up", "project-bids"].sort(),
     );
   });
 

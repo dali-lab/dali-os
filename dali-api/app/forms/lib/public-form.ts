@@ -23,6 +23,8 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
+import { isGrowthSlot } from "~/projects/lib/growth.server";
+import { notifyGrowthRequest } from "~/projects/lib/growth-notify.server";
 import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,
@@ -488,6 +490,7 @@ export async function submitMemberForm(args: {
         select: {
           slot: true,
           columnMapping: true,
+          enabled: true,
           updatedAt: true,
           staffingCycle: {
             select: { id: true, termId: true, maxPreferencesPerMember: true },
@@ -695,7 +698,18 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
-  if (slot === "level-up") {
+  if (isGrowthSlot(slot)) {
+    // Re-check the flow's open/closed state server-side — the member may have
+    // hit the form link directly after Core closed the flow. The picked binding
+    // (staffingBinding) already carries `enabled`, so no extra query is needed.
+    if (staffingBinding.enabled === false) {
+      return {
+        error:
+          "This request flow is currently closed. Check back when it reopens.",
+        status: 403,
+      };
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.formSubmission.create({
         data: {
@@ -703,13 +717,31 @@ export async function submitMemberForm(args: {
           formVersionId: version.id,
           userId: args.userId,
           staffingCycleId: cycle.id,
-          slot: "level-up",
+          slot,
           answers: args.answers as object,
         },
       });
       await closeFormTodos(tx, args.userId, form.id);
     });
     await notifySubmitted();
+
+    // Notify the target domain's leads about the request. Best-effort — a
+    // notification failure must never surface to the member as an error.
+    const submitter = await prisma.user.findUnique({
+      where: { id: args.userId },
+      select: { firstName: true, lastName: true },
+    });
+    const submitterName = submitter
+      ? `${submitter.firstName} ${submitter.lastName}`.trim()
+      : "A member";
+    notifyGrowthRequest({
+      slot,
+      submitterUserId: args.userId,
+      submitterName,
+      answers: args.answers as Record<string, unknown>,
+      columnMapping: staffingBinding.columnMapping,
+    }).catch(() => {});
+
     return { ok: true };
   }
 

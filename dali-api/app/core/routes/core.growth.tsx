@@ -1,23 +1,30 @@
 import { useMemo, useState, useEffect } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
-import type { Route } from "./+types/projects.level-up";
+import type { Route } from "./+types/core.growth";
 import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
-import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
+import {
+  canManageStaffing,
+  canViewStaffing,
+  currentTerm,
+  getUserRoles,
+} from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
-import { ensureStaffingCycle } from "../lib/staffing-cycle";
+import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
 import {
   getSlotBinding,
   listSelectableForms,
   setSlotBinding,
   setSlotColumnMapping,
-} from "../lib/form-slots";
-import { SubmissionFilters } from "../components/SubmissionFilters";
-import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
-import { DomainFilter } from "../components/DomainFilter";
+  setSlotEnabled,
+} from "~/projects/lib/form-slots";
+import { ensureGrowthBindings } from "~/projects/lib/growth.server";
+import { SubmissionFilters } from "~/projects/components/SubmissionFilters";
+import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSettingsModal";
+import { DomainFilter } from "~/projects/components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -27,22 +34,23 @@ import {
   parseColumnMapping,
   validateMapping,
   type ColumnMapping,
-} from "../lib/slot-roles";
-import { buildSubmissionView } from "../lib/submission-view.server";
-import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
-import { SlotStatusStrip } from "../components/SlotStatusStrip";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+} from "~/projects/lib/slot-roles";
+import { buildSubmissionView } from "~/projects/lib/submission-view.server";
+import { deriveSlotStatus, type SlotStatus } from "~/projects/lib/slot-status.server";
+import { SlotStatusStrip } from "~/projects/components/SlotStatusStrip";
+import { coreHandle } from "~/core/coreNav";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
-import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
-const SLOT = "level-up" as const;
-
-export const handle = { areaPills: true };
+export const handle = {
+  ...coreHandle("growth"),
+  areaPills: true,
+};
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Level Up · DALI OS" },
+  { title: "Growth · DALI OS" },
 ];
 
 // Parses a level string to Level enum. Accepts "P1"/"P2"/"P3" and their full
@@ -55,19 +63,75 @@ function parseLevel(raw: string): Level | null {
   return null;
 }
 
+type SlotBindingData = {
+  formId: string;
+  formName: string;
+  published: boolean;
+  publicToken: string | null;
+  updatedAt: string;
+  enabled: boolean;
+  mapping: ColumnMapping | null;
+} | null;
+
+async function loadSlotData(
+  singleCycleId: string | null,
+  slot: "level-up" | "domain-join",
+  canManage: boolean,
+  cycleIds: string[],
+) {
+  const [binding, selectableForms] = await Promise.all([
+    singleCycleId ? getSlotBinding(singleCycleId, slot) : Promise.resolve(null),
+    canManage && singleCycleId ? listSelectableForms() : Promise.resolve([]),
+  ]);
+
+  const view = await buildSubmissionView({
+    cycleIds,
+    slot,
+    formId: binding?.formId ?? null,
+  });
+
+  const tableColumns = view.tableColumns.map((c) => ({ key: c.key, label: c.label }));
+
+  let formQuestions: { key: string; label: string; type: string; referenceSource?: string }[] = [];
+  let mappingWarning: string | null = null;
+  if (binding) {
+    const latest = await prisma.formVersion.findFirst({
+      where: { form: { id: binding.formId } },
+      orderBy: { versionNumber: "desc" },
+      select: { questions: true },
+    });
+    const qs = (latest?.questions as unknown as Question[]) ?? [];
+    formQuestions = qs.map((q) => ({
+      key: q.key,
+      label: q.data.label,
+      type: q.type,
+      referenceSource: q.data.referenceSource,
+    }));
+    const check = validateMapping(slot, qs, binding.mapping);
+    if (!check.ok) mappingWarning = check.reason;
+  }
+
+  const slotStatus: SlotStatus | null = singleCycleId
+    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === slot) ?? null
+    : null;
+
+  return { binding, selectableForms, view, tableColumns, formQuestions, mappingWarning, slotStatus };
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  const regrouped = await regroupRedirect(
-    request,
-    auth.user.sub,
-    "/projects/level-up",
-    "/core/level-up",
-  );
-  if (regrouped) return regrouped;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+
+  const roles = await getUserRoles(auth.user.sub, request);
+  const domainHubsEnabled = await isFeatureEnabled(
+    "domain-hubs",
+    auth.user.sub,
+    roles,
+    request,
+  );
 
   const {
     terms: termOptions,
@@ -95,79 +159,53 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? { id: fallbackTerm.id, code: fallbackTerm.code }
         : termOptions[0]);
     const cycle = await ensureStaffingCycle(t.id, t.code);
+    // Carry forward any prior Growth bindings to this cycle on first load.
+    await ensureGrowthBindings(cycle.id);
     cycleIds = [cycle.id];
     cycleName = cycle.name;
     singleCycleId = cycle.id;
   }
 
   const canManage = await canManageStaffing(auth.user.sub);
-  const [binding, selectableForms] = await Promise.all([
-    singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
-    canManage && singleCycleId ? listSelectableForms() : Promise.resolve([]),
+
+  const [levelUpData, domainJoinData] = await Promise.all([
+    loadSlotData(singleCycleId, "level-up", canManage, cycleIds),
+    domainHubsEnabled
+      ? loadSlotData(singleCycleId, "domain-join", canManage, cycleIds)
+      : Promise.resolve(null),
   ]);
 
-  const view = await buildSubmissionView({
-    cycleIds,
-    slot: SLOT,
-    formId: binding?.formId ?? null,
-  });
-
-  const tableColumns = view.tableColumns.map((c) => ({
-    key: c.key,
-    label: c.label,
-  }));
-
-  let formQuestions: {
-    key: string;
-    label: string;
-    type: string;
-    referenceSource?: string;
-  }[] = [];
-  let mappingWarning: string | null = null;
-  if (binding) {
-    const latest = await prisma.formVersion.findFirst({
-      where: { form: { id: binding.formId } },
-      orderBy: { versionNumber: "desc" },
-      select: { questions: true },
-    });
-    const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.map((q) => ({
-      key: q.key,
-      label: q.data.label,
-      type: q.type,
-      referenceSource: q.data.referenceSource,
-    }));
-    const check = validateMapping(SLOT, qs, binding.mapping);
-    if (!check.ok) mappingWarning = check.reason;
-  }
-
-  const noFormConnected = !isAll && !binding;
-
-  // Resolve target domain + level for each row so the Level Up button can
-  // show a meaningful confirmation and be disabled when already promoted.
-  // We need raw answers, not the display-resolved cell strings.
   const targetPromotion = await resolveTargetPromotions(
-    view.rows.map((r) => r.userId),
+    levelUpData.view.rows.map((r) => r.userId),
     cycleIds,
-    binding,
+    levelUpData.binding,
+    "level-up",
   );
 
-  const submissions = view.rows.map((r) => ({
+  const levelUpSubmissions = levelUpData.view.rows.map((r) => ({
     ...r,
     targetPromotion: targetPromotion.get(r.userId) ?? null,
   }));
+
+  // For domain-join, all approved actions enter at P1 with no prior eligibility.
+  let domainJoinSubmissions: typeof levelUpSubmissions = [];
+  if (domainJoinData) {
+    const djPromotion = await resolveTargetPromotions(
+      domainJoinData.view.rows.map((r) => r.userId),
+      cycleIds,
+      domainJoinData.binding,
+      "domain-join",
+    );
+    domainJoinSubmissions = domainJoinData.view.rows.map((r) => ({
+      ...r,
+      targetPromotion: djPromotion.get(r.userId) ?? null,
+    }));
+  }
 
   const domainOptions = await prisma.domain.findMany({
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
   });
-
-  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
-  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
-  const slotStatus: SlotStatus | null = singleCycleId
-    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
-      null
-    : null;
 
   return {
     gate: "ok" as const,
@@ -175,16 +213,27 @@ export async function loader({ request }: Route.LoaderArgs) {
     termOptions,
     selectedTerm,
     isAll,
-    submissions,
-    tableColumns,
     canManage,
-    binding,
-    selectableForms,
-    formQuestions,
-    mappingWarning,
-    noFormConnected,
     domainOptions,
-    slotStatus,
+    domainHubsEnabled,
+    // Level-up slot
+    levelUpSubmissions,
+    levelUpTableColumns: levelUpData.tableColumns,
+    levelUpBinding: levelUpData.binding,
+    levelUpSelectableForms: levelUpData.selectableForms,
+    levelUpFormQuestions: levelUpData.formQuestions,
+    levelUpMappingWarning: levelUpData.mappingWarning,
+    levelUpSlotStatus: levelUpData.slotStatus,
+    levelUpNoForm: !isAll && !levelUpData.binding,
+    // Domain-join slot (only when domain-hubs flag is on)
+    domainJoinSubmissions,
+    domainJoinTableColumns: domainJoinData?.tableColumns ?? [],
+    domainJoinBinding: domainJoinData?.binding ?? null,
+    domainJoinSelectableForms: domainJoinData?.selectableForms ?? [],
+    domainJoinFormQuestions: domainJoinData?.formQuestions ?? [],
+    domainJoinMappingWarning: domainJoinData?.mappingWarning ?? null,
+    domainJoinSlotStatus: domainJoinData?.slotStatus ?? null,
+    domainJoinNoForm: domainHubsEnabled && !isAll && !domainJoinData?.binding,
   };
 }
 
@@ -195,13 +244,11 @@ export type TargetPromotion = {
   alreadyPromoted: boolean;
 } | null;
 
-// Resolves target domain + level for each user from their raw form submission.
-// Returns null for rows where the mapping doesn't have target-domain /
-// target-level, or the answers can't be resolved.
 async function resolveTargetPromotions(
   userIds: string[],
   cycleIds: string[],
   binding: Awaited<ReturnType<typeof getSlotBinding>>,
+  slot: "level-up" | "domain-join",
 ): Promise<Map<string, TargetPromotion>> {
   const result = new Map<string, TargetPromotion>();
   if (!binding?.mapping || userIds.length === 0) return result;
@@ -212,25 +259,22 @@ async function resolveTargetPromotions(
   const levelEntry = binding.mapping.entries.find(
     (e) => e.role === "target-level" && e.source === "question",
   );
-  if (!domainEntry || !levelEntry) return result;
+  if (!domainEntry) return result;
 
-  const domainKey =
-    domainEntry.source === "question" ? domainEntry.questionKey : null;
-  const levelKey =
-    levelEntry.source === "question" ? levelEntry.questionKey : null;
-  if (!domainKey || !levelKey) return result;
+  const domainKey = domainEntry.source === "question" ? domainEntry.questionKey : null;
+  const levelKey = levelEntry?.source === "question" ? levelEntry.questionKey : null;
+  if (!domainKey) return result;
 
   const subs = await prisma.formSubmission.findMany({
     where: {
       staffingCycleId: { in: cycleIds },
-      slot: SLOT,
+      slot,
       userId: { in: userIds },
     },
     orderBy: { createdAt: "desc" },
     select: { userId: true, answers: true },
   });
 
-  // Most recent submission per user.
   const seen = new Set<string>();
   const rawByUser = new Map<string, Record<string, unknown>>();
   for (const s of subs) {
@@ -239,8 +283,6 @@ async function resolveTargetPromotions(
     rawByUser.set(s.userId, (s.answers as Record<string, unknown>) ?? {});
   }
 
-  // Batch-resolve domain ids + names. We try treating the raw answer as a
-  // domain ID first; if that misses we fall back to displayName matching.
   const rawDomainAnswers = [...rawByUser.values()]
     .map((a) => a[domainKey])
     .filter((v): v is string => typeof v === "string" && v.length > 0);
@@ -265,7 +307,6 @@ async function resolveTargetPromotions(
     domainLookup.set(d.displayName.toLowerCase(), d);
   }
 
-  // Current eligibility levels per user so we can flag already-promoted rows.
   const eligibilities = await prisma.domainEligibility.findMany({
     where: { userId: { in: userIds } },
     select: { userId: true, domainId: true, level: true },
@@ -285,16 +326,17 @@ async function resolveTargetPromotions(
       continue;
     }
     const rawDomain = answers[domainKey];
-    const rawLevel = answers[levelKey];
-    if (typeof rawDomain !== "string" || typeof rawLevel !== "string") {
+    // For domain-join: default to P1 when the level question isn't mapped.
+    const rawLevel = levelKey ? answers[levelKey] : "P1";
+    if (typeof rawDomain !== "string") {
       result.set(userId, null);
       continue;
     }
     const domain =
-      domainLookup.get(rawDomain) ??
-      domainLookup.get(rawDomain.toLowerCase());
-    const targetLevel = parseLevel(rawLevel);
-    if (!domain || !targetLevel) {
+      domainLookup.get(rawDomain) ?? domainLookup.get(rawDomain.toLowerCase());
+    const targetLevel =
+      typeof rawLevel === "string" ? (parseLevel(rawLevel) ?? "P1") : "P1";
+    if (!domain) {
       result.set(userId, null);
       continue;
     }
@@ -331,22 +373,28 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = String(form.get("intent"));
+  // The slot this action targets (level-up or domain-join).
+  const rawSlot = String(form.get("slot") ?? "level-up");
+  const slot = rawSlot === "domain-join" ? "domain-join" : "level-up";
 
-  // Form binding and mapping: managers only.
-  if (intent === "set-slot-form" || intent === "set-slot-mapping") {
+  if (
+    intent === "set-slot-form" ||
+    intent === "set-slot-mapping" ||
+    intent === "set-slot-enabled"
+  ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
 
     if (intent === "set-slot-form") {
       const formId = String(form.get("formId") ?? "");
-      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+      const result = await setSlotBinding(cycle.id, slot, formId, auth.user.sub);
       if (!result.ok)
         return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });
     }
 
     if (intent === "set-slot-mapping") {
-      const binding = await getSlotBinding(cycle.id, SLOT);
+      const binding = await getSlotBinding(cycle.id, slot);
       if (!binding)
         return Response.json(
           { error: "Bind a form before mapping its columns." },
@@ -361,12 +409,12 @@ export async function action({ request }: Route.ActionArgs) {
         select: { questions: true },
       });
       const qs = (latest?.questions as unknown as Question[]) ?? [];
-      const check = validateMapping(SLOT, qs, mapping);
+      const check = validateMapping(slot, qs, mapping);
       if (!check.ok)
         return Response.json({ error: check.reason }, { status: 400 });
       const result = await setSlotColumnMapping(
         cycle.id,
-        SLOT,
+        slot,
         mapping as ColumnMapping,
         auth.user.sub,
       );
@@ -374,10 +422,16 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });
     }
+
+    if (intent === "set-slot-enabled") {
+      const enabled = form.get("enabled") === "true";
+      const result = await setSlotEnabled(cycle.id, slot, enabled, auth.user.sub);
+      if (!result.ok)
+        return Response.json({ error: result.error }, { status: 400 });
+      return Response.json({ ok: true });
+    }
   }
 
-  // Note saving: anyone who can view the page.
-  // Level Up: managers only.
   if (intent === "level-up-member") {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -401,7 +455,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function LevelUpDatabase() {
+export default function GrowthBoard() {
   const data = useLoaderData<typeof loader>();
 
   if (data.gate === "no-cycle") {
@@ -423,7 +477,8 @@ type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 function Loaded({ data }: { data: LoadedData }) {
   const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [levelUpSettingsOpen, setLevelUpSettingsOpen] = useState(false);
+  const [domainJoinSettingsOpen, setDomainJoinSettingsOpen] = useState(false);
   const [confirmRow, setConfirmRow] = useState<{
     userId: string;
     name: string;
@@ -432,11 +487,23 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
-  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
-    searchFields: (s) => [s.name, s.email],
-    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
-    deps: [domainId],
-  });
+  const { search, setSearch, filtered: filteredLevelUp } = useFilteredList(
+    data.levelUpSubmissions,
+    {
+      searchFields: (s) => [s.name, s.email],
+      predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
+      deps: [domainId],
+    },
+  );
+
+  const { filtered: filteredDomainJoin } = useFilteredList(
+    data.domainJoinSubmissions,
+    {
+      searchFields: (s) => [s.name, s.email],
+      predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
+      deps: [domainId],
+    },
+  );
 
   const domains = useMemo(
     () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
@@ -446,36 +513,48 @@ function Loaded({ data }: { data: LoadedData }) {
   const canOpenSettings = !data.isAll;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <Header
         cycleName={data.cycle.name}
-        onOpenSettings={
-          canOpenSettings ? () => setSettingsOpen(true) : undefined
+        onOpenLevelUpSettings={
+          canOpenSettings ? () => setLevelUpSettingsOpen(true) : undefined
+        }
+        onOpenDomainJoinSettings={
+          canOpenSettings && data.domainHubsEnabled
+            ? () => setDomainJoinSettingsOpen(true)
+            : undefined
         }
         settingsLabel={data.canManage ? "Advanced settings" : "View settings"}
       />
 
       {canOpenSettings && (
-        <SlotAdvancedSettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          slot="level-up"
-          slotLabel="Level Up"
-          binding={data.binding}
-          selectableForms={data.selectableForms}
-          formQuestions={data.formQuestions}
-          cycleTerms={[]}
-          canManage={data.canManage}
-        />
+        <>
+          <SlotAdvancedSettingsModal
+            open={levelUpSettingsOpen}
+            onClose={() => setLevelUpSettingsOpen(false)}
+            slot="level-up"
+            slotLabel="Level Up"
+            binding={data.levelUpBinding}
+            selectableForms={data.levelUpSelectableForms}
+            formQuestions={data.levelUpFormQuestions}
+            cycleTerms={[]}
+            canManage={data.canManage}
+          />
+          {data.domainHubsEnabled && (
+            <SlotAdvancedSettingsModal
+              open={domainJoinSettingsOpen}
+              onClose={() => setDomainJoinSettingsOpen(false)}
+              slot="domain-join"
+              slotLabel="Domain Join"
+              binding={data.domainJoinBinding}
+              selectableForms={data.domainJoinSelectableForms}
+              formQuestions={data.domainJoinFormQuestions}
+              cycleTerms={[]}
+              canManage={data.canManage}
+            />
+          )}
+        </>
       )}
-
-      {data.mappingWarning && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <span className="font-medium">Heads up:</span> {data.mappingWarning}
-        </div>
-      )}
-
-      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
@@ -485,31 +564,148 @@ function Loaded({ data }: { data: LoadedData }) {
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
 
-      <div
-        className={cn(
-          "overflow-hidden",
-          os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
-        )}
-      >
-        {data.noFormConnected ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Level Up form is connected for this term. Open{" "}
-            <em>Advanced settings</em> to connect one.
+      {/* ── Level Up section ── */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Level Up</h2>
+            <p className="text-xs text-muted-foreground">
+              Members requesting a higher level in a domain they&apos;re already in.
+            </p>
           </div>
-        ) : (
-          <LevelUpTable
-            columns={data.tableColumns}
-            rows={filtered}
-            canManage={data.canManage}
-            emptyMessage={
-              data.submissions.length === 0
-                ? "No Level Up submissions yet."
-                : "No members match the current filters."
-            }
-            onLevelUp={(row) => setConfirmRow(row)}
-          />
+          <div className="flex items-center gap-2">
+            {canOpenSettings && data.canManage && data.levelUpBinding && (
+              <FlowToggle
+                slot="level-up"
+                enabled={data.levelUpBinding.enabled}
+              />
+            )}
+            {canOpenSettings && (
+              <button
+                type="button"
+                onClick={() => setLevelUpSettingsOpen(true)}
+                className={cn(
+                  "shrink-0 text-sm",
+                  os
+                    ? "os-edit-btn"
+                    : "px-3 py-1.5 font-medium rounded-md border border-border text-foreground hover:bg-muted",
+                )}
+              >
+                {data.canManage ? "Settings" : "View settings"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {data.levelUpMappingWarning && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <span className="font-medium">Heads up:</span> {data.levelUpMappingWarning}
+          </div>
         )}
-      </div>
+
+        {data.levelUpSlotStatus && <SlotStatusStrip status={data.levelUpSlotStatus} />}
+
+        <div
+          className={cn(
+            "overflow-hidden",
+            os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+          )}
+        >
+          {data.levelUpNoForm ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No Level Up form is connected for this term. Open{" "}
+              <em>Settings</em> to connect one.
+            </div>
+          ) : (
+            <GrowthTable
+              columns={data.levelUpTableColumns}
+              rows={filteredLevelUp}
+              canManage={data.canManage}
+              emptyMessage={
+                data.levelUpSubmissions.length === 0
+                  ? "No Level Up requests yet."
+                  : "No members match the current filters."
+              }
+              onLevelUp={(row) => setConfirmRow(row)}
+              detailHref={(userId) => `/core/growth/${userId}`}
+            />
+          )}
+        </div>
+      </section>
+
+      {/* ── Domain Join section (domain-hubs flag) ── */}
+      {data.domainHubsEnabled && (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Domain Join</h2>
+              <p className="text-xs text-muted-foreground">
+                Members requesting to join a domain they hold no eligibility in → P1.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {canOpenSettings && data.canManage && data.domainJoinBinding && (
+                <FlowToggle
+                  slot="domain-join"
+                  enabled={data.domainJoinBinding.enabled}
+                />
+              )}
+              {canOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => setDomainJoinSettingsOpen(true)}
+                  className={cn(
+                    "shrink-0 text-sm",
+                    os
+                      ? "os-edit-btn"
+                      : "px-3 py-1.5 font-medium rounded-md border border-border text-foreground hover:bg-muted",
+                  )}
+                >
+                  {data.canManage ? "Settings" : "View settings"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {data.domainJoinMappingWarning && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="font-medium">Heads up:</span> {data.domainJoinMappingWarning}
+            </div>
+          )}
+
+          {data.domainJoinSlotStatus && (
+            <SlotStatusStrip status={data.domainJoinSlotStatus} />
+          )}
+
+          <div
+            className={cn(
+              "overflow-hidden",
+              os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+            )}
+          >
+            {data.domainJoinNoForm ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No Domain Join form is connected for this term. Open{" "}
+                <em>Settings</em> to connect one.
+              </div>
+            ) : (
+              <GrowthTable
+                columns={data.domainJoinTableColumns}
+                rows={filteredDomainJoin}
+                canManage={data.canManage}
+                emptyMessage={
+                  data.domainJoinSubmissions.length === 0
+                    ? "No Domain Join requests yet."
+                    : "No members match the current filters."
+                }
+                onLevelUp={(row) => setConfirmRow(row)}
+                detailHref={(userId) => `/core/growth/${userId}`}
+                joinMode
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       {confirmRow && (
         <LevelUpConfirmDialog
@@ -521,16 +717,48 @@ function Loaded({ data }: { data: LoadedData }) {
   );
 }
 
+// ─── Open/Closed toggle ───────────────────────────────────────────────────────
+
+function FlowToggle({ slot, enabled }: { slot: "level-up" | "domain-join"; enabled: boolean }) {
+  const fetcher = useFetcher();
+  const optimisticEnabled =
+    fetcher.state !== "idle"
+      ? (fetcher.formData?.get("enabled") === "true")
+      : enabled;
+
+  return (
+    <fetcher.Form method="post" className="flex items-center gap-1.5">
+      <input type="hidden" name="intent" value="set-slot-enabled" />
+      <input type="hidden" name="slot" value={slot} />
+      <input type="hidden" name="enabled" value={optimisticEnabled ? "false" : "true"} />
+      <button
+        type="submit"
+        className={cn(
+          "inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors",
+          optimisticEnabled
+            ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+            : "bg-muted text-muted-foreground border-border hover:bg-muted/80",
+        )}
+        title={optimisticEnabled ? "Close this flow" : "Open this flow"}
+      >
+        {optimisticEnabled ? "Open" : "Closed"}
+      </button>
+    </fetcher.Form>
+  );
+}
+
 // ─── Table ────────────────────────────────────────────────────────────────────
 
-type TableRow = LoadedData["submissions"][number];
+type TableRow = LoadedData["levelUpSubmissions"][number];
 
-function LevelUpTable({
+function GrowthTable({
   columns,
   rows,
   canManage,
   emptyMessage,
   onLevelUp,
+  detailHref,
+  joinMode = false,
 }: {
   columns: { key: string; label: string }[];
   rows: TableRow[];
@@ -543,6 +771,8 @@ function LevelUpTable({
     domainName: string;
     targetLevel: Level;
   }) => void;
+  detailHref: (userId: string) => string;
+  joinMode?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -570,12 +800,14 @@ function LevelUpTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <LevelUpRow
+            <GrowthRow
               key={r.userId}
               row={r}
               columns={columns}
               canManage={canManage}
               onLevelUp={onLevelUp}
+              detailHref={detailHref}
+              joinMode={joinMode}
             />
           ))}
         </tbody>
@@ -584,11 +816,13 @@ function LevelUpTable({
   );
 }
 
-function LevelUpRow({
+function GrowthRow({
   row,
   columns,
   canManage,
   onLevelUp,
+  detailHref,
+  joinMode,
 }: {
   row: TableRow;
   columns: { key: string; label: string }[];
@@ -600,22 +834,21 @@ function LevelUpRow({
     domainName: string;
     targetLevel: Level;
   }) => void;
+  detailHref: (userId: string) => string;
+  joinMode: boolean;
 }) {
   const tp = row.targetPromotion;
-
-  const levelLabel: Record<Level, string> = { P1: "P1", P2: "P2", P3: "P3" };
 
   return (
     <tr className="border-t border-border hover:bg-muted/10">
       <td className="px-4 py-2">
         <a
-          href={`/projects/level-up/${row.userId}`}
+          href={detailHref(row.userId)}
           className="text-foreground hover:underline"
           onClick={(e) => {
-            // Allow middle-click / cmd-click to open new tab naturally.
             if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
               e.preventDefault();
-              window.location.href = `/projects/level-up/${row.userId}`;
+              window.location.href = detailHref(row.userId);
             }
           }}
         >
@@ -626,11 +859,7 @@ function LevelUpRow({
         const v = row.cells[c.key] ?? "";
         return (
           <td key={c.key} className="px-4 py-2 text-foreground">
-            {v === "" ? (
-              <span className="text-muted-foreground">—</span>
-            ) : (
-              v
-            )}
+            {v === "" ? <span className="text-muted-foreground">—</span> : v}
           </td>
         );
       })}
@@ -640,7 +869,7 @@ function LevelUpRow({
             tp.alreadyPromoted ? (
               <span
                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200"
-                title={`Already at ${levelLabel[tp.targetLevel]} in ${tp.domainName}`}
+                title={`Already at ${tp.targetLevel} in ${tp.domainName}`}
               >
                 Promoted ✓
               </span>
@@ -658,13 +887,15 @@ function LevelUpRow({
                 }
                 className="px-3 py-1 text-xs font-medium rounded bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
               >
-                Level Up → {levelLabel[tp.targetLevel]}
+                {joinMode
+                  ? `Join → P1 (${tp.domainName})`
+                  : `Level up → ${tp.targetLevel}`}
               </button>
             )
           ) : (
             <span
               className="text-xs text-muted-foreground"
-              title="Map target-domain and target-level columns to enable this button"
+              title="Map target-domain column to enable this button"
             >
               —
             </span>
@@ -703,13 +934,13 @@ function LevelUpConfirmDialog({
     <Modal
       open
       onClose={onClose}
-      labelledBy="level-up-confirm-title"
+      labelledBy="growth-confirm-title"
       disableEscape={pending}
       containerClassName="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm p-6 flex flex-col gap-4 my-auto"
     >
       <>
         <ModalHeader
-          titleId="level-up-confirm-title"
+          titleId="growth-confirm-title"
           title="Confirm Level Up"
           onClose={onClose}
           className="mb-0"
@@ -757,34 +988,48 @@ function LevelUpConfirmDialog({
 
 function Header({
   cycleName,
-  onOpenSettings,
+  onOpenLevelUpSettings,
+  onOpenDomainJoinSettings,
   settingsLabel,
 }: {
   cycleName?: string;
-  onOpenSettings?: () => void;
+  onOpenLevelUpSettings?: () => void;
+  onOpenDomainJoinSettings?: () => void;
   settingsLabel?: string;
 }) {
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
+  const domainHubs = useFeatureFlag("domain-hubs");
+
   return (
-    <>
-    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "level-up" })} />
     <header className="flex items-start justify-between gap-3">
-      <h1 className={pageTitle}>Level Up</h1>
-      {onOpenSettings && (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className={cn(
-            "shrink-0",
-            os
-              ? "os-edit-btn"
-              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+      <div>
+        <h1 className={pageTitle}>Growth</h1>
+        {cycleName && (
+          <p className="text-sm text-muted-foreground">{cycleName}</p>
+        )}
+      </div>
+      {(onOpenLevelUpSettings || (domainHubs && onOpenDomainJoinSettings)) && (
+        <div className="flex items-center gap-2 shrink-0">
+          {onOpenLevelUpSettings && (
+            <button
+              type="button"
+              onClick={onOpenLevelUpSettings}
+              className="os-edit-btn text-sm"
+            >
+              Level Up {settingsLabel ?? "settings"}
+            </button>
           )}
-        >
-          {settingsLabel ?? "Advanced settings"}
-        </button>
+          {domainHubs && onOpenDomainJoinSettings && (
+            <button
+              type="button"
+              onClick={onOpenDomainJoinSettings}
+              className="os-edit-btn text-sm"
+            >
+              Domain Join {settingsLabel ?? "settings"}
+            </button>
+          )}
+        </div>
       )}
     </header>
-    </>
   );
 }

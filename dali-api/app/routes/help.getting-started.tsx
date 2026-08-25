@@ -43,8 +43,8 @@ const SECTIONS: Array<{
       <>
         Every active project lives here with its sprint board, epics, tasks,
         docs, and files. The <em>Staffing</em> section under Projects is
-        where intent-to-work, project bids, and level-up forms live during
-        a staffing cycle —{" "}
+        where intent-to-work, project bids, and Growth (level-up and domain join)
+        forms live during a staffing cycle —{" "}
         <Link to="/help/staffing" className="text-accent-teal hover:underline">
           read more
         </Link>

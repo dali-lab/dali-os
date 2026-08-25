@@ -185,7 +185,7 @@ describe("Core area", () => {
         "/core/staffing",
         "/core/intent-to-work",
         "/core/project-bids",
-        "/core/level-up",
+        "/core/growth",
         "/core/access/roles",
         "/core/access/domains",
         "/core/communications",
@@ -258,6 +258,20 @@ describe("areaForPath", () => {
     expect(visibleSubtabs(projectsArea, NOBODY).map((t) => t.href)).not.toContain(
       "/members/groups",
     );
+  });
+
+  it("injects the Domains sub-tab into General only when domain-hubs is on", () => {
+    const generalOff = areasFor(REGROUP).find((a) => a.key === "projects")!;
+    expect(generalOff.subtabs.map((t) => t.href)).not.toContain("/domains");
+
+    const generalOn = areasFor({ "domain-hubs": true }).find(
+      (a) => a.key === "projects",
+    )!;
+    const hrefs = generalOn.subtabs.map((t) => t.href);
+    expect(hrefs).toContain("/domains");
+    // Sits right after Projects, before People.
+    expect(hrefs.indexOf("/domains")).toBe(hrefs.indexOf("/projects") + 1);
+    expect(hrefs.indexOf("/domains")).toBeLessThan(hrefs.indexOf("/members"));
   });
 
   it("keeps borrowed sub-tabs inside Projects", () => {
