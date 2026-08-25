@@ -20,25 +20,6 @@ import type {
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-// Hero readout: names the live sprint so a partner lands on "where are we
-// right now" before anything else.
-function MomentumReadout({
-  momentum,
-}: {
-  momentum: NonNullable<PartnerProjectViewData["momentum"]>;
-}) {
-  return (
-    <div className="rounded-2xl bg-brand-tint px-5 py-4 sm:min-w-[13rem]">
-      <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
-        Current sprint
-      </p>
-      <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
-        {momentum.label}
-      </p>
-    </div>
-  );
-}
-
 // One shared document. Indented when it sits inside a folder, so the tree
 // reads the same way the project hub's Drive does.
 function DriveDocRow({
@@ -251,7 +232,6 @@ export function PartnerProjectHubView({
     partnerSince,
     currentTermCode,
     team,
-    momentum,
     timelineEpics,
     timelineTerms,
     recentlyDone,
@@ -293,38 +273,29 @@ export function PartnerProjectHubView({
             className="w-full h-40 object-cover"
             placeholderClassName="w-full h-40"
           />
-          <div className="p-5">
-            <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
-                  <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
-                  <span className="min-w-0 truncate">{project.name}</span>
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {[
-                    project.terms.length > 0
-                      ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
-                      : null,
-                    partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                {/* Same Markdown renderer as the internal Overview tab, so a
-                    description written with formatting reads the same on both
-                    surfaces. */}
-                {project.description && (
-                  <div className="mt-3">
-                    <Markdown>{project.description}</Markdown>
-                  </div>
-                )}
+          <div className="min-w-0 p-5">
+            <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
+              <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
+              <span className="min-w-0 truncate">{project.name}</span>
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {[
+                project.terms.length > 0
+                  ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
+                  : null,
+                partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            {/* Same Markdown renderer as the internal Overview tab, so a
+                description written with formatting reads the same on both
+                surfaces. */}
+            {project.description && (
+              <div className="mt-3">
+                <Markdown>{project.description}</Markdown>
               </div>
-              {momentum && (
-                <div className="sm:flex-shrink-0">
-                  <MomentumReadout momentum={momentum} />
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

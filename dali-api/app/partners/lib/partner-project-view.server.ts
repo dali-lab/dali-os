@@ -26,19 +26,6 @@ export async function resolvePartnerProjectOrgId(
   return link?.partnerOrgId ?? null;
 }
 
-// A sprint reduced to its progress counts. Sprints are no longer a surface of
-// their own on the partner hub — the timeline draws the work — but the live
-// ones still feed the hero readout at the top of the page.
-type SprintProgress = {
-  id: string;
-  name: string;
-  startsAt: string;
-  endsAt: string;
-  status: "Active" | "Closed" | "Planned";
-  done: number;
-  open: number;
-};
-
 // One shelf of the partner's Drive: collab-doc pages and uploaded files
 // together, the way the project hub's own Drive block reads.
 export type PartnerDriveDoc = {
@@ -87,21 +74,11 @@ export type PartnerProjectViewData = {
   partnerSince: string | null;
   currentTermCode: string | null;
   team: { name: string; domains: string[]; photoUrl: string | null }[];
-  // Aggregate live progress across the in-flight sprint(s) — the hero readout.
-  // Null when nothing is active (between sprints / not yet started).
-  momentum: {
-    label: string;
-    done: number;
-    total: number;
-    endsAt: string;
-    daysLeft: number;
-  } | null;
   // The same bars the project hub's planning timeline draws, built by the same
   // resolver — minus the task level, which the partner hub hides. Every
   // non-cancelled epic, in position order.
   timelineEpics: TimelineEpic[];
   timelineTerms: TimelineTerm[];
-  nextSprint: { name: string; startsAt: string; endsAt: string } | null;
   recentlyDone: {
     id: string;
     title: string;
@@ -145,14 +122,6 @@ export async function loadPartnerProjectView(
   if (!project) return null;
 
   const current = await currentTerm();
-
-  const sprintSelect = {
-    id: true,
-    name: true,
-    startsAt: true,
-    endsAt: true,
-    status: true,
-  } as const;
 
   const [
     partnership,
@@ -211,10 +180,11 @@ export async function loadPartnerProjectView(
           },
         },
       }),
+      // Dates only — sprints are not a surface of their own here; an epic with
+      // no dates of its own is placed by the sprints under it.
       prisma.sprint.findMany({
         where: { projectId: project.id },
-        orderBy: { startsAt: "asc" },
-        select: { ...sprintSelect, epicId: true },
+        select: { epicId: true, startsAt: true, endsAt: true },
       }),
       // Dates only. Tasks never reach the partner — they're read here because a
       // story with no dates of its own is placed by the tasks under it, and a
@@ -273,39 +243,6 @@ export async function loadPartnerProjectView(
       }),
     ]);
 
-  // One count pass over every sprint on the board — cheap, and it's what the
-  // hero readout aggregates.
-  const counts = sprintRows.length
-    ? await prisma.task.groupBy({
-        by: ["sprintId", "status"],
-        where: {
-          projectId: project.id,
-          sprintId: { in: sprintRows.map((s) => s.id) },
-        },
-        _count: { _all: true },
-      })
-    : [];
-
-  const sprintProgress: SprintProgress[] = sprintRows.map((s) => {
-    const mine = counts.filter((c) => c.sprintId === s.id);
-    const total = mine.reduce((sum, c) => sum + c._count._all, 0);
-    const done = mine
-      .filter((c) => c.status === "Done")
-      .reduce((sum, c) => sum + c._count._all, 0);
-    const cancelled = mine
-      .filter((c) => c.status === "Cancelled")
-      .reduce((sum, c) => sum + c._count._all, 0);
-    return {
-      id: s.id,
-      name: s.name,
-      startsAt: s.startsAt.toISOString(),
-      endsAt: s.endsAt.toISOString(),
-      status: s.status,
-      done,
-      open: Math.max(0, total - cancelled - done),
-    };
-  });
-
   // The same span resolution the project hub runs, with the task level left
   // empty: partners see what's being built and when, not who is on which card.
   const timelineEpics = buildTimelineEpics({
@@ -345,38 +282,6 @@ export async function loadPartnerProjectView(
       photoUrl: await resolvePhotoUrl(r.photoUrl),
     })),
   );
-
-  // Aggregate the in-flight sprints into a single hero readout. One active
-  // sprint → its name; several → a count. Deadline is the soonest end.
-  const activeCards = sprintProgress.filter((c) => c.status === "Active");
-  const momentum =
-    activeCards.length > 0
-      ? (() => {
-          const done = activeCards.reduce((sum, c) => sum + c.done, 0);
-          const total = activeCards.reduce((sum, c) => sum + c.done + c.open, 0);
-          const endsAt = activeCards.map((c) => c.endsAt).sort()[0];
-          const daysLeft = Math.max(
-            0,
-            Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000),
-          );
-          return {
-            label:
-              activeCards.length === 1
-                ? activeCards[0].name
-                : `${activeCards.length} sprints active`,
-            done,
-            total,
-            endsAt,
-            daysLeft,
-          };
-        })()
-      : null;
-
-  // Soonest planned sprint anywhere on the board — the "what's next" pointer.
-  const nextSprint =
-    sprintProgress
-      .filter((c) => c.status === "Planned")
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
   const toDriveFile = async (
     f: (typeof sharedFileRows)[number],
@@ -447,16 +352,8 @@ export async function loadPartnerProjectView(
     partnerSince: partnership?.startedAt?.toISOString() ?? null,
     currentTermCode: current?.code ?? null,
     team,
-    momentum,
     timelineEpics,
     timelineTerms,
-    nextSprint: nextSprint
-      ? {
-          name: nextSprint.name,
-          startsAt: nextSprint.startsAt,
-          endsAt: nextSprint.endsAt,
-        }
-      : null,
     recentlyDone: recentlyDone.map((t) => ({
       id: t.id,
       title: t.title,
