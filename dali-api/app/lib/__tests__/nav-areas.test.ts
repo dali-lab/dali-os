@@ -12,6 +12,7 @@ import {
   visibleSubtabs,
   type RoleFlags,
 } from "~/lib/nav-areas";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 
 const projects = NAV_AREAS.find((a) => a.key === "projects")!;
 
@@ -20,7 +21,7 @@ describe("areaForPath", () => {
     expect(areaForPath("/projects")?.key).toBe("projects");
     expect(areaForPath("/projects/staffing")?.key).toBe("projects");
     expect(areaForPath("/projects/abc123")?.key).toBe("projects");
-    expect(areaForPath("/drive")?.key).toBe("drive");
+    expect(areaForPath("/core")?.key).toBe("core");
   });
 
   it("still resolves an area hub that carries a query string", () => {
@@ -29,7 +30,7 @@ describe("areaForPath", () => {
     // its query. Without trimming it, the hub matched no area and the sidebar
     // fell back to the last-visited area (Projects by default).
     expect(areaForPath("/education?term=25F")?.key).toBe("education");
-    expect(areaForPath("/mentorship?q=x")?.key).toBe("mentorship");
+    expect(areaForPath("/hiring?q=x")?.key).toBe("hiring");
     expect(areaForPath("/projects#top")?.key).toBe("projects");
   });
 
@@ -106,7 +107,7 @@ describe("hasSubnavRow", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* nav-regroup: the role-grouped area set behind the flag              */
+/* the role-grouped area set (nav-regroup flag retired — always on)    */
 /* ------------------------------------------------------------------ */
 
 const NOBODY: RoleFlags = {
@@ -123,11 +124,12 @@ const NOBODY: RoleFlags = {
 };
 const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewStaffing: true };
 
-const REGROUP = { "nav-regroup": true };
-const LEGACY = { "nav-regroup": false };
+// nav-regroup was retired — the role-grouped set is the only nav, and areasFor
+// ignores flags. An empty map documents that at the call sites.
+const REGROUP = {};
 
 describe("area sets", () => {
-  it("collapses to five areas under nav-regroup", () => {
+  it("collapses to five areas", () => {
     expect(areasFor(REGROUP).map((a) => a.key)).toEqual([
       "projects",
       "education",
@@ -137,12 +139,14 @@ describe("area sets", () => {
     ]);
   });
 
-  it("leaves the pre-regroup set alone when the flag is off", () => {
-    const keys = areasFor(LEGACY).map((a) => a.key);
-    expect(keys).toContain("members");
-    expect(keys).toContain("partners");
-    expect(keys).toContain("mentorship");
-    expect(keys).not.toContain("core");
+  it("returns the role-grouped set with no args at all", () => {
+    expect(areasFor().map((a) => a.key)).toEqual([
+      "projects",
+      "education",
+      "core",
+      "hiring",
+      "admin",
+    ]);
   });
 
   it("shows a regular member only Projects and Education", () => {
@@ -197,7 +201,7 @@ describe("Core area", () => {
 });
 
 describe("Admin area", () => {
-  it("keeps only system clusters under nav-regroup", () => {
+  it("keeps only system clusters", () => {
     const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
     const labels = admin.subtabs.map((t) => t.label);
     expect(labels).not.toContain("People & Access");
@@ -208,12 +212,30 @@ describe("Admin area", () => {
       expect.arrayContaining(["Hub", "Finance", "System & Insights"]),
     );
   });
+});
 
-  it("keeps every cluster when the flag is off", () => {
-    const admin = areasFor(LEGACY).find((a) => a.key === "admin")!;
-    const labels = admin.subtabs.map((t) => t.label);
-    expect(labels).toContain("People & Access");
-    expect(labels).toContain("Communications");
+describe("admin cluster allocation", () => {
+  it("is strictly system-level — no People & Access or Communications clusters", () => {
+    const keys = ADMIN_CLUSTERS.map((c) => c.key);
+    expect(keys).not.toContain("people");
+    expect(keys).not.toContain("communications");
+    expect(keys).toEqual(expect.arrayContaining(["finance", "system"]));
+  });
+
+  it("files Email Senders and Outbound Messages under System & Insights", () => {
+    const system = ADMIN_CLUSTERS.find((c) => c.key === "system")!;
+    const sectionKeys = system.sections.map((s) => s.key);
+    expect(sectionKeys).toEqual(
+      expect.arrayContaining([
+        "analytics",
+        "ai-usage",
+        "activity",
+        "jobs",
+        "feature-flags",
+        "email-senders",
+        "outbound-messages",
+      ]),
+    );
   });
 });
 
@@ -247,10 +269,12 @@ describe("areaForPath", () => {
     expect(areaForPath("/mentorship/browse", REGROUP)?.key).toBe("projects");
   });
 
-  it("still resolves the pre-regroup URLs when the flag is off", () => {
-    expect(areaForPath("/projects/staffing", LEGACY)?.key).toBe("projects");
-    expect(areaForPath("/members", LEGACY)?.key).toBe("members");
-    expect(areaForPath("/admin/people", LEGACY)?.key).toBe("admin");
+  it("still resolves pre-regroup URLs to an area (they redirect at the route layer)", () => {
+    // These addresses now 302 to their canonical /core (or /admin) path, but the
+    // matcher must still place them so the redirecting hop highlights an area.
+    expect(areaForPath("/projects/staffing")?.key).toBe("projects");
+    expect(areaForPath("/admin/people")?.key).toBe("admin");
+    expect(areaForPath("/admin/email-senders")?.key).toBe("admin");
   });
 
   it("ignores the query string", () => {
@@ -298,11 +322,8 @@ describe("isPinnedActive", () => {
 });
 
 describe("pinnedNavItems", () => {
-  it("pins nothing before the regroup", () => {
-    expect(pinnedNavItems(LEGACY)).toEqual([]);
-  });
-
-  it("pins Drive once regrouped", () => {
+  it("pins Drive", () => {
     expect(pinnedNavItems(REGROUP).map((i) => i.href)).toEqual(["/drive"]);
+    expect(pinnedNavItems().map((i) => i.href)).toEqual(["/drive"]);
   });
 });

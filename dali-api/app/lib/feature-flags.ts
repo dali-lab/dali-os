@@ -92,14 +92,6 @@ export const FEATURE_FLAGS = [
       "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
   },
   {
-    key: "nav-regroup",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "Role-grouped navigation",
-    description:
-      "Collapses the sidebar to Projects / Education / Core / Admin / Hiring, with Drive pinned under Calendar. Core process tooling (staffing, intent to work, bids, level up, access, attendance, communications) moves out of Projects and Admin into a Core area at /core/*, leaving Admin strictly system-level. Needs the new left navigation to take effect.",
-  },
-  {
     key: "os-redesign",
     label: "dali.os design",
     description:

@@ -41,11 +41,7 @@ export const CORE_CLUSTERS: NavCluster[] = [
         to: "/core/communications/email",
         icon: Mail,
         description:
-          "Shared email templates and the Google accounts each area sends from.",
-        subtabs: [
-          { key: "email-templates", label: "Templates", to: "/core/communications/email" },
-          { key: "email-senders", label: "Senders", to: "/core/communications/email-senders" },
-        ],
+          "Shared email templates for announcements and lab outreach. (The Gmail accounts each area sends from live in Admin ▸ System & Insights.)",
       },
     ],
   },

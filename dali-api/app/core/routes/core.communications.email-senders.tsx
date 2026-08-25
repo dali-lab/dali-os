@@ -1,16 +1,18 @@
-// Core-namespaced email senders.
-//
-// PURE RE-EXPORT of ~/admin/routes/admin.email-senders — there is exactly one implementation and this
-// module delegates to it entirely. The /core URL is canonical while the
-// nav-regroup flag is on; the pre-regroup URL redirects here for those
-// viewers (regroupRedirect, called in the source loader).
-//
-// `handle` is overridden rather than re-exported so the breadcrumb reads
-// "Core › …" instead of the source page's own trail. That override is the
-// reason these aliases are files rather than a second route id.
+// Legacy redirect: Email Senders is email-transport infrastructure and now
+// lives in Admin ▸ System & Insights, not Core Communications. This
+// pre-existing /core URL bounces to the canonical /admin one so old links keep
+// working. (It was briefly canonical under the retired nav-regroup flag.)
+import { redirect } from "react-router";
+import type { Route } from "./+types/core.communications.email-senders";
+import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 
-import { coreHandle } from "~/core/coreNav";
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  return redirect("/admin/email-senders");
+}
 
-export { meta, loader, action, default } from "~/admin/routes/admin.email-senders";
-
-export const handle = coreHandle("email-senders");
+export default function CoreEmailSendersRedirect() {
+  return null;
+}

@@ -25,7 +25,6 @@ import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
@@ -234,8 +233,9 @@ export function LayoutOS({
     })
   }
 
-  const navRegroup = useFeatureFlag('nav-regroup')
-  const navFlags = { 'nav-regroup': navRegroup }
+  // The nav-regroup flag was retired; the nav-areas registry no longer branches
+  // on any flag, so an empty map is all the helpers need.
+  const navFlags = {}
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,

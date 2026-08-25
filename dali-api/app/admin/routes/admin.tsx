@@ -16,23 +16,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
-  // Live signals surfaced on the relevant cluster cards. Both are cheap counts
-  // and default to 0, so the hub degrades gracefully if either table is empty.
-  const [admin, announcements, jobs] = await Promise.all([
+  // Live signal surfaced on the Jobs card. A cheap count that defaults to 0, so
+  // the hub degrades gracefully if the table is empty.
+  const [admin, jobs] = await Promise.all([
     isAdmin(auth.user.sub),
-    prisma.scheduledAnnouncement.count({
-      where: { sentAt: null, canceledAt: null },
-    }),
     prisma.scheduledJob.count({ where: { enabled: true, lastStatus: "Error" } }),
   ]);
   return {
     isAdmin: admin,
-    badges: { announcements, jobs } as Record<string, number>,
+    badges: { jobs } as Record<string, number>,
   };
 }
 
 function badgeLabel(key: string, n: number): string {
-  if (key === "announcements") return `${n} scheduled`;
   if (key === "jobs") return `${n} failing`;
   return String(n);
 }
