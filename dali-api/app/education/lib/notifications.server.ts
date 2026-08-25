@@ -420,3 +420,44 @@ async function sendDecisionEmail(args: {
     });
   }
 }
+
+/**
+ * Email a newly-invited external (non-DALI) instructor. They authenticate with
+ * Dartmouth SSO; the link deep-links into the management surface and login-next
+ * returns them there after CAS. Transactional (outside the notification
+ * preference layer), like the other applicant/portal education email.
+ */
+export async function notifyExternalInstructorInvite(args: {
+  user: { firstName: string; dartmouthEmail: string | null; netId: string | null };
+  offeringId: string;
+  offeringTitle: string;
+}): Promise<void> {
+  const sender = await getSender("Education");
+  if (!sender) return;
+  const target =
+    args.user.dartmouthEmail ??
+    (args.user.netId ? `${args.user.netId}@dartmouth.edu` : null);
+  if (!target) return;
+  const { to, redirectedFrom } = resolveCandidateEmail(target);
+  if (!to) return;
+  const link = `${getFrontendUrl()}/education/manage/${args.offeringId}`;
+  try {
+    await sendEmail({
+      refreshToken: sender.refreshToken,
+      from: sender.sendAsEmail,
+      to,
+      subject: `You're an instructor for ${args.offeringTitle}`,
+      html:
+        redirectBannerHtml(redirectedFrom) +
+        `<p>Hi ${args.user.firstName},</p>` +
+        `<p>You've been added as an instructor for <strong>${args.offeringTitle}</strong> in DALI OS. ` +
+        `You can manage sessions, review applications, take attendance, and grade work.</p>` +
+        `<p><a href="${link}">Open your teaching dashboard</a> — sign in with Dartmouth.</p>`,
+    });
+  } catch (err) {
+    console.error("external instructor invite email failed", {
+      offeringId: args.offeringId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}

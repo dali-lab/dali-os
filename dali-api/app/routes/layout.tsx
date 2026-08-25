@@ -30,6 +30,7 @@ import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
+import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import type { Route } from './+types/layout'
 
@@ -91,6 +92,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms,
     canViewStaffing,
   } = roles
+
+  // Non-member gate: a Dartmouth account with no DALIMember row (e.g. an
+  // external instructor) never gets the full member shell. They may only reach
+  // education management inside it — every other member-shell path sends them
+  // back to their /portal home. Members and Core are unaffected. Keyed on the
+  // DALIMember row (isLabMember), not auth type, so a NetID-native member is
+  // never misfiled here. Partners/applicants were already redirected above.
+  const instructorChrome = !isLabMember
+  if (instructorChrome && !new URL(request.url).pathname.startsWith('/education/manage')) {
+    return redirect('/portal')
+  }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement
   // (membership, mentorship) can only reach the signing surface until they
@@ -205,7 +217,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -234,7 +246,22 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+
+  // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
+  // for the education-management routes they're allowed into. Rendered before the
+  // member-shell hooks below since those assume the full member layout. Toast /
+  // Dialog / Presence providers live in root.tsx (global); FeatureFlagsProvider
+  // is re-supplied here for any management component that reads a flag, and
+  // useUserTimeZone() still resolves off this same layout loader's data.
+  if (instructorChrome) {
+    return (
+      <FeatureFlagsProvider flags={flags}>
+        <InstructorChrome />
+      </FeatureFlagsProvider>
+    )
+  }
+
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()

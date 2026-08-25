@@ -3,7 +3,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
-import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listManageable } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { educationPills } from "~/education/components/educationPills";
@@ -19,24 +18,28 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isCore && !roles.isInstructor) return redirect("/education");
+  // Non-managers (incl. a Dartmouth non-member who isn't an instructor) go to
+  // their /portal home — not /education, which bounces non-members straight back.
+  if (!roles.isCore && !roles.isInstructor) return redirect("/portal");
 
   const offerings = await listManageable(auth.user.sub);
-  return { offerings, isCore: roles.isCore };
+  return { offerings, isCore: roles.isCore, isExternal: !roles.isLabMember };
 }
 
 export default function ManageEducation() {
-  const { offerings, isCore } = useLoaderData<typeof loader>();
+  const { offerings, isCore, isExternal } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-6">
-      <AreaPillNav
-        items={educationPills({ canManage: true, isCore, active: "manage" })}
-      />
+      {/* The education area pills assume the member shell; an external instructor
+          runs in the lightweight InstructorChrome, so the pill row is hidden. */}
+      {!isExternal && (
+        <AreaPillNav
+          items={educationPills({ canManage: true, isCore, active: "manage" })}
+        />
+      )}
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
