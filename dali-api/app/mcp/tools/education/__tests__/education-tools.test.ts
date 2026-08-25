@@ -363,7 +363,7 @@ describe("get_education_assignment", () => {
     vi.mocked(isOfferingManager).mockResolvedValue(false);
     mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1", status: "Approved" });
     vi.mocked(getAssignmentForStudent).mockResolvedValue({
-      assignment: { id: "asgn1", title: "HW1", dueAt: new Date("2026-03-01"), submissionType: "Text", instructionsDocId: null },
+      assignment: { id: "asgn1", title: "HW1", dueAt: new Date("2026-03-01"), submissionType: "Text", instructionsDocId: null, points: null },
       submission: null,
     });
     const result = await runGetEducationAssignment(ctx(), { assignmentId: "asgn1", offeringId: "o1" });

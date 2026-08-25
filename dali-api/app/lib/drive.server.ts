@@ -301,6 +301,35 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
  *  verified the viewer is enrolled/instructor/Core before calling this. Every
  *  page in a visible offering is viewable by that audience — mirrors the project
  *  scope which trusts the upstream membership gate. */
+/** Load uploaded files (ProjectFile rows) scoped to an EducationOffering. */
+async function loadEducationFiles(offeringId: string): Promise<DriveItem[]> {
+  const rows = await prisma.projectFile.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
+      archivedAt: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      folderPageId: true,
+      updatedAt: true,
+      currentVersion: { select: { sizeBytes: true } },
+    },
+  });
+  return rows.map((f) => ({
+    type: "file" as const,
+    id: f.id,
+    title: f.title,
+    parentFolderId: f.folderPageId,
+    iconEmoji: null,
+    updatedAt: f.updatedAt,
+    href: `/documents/file/${f.id}`,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
+  }));
+}
+
 async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
     where: {
@@ -911,12 +940,15 @@ export async function loadDriveScope({
     return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
   }
 
-  // EducationOffering scope — pages only; offerings don't own files.
+  // EducationOffering scope — pages + uploaded files.
   if (scope.kind === "EducationOffering") {
     const { offeringId } = scope;
-    const pages = await loadEducationPages(offeringId);
+    const [pages, files] = await Promise.all([
+      loadEducationPages(offeringId),
+      loadEducationFiles(offeringId),
+    ]);
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
-    return [...pages, ...forms];
+    return [...pages, ...files, ...forms];
   }
 
   // Project scope

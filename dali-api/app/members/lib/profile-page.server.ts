@@ -160,8 +160,8 @@ export type ProfilePageData = {
       offeringId: string;
       title: string;
       type: "Miniseries" | "Workshop";
-      startsAt: Date;
-      endsAt: Date;
+      startsAt: Date | null;
+      endsAt: Date | null;
       status: string;
       attendance: { present: number; excused: number; total: number };
       certificateIssuedAt: Date | null;

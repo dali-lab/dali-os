@@ -2155,6 +2155,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
+  educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
@@ -3131,16 +3132,25 @@ model EducationOffering {
   capacity             Int
   registrationOpensAt  DateTime
   registrationClosesAt DateTime
-  startsAt             DateTime
-  endsAt               DateTime
+  startsAt             DateTime?
+  endsAt               DateTime?
   status               OfferingStatus @default(Draft)
   // True for typical miniseries (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
   requiresReview       Boolean
+  // Fraction of sessions a student must attend (Present + Excused) to earn a
+  // completion certificate. Miniseries only; workshops need one Present mark.
+  completionThreshold  Float          @default(0.8)
+
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
   calendarEmail        String?
+
+  // The term this offering runs in — derived server-side from the first
+  // session's date; null until sessions are added.
+  termId               String?
+  term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
 
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
@@ -3168,6 +3178,8 @@ model EducationOffering {
   formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
+
+  @@index([termId])
 }
 
 enum OfferingType {
@@ -3317,6 +3329,9 @@ model EducationAssignment {
   instructionsDocId String?
   dueAt             DateTime?
   submissionType    SubmissionType
+  // Optional max points. Null = complete/incomplete (free-form grade only).
+  // Informational — points never gate course completion.
+  points            Int?
 
   offering    EducationOffering?    @relation(fields: [offeringId], references: [id])
   session     EducationSession?     @relation(fields: [sessionId], references: [id])
@@ -3327,25 +3342,36 @@ enum SubmissionType {
   Text
   File
   Mixed
+  // URL deliverable (Figma/GitHub/Drive link) — stored in EducationSubmission.link.
+  Link
+  // Student authors in a BlockNote collab doc (EducationSubmission.contentDocId).
+  Doc
+  // No artifact — the student marks the task done. Informational, like the rest.
+  Complete
 }
 
 model EducationSubmission {
   id            String    @id @default(cuid())
   assignmentId  String
   studentId     String
-  // DORMANT in v1 — students (incl. portal users) don't get collab editing;
-  // the plain-text columns below hold the body and feedback instead.
+  // Set for Doc submissions — the BlockNote collab room the student authors in
+  // (room id "edusubmission:<submissionId>:content"). Null for other types.
   contentDocId  String?
   files         Json?
   submittedAt   DateTime?
   gradedAt      DateTime?
-  // DORMANT in v1 — see contentDocId.
+  // DORMANT in v1 — instructor feedback lives in feedbackText below.
   feedbackDocId String?
 
   // Plain-text submission body (Text/Mixed submission types).
   textContent  String?
+  // URL deliverable body (Link submission type).
+  link         String?
   // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
   grade        String?
+  // Optional numeric score, set when the assignment defines points. Paired with
+  // the free-form grade; informational only (never gates completion).
+  score        Int?
   // Instructor feedback on this submission, shown to the student.
   feedbackText String?
 
@@ -3984,6 +4010,11 @@ model Page {
   // (and collaboratively edit) this page from the partner portal. Meaningless
   // for Lab/EducationOffering workspaces (stays false).
   partnerVisible Boolean @default(false)
+
+  // Optional link to an EducationSession, for offering materials scoped to one
+  // session (groups the student Materials view by session). Loose FK — only
+  // meaningful when workspaceType == EducationOffering; null = offering-wide.
+  sessionId String?
 
   // Education collaborative doc: when true and workspaceType == EducationOffering,
   // students with an Approved application to workspaceId may collaboratively

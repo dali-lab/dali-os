@@ -12,7 +12,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
-import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import {
   requireOfferingManager,
   redirectDartmouthToPortal,
@@ -50,7 +50,7 @@ import {
   saveAttendance,
 } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
+import { closeOutOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -124,7 +124,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ] = await Promise.all([
     core
       ? prisma.user.findMany({
-          where: await currentTermMemberWhere(),
+          // Any lab member is eligible as an instructor — not just those active
+          // in the current term. Alums, future-term members, and anyone not
+          // staffed this cycle should still be addable.
+          where: { daliMember: { isNot: null } },
           select: { id: true, firstName: true, lastName: true },
           orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
         })
@@ -152,6 +155,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     listDiscussion(params.offeringId!),
     favoritePageIds(gate.auth.user.sub),
   ]);
+
+  // Uploaded file materials for this offering (S3-backed, not Page records).
+  const offeringFiles = await prisma.projectFile.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: params.offeringId!,
+      archivedAt: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true },
+  });
 
   const notes = await notesForOffering(params.offeringId!);
 
@@ -187,6 +201,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const attendanceMatrix = await getAttendanceMatrix(params.offeringId!);
 
+  // Performance view: submissions keyed by (studentId, assignmentId) for the
+  // approved roster. Assignments already loaded above; this is just submissions.
+  const approvedStudentIds = attendanceMatrix.students.map((s) => s.applicationId);
+  // applicationId == student application id — fetch via applicantUserId.
+  const approvedApplications = await prisma.educationApplication.findMany({
+    where: {
+      id: { in: approvedStudentIds },
+    },
+    select: { id: true, applicantUserId: true },
+  });
+  const studentIdByApp = new Map(approvedApplications.map((a) => [a.id, a.applicantUserId]));
+  const studentUserIds = [...new Set(approvedApplications.map((a) => a.applicantUserId))];
+
+  const submissionsForRoster =
+    assignments.length > 0 && studentUserIds.length > 0
+      ? await prisma.educationSubmission.findMany({
+          where: {
+            assignmentId: { in: assignments.map((a) => a.id) },
+            studentId: { in: studentUserIds },
+          },
+          select: { assignmentId: true, studentId: true, grade: true, score: true },
+        })
+      : [];
+
+  // Build a map: applicationId → (assignmentId → {grade, score}) for component use.
+  // The matrix students are keyed by applicationId, so we translate via studentIdByApp.
+  const userIdToAppId = new Map(
+    approvedApplications.map((a) => [a.applicantUserId, a.id]),
+  );
+  const performanceByApp: Record<string, Record<string, { grade: string | null; score: number | null }>> = {};
+  for (const sub of submissionsForRoster) {
+    const appId = userIdToAppId.get(sub.studentId);
+    if (!appId) continue;
+    if (!performanceByApp[appId]) performanceByApp[appId] = {};
+    performanceByApp[appId][sub.assignmentId] = { grade: sub.grade, score: sub.score };
+  }
+
   return {
     publishedForms,
     feedbackBindings,
@@ -205,7 +256,36 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     roster,
     attendanceMatrix,
+    // Performance view data (plain — no Prisma types, safe to pass to client).
+    performanceByApp,
+    assignmentsForPerformance: assignments.map((a) => ({
+      id: a.id,
+      title: a.title,
+      points: a.points,
+    })),
+    // Pre-computed completion eligibility per student (attendance-driven; scores are informational).
+    completionByApp: Object.fromEntries(
+      attendanceMatrix.students.map((st) => {
+        const present = Object.values(st.marks).filter((m) => m === "Present").length;
+        const excused = Object.values(st.marks).filter((m) => m === "Excused").length;
+        return [
+          st.applicationId,
+          certificateEligibility({
+            type: offering.type as "Miniseries" | "Workshop",
+            totalSessions: attendanceMatrix.sessions.length,
+            present,
+            excused,
+            threshold: offering.completionThreshold,
+          }),
+        ];
+      }),
+    ),
     materials,
+    offeringFiles: offeringFiles.map((f) => ({
+      id: f.id,
+      title: f.title,
+      href: `/documents/file/${f.id}`,
+    })),
     workspaceDocs,
     favoriteIds: [...favoriteIds],
     assignments,
@@ -249,6 +329,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "decide-application",
     "create-page",
     "move-page",
+    "set-material-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
@@ -300,30 +381,55 @@ export async function action({ request, params }: Route.ActionArgs) {
           parentPageId: String(formData.get("parentPageId") ?? "") || null,
           studentEditable: formData.get("studentEditable") === "true",
           kind: formData.get("kind") === "Folder" ? "Folder" : "FreeForm",
+          sessionId: String(formData.get("sessionId") ?? "") || null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "set-material-session": {
+        const pageId = String(formData.get("pageId") ?? "");
+        const sessionId = String(formData.get("sessionId") ?? "") || null;
+        // Guard: page must belong to this offering's workspace.
+        const page = await prisma.page.findUnique({
+          where: { id: pageId },
+          select: { workspaceType: true, workspaceId: true },
+        });
+        if (
+          !page ||
+          page.workspaceType !== "EducationOffering" ||
+          page.workspaceId !== params.offeringId
+        ) {
+          return Response.json({ error: "Page not found" }, { status: 404 });
+        }
+        await prisma.page.update({ where: { id: pageId }, data: { sessionId } });
+        return { ok: true };
+      }
       case "create-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const pointsRaw = String(formData.get("points") ?? "");
+        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
         const result = await createAssignment({
           offeringId: params.offeringId!,
           sessionId: String(formData.get("sessionId") ?? "") || null,
           title: String(formData.get("title") ?? ""),
           dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
+          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
       case "update-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const pointsRaw = String(formData.get("points") ?? "");
+        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
         const result = await updateAssignment({
           assignmentId: String(formData.get("assignmentId") ?? ""),
           offeringId: params.offeringId!,
           title: String(formData.get("title") ?? ""),
           dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
+          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -440,6 +546,7 @@ export default function ManageOffering() {
     roster,
     attendanceMatrix,
     materials,
+    offeringFiles,
     workspaceDocs,
     favoriteIds,
     assignments,
@@ -457,6 +564,9 @@ export default function ManageOffering() {
     collabToken,
     userName,
     currentUserId,
+    performanceByApp,
+    assignmentsForPerformance,
+    completionByApp,
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
@@ -1066,12 +1176,22 @@ export default function ManageOffering() {
               )
             }
             formatSessionDate={(d) => formatDateTime(d as never, tz)}
+            assignments={assignmentsForPerformance}
+            submissionsByApp={performanceByApp}
+            completionByApp={completionByApp}
           />
         </div>
       )}
 
       {tab === "materials" && (
-        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} favoriteIds={favoriteIds} />
+        <ManageMaterials
+          offeringId={offering.id}
+          materials={materials}
+          files={offeringFiles}
+          workspaceDocs={workspaceDocs}
+          sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
+          favoriteIds={favoriteIds}
+        />
       )}
 
       {tab === "assignments" && (
