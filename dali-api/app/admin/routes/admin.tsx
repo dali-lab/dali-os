@@ -1,5 +1,5 @@
 import { Link, redirect, useLoaderData } from "react-router";
-import { Activity, ArrowRight, Clock, Mail, SendHorizonal, Sparkles } from "lucide-react";
+import { Activity, ArrowRight, Clock, Mail, Radio, SendHorizonal, Sparkles } from "lucide-react";
 import type { Route } from "./+types/admin";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -29,10 +29,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const dayUtc = new Date().toISOString().slice(0, 10);
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
+  // Presence: lastActiveAt is bumped ≤ once/60s in requireAuth. "On site" = the
+  // 5-minute active window the status dots use; "last hour" is the recent tail.
+  // This is an anonymous aggregate, so it ignores hideActivity (which gates the
+  // per-user dot's visibility to peers, not the write path).
+  const activeSince = new Date(now - 5 * 60 * 1000);
+  const hourSince = new Date(now - 60 * 60 * 1000);
 
   const [
     admin,
+    activeNow,
+    activeHour,
     jobsEnabled,
     jobsFailing,
     outboundPending,
@@ -43,6 +52,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     auditRows,
   ] = await Promise.all([
     isAdmin(auth.user.sub),
+    prisma.user.count({ where: { lastActiveAt: { gte: activeSince } } }),
+    prisma.user.count({ where: { lastActiveAt: { gte: hourSince } } }),
     prisma.scheduledJob.count({ where: { enabled: true } }),
     prisma.scheduledJob.count({ where: { enabled: true, lastStatus: "Error" } }),
     prisma.outboundMessage.count({ where: { status: "Pending" } }),
@@ -118,6 +129,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     isAdmin: admin,
     badges: { jobs: jobsFailing } as Record<string, number>,
     health: {
+      activeNow,
+      activeHour,
       jobsEnabled,
       jobsFailing,
       outboundPending,
@@ -199,6 +212,14 @@ export default function AdminHub() {
 
       {/* System health strip */}
       <section aria-label="System health" className="flex flex-wrap gap-3">
+        <HealthTile
+          to="/members"
+          icon={Radio}
+          label="Live now"
+          tone={health.activeNow > 0 ? "ok" : "idle"}
+          primary={`${health.activeNow.toLocaleString()} on site`}
+          secondary={`${health.activeHour.toLocaleString()} in the last hour`}
+        />
         <HealthTile
           to="/admin/jobs"
           icon={Clock}
