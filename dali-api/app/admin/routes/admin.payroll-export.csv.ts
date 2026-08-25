@@ -44,7 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const requestedTermId = url.searchParams.get("termId");
+  const requestedTermId = url.searchParams.get("term");
 
   const terms = await prisma.term.findMany({
     orderBy: { sortKey: "desc" },
