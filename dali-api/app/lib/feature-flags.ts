@@ -98,12 +98,6 @@ export const FEATURE_FLAGS = [
       "The dark dali.os shell: sidebar with an area switcher, a top bar carrying favorites and the task bell, the recents home, and the card-grid project hub. Takes precedence over the other shell flags on the pages it covers — everything it doesn't cover keeps whatever the new left navigation gives it.",
   },
   {
-    key: "templates",
-    label: "Templates",
-    description:
-      "Surface the unified Drive Templates gallery (documents, forms, mentor notes, email, and agreement templates in one place) and project templates (save a project's structure as a template and start new projects from it).",
-  },
-  {
     key: "nav-preload",
     defaultEnabled: true,
     defaultEveryone: true,

@@ -13,7 +13,6 @@ import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   captureProjectTemplate,
   instantiateProjectTemplate,
@@ -174,10 +173,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canEdit = roles.isCore;
   const canStaff = roles.canViewStaffing;
 
-  // Project templates (Core + `templates` flag): the "Start from template"
-  // options in the create modal. Reuses the `roles` resolved above.
-  const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles, request));
-  const projectTemplates = templatesEnabled
+  // Project templates (Core only): the "Start from template" options in the
+  // create modal.
+  const projectTemplates = canEdit
     ? await prisma.projectTemplate.findMany({
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
         select: { id: true, name: true, iconEmoji: true },
@@ -192,7 +190,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canEdit,
     canStaff,
     hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
-    templatesEnabled,
     projectTemplates,
   };
 }
@@ -211,11 +208,8 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = (form.get("intent") as string | null) ?? "create";
 
   // Capture: save an existing project's structure as a template (posted from
-  // the project page's "Save as template" control). Gated by the flag.
+  // the project page's "Save as template" control). Core-gated above.
   if (intent === "capture") {
-    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
-      return { error: "Templates are not enabled." };
-    }
     const projectId = (form.get("projectId") as string | null)?.trim() ?? "";
     const templateName = (form.get("templateName") as string | null)?.trim() ?? "";
     if (!projectId || !templateName) return { error: "A project and template name are required." };
@@ -242,9 +236,6 @@ export async function action({ request }: Route.ActionArgs) {
   // project from its blueprint instead of a blank one.
   const fromTemplateId = (form.get("fromTemplateId") as string | null)?.trim() ?? "";
   if (fromTemplateId) {
-    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
-      return { error: "Templates are not enabled." };
-    }
     if (!name) return { error: "A project name is required." };
     const initialTermId = (form.get("firstTermId") as string | null)?.trim() || null;
     const partnerOrgId = (form.get("partnerOrgId") as string | null)?.trim() || null;
@@ -321,12 +312,14 @@ export default function ProjectsListPage() {
     canEdit,
     canStaff,
     hiddenByTermFilter,
-    templatesEnabled,
     projectTemplates,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [creating, setCreating] = useState(false);
+  // Deep link from the Drive templates gallery: ?new=<templateId> opens the
+  // create modal prefilled with that project template.
+  const presetTemplateId = searchParams.get("new") ?? "";
+  const [creating, setCreating] = useState(() => canEdit && presetTemplateId !== "");
   const [newIconEmoji, setNewIconEmoji] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // In the URL (like ?term=) rather than component state, so "show me every
@@ -430,12 +423,12 @@ export default function ProjectsListPage() {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
-            {templatesEnabled && projectTemplates.length > 0 && (
+            {projectTemplates.length > 0 && (
               <label className="flex flex-col gap-1 text-xs sm:col-span-2">
                 <span className="text-muted-foreground">Start from template (optional)</span>
                 <Select
                   name="fromTemplateId"
-                  defaultValue=""
+                  defaultValue={presetTemplateId}
                   placeholder="Blank project"
                   options={[
                     { value: "", label: "Blank project" },
