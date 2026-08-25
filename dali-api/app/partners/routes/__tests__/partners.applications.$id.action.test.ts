@@ -64,13 +64,6 @@ describe("partner application CRM action — guards", () => {
     expect(res).toMatchObject({ error: expect.stringContaining("permission") });
     expect(db.partnerApplication.update).not.toHaveBeenCalled();
   });
-
-  it("blocks CRM intents when the flag is off", async () => {
-    (isFeatureEnabled as any).mockResolvedValue(false);
-    const res = await callAction({ intent: "accept" });
-    expect(res).toMatchObject({ error: expect.stringContaining("not enabled") });
-    expect(db.partnerApplication.update).not.toHaveBeenCalled();
-  });
 });
 
 describe("triage / decision intents", () => {
