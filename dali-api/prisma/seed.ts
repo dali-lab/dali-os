@@ -3892,36 +3892,313 @@ async function main() {
         }
       }
 
-      // Project workspace: one Epic → Sprint → Task chain on DALI OS.
+      // Project workspace: a full Epic → User story → Task plan on DALI OS so
+      // the timeline renders a populated Gantt (nested bars, dependency arrows,
+      // an Active sprint band). Every level carries explicit dates relative to
+      // "now" so the today-marker lands mid-plan and epics/stories place on the
+      // grid instead of falling into the "unscheduled" list.
       if (dali) {
+        // FK-safe teardown: assignees → tasks → stories (cascades their deps) →
+        // sprints → epics. Idempotent across re-seeds.
+        await prisma.taskAssignee.deleteMany({ where: { task: { projectId: dali.id } } });
         await prisma.task.deleteMany({ where: { projectId: dali.id } });
+        await prisma.userStory.deleteMany({ where: { epic: { projectId: dali.id } } });
         await prisma.sprint.deleteMany({ where: { projectId: dali.id } });
         await prisma.epic.deleteMany({ where: { projectId: dali.id } });
-        const epic = await prisma.epic.create({
-          data: { projectId: dali.id, title: "Staffing board v1", position: 0 },
-        });
-        // Relative dates: an Active demo sprint must genuinely span "now" or
-        // the sprint-lifecycle job auto-closes it on the first tick.
-        const sprint = await prisma.sprint.create({
-          data: {
-            projectId: dali.id,
-            epicId: epic.id,
-            name: "Sprint 1",
-            startsAt: new Date(Date.now() - 7 * 86_400_000),
-            endsAt: new Date(Date.now() + 7 * 86_400_000),
-            status: "Active",
+
+        const DAY = 86_400_000;
+        const nowMs = Date.now();
+        const at = (days: number) => new Date(nowMs + days * DAY);
+        const member = (i: number) => memberUsers[i]?.id;
+        const people = (...ids: (string | undefined)[]) =>
+          [...new Set(ids.filter((x): x is string => Boolean(x)))];
+
+        type TaskSeed = {
+          title: string;
+          status: "Backlog" | "Todo" | "InProgress" | "InReview" | "Done" | "Cancelled";
+          start: number;
+          due: number;
+          domainId?: string;
+          assignees: (string | undefined)[];
+        };
+        type StorySeed = {
+          key: string;
+          title: string;
+          notes: string;
+          status: "Todo" | "InProgress" | "Done";
+          priority: "Must" | "Should" | "Could" | "Wont";
+          category: string;
+          successMetric: string;
+          acceptanceCriteria: string;
+          start: number;
+          end: number;
+          dependsOn?: string[];
+          tasks: TaskSeed[];
+        };
+        type EpicSeed = {
+          title: string;
+          status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
+          start: number | null;
+          end: number | null;
+          sprint?: { name: string; status: "Planned" | "Active" | "Closed"; start: number; end: number };
+          stories: StorySeed[];
+        };
+
+        const plan: EpicSeed[] = [
+          {
+            title: "Staffing board v1",
+            status: "Done",
+            start: -35,
+            end: -7,
+            sprint: { name: "Foundations", status: "Closed", start: -21, end: -7 },
+            stories: [
+              {
+                key: "board-dnd",
+                title: "Drag-and-drop columns",
+                notes: "Reorder domains and cards on the staffing board with drag-and-drop.",
+                status: "Done",
+                priority: "Must",
+                category: "Frontend",
+                successMetric: "A PM reorders a board in under 5s with no page reload.",
+                acceptanceCriteria: "Card order survives refresh; keyboard reordering works.",
+                start: -35,
+                end: -22,
+                tasks: [
+                  { title: "Column drag-and-drop", status: "Done", start: -35, due: -29, domainId: engDomain.id, assignees: [admin.id, member(0)] },
+                  { title: "Persist card order", status: "Done", start: -29, due: -22, domainId: engDomain.id, assignees: [member(0), member(1)] },
+                ],
+              },
+              {
+                key: "two-phase-lock",
+                title: "Two-phase staffing lock",
+                notes: "Lock Core placements first, then open member matching.",
+                status: "Done",
+                priority: "Should",
+                category: "Backend",
+                successMetric: "No member is double-booked after a cycle closes.",
+                acceptanceCriteria: "Core lock precedes the member phase; auto-pairing runs on close.",
+                start: -22,
+                end: -7,
+                tasks: [
+                  { title: "Core-first lock", status: "Done", start: -22, due: -15, domainId: pmDomain.id, assignees: [admin.id] },
+                  { title: "Member matching phase", status: "Done", start: -15, due: -7, domainId: pmDomain.id, assignees: [member(1), member(2)] },
+                ],
+              },
+            ],
           },
-        });
-        await prisma.task.create({
-          data: {
-            projectId: dali.id,
-            sprintId: sprint.id,
-            epicId: epic.id,
-            title: "Drag-and-drop columns",
+          {
+            title: "Project timeline & workspace",
             status: "InProgress",
-            createdById: admin.id,
+            start: -10,
+            end: 18,
+            sprint: { name: "Timeline", status: "Active", start: -7, end: 7 },
+            stories: [
+              {
+                key: "gantt-grid",
+                title: "Gantt grid + today marker",
+                notes: "A grid that is always there, with a marker for today.",
+                status: "Done",
+                priority: "Must",
+                category: "Frontend",
+                successMetric: "The grid renders with zero epics without collapsing.",
+                acceptanceCriteria: "UTC-day columns tile the range; today line sits above the bars.",
+                start: -10,
+                end: -1,
+                tasks: [
+                  { title: "UTC-day geometry", status: "Done", start: -10, due: -5, domainId: engDomain.id, assignees: [member(0)] },
+                  { title: "Today marker line", status: "Done", start: -5, due: -1, domainId: engDomain.id, assignees: [member(0)] },
+                ],
+              },
+              {
+                key: "nested-bars",
+                title: "Epic → story → task bars",
+                notes: "Nested containment: a story bar inside its epic, a task bar inside its story.",
+                status: "InProgress",
+                priority: "Must",
+                category: "Frontend",
+                successMetric: "Every dated story and task draws a bar under its parent.",
+                acceptanceCriteria: "Bars nest and clip to parents; drag-to-reschedule snaps to whole days.",
+                start: -1,
+                end: 9,
+                dependsOn: ["gantt-grid"],
+                tasks: [
+                  { title: "Nested bar layout", status: "InProgress", start: -1, due: 4, domainId: engDomain.id, assignees: [member(0), member(2)] },
+                  { title: "Drag to reschedule", status: "Todo", start: 4, due: 9, domainId: engDomain.id, assignees: [member(2)] },
+                ],
+              },
+              {
+                key: "project-calendar",
+                title: "Project calendar",
+                notes: "A month calendar of meetings and epic/story deadlines.",
+                status: "Todo",
+                priority: "Should",
+                category: "Frontend",
+                successMetric: "Deadlines and meetings show on the correct day in the viewer's zone.",
+                acceptanceCriteria: "Month grid loads; events render for meetings and end dates.",
+                start: 9,
+                end: 18,
+                dependsOn: ["nested-bars"],
+                tasks: [
+                  { title: "Month grid", status: "Todo", start: 9, due: 14, domainId: designDomain.id, assignees: [member(1)] },
+                  { title: "Meeting + deadline events", status: "Todo", start: 14, due: 18, domainId: engDomain.id, assignees: [member(2)] },
+                ],
+              },
+            ],
           },
-        });
+          {
+            title: "Wallet check-in",
+            status: "Open",
+            start: 14,
+            end: 40,
+            sprint: { name: "Wallet", status: "Planned", start: 14, end: 28 },
+            stories: [
+              {
+                key: "wallet-pass",
+                title: "Apple / Google wallet pass",
+                notes: "Issue a signed wallet pass per member for meeting check-in.",
+                status: "Todo",
+                priority: "Must",
+                category: "Backend",
+                successMetric: "A member adds a working pass to their wallet in one tap.",
+                acceptanceCriteria: "Signed token verifies; Apple and Google endpoints return a valid pass.",
+                start: 14,
+                end: 28,
+                tasks: [
+                  { title: "Signed pass token", status: "Todo", start: 14, due: 21, domainId: engDomain.id, assignees: [member(0)] },
+                  { title: "Apple + Google pass endpoints", status: "Todo", start: 21, due: 28, domainId: engDomain.id, assignees: [member(0), member(1)] },
+                ],
+              },
+              {
+                key: "scan-checkin",
+                title: "Scan-to-check-in",
+                notes: "Scan a member's pass to check them into a scheduled meeting.",
+                status: "Todo",
+                priority: "Should",
+                category: "Fullstack",
+                successMetric: "A scan marks attendance in under 2s.",
+                acceptanceCriteria: "Scanner reads the pass; the check-in route records attendance once.",
+                start: 28,
+                end: 40,
+                dependsOn: ["wallet-pass"],
+                tasks: [
+                  { title: "Attendee scanner UI", status: "Todo", start: 28, due: 34, domainId: designDomain.id, assignees: [member(1)] },
+                  { title: "Check-in route", status: "Todo", start: 34, due: 40, domainId: engDomain.id, assignees: [member(2)] },
+                ],
+              },
+            ],
+          },
+          {
+            title: "Mentorship notes",
+            status: "Backlog",
+            start: 35,
+            end: 56,
+            stories: [
+              {
+                key: "mentor-notes",
+                title: "Weekly mentor notes",
+                notes: "Mentors log a weekly note per mentee, visible to mentors and Core.",
+                status: "Todo",
+                priority: "Could",
+                category: "Backend",
+                successMetric: "Each pair has a note for every active week.",
+                acceptanceCriteria: "Editor saves per week; the mentee cannot read the note.",
+                start: 35,
+                end: 56,
+                tasks: [
+                  { title: "Note editor", status: "Todo", start: 35, due: 45, domainId: engDomain.id, assignees: [member(0)] },
+                  { title: "Visibility rules", status: "Todo", start: 45, due: 56, domainId: pmDomain.id, assignees: [admin.id] },
+                ],
+              },
+            ],
+          },
+        ];
+
+        const storyIdByKey = new Map<string, string>();
+        const depPairs: { storyKey: string; dependsOnKey: string }[] = [];
+
+        for (const [ei, e] of plan.entries()) {
+          const epic = await prisma.epic.create({
+            data: {
+              projectId: dali.id,
+              title: e.title,
+              status: e.status,
+              position: ei,
+              targetTermId: term26S.id,
+              startsAt: e.start != null ? at(e.start) : null,
+              endsAt: e.end != null ? at(e.end) : null,
+            },
+          });
+          if (e.sprint) {
+            // An Active demo sprint must genuinely span "now" or the
+            // sprint-lifecycle job auto-closes it on the first tick.
+            await prisma.sprint.create({
+              data: {
+                projectId: dali.id,
+                epicId: epic.id,
+                name: e.sprint.name,
+                startsAt: at(e.sprint.start),
+                endsAt: at(e.sprint.end),
+                status: e.sprint.status,
+              },
+            });
+          }
+          for (const [si, s] of e.stories.entries()) {
+            const story = await prisma.userStory.create({
+              data: {
+                epicId: epic.id,
+                title: s.title,
+                notes: s.notes,
+                status: s.status,
+                priority: s.priority,
+                category: s.category,
+                successMetric: s.successMetric,
+                acceptanceCriteria: s.acceptanceCriteria,
+                position: si,
+                startsAt: at(s.start),
+                endsAt: at(s.end),
+              },
+            });
+            storyIdByKey.set(s.key, story.id);
+            for (const dep of s.dependsOn ?? []) {
+              depPairs.push({ storyKey: s.key, dependsOnKey: dep });
+            }
+            for (const [ti, t] of s.tasks.entries()) {
+              const task = await prisma.task.create({
+                data: {
+                  projectId: dali.id,
+                  epicId: epic.id,
+                  storyId: story.id,
+                  title: t.title,
+                  status: t.status,
+                  position: ti,
+                  domainId: t.domainId ?? null,
+                  startsAt: at(t.start),
+                  dueAt: at(t.due),
+                  createdById: admin.id,
+                },
+              });
+              const assignees = people(...t.assignees);
+              if (assignees.length) {
+                await prisma.taskAssignee.createMany({
+                  data: assignees.map((userId) => ({ taskId: task.id, userId })),
+                  skipDuplicates: true,
+                });
+              }
+            }
+          }
+        }
+
+        // Story dependency arrows — created after every story exists so both
+        // endpoints resolve.
+        for (const d of depPairs) {
+          const storyId = storyIdByKey.get(d.storyKey);
+          const dependsOnStoryId = storyIdByKey.get(d.dependsOnKey);
+          if (storyId && dependsOnStoryId) {
+            await prisma.userStoryDependency.create({ data: { storyId, dependsOnStoryId } });
+          }
+        }
+
+        // One unscheduled backlog task keeps the board's backlog column non-empty.
         await prisma.task.create({
           data: {
             projectId: dali.id,
