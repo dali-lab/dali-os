@@ -5,7 +5,7 @@ import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { APPLICATION_TZ } from "~/lib/timezone";
-import { Menu } from "~/components/ui/floating";
+import { Menu, Tooltip } from "~/components/ui/floating";
 import {
   MoreHorizontal,
   Copy,
@@ -33,19 +33,31 @@ export type OfferingCardData = {
 };
 
 export function TypeBadge({ type }: { type: OfferingCardData["type"] }) {
+  const tip =
+    type === "Miniseries"
+      ? "Miniseries: multi-session course with reviewed applications and attendance tracking."
+      : "Workshop: single-session event with RSVP-style approval — no ongoing attendance.";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        type === "Miniseries"
-          ? "bg-accent-teal/10 text-accent-teal"
-          : "bg-accent-coral/10 text-accent-coral",
-      )}
-    >
-      {type}
-    </span>
+    <Tooltip content={tip} variant="rich" placement="top">
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+          type === "Miniseries"
+            ? "bg-accent-teal/10 text-accent-teal"
+            : "bg-accent-coral/10 text-accent-coral",
+        )}
+      >
+        {type}
+      </span>
+    </Tooltip>
   );
 }
+
+const STATUS_TIPS: Record<OfferingCardData["status"], string> = {
+  Draft: "Not yet visible to members. Publish to open registration.",
+  Published: "Visible to members and accepting applications within the registration window.",
+  Archived: "Hidden from the hub and closed to new applications. Existing enrollments are preserved.",
+};
 
 export function StatusBadge({ status }: { status: OfferingCardData["status"] }) {
   const styles: Record<OfferingCardData["status"], string> = {
@@ -54,14 +66,16 @@ export function StatusBadge({ status }: { status: OfferingCardData["status"] }) 
     Archived: "bg-accent-yellow/25 text-foreground",
   };
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        styles[status],
-      )}
-    >
-      {status}
-    </span>
+    <Tooltip content={STATUS_TIPS[status]} variant="rich" placement="top">
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+          styles[status],
+        )}
+      >
+        {status}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -73,19 +87,31 @@ const MY_STATUS_STYLES: Record<string, { label: string; className: string }> = {
   Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
 };
 
+const MY_STATUS_TIPS: Record<string, string | null> = {
+  Waitlisted:
+    "You're on the waitlist. If a seat opens before registration closes, you'll be automatically moved to Enrolled (you'll get a notification).",
+  Submitted: null,
+  Approved: null,
+  Rejected: null,
+  Withdrawn: null,
+};
+
 export function MyStatusChip({ status }: { status: string | null }) {
   if (!status) return null;
   const style = MY_STATUS_STYLES[status];
   if (!style) return null;
+  const tip = MY_STATUS_TIPS[status] ?? null;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        style.className,
-      )}
-    >
-      {style.label}
-    </span>
+    <Tooltip content={tip} variant="rich" placement="top">
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+          style.className,
+        )}
+      >
+        {style.label}
+      </span>
+    </Tooltip>
   );
 }
 

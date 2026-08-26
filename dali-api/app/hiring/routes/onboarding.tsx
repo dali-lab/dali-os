@@ -462,7 +462,6 @@ function RemindHeader({
               icon={justSent ? Check : Bell}
               disabled={busy || incompleteCount === 0}
               tooltipSide="top"
-              tooltipPortal
               className="text-accent-coral hover:bg-accent-coral/10 hover:text-accent-coral"
               iconClassName="h-3.5 w-3.5"
             />

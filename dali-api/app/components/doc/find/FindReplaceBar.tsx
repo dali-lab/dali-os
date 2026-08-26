@@ -23,6 +23,7 @@ import {
 import { ChevronUp, ChevronDown, X, ChevronsUpDown } from "lucide-react";
 import type { BlockNoteEditor } from "@blocknote/core";
 import { findReplaceKey, type FindPluginState, type FindPluginUpdate } from "./FindReplacePlugin";
+import { Tooltip } from "~/components/ui/floating";
 
 interface FindReplaceBarProps {
   editor: BlockNoteEditor<any, any, any>;
@@ -218,16 +219,17 @@ export function FindReplaceBar({ editor, canEdit, onClose, initialQuery = "" }: 
       {/* Row 1: search */}
       <div className="dali-find-bar__row">
         {/* Toggle replace row */}
-        <button
-          type="button"
-          onClick={() => setReplaceExpanded((v) => !v)}
-          aria-label={replaceExpanded ? "Collapse replace" : "Expand replace"}
-          aria-expanded={replaceExpanded}
-          className="dali-find-bar__toggle"
-          title={replaceExpanded ? "Hide replace" : "Show replace"}
-        >
-          <ChevronsUpDown className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip content={replaceExpanded ? "Hide replace" : "Show replace"}>
+          <button
+            type="button"
+            onClick={() => setReplaceExpanded((v) => !v)}
+            aria-label={replaceExpanded ? "Collapse replace" : "Expand replace"}
+            aria-expanded={replaceExpanded}
+            className="dali-find-bar__toggle"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
 
         <input
           ref={queryRef}
@@ -247,36 +249,39 @@ export function FindReplaceBar({ editor, canEdit, onClose, initialQuery = "" }: 
           {countLabel}
         </span>
 
-        <button
-          type="button"
-          onClick={() => navigate("prev")}
-          disabled={matchCount === 0}
-          aria-label="Previous match"
-          title="Previous match (Shift+Enter)"
-          className="dali-find-bar__nav"
-        >
-          <ChevronUp className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate("next")}
-          disabled={matchCount === 0}
-          aria-label="Next match"
-          title="Next match (Enter)"
-          className="dali-find-bar__nav"
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip content="Previous match (Shift+Enter)">
+          <button
+            type="button"
+            onClick={() => navigate("prev")}
+            disabled={matchCount === 0}
+            aria-label="Previous match"
+            className="dali-find-bar__nav"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
+        <Tooltip content="Next match (Enter)">
+          <button
+            type="button"
+            onClick={() => navigate("next")}
+            disabled={matchCount === 0}
+            aria-label="Next match"
+            className="dali-find-bar__nav"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
 
-        <button
-          type="button"
-          onClick={close}
-          aria-label="Close find bar"
-          title="Close (Esc)"
-          className="dali-find-bar__close"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip content="Close (Esc)">
+          <button
+            type="button"
+            onClick={close}
+            aria-label="Close find bar"
+            className="dali-find-bar__close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Row 2: replace — only when expanded AND canEdit */}

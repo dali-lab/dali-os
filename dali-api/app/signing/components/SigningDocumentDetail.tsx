@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, Link, useLoaderData, useActionData, useSubmit } from "react-router";
-import { Menu } from "~/components/ui/floating";
+import { Menu, Tooltip, InfoTip } from "~/components/ui/floating";
 import { nextTermCode } from "~/lib/terms.shared";
 import {
   Plus,
@@ -49,6 +49,15 @@ import type { loader } from "~/signing/routes/core.agreements.$id";
 const MEMBER_FIELD_TYPES = SIGNING_FIELD_TYPES.filter(
   (t) => t !== "adminSignatureField",
 );
+
+// Tooltip copy for each field type shown in the insert controls.
+const FIELD_TYPE_TIP: Partial<Record<string, string>> = {
+  signatureField: "Member draws or types their signature.",
+  dateField: "Auto-fills with the date the member signs.",
+  initialField: "Member enters their initials — shorter than a full signature.",
+  checkboxField: "Member checks a box to acknowledge a statement.",
+  textField: "Member types a short freeform response.",
+};
 
 type PersonResult = { userId: string; name: string; email: string | null };
 
@@ -111,15 +120,16 @@ function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) 
 
   return (
     <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        disabled={!editor}
-        title="Insert a pre-signed supervisor signature"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
-      >
-        <PenLine className="w-3 h-3" /> Supervisor signature
-      </button>
+      <Tooltip content="Inserts a pre-signed supervisor counter-signature bound to a named person. Their name is baked into the document at issuance — the member never fills this field." variant="rich">
+        <button
+          type="button"
+          disabled={!editor}
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+        >
+          <PenLine className="w-3 h-3" /> Supervisor signature
+        </button>
+      </Tooltip>
       {open && (
         <div className="absolute left-0 z-50 mt-1 w-72 rounded-md border border-border bg-card p-2 shadow-lg">
           <input
@@ -179,34 +189,35 @@ function SigningInsertControls({
     <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
       <span className="text-xs font-medium text-muted-foreground mr-1">Insert:</span>
       {MEMBER_FIELD_TYPES.map((type) => (
-        <button
-          key={type}
-          type="button"
-          disabled={!editor}
-          title={`Insert ${FIELD_LABEL[type]} field`}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            insertField(type);
-          }}
-          className="rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-        >
-          {FIELD_LABEL[type]}
-        </button>
+        <Tooltip key={type} content={FIELD_TYPE_TIP[type] ?? `Insert ${FIELD_LABEL[type]} field`}>
+          <button
+            type="button"
+            disabled={!editor}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertField(type);
+            }}
+            className="rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            {FIELD_LABEL[type]}
+          </button>
+        </Tooltip>
       ))}
       <AdminSignatureButton editor={editor} />
       <Menu
         align="left"
         ariaLabel="Insert merge variable"
         trigger={
-          <button
-            type="button"
-            disabled={!editor}
-            title="Insert a merge variable"
-            className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
-          >
-            + Variable
-            <ChevronDown className="w-3 h-3" />
-          </button>
+          <Tooltip content="Insert a {{variable}} that resolves at sign time — e.g. {{term}}, {{name}}, {{today}}.">
+            <button
+              type="button"
+              disabled={!editor}
+              className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+            >
+              + Variable
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </Tooltip>
         }
       >
         {ALL_SIGNING_VARIABLES.map((v) => (
@@ -416,13 +427,16 @@ export function SigningDocumentDetail() {
         options={SCOPE_OPTIONS}
         onSelect={(v) => changeConfig("gateScope", v)}
       />
-      <ConfigPill
-        label="Audience"
-        value={AUDIENCE_SHORT[document.audience] ?? document.audience}
-        selected={document.audience}
-        options={AUDIENCE_OPTIONS}
-        onSelect={(v) => changeConfig("audience", v)}
-      />
+      <span className="inline-flex items-center gap-1">
+        <ConfigPill
+          label="Audience"
+          value={AUDIENCE_SHORT[document.audience] ?? document.audience}
+          selected={document.audience}
+          options={AUDIENCE_OPTIONS}
+          onSelect={(v) => changeConfig("audience", v)}
+        />
+        <InfoTip content="Who must sign. New Members = first term staffed; Members = everyone currently staffed; Mentors = P3 + external mentors; Hiring Participants = anyone in an active hiring cycle." />
+      </span>
       <ConfigPill
         label="Cadence"
         value={CADENCE_SHORT[document.cadence] ?? document.cadence}
@@ -460,13 +474,15 @@ export function SigningDocumentDetail() {
         })}
       >
         <input type="hidden" name="intent" value="archive" />
-        <button
-          type="submit"
-          className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-foreground/70 bg-card border border-border hover:bg-muted/50"
-          title="Archive"
-        >
-          <Archive className="w-4 h-4" />
-        </button>
+        <Tooltip content="Archive">
+          <button
+            type="submit"
+            aria-label="Archive"
+            className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-foreground/70 bg-card border border-border hover:bg-muted/50"
+          >
+            <Archive className="w-4 h-4" />
+          </button>
+        </Tooltip>
       </Form>
     </>
   );
@@ -604,13 +620,14 @@ export function SigningDocumentDetail() {
                   <Form method="post">
                     <input type="hidden" name="intent" value="activate" />
                     <input type="hidden" name="versionId" value={selectedVersion.id} />
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
-                      title="Put this version in force"
-                    >
-                      <Zap className="w-4 h-4" /> Put in force
-                    </button>
+                    <Tooltip content="Bind this version: send sign requests to everyone in the configured audience and start tracking completion." variant="rich">
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
+                      >
+                        <Zap className="w-4 h-4" /> Put in force
+                      </button>
+                    </Tooltip>
                   </Form>
                 )}
                 {isEditableDraft(selectedVersion) && (
@@ -628,7 +645,6 @@ export function SigningDocumentDetail() {
                     <button
                       type="submit"
                       className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-foreground/70 bg-card border border-border hover:bg-muted/50"
-                      title="Delete this draft"
                     >
                       <Trash2 className="w-4 h-4" /> Delete
                     </button>
@@ -682,7 +698,6 @@ function ConfigPill({
       trigger={
         <button
           type="button"
-          title={`Change ${label.toLowerCase()}`}
           className="rounded bg-muted px-2 py-0.5 inline-flex items-center gap-1 transition-colors hover:bg-muted/70"
         >
           <span className="text-muted-foreground">{label}:</span>
@@ -755,13 +770,14 @@ function BindingsPanel() {
                   ) : (
                     roster.signed.map((s) => (
                       <li key={s.signatureId}>
-                        <Link
-                          to={`/core/agreements/${document.id}/signature/${s.signatureId}`}
-                          className="block truncate text-xs text-accent-coral hover:underline"
-                          title="View signed copy"
-                        >
-                          {s.name}
-                        </Link>
+                        <Tooltip content="View signed copy">
+                          <Link
+                            to={`/core/agreements/${document.id}/signature/${s.signatureId}`}
+                            className="block truncate text-xs text-accent-coral hover:underline"
+                          >
+                            {s.name}
+                          </Link>
+                        </Tooltip>
                       </li>
                     ))
                   )}

@@ -1,4 +1,4 @@
-import { Popover } from "~/components/ui/floating";
+import { Popover, Tooltip } from "~/components/ui/floating";
 
 // Notion-style page icon. Surfaces Page.iconEmoji (persisted by the host via
 // onChange). No emoji-picker dependency in the repo, so this is a small curated
@@ -42,17 +42,18 @@ export function PageIconPicker({
       ariaLabel="Page icon"
       panelClassName="z-[60] w-max rounded-md border border-border bg-card p-2 shadow-brand-2 focus:outline-none"
       trigger={
-        <button
-          type="button"
-          title={iconEmoji ? "Change icon" : "Add icon"}
-          className={
-            iconEmoji
-              ? "text-4xl leading-none hover:opacity-80"
-              : "text-xs text-muted-foreground hover:text-foreground rounded border border-dashed border-border px-2 py-1"
-          }
-        >
-          {iconEmoji ?? "Add icon"}
-        </button>
+        <Tooltip content={iconEmoji ? "Change icon" : "Add icon"}>
+          <button
+            type="button"
+            className={
+              iconEmoji
+                ? "text-4xl leading-none hover:opacity-80"
+                : "text-xs text-muted-foreground hover:text-foreground rounded border border-dashed border-border px-2 py-1"
+            }
+          >
+            {iconEmoji ?? "Add icon"}
+          </button>
+        </Tooltip>
       }
     >
       {(close) => (

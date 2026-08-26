@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { usePresence, type Peer } from "./PresenceProvider";
 import { initialsFromName } from "./util";
+import { Tooltip } from "~/components/ui/floating";
 
 // Short grace period so moving the cursor from the chip across the gap to the
 // hover card doesn't briefly drop hover state and dismiss the card.
@@ -66,10 +67,15 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
       className={`inline-flex items-center gap-2 text-xs text-muted-foreground/70 ${className ?? ""}`}
     >
       {!ctx.connected && (
-        <span
-          className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
-          aria-label="Connecting to presence"
-        />
+        <Tooltip
+          content="Reconnecting to the live presence session. Changes are still saving normally."
+          variant="rich"
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+            aria-label="Connecting to presence"
+          />
+        </Tooltip>
       )}
       <div className="flex items-center -space-x-1.5">
         {shown.map((p) => (
@@ -80,12 +86,13 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
           />
         ))}
         {overflow > 0 && (
-          <span
-            className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-muted-foreground bg-muted ring-2 ring-white"
-            title={`${overflow} more`}
-          >
-            +{overflow}
-          </span>
+          <Tooltip content={`${overflow} more ${overflow === 1 ? "person" : "people"} also viewing`}>
+            <span
+              className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-muted-foreground bg-muted ring-2 ring-white"
+            >
+              +{overflow}
+            </span>
+          </Tooltip>
         )}
       </div>
     </div>

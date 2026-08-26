@@ -60,7 +60,7 @@ import {
 } from "~/calendar/components/RepeatField";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
@@ -1459,20 +1459,21 @@ function AvailabilityView({ data }: { data: LoaderData }) {
       )}
     >
       {sidebarCollapsed ? (
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(false)}
-          className={cn(
-            "hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 py-3",
-            os
-              ? "rounded-os-item bg-os-card text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-              : "rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-          aria-label="Expand availability settings"
-          title="Expand settings"
-        >
-          <PanelLeftOpen className="h-5 w-5 shrink-0" />
-        </button>
+        <Tooltip content="Expand settings">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            className={cn(
+              "hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 py-3",
+              os
+                ? "rounded-os-item bg-os-card text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                : "rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+            aria-label="Expand availability settings"
+          >
+            <PanelLeftOpen className="h-5 w-5 shrink-0" />
+          </button>
+        </Tooltip>
       ) : (
         <aside
           className={cn(
@@ -1494,20 +1495,21 @@ function AvailabilityView({ data }: { data: LoaderData }) {
                 <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed(true)}
-              className={cn(
-                "hidden lg:inline-flex shrink-0",
-                os
-                  ? iconBtn
-                  : "rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-              aria-label="Collapse availability settings"
-              title="Collapse settings"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
+            <Tooltip content="Collapse settings">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className={cn(
+                  "hidden lg:inline-flex shrink-0",
+                  os
+                    ? iconBtn
+                    : "rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+                aria-label="Collapse availability settings"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </Tooltip>
           </header>
           <CalendarIntegrationsCard
             links={data.calendarLinks}
@@ -1838,14 +1840,15 @@ function WorkingHoursCard({
                   );
                 }}
               >
-                <button
-                  type="submit"
-                  aria-label="Reset working hours to defaults"
-                  title="Reset to defaults"
-                  className={iconBtn}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip content="Reset working hours to defaults">
+                  <button
+                    type="submit"
+                    aria-label="Reset working hours to defaults"
+                    className={iconBtn}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               </resetFetcher.Form>
             </>
           )}
@@ -1999,15 +2002,16 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
                   (un-checking clears the day), so the delete button only
                   appears when there are multiple segments to pick from. */}
               {segments.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeSegment(idx)}
-                  aria-label={`Remove ${DAY_LABELS[day.dayOfWeek]} segment ${idx + 1}`}
-                  title="Remove segment"
-                  className="p-1 mr-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip content="Remove segment">
+                  <button
+                    type="button"
+                    onClick={() => removeSegment(idx)}
+                    aria-label={`Remove ${DAY_LABELS[day.dayOfWeek]} segment ${idx + 1}`}
+                    className="p-1 mr-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               )}
             </div>
           ))}
@@ -2403,16 +2407,17 @@ function WeekToolbar({
             <ChevronRight className="w-4 h-4" />
           </Link>
           {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshing}
-              aria-label="Refresh availability"
-              title="Refresh availability"
-              className={cn(iconBtn, "disabled:opacity-50")}
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-            </button>
+            <Tooltip content={refreshing ? "Refreshing…" : "Refresh availability"}>
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing}
+                aria-label="Refresh availability"
+                className={cn(iconBtn, "disabled:opacity-50")}
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -2776,22 +2781,22 @@ function RoleFilterRow({
         const active = !excludedKeys.has(b.key);
         const color = roleColor(b.key);
         return (
-          <button
-            key={b.key}
-            type="button"
-            onClick={() => onToggle(b.key)}
-            aria-pressed={active}
-            title={`${b.label} — ${b.hours.toFixed(2)} hrs this week${active ? "" : " (hidden)"}`}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs transition-colors ${
-              active
-                ? "border-border bg-muted/60 text-foreground"
-                : "border-border/50 text-muted-foreground opacity-50"
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color.dot }} />
-            {b.label}
-            <span className={active ? "text-muted-foreground" : ""}>· {b.hours.toFixed(2)}h</span>
-          </button>
+          <Tooltip key={b.key} content={`${b.label} — ${b.hours.toFixed(2)} hrs this week${active ? "" : " (hidden)"}`}>
+            <button
+              type="button"
+              onClick={() => onToggle(b.key)}
+              aria-pressed={active}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs transition-colors ${
+                active
+                  ? "border-border bg-muted/60 text-foreground"
+                  : "border-border/50 text-muted-foreground opacity-50"
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color.dot }} />
+              {b.label}
+              <span className={active ? "text-muted-foreground" : ""}>· {b.hours.toFixed(2)}h</span>
+            </button>
+          </Tooltip>
         );
       })}
     </div>
@@ -3328,7 +3333,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
               >
                 Add
               </button>
-              <Tooltip label="Reset">
+              <Tooltip content="Reset">
                 <button
                   type="button"
                   onClick={resetAddForm}
@@ -4548,7 +4553,10 @@ function ParticipantPicker({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <label className="block text-sm font-medium text-foreground">Participants</label>
+        <label className="block text-sm font-medium text-foreground inline-flex items-center gap-1">
+          Participants
+          <InfoTip content="Add individuals or groups. Groups marked with a team icon are dynamic — their membership resolves at invite time, so new members added after scheduling will not be included." />
+        </label>
         <span className="text-xs text-muted-foreground">
           {resolvedCount} unique user{resolvedCount === 1 ? "" : "s"}
         </span>
@@ -4559,22 +4567,20 @@ function ParticipantPicker({
           const g = groupsById.get(gid);
           if (!g) return null;
           return (
-            <span
-              key={`g:${gid}`}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-              title={`${g.memberIds.length} member${g.memberIds.length === 1 ? "" : "s"}`}
-            >
-              <UsersRound className="w-3 h-3" />
-              {g.name}
-              <button
-                type="button"
-                onClick={() => onChangeGroups(selectedGroupIds.filter((x) => x !== gid))}
-                aria-label={`Remove ${g.name}`}
-                className="hover:text-blue-600"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
+            <Tooltip key={`g:${gid}`} content={`${g.memberIds.length} member${g.memberIds.length === 1 ? "" : "s"}`}>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <UsersRound className="w-3 h-3" />
+                {g.name}
+                <button
+                  type="button"
+                  onClick={() => onChangeGroups(selectedGroupIds.filter((x) => x !== gid))}
+                  aria-label={`Remove ${g.name}`}
+                  className="hover:text-blue-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            </Tooltip>
           );
         })}
         {selectedUserIds.map((uid) => {
@@ -4995,6 +5001,12 @@ function ScheduleWeekGrid({
           )}
           {error && (
             <div className="px-4 py-2 text-xs text-red-700">{error}</div>
+          )}
+          {!showingSelfOnly && data && participantIds.length > 0 && (
+            <div className="flex items-center gap-1 px-2 pt-1">
+              <span className="text-xs text-muted-foreground">Hover a name to see their free times.</span>
+              <InfoTip content="The grid shades each slot by how many participants are free at that time. The darker the green, the more people are available. Hover a name below to highlight just their free intervals. Free/busy is fetched from each person's working-hours settings and linked Google Calendar." />
+            </div>
           )}
           {!showingSelfOnly && data && participantIds.length > 0 && (
             <ParticipantAvailabilityRoster
@@ -5578,12 +5590,13 @@ function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] }) {
         {shown.map((a, i) => (
           <li key={`${a.name}-${i}`} className="flex items-center gap-1.5">
             <span className={`h-2 w-2 shrink-0 rounded-full ${ATTENDEE_DOT[a.status]}`} />
-            <span
-              className={`truncate ${a.status === "Declined" ? "text-muted-foreground line-through" : "text-foreground"}`}
-              title={a.name}
-            >
-              {a.name}
-            </span>
+            <Tooltip content={a.name}>
+              <span
+                className={`truncate ${a.status === "Declined" ? "text-muted-foreground line-through" : "text-foreground"}`}
+              >
+                {a.name}
+              </span>
+            </Tooltip>
             {a.organizer && (
               <span className="shrink-0 text-[10px] text-muted-foreground">organizer</span>
             )}
@@ -6113,12 +6126,13 @@ function WeekGrid({
             <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
             <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
             {periodEnd && !showProviderRow && (
-              <span
-                title="Last day of this pay period"
-                className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
-              >
-                Pay ends
-              </span>
+              <Tooltip content="Last day of this pay period" placement="bottom">
+                <span
+                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
+                >
+                  Pay ends
+                </span>
+              </Tooltip>
             )}
             {showProviderRow && (
               <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">

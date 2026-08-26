@@ -1,4 +1,5 @@
 import { Check, FileSignature, GraduationCap, TriangleAlert, UserCheck } from "lucide-react";
+import { InfoTip } from "~/components/ui/floating";
 import type { ProfilePageData } from "~/members/lib/profile-page.server";
 
 // The paperwork side of a profile: the CE credit the term requires, the
@@ -43,10 +44,11 @@ export function ComplianceBlock({
             )}
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
+            <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
               {ce.compliant
                 ? `CE credit met for ${ce.termCode}`
                 : `CE credit outstanding for ${ce.termCode}`}
+              <InfoTip content="DALI requires 1 Continuing Education credit per term for all staffed members. Attend a course or workshop in the Education section to earn it." />
             </p>
             <p className="text-xs text-muted-foreground">
               {ce.credits} of 1 required ·{" "}

@@ -14,7 +14,7 @@ import {
 } from "~/lib/notification-events";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 
 // `general` is the pre-registry backfill value — nothing emits it.
 export const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
@@ -153,36 +153,65 @@ export function NotificationsSettingsBlock({
                       <p className="text-xs text-zinc-500">{def.description}</p>
                     </div>
                     <div className="text-center">
-                      <Checkbox
-                        name={`${eventType}:inApp`}
-                        defaultChecked={inApp}
-                        disabled={def.lockedInApp}
-                        title={def.lockedInApp ? "Required — this is an action item" : undefined}
-                      />
+                      {def.lockedInApp ? (
+                        <Tooltip
+                          content="Required — this notification is an action item and cannot be turned off."
+                          variant="rich"
+                        >
+                          <span>
+                            <Checkbox
+                              name={`${eventType}:inApp`}
+                              defaultChecked={inApp}
+                              disabled
+                            />
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <Checkbox
+                          name={`${eventType}:inApp`}
+                          defaultChecked={inApp}
+                        />
+                      )}
                     </div>
                     <div className="text-center">
-                      <Checkbox
-                        name={`${eventType}:desktop`}
-                        defaultChecked={desktop}
-                        title="Native banner in the DALI OS desktop app (applies when in-app is on)"
-                      />
+                      <Tooltip
+                        content="Raises a native banner in the DALI OS desktop app (only applies when in-app is also on)."
+                        variant="rich"
+                      >
+                        <span>
+                          <Checkbox
+                            name={`${eventType}:desktop`}
+                            defaultChecked={desktop}
+                          />
+                        </span>
+                      </Tooltip>
                     </div>
                     <div className="text-center">
-                      <Checkbox
-                        name={`${eventType}:slackDm`}
-                        defaultChecked={slackDm}
-                        disabled={!slackConnected}
-                        title={!slackConnected ? "Connect Slack first" : undefined}
-                      />
+                      {!slackConnected ? (
+                        <Tooltip
+                          content="Connect your Slack account first to enable DM notifications."
+                          variant="rich"
+                        >
+                          <span>
+                            <Checkbox
+                              name={`${eventType}:slackDm`}
+                              defaultChecked={slackDm}
+                              disabled
+                            />
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <Checkbox
+                          name={`${eventType}:slackDm`}
+                          defaultChecked={slackDm}
+                        />
+                      )}
                     </div>
                     <div className="text-center">
                       {def.externalEmail ? (
-                        <span
-                          className="text-xs text-zinc-400"
-                          title="Sent by email separately"
-                        >
-                          —
-                        </span>
+                        <Tooltip content="Sent by a separate transactional email pipeline.">
+                          <span className="text-xs text-zinc-400">—</span>
+                        </Tooltip>
                       ) : (
                         <Select
                           name={`${eventType}:email`}

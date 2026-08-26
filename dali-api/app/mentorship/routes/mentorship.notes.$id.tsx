@@ -10,7 +10,7 @@ import { isCore } from "~/lib/roles";
 import { parseSessionCookie } from "~/lib/cookies";
 import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
@@ -187,29 +187,32 @@ export default function MentorNoteEditor() {
       <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
         <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
-        <p className={bodyText}>Author: {fullName(data.mentor)}</p>
+        <p className={cn(bodyText, "inline-flex items-center gap-1")}>
+          Author: {fullName(data.mentor)}
+          <InfoTip content="Mentor notes are visible to the assigned mentor and Core members only — not to the mentee." />
+        </p>
       </header>
 
-      <div className="flex items-center gap-2">
-        <span className={bodyText}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={cn(bodyText, "inline-flex items-center gap-1")}>
           Vibe check
           <span className="text-accent-coral ml-0.5" aria-hidden>
             *
           </span>
+          <InfoTip content="An at-a-glance signal for this week's note. Excellent = things are going well; Room for improvement = something to address; Concerning = needs follow-up. Visible to mentors and Core — not to the mentee." />
           :
         </span>
         <div className="flex items-center gap-1.5">
           {VIBES.map((v) => {
             const Icon = VIBE_ICON[v];
             const active = vibe === v;
-            return (
+            const vibeButton = (
               <button
                 key={v}
                 type="button"
                 onClick={() => pickVibe(v)}
                 disabled={!data.canEdit}
                 aria-pressed={active}
-                title={VIBE_META[v].label}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border transition",
                   os ? "px-3.5 py-1.5 text-sm font-medium" : "px-2.5 py-1 text-xs",
@@ -225,6 +228,19 @@ export default function MentorNoteEditor() {
                 {VIBE_META[v].label}
               </button>
             );
+            if (!data.canEdit) {
+              return (
+                <Tooltip
+                  key={v}
+                  content="Read only — only the mentor or Core can set the vibe."
+                  variant="rich"
+                >
+                  {/* Disabled buttons don't fire hover events; span captures them. */}
+                  <span>{vibeButton}</span>
+                </Tooltip>
+              );
+            }
+            return vibeButton;
           })}
         </div>
       </div>
@@ -242,11 +258,11 @@ export default function MentorNoteEditor() {
             : "Read only"}
         </span>
         {data.canEdit && (
-          <Tooltip label="Delete">
+          <Tooltip content="Delete note">
             <button
               type="button"
               onClick={handleDelete}
-              aria-label="Delete"
+              aria-label="Delete note"
               className={cn(
                 "inline-flex items-center justify-center",
                 os ? iconBtn : "p-1.5 text-accent-coral hover:underline",

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 
 type Values = {
   type?: "Miniseries" | "Workshop";
@@ -48,18 +48,31 @@ export function OfferingFields({
     <>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className={LABEL}>Type</span>
-          <Select
-            name="type"
-            defaultValue={values.type ?? "Workshop"}
-            disabled={typeLocked}
-            onChange={(v) => setSelectedType(v as "Miniseries" | "Workshop")}
-            options={[
-              { value: "Workshop", label: "Workshop (single session, RSVP)" },
-              { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
-            ]}
-            buttonClassName={INPUT}
-          />
+          <span className={LABEL}>
+            <span className="inline-flex items-center gap-1">
+              Type
+              <InfoTip content="Workshop: a single-session event with RSVP-style approval (no multi-session attendance). Miniseries: a multi-session course with reviewed applications and attendance tracking." />
+            </span>
+          </span>
+          <Tooltip
+            content={typeLocked ? "Type can't be changed after an offering is created — it affects how sessions, attendance, and applications are structured." : null}
+            variant="rich"
+            placement="top"
+          >
+            <span className="block">
+              <Select
+                name="type"
+                defaultValue={values.type ?? "Workshop"}
+                disabled={typeLocked}
+                onChange={(v) => setSelectedType(v as "Miniseries" | "Workshop")}
+                options={[
+                  { value: "Workshop", label: "Workshop (single session, RSVP)" },
+                  { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
+                ]}
+                buttonClassName={INPUT}
+              />
+            </span>
+          </Tooltip>
         </label>
         <label className="block">
           <span className={LABEL}>Capacity</span>
@@ -124,7 +137,12 @@ export function OfferingFields({
 
       {isMiniseries && (
         <label className="block">
-          <span className={LABEL}>Completion threshold (%)</span>
+          <span className={LABEL}>
+            <span className="inline-flex items-center gap-1">
+              Completion threshold (%)
+              <InfoTip content="Students must attend at least this percentage of sessions (excused absences count as attended) to earn a completion certificate. Default is 80%." />
+            </span>
+          </span>
           <input
             type="number"
             name="completionThresholdPct"

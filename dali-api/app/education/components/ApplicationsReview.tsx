@@ -3,6 +3,7 @@ import { Form, useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { ApplicationAnswers } from "./ApplicationAnswers";
 import type { Question } from "~/types";
+import { InfoTip, Tooltip } from "~/components/ui/floating";
 
 // Reviewing applications is a read-then-decide loop, so the list and the thing
 // you're deciding on sit side by side: pick a name on the left, their answers
@@ -88,9 +89,15 @@ export function ApplicationsReview({
                     {applicantName(a)}
                   </span>
                   {a.status === "Waitlisted" && a.waitlistRank != null && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      #{a.waitlistRank}
-                    </span>
+                    <Tooltip
+                      content={`Waitlist position ${a.waitlistRank}. If a seat opens before registration closes, they're automatically promoted to Enrolled in rank order.`}
+                      variant="rich"
+                      placement="top"
+                    >
+                      <span className="shrink-0 text-xs text-muted-foreground cursor-default">
+                        #{a.waitlistRank}
+                      </span>
+                    </Tooltip>
                   )}
                 </span>
                 <span className="mt-0.5 flex items-center gap-2 min-w-0">
@@ -225,8 +232,9 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 items-start">
         <label className="block">
-          <span className="text-xs font-semibold text-muted-foreground">
+          <span className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
             Feedback to student — shared with their certificate
+            <InfoTip content="This note is visible to the student. It's included with their completion certificate and shown on their course page." />
           </span>
           <textarea
             rows={4}
@@ -240,8 +248,9 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
           />
         </label>
         <label className="block">
-          <span className="text-xs font-semibold text-amber-800">
+          <span className="text-xs font-semibold text-amber-800 inline-flex items-center gap-1">
             Internal note — hiring only, never shown to the student
+            <InfoTip content="Visible only to instructors and Core members. Used as a hiring signal when this student applies to DALI — the student never sees it." />
           </span>
           <textarea
             rows={4}

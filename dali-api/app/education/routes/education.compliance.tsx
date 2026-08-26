@@ -17,6 +17,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
+import { InfoTip, Tooltip } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -92,8 +93,12 @@ export default function CECompliance() {
       <div className="flex flex-col gap-4 max-w-3xl">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1 className="font-heading text-2xl font-bold text-foreground inline-flex items-center gap-2">
             CE credit compliance
+            <InfoTip
+              content="Every DALI member earns one continuing-education (CE) credit per term by attending any workshop or miniseries session. Missing a credit never auto-blocks anything — this page is for coordinators to nudge and manually grant credits when needed."
+              placement="bottom"
+            />
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Every member needs at least one continuing-education credit per
@@ -152,16 +157,22 @@ export default function CECompliance() {
               >
                 {r.name}
               </a>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                  r.compliant
-                    ? "bg-green-100 text-green-800"
-                    : "bg-amber-100 text-amber-800",
-                )}
+              <Tooltip
+                content={r.compliant ? "Has at least 1 CE credit this term — compliant." : "0 credits this term. Use Grant credit below or Send reminders above."}
+                variant="rich"
+                placement="top"
               >
-                {r.credits} credit{r.credits === 1 ? "" : "s"}
-              </span>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                    r.compliant
+                      ? "bg-green-100 text-green-800"
+                      : "bg-amber-100 text-amber-800",
+                  )}
+                >
+                  {r.credits} credit{r.credits === 1 ? "" : "s"}
+                </span>
+              </Tooltip>
             </div>
 
             {expandedMemberId === r.userId && (

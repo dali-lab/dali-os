@@ -3,7 +3,7 @@ import { Link2, User, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -296,7 +296,10 @@ export function ShareDialog({
 
       {/* People with access */}
       <div className="flex flex-col gap-2.5 mb-6">
-        <h3 className="text-xs font-semibold text-muted-foreground">People with access</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+          People with access
+          <InfoTip content="Individual people or groups who can access this document. View = read-only; Comment = read and add comments; Edit = make changes; Full access = edit and manage sharing." />
+        </h3>
         <p className="text-xs text-muted-foreground -mt-1.5">{ctx ? baseAccessLine(ctx) : "…"}</p>
         <ul className="flex flex-col gap-1.5">
           {ctx?.owner && (
@@ -370,7 +373,10 @@ export function ShareDialog({
 
       {/* General access (Google's row): audience + role, plus copy link */}
       <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
-        <h3 className="text-xs font-semibold text-muted-foreground">General access</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+          General access
+          <InfoTip content={isLab ? "Controls who can open this document by default. 'Everyone in the lab' makes it accessible to any lab member. 'Only people you add' restricts it to explicit shares above." : "Controls who can open this document via the link. 'Anyone in the lab' means any lab member with the link; 'Anyone with the link' is public read-only."} />
+        </h3>
         <div className="flex items-start gap-3 rounded-md border border-border px-3 py-3">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -421,7 +427,10 @@ export function ShareDialog({
           lab "General access" above (share-with-people vs external org). */}
       {ctx?.workspaceType === "Project" && ctx.hasActivePartner && (
         <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
-          <h3 className="text-xs font-semibold text-muted-foreground">Partners</h3>
+          <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+            Partners
+            <InfoTip content="When enabled, partner accounts on this project can view and comment on this document in the partner portal. Lab-internal edits remain invisible to partners." />
+          </h3>
           <Checkbox
             className="items-start rounded-md border border-border px-3 py-2"
             checked={ctx.partnerVisible}

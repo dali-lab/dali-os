@@ -25,7 +25,7 @@ import { isEmptyBlocks } from "~/lib/blocks";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -319,14 +319,15 @@ export function FormDetail() {
                   const className =
                     "inline-flex items-center px-2 py-0.5 rounded-full bg-accent-teal/10 text-accent-teal border border-accent-teal/20";
                   return u.href ? (
-                    <Link
-                      key={`${u.kind}:${u.label}`}
-                      to={u.href}
-                      className={`${className} hover:bg-accent-teal/20 hover:underline transition-colors`}
-                      title="Open where this form is managed"
-                    >
-                      {u.label}
-                    </Link>
+                    <Tooltip content="Open where this form is managed">
+                      <Link
+                        key={`${u.kind}:${u.label}`}
+                        to={u.href}
+                        className={`${className} hover:bg-accent-teal/20 hover:underline transition-colors`}
+                      >
+                        {u.label}
+                      </Link>
+                    </Tooltip>
                   ) : (
                     <span key={`${u.kind}:${u.label}`} className={className}>
                       {u.label}
@@ -409,8 +410,9 @@ export function FormDetail() {
               version. Highlighted so it's clearly distinct from frozen ones. */}
           {hasDraft && (
             <div className="space-y-2">
-              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">
+              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider inline-flex items-center gap-1">
                 Draft
+                <InfoTip content="An editable scratch copy — not yet usable as a form. Save it as a version to freeze it and make it available for responses." />
               </h3>
               <button
                 onClick={() => startEditing(form.draft ?? undefined)}
@@ -433,8 +435,9 @@ export function FormDetail() {
             </div>
           )}
 
-          <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">
+          <h3 className="text-sm font-bold text-foreground uppercase tracking-wider inline-flex items-center gap-1">
             Versions
+            <InfoTip content="Each saved version is a frozen snapshot of the question set. Published forms always serve the latest version. A version with responses cannot be edited or deleted." />
           </h3>
           {form.versions.length === 0 ? (
             <p className="text-sm text-muted-foreground">No versions yet.</p>
@@ -545,14 +548,16 @@ export function FormDetail() {
                           <input type="hidden" name="intent" value="delete-version" />
                           <input type="hidden" name="id" value={form.id} />
                           <input type="hidden" name="versionId" value={version.id} />
-                          <button
-                            type="submit"
-                            onClick={(e) => e.stopPropagation()}
-                            title="Delete version"
-                            className={buttonClasses("secondary", "sm", "gap-1.5")}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <Tooltip content="Delete version">
+                            <button
+                              type="submit"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Delete version"
+                              className={buttonClasses("secondary", "sm", "gap-1.5")}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </Tooltip>
                         </deleteFetcher.Form>
                       </div>
                     )}
@@ -671,10 +676,16 @@ export function FormDetail() {
                     )}
                     Preview
                   </button>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Lock className="w-3.5 h-3.5" />
-                    Read-only
-                  </span>
+                  <Tooltip
+                    content="This version has responses or is pinned by a hiring cycle — it can't be edited. Use New version to branch off a new one."
+                    variant="rich"
+                    placement="top"
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-default">
+                      <Lock className="w-3.5 h-3.5" />
+                      Read-only
+                    </span>
+                  </Tooltip>
                 </div>
               </div>
 
@@ -1125,27 +1136,30 @@ function PublishControl({
             {published ? PUBLISHED_COPY[audience] : "Only lab staff can see this form."}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={toggle}
-          disabled={busy || (!published && !hasVersions)}
-          title={
-            !published && !hasVersions
-              ? "Add a question version before publishing"
-              : undefined
-          }
-          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-            published
-              ? "border border-border text-foreground hover:bg-muted/50"
-              : "bg-accent-coral text-white hover:bg-accent-coral/90"
-          }`}
+        <Tooltip
+          content={!published && !hasVersions ? "Save a version first — only versioned forms can be published." : null}
+          variant="rich"
+          placement="top"
         >
-          {busy
-            ? "Saving…"
-            : published
-              ? "Unpublish"
-              : "Publish"}
-        </button>
+          <span>
+            <button
+              type="button"
+              onClick={toggle}
+              disabled={busy || (!published && !hasVersions)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                published
+                  ? "border border-border text-foreground hover:bg-muted/50"
+                  : "bg-accent-coral text-white hover:bg-accent-coral/90"
+              }`}
+            >
+              {busy
+                ? "Saving…"
+                : published
+                  ? "Unpublish"
+                  : "Publish"}
+            </button>
+          </span>
+        </Tooltip>
       </div>
 
       {err && (
@@ -1167,7 +1181,7 @@ function PublishControl({
             onFocus={(e) => e.currentTarget.select()}
             className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background text-foreground font-mono"
           />
-          <Tooltip label="Copy link">
+          <Tooltip content="Copy link">
             <button
               type="button"
               onClick={copy}

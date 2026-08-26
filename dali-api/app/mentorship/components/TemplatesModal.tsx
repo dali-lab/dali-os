@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { DocEditor } from "~/components/doc";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -466,11 +466,11 @@ function TemplateDetail({
             </button>
           </span>
         ) : (
-          <Tooltip label="Delete">
+          <Tooltip content="Delete template">
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              aria-label="Delete"
+              aria-label="Delete template"
               className={cn(
                 "inline-flex items-center justify-center",
                 os

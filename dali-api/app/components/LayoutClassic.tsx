@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
+import { Tooltip } from "~/components/ui/floating";
 import {
   LogOut,
   Calendar,
@@ -286,58 +287,62 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
     <>
       {/* Brand */}
       <div className={`h-14 flex items-center flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between px-3 gap-2'}`}>
-        <button
-          type="button"
-          {...tabClickProps({ url: '/', label: 'Home' })}
-          className="flex items-center gap-2.5 min-w-0 focus:outline-none"
-          title="Home"
-        >
-          {/* #566 brand logo, kept on the workspace-tab nav (not a <Link>) */}
-          <img
-            src="/icon-white.svg"
-            alt=""
-            aria-hidden="true"
-            className="w-8 h-8 flex-shrink-0"
-          />
-          {!collapsed && (
-            <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
-              DALI OS
-            </span>
-          )}
-        </button>
+        <Tooltip content={collapsed ? 'Home' : ''} placement="right">
+          <button
+            type="button"
+            {...tabClickProps({ url: '/', label: 'Home' })}
+            className="flex items-center gap-2.5 min-w-0 focus:outline-none"
+          >
+            {/* #566 brand logo, kept on the workspace-tab nav (not a <Link>) */}
+            <img
+              src="/icon-white.svg"
+              alt=""
+              aria-hidden="true"
+              className="w-8 h-8 flex-shrink-0"
+            />
+            {!collapsed && (
+              <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
+                DALI OS
+              </span>
+            )}
+          </button>
+        </Tooltip>
         {!collapsed && (
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              type="button"
-              {...tabClickProps({ url: '/help', label: 'Help' })}
-              className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
-              aria-label="Help"
-              title="Help"
-            >
-              <HelpCircle className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </button>
+            <Tooltip content="Help">
+              <button
+                type="button"
+                {...tabClickProps({ url: '/help', label: 'Help' })}
+                className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+                aria-label="Help"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Collapse sidebar" placement="right">
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>
       {collapsed && (
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className="hidden md:flex mx-2 mt-2 p-1.5 items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
-          aria-label="Expand sidebar"
-          title="Expand sidebar"
-        >
-          <PanelLeftOpen className="w-4 h-4" />
-        </button>
+        <Tooltip content="Expand sidebar" placement="right">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="hidden md:flex mx-2 mt-2 p-1.5 items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+            aria-label="Expand sidebar"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        </Tooltip>
       )}
 
       {/* Areas + nested sections */}
@@ -345,27 +350,28 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         {/* Global search launcher. The palette is otherwise keyboard-only (⌘K);
             this is the visible affordance that makes it discoverable and teaches
             the shortcut — styled like a search field rather than a nav button. */}
-        <button
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-          title="Search (⌘K)"
-          aria-label="Search"
-          className={`flex items-center rounded-md mb-1 text-sm transition-colors ${
-            collapsed
-              ? 'px-3 py-2 justify-center text-white/50 hover:text-white hover:bg-white/5'
-              : 'gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white/90'
-          }`}
-        >
-          <Search className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && (
-            <>
-              <span className="truncate">Search</span>
-              <kbd className="ml-auto text-[10px] font-mono text-white/40 bg-white/10 rounded px-1.5 py-0.5">
-                ⌘K
-              </kbd>
-            </>
-          )}
-        </button>
+        <Tooltip content={collapsed ? 'Search (⌘K)' : ''} placement="right">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+            className={`flex items-center rounded-md mb-1 text-sm transition-colors ${
+              collapsed
+                ? 'px-3 py-2 justify-center text-white/50 hover:text-white hover:bg-white/5'
+                : 'gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white/90'
+            }`}
+          >
+            <Search className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="truncate">Search</span>
+                <kbd className="ml-auto text-[10px] font-mono text-white/40 bg-white/10 rounded px-1.5 py-0.5">
+                  ⌘K
+                </kbd>
+              </>
+            )}
+          </button>
+        </Tooltip>
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
@@ -404,28 +410,30 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
           // the Tasks header + per-todo subtabs.
           return (
             <>
-              <button
-                type="button"
-                title={collapsed ? 'Home' : undefined}
-                {...tabClickProps({ url: '/', label: 'Home' })}
-                className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                  homeActive ? 'text-white' : 'text-white/65 hover:text-white'
-                }`}
-              >
-                <Home className="w-4 h-4 flex-shrink-0" />
-                {!collapsed && <span className="truncate">Home</span>}
-              </button>
-              <div className="flex flex-col">
+              <Tooltip content={collapsed ? 'Home' : ''} placement="right">
                 <button
                   type="button"
-                  title={collapsed ? `My Tasks (${taskCount})` : undefined}
-                  {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                    tasksActive || hasTasks ? 'text-white' : 'text-white/40 hover:text-white'
+                  {...tabClickProps({ url: '/', label: 'Home' })}
+                  className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                    homeActive ? 'text-white' : 'text-white/65 hover:text-white'
                   }`}
                 >
-                  {headerInner}
+                  <Home className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span className="truncate">Home</span>}
                 </button>
+              </Tooltip>
+              <div className="flex flex-col">
+                <Tooltip content={collapsed ? `My Tasks (${taskCount})` : ''} placement="right">
+                  <button
+                    type="button"
+                    {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                      tasksActive || hasTasks ? 'text-white' : 'text-white/40 hover:text-white'
+                    }`}
+                  >
+                    {headerInner}
+                  </button>
+                </Tooltip>
 
                 {!collapsed && hasTasks && (
                   <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
@@ -436,52 +444,50 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
                       // Accept/Maybe/Decline are available (same as Home).
                       if (t.source === 'meeting') {
                         return (
+                          <Tooltip key={t.id} content={t.title}>
+                            <button
+                              type="button"
+                              {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                              className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                            >
+                              <span className="truncate">{t.title}</span>
+                            </button>
+                          </Tooltip>
+                        )
+                      }
+                      return t.link ? (
+                        <Tooltip key={t.id} content={t.title}>
                           <button
-                            key={t.id}
                             type="button"
-                            title={t.title}
-                            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                            onClick={() => {
+                              // Tasks are notification rows — POST /read clears
+                              // the tile + drops the count once the user acts.
+                              // Self-clearing tasks (a form to submit, the
+                              // onboarding checklist) are the exception: opening
+                              // the link isn't acting on them, so they clear only
+                              // when their own action completes.
+                              if (!t.hasAction) {
+                                fetch(`/api/notifications/${t.id}/read`, {
+                                  method: 'POST',
+                                  credentials: 'include',
+                                  keepalive: true,
+                                }).then(() =>
+                                  window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
+                                )
+                              }
+                              openInWorkspace({ url: t.link!, label: t.title })
+                            }}
                             className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
                           >
                             <span className="truncate">{t.title}</span>
                           </button>
-                        )
-                      }
-                      return t.link ? (
-                        <button
-                          key={t.id}
-                          type="button"
-                          title={t.title}
-                          onClick={() => {
-                            // Tasks are notification rows — POST /read clears
-                            // the tile + drops the count once the user acts.
-                            // Self-clearing tasks (a form to submit, the
-                            // onboarding checklist) are the exception: opening
-                            // the link isn't acting on them, so they clear only
-                            // when their own action completes.
-                            if (!t.hasAction) {
-                              fetch(`/api/notifications/${t.id}/read`, {
-                                method: 'POST',
-                                credentials: 'include',
-                                keepalive: true,
-                              }).then(() =>
-                                window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
-                              )
-                            }
-                            openInWorkspace({ url: t.link!, label: t.title })
-                          }}
-                          className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
-                        >
-                          <span className="truncate">{t.title}</span>
-                        </button>
+                        </Tooltip>
                       ) : (
-                        <div
-                          key={t.id}
-                          title={t.title}
-                          className={`${cls} text-white/40`}
-                        >
-                          <span className="truncate">{t.title}</span>
-                        </div>
+                        <Tooltip key={t.id} content={t.title}>
+                          <div className={`${cls} text-white/40`}>
+                            <span className="truncate">{t.title}</span>
+                          </div>
+                        </Tooltip>
                       )
                     })}
                     {/* Entry point into the full My Tasks surface — Open list
@@ -502,18 +508,18 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         {navEntries.map((entry) => {
           const active = isEntryActive(entry)
           return (
-            <button
-              key={entry.key}
-              type="button"
-              title={collapsed ? entry.label : undefined}
-              {...tabClickProps({ url: entry.to, label: entry.label })}
-              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                active ? 'text-white' : 'text-white/65 hover:text-white'
-              }`}
-            >
-              <entry.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">{entry.label}</span>}
-            </button>
+            <Tooltip key={entry.key} content={collapsed ? entry.label : ''} placement="right">
+              <button
+                type="button"
+                {...tabClickProps({ url: entry.to, label: entry.label })}
+                className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                  active ? 'text-white' : 'text-white/65 hover:text-white'
+                }`}
+              >
+                <entry.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span className="truncate">{entry.label}</span>}
+              </button>
+            </Tooltip>
           )
         })}
       </nav>
@@ -521,15 +527,15 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
       {/* Footer — user + logout */}
       <div className="border-t border-white/10 p-2 flex-shrink-0">
         <div className={`flex items-center gap-1 px-1 py-1 ${collapsed ? 'justify-center' : ''}`}>
-          <button
-            type="button"
-            {...tabClickProps({ url: '/profile', label: 'Profile' })}
-            title={collapsed ? 'Open profile' : undefined}
-            aria-label="Open profile"
-            className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
-              collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
-            }`}
-          >
+          <Tooltip content={collapsed ? 'Open profile' : ''} placement="right">
+            <button
+              type="button"
+              {...tabClickProps({ url: '/profile', label: 'Profile' })}
+              aria-label="Open profile"
+              className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
+                collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
+              }`}
+            >
             <div className="relative w-8 h-8 flex-shrink-0">
               {photoUrl ? (
                 <img
@@ -543,31 +549,34 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
                 </div>
               )}
             </div>
-            {!collapsed && (
-              <span className="text-xs text-white/80 truncate min-w-0">
-                {user.firstName}
-              </span>
-            )}
-          </button>
+              {!collapsed && (
+                <span className="text-xs text-white/80 truncate min-w-0">
+                  {user.firstName}
+                </span>
+              )}
+            </button>
+          </Tooltip>
           {!collapsed && (
             <>
-              <button
-                type="button"
-                {...tabClickProps({ url: '/settings', label: 'Settings' })}
-                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
-                title="Settings"
-                aria-label="Settings"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-              <a
-                href="/logout"
-                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
-                title="Log out"
-                aria-label="Log out"
-              >
-                <LogOut className="w-4 h-4" />
-              </a>
+              <Tooltip content="Settings">
+                <button
+                  type="button"
+                  {...tabClickProps({ url: '/settings', label: 'Settings' })}
+                  className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
+                  aria-label="Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </Tooltip>
+              <Tooltip content="Log out">
+                <a
+                  href="/logout"
+                  className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
+                  aria-label="Log out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </a>
+              </Tooltip>
             </>
           )}
         </div>
@@ -603,7 +612,6 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
             type="button"
             {...tabClickProps({ url: '/', label: 'Home' })}
             className="flex items-center gap-2.5"
-            title="Home"
           >
             {/* #566 brand logo, kept on the workspace-tab nav (not a <Link>) */}
             <img
@@ -618,15 +626,16 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            {...tabClickProps({ url: '/help', label: 'Help' })}
-            className="p-1.5 text-white/40 hover:text-white/70"
-            aria-label="Help"
-            title="Help"
-          >
-            <HelpCircle className="w-5 h-5" />
-          </button>
+          <Tooltip content="Help">
+            <button
+              type="button"
+              {...tabClickProps({ url: '/help', label: 'Help' })}
+              className="p-1.5 text-white/40 hover:text-white/70"
+              aria-label="Help"
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
+          </Tooltip>
           <Link
             to="/profile"
             aria-label="Profile"
@@ -644,9 +653,11 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
               </span>
             )}
           </Link>
-          <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
-            <LogOut className="w-4 h-4" />
-          </a>
+          <Tooltip content="Log out">
+            <a href="/logout" className="text-white/40 hover:text-white/70 transition" aria-label="Log out">
+              <LogOut className="w-4 h-4" />
+            </a>
+          </Tooltip>
         </div>
       </div>
 
@@ -700,25 +711,25 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            title="Search (⌘K)"
             aria-label="Search"
             className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors"
           >
             <Search className="w-4 h-4" />
             <kbd className="text-[10px] font-mono text-white/40 bg-white/10 rounded px-1 py-0.5">⌘K</kbd>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFocusPreference(false)
-              window.location.reload()
-            }}
-            title="Show sidebar"
-            aria-label="Show sidebar"
-            className="p-2 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
-          >
-            <PanelLeftOpen className="w-4 h-4" />
-          </button>
+          <Tooltip content="Show sidebar" placement="right">
+            <button
+              type="button"
+              onClick={() => {
+                setFocusPreference(false)
+                window.location.reload()
+              }}
+              aria-label="Show sidebar"
+              className="p-2 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+          </Tooltip>
         </div>
       )}
 

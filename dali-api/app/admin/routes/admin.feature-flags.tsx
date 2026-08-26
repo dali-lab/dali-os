@@ -18,6 +18,7 @@ import { fullName } from "~/lib/display";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
 import { listFlagsForAdmin, type AdminFlagView } from "~/lib/feature-flags.server";
 import { buttonClasses } from "~/components/ui/Button";
+import { InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("feature-flags");
 
@@ -187,11 +188,13 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
           />
           Everyone
           <span className="text-xs text-zinc-400">(on for all users)</span>
+          <InfoTip content="When checked, this flag is on for every user regardless of role or person targeting. Disable the master switch above to turn it off for all." />
         </label>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
             Roles
+            <InfoTip content="The flag is on for any user who holds at least one of these roles. Ignored when Everyone is checked." />
           </p>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {ROLE_TARGETS.map((r) => (
@@ -217,8 +220,9 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
             Specific people
+            <InfoTip content="Individual users who always get this flag regardless of role. Useful for staged rollouts or testing with named members." />
           </p>
           {userIds.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">

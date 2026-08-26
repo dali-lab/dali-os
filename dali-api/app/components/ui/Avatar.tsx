@@ -1,6 +1,6 @@
 import { cn } from "~/lib/cn";
 import { initialsFromName } from "~/lib/display";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { formatLastActive } from "~/lib/presence";
@@ -139,7 +139,7 @@ function AvatarWithStatus({
   return (
     // portal: avatars often sit inside overflow-clipped scroll panes (the
     // directory table, tight lists) — without it the tip is cut off at the edge.
-    <Tooltip label={tooltipLabel} side="top" portal>
+    <Tooltip content={tooltipLabel} placement="top">
       {wrapper}
     </Tooltip>
   );
