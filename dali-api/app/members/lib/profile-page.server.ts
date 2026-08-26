@@ -101,6 +101,13 @@ export type ProfilePageData = {
     level: string;
     project: { id: string; name: string; iconEmoji: string | null };
     domain: { name: string };
+    /** Guards for the Core-only inline level editor, mirroring
+     *  /api/projects/assignments/:id/level: the eligibility ceiling a level
+     *  can't exceed, and the count of mentees this member still holds on the
+     *  assignment (a demotion is blocked while > 0). Null/0 for viewers who
+     *  can't edit — the read-only badge doesn't need them. */
+    eligibilityLevel: string | null;
+    activeMenteeCount: number;
   }>;
   pendingReviews: number;
   /** True only when the subject has unsubmitted reviews — gates the activity
@@ -298,13 +305,15 @@ export async function loadProfilePage({
       getPresenceUser(auth.user.sub),
     ]);
 
-  const [projectAssignments, pendingReviews] = await Promise.all([
+  const [projectAssignmentRows, pendingReviews] = await Promise.all([
     term
       ? prisma.projectAssignment.findMany({
           where: { userId: targetId, termId: term.id },
           select: {
             id: true,
             level: true,
+            domainId: true,
+            projectId: true,
             project: { select: { id: true, name: true, iconEmoji: true } },
             domain: { select: { name: true } },
           },
@@ -327,6 +336,37 @@ export async function loadProfilePage({
       ? { apple: walletAppleConfigured(), google: walletGoogleConfigured() }
       : null;
   const canRevokeWalletPass = isSelf || canManageEligibility;
+
+  // Inline level editing on the profile is Core-only and reuses the project-hub
+  // guards: a target level can't exceed the member's DomainEligibility ceiling
+  // for the domain, and a demotion is blocked while they still mentor someone
+  // on that (project, term, domain). The guard inputs are only fetched when the
+  // editor will actually render.
+  const eligibilityByDomain = new Map(
+    member.domainEligibilities.map((e) => [e.domain.id, e.level as string]),
+  );
+  const menteeCountByProjectDomain = new Map<string, number>();
+  if (canManageEligibility && term && projectAssignmentRows.length > 0) {
+    const grouped = await prisma.mentorshipPair.groupBy({
+      by: ["projectId", "domainId"],
+      where: { mentorUserId: targetId, termId: term.id },
+      _count: { _all: true },
+    });
+    for (const g of grouped) {
+      menteeCountByProjectDomain.set(`${g.projectId}:${g.domainId}`, g._count._all);
+    }
+  }
+  const projectAssignments = projectAssignmentRows.map((a) => ({
+    id: a.id,
+    level: a.level,
+    project: a.project,
+    domain: { name: a.domain.name },
+    eligibilityLevel: canManageEligibility
+      ? eligibilityByDomain.get(a.domainId) ?? null
+      : null,
+    activeMenteeCount:
+      menteeCountByProjectDomain.get(`${a.projectId}:${a.domainId}`) ?? 0,
+  }));
 
   // Education engagement is for the member themself and Core — not peer
   // browsing. Teaching history is public credit, but keeping one gate for the
