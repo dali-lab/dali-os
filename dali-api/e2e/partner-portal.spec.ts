@@ -164,10 +164,14 @@ test.describe('project hub share toggle (member)', () => {
       .getByRole('button', { name: title, exact: true })
       .locator('xpath=following::button[@aria-label="Document actions"][1]');
 
-  test('project details shows the Partners section and share states', async ({ page }) => {
+  test('project details shows the Partners section; drive shows share states', async ({ page }) => {
+    // Partners live on Project details; the project's files (and their
+    // partner-share toggles) live on the Drive tab.
     await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
     await expect(page.getByText('Pat Tuck (Program Sponsor)')).toBeVisible();
+
+    await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
     // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
     // read off each row's menu, which names the action that would flip it.
     await docMenu(page, 'Weekly Partner Update').click();
@@ -184,7 +188,7 @@ test.describe('project hub share toggle (member)', () => {
   });
 
   test('toggling share flips the badge and back', async ({ page }) => {
-    await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
+    await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
     await docMenu(page, 'Internal Retro Notes').click();
     await page.getByRole('menuitem', { name: 'Share with partner' }).click();
     await expect(
