@@ -18,7 +18,7 @@ import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
@@ -1760,7 +1760,7 @@ export default function ProjectDetail() {
         {/* Scope/challenge config lives behind this gear, visible only to
             Core/Admin/Staff. */}
         {canViewScope && (
-          <Tooltip label="Project settings" className="ml-auto -mb-px">
+          <Tooltip content="Project settings" className="ml-auto -mb-px">
             <button
               type="button"
               onClick={() => setScopeSettingsOpen(true)}
@@ -2152,7 +2152,7 @@ function ProjectHeader({
       {canEdit &&
         (editing ? (
           <>
-            <Tooltip label="Cancel">
+            <Tooltip content="Cancel">
               <button
                 type="button"
                 onClick={() => setEditing(false)}
@@ -2162,7 +2162,7 @@ function ProjectHeader({
                 <X className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
-            <Tooltip label="Save">
+            <Tooltip content="Save">
               <button
                 type="button"
                 onClick={() => {
@@ -2177,7 +2177,7 @@ function ProjectHeader({
             </Tooltip>
           </>
         ) : (
-          <Tooltip label="Edit">
+          <Tooltip content="Edit">
             <button
               type="button"
               onClick={openEditor}
@@ -3799,7 +3799,7 @@ function PartnersSection({
                 >
                   <input type="hidden" name="intent" value="partner-end" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip label="End partnership (keeps the record)">
+                  <Tooltip content="End partnership (keeps the record)">
                     <button
                       type="submit"
                       aria-label="End partnership"
@@ -3823,7 +3823,7 @@ function PartnersSection({
                 >
                   <input type="hidden" name="intent" value="partner-unlink" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip label="Unlink organization (erases the record)">
+                  <Tooltip content="Unlink organization (erases the record)">
                     <button
                       type="submit"
                       aria-label="Unlink organization"
@@ -3939,14 +3939,14 @@ function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; c
       <div className="flex items-center gap-3 flex-shrink-0">
         {/* Read-only status badges stay inline; all actions live in "⋯". */}
         {doc.partnerVisible && (
-          <Tooltip label="Shared with partner">
+          <Tooltip content="Shared with partner">
             <span className="flex items-center text-accent-teal">
               <Handshake className="w-3.5 h-3.5" />
             </span>
           </Tooltip>
         )}
         {doc.publicVisible && (
-          <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+          <Tooltip content="Public write-up — rendered on this project's page on dali.website">
             <span className="flex items-center text-accent-coral">
               <Globe className="w-3.5 h-3.5" />
             </span>
@@ -4393,7 +4393,7 @@ function DocumentsBlock({
         </Link>
         <div className="flex items-center gap-2 flex-shrink-0">
           {f.partnerVisible && !canEdit && (
-            <Tooltip label="Shared with partner">
+            <Tooltip content="Shared with partner">
               <span className="flex items-center text-accent-teal">
                 <Handshake className="w-3.5 h-3.5" />
               </span>
@@ -4678,7 +4678,7 @@ function DocumentsBlock({
                   </button>
                   {canEdit && (
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <Tooltip label="Add document">
+                      <Tooltip content="Add document">
                         <button
                           type="button"
                           disabled={busy}
@@ -4689,7 +4689,7 @@ function DocumentsBlock({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      <Tooltip label="Upload file into folder">
+                      <Tooltip content="Upload file into folder">
                         <button
                           type="button"
                           disabled={busy}
