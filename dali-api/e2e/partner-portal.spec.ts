@@ -169,7 +169,10 @@ test.describe('project hub share toggle (member)', () => {
     // partner-share toggles) live on the Drive tab.
     await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
-    await expect(page.getByText('Pat Tuck (Program Sponsor)')).toBeVisible();
+    // The os Partners view leads with the contacts — name and role on their
+    // own lines rather than the old "Name (Role)" org summary.
+    await expect(page.getByText('Pat Tuck', { exact: true })).toBeVisible();
+    await expect(page.getByText('Program Sponsor', { exact: true })).toBeVisible();
 
     await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
     // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
