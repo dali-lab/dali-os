@@ -1,0 +1,21 @@
+<svg width="1032" height="336" viewBox="0 0 1032 336" xmlns="http://www.w3.org/2000/svg">
+  <!-- Google Wallet heroImage: same DALI-blue + organic blob motif as the Apple
+       strip, at Google's ~3:1 banner ratio. Source of hero.png. -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22617F"/>
+      <stop offset="1" stop-color="#153A52"/>
+    </linearGradient>
+    <filter id="soft" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="64"/>
+    </filter>
+    <clipPath id="clip"><rect width="1032" height="336"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1032" height="336" fill="url(#base)"/>
+    <circle cx="700" cy="96"  r="230" fill="#00ADAB" opacity="0.48" filter="url(#soft)"/>
+    <circle cx="1000" cy="300" r="230" fill="#FF8B81" opacity="0.48" filter="url(#soft)"/>
+    <circle cx="890" cy="20"  r="150" fill="#FFD461" opacity="0.48" filter="url(#soft)"/>
+    <circle cx="520" cy="330" r="200" fill="#80D5CD" opacity="0.30" filter="url(#soft)"/>
+  </g>
+</svg>

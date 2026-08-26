@@ -1,0 +1,22 @@
+<svg width="375" height="98" viewBox="0 0 375 98" xmlns="http://www.w3.org/2000/svg">
+  <!-- Apple storeCard strip: DALI-blue base with soft organic color blobs
+       (teal/coral/yellow), kept clear on the left so the overlaid member name
+       stays legible. Source of strip.png / @2x / @3x. Palette per DALI guide. -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22617F"/>
+      <stop offset="1" stop-color="#153A52"/>
+    </linearGradient>
+    <filter id="soft" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+    <clipPath id="clip"><rect width="375" height="98"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="375" height="98" fill="url(#base)"/>
+    <circle cx="245" cy="26" r="72" fill="#00ADAB" opacity="0.50" filter="url(#soft)"/>
+    <circle cx="362" cy="82" r="72" fill="#FF8B81" opacity="0.50" filter="url(#soft)"/>
+    <circle cx="322" cy="4"  r="46" fill="#FFD461" opacity="0.50" filter="url(#soft)"/>
+    <circle cx="180" cy="98" r="60" fill="#80D5CD" opacity="0.30" filter="url(#soft)"/>
+  </g>
+</svg>

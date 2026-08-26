@@ -46,7 +46,12 @@ export function walletAppleConfigured(): boolean {
 export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { firstName: true, lastName: true, createdAt: true },
+    select: {
+      firstName: true,
+      lastName: true,
+      classYear: true,
+      daliMember: { select: { onboardedAt: true } },
+    },
   });
   if (!user) throw new Error(`User not found: ${userId}`);
 
@@ -67,34 +72,50 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
       organizationName: "DALI Lab",
       description: "DALI Membership",
       serialNumber: userId,
-      backgroundColor: "rgb(0, 83, 164)",
-      foregroundColor: "rgb(255,255,255)",
-      labelColor: "rgb(220,230,245)",
+      logoText: "Membership",
+      // Official DALI blue (#1E5779).
+      backgroundColor: "rgb(30, 87, 121)",
+      foregroundColor: "rgb(255, 255, 255)",
+      labelColor: "rgb(199, 218, 231)",
     },
   );
 
-  // Set pass style to generic (resets any prior field arrays).
-  pass.type = "generic";
+  // storeCard: a branded strip banner with the member name over it and the
+  // fields below (setting the style resets the field arrays).
+  pass.type = "storeCard";
 
-  // Primary field: member full name.
+  // Primary field: member name, rendered over the strip.
   pass.primaryFields.push({ key: "member", label: "MEMBER", value: `${user.firstName} ${user.lastName}` });
 
-  // Secondary field: year the member joined.
-  const memberSince = String(user.createdAt.getFullYear());
-  pass.secondaryFields.push({ key: "memberSince", label: "MEMBER SINCE", value: memberSince });
+  // Secondary fields: onboarding-based "member since" + Dartmouth class year.
+  // Both are staleness-proof (they don't change term to term), so a static pass
+  // stays correct; each is omitted when we don't have the value.
+  if (user.daliMember?.onboardedAt) {
+    pass.secondaryFields.push({
+      key: "memberSince",
+      label: "MEMBER SINCE",
+      value: String(user.daliMember.onboardedAt.getFullYear()),
+    });
+  }
+  if (user.classYear) {
+    pass.secondaryFields.push({ key: "class", label: "CLASS", value: `'${String(user.classYear).slice(-2)}` });
+  }
 
   // Barcode: signed member token as a QR code.
   const memberSecret = await ensureWalletSecret(userId);
   const token = signWalletToken(userId, memberSecret);
   pass.setBarcodes({ format: "PKBarcodeFormatQR", message: token, messageEncoding: "iso-8859-1" });
 
-  // Images: passkit-generator requires at least icon.png.
-  const iconBuf = readBrandAsset("icon-blue.png");
-  const logoBuf = readBrandAsset("logo-blue.png");
+  // Images: white icon/logo for the dark card, plus the branded strip banner.
+  const iconBuf = readBrandAsset("icon-white.png");
+  const logoBuf = readBrandAsset("logo-white.png");
   pass.addBuffer("icon.png", iconBuf);
   pass.addBuffer("icon@2x.png", iconBuf);
   pass.addBuffer("logo.png", logoBuf);
   pass.addBuffer("logo@2x.png", logoBuf);
+  pass.addBuffer("strip.png", readBrandAsset("wallet/strip.png"));
+  pass.addBuffer("strip@2x.png", readBrandAsset("wallet/strip@2x.png"));
+  pass.addBuffer("strip@3x.png", readBrandAsset("wallet/strip@3x.png"));
 
   return pass.getAsBuffer();
 }

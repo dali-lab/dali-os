@@ -70,7 +70,12 @@ export async function buildGoogleWalletSaveUrl(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { firstName: true, lastName: true },
+    select: {
+      firstName: true,
+      lastName: true,
+      classYear: true,
+      daliMember: { select: { onboardedAt: true } },
+    },
   });
   if (!user) throw new Error(`User not found: ${userId}`);
 
@@ -78,6 +83,20 @@ export async function buildGoogleWalletSaveUrl(
   const barcodeValue = signWalletToken(userId, memberSecret);
 
   const genericClass = { id: classId };
+
+  // Onboarding-based "member since" + class year, mirroring the Apple pass.
+  // Each omitted when unknown; both are staleness-proof.
+  const textModulesData: Array<{ id: string; header: string; body: string }> = [];
+  if (user.daliMember?.onboardedAt) {
+    textModulesData.push({
+      id: "member_since",
+      header: "Member since",
+      body: String(user.daliMember.onboardedAt.getFullYear()),
+    });
+  }
+  if (user.classYear) {
+    textModulesData.push({ id: "class", header: "Class", body: `'${String(user.classYear).slice(-2)}` });
+  }
 
   const genericObject = {
     id: objectId,
@@ -95,8 +114,10 @@ export async function buildGoogleWalletSaveUrl(
     subheader: {
       defaultValue: { language: "en-US", value: "Membership" },
     },
-    hexBackgroundColor: "#0053a4",
+    hexBackgroundColor: "#1E5779",
     logo: { sourceUri: { uri: `${origin}/logo-white.png` } },
+    heroImage: { sourceUri: { uri: `${origin}/wallet/hero.png` } },
+    textModulesData,
     barcode: { type: "QR_CODE", value: barcodeValue },
   };
 
