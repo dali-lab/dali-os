@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight } from "lucide-react";
+import { Link } from "react-router";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 import {
   DAY,
   dayOffset,
@@ -72,6 +73,16 @@ export type TimelineTerm = { code: string; startsAt: string; endsAt: string };
 
 export type StoryDependencyEdge = { storyId: string; dependsOnStoryId: string };
 
+// A meeting occurrence pinned to the timeline as a day chip. Already expanded
+// server-side (one entry per occurrence of a recurring meeting).
+export type TimelineMeeting = {
+  id: string;
+  meetingId: string;
+  title: string;
+  startsAt: string;
+  type: "Team" | "Partner" | "Other" | null;
+};
+
 type Level = "epic" | "story" | "task";
 
 // ── Geometry ────────────────────────────────────────────────────────────────
@@ -83,6 +94,10 @@ const HEADER_ROW_H = 34;
 const HEADER_ROWS = 3; // month, day number, sprint band
 const BODY_TOP_PAD = 14; // clear gap below the sprint band before bars start
 const BODY_BOTTOM_PAD = 20;
+// Reserved band under the header for meeting chips, added to the body's top
+// offset only when there are meetings to show so a project with none loses no
+// vertical room.
+const MEETING_ROW_H = 30;
 
 // Cap on the scroll box. Past this the body scrolls vertically inside the card
 // rather than pushing the rest of the page down — a project with many
@@ -582,6 +597,7 @@ function HoverBar({
 
 export function EpicsTimeline({
   epics,
+  meetings = [],
   taskCounts,
   terms = [],
   storyDependencies = [],
@@ -593,6 +609,9 @@ export function EpicsTimeline({
   onTaskClick,
 }: {
   epics: TimelineEpic[];
+  // Meeting occurrences pinned to the timeline as day chips, in a reserved
+  // band just under the header. Empty = no band, no vertical cost.
+  meetings?: TimelineMeeting[];
   // Optional per-epic task progress keyed by epic id (Cancelled tasks
   // excluded), shown in the epic hover card.
   taskCounts?: Record<string, { done: number; total: number }>;
@@ -812,6 +831,19 @@ export function EpicsTimeline({
       ? ((today - bounds.min) / DAY) * PX_PER_DAY
       : null;
 
+  // Meeting chips ride a reserved band under the header. Position each by its
+  // UTC day; drop any outside the drawn range. The band's height is only paid
+  // when there are chips (folded into the layout cursor below).
+  const meetingBandH = meetings.length > 0 ? MEETING_ROW_H : 0;
+  const meetingChips = useMemo(() => {
+    if (!bounds) return [] as (TimelineMeeting & { left: number })[];
+    return meetings.flatMap((m) => {
+      const day = utcDayOf(m.startsAt);
+      if (day < bounds.min || day > bounds.max) return [];
+      return [{ ...m, left: ((day - bounds.min) / DAY) * PX_PER_DAY }];
+    });
+  }, [meetings, bounds]);
+
   // Only epics overlapping the visible day range are laid out, and they stack
   // from the top in start order — so scrolling sideways keeps the visible work
   // compact instead of leaving the viewport parked on empty rows.
@@ -902,7 +934,7 @@ export function EpicsTimeline({
       );
     }
 
-    let cursor = HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD;
+    let cursor = HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + meetingBandH;
     for (const e of visible) {
       const eh = epicH.get(e.id)!;
       epicBars.push({
@@ -956,10 +988,10 @@ export function EpicsTimeline({
     const height =
       visible.length > 0
         ? cursor - EPIC_GAP + BODY_BOTTOM_PAD
-        : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
+        : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + meetingBandH + 40;
 
     return { epicBars, storyBars, taskBars, storyRects, height };
-  }, [epics, bounds, view, os]);
+  }, [epics, bounds, view, os, meetingBandH]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
   // is what makes the horizontal scrollbar jump around under the cursor.
@@ -1241,6 +1273,29 @@ export function EpicsTimeline({
                     </div>
                   )}
                 </div>
+
+                {/* Meeting chips — a reserved band just under the header, each
+                    pinned to its day. Amber, like the design. Clicking opens
+                    the calendar. */}
+                {meetingChips.length > 0 && (
+                  <div
+                    className="absolute inset-x-0 z-[15]"
+                    style={{ top: HEADER_ROWS * HEADER_ROW_H + 6, height: MEETING_ROW_H }}
+                  >
+                    {meetingChips.map((m) => (
+                      <Link
+                        key={m.id}
+                        to="/calendar"
+                        title={`${m.title}${m.type ? ` · ${m.type}` : ""}`}
+                        className="absolute flex h-[22px] max-w-[180px] items-center gap-1 truncate rounded-md border border-os-amber/50 bg-os-amber/15 px-2 text-[12px] font-medium text-os-amber transition-colors hover:bg-os-amber/25"
+                        style={{ left: m.left, top: 0 }}
+                      >
+                        <CalendarDays className="h-3 w-3 flex-shrink-0" aria-hidden />
+                        <span className="truncate">{m.title}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
 
                 {/* Dependency arrows between story bars. z-20 lifts them above
                     the bars, pointer-events-none keeps the bars clickable. A

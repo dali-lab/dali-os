@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -28,6 +28,7 @@ import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
+import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -154,10 +155,10 @@ function isTab(x: string | null): x is Tab {
 
 // The dali.os cut of the same page. Nothing new is computed for it — the
 // content is the classic tabs redealt: the planning timeline and the task
-// board are one "Progress" surface, the meetings list gets its own tab
-// instead of being a card buried in Overview, and what's left of Overview is
-// the project's details.
-const OS_TABS = ["progress", "meetings", "details", "mentorship"] as const;
+// board are one "Progress" surface, the project's files get their own "Drive"
+// tab, and what's left of Overview is the project's details. Meetings are no
+// longer a tab — they ride the Progress timeline as day-pinned chips.
+const OS_TABS = ["progress", "drive", "details", "mentorship"] as const;
 type OsTab = (typeof OS_TABS)[number];
 function isOsTab(x: string | null): x is OsTab {
   return (OS_TABS as readonly string[]).includes(x ?? "");
@@ -165,7 +166,7 @@ function isOsTab(x: string | null): x is OsTab {
 
 const OS_TAB_LABELS: Record<OsTab, string> = {
   progress: "Progress",
-  meetings: "Meetings",
+  drive: "Drive",
   details: "Project details",
   mentorship: "Mentorship",
 };
@@ -178,10 +179,11 @@ const CLASSIC_TO_OS: Record<Tab, OsTab> = {
   board: "progress",
   mentorship: "mentorship",
 };
-// And back, for a member who lands on an os link with the flag off.
+// And back, for a member who lands on an os link with the flag off. Drive has
+// no classic equivalent — its files live in Overview there.
 const OS_TO_CLASSIC: Record<OsTab, Tab> = {
   progress: "board",
-  meetings: "overview",
+  drive: "overview",
   details: "overview",
   mentorship: "mentorship",
 };
@@ -487,6 +489,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     bidDomains,
     linkablePartnerOrgs,
     meetingRows,
+    timelineMeetingRows,
     presenceUser,
     activityRows,
   ] = await Promise.all([
@@ -569,6 +572,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { selectedAt: "asc" },
       take: 5,
       select: { id: true, title: true, selectedAt: true, durationMinutes: true },
+    }),
+    // Every confirmed/searching meeting for this project, with the data needed
+    // to expand recurrences — these ride the Progress timeline as day-pinned
+    // chips (os tab set). Cancelled meetings are excluded; unscheduled ones
+    // (selectedAt null) expand to nothing.
+    prisma.scheduledMeeting.findMany({
+      where: { projectId: project.id, status: { not: "Cancelled" } },
+      select: {
+        id: true,
+        title: true,
+        selectedAt: true,
+        durationMinutes: true,
+        recurrenceRule: true,
+        meetingType: true,
+        exceptions: {
+          select: {
+            originalStart: true,
+            overrideStart: true,
+            overrideDurationMin: true,
+            cancelled: true,
+          },
+        },
+      },
     }),
     // Presence user (collab editor wiring).
     getPresenceUser(
@@ -1151,6 +1177,54 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : [],
   );
 
+  // Meeting chips for the Progress timeline: expand each meeting's occurrences
+  // across the plan's date span (padded), so a recurring sync shows on every
+  // week it lands on. The client positions each by its day and clamps to the
+  // visible range, so a slightly wider window here is harmless.
+  const timelineMeetings = (() => {
+    const DAY_MS = 86_400_000;
+    const times: number[] = [Date.now()];
+    const add = (iso: string | null | undefined) => {
+      if (!iso) return;
+      const n = Date.parse(iso);
+      if (!Number.isNaN(n)) times.push(n);
+    };
+    for (const e of epics) {
+      add(e.startsAt);
+      add(e.endsAt);
+      for (const s of e.stories) {
+        add(s.startsAt);
+        add(s.endsAt);
+        for (const t of s.tasks) {
+          add(t.startsAt);
+          add(t.endsAt);
+        }
+      }
+    }
+    const windowStart = new Date(Math.min(...times) - 45 * DAY_MS);
+    const windowEnd = new Date(Math.max(...times) + 75 * DAY_MS);
+    return timelineMeetingRows
+      .flatMap((m) =>
+        expandOccurrences(
+          {
+            selectedAt: m.selectedAt,
+            durationMinutes: m.durationMinutes,
+            recurrenceRule: m.recurrenceRule,
+          },
+          m.exceptions,
+          windowStart,
+          windowEnd,
+        ).map((occ) => ({
+          id: `${m.id}:${occ.originalStart.getTime()}`,
+          meetingId: m.id,
+          title: m.title,
+          startsAt: occ.start.toISOString(),
+          type: m.meetingType,
+        })),
+      )
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  })();
+
   // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
   const recentActivity = activityRows;
 
@@ -1220,6 +1294,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1578,6 +1653,7 @@ export default function ProjectDetail() {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1615,6 +1691,33 @@ export default function ProjectDetail() {
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+
+  // Progress people filter — shared by the timeline and the board. Lives in the
+  // URL (?people=<id,id>) like the board's other filters, so a person-sliced
+  // view is a link worth sending. Options are only people who hold tasks.
+  const peopleOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const t of tasks) for (const a of t.assignees) byId.set(a.id, a.name);
+    return [...byId]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tasks]);
+  const selectedPeopleIds = useMemo(
+    () => (searchParams.get("people") ?? "").split(",").filter(Boolean),
+    [searchParams],
+  );
+  const setSelectedPeopleIds = useCallback(
+    (ids: string[]) =>
+      setSearchParams(
+        (prev) => {
+          if (ids.length) prev.set("people", ids.join(","));
+          else prev.delete("people");
+          return prev;
+        },
+        { replace: true, preventScrollReset: true },
+      ),
+    [setSearchParams],
+  );
 
   const tabParam = searchParams.get("tab");
   // Read the param under whichever tab set is live, translating one written in
@@ -1688,6 +1791,12 @@ export default function ProjectDetail() {
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
       onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
+      // Progress-tab controls: meeting chips on the timeline, the shared people
+      // filter, and the New ▸ Meeting deep link. Rendered only under os.
+      timelineMeetings={os ? timelineMeetings : []}
+      peopleOptions={os ? peopleOptions : []}
+      selectedPeopleIds={os ? selectedPeopleIds : []}
+      onPeopleChange={setSelectedPeopleIds}
     />
   );
   const board = (
@@ -1699,6 +1808,7 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
+      filterPeopleIds={os ? selectedPeopleIds : []}
     />
   );
 
@@ -1789,6 +1899,7 @@ export default function ProjectDetail() {
           // so Project details renders without it.
           planning={os ? null : planningNode}
           showMeetings={!os}
+          showDocuments={!os}
           project={project}
           teams={teams}
           documents={documents}
@@ -1865,12 +1976,18 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {tab === "meetings" && (
-          <MeetingsSection
-            meetings={upcomingMeetings}
-            calendar={projectCalendar}
+        {/* Drive (os): the project's files, lifted out of Project details onto
+            their own tab — the collab-doc pages and uploaded files in one
+            folder tree. */}
+        {tab === "drive" && (
+          <DocumentsBlock
             projectId={project.id}
-            standalone
+            documents={documents}
+            pinnedDocuments={pinnedDocuments}
+            files={files}
+            fileEpics={boardOptions.epics}
+            canEdit={canEdit}
+            hasActivePartner={hasActivePartner}
           />
         )}
 
@@ -2136,14 +2253,12 @@ function ProjectHeader({
   // them alone on the right, the os layout groups them with the tag clusters.
   const editControls = (
     <div className="flex items-center gap-1.5 shrink-0">
-      {!editing && (
+      {/* Classic keeps a header Schedule-meeting button; under os this folds
+          into the Progress toolbar's New ▸ Meeting. */}
+      {!editing && !os && (
         <Link
           to={`/calendar?tab=schedule&project=${project.id}`}
-          className={
-            os
-              ? "os-edit-btn"
-              : "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-          }
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
         >
           <CalendarPlus className="w-4 h-4" />
           Schedule meeting
@@ -3282,6 +3397,7 @@ function OverviewTab({
   fileEpics,
   upcomingMeetings,
   showMeetings = true,
+  showDocuments = true,
   recentActivity,
   canEdit,
   canEditFinance,
@@ -3304,8 +3420,11 @@ function OverviewTab({
   files: LoaderData["files"];
   fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
-  // False under the os tab set, where Meetings is its own tab.
+  // False under the os tab set, where meetings ride the Progress timeline.
   showMeetings?: boolean;
+  // False under the os tab set, where the project's files are their own
+  // "Drive" tab rather than a block at the bottom of Project details.
+  showDocuments?: boolean;
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
   canEditFinance: boolean;
@@ -3450,16 +3569,19 @@ function OverviewTab({
 
       {/* Drive — the project's one file surface: collab-doc pages and uploaded
           files together in one folder tree. Files render inline (root-level
-          at the bottom, folder-placed nested under the matching folder). */}
-      <DocumentsBlock
-        projectId={project.id}
-        documents={documents}
-        pinnedDocuments={pinnedDocuments}
-        files={files}
-        fileEpics={fileEpics}
-        canEdit={canEdit}
-        hasActivePartner={hasActivePartner}
-      />
+          at the bottom, folder-placed nested under the matching folder). Under
+          the os tab set this is lifted out to a "Drive" tab of its own. */}
+      {showDocuments && (
+        <DocumentsBlock
+          projectId={project.id}
+          documents={documents}
+          pinnedDocuments={pinnedDocuments}
+          files={files}
+          fileEpics={fileEpics}
+          canEdit={canEdit}
+          hasActivePartner={hasActivePartner}
+        />
+      )}
 
       {/* Recent project-scoped audit activity — editors only (the loader
           returns an empty list otherwise). Read-only. */}
@@ -4773,6 +4895,10 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
+  timelineMeetings = [],
+  peopleOptions = [],
+  selectedPeopleIds = [],
+  onPeopleChange,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -4786,6 +4912,10 @@ function PlanningTab({
   userName: string;
   onTaskClick: (taskId: string) => void;
   onAddTask?: () => void;
+  timelineMeetings?: LoaderData["timelineMeetings"];
+  peopleOptions?: { id: string; name: string }[];
+  selectedPeopleIds?: string[];
+  onPeopleChange?: (ids: string[]) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -4802,6 +4932,10 @@ function PlanningTab({
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
+        timelineMeetings={timelineMeetings}
+        peopleOptions={peopleOptions}
+        selectedPeopleIds={selectedPeopleIds}
+        onPeopleChange={onPeopleChange}
       />
     </div>
   );
