@@ -3,6 +3,7 @@ import {
   Form,
   Link,
   useFetcher,
+  useLocation,
   useNavigation,
   useSubmit,
 } from "react-router";
@@ -257,6 +258,7 @@ export function MemberProfileView({
         projectAssignments={projectAssignments}
         pendingReviews={pendingReviews}
         showReviewsRow={showReviewsRow}
+        canEditLevel={canManageEligibility}
       />
 
       {(wallet || (canRevokeWalletPass && !isSelf)) && (
@@ -740,6 +742,7 @@ function ActivitySection({
   projectAssignments,
   pendingReviews,
   showReviewsRow,
+  canEditLevel,
   embedded,
 }: {
   isSelf: boolean;
@@ -747,15 +750,44 @@ function ActivitySection({
   projectAssignments: ProfilePageData["projectAssignments"];
   pendingReviews: number;
   showReviewsRow: boolean;
+  /** Core viewers get the inline P1/P2/P3 editor on each project row — this is
+   *  where assignment levels are changed now that the project hub links here. */
+  canEditLevel: boolean;
   embedded?: boolean;
 }) {
+  // The project hub deep-links to this card (#project-assignments) to change a
+  // level. Scroll it into view and flash it so the target is obvious.
+  const location = useLocation();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [highlight, setHighlight] = useState(false);
+  useEffect(() => {
+    if (location.hash !== "#project-assignments") return;
+    const el = cardRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() =>
+      el.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+    setHighlight(true);
+    const t = setTimeout(() => setHighlight(false), 2000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [location.hash]);
+
   return (
     <div
-      className={
+      id="project-assignments"
+      ref={cardRef}
+      className={`${
         embedded
           ? "flex flex-col gap-3"
           : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      }
+      } ${
+        highlight
+          ? "ring-2 ring-accent-coral ring-offset-2 ring-offset-background transition-shadow"
+          : "transition-shadow"
+      }`}
     >
       {!embedded && (
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
@@ -779,22 +811,43 @@ function ActivitySection({
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {projectAssignments.map((a) => (
-              <li key={a.id}>
-                <Link
-                  to={`/projects/${a.project.id}`}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+            {projectAssignments.map((a) =>
+              canEditLevel ? (
+                // The level control is interactive, so the project link can't
+                // wrap the whole row — split them.
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border"
                 >
-                  <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                  <Link
+                    to={`/projects/${a.project.id}`}
+                    className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
+                  >
                     <ProjectIcon iconEmoji={a.project.iconEmoji} />
                     <span className="truncate">{a.project.name}</span>
+                  </Link>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                    {a.domain.name}
+                    <ProfileLevelEditor assignment={a} />
                   </span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {a.domain.name} · {a.level}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                </li>
+              ) : (
+                <li key={a.id}>
+                  <Link
+                    to={`/projects/${a.project.id}`}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                      <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                      <span className="truncate">{a.project.name}</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {a.domain.name} · {a.level}
+                    </span>
+                  </Link>
+                </li>
+              ),
+            )}
           </ul>
         )}
       </div>
@@ -816,6 +869,79 @@ function ActivitySection({
         </div>
       )}
     </div>
+  );
+}
+
+// Core-only inline level editor for one project assignment. Posts to the same
+// resource route the project hub used to call; the guards (eligibility ceiling,
+// mentee-blocked demotion) are enforced server-side and previewed here.
+const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
+const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
+
+function ProfileLevelEditor({
+  assignment,
+}: {
+  assignment: ProfilePageData["projectAssignments"][number];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ceilingRank = assignment.eligibilityLevel
+    ? LEVEL_RANK[assignment.eligibilityLevel as "P1" | "P2" | "P3"]
+    : 0;
+  const currentRank = LEVEL_RANK[assignment.level as "P1" | "P2" | "P3"];
+  const blockedByMentees = assignment.activeMenteeCount > 0;
+
+  const value =
+    (fetcher.formData?.get("level") as string | null) ?? assignment.level;
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
+    if (opt === assignment.level) return null;
+    if (LEVEL_RANK[opt] > ceilingRank) {
+      return assignment.eligibilityLevel
+        ? `Eligible only up to ${assignment.eligibilityLevel} in ${assignment.domain.name}. Promote first.`
+        : `No ${assignment.domain.name} eligibility. Promote first.`;
+    }
+    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
+      return `Mentoring ${assignment.activeMenteeCount} mentee${assignment.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
+    }
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Select
+        ariaLabel={`Assignment level in ${assignment.domain.name}`}
+        value={value}
+        disabled={busy}
+        onChange={(next) => {
+          if (next === assignment.level) return;
+          fetcher.submit(
+            { level: next },
+            {
+              method: "post",
+              action: `/api/projects/assignments/${assignment.id}/level`,
+              encType: "application/json",
+            },
+          );
+        }}
+        options={LEVEL_OPTIONS.map((opt) => {
+          const reason = disabledReason(opt);
+          return {
+            value: opt,
+            label: `${opt}${reason ? " (locked)" : ""}`,
+            description: reason ?? undefined,
+            disabled: reason !== null,
+          };
+        })}
+        buttonClassName="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
+      />
+      {error && (
+        <span className="text-[10px] leading-tight text-destructive" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
 
