@@ -335,6 +335,31 @@ export async function createScheduledMeeting(
   };
 }
 
+// Grace on either side of a meeting during which self-check-in / wallet-pass
+// scan is accepted: from CHECK_IN_GRACE_MIN before the scheduled start to
+// CHECK_IN_GRACE_MIN after the scheduled end.
+export const CHECK_IN_GRACE_MIN = 15;
+
+/**
+ * Whether `now` falls within the check-in window for a meeting. Shared by the
+ * self-check-in route (api.scheduled-meetings.$id.check-in.ts) and the
+ * wallet-pass scan route (api.scheduled-meetings.$id.scan-attendee.ts) so the
+ * window math has one definition. A meeting with no scheduled time yet has no
+ * window (nothing to be early/late for), so this returns false — callers that
+ * want to distinguish "no time set" from "window closed" check selectedAt first.
+ */
+export function isWithinCheckInWindow(
+  selectedAt: Date | null,
+  durationMinutes: number,
+  now: number = Date.now(),
+): boolean {
+  if (!selectedAt) return false;
+  const graceMs = CHECK_IN_GRACE_MIN * 60_000;
+  const start = selectedAt.getTime() - graceMs;
+  const end = selectedAt.getTime() + durationMinutes * 60_000 + graceMs;
+  return now >= start && now <= end;
+}
+
 export type MarkMeetingAttendanceResult =
   | { ok: true }
   | { ok: false; error: string; status: number };
