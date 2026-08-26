@@ -15,7 +15,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Check, Loader2, Pencil, X } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 
 export function EditableSection({
   title,
@@ -93,7 +93,7 @@ export function EditableSection({
           <div className="flex items-center gap-1.5 shrink-0">
             {editing ? (
               <>
-                <Tooltip label="Cancel">
+                <Tooltip content="Cancel">
                   <button
                     type="button"
                     onClick={cancel}
@@ -104,7 +104,7 @@ export function EditableSection({
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </Tooltip>
-                <Tooltip label="Save changes">
+                <Tooltip content="Save changes">
                   <button
                     type="button"
                     onClick={() => void save()}
@@ -121,7 +121,7 @@ export function EditableSection({
                 </Tooltip>
               </>
             ) : (
-              <Tooltip label={`Edit ${title}`}>
+              <Tooltip content={`Edit ${title}`}>
                 <button
                   type="button"
                   onClick={() => setEditing(true)}

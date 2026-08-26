@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Star } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { notifyFavoritesChanged } from "~/components/favorites-live";
 
 // One star for every place a page is listed — the Documents hub, a project's
@@ -51,7 +51,7 @@ export function FavoriteStar({
   }
 
   return (
-    <Tooltip label={favorited ? "In your favorites" : "Add to your favorites"}>
+    <Tooltip content={favorited ? "In your favorites" : "Add to your favorites"}>
       <button
         type="button"
         disabled={busy}

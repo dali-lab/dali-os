@@ -20,7 +20,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Tooltip } from '~/components/ui/IconButton'
+import { Tooltip } from "~/components/ui/floating";
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
 import { formatDateTime } from '~/lib/display'
@@ -271,7 +271,7 @@ export function RubricDetail() {
               {/* Undo/Redo: backed by native Y.UndoManager — no y-prosemirror bug class. */}
               {collabToken && (
                 <div className="flex items-center gap-1">
-                  <Tooltip label="Undo (⌘Z)">
+                  <Tooltip content="Undo (⌘Z)">
                     <button
                       type="button"
                       onClick={undo}
@@ -282,7 +282,7 @@ export function RubricDetail() {
                       <Undo2 className="w-4 h-4" />
                     </button>
                   </Tooltip>
-                  <Tooltip label="Redo (⌘⇧Z)">
+                  <Tooltip content="Redo (⌘⇧Z)">
                     <button
                       type="button"
                       onClick={redo}
@@ -375,7 +375,7 @@ export function RubricDetail() {
                               className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                             />
                             <div className="flex justify-between">
-                              <Tooltip label="Remove criterion">
+                              <Tooltip content="Remove criterion">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveCriterion(c.key)}

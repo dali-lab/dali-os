@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check, Plus, Briefcase } from "lucide-react";
 import { fullName } from "~/lib/display";
+import { Tooltip } from "~/components/ui/floating";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -220,19 +221,25 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
       <input type="hidden" name="intent" value="set-admin" />
       <input type="hidden" name="userId" value={member.id} />
       <input type="hidden" name="value" value={String(!isAdminMember)} />
-      <button
-        type="submit"
-        disabled={disabled}
-        title={disabled ? "Only Admins can grant or revoke Admin." : undefined}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-          isAdminMember
-            ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
-            : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-        } disabled:opacity-60 disabled:cursor-not-allowed`}
+      <Tooltip
+        content={disabled ? "Only Admins can grant or revoke Admin." : isAdminMember ? "Remove Admin role" : "Grant Admin role"}
+        variant="rich"
       >
-        {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-        {isAdminMember ? "Admin" : "Set Admin"}
-      </button>
+        <span>
+          <button
+            type="submit"
+            disabled={disabled}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              isAdminMember
+                ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
+                : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+            {isAdminMember ? "Admin" : "Set Admin"}
+          </button>
+        </span>
+      </Tooltip>
     </fetcher.Form>
   );
 }
@@ -252,19 +259,25 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
       <input type="hidden" name="intent" value="set-staff" />
       <input type="hidden" name="userId" value={member.id} />
       <input type="hidden" name="value" value={String(!isStaffMember)} />
-      <button
-        type="submit"
-        disabled={disabled}
-        title={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain Admin access."}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-          isStaffMember
-            ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
-            : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-        } disabled:opacity-60 disabled:cursor-not-allowed`}
+      <Tooltip
+        content={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain full Admin access."}
+        variant="rich"
       >
-        {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
-        {isStaffMember ? "Staff" : "Set Staff"}
-      </button>
+        <span>
+          <button
+            type="submit"
+            disabled={disabled}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              isStaffMember
+                ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
+                : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
+            {isStaffMember ? "Staff" : "Set Staff"}
+          </button>
+        </span>
+      </Tooltip>
     </fetcher.Form>
   );
 }

@@ -1,6 +1,7 @@
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { TypeBadge, MyStatusChip } from "./OfferingCard";
+import { InfoTip } from "~/components/ui/floating";
 
 // "Past DALI education" panel on the hiring application views: what this
 // applicant attended, how consistently they showed up, and what instructors
@@ -61,16 +62,18 @@ export function EducationEngagementPanel({ entries }: { entries: EngagementRow[]
             )}
             {e.feedback && (
               <p className="text-sm text-foreground mt-2">
-                <span className="text-xs font-semibold text-muted-foreground block">
+                <span className="text-xs font-semibold text-muted-foreground block inline-flex items-center gap-1">
                   Instructor feedback (shared with the student)
+                  <InfoTip content="This note is visible to the student on their course page. It's the instructor's exit feedback for the student." />
                 </span>
                 {e.feedback}
               </p>
             )}
             {e.internalNote && (
               <p className="text-sm text-foreground mt-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                <span className="text-xs font-semibold text-amber-800 block">
+                <span className="text-xs font-semibold text-amber-800 block inline-flex items-center gap-1">
                   Internal instructor note — never shown to the student
+                  <InfoTip content="This note is only visible to instructors and Core members. It's separate from the shared feedback and used for hiring context." />
                 </span>
                 {e.internalNote}
               </p>

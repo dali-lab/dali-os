@@ -5,7 +5,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { ALL_LEVELS, type Level } from "~/lib/level";
 import type { DomainLevel, MemberCardModel } from "../lib/staffing-board";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
@@ -121,7 +121,6 @@ export function MemberCard({
         }
       }}
       aria-label={`View ${fullName}'s bid`}
-      title="View bid"
       className={cn(
         "p-2.5 flex flex-col gap-1.5 select-none",
         os ? "rounded-os-item" : "rounded-md",
@@ -206,15 +205,16 @@ function ExternalMentorCard({
           </div>
         </div>
         {onRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            title="Remove external mentor"
-            aria-label={`Remove external mentor ${fullName}`}
-            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
-          >
-            ×
-          </button>
+          <Tooltip content="Remove external mentor">
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Remove external mentor ${fullName}`}
+              className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+            >
+              ×
+            </button>
+          </Tooltip>
         )}
       </div>
       <DomainLevelStrip card={card} />
@@ -259,23 +259,31 @@ function MemberCardBody({
               {fullName}
             </span>
             {card.unresolvedBid && (
-              <span
-                className={cn(
-                  "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded",
-                  os ? "bg-os-amber/20 text-os-amber" : "bg-amber-100 text-amber-800",
-                )}
-                title="Submitted a bid, but none of their picks matched an open role for this term — needs a staffing lead's attention."
+              <Tooltip
+                variant="rich"
+                content="This member submitted a bid but none of their picks matched an open role for this term — a staffing lead needs to place them manually."
               >
-                Bid unresolved
-              </span>
+                <span
+                  className={cn(
+                    "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded",
+                    os ? "bg-os-amber/20 text-os-amber" : "bg-amber-100 text-amber-800",
+                  )}
+                >
+                  Bid unresolved
+                </span>
+              </Tooltip>
             )}
             {card.manuallyAdded && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
-                title="Manually added to the board (no bid submitted)."
+              <Tooltip
+                variant="rich"
+                content="Added directly to the board by a staffing lead — no bid was submitted."
               >
-                Added
-              </span>
+                <span
+                  className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
+                >
+                  Added
+                </span>
+              </Tooltip>
             )}
           </div>
           <RolePills
@@ -286,20 +294,21 @@ function MemberCardBody({
           />
         </div>
         {onRemove && card.manuallyAdded && (
-          <button
-            type="button"
-            // Stop the press from starting a drag or opening the bid modal.
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            title="Remove from board"
-            aria-label={`Remove ${fullName} from board`}
-            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
-          >
-            ×
-          </button>
+          <Tooltip content="Remove from board">
+            <button
+              type="button"
+              // Stop the press from starting a drag or opening the bid modal.
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              aria-label={`Remove ${fullName} from board`}
+              className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+            >
+              ×
+            </button>
+          </Tooltip>
         )}
       </div>
 
@@ -371,7 +380,15 @@ function DomainLevelStrip({
   const selected = new Set(assignmentDomainIds ?? card.assignmentDomainIds ?? []);
 
   if (card.domainLevels.length === 0 && !canEdit) {
-    return <p className="text-[11px] text-muted-foreground italic">No domain eligibility</p>;
+    return (
+      <p className="text-[11px] text-muted-foreground italic inline-flex items-center gap-1">
+        No domain eligibility
+        <InfoTip
+          content="This member has no domain skills configured. A staffing lead can add domains via the Edit Domains control."
+          placement="right"
+        />
+      </p>
+    );
   }
 
   return (
@@ -394,16 +411,17 @@ function DomainLevelStrip({
         />
       ))}
       {canEdit && onAddDomain && !adding && available.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          title="Add domain"
-          aria-label="Add domain"
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-        >
-          <Plus className="w-2.5 h-2.5" aria-hidden />
-          Domain
-        </button>
+        <Tooltip content="Add a domain eligibility to this member">
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            aria-label="Add domain"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <Plus className="w-2.5 h-2.5" aria-hidden />
+            Domain
+          </button>
+        </Tooltip>
       )}
       {canEdit && adding && (
         <div className="flex flex-wrap items-center gap-1 w-full mt-0.5">
@@ -482,7 +500,7 @@ function DomainLevelChip({
     <button
       type="button"
       onClick={onToggleAssignment}
-      title={
+      aria-label={
         isAssignment
           ? `Remove ${domain.domainName} from staffing assignment`
           : `Staff in ${domain.domainName}`
@@ -496,7 +514,18 @@ function DomainLevelChip({
     <span>{domain.domainName}</span>
   );
 
+  const chipTitle = isAssignment
+    ? `${domain.domainName} · ${domain.level} — currently staffed in this domain`
+    : canToggleAssignment
+      ? `Click to staff in ${domain.domainName} · ${domain.level}`
+      : `${domain.domainName} · ${domain.level}`;
+  const chipTipContent = isAssignment
+    ? `Staffed in ${domain.domainName} at ${domain.level}. Click the domain name to remove it from this assignment.`
+    : canToggleAssignment
+      ? `Eligible in ${domain.domainName} at ${domain.level}. Click the domain name to add it to this staffing assignment.`
+      : `Eligible in ${domain.domainName} at level ${domain.level}.`;
   return (
+    <Tooltip variant="rich" content={chipTipContent}>
     <span
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
         isAssignment
@@ -505,13 +534,7 @@ function DomainLevelChip({
             : "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
           : "bg-muted text-foreground"
       }`}
-      title={
-        isAssignment
-          ? `${domain.domainName} · ${domain.level} (staffing assignment)`
-          : canToggleAssignment
-            ? `Click ${domain.domainName} to staff in this domain · ${domain.level}`
-            : `${domain.domainName} · ${domain.level}`
-      }
+      aria-label={chipTitle}
     >
       {nameButton}
       {canEdit ? (
@@ -532,6 +555,7 @@ function DomainLevelChip({
         </span>
       )}
     </span>
+    </Tooltip>
   );
 }
 

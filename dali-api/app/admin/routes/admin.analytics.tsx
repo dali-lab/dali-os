@@ -1,4 +1,5 @@
 import { Link, redirect, useLoaderData } from "react-router";
+import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/admin.analytics";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -322,12 +323,11 @@ export default function AdminConsoleAnalytics() {
               {errors.map((e) => (
                 <tr key={e.message} className="hover:bg-muted/30">
                   <td className="px-4 py-2.5 max-w-md">
-                    <code
-                      className="block text-xs text-foreground truncate"
-                      title={e.message}
-                    >
-                      {e.message}
-                    </code>
+                    <Tooltip content={e.message} variant="rich" placement="bottom">
+                      <code className="block text-xs text-foreground truncate">
+                        {e.message}
+                      </code>
+                    </Tooltip>
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{e.count}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{e.users}</td>

@@ -17,7 +17,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -700,15 +700,16 @@ export function TaskModal({
           {/* The design's .modal-edit-btn — only where there's a record to
               switch out of, and only for someone who may change it. */}
           {readOnly && canManage && (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="os-icon-btn"
-              aria-label="Edit task"
-              title="Edit"
-            >
-              <Pencil className="w-4 h-4" aria-hidden />
-            </button>
+            <Tooltip content="Edit task">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="os-icon-btn"
+                aria-label="Edit task"
+              >
+                <Pencil className="w-4 h-4" aria-hidden />
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
@@ -870,36 +871,62 @@ export function TaskModal({
           </PropRow>
           {!os && (
           <PropRow label="Sprint" hint={sprintHint}>
-            <Select
-              value={sprintId}
-              disabled={!canManage || epicSprints.length === 0}
-              onChange={(value) => setSprintId(value)}
-              placeholder="None"
-              options={[
-                { value: "", label: "None" },
-                ...epicSprints.map((s) => ({
-                  value: s.id,
-                  label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
-                })),
-              ]}
-              buttonClassName={PROP_CONTROL}
-            />
+            <Tooltip
+              variant="rich"
+              content={
+                epicSprints.length === 0
+                  ? epicId
+                    ? "This epic has no sprints yet. Sprints are added from the Progress tab."
+                    : "Pick an epic first — sprints are scoped to an epic."
+                  : null
+              }
+            >
+              <span>
+                <Select
+                  value={sprintId}
+                  disabled={!canManage || epicSprints.length === 0}
+                  onChange={(value) => setSprintId(value)}
+                  placeholder="None"
+                  options={[
+                    { value: "", label: "None" },
+                    ...epicSprints.map((s) => ({
+                      value: s.id,
+                      label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
+                    })),
+                  ]}
+                  buttonClassName={PROP_CONTROL}
+                />
+              </span>
+            </Tooltip>
           </PropRow>
           )}
           </FieldPair>
 
           <PropRow label="User story" hint={storyHint}>
-            <Select
-              value={storyId}
-              disabled={!canManage || epicStories.length === 0}
-              onChange={(value) => setStoryId(value)}
-              placeholder="None"
-              options={[
-                { value: "", label: "None" },
-                ...epicStories.map((s) => ({ value: s.id, label: s.title })),
-              ]}
-              buttonClassName={PROP_CONTROL}
-            />
+            <Tooltip
+              variant="rich"
+              content={
+                epicStories.length === 0
+                  ? epicId
+                    ? "This epic has no user stories yet. Add stories from the Progress tab."
+                    : "Pick an epic first — user stories are scoped to an epic."
+                  : null
+              }
+            >
+              <span>
+                <Select
+                  value={storyId}
+                  disabled={!canManage || epicStories.length === 0}
+                  onChange={(value) => setStoryId(value)}
+                  placeholder="None"
+                  options={[
+                    { value: "", label: "None" },
+                    ...epicStories.map((s) => ({ value: s.id, label: s.title })),
+                  ]}
+                  buttonClassName={PROP_CONTROL}
+                />
+              </span>
+            </Tooltip>
           </PropRow>
         </div>
 

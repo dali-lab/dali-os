@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Check, X } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
@@ -285,15 +285,20 @@ function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
       </td>
       <td className="px-5 py-3">
         <div className="flex items-center justify-end gap-2">
-          <button
-            onClick={onAccept}
-            disabled={busy}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
-          >
-            <Check className="w-3.5 h-3.5" />
-            Accept
-          </button>
-          <Tooltip label="Remove">
+          <div className="inline-flex items-center gap-1">
+            <button
+              onClick={onAccept}
+              disabled={busy}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Accept
+            </button>
+            <InfoTip
+              content="Accepting off the waitlist runs the full release flow — the applicant gets an acceptance email and placement even though the main cycle is closed."
+            />
+          </div>
+          <Tooltip content="Remove">
             <button
               onClick={onRemove}
               disabled={busy}

@@ -1,5 +1,6 @@
 import { GraduationCap, Sprout } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 // The per-card mentor/mentee role badge on the staffing board. Role defaults to
@@ -15,13 +16,18 @@ export function RoleBadge({
 }) {
   const os = useFeatureFlag("os-redesign");
   return (
+    <Tooltip
+      variant="rich"
+      content={
+        isMentor
+          ? "Mentor — this member guides a same-domain mentee. Role defaults to mentor at P3; click to override."
+          : "Mentee — this member is paired with a same-domain P3 mentor at finalize. Click to override to mentor."
+      }
+    >
     <button
       type="button"
       onClick={onToggle}
       aria-pressed={isMentor}
-      title={
-        isMentor ? "Mentor — click to make mentee" : "Mentee — click to make mentor"
-      }
       aria-label={
         isMentor ? "Role: mentor, change to mentee" : "Role: mentee, change to mentor"
       }
@@ -43,5 +49,6 @@ export function RoleBadge({
       )}
       {isMentor ? "Mentor" : "Mentee"}
     </button>
+    </Tooltip>
   );
 }

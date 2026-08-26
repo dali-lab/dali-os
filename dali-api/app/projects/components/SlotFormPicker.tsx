@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 type SelectableForm = { id: string; name: string; published: boolean };
@@ -110,12 +110,16 @@ export function SlotFormPicker({
               Send to members
             </a>
           ) : (
-            <span
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground opacity-60 cursor-not-allowed"
-              title="Publish the form before sending it to members"
+            <Tooltip
+              variant="rich"
+              content="Publish this form in Drive before sending — unpublished forms can't be filled by members."
             >
-              Send to members
-            </span>
+              <span
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground opacity-60 cursor-not-allowed"
+              >
+                Send to members
+              </span>
+            </Tooltip>
           )}
           <span className="text-xs text-muted-foreground">
             Opens the Announcements composer with this form attached.

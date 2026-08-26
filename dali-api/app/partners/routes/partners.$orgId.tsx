@@ -10,7 +10,7 @@ import {
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/partners.$orgId";
@@ -848,7 +848,7 @@ export default function PartnerOrgDetail() {
                     >
                       <input type="hidden" name="intent" value="project-unlink" />
                       <input type="hidden" name="projectPartnerId" value={pp.id} />
-                      <Tooltip label="Unlink project">
+                      <Tooltip content="Unlink project">
                         <button
                           type="submit"
                           aria-label="Unlink project"

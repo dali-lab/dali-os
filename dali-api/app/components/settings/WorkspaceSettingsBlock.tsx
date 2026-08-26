@@ -4,6 +4,7 @@ import { PanelTop, Square } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { readTablessPreference, setTablessPreference } from "~/lib/tabless";
 import { readFocusPreference, setFocusPreference } from "~/lib/focus-mode";
+import { InfoTip } from "~/components/ui/floating";
 
 const OPTIONS: {
   value: "tabs" | "tabless";
@@ -113,7 +114,10 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
 
       <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
         <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">Focus mode</p>
+          <p className="font-heading text-sm font-semibold text-foreground">
+            Focus mode{" "}
+            <InfoTip content="Hides the sidebar so you can concentrate. Navigate with ⌘K and breadcrumbs; a floating button brings the sidebar back." />
+          </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Hide the sidebar and navigate with ⌘K and breadcrumbs. A floating
             button brings it back anytime.
@@ -141,7 +145,10 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
 
       <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
         <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">Appear away</p>
+          <p className="font-heading text-sm font-semibold text-foreground">
+            Appear away{" "}
+            <InfoTip content="Hides your online status dot from other members. Your activity is still recorded for internal purposes; only the visible indicator is hidden." />
+          </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Hide your online status from other members. Your activity is still recorded;
             only the visible dot is hidden.

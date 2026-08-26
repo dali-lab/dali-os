@@ -12,7 +12,7 @@ import {
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { buttonClasses } from "~/components/ui/Button";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
 import { NoteShareModal } from "./NoteShareModal";
 
@@ -36,7 +36,10 @@ type Tab = "mine" | "shared";
 function VisibilityMark({ note }: { note: NoteSummary }) {
   if (note.labListing === "Listed") {
     return (
-      <Tooltip label="On the lab Documents page">
+      <Tooltip
+        content="Listed on the lab-wide Documents page — visible to all lab members."
+        variant="rich"
+      >
         <span className="text-accent-teal">
           <Landmark className="w-3.5 h-3.5" aria-label="Listed lab-wide" />
         </span>
@@ -45,7 +48,10 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
   }
   if (note.visibility === "public") {
     return (
-      <Tooltip label="On your profile — anyone can read it">
+      <Tooltip
+        content="Public — visible on your profile to anyone with lab access."
+        variant="rich"
+      >
         <span className="text-accent-coral">
           <Eye className="w-3.5 h-3.5" aria-label="Public" />
         </span>
@@ -54,7 +60,10 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
   }
   if (note.shareCount > 0) {
     return (
-      <Tooltip label={`Shared with ${note.shareCount} ${note.shareCount === 1 ? "person or group" : "people and groups"}`}>
+      <Tooltip
+        content={`Shared with ${note.shareCount} ${note.shareCount === 1 ? "person or group" : "people and groups"} — only they can see it.`}
+        variant="rich"
+      >
         <span className="text-muted-foreground">
           <Users className="w-3.5 h-3.5" aria-label="Shared" />
         </span>
@@ -62,7 +71,7 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
     );
   }
   return (
-    <Tooltip label="Only you">
+    <Tooltip content="Private — only you can see this page." variant="rich">
       <span className="text-muted-foreground/60">
         <Lock className="w-3.5 h-3.5" aria-label="Private" />
       </span>
@@ -186,7 +195,7 @@ export function PersonalNotesRail({
         <h2 className="font-heading font-semibold text-foreground">Pages</h2>
         {isSelf && (
           <div className="flex items-center gap-0.5">
-            <Tooltip label="New folder">
+            <Tooltip content="New folder">
               <button
                 type="button"
                 onClick={() => create(true)}
@@ -197,7 +206,7 @@ export function PersonalNotesRail({
                 <FolderPlus className="w-4 h-4" />
               </button>
             </Tooltip>
-            <Tooltip label="New page">
+            <Tooltip content="New page">
               <button
                 type="button"
                 onClick={() => create(false)}

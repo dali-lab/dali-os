@@ -1,5 +1,5 @@
 import { DateField } from "~/components/ui/DateField";
-import { Select } from "~/components/ui/floating";
+import { Select, InfoTip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 // The calendar's one recurrence control — used by Create Meeting and by both
@@ -163,7 +163,10 @@ export function RepeatField({
 
   return (
     <div>
-      <span className={labelClassName}>Repeats</span>
+      <span className={cn(labelClassName, "inline-flex items-center gap-1")}>
+        Repeats
+        <InfoTip content="Creates a recurring series using your chosen frequency. The invitation goes to all participants for each occurrence. Recurring blocks cannot be marked as work time." />
+      </span>
       <Select
         value={value.freq}
         onChange={(v) => pickFreq(v as RepeatFreq)}

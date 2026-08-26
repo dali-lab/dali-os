@@ -10,6 +10,7 @@ import { SendHorizonal, Mail, MessageSquare } from "lucide-react";
 import type { Route } from "./+types/admin.outbound-messages";
 import { adminHandle } from "~/admin/adminNav";
 import { StatusDot } from "~/admin/components/console-ui";
+import { Tooltip } from "~/components/ui/floating";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -244,9 +245,11 @@ function Row({ msg }: { msg: MessageRow }) {
       </td>
       <td className="px-3 py-3">
         {msg.subject && (
-          <div className="text-sm text-foreground truncate max-w-[200px]" title={msg.subject}>
-            {msg.subject}
-          </div>
+          <Tooltip content={msg.subject}>
+            <div className="text-sm text-foreground truncate max-w-[200px]">
+              {msg.subject}
+            </div>
+          </Tooltip>
         )}
         {msg.eventType && (
           <div className="font-mono text-xs text-muted-foreground">{msg.eventType}</div>
@@ -257,14 +260,13 @@ function Row({ msg }: { msg: MessageRow }) {
       </td>
       <td className="px-3 py-3 max-w-[220px]">
         {msg.lastError && (
-          <p
-            className="break-all text-xs text-red-600"
-            title={msg.lastError}
-          >
-            {msg.lastError.length > 120
-              ? `${msg.lastError.slice(0, 120)}…`
-              : msg.lastError}
-          </p>
+          <Tooltip content={msg.lastError} variant="rich" placement="bottom">
+            <p className="break-all text-xs text-red-600">
+              {msg.lastError.length > 120
+                ? `${msg.lastError.slice(0, 120)}…`
+                : msg.lastError}
+            </p>
+          </Tooltip>
         )}
       </td>
       <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">

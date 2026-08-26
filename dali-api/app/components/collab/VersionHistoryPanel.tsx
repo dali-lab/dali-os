@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { useDialog } from "~/components/ui/dialog";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { relativeTime } from "~/lib/relative-time";
 
 interface Author {
@@ -136,8 +137,9 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
         {/* Left: version list */}
         <div className="w-72 border-r border-border flex flex-col">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/50">
-            <h2 id="version-history-title" className="text-sm font-semibold text-foreground">
+            <h2 id="version-history-title" className="text-sm font-semibold text-foreground inline-flex items-center gap-1">
               Version history
+              <InfoTip content="Snapshots are saved automatically every ~30 seconds while the document is being edited. Restoring a version replaces the current content for all viewers." />
             </h2>
             <button
               type="button"
@@ -160,27 +162,31 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
             {versions?.map((v) => {
               const isSelected = v.id === selectedId;
               return (
-                <button
+                <Tooltip
                   key={v.id}
-                  type="button"
-                  onClick={() => setSelectedId(v.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted/50 ${
-                    isSelected ? "bg-accent-coral/5 hover:bg-accent-coral/5" : ""
-                  }`}
-                  title={new Date(v.createdAt).toLocaleString()}
+                  content={new Date(v.createdAt).toLocaleString()}
+                  placement="right"
                 >
-                  <div className="text-xs font-medium text-foreground">
-                    {relativeTime(v.createdAt)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {authorLabel(v.authors)}
-                  </div>
-                  {v.plainTextPreview && (
-                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-wrap">
-                      {v.plainTextPreview}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(v.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted/50 ${
+                      isSelected ? "bg-accent-coral/5 hover:bg-accent-coral/5" : ""
+                    }`}
+                  >
+                    <div className="text-xs font-medium text-foreground">
+                      {relativeTime(v.createdAt)}
                     </div>
-                  )}
-                </button>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {authorLabel(v.authors)}
+                    </div>
+                    {v.plainTextPreview && (
+                      <div className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-wrap">
+                        {v.plainTextPreview}
+                      </div>
+                    )}
+                  </button>
+                </Tooltip>
               );
             })}
           </div>
@@ -207,14 +213,21 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                     {authorLabel(detail.authors)}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRestore}
-                  disabled={restoring}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-accent-coral rounded hover:bg-accent-coral/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                <Tooltip
+                  content={restoring ? "Restore in progress — please wait." : undefined}
+                  variant="rich"
                 >
-                  {restoring ? "Restoring..." : "Restore this version"}
-                </button>
+                  <span>
+                    <button
+                      type="button"
+                      onClick={handleRestore}
+                      disabled={restoring}
+                      className="px-3 py-1.5 text-xs font-semibold text-white bg-accent-coral rounded hover:bg-accent-coral/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {restoring ? "Restoring..." : "Restore this version"}
+                    </button>
+                  </span>
+                </Tooltip>
               </div>
               <div className="flex-1 overflow-y-auto p-6 whitespace-pre-wrap text-sm text-foreground font-mono leading-relaxed">
                 {detail.plainText || (

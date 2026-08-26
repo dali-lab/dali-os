@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { X, Trash2, Pencil, Plus, CheckSquare, FileText, Zap, Calendar } from "lucide-react";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import type { TimelineMeeting } from "./EpicsTimeline";
-import { Tooltip } from "~/components/ui/IconButton";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
@@ -803,7 +802,7 @@ function EpicDetail({
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {canManage && (
-            <Tooltip label="Delete epic">
+            <Tooltip content="Delete epic">
               <button
                 type="button"
                 disabled={busy}
@@ -1213,22 +1212,28 @@ function EpicDetail({
                 // .quick-add-item: name on the left, one × on the right. The
                 // card below is the classic list's row.
                 <li key={story.id} className="os-item-row">
+                  <Tooltip content={story.title}>
                   <button
                     type="button"
                     onClick={() => canEditContent && setEditStoryId(story.id)}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    title={story.title}
                   >
                     {isStoryIncomplete(story) && (
+                      <Tooltip
+                        variant="rich"
+                        content="Quick-captured by name only — open this story to add notes, dates, and priority."
+                        placement="right"
+                      >
                       <span
                         className="os-incomplete-dot"
-                        title="Added by name — still needs its details"
                       >
                         !
                       </span>
+                      </Tooltip>
                     )}
                     <span className="truncate">{story.title}</span>
                   </button>
+                  </Tooltip>
                   {canEditContent && (
                     <button
                       type="button"
@@ -1262,12 +1267,16 @@ function EpicDetail({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       {os && isStoryIncomplete(story) && (
-                        <span
-                          className="os-incomplete-dot mr-1.5 align-middle"
-                          title="Added by name — still needs its details"
+                        <Tooltip
+                          variant="rich"
+                          content="Quick-captured by name only — open this story to add notes, dates, and priority."
                         >
-                          !
-                        </span>
+                          <span
+                            className="os-incomplete-dot mr-1.5 align-middle"
+                          >
+                            !
+                          </span>
+                        </Tooltip>
                       )}
                       <p className="inline text-sm font-medium text-foreground leading-snug">
                         {story.title}
@@ -1282,11 +1291,24 @@ function EpicDetail({
                           </span>
                         )}
                         {story.priority && (
-                          <span
-                            className={`text-[11px] px-1.5 py-0.5 rounded-full border border-border ${STORY_PRIORITY_TONE[story.priority]}`}
+                          <Tooltip
+                            variant="rich"
+                            content={
+                              story.priority === "Must"
+                                ? "Must — required for this term's launch. Blocks release."
+                                : story.priority === "Should"
+                                  ? "Should — high value and expected, but not a launch blocker."
+                                  : story.priority === "Could"
+                                    ? "Could — nice-to-have if time allows; deferred if the sprint fills."
+                                    : "Won't — explicitly out of scope this term."
+                            }
                           >
-                            {story.priority}
-                          </span>
+                            <span
+                              className={`text-[11px] px-1.5 py-0.5 rounded-full border border-border ${STORY_PRIORITY_TONE[story.priority]}`}
+                            >
+                              {story.priority}
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                     </div>
@@ -1830,7 +1852,13 @@ function StoryForm({
               {categoryField}
             </label>
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Priority</span>
+              <span className="text-muted-foreground inline-flex items-center gap-1">
+                Priority
+                <InfoTip
+                  content="MoSCoW priority: Must = required for launch, Should = high value, Could = nice-to-have, Won't = out of scope this term."
+                  placement="top"
+                />
+              </span>
               <Select
                 value={priority}
                 onChange={(value) => setPriority(value as StoryPriority | "")}

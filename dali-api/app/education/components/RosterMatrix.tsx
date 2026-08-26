@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Form } from "react-router";
 import { Check, Minus, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 // The roster answers two questions with one grid: who is falling behind
@@ -171,18 +171,25 @@ export function RosterMatrix({
                         : "text-muted-foreground"
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onSelectSession(s.id)}
-                      className="whitespace-nowrap"
-                      title={formatSessionDate(s.datetime)}
-                    >
-                      S{s.sequence}
-                    </button>
+                    <Tooltip content={formatSessionDate(s.datetime)}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectSession(s.id)}
+                        className="whitespace-nowrap"
+                      >
+                        S{s.sequence}
+                      </button>
+                    </Tooltip>
                   </th>
                 ))}
                 <th className="px-4 py-2.5 text-right font-medium text-muted-foreground whitespace-nowrap">
-                  Attended
+                  <span className="inline-flex items-center gap-1">
+                    Attended
+                    <InfoTip
+                      content="Sessions attended out of total. Green ≥ 75%, amber 50–74%, red < 50%. Excused absences count as attended for completion purposes."
+                      placement="top"
+                    />
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -206,14 +213,18 @@ export function RosterMatrix({
                           }`}
                         >
                           {Icon && style ? (
-                            <span title={style.label}>
-                              <Icon className={`mx-auto h-4 w-4 ${style.className}`} />
-                              <span className="sr-only">{style.label}</span>
-                            </span>
+                            <Tooltip content={style.label}>
+                              <span>
+                                <Icon className={`mx-auto h-4 w-4 ${style.className}`} />
+                                <span className="sr-only">{style.label}</span>
+                              </span>
+                            </Tooltip>
                           ) : (
-                            <span className="text-muted-foreground/40" title="Unmarked">
-                              ·
-                            </span>
+                            <Tooltip content="Not yet marked for this session">
+                              <span className="text-muted-foreground/40">
+                                ·
+                              </span>
+                            </Tooltip>
                           )}
                         </td>
                       );
@@ -281,22 +292,34 @@ function PerformanceTable({
                 Student
               </th>
               <th className="px-3 py-2.5 text-right font-medium text-muted-foreground whitespace-nowrap">
-                Attendance %
+                <span className="inline-flex items-center gap-1">
+                  Attendance %
+                  <InfoTip
+                    content="Present + excused sessions as a percentage of total. Green ≥ 80%, amber 50–79%, red < 50%."
+                    placement="top"
+                  />
+                </span>
               </th>
               {assignments.map((a) => (
-                <th
-                  key={a.id}
-                  className="px-3 py-2.5 text-center font-medium text-muted-foreground max-w-[120px]"
-                  title={a.title}
-                >
-                  <span className="block truncate max-w-[120px]">{a.title}</span>
-                  {a.points != null && (
-                    <span className="block text-[10px] font-normal">/{a.points} pts</span>
-                  )}
-                </th>
+                <Tooltip key={a.id} content={a.title}>
+                  <th
+                    className="px-3 py-2.5 text-center font-medium text-muted-foreground max-w-[120px]"
+                  >
+                    <span className="block truncate max-w-[120px]">{a.title}</span>
+                    {a.points != null && (
+                      <span className="block text-[10px] font-normal">/{a.points} pts</span>
+                    )}
+                  </th>
+                </Tooltip>
               ))}
               <th className="px-4 py-2.5 text-center font-medium text-muted-foreground whitespace-nowrap">
-                Completion
+                <span className="inline-flex items-center gap-1">
+                  Completion
+                  <InfoTip
+                    content="Eligible means the student met the offering's attendance threshold (usually 80%). Assignment scores don't affect completion — only attendance does."
+                    placement="top"
+                  />
+                </span>
               </th>
             </tr>
           </thead>
@@ -343,13 +366,13 @@ function PerformanceTable({
                       display = "—";
                     }
                     return (
-                      <td
-                        key={a.id}
-                        className="px-3 py-2 text-center text-muted-foreground tabular-nums"
-                        title={display === "—" ? "No submission" : display}
-                      >
-                        {display}
-                      </td>
+                      <Tooltip key={a.id} content={display === "—" ? "No submission" : display}>
+                        <td
+                          className="px-3 py-2 text-center text-muted-foreground tabular-nums"
+                        >
+                          {display}
+                        </td>
+                      </Tooltip>
                     );
                   })}
                   <td className="px-4 py-2 text-center">

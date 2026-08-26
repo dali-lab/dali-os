@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Tooltip } from "~/components/ui/floating";
 import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy, Pin, PinOff, ChevronDown } from 'lucide-react'
 import {
   DndContext,
@@ -435,7 +436,6 @@ function SortableTab({
         onMiddleClose()
       }}
       onContextMenu={onContextMenu}
-      title={tab.label}
       className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing ${
         isActive
           ? 'bg-card text-foreground'
@@ -1847,58 +1847,64 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                     }`
                   return (
                     <>
-                      <button
-                        type="button"
-                        disabled={!canBack}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!canBack) return
-                          goBack(pane.id)
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (!canBack) return
-                          setHistoryMenu((prev) =>
-                            prev?.paneId === pane.id && prev.side === 'back'
-                              ? null
-                              : { paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY },
-                          )
-                          setContextMenu(null)
-                          setOverflowMenu(null)
-                        }}
-                        title={canBack ? 'Back (right-click for history)' : 'Back'}
-                        aria-label="Back"
-                        className={navBtn(canBack)}
-                      >
-                        <ChevronLeft className="w-[18px] h-[18px]" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canFwd}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!canFwd) return
-                          goForward(pane.id)
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (!canFwd) return
-                          setHistoryMenu((prev) =>
-                            prev?.paneId === pane.id && prev.side === 'forward'
-                              ? null
-                              : { paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY },
-                          )
-                          setContextMenu(null)
-                          setOverflowMenu(null)
-                        }}
-                        title={canFwd ? 'Forward (right-click for history)' : 'Forward'}
-                        aria-label="Forward"
-                        className={navBtn(canFwd)}
-                      >
-                        <ChevronRight className="w-[18px] h-[18px]" />
-                      </button>
+                      <Tooltip content={canBack ? 'Back (right-click for history)' : 'Back'}>
+                        <span>
+                          <button
+                            type="button"
+                            disabled={!canBack}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!canBack) return
+                              goBack(pane.id)
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (!canBack) return
+                              setHistoryMenu((prev) =>
+                                prev?.paneId === pane.id && prev.side === 'back'
+                                  ? null
+                                  : { paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY },
+                              )
+                              setContextMenu(null)
+                              setOverflowMenu(null)
+                            }}
+                            aria-label="Back"
+                            className={navBtn(canBack)}
+                          >
+                            <ChevronLeft className="w-[18px] h-[18px]" />
+                          </button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip content={canFwd ? 'Forward (right-click for history)' : 'Forward'}>
+                        <span>
+                          <button
+                            type="button"
+                            disabled={!canFwd}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!canFwd) return
+                              goForward(pane.id)
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (!canFwd) return
+                              setHistoryMenu((prev) =>
+                                prev?.paneId === pane.id && prev.side === 'forward'
+                                  ? null
+                                  : { paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY },
+                              )
+                              setContextMenu(null)
+                              setOverflowMenu(null)
+                            }}
+                            aria-label="Forward"
+                            className={navBtn(canFwd)}
+                          >
+                            <ChevronRight className="w-[18px] h-[18px]" />
+                          </button>
+                        </span>
+                      </Tooltip>
                     </>
                   )
                 })()}
@@ -1918,44 +1924,46 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                   )}
                 </div>
                 {overflowUnpinned.length > 0 && (
+                  <Tooltip content={`${overflowUnpinned.length} more tab${overflowUnpinned.length === 1 ? '' : 's'}`}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // Toggle: stopPropagation blocks the shell dismiss
+                        // listener, so a second click on +N must close itself.
+                        if (overflowMenu?.paneId === pane.id) {
+                          setOverflowMenu(null)
+                          return
+                        }
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setOverflowMenu({ paneId: pane.id, x: rect.right, y: rect.bottom })
+                        setContextMenu(null)
+                        setHistoryMenu(null)
+                      }}
+                      aria-label={`Show ${overflowUnpinned.length} more tabs`}
+                      style={{ width: OVERFLOW_BTN_W }}
+                      className="flex-none flex items-center justify-center gap-0.5 border-l border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
+                    >
+                      +{overflowUnpinned.length}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+              {state.panes.length > 1 && (
+                <Tooltip content="Close pane">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      // Toggle: stopPropagation blocks the shell dismiss
-                      // listener, so a second click on +N must close itself.
-                      if (overflowMenu?.paneId === pane.id) {
-                        setOverflowMenu(null)
-                        return
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setOverflowMenu({ paneId: pane.id, x: rect.right, y: rect.bottom })
-                      setContextMenu(null)
-                      setHistoryMenu(null)
+                      closePane(pane.id)
                     }}
-                    title={`${overflowUnpinned.length} more tab${overflowUnpinned.length === 1 ? '' : 's'}`}
-                    aria-label={`Show ${overflowUnpinned.length} more tabs`}
-                    style={{ width: OVERFLOW_BTN_W }}
-                    className="flex-none flex items-center justify-center gap-0.5 border-l border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
+                    aria-label="Close pane"
+                    className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted border-l border-border"
                   >
-                    +{overflowUnpinned.length}
-                    <ChevronDown className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                )}
-              </div>
-              {state.panes.length > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closePane(pane.id)
-                  }}
-                  title="Close pane"
-                  aria-label="Close pane"
-                  className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted border-l border-border"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                </Tooltip>
               )}
             </div>
 
@@ -2176,18 +2184,18 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
             {entries.map((url, displayIdx) => {
               const steps = displayIdx + 1
               return (
-                <button
-                  key={`${steps}-${url}`}
-                  type="button"
-                  onClick={() => {
-                    navigateActiveTab(historyMenu.paneId, historyMenu.side, steps)
-                    setHistoryMenu(null)
-                  }}
-                  title={url}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
-                >
-                  <span className="truncate">{url}</span>
-                </button>
+                <Tooltip key={`${steps}-${url}`} content={url}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigateActiveTab(historyMenu.paneId, historyMenu.side, steps)
+                      setHistoryMenu(null)
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
+                  >
+                    <span className="truncate">{url}</span>
+                  </button>
+                </Tooltip>
               )
             })}
           </div>
@@ -2221,7 +2229,6 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                     setActiveTab(overflowMenu.paneId, tab.id)
                     setOverflowMenu(null)
                   }}
-                  title={tab.label}
                   className="flex-1 min-w-0 flex items-center text-left"
                 >
                   <span className={`truncate ${tab.ephemeral ? 'italic' : ''}`}>{tab.label}</span>

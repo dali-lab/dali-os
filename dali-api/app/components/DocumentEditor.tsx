@@ -21,7 +21,7 @@ import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { FindReplaceBar } from "./doc/find";
@@ -511,7 +511,7 @@ export function DocumentEditor({
           floating toolbar). Shared prefs: every viewer sees the same doc. */}
       {canEdit && (
         <div ref={typoRef} className="relative">
-          <Tooltip label="Page style">
+          <Tooltip content="Page style">
             <button
               type="button"
               onClick={() => setTypoOpen((o) => !o)}
@@ -587,7 +587,7 @@ export function DocumentEditor({
       )}
 
       {hasComments && (
-        <Tooltip label={commentsOpen ? "Hide comments" : "Show comments"}>
+        <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
           <button
             type="button"
             onClick={() => setCommentsOpen((o) => !o)}
@@ -606,7 +606,7 @@ export function DocumentEditor({
 
       {/* Favorite — personal, unlike the ⋯ "Pin" which moves the document for
           everyone. Anyone who can read the page can bookmark it. */}
-      <Tooltip label={favorited ? "Remove from favorites" : "Add to favorites"}>
+      <Tooltip content={favorited ? "Remove from favorites" : "Add to favorites"}>
         <button
           type="button"
           onClick={() => void toggleFavorite()}
@@ -625,7 +625,7 @@ export function DocumentEditor({
       {/* Share — its own control rather than a ⋯ entry: who can open a document
           is a property of the document, not a rarely-reached utility. */}
       {canManageAccess && (
-        <Tooltip label="Share">
+        <Tooltip content="Share">
           <button
             type="button"
             onClick={() => setAccessOpen(true)}
