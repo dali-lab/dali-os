@@ -5,6 +5,8 @@ import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { replaceCollabDocContent } from "~/collab/write";
 import { plainTextToBlocks } from "~/collab/blocknote-server";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 // POST /api/epics/:id/description-doc
 //
@@ -61,15 +63,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Move any legacy plain-text description into the doc, once — but only while
-  // the doc is still empty (no CollabDocument row), so we never overwrite text
-  // someone has since edited in the collab editor.
+  // the doc has no real content, so we never overwrite text someone has since
+  // edited. A CollabDocument row is not a good "already migrated" signal:
+  // merely opening the editor writes an empty paragraph, creating a row with no
+  // text. So read the body and seed only when it's actually blank — otherwise
+  // the hover card (which reads the column) shows text the empty editor doesn't.
   if (epic.description?.trim()) {
     const docName = `epic:${descriptionDocId}:description`;
-    const existing = await prisma.collabDocument.findUnique({
-      where: { name: docName },
-      select: { name: true },
-    });
-    if (!existing) {
+    const existingText = blocksToPlainText(await readDocAsBlocks(docName)).trim();
+    if (!existingText) {
       await replaceCollabDocContent(
         docName,
         plainTextToBlocks(epic.description),
