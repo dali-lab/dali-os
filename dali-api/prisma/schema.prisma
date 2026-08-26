@@ -116,6 +116,14 @@ model User {
   // a user with no handle simply can't be @-mentioned until they set one.
   handle         String? @unique
 
+  // Per-member secret mixed into the signed barcode carried by the member's
+  // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
+  // lazily the first time they download a pass; rotating it revokes every
+  // barcode they've issued (lost phone / abuse) — the scan endpoint verifies
+  // against this value. Null = no pass issued (or revoked to nothing); a null
+  // secret never verifies. Server-only; never crosses the wire.
+  walletPassSecret String?
+
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
   // first/last above (e.g. a legal name). Optional — blank means "same".

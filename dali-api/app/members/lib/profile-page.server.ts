@@ -42,6 +42,10 @@ import {
 } from "~/admin/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
+import { rotateWalletSecret } from "~/lib/wallet-token";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
 import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
@@ -175,6 +179,14 @@ export type ProfilePageData = {
     ceCredits: Array<{ termCode: string; count: number }>;
 
   } | null;
+  /** Wallet membership-pass controls — only on your own profile, and only when
+   *  the wallet-checkin flag is on for you. Each platform boolean is false when
+   *  its signing certs aren't configured on the server (that button hides).
+   *  Null hides the Add-to-Wallet section entirely. */
+  wallet: { apple: boolean; google: boolean } | null;
+  /** Whether the viewer may reset/revoke this member's wallet pass — the member
+   *  themself (lost phone) or Core (offboarding / abuse). */
+  canRevokeWalletPass: boolean;
 };
 
 const TEXT_FIELDS = [
@@ -306,6 +318,15 @@ export async function loadProfilePage({
   const canManageEligibility = await isCore(auth.user.sub);
   const adminViewer = await isAdmin(auth.user.sub);
   const canEdit = adminViewer || isSelf;
+
+  // Wallet membership pass — only on your own profile with the flag on. `roles`
+  // is the subject's roles, which is the viewer's own when isSelf, so it's the
+  // right input to the flag check here. Core can also reset a member's pass.
+  const wallet =
+    isSelf && (await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request))
+      ? { apple: walletAppleConfigured(), google: walletGoogleConfigured() }
+      : null;
+  const canRevokeWalletPass = isSelf || canManageEligibility;
 
   // Education engagement is for the member themself and Core — not peer
   // browsing. Teaching history is public credit, but keeping one gate for the
@@ -528,6 +549,8 @@ export async function loadProfilePage({
     presenceSubtitle: presenceUser?.subtitle ?? null,
     allowedLevels: ALLOWED_LEVELS,
     education,
+    wallet,
+    canRevokeWalletPass,
 
     mentorshipPanel,
   };
@@ -551,6 +574,17 @@ export async function runProfileAction({
 
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "profile");
+
+  if (intent === "revoke-wallet-pass") {
+    // Self-service reset (lost/stolen phone) or Core revoking for a member
+    // (offboarding / abuse). Rotating the secret invalidates every barcode that
+    // member has downloaded; they re-add the pass to get a working one.
+    if (auth.user.sub !== targetId && !(await isCore(auth.user.sub))) {
+      return { error: "You don't have permission to reset this member's pass." };
+    }
+    await rotateWalletSecret(targetId);
+    return redirect(redirectPathFor(request, targetId));
+  }
 
   if (intent === "add-eligibility" || intent === "set-eligibility-level") {
     if (!(await isCore(auth.user.sub))) {
