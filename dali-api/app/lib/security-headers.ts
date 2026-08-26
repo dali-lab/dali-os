@@ -100,7 +100,11 @@ export function securityHeaders(): Record<string, string> {
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "X-DNS-Prefetch-Control": "off",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    // camera=(self): the wallet-pass scan station (/calendar/scan/:id) uses
+    // getUserMedia to read pass QRs. Scoped to same-origin documents — a
+    // cross-origin embed still can't reach the camera. microphone/geolocation
+    // stay fully disabled (unused).
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
     [cspHeaderName()]: contentSecurityPolicy(),
   };
 
