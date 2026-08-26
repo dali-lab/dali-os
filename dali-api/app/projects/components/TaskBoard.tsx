@@ -64,6 +64,9 @@ type Props = {
   // Bumped by an outside control (the timeline's Add ▸ Task) to open the
   // create form. A counter rather than a boolean so repeated adds each fire.
   createNonce?: number;
+  // The shared Progress people filter (os). Empty = no people filter; the
+  // board's own filters (epic/sprint/term/mine/search) still apply on top.
+  filterPeopleIds?: string[];
 };
 
 // Card and list meta. 11px sits below the design's smallest step.
@@ -163,6 +166,7 @@ export function TaskBoard({
   currentUserId,
   currentUserName,
   createNonce = 0,
+  filterPeopleIds = [],
 }: Props) {
   // Optimistic board state + rollback live in the shared hook. Server data is
   // adopted whenever it changes and no save is in flight, so teammate edits,
@@ -403,6 +407,10 @@ export function TaskBoard({
     if (onlyMine) {
       ts = ts.filter((t) => t.assignees.some((a) => a.id === currentUserId));
     }
+    if (filterPeopleIds.length > 0) {
+      const want = new Set(filterPeopleIds);
+      ts = ts.filter((t) => t.assignees.some((a) => want.has(a.id)));
+    }
     if (query.trim()) ts = ts.filter((t) => taskMatchesQuery(t, query));
     return ts;
   }, [
@@ -413,6 +421,7 @@ export function TaskBoard({
     sprintTermById,
     onlyMine,
     currentUserId,
+    filterPeopleIds,
     query,
   ]);
 
