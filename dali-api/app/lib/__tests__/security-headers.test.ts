@@ -107,6 +107,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
     expect(h["X-Content-Type-Options"]).toBe("nosniff");
     expect(h["X-Frame-Options"]).toBe("SAMEORIGIN");
     expect(h["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
-    expect(h["Permissions-Policy"]).toContain("camera=()");
+    expect(h["Permissions-Policy"]).toContain("camera=(self)");
+    expect(h["Permissions-Policy"]).toContain("microphone=()");
   });
 });
