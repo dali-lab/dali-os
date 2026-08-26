@@ -625,12 +625,13 @@ function EpicDetail({
     epic.descriptionDocId,
   );
   useEffect(() => {
-    // Already provisioned (this epic, or any past visit by anyone) — nothing
-    // to do; the editor mounts on the existing room name.
-    if (descriptionDocId) return;
-    // Viewers can't trigger the write — they'd just see a "No description
-    // yet" placeholder until a manager opens the epic. That's fine.
+    // Viewers can't trigger the write — they'd just see the plain-text
+    // description (or a placeholder) until a manager opens the epic.
     if (!canManage) return;
+    // Ping on every manager open, even when the room name is already known:
+    // the endpoint is idempotent for the id and also seeds the doc from a
+    // legacy plain-text description if the doc is still empty, so an epic
+    // provisioned-but-empty before that seeding existed still gets migrated.
     let cancelled = false;
     void (async () => {
       try {
@@ -645,14 +646,14 @@ function EpicDetail({
         }
       } catch {
         // Network failure: the modal still shows the rest of the epic;
-        // the description block falls back to "No description yet." A
-        // future open retries.
+        // the description block falls back to the plain text or a
+        // placeholder. A future open retries.
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [descriptionDocId, canManage, epic.id]);
+  }, [canManage, epic.id]);
 
   // There is no modal-level edit mode: a manager can add a story, rename the
   // epic, or open the details form straight from the read view.
@@ -946,11 +947,12 @@ function EpicDetail({
       </section>
       )}
 
-      {/* Description — always live as a collab editor (the project's
-          Overview/PRD pattern). The room name is the epic's descriptionDocId
-          (lazily provisioned on first open by a manager). For viewers or
-          while provisioning is in flight, falls back to a quiet placeholder
-          so the modal isn't empty. */}
+      {/* Description — a live collab editor (the project's Overview/PRD
+          pattern). The room name is the epic's descriptionDocId (lazily
+          provisioned on first manager open, and seeded there from any legacy
+          plain-text description). For viewers or while provisioning is in
+          flight, falls back to that plain text, then a placeholder — never
+          both the text and the editor at once. */}
       {os && <div className="os-modal-divider" aria-hidden />}
       <section className={cn(!os && "border-t border-border pt-4 first:border-t-0 first:pt-0")}>
         <h3
@@ -960,21 +962,6 @@ function EpicDetail({
         >
           Description
         </h3>
-        {/* The plain-text `description` column predates the collab doc and
-            nothing in this modal writes it any more — but the timeline's hover
-            card still reads it, so an epic carried over from before the switch
-            showed a paragraph on hover that vanished the moment you clicked the
-            bar. It reads here too now, above the doc, so the two agree. */}
-        {epic.description && (
-          <p
-            className={cn(
-              "whitespace-pre-wrap text-sm text-foreground",
-              os ? "mb-3" : "mb-2",
-            )}
-          >
-            {epic.description}
-          </p>
-        )}
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -992,6 +979,19 @@ function EpicDetail({
               className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-accent-coral/30"
             />
           </PresenceProvider>
+        ) : epic.description ? (
+          // No live editor yet (a viewer, or provisioning still in flight):
+          // show the plain-text `description` so the modal isn't empty. When a
+          // manager opens the epic the doc is seeded from this same text and
+          // the editor above becomes the single surface — the two never stack.
+          <p
+            className={cn(
+              "whitespace-pre-wrap text-sm text-foreground",
+              os ? "mb-3" : "mb-2",
+            )}
+          >
+            {epic.description}
+          </p>
         ) : canManage ? (
           <p className="text-sm text-muted-foreground italic">Preparing editor…</p>
         ) : !collabToken ? (
@@ -999,11 +999,7 @@ function EpicDetail({
             Sign in again to see the description.
           </p>
         ) : (
-          // With the legacy paragraph above, "No description yet." would
-          // contradict what the reader is looking at — the doc is just empty.
-          !epic.description && (
-            <p className="text-sm text-muted-foreground italic">No description yet.</p>
-          )
+          <p className="text-sm text-muted-foreground italic">No description yet.</p>
         )}
       </section>
 

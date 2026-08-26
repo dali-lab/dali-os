@@ -338,6 +338,19 @@ export async function storeDocument(
     }
   }
 
+  if (entity === "epic") {
+    if (field === "description") {
+      // `id` here is the epic's descriptionDocId (the opaque room name), not
+      // the epic id, and that column isn't unique — hence updateMany. Mirrors
+      // the doc back to the plain-text column the timeline hover card and the
+      // modal's pre-editor fallback read, so they don't go stale after edits.
+      await prisma.epic.updateMany({
+        where: { descriptionDocId: id },
+        data: { description: plainText },
+      });
+    }
+  }
+
   if (entity === "edusubmission") {
     if (field === "feedback") {
       await prisma.educationSubmission.update({

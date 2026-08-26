@@ -1304,12 +1304,11 @@ export function EpicsTimeline({
                           top: b.top,
                           height: b.height,
                           border: `1px solid ${os ? OS_LEVEL.epic.edge : LEVEL_COLOR.epic}`,
-                          // A translucent wash of the level fill so the bar
-                          // reads as filled, not just outlined — the solid
-                          // label pill still stands out and nested story/task
-                          // bars paint on top.
+                          // Fill the bar with its solid level colour, not a
+                          // translucent wash, so the container reads as one
+                          // solid band; nested story/task bars paint on top.
                           background: os
-                            ? `color-mix(in srgb, ${OS_LEVEL.epic.fill} 16%, transparent)`
+                            ? OS_LEVEL.epic.fill
                             : `color-mix(in srgb, ${LEVEL_COLOR.epic} 7%, transparent)`,
                           ...dragStyle(
                             "epic",
@@ -1373,10 +1372,10 @@ export function EpicsTimeline({
                         top: b.top,
                         height: b.height,
                         border: `1px solid ${os ? OS_LEVEL.story.edge : LEVEL_COLOR.story}`,
-                        // Wash slightly stronger than the epic so the nested
-                        // story bar still reads as its own band over the epic.
+                        // Solid fill, like the epic — the story's own hue
+                        // still reads as its own band over the epic it nests in.
                         background: os
-                          ? `color-mix(in srgb, ${OS_LEVEL.story.fill} 22%, transparent)`
+                          ? OS_LEVEL.story.fill
                           : `color-mix(in srgb, ${LEVEL_COLOR.story} 8%, transparent)`,
                         ...dragStyle(
                           "story",
