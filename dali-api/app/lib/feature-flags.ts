@@ -98,6 +98,12 @@ export const FEATURE_FLAGS = [
       "The dark dali.os shell: sidebar with an area switcher, a top bar carrying favorites and the task bell, the recents home, and the card-grid project hub. Takes precedence over the other shell flags on the pages it covers — everything it doesn't cover keeps whatever the new left navigation gives it.",
   },
   {
+    key: "wallet-checkin",
+    label: "Wallet check-in",
+    description:
+      "Members can add a DALI membership pass to Apple/Google Wallet; an organizer scans it at a meeting to mark attendance (the inverse of QR self-check-in). Needs the pass-signing certs configured in the environment — the Add-to-Wallet buttons hide when a platform is unconfigured even with this on.",
+  },
+  {
     key: "nav-preload",
     defaultEnabled: true,
     defaultEveryone: true,

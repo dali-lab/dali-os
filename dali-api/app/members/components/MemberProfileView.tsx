@@ -19,7 +19,9 @@ import {
   MessageSquare,
   Plus,
   Shield,
+  Smartphone,
   User as UserIcon,
+  Wallet,
   X,
 } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
@@ -77,6 +79,8 @@ export function MemberProfileView({
     favoriteIds,
     achievements,
     compliance,
+    wallet,
+    canRevokeWalletPass,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -254,6 +258,10 @@ export function MemberProfileView({
         pendingReviews={pendingReviews}
         showReviewsRow={showReviewsRow}
       />
+
+      {(wallet || (canRevokeWalletPass && !isSelf)) && (
+        <WalletSection wallet={wallet} isSelf={isSelf} canRevoke={canRevokeWalletPass} />
+      )}
 
       {hasEducation && data.education && (
         <EducationSection education={data.education} />
@@ -598,6 +606,131 @@ function PersonalSection({
         </Form>
       )}
     </EditableSection>
+  );
+}
+
+function WalletSection({
+  wallet,
+  isSelf,
+  canRevoke,
+}: {
+  wallet: { apple: boolean; google: boolean } | null;
+  isSelf: boolean;
+  canRevoke: boolean;
+}) {
+  const revokeFetcher = useFetcher<{ error?: string } | null>();
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const revoking = revokeFetcher.state !== "idle";
+
+  async function addToGoogle() {
+    setGoogleBusy(true);
+    setGoogleError(null);
+    try {
+      const res = await fetch("/api/wallet/google/save-url", { credentials: "include" });
+      const body = (await res.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      if (res.ok && body?.url) {
+        window.open(body.url, "_blank", "noopener");
+      } else {
+        setGoogleError(body?.error ?? "Couldn't build the Google Wallet link.");
+      }
+    } catch {
+      setGoogleError("Network error — try again.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Wallet className="w-4 h-4 text-muted-foreground" aria-hidden />
+        <h2 className="font-heading font-semibold text-foreground">Membership pass</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">
+        {isSelf
+          ? "Add your DALI pass to your phone's wallet, then show it at a meeting to check in — no sign-in needed."
+          : "Reset this member's wallet pass to revoke a lost or shared one — they'll re-add it to get a working pass."}
+      </p>
+
+      {wallet && (wallet.apple || wallet.google) && (
+        <div className="flex flex-wrap gap-2">
+          {wallet.apple && (
+            <a
+              href="/api/wallet/apple/pass"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors"
+            >
+              <Wallet className="w-4 h-4" aria-hidden />
+              Add to Apple Wallet
+            </a>
+          )}
+          {wallet.google && (
+            <button
+              type="button"
+              onClick={() => void addToGoogle()}
+              disabled={googleBusy}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors disabled:opacity-50"
+            >
+              <Smartphone className="w-4 h-4" aria-hidden />
+              {googleBusy ? "Opening…" : "Add to Google Wallet"}
+            </button>
+          )}
+        </div>
+      )}
+      {wallet && !wallet.apple && !wallet.google && (
+        <p className="text-xs text-muted-foreground">
+          Wallet passes aren't configured on this server yet.
+        </p>
+      )}
+      {googleError && <p className="text-xs text-red-700 mt-2">{googleError}</p>}
+
+      {canRevoke && (
+        <div className="mt-3 pt-3 border-t border-border">
+          {confirmRevoke ? (
+            <revokeFetcher.Form
+              method="post"
+              onSubmit={() => setConfirmRevoke(false)}
+              className="flex items-center gap-2 flex-wrap"
+            >
+              <input type="hidden" name="intent" value="revoke-wallet-pass" />
+              <span className="text-sm text-foreground">
+                {isSelf
+                  ? "Reset your pass? Your current one stops working until you re-add it."
+                  : "Revoke this member's pass? Their current one stops working."}
+              </span>
+              <button
+                type="submit"
+                disabled={revoking}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {revoking ? "Resetting…" : isSelf ? "Reset pass" : "Revoke pass"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmRevoke(false)}
+                className="px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </revokeFetcher.Form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmRevoke(true)}
+              className="text-sm text-red-700 hover:underline"
+            >
+              {isSelf ? "Reset my wallet pass" : "Revoke wallet pass"}
+            </button>
+          )}
+          {revokeFetcher.data?.error && (
+            <p className="text-xs text-red-700 mt-2">{revokeFetcher.data.error}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
