@@ -14,6 +14,7 @@ import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { hasSubnavRow } from "~/lib/nav-areas";
+import { Tooltip } from "~/components/ui/floating";
 
 const PageDocPage = lazy(() =>
   import("./PageDocPage").then((m) => ({ default: m.PageDocPage })),
@@ -155,15 +156,16 @@ export function PageDocButton({
 
   if (variant === "topbar") {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Open this page's guide"
-        className="guide-pulse os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
-      >
-        <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
-        Guide
-      </button>
+      <Tooltip content="Open this page's guide">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="guide-pulse os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+        >
+          <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
+          Guide
+        </button>
+      </Tooltip>
     );
   }
 

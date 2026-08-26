@@ -8,6 +8,7 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { Sparkles } from "lucide-react";
 import { Sparkline, MiniBar } from "~/admin/components/console-ui";
+import { InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("ai-usage");
 
@@ -137,7 +138,10 @@ export default function AdminConsoleAiUsage() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Sparkles className="w-6 h-6 text-foreground/80" />
-        <h1 className="text-2xl font-bold text-foreground">AI usage</h1>
+        <h1 className="text-2xl font-bold text-foreground inline-flex items-center gap-1.5">
+          AI usage
+          <InfoTip content="Each member is limited to 200 AI doc-writing requests per day and 10 per minute (burst). Token counts are best-effort — a request can appear without tokens if the call was cancelled or failed." />
+        </h1>
         <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
           {rangeLabel}
         </span>

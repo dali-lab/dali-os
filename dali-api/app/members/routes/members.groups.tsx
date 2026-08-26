@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
+import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
@@ -730,16 +731,21 @@ function GroupCard({
             {group.name}
           </span>
           {isSystem && (
-            <span
-              className={cn(
-                "font-medium uppercase tracking-wide",
-                os
-                  ? "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent"
-                  : "rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700",
-              )}
+            <Tooltip
+              content="System-managed group — membership updates automatically from assignments. Cannot be edited or deleted."
+              variant="rich"
             >
-              Auto
-            </span>
+              <span
+                className={cn(
+                  "font-medium uppercase tracking-wide",
+                  os
+                    ? "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent"
+                    : "rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700",
+                )}
+              >
+                Auto
+              </span>
+            </Tooltip>
           )}
           {group.archived && (
             <span
@@ -781,18 +787,19 @@ function GroupCard({
                 value={group.archived ? "unarchive-group" : "archive-group"}
               />
               <input type="hidden" name="groupId" value={group.id} />
-              <button
-                type="submit"
-                aria-label={group.archived ? "Restore group" : "Archive group"}
-                title={group.archived ? "Restore group" : "Archive group"}
-                className="text-muted-foreground hover:text-foreground p-1"
-              >
-                {group.archived ? (
-                  <ArchiveRestore className="w-4 h-4" />
-                ) : (
-                  <Archive className="w-4 h-4" />
-                )}
-              </button>
+              <Tooltip content={group.archived ? "Restore group" : "Archive group"}>
+                <button
+                  type="submit"
+                  aria-label={group.archived ? "Restore group" : "Archive group"}
+                  className="text-muted-foreground hover:text-foreground p-1"
+                >
+                  {group.archived ? (
+                    <ArchiveRestore className="w-4 h-4" />
+                  ) : (
+                    <Archive className="w-4 h-4" />
+                  )}
+                </button>
+              </Tooltip>
             </fetcher.Form>
             <fetcher.Form
               method="post"

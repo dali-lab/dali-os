@@ -15,6 +15,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { JOBS, resolveJobSettings } from "~/jobs/registry";
 import { buttonClasses } from "~/components/ui/Button";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("jobs");
 
@@ -149,17 +150,18 @@ function JobRow({ job }: { job: JobView }) {
             {job.settingDefs.map((s) => (
               <label key={s.key} className="flex items-center gap-1.5 text-xs text-zinc-600">
                 {s.label}
-                <input
-                  type="number"
-                  min={s.min}
-                  max={s.max}
-                  value={settings[s.key] ?? ""}
-                  onChange={(e) =>
-                    setSettings((prev) => ({ ...prev, [s.key]: e.target.value }))
-                  }
-                  className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
-                  title={`${s.min}–${s.max}${s.unit ? ` ${s.unit}` : ""} (default ${s.default})`}
-                />
+                <Tooltip content={`${s.min}–${s.max}${s.unit ? ` ${s.unit}` : ""} · default ${s.default}`}>
+                  <input
+                    type="number"
+                    min={s.min}
+                    max={s.max}
+                    value={settings[s.key] ?? ""}
+                    onChange={(e) =>
+                      setSettings((prev) => ({ ...prev, [s.key]: e.target.value }))
+                    }
+                    className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
+                  />
+                </Tooltip>
                 {s.unit}
               </label>
             ))}
@@ -169,22 +171,25 @@ function JobRow({ job }: { job: JobView }) {
           <p className="mt-1 text-xs text-red-600">{saveFetcher.data.error}</p>
         )}
         {job.lastError && (
-          <p className="mt-1 break-all text-xs text-red-600" title={job.lastError}>
-            {job.lastError.length > 200 ? `${job.lastError.slice(0, 200)}…` : job.lastError}
-          </p>
+          <Tooltip content={job.lastError} variant="rich" placement="bottom">
+            <p className="mt-1 break-all text-xs text-red-600">
+              {job.lastError.length > 200 ? `${job.lastError.slice(0, 200)}…` : job.lastError}
+            </p>
+          </Tooltip>
         )}
       </td>
       <td className="px-3 py-3 text-center align-top">
         <label className="inline-flex items-center gap-1 text-xs text-zinc-600">
-          <input
-            type="number"
-            min={1}
-            max={10080}
-            value={interval}
-            onChange={(e) => setInterval(e.target.value)}
-            className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
-            title={`Minutes between runs (default ${job.defaultIntervalMinutes})`}
-          />
+          <Tooltip content={`Minutes between runs · 1–10080 · default ${job.defaultIntervalMinutes}`}>
+            <input
+              type="number"
+              min={1}
+              max={10080}
+              value={interval}
+              onChange={(e) => setInterval(e.target.value)}
+              className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
+            />
+          </Tooltip>
           m
         </label>
       </td>
@@ -283,7 +288,12 @@ export default function AdminJobs() {
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
               <th className="px-3 py-2">Job</th>
-              <th className="px-3 py-2 text-center">Interval</th>
+              <th className="px-3 py-2 text-center">
+                <span className="inline-flex items-center gap-1">
+                  Interval
+                  <InfoTip content="How often this job runs. The DB row is authoritative — registry values are defaults. Range: 1–10080 minutes. A lease prevents concurrent runs across machines." />
+                </span>
+              </th>
               <th className="px-3 py-2 text-center">Status</th>
               <th className="px-3 py-2 text-center">Next run</th>
               <th className="px-3 py-2 text-center">Last run</th>

@@ -19,6 +19,7 @@ import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
@@ -630,23 +631,24 @@ export function StaffingBoard({
             <span className="truncate">{p.name}</span>
             {/* Straight through to the project. The column header is part of a
                 drag surface, so the press must not reach it. */}
-            <Link
-              to={`/projects/${p.id}`}
-              prefetch="intent"
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              title={`Open ${p.name}`}
-              aria-label={`Open ${p.name}`}
-              className={cn(
-                "shrink-0 rounded p-0.5 transition-colors",
-                os
-                  ? "text-os-muted hover:text-foreground"
-                  : "text-muted-foreground/70 hover:text-accent-coral",
-              )}
-            >
-              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-            </Link>
+            <Tooltip content={`Open ${p.name}`}>
+              <Link
+                to={`/projects/${p.id}`}
+                prefetch="intent"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Open ${p.name}`}
+                className={cn(
+                  "shrink-0 rounded p-0.5 transition-colors",
+                  os
+                    ? "text-os-muted hover:text-foreground"
+                    : "text-muted-foreground/70 hover:text-accent-coral",
+                )}
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+              </Link>
+            </Tooltip>
           </span>
         ),
         subtitle: `${board[p.id]?.length ?? 0} assigned`,
@@ -655,20 +657,24 @@ export function StaffingBoard({
         listClassName: listClass,
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
-          <button
-            type="button"
-            onClick={() => setFinalizeProjectId(p.id)}
-            title={`Finalize ${p.name}`}
-            aria-label={`Finalize ${p.name}`}
-            className={cn(
-              "flex-shrink-0 transition-colors",
-              os
-                ? "text-os-muted hover:text-os-accent"
-                : "text-muted-foreground hover:text-accent-coral",
-            )}
+          <Tooltip
+            variant="rich"
+            content="Lock the roster and set up the project's Slack channel and GitHub team. Run this once all members are placed."
           >
-            <CheckCircle2 className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={() => setFinalizeProjectId(p.id)}
+              aria-label={`Finalize ${p.name}`}
+              className={cn(
+                "flex-shrink-0 transition-colors",
+                os
+                  ? "text-os-muted hover:text-os-accent"
+                  : "text-muted-foreground hover:text-accent-coral",
+              )}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+            </button>
+          </Tooltip>
         ) : (
           <span />
         ),

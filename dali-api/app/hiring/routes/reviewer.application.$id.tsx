@@ -22,6 +22,7 @@ import { PresenceBar } from '~/components/collab/PresenceBar'
 import { getEducationEngagement } from '~/education/lib/engagement.server'
 import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
 import { Radio } from '~/components/ui/Radio'
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import type { Question, RubricCriterion } from '~/types'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -561,7 +562,10 @@ export default function ReviewerApplicationReview() {
 
               {/* Overall Recommendation */}
               <div className="pt-4 border-t border-border">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3">Overall Recommendation</h3>
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3 inline-flex items-center gap-1">
+                  Overall Recommendation
+                  <InfoTip variant="rich" content="Reviewer's overall hiring signal — Strong Hire means definitely bring in, Strong No Hire means clear pass; used in deliberations to calibrate decisions across reviewers." />
+                </h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (
                     <Radio
@@ -623,13 +627,15 @@ export default function ReviewerApplicationReview() {
 
       {/* Floating rubric toggle */}
       <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-8 flex flex-col gap-4 z-50">
-        <button
-          onClick={() => setShowRubric(!showRubric)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
-          title="Scoring Guide"
-        >
-          {showRubric ? <X className="w-6 h-6" /> : <HelpCircle className="w-6 h-6" />}
-        </button>
+        <Tooltip content="Scoring Guide" placement="left">
+          <button
+            onClick={() => setShowRubric(!showRubric)}
+            aria-label="Scoring Guide"
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
+          >
+            {showRubric ? <X className="w-6 h-6" /> : <HelpCircle className="w-6 h-6" />}
+          </button>
+        </Tooltip>
       </div>
 
       {showRubric && (

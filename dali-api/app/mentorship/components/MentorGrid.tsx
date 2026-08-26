@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Plus } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBE_META } from "../lib/vibe";
@@ -70,9 +71,12 @@ export function MentorGrid({
                         : "text-accent-coral"
                       : "text-muted-foreground",
                   )}
-                  title={w === currentWeek ? `Week ${w} (current)` : `Week ${w}`}
                 >
-                  {w}
+                  <Tooltip
+                    content={w === currentWeek ? `Week ${w} (current term week)` : `Week ${w}`}
+                  >
+                    <span>{w}</span>
+                  </Tooltip>
                 </th>
               ))}
             </tr>
@@ -138,14 +142,26 @@ function GridCellView({
   // Submitted: open the existing note, colored by its vibe.
   if (cell.state === "submitted") {
     const swatch = cell.vibe ? VIBE_META[cell.vibe].dot : "bg-muted-foreground/40";
+    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no vibe set";
+    const vibeDesc = cell.vibe === "Good"
+      ? "Mentor marked this week as going well."
+      : cell.vibe === "Ok"
+      ? "Mentor flagged some areas to work on."
+      : cell.vibe === "Bad"
+      ? "Mentor flagged something concerning — follow up."
+      : "No overall vibe was recorded for this week.";
     return (
-      <Link
-        to={`/mentorship/notes/${cell.noteId}`}
-        title={`Week ${cell.week}${cell.vibe ? ` · ${VIBE_META[cell.vibe].label}` : " · no vibe"}`}
-        className={`${base} ${swatch} text-white hover:ring-2 hover:ring-offset-1 hover:ring-border`}
+      <Tooltip
+        content={`Week ${cell.week} · ${vibeLabel}. ${vibeDesc}`}
+        variant="rich"
       >
-        <span className="sr-only">Open note</span>
-      </Link>
+        <Link
+          to={`/mentorship/notes/${cell.noteId}`}
+          className={`${base} ${swatch} text-white hover:ring-2 hover:ring-offset-1 hover:ring-border`}
+        >
+          <span className="sr-only">Open note</span>
+        </Link>
+      </Tooltip>
     );
   }
 
@@ -164,12 +180,13 @@ function GridCellView({
   // A non-mentor viewer has nothing to open.
   if (!cell.canCreate) {
     return (
-      <span
-        className={`${base} ${style}`}
-        title={`Week ${cell.week} · ${missing ? "no note" : "not yet due"}`}
+      <Tooltip
+        content={`Week ${cell.week} · ${missing ? "no note written yet" : "not yet due"}`}
       >
-        {missing ? "" : "–"}
-      </span>
+        <span className={`${base} ${style}`}>
+          {missing ? "" : "–"}
+        </span>
+      </Tooltip>
     );
   }
 
@@ -198,15 +215,16 @@ function GridCellView({
   }
 
   return (
-    <button
-      type="button"
-      onClick={openNote}
-      disabled={busy}
-      title={`Week ${cell.week} · open note`}
-      className={`${base} ${style} ${hover}`}
-    >
-      <Plus className="h-3 w-3" aria-hidden />
-      <span className="sr-only">Open note for week {cell.week}</span>
-    </button>
+    <Tooltip content={`Week ${cell.week} — click to open or create this week's note`}>
+      <button
+        type="button"
+        onClick={openNote}
+        disabled={busy}
+        className={`${base} ${style} ${hover}`}
+      >
+        <Plus className="h-3 w-3" aria-hidden />
+        <span className="sr-only">Open note for week {cell.week}</span>
+      </button>
+    </Tooltip>
   );
 }

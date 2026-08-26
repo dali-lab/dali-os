@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
-import { Menu } from '~/components/ui/floating'
+import { Menu } from "~/components/ui/floating";
 import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'

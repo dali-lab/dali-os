@@ -25,7 +25,7 @@ import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
 import { DateField } from "~/components/ui/DateField";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 
 import {
   zonedDayEndUtc,
@@ -583,8 +583,12 @@ export default function FellowshipCycleSetup() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark-blue">{cycle.name}</h1>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
             {CYCLE_TYPE_LABELS[cycle.cycleType]} cycle · {cycle.status}
+            <InfoTip
+              variant="rich"
+              content="Lifecycle stage of this hiring cycle — Draft means setup, Open means accepting applications, Under Review means scoring in progress, Completed means decisions released."
+            />
           </p>
         </div>
         <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
@@ -618,8 +622,12 @@ export default function FellowshipCycleSetup() {
           title="Applicant pool"
           description="Core cycles are open to all current lab members and aren't domain-scoped. Every applicant applies to Core and is read by the whole reviewer pool."
         >
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
             No target domains to configure.
+            <InfoTip
+              variant="rich"
+              content="A virtual domain created for Core hiring cycles — all DALI members can apply regardless of their technical specialty."
+            />
           </p>
         </Section>
       ) : (
@@ -803,23 +811,28 @@ function TargetDomainsSection({
       title="Target domains"
       description="Domains interns can apply to convert into. All domains share the cycle's general rubric and a single reviewer pool."
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-        {allDomains.map((d) => {
-          const checked = selectedIds.has(d.id);
-          return (
-            <Checkbox
-              key={d.id}
-              label={d.displayName}
-              checked={checked}
-              disabled={disabled}
-              onChange={() => toggle(d.id)}
-              className={`px-3 py-2 border rounded-md text-sm ${
-                checked ? "border-blue-400 bg-blue-50" : "border-border"
-              } ${disabled ? "opacity-50" : "cursor-pointer"}`}
-            />
-          );
-        })}
-      </div>
+      <Tooltip
+        content={disabled ? "The cycle is already open — close it first to change target domains." : null}
+        variant="rich"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+          {allDomains.map((d) => {
+            const checked = selectedIds.has(d.id);
+            return (
+              <Checkbox
+                key={d.id}
+                label={d.displayName}
+                checked={checked}
+                disabled={disabled}
+                onChange={() => toggle(d.id)}
+                className={`px-3 py-2 border rounded-md text-sm ${
+                  checked ? "border-blue-400 bg-blue-50" : "border-border"
+                } ${disabled ? "opacity-50" : "cursor-pointer"}`}
+              />
+            );
+          })}
+        </div>
+      </Tooltip>
       {fetcher.data && "error" in fetcher.data && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 mb-3">
           {fetcher.data.error as string}
@@ -1433,20 +1446,19 @@ function DecisionsSection({
                           {busyId === d.id ? "Finalizing…" : "Finalize"}
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => releaseOne(d.id)}
-                          disabled={busyId === d.id || bulkBusy || !hasBinding}
-                          title={
-                            !hasBinding
-                              ? `No email template bound to ${d.type} in this cycle. Bind one in Decision emails above.`
-                              : undefined
-                          }
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                        >
-                          <Mail className="w-3.5 h-3.5" aria-hidden />
-                          {busyId === d.id ? "Releasing…" : "Release"}
-                        </button>
+                        <Tooltip content={!hasBinding ? "An email template must be bound to this decision type before it can be released to the applicant." : null} variant="rich">
+                          <span>
+                            <button
+                              type="button"
+                              onClick={() => releaseOne(d.id)}
+                              disabled={busyId === d.id || bulkBusy || !hasBinding}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                            >
+                              <Mail className="w-3.5 h-3.5" aria-hidden />
+                              {busyId === d.id ? "Releasing…" : "Release"}
+                            </button>
+                          </span>
+                        </Tooltip>
                       )}
                     </div>
                   </td>

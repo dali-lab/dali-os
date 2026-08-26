@@ -22,7 +22,7 @@ import { DecisionHistoryList } from "~/hiring/components/DecisionHistoryList";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import type { Question, RubricCriterion } from "~/types";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -654,6 +654,12 @@ function DecisionsSection({
           {!canSeePreReleaseDecisions && decisions.length > 0 && " (released only)"}
         </>
       }
+      headerExtra={
+        <InfoTip
+          variant="rich"
+          content="Draft decisions are visible only to leads, Final marks the decision ready to release, Released sends the decision email to the applicant. An 'Accepted elsewhere' status means the applicant accepted another DALI domain's offer — sibling pending applications are automatically withdrawn."
+        />
+      }
     >
       {decisions.length > 0 && <DecisionHistoryList decisions={decisions} showNotes />}
     </DetailCard>
@@ -668,6 +674,12 @@ function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
         delibs.length === 0
           ? "Not part of any delibs session."
           : `${delibs.length} ${delibs.length === 1 ? "session" : "sessions"}`
+      }
+      headerExtra={
+        <InfoTip
+          variant="rich"
+          content="Short for deliberations — the group discussion sessions where domain leads review applications together and make accept, waitlist, or reject decisions."
+        />
       }
     >
       {delibs.length > 0 && (

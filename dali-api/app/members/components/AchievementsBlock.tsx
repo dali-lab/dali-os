@@ -10,7 +10,7 @@ import {
   UserSearch,
   Users,
 } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import type { Achievement, AchievementKey } from "~/members/lib/achievements.server";
 
 // Medals for the profile rail. Each milestone gets its own shape and palette
@@ -125,7 +125,7 @@ export function AchievementsBlock({ achievements }: { achievements: Achievement[
           const { Icon } = m;
           return (
             <li key={a.key} className="flex flex-col items-center gap-1.5">
-              <Tooltip label={`${a.title} — ${a.description}`}>
+              <Tooltip content={`${a.title} — ${a.description}`} variant="rich">
                 <span
                   aria-hidden
                   className={`flex h-11 w-11 items-center justify-center ring-1 ${m.shape} ${m.fill} ${m.ring}`}

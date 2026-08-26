@@ -10,6 +10,7 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { ChevronDown } from "lucide-react";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
@@ -323,8 +324,11 @@ export default function DomainLeadApplicationView() {
         domainName={da.domain?.name ?? da.challengeVersion?.domain?.name}
         cycleName={application.applicationCycle.name}
         statusSlot={
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>
+          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>
             {statusInfo.label}
+            {inferredStatus === "AcceptedElsewhere" && (
+              <InfoTip content="Applicant accepted an offer from another DALI domain — this application is closed and sibling pending applications are automatically withdrawn." />
+            )}
           </span>
         }
       />
@@ -456,10 +460,12 @@ function ReviewCard({
             const meta = criteriaByKey[key];
             const label = meta?.label ?? key;
             return (
-              <span key={key} className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded" title={label}>
-                {label.split(" ")[0]}: {score}
-                {meta?.maxScore != null ? `/${meta.maxScore}` : ""}
-              </span>
+              <Tooltip key={key} content={label}>
+                <span className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded">
+                  {label.split(" ")[0]}: {score}
+                  {meta?.maxScore != null ? `/${meta.maxScore}` : ""}
+                </span>
+              </Tooltip>
             );
           })}
         </div>

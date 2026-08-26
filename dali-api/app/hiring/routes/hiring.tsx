@@ -11,6 +11,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { formatInterviewDateInZone, formatInterviewTimeRangeInZone } from "~/hiring/lib/interview-time";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
+import { InfoTip } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -102,11 +103,12 @@ export default function HiringHub() {
             {hub.cycle.name}
             <span
               className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
                 STAGE_STYLES[hub.cycle.status] ?? "bg-muted text-muted-foreground",
               )}
             >
               {hub.cycle.status === "UnderReview" ? "Under review" : hub.cycle.status}
+              <InfoTip content="Lifecycle stage of this hiring cycle — Draft means setup, Open means accepting applications, Under Review means scoring in progress, Completed means decisions released." />
             </span>
             {hub.cycle.closeDate && hub.cycle.status === "Open" && (
               <span>

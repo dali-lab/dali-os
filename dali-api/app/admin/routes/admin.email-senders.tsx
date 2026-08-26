@@ -18,6 +18,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { UsageGauge } from "~/admin/components/console-ui";
+import { InfoTip, Tooltip } from "~/components/ui/floating";
 import {
   EMAIL_PURPOSES,
   EMAIL_PURPOSE_KEYS,
@@ -161,9 +162,11 @@ function DailyCapRow({
           </span>
           {dailyCap != null ? ` / ${dailyCap}` : ""}
           {capped && (
-            <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-              capped
-            </span>
+            <Tooltip content="This sender has reached its daily cap — outbound email for this purpose is paused until midnight UTC." variant="rich">
+              <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 cursor-default">
+                capped
+              </span>
+            </Tooltip>
           )}
         </span>
 
@@ -173,6 +176,7 @@ function DailyCapRow({
           <input type="hidden" name="id" value={integrationId} />
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Daily cap
+            <InfoTip content="Maximum emails this sender may send per UTC day. Leave blank for uncapped. The gauge above shows today's usage." />
             <input
               type="number"
               name="dailyCap"
@@ -180,7 +184,6 @@ function DailyCapRow({
               defaultValue={dailyCap ?? ""}
               placeholder="uncapped"
               className="w-24 rounded-md border border-border bg-page px-1.5 py-0.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              title="Maximum emails per UTC day. Leave blank for uncapped."
             />
           </label>
           <button

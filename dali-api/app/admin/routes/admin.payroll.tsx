@@ -40,7 +40,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { useChartColors } from "~/components/analytics/useChartColors";
-import { Tooltip as UiTooltip } from "~/components/ui/IconButton";
+import { Tooltip as UiTooltip, InfoTip } from "~/components/ui/floating";
 import { PayrollUploadModal } from "~/admin/components/PayrollUploadModal";
 import { PayrollBudgetPanel } from "~/admin/components/PayrollBudgetPanel";
 
@@ -197,7 +197,7 @@ export default function PayrollReconcile() {
         <div className="flex items-center gap-2 flex-wrap">
           <TermFilter terms={data.terms} selected={data.selected} />
           {hasData && (
-            <UiTooltip label="Export CSV">
+            <UiTooltip content="Export CSV">
               <a
                 href={csvHref(tab)}
                 download
@@ -828,7 +828,12 @@ function ChartStringsPanel({ rec }: { rec: ReconciliationResult }) {
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="w-8 px-3 py-2"></th>
-              <th className={TH}>Chart String</th>
+              <th className={TH}>
+                <span className="inline-flex items-center gap-1">
+                  Chart String
+                  <InfoTip content="The Dartmouth financial account code (oracle chart string) that payroll charges are posted to for each project." />
+                </span>
+              </th>
               <th className={TH}>Project</th>
               <th className={TH_NUM}>Hours</th>
               <th className={TH_NUM}>Earnings</th>

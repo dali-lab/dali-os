@@ -17,7 +17,7 @@ import { useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import {
   SLOT_ROLES,
   BUILTIN_SOURCES,
@@ -441,7 +441,7 @@ export function SlotColumnMapper({
                     }}
                     disabled={saving}
                     className="cursor-grab active:cursor-grabbing px-1.5 py-1 text-muted-foreground hover:text-foreground select-none disabled:opacity-40"
-                    title="Drag to reorder"
+                    aria-label="Drag to reorder column"
                   >
                     ⋮⋮
                   </button>
@@ -459,14 +459,16 @@ export function SlotColumnMapper({
                     className="min-w-0 lg:w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
                   />
                 ) : (
-                  <div className="min-w-0 text-sm font-medium text-foreground truncate" title={c.label}>
-                    {c.label}
-                    {isBuiltin && (
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">
-                        (automatic)
-                      </span>
-                    )}
-                  </div>
+                  <Tooltip content={c.label}>
+                    <div className="min-w-0 text-sm font-medium text-foreground truncate">
+                      {c.label}
+                      {isBuiltin && (
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          (automatic)
+                        </span>
+                      )}
+                    </div>
+                  </Tooltip>
                 )}
 
                 {/* Backing question — builtins resolve server-side, role and
@@ -491,18 +493,21 @@ export function SlotColumnMapper({
                     buttonClassName="min-w-0 w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />
                 ) : (
-                  <div
-                    className="min-w-0 text-sm text-foreground truncate"
-                    title={
+                  <Tooltip
+                    content={
                       questions.find((q) => q.key === c.questionKey)?.label ??
                       c.questionKey ??
-                      undefined
+                      null
                     }
                   >
-                    {questions.find((q) => q.key === c.questionKey)?.label ??
-                      c.questionKey ??
-                      "—"}
-                  </div>
+                    <div
+                      className="min-w-0 text-sm text-foreground truncate"
+                    >
+                      {questions.find((q) => q.key === c.questionKey)?.label ??
+                        c.questionKey ??
+                        "—"}
+                    </div>
+                  </Tooltip>
                 )}
 
                 {canManage && (

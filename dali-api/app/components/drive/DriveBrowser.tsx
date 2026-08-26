@@ -68,7 +68,7 @@ import {
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PageIcon } from "~/components/PageIcon";
-import { Menu, ContextMenu } from "~/components/ui/floating";
+import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -1003,66 +1003,72 @@ export function DriveBrowser({
               os ? "rounded-full bg-card" : "rounded-md",
             )}
           >
-            <button
-              type="button"
-              data-testid="drive-view-columns"
-              aria-label="Column view"
-              aria-pressed={viewMode === "columns"}
-              onClick={(e) => {
-                e.stopPropagation();
-                changeView("columns");
-              }}
-              className={cn(
-                os ? "px-3.5 py-2.5" : "p-1.5",
-                viewMode === "columns"
-                  ? os
-                    ? "bg-os-container text-foreground"
-                    : "bg-accent-coral/10 text-accent-coral"
-                  : "text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              <Columns className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              data-testid="drive-view-list"
-              aria-label="List view"
-              aria-pressed={viewMode === "list"}
-              onClick={(e) => {
-                e.stopPropagation();
-                changeView("list");
-              }}
-              className={cn(
-                os ? "px-3.5 py-2.5" : "p-1.5",
-                viewMode === "list"
-                  ? os
-                    ? "bg-os-container text-foreground"
-                    : "bg-accent-coral/10 text-accent-coral"
-                  : "text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              <ListIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              data-testid="drive-view-grid"
-              aria-label="Grid view"
-              aria-pressed={viewMode === "grid"}
-              onClick={(e) => {
-                e.stopPropagation();
-                changeView("grid");
-              }}
-              className={cn(
-                os ? "px-3.5 py-2.5" : "p-1.5",
-                viewMode === "grid"
-                  ? os
-                    ? "bg-os-container text-foreground"
-                    : "bg-accent-coral/10 text-accent-coral"
-                  : "text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
+            <Tooltip content="Column view">
+              <button
+                type="button"
+                data-testid="drive-view-columns"
+                aria-label="Column view"
+                aria-pressed={viewMode === "columns"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  changeView("columns");
+                }}
+                className={cn(
+                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  viewMode === "columns"
+                    ? os
+                      ? "bg-os-container text-foreground"
+                      : "bg-accent-coral/10 text-accent-coral"
+                    : "text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                <Columns className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content="List view">
+              <button
+                type="button"
+                data-testid="drive-view-list"
+                aria-label="List view"
+                aria-pressed={viewMode === "list"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  changeView("list");
+                }}
+                className={cn(
+                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  viewMode === "list"
+                    ? os
+                      ? "bg-os-container text-foreground"
+                      : "bg-accent-coral/10 text-accent-coral"
+                    : "text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                <ListIcon className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Grid view">
+              <button
+                type="button"
+                data-testid="drive-view-grid"
+                aria-label="Grid view"
+                aria-pressed={viewMode === "grid"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  changeView("grid");
+                }}
+                className={cn(
+                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  viewMode === "grid"
+                    ? os
+                      ? "bg-os-container text-foreground"
+                      : "bg-accent-coral/10 text-accent-coral"
+                    : "text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-3">{newMenu}</div>
@@ -1510,9 +1516,14 @@ function ColumnItemRow({
       {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders.
           Reuses the PageRow opacity-reveal pattern from home.tsx:797. */}
       {isSystemManaged && (
-        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          Managed
-        </span>
+        <Tooltip
+          content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
+          variant="rich"
+        >
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            Managed
+          </span>
+        </Tooltip>
       )}
       {/* Inline star for favorites */}
       {(item.type === "doc" || item.type === "folder") && onToggleFavorite && (
@@ -1974,9 +1985,14 @@ function ListRow({
         )}
         {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders. */}
         {isSystemManaged && (
-          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            Managed
-          </span>
+          <Tooltip
+            content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
+            variant="rich"
+          >
+            <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              Managed
+            </span>
+          </Tooltip>
         )}
       </span>
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
@@ -2083,11 +2099,16 @@ function GridTile({
       )}
       {/* Signal ①: "Managed" chip on hover for system-keyed folders. */}
       {isSystemManaged && (
-        <span
-          className={`shrink-0 rounded-sm bg-muted px-1.5 py-0.5 ${t.badge} font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+        <Tooltip
+          content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
+          variant="rich"
         >
-          Managed
-        </span>
+          <span
+            className={`shrink-0 rounded-sm bg-muted px-1.5 py-0.5 ${t.badge} font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+          >
+            Managed
+          </span>
+        </Tooltip>
       )}
     </div>
   );

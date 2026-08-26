@@ -12,7 +12,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
 import { prisma } from "~/lib/db";
@@ -400,7 +400,7 @@ export default function AdminAttendancePage() {
                     {/* Prefer the dedicated check-in surface — it always exists for
                         SelfCheckIn meetings. The meeting-note document can be
                         archived/missing and used to 404 from this icon. */}
-                    <Tooltip label="Open check-in / QR" side="bottom">
+                    <Tooltip content="Open check-in / QR" placement="bottom">
                       <Link
                         to={`/calendar/check-in/${event.id}`}
                         className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
@@ -410,7 +410,7 @@ export default function AdminAttendancePage() {
                       </Link>
                     </Tooltip>
                     {event.notePageId && (
-                      <Tooltip label="Open meeting note" side="bottom">
+                      <Tooltip content="Open meeting note" placement="bottom">
                         <Link
                           to={`/documents/${event.notePageId}`}
                           className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
@@ -484,7 +484,7 @@ function DeleteEventButton({
   const busy = fetcher.state !== "idle";
 
   return (
-    <Tooltip label="Delete event" side="bottom">
+    <Tooltip content="Delete event" placement="bottom">
       <fetcher.Form
         method="post"
         onSubmit={confirmSubmit({

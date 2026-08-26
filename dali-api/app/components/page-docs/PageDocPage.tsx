@@ -19,7 +19,7 @@ import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 // PageDocPage is lazy-loaded (see PageDocContext), so importing from the doc
 // schema package here doesn't drag BlockNote into any route's initial chunk.
 import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 
@@ -261,7 +261,7 @@ export function PageDocPage({
           Edit
         </button>
       ) : (
-        <Tooltip label="Edit guide">
+        <Tooltip content="Edit guide">
           <button
             type="button"
             onClick={startEditing}

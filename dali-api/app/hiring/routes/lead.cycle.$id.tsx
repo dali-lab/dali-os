@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Form, Link, useParams, useLoaderData, useSearchParams, useFetcher, redirect } from 'react-router'
-import { Select, type SelectOption } from "~/components/ui/floating"
+import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -25,7 +25,6 @@ import {
 } from "~/hiring/lib/email-variables";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
@@ -1420,8 +1419,9 @@ export default function HiringLeadCycleDetails() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h1 className="text-2xl font-bold text-foreground">{cycle?.name ?? 'Cycle Management'}</h1>
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
+        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
           {STATUS_LABELS[cycleStatus] ?? cycleStatus}
+          <InfoTip content="Lifecycle stage of this hiring cycle — Draft means setup, Open means accepting applications, Under Review means scoring in progress, Completed means decisions released." />
         </span>
         <div className="ml-auto">
           <PresenceBar />
@@ -1624,20 +1624,27 @@ export default function HiringLeadCycleDetails() {
                 <p className="text-sm text-muted-foreground">{nextStepCopy[cycleStatus] ?? ''}</p>
               </div>
               {!atTerminal && (
-                <button
-                  onClick={
-                    cycleStatus === 'UnderReview'
-                      ? () => setShowCompleteConfirm(true)
-                      : cycleStatus === 'Draft'
-                        ? () => setShowOpenConfirm(true)
-                        : () => advanceStatus()
-                  }
-                  disabled={statusUpdating || !draftChecklistMet}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                <Tooltip
+                  content={!draftChecklistMet ? "Complete all checklist items above before advancing this cycle — at minimum a challenge form and rubric must be set." : null}
+                  variant="rich"
                 >
-                  {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                  <span>
+                    <button
+                      onClick={
+                        cycleStatus === 'UnderReview'
+                          ? () => setShowCompleteConfirm(true)
+                          : cycleStatus === 'Draft'
+                            ? () => setShowOpenConfirm(true)
+                            : () => advanceStatus()
+                      }
+                      disabled={statusUpdating || !draftChecklistMet}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                    >
+                      {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </span>
+                </Tooltip>
               )}
             </div>
 
@@ -2071,20 +2078,19 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">—</td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => resendInvite(p.domainApplication.id)}
-                          disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                          title={
-                            !reminderTemplateBound
-                              ? 'Bind a template to InterviewInviteReminder on the Setup tab → Notification Emails to enable.'
-                              : undefined
-                          }
-                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Mail className="w-3.5 h-3.5" aria-hidden />
-                          {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
-                        </button>
+                        <Tooltip content={!reminderTemplateBound ? 'Bind a reminder email template in cycle settings to enable invitation resends.' : null} variant="rich">
+                          <span>
+                            <button
+                              type="button"
+                              onClick={() => resendInvite(p.domainApplication.id)}
+                              disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                              className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Mail className="w-3.5 h-3.5" aria-hidden />
+                              {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
+                            </button>
+                          </span>
+                        </Tooltip>
                       </td>
                     </tr>
                   )
@@ -2164,10 +2170,10 @@ export default function HiringLeadCycleDetails() {
                           </span>
                         )}
                         {interview.location === 'Online' && isFuture && interview.status === 'Scheduled' && (
+                          <Tooltip content="Saves a location-change email to applicant + both interviewers when you tab away" variant="rich">
                           <input
                             type="url"
                             placeholder="Paste meeting link (emails on save)"
-                            title="Sends location-change email to applicant + both interviewers when you tab away"
                             defaultValue={interview.zoomJoinUrl ?? ''}
                             onBlur={async (e) => {
                               let meetingUrl = e.target.value.trim()
@@ -2191,6 +2197,7 @@ export default function HiringLeadCycleDetails() {
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                             className="block w-full text-xs border border-border rounded px-1.5 py-0.5 bg-card mt-1 placeholder:text-muted-foreground/50"
                           />
+                          </Tooltip>
                         )}
                         {interview.location === 'Online' && interview.zoomJoinUrl && !(isFuture && interview.status === 'Scheduled') && (
                           <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
@@ -2284,20 +2291,19 @@ export default function HiringLeadCycleDetails() {
                     <div className="text-xs text-muted-foreground italic">
                       Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => resendInvite(p.domainApplication.id)}
-                      disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                      title={
-                        !reminderTemplateBound
-                          ? 'Bind a template to InterviewInviteReminder on the Setup tab → Notification Emails to enable.'
-                          : undefined
-                      }
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Mail className="w-3.5 h-3.5" aria-hidden />
-                      {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
-                    </button>
+                    <Tooltip content={!reminderTemplateBound ? 'Bind a reminder email template in cycle settings to enable invitation resends.' : null} variant="rich">
+                      <span>
+                        <button
+                          type="button"
+                          onClick={() => resendInvite(p.domainApplication.id)}
+                          disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Mail className="w-3.5 h-3.5" aria-hidden />
+                          {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
+                        </button>
+                      </span>
+                    </Tooltip>
                   </li>
                 )
               })}
@@ -2882,7 +2888,7 @@ export default function HiringLeadCycleDetails() {
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
+              <h3 className="font-bold text-foreground inline-flex items-center gap-1">Final Decisions Ready for Release<InfoTip content="Draft decisions are visible only to leads, Final marks the decision ready to release, Released sends the decision email to the applicant." /></h3>
               {pendingDecisions.length > 0 && (
                 <button
                   onClick={async () => {
@@ -2908,11 +2914,6 @@ export default function HiringLeadCycleDetails() {
                     setReleasingAll(false)
                   }}
                   disabled={releasable.length === 0 || releasingAll}
-                  title={
-                    skipped > 0
-                      ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
-                      : undefined
-                  }
                   className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 >
                   <Mail className="w-3.5 h-3.5" aria-hidden />
@@ -2997,7 +2998,7 @@ export default function HiringLeadCycleDetails() {
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                        <Tooltip label="Preview">
+                        <Tooltip content="Preview">
                           <button
                             type="button"
                             onClick={() => setPreviewDecisionId(d.id)}
@@ -3007,19 +3008,18 @@ export default function HiringLeadCycleDetails() {
                             <Eye className="w-3.5 h-3.5" />
                           </button>
                         </Tooltip>
-                        <button
-                          onClick={() => confirmReleaseOne(d)}
-                          disabled={releasing === d.id || releasingAll || !hasBinding}
-                          title={
-                            !hasBinding
-                              ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
-                              : undefined
-                          }
-                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                        >
-                          <Mail className="w-3.5 h-3.5" aria-hidden />
-                          {releasing === d.id ? 'Releasing...' : 'Release'}
-                        </button>
+                        <Tooltip content={!hasBinding ? `An email template must be bound to this decision type before it can be released to the applicant.` : null} variant="rich">
+                          <span>
+                            <button
+                              onClick={() => confirmReleaseOne(d)}
+                              disabled={releasing === d.id || releasingAll || !hasBinding}
+                              className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                            >
+                              <Mail className="w-3.5 h-3.5" aria-hidden />
+                              {releasing === d.id ? 'Releasing...' : 'Release'}
+                            </button>
+                          </span>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>
@@ -3058,7 +3058,7 @@ export default function HiringLeadCycleDetails() {
                       Made by {d.madeBy.firstName} {d.madeBy.lastName}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Tooltip label="Preview">
+                      <Tooltip content="Preview">
                         <button
                           type="button"
                           onClick={() => setPreviewDecisionId(d.id)}
@@ -3068,24 +3068,23 @@ export default function HiringLeadCycleDetails() {
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      <button
-                        onClick={async () => {
-                          setReleasing(d.id)
-                          await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                          setReleasing(null)
-                        }}
-                        disabled={releasing === d.id || !hasBinding}
-                        title={
-                          !hasBinding
-                            ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
-                            : undefined
-                        }
-                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                      >
-                        <Mail className="w-3.5 h-3.5" aria-hidden />
-                        {releasing === d.id ? 'Releasing...' : 'Release'}
-                      </button>
+                      <Tooltip content={!hasBinding ? `An email template must be bound to this decision type before it can be released to the applicant.` : null} variant="rich">
+                        <span>
+                          <button
+                            onClick={async () => {
+                              setReleasing(d.id)
+                              await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                              setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                              setReleasing(null)
+                            }}
+                            disabled={releasing === d.id || !hasBinding}
+                            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                          >
+                            <Mail className="w-3.5 h-3.5" aria-hidden />
+                            {releasing === d.id ? 'Releasing...' : 'Release'}
+                          </button>
+                        </span>
+                      </Tooltip>
                     </div>
                   </li>
                 )
@@ -4039,7 +4038,7 @@ function DomainOverridePanel({
                 {currentRubricLabel ?? 'No rubric set'}
               </div>
               {currentRubric && (
-                <Tooltip label="Preview">
+                <Tooltip content="Preview">
                   <button
                     type="button"
                     onClick={() => setShowRubricPreview(true)}
@@ -4082,7 +4081,7 @@ function DomainOverridePanel({
                 />
               </div>
               {selectedRubricId && (
-                <Tooltip label="Preview">
+                <Tooltip content="Preview">
                   <button
                     type="button"
                     onClick={() => setShowRubricPreview(true)}
@@ -4108,17 +4107,22 @@ function DomainOverridePanel({
           <p className="text-xs text-muted-foreground">
             Force-mark this domain ready to unblock cycle advancement when the domain lead is unavailable.
           </p>
-          <button
-            type="button"
-            onClick={() => setShowReadyModal(true)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
-              isReady
-                ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
-                : 'bg-amber-600 hover:bg-amber-700 text-white'
-            }`}
-          >
-            {isReady ? 'Unmark Ready' : 'Force Mark Ready'}
-          </button>
+          <div className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowReadyModal(true)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
+                isReady
+                  ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+              }`}
+            >
+              {isReady ? 'Unmark Ready' : 'Force Mark Ready'}
+            </button>
+            {!isReady && (
+              <InfoTip content="Bypasses checklist requirements to manually advance this domain — use when the domain lead is unavailable and setup can't be completed through normal flow." />
+            )}
+          </div>
         </div>
       )}
 

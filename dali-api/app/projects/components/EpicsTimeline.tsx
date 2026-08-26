@@ -20,6 +20,7 @@ import {
   utcDayOf,
 } from "../lib/timeline-days";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
@@ -375,13 +376,14 @@ function TimelineBarHover({
               {title}
             </div>
             {clickable && (
-              <span
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-container text-os-accent"
-                aria-hidden
-                title="Click the bar to open"
-              >
-                <ArrowUpRight className="h-[15px] w-[15px]" />
-              </span>
+              <Tooltip content="Click the bar to open" placement="right">
+                <span
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-container text-os-accent"
+                  aria-hidden
+                >
+                  <ArrowUpRight className="h-[15px] w-[15px]" />
+                </span>
+              </Tooltip>
             )}
           </div>
           {/* Clamped, not "in full": an epic carried over from before the

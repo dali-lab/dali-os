@@ -23,7 +23,6 @@ export function DocToc({
       trigger={
         <button
           type="button"
-          title="Contents"
           className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <List className="h-3.5 w-3.5" /> Contents

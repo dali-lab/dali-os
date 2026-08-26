@@ -7,7 +7,7 @@ import {
   useNavigation,
   useSubmit,
 } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
   Briefcase as BriefcaseIcon,
   FolderKanban,
@@ -192,14 +192,23 @@ export function MemberProfileView({
           )}
           {presenceLabel && (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span
-                aria-hidden
-                className={`w-1.5 h-1.5 rounded-full ${
+              <Tooltip
+                content={
                   presence?.state === "active"
-                    ? "bg-accent-green"
-                    : "border border-accent-yellow bg-background"
-                }`}
-              />
+                    ? "Active now — seen within the last minute."
+                    : "Recently active — last seen more than a minute ago."
+                }
+                variant="rich"
+              >
+                <span
+                  aria-hidden
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    presence?.state === "active"
+                      ? "bg-accent-green"
+                      : "border border-accent-yellow bg-background"
+                  }`}
+                />
+              </Tooltip>
               {presenceLabel}
             </p>
           )}
@@ -802,8 +811,9 @@ function ActivitySection({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide inline-flex items-center gap-1">
           Projects
+          <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
         </h3>
         {projectAssignments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -1265,13 +1275,20 @@ function AddEligibility({
           buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
       </label>
-      <button
-        type="submit"
-        disabled={submitting || !domainId}
-        className={buttonClasses("primary", "sm")}
+      <Tooltip
+        content={!domainId ? "Select a domain first." : undefined}
+        variant="rich"
       >
-        Add
-      </button>
+        <span>
+          <button
+            type="submit"
+            disabled={submitting || !domainId}
+            className={buttonClasses("primary", "sm")}
+          >
+            Add
+          </button>
+        </span>
+      </Tooltip>
       <button
         type="button"
         onClick={() => {
