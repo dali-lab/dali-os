@@ -564,7 +564,7 @@ export default function ReviewerApplicationReview() {
               <div className="pt-4 border-t border-border">
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3 inline-flex items-center gap-1">
                   Overall Recommendation
-                  <InfoTip variant="rich" content="Reviewer's overall hiring signal — Strong Hire means definitely bring in, Strong No Hire means clear pass; used in deliberations to calibrate decisions across reviewers." />
+                  <InfoTip content="Reviewer's overall hiring signal — Strong Hire means definitely bring in, Strong No Hire means clear pass; used in deliberations to calibrate decisions across reviewers." />
                 </h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (

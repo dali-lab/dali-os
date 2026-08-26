@@ -586,7 +586,6 @@ export default function FellowshipCycleSetup() {
           <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
             {CYCLE_TYPE_LABELS[cycle.cycleType]} cycle · {cycle.status}
             <InfoTip
-              variant="rich"
               content="Lifecycle stage of this hiring cycle — Draft means setup, Open means accepting applications, Under Review means scoring in progress, Completed means decisions released."
             />
           </p>
@@ -625,7 +624,6 @@ export default function FellowshipCycleSetup() {
           <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
             No target domains to configure.
             <InfoTip
-              variant="rich"
               content="A virtual domain created for Core hiring cycles — all DALI members can apply regardless of their technical specialty."
             />
           </p>

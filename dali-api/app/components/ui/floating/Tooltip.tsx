@@ -108,17 +108,22 @@ export function Tooltip({
       {trigger}
       {!disabled && hasContent && isMounted && (
         <FloatingPortal>
+          {/* Outer node owns positioning (floating-ui writes a translate
+              transform here); inner node owns the open/close animation — keep
+              them separate so the fade/scale transform can't clobber the
+              positioning transform (which would drop the tip to 0,0). */}
           <div
             ref={refs.setFloating}
-            style={{ ...floatingStyles, ...transitionStyles }}
+            style={floatingStyles}
             {...getFloatingProps()}
-            className={cn(
-              "z-[70]",
-              variant === "rich" ? RICH_CLASS : LABEL_CLASS,
-              className,
-            )}
+            className={cn("z-[70]", variant === "label" && "pointer-events-none")}
           >
-            {content}
+            <div
+              style={transitionStyles}
+              className={cn(variant === "rich" ? RICH_CLASS : LABEL_CLASS, className)}
+            >
+              {content}
+            </div>
           </div>
         </FloatingPortal>
       )}

@@ -656,7 +656,6 @@ function DecisionsSection({
       }
       headerExtra={
         <InfoTip
-          variant="rich"
           content="Draft decisions are visible only to leads, Final marks the decision ready to release, Released sends the decision email to the applicant. An 'Accepted elsewhere' status means the applicant accepted another DALI domain's offer — sibling pending applications are automatically withdrawn."
         />
       }
@@ -677,7 +676,6 @@ function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
       }
       headerExtra={
         <InfoTip
-          variant="rich"
           content="Short for deliberations — the group discussion sessions where domain leads review applications together and make accept, waitlist, or reject decisions."
         />
       }

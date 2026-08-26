@@ -295,7 +295,6 @@ function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
               Accept
             </button>
             <InfoTip
-              variant="rich"
               content="Accepting off the waitlist runs the full release flow — the applicant gets an acceptance email and placement even though the main cycle is closed."
             />
           </div>

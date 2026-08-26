@@ -441,7 +441,6 @@ export function SlotColumnMapper({
                     }}
                     disabled={saving}
                     className="cursor-grab active:cursor-grabbing px-1.5 py-1 text-muted-foreground hover:text-foreground select-none disabled:opacity-40"
-                    aria-label="Drag to reorder column"
                   >
                     ⋮⋮
                   </button>
