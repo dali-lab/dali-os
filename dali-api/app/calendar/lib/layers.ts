@@ -11,7 +11,7 @@
 // so the same functions feed every view.
 
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import type { EventBlock, ExternalEventDTO, LoaderData, TimeEntryDTO } from "./types";
+import type { EventBlock, ExternalEventDTO, LoaderData, ManualBlockDTO, TimeEntryDTO } from "./types";
 import {
   CLASS_BG,
   EVENT_CORAL,
@@ -204,6 +204,8 @@ export function buildBlocksLayer(
   data: LoaderData,
   days: GridDay[],
   loggedByBlock?: Map<string, LoggedAccent>,
+  onEditBlock?: (b: ManualBlockDTO) => void,
+  onMoveBlock?: (b: ManualBlockDTO, startHour: number, endHour: number) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const b of data.manualBlocks) {
@@ -217,6 +219,9 @@ export function buildBlocksLayer(
         className: EVENT_CORAL,
         borderClassName: "border-accent-coral-light",
         loggedAccent: loggedByBlock?.get(b.id),
+        // Click opens the same composer (edit mode); drag moves/resizes it.
+        onClick: onEditBlock ? () => onEditBlock(b) : undefined,
+        onMoveResize: onMoveBlock ? (s, en) => onMoveBlock(b, s, en) : undefined,
       },
       into,
     );
