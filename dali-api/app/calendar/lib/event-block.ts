@@ -6,6 +6,12 @@ import type { EventAttendeeDTO, MeetingInviteDTO, TimeEntryDTO } from "~/calenda
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 export const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
+// Classes-this-term blocks use the brand navy (every accent token is already
+// claimed by blocks/meetings/roles). Dark enough to carry white ink, distinct
+// from the coral/teal/green/pink/yellow the other layers use. Applied via the
+// EventBlock.bgColor escape hatch, so text flips to a readable on-colour shade.
+export const CLASS_BG = "#1E5779";
+
 // Schedule-preview availability tint: interpolate from white (no one free) to a
 // deep sage (everyone free) by `frac` (0..1). Lerping the color itself — not
 // just opacity over a fixed light green — gives real contrast between the

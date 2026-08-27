@@ -442,6 +442,7 @@ export type CreateGoogleEventInput = {
   linkId: string;
   summary: string;
   description?: string;
+  location?: string;
   startIso: string;
   endIso: string;
   // RFC 5545 RRULE; pass without the "RRULE:" prefix (e.g. "FREQ=WEEKLY;BYDAY=MO").
@@ -467,6 +468,7 @@ export async function createGoogleCalendarEvent(
     end: { dateTime: input.endIso, timeZone },
   };
   if (input.description) body.description = input.description;
+  if (input.location) body.location = input.location;
   if (input.recurrenceRule) {
     const rule = input.recurrenceRule.startsWith("RRULE:")
       ? input.recurrenceRule
@@ -491,6 +493,91 @@ export async function createGoogleCalendarEvent(
   const data = (await res.json()) as { id?: string; htmlLink?: string };
   if (!data.id) throw new Error("Google events.insert returned no event id");
   return { eventId: data.id, htmlLink: data.htmlLink ?? null };
+}
+
+/** Edit an event we created (a class's time / title / recurrence changed). Only
+ *  the passed fields are patched; recurrenceRule:null clears the recurrence. */
+export async function patchGoogleCalendarEvent(input: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  startIso?: string;
+  endIso?: string;
+  recurrenceRule?: string | null;
+  timeZone?: string;
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(input.linkId);
+  const calendarId = encodeURIComponent(input.calendarId ?? "primary");
+  const timeZone = input.timeZone ?? APPLICATION_TZ;
+  const body: Record<string, unknown> = {};
+  if (input.summary !== undefined) body.summary = input.summary;
+  if (input.description !== undefined) body.description = input.description;
+  if (input.location !== undefined) body.location = input.location;
+  if (input.startIso) body.start = { dateTime: input.startIso, timeZone };
+  if (input.endIso) body.end = { dateTime: input.endIso, timeZone };
+  if (input.recurrenceRule !== undefined) {
+    body.recurrence = input.recurrenceRule
+      ? [input.recurrenceRule.startsWith("RRULE:") ? input.recurrenceRule : `RRULE:${input.recurrenceRule}`]
+      : [];
+  }
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.eventId)}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.patch failed (${res.status}): ${detail}`);
+  }
+}
+
+/** Delete an event we created. A 404/410 (already gone) counts as success — the
+ *  caller's goal is that the event no longer exists. */
+export async function deleteGoogleCalendarEvent(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`,
+    { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.delete failed (${res.status}): ${detail}`);
+  }
+}
+
+/** Find (by summary) or create a dedicated calendar on the linked account and
+ *  return its id. Backs the "dedicated Classes calendar" destination so class
+ *  events group cleanly and toggle/remove without touching the primary. */
+export async function getOrCreateNamedCalendar(linkId: string, summary: string): Promise<string> {
+  const token = await getValidAccessTokenForLink(linkId);
+  const wanted = summary.trim().toLowerCase();
+  const existing = (await listCalendarsForLink(linkId, token)).find(
+    (c) => c.summary?.trim().toLowerCase() === wanted,
+  );
+  if (existing) return existing.id;
+  const res = await fetch("https://www.googleapis.com/calendar/v3/calendars", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google calendars.insert failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error("Google calendars.insert returned no id");
+  return data.id;
 }
 
 type AttendeeResponse = "accepted" | "declined" | "tentative" | "needsAction";
