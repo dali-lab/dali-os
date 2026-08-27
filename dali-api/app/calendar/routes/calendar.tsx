@@ -746,6 +746,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       isWork: b.isWork,
       assignmentType: b.assignmentType,
       roleRefId: b.roleRefId,
+      workNote: b.workNote,
     })),
     calendarLinks,
     generalCalendar,
@@ -943,13 +944,17 @@ async function handleEventAction(
       const isWork = get("isWork") === "1";
       const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
       const roleRefId = get("roleRefId") || null;
+      const workNote = get("workNote").trim() || null;
       if (isWork && recurrenceRule) {
         return Response.json({ error: "Recurring blocks can't be added to the timesheet yet." }, { status: 400 });
+      }
+      if (isWork && !workNote) {
+        return Response.json({ error: "Add a timesheet description." }, { status: 400 });
       }
       const startTime = new Date(startIso);
       const endTime = new Date(endIso);
       const block = await prisma.manualBlock.create({
-        data: { userId, title, startTime, endTime, allDay, recurrenceRule, isWork, assignmentType, roleRefId },
+        data: { userId, title, startTime, endTime, allDay, recurrenceRule, isWork, assignmentType, roleRefId, workNote },
       });
       const sync = await syncManualBlockTimeEntry({
         manualBlockId: block.id,
@@ -958,6 +963,7 @@ async function handleEventAction(
         assignmentType,
         roleRefId,
         title,
+        workNote,
         startTime,
         endTime,
       });
@@ -992,6 +998,7 @@ async function handleEventAction(
           assignmentType: block.assignmentType,
           roleRefId: block.roleRefId,
           title: block.title,
+          workNote: block.workNote,
           startTime,
           endTime,
         });
@@ -1003,10 +1010,14 @@ async function handleEventAction(
         const isWork = get("isWork") === "1";
         const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
         const roleRefId = get("roleRefId") || null;
+        const workNote = get("workNote").trim() || null;
         const allDay = get("allDay") === "1";
+        if (isWork && !workNote) {
+          return Response.json({ error: "Add a timesheet description." }, { status: 400 });
+        }
         await prisma.manualBlock.update({
           where: { id: manualBlockId },
-          data: { title, startTime, endTime, allDay, isWork, assignmentType, roleRefId },
+          data: { title, startTime, endTime, allDay, isWork, assignmentType, roleRefId, workNote },
         });
         const sync = await syncManualBlockTimeEntry({
           manualBlockId,
@@ -1015,6 +1026,7 @@ async function handleEventAction(
           assignmentType,
           roleRefId,
           title,
+          workNote,
           startTime,
           endTime,
         });
@@ -2019,6 +2031,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         isWork: b.isWork,
         assignmentType: b.assignmentType,
         roleRefId: b.roleRefId,
+        workNote: b.workNote,
       },
     });
   const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number) => {
@@ -2058,6 +2071,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         isWork: b.isWork,
         assignmentType: b.assignmentType,
         roleRefId: b.roleRefId,
+        workNote: b.workNote,
       },
     });
   // Detail-popover Delete. Recurring events need the this/following/all scope
@@ -3491,6 +3505,9 @@ function EventComposer({
   const [roleKey, setRoleKey] = useState(
     base?.assignmentType && base?.roleRefId ? `${base.assignmentType}::${base.roleRefId}` : "",
   );
+  // The timesheet entry's own description — required when logging, kept separate
+  // from the event description above.
+  const [workNote, setWorkNote] = useState(base?.workNote ?? "");
 
   // Timed inputs are split into one date + start/end times (custom DateField /
   // TimeField). Seeded from the event/seed or the drag — the seed strings are
@@ -3546,7 +3563,7 @@ function EventComposer({
     startIso !== "" &&
     endIso !== "" &&
     startIso < endIso &&
-    (!(isLocal && isWork) || roleKey !== "");
+    (!(isLocal && isWork) || (roleKey !== "" && workNote.trim() !== ""));
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
   // Keep the grid's tentative create block in sync with the times as they change.
@@ -3612,6 +3629,7 @@ function EventComposer({
             <input type="hidden" name="isWork" value={isLocal && isWork ? "1" : ""} />
             <input type="hidden" name="assignmentType" value={isLocal && isWork ? roleKey.split("::")[0] ?? "" : ""} />
             <input type="hidden" name="roleRefId" value={isLocal && isWork ? roleKey.split("::")[1] ?? "" : ""} />
+            <input type="hidden" name="workNote" value={isLocal && isWork ? workNote : ""} />
             {isRecurring && <input type="hidden" name="scope" value={scope} />}
             {isRecurring && ev?.recurringEventId && (
               <input type="hidden" name="recurringEventId" value={ev.recurringEventId} />
@@ -3675,22 +3693,42 @@ function EventComposer({
             </div>
 
             {/* Timesheet logging is the one thing unique to the in-app destination —
-                nested under Calendar with an empty icon gutter to keep alignment. */}
+                nested under Calendar with an empty icon gutter to keep alignment.
+                When on, the block mirrors into a linked timesheet entry with its
+                own role + description (kept separate from the event above). */}
             {isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
               <div className="flex items-start gap-3">
                 <div className="w-4 shrink-0" aria-hidden />
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="min-w-0 flex-1">
                   <label className="flex items-center gap-2 text-sm text-foreground">
                     <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
                   </label>
                   {isWork && (
-                    <Select
-                      value={roleKey}
-                      onChange={setRoleKey}
-                      options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
-                      placeholder="Which role?"
-                      buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
-                    />
+                    <div className="mt-2 flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <Clock className="h-3 w-3" /> Linked timesheet entry
+                      </div>
+                      <Select
+                        value={roleKey}
+                        onChange={setRoleKey}
+                        options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
+                        placeholder="Which role?"
+                        buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+                      />
+                      <textarea
+                        value={workNote}
+                        onChange={(e) => setWorkNote(e.target.value)}
+                        placeholder="What did you work on?"
+                        rows={2}
+                        aria-label="Timesheet description"
+                        className={cn(fieldCls, "w-full resize-y")}
+                      />
+                      {workNote.trim() === "" && (
+                        <p className="text-[11px] text-muted-foreground">
+                          A timesheet description is required — it's logged separately from the event.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -2127,6 +2127,11 @@ model ManualBlock {
   isWork          Boolean         @default(false)
   assignmentType  AssignmentType?
   roleRefId       String?
+  // The timesheet entry's own description, kept distinct from the calendar
+  // block's title (logging a meeting is a different note than the meeting's own
+  // description). Mirrored into the linked TimeEntry.note by
+  // syncManualBlockTimeEntry; null falls back to the block title.
+  workNote        String?
   createdAt       DateTime        @default(now())
 
   user        User        @relation(fields: [userId], references: [id])
