@@ -564,12 +564,7 @@ export function EpicSprintManager({
         onClose={closeEpic}
         labelledBy="epic-detail-title"
         disableEscape={busy}
-        containerClassName={cn(
-          "w-full my-auto",
-          os
-            ? "max-w-[560px] os-modal-card os-form"
-            : "max-w-5xl bg-card rounded-2xl shadow-xl p-5 sm:p-6",
-        )}
+        containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
       >
         {activeEpic && (
           <EpicDetail
@@ -623,7 +618,7 @@ export function EpicSprintManager({
   );
 }
 
-function EpicDetail({
+export function EpicDetail({
   projectId,
   epic,
   autoNewStory = false,
@@ -660,7 +655,6 @@ function EpicDetail({
   onDeleted: () => void;
 }) {
   const dialog = useDialog();
-  const os = useFeatureFlag("os-redesign");
   const [newStoryOpen, setNewStoryOpen] = useState(Boolean(autoNewStory));
   const [quickAddTitle, setQuickAddTitle] = useState("");
   // Quick-add appends to the end of a list that may already be taller than the
@@ -749,22 +743,13 @@ function EpicDetail({
   }, [epic.startsAt, epic.endsAt, timelineTerms]);
 
   return (
-    <div className={cn("max-h-[80vh] overflow-y-auto", os ? "" : "flex flex-col gap-4")}>
+    <div className="max-h-[80vh] overflow-y-auto">
       {/* Modal header */}
-      <div className={cn("flex items-start justify-between gap-3", os && "mb-6")}>
+      <div className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            {/* The design names the level with a badge; the classic header
-                marks it with the level's dot. */}
-            {os ? (
-              <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
-            ) : (
-              <span
-                aria-hidden
-                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                style={{ background: LEVEL_COLOR.epic }}
-              />
-            )}
+            {/* The level is named with a badge, not marked with a dot. */}
+            <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
             {canManage ? (
               <input
                 id="epic-detail-title"
@@ -781,19 +766,13 @@ function EpicDetail({
                 }}
                 aria-label="Epic name"
                 className={cn(
-                  "w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-                  // Edited in place, but it is the modal's heading — so it is
-                  // set like one. The stored title keeps its own casing.
-                  os && "os-record-name",
+                  "os-record-name w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
                 )}
               />
             ) : (
               <h2
                 id="epic-detail-title"
-                className={cn(
-                  "font-heading text-lg font-bold text-foreground truncate",
-                  os && "os-record-name",
-                )}
+                className="os-record-name font-heading text-lg font-bold text-foreground truncate"
               >
                 {epic.title}
               </h2>
@@ -844,187 +823,103 @@ function EpicDetail({
           it or changing it — there's no edit mode that swaps one layout for
           another, so nothing appears or disappears on entering it. Each
           control saves itself; the API takes partial updates. */}
-      {os ? (
-        <section>
-          <div className="os-field-row">
-            <div className="os-field-group">
-              <span className="os-field-label">Status</span>
-            {canManage ? (
-              <Select
-                value={epic.status}
-                onChange={(value) => void saveEpic({ status: value })}
-                options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
-                buttonClassName={EPIC_FIELD}
-              />
-            ) : (
-              <span className="text-sm text-foreground">{epic.status}</span>
-            )}
-            </div>
-            {terms.length > 0 && (
-              <div className="os-field-group">
-                <span className="os-field-label">Target term</span>
-            {canManage ? (
-              <Select
-                value={epic.targetTermId ?? ""}
-                onChange={(value) => void saveEpic({ targetTermId: value || null })}
-                placeholder="No target term"
-                options={[
-                  { value: "", label: "No target term" },
-                  ...terms.map((t) => ({ value: t.id, label: t.code })),
-                ]}
-                buttonClassName={EPIC_FIELD}
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
-              </span>
-            )}
-              </div>
-            )}
-          </div>
-          <div className="os-field-row">
-            <div className="os-field-group">
-              <span className="os-field-label">Start date</span>
-            {canManage ? (
-              <DateField
-                mode="date"
-                value={epic.startsAt ? dateInputValue(epic.startsAt) : ""}
-                onChange={(value) =>
-                  void saveEpic({
-                    startsAt: value ? new Date(value).toISOString() : null,
-                  })
-                }
-                ariaLabel="Epic start date"
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {epic.startsAt ? dateInputValue(epic.startsAt) : "—"}
-              </span>
-            )}
-            </div>
-            <div className="os-field-group">
-              <span className="os-field-label">End date</span>
-            {canManage ? (
-              <DateField
-                mode="date"
-                value={epic.endsAt ? dateInputValue(epic.endsAt) : ""}
-                onChange={(value) =>
-                  void saveEpic({
-                    endsAt: value ? new Date(value).toISOString() : null,
-                  })
-                }
-                ariaLabel="Epic end date"
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {epic.endsAt ? dateInputValue(epic.endsAt) : "—"}
-              </span>
-            )}
-            </div>
-          </div>
-          {/* Not a picker. A sprint is a fixed week, so the weeks an epic runs
-              through are already settled by the two dates above — these state
-              them rather than asking again. */}
+      <section>
+        <div className="os-field-row">
           <div className="os-field-group">
-            <span className="os-field-label">Sprints</span>
-            {epicSprints.length > 0 ? (
-              <div className="os-sprint-chip-row">
-                {epicSprints.map((b) => (
-                  <span key={b.key} className="os-sprint-chip os-sprint-chip--active">
-                    {b.label}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-os-grey">
-                Set a start and end date to place this epic in its weeks.
-              </p>
-            )}
-          </div>
-        </section>
-      ) : (
-      <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-        <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
-          <dt className="text-muted-foreground">Status</dt>
-          <dd className="min-w-0">
-            {canManage ? (
-              <Select
-                value={epic.status}
-                onChange={(value) => void saveEpic({ status: value })}
-                options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
-                buttonClassName={EPIC_FIELD}
-              />
-            ) : (
-              <span className="text-sm text-foreground">{epic.status}</span>
-            )}
-          </dd>
-
-          {terms.length > 0 && (
-            <>
-              <dt className="text-muted-foreground">Target term</dt>
-              <dd className="min-w-0">
-            {canManage ? (
-              <Select
-                value={epic.targetTermId ?? ""}
-                onChange={(value) => void saveEpic({ targetTermId: value || null })}
-                placeholder="No target term"
-                options={[
-                  { value: "", label: "No target term" },
-                  ...terms.map((t) => ({ value: t.id, label: t.code })),
-                ]}
-                buttonClassName={EPIC_FIELD}
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
-              </span>
-            )}
-              </dd>
-            </>
+            <span className="os-field-label">Status</span>
+          {canManage ? (
+            <Select
+              value={epic.status}
+              onChange={(value) => void saveEpic({ status: value })}
+              options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+              buttonClassName={EPIC_FIELD}
+            />
+          ) : (
+            <span className="text-sm text-foreground">{epic.status}</span>
           )}
-
-          <dt className="text-muted-foreground">Starts</dt>
-          <dd className="min-w-0">
-            {canManage ? (
-              <DateField
-                mode="date"
-                value={epic.startsAt ? dateInputValue(epic.startsAt) : ""}
-                onChange={(value) =>
-                  void saveEpic({
-                    startsAt: value ? new Date(value).toISOString() : null,
-                  })
-                }
-                ariaLabel="Epic start date"
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {epic.startsAt ? dateInputValue(epic.startsAt) : "—"}
-              </span>
-            )}
-          </dd>
-
-          <dt className="text-muted-foreground">Ends</dt>
-          <dd className="min-w-0">
-            {canManage ? (
-              <DateField
-                mode="date"
-                value={epic.endsAt ? dateInputValue(epic.endsAt) : ""}
-                onChange={(value) =>
-                  void saveEpic({
-                    endsAt: value ? new Date(value).toISOString() : null,
-                  })
-                }
-                ariaLabel="Epic end date"
-              />
-            ) : (
-              <span className="text-sm text-foreground">
-                {epic.endsAt ? dateInputValue(epic.endsAt) : "—"}
-              </span>
-            )}
-          </dd>
-        </dl>
+          </div>
+          {terms.length > 0 && (
+            <div className="os-field-group">
+              <span className="os-field-label">Target term</span>
+          {canManage ? (
+            <Select
+              value={epic.targetTermId ?? ""}
+              onChange={(value) => void saveEpic({ targetTermId: value || null })}
+              placeholder="No target term"
+              options={[
+                { value: "", label: "No target term" },
+                ...terms.map((t) => ({ value: t.id, label: t.code })),
+              ]}
+              buttonClassName={EPIC_FIELD}
+            />
+          ) : (
+            <span className="text-sm text-foreground">
+              {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
+            </span>
+          )}
+            </div>
+          )}
+        </div>
+        <div className="os-field-row">
+          <div className="os-field-group">
+            <span className="os-field-label">Start date</span>
+          {canManage ? (
+            <DateField
+              mode="date"
+              value={epic.startsAt ? dateInputValue(epic.startsAt) : ""}
+              onChange={(value) =>
+                void saveEpic({
+                  startsAt: value ? new Date(value).toISOString() : null,
+                })
+              }
+              ariaLabel="Epic start date"
+            />
+          ) : (
+            <span className="text-sm text-foreground">
+              {epic.startsAt ? dateInputValue(epic.startsAt) : "—"}
+            </span>
+          )}
+          </div>
+          <div className="os-field-group">
+            <span className="os-field-label">End date</span>
+          {canManage ? (
+            <DateField
+              mode="date"
+              value={epic.endsAt ? dateInputValue(epic.endsAt) : ""}
+              onChange={(value) =>
+                void saveEpic({
+                  endsAt: value ? new Date(value).toISOString() : null,
+                })
+              }
+              ariaLabel="Epic end date"
+            />
+          ) : (
+            <span className="text-sm text-foreground">
+              {epic.endsAt ? dateInputValue(epic.endsAt) : "—"}
+            </span>
+          )}
+          </div>
+        </div>
+        {/* Not a picker. A sprint is a fixed week, so the weeks an epic runs
+            through are already settled by the two dates above — these state
+            them rather than asking again. */}
+        <div className="os-field-group">
+          <span className="os-field-label">Sprints</span>
+          {epicSprints.length > 0 ? (
+            <div className="os-sprint-chip-row">
+              {epicSprints.map((b) => (
+                <span key={b.key} className="os-sprint-chip os-sprint-chip--active">
+                  {b.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-os-grey">
+              Set a start and end date to place this epic in its weeks.
+            </p>
+          )}
+        </div>
       </section>
-      )}
 
       {/* Description — a live collab editor (the project's Overview/PRD
           pattern). The room name is the epic's descriptionDocId (lazily
@@ -1032,15 +927,9 @@ function EpicDetail({
           plain-text description). For viewers or while provisioning is in
           flight, falls back to that plain text, then a placeholder — never
           both the text and the editor at once. */}
-      {os && <div className="os-modal-divider" aria-hidden />}
-      <section className={cn(!os && "border-t border-border pt-4 first:border-t-0 first:pt-0")}>
-        <h3
-          className={cn(
-            os ? "os-section-header" : "text-sm font-semibold text-foreground mb-2",
-          )}
-        >
-          Description
-        </h3>
+      <div className="os-modal-divider" aria-hidden />
+      <section>
+        <h3 className="os-section-header">Description</h3>
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -1063,17 +952,12 @@ function EpicDetail({
           // show the plain-text `description` so the modal isn't empty. When a
           // manager opens the epic the doc is seeded from this same text and
           // the editor above becomes the single surface — the two never stack.
-          <p
-            className={cn(
-              "whitespace-pre-wrap text-sm text-foreground",
-              os ? "mb-3" : "mb-2",
-            )}
-          >
+          <p className="mb-3 whitespace-pre-wrap text-sm text-foreground">
             {epic.description}
           </p>
         ) : canManage ? (
           <p className="text-sm text-muted-foreground italic">Preparing editor…</p>
-        ) : !collabToken ? (
+        ) : descriptionDocId && !collabToken ? (
           <p className="text-sm text-muted-foreground italic">
             Sign in again to see the description.
           </p>
@@ -1086,133 +970,79 @@ function EpicDetail({
           and criteria live in their own blocks so long text doesn't jam into
           the requirement cell. Editing uses the same edit mode as the header
           pencil; each story expands inline rather than a nested table-row form. */}
-      {os && <div className="os-modal-divider" aria-hidden />}
-      <section className={cn(!os && "border-t border-border pt-4 first:border-t-0 first:pt-0")}>
+      <div className="os-modal-divider" aria-hidden />
+      <section>
         <div className="flex items-center justify-between mb-3">
-          <h3
-            className={cn(
-              "flex items-center gap-2",
-              os ? "os-section-header !mb-0" : "text-sm font-semibold text-foreground",
-            )}
-          >
-            {/* The design names a section in type, not with a colour dot. */}
-            {!os && (
-              <span
-                aria-hidden
-                className="h-2 w-2 rounded-full"
-                style={{ background: LEVEL_COLOR.story }}
-              />
-            )}
+          {/* A section is named in type, not with a colour dot. */}
+          <h3 className="os-section-header !mb-0 flex items-center gap-2">
             User stories
           </h3>
           {canEditContent && !newStoryOpen && (
             <button
               type="button"
               onClick={() => setNewStoryOpen(true)}
-              className={os ? "os-add-btn os-add-btn--sm" : "text-xs font-medium hover:underline"}
-              style={os ? undefined : { color: LEVEL_COLOR.story }}
+              className="os-add-btn os-add-btn--sm"
             >
-              {os ? (
-                <>
-                  <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
-                  New story
-                </>
-              ) : (
-                "+ New story"
-              )}
+              <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+              New story
             </button>
           )}
         </div>
 
-        {newStoryOpen &&
-          (os ? (
-            // The design adds a story by name, in place — .quick-add-input-row
-            // under the list. No dialog: you capture five stories without
-            // leaving the epic, and each lands marked incomplete until its
-            // details are filled in.
-            <div className="os-quick-add-row mb-2.5">
-              <input
-                autoFocus
-                value={quickAddTitle}
-                onChange={(e) => setQuickAddTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setQuickAddTitle("");
-                    setNewStoryOpen(false);
-                    return;
-                  }
-                  if (e.key !== "Enter") return;
-                  e.preventDefault();
-                  const title = quickAddTitle.trim();
-                  if (!title) return;
-                  setQuickAddTitle("");
-                  run(async () => {
-                    await api(`/api/epics/${epic.id}/stories`, "POST", { title });
-                  });
-                }}
-                placeholder="Story name, then Enter…"
-                aria-label="New story name"
-                className="min-w-0 flex-1"
-              />
-              <button
-                type="button"
-                className="os-icon-btn"
-                aria-label="Done adding"
-                onClick={() => {
+        {newStoryOpen && (
+          // The design adds a story by name, in place — .quick-add-input-row
+          // under the list. No dialog: you capture five stories without
+          // leaving the epic, and each lands marked incomplete until its
+          // details are filled in.
+          <div className="os-quick-add-row mb-2.5">
+            <input
+              autoFocus
+              value={quickAddTitle}
+              onChange={(e) => setQuickAddTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
                   setQuickAddTitle("");
                   setNewStoryOpen(false);
-                }}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
-              <StoryForm
-                busy={busy}
-                onCancel={() => setNewStoryOpen(false)}
-                onSubmit={(values) =>
-                  run(async () => {
-                    await api(`/api/epics/${epic.id}/stories`, "POST", values);
-                    setNewStoryOpen(false);
-                  })
+                  return;
                 }
-              />
-            </div>
-          ))}
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                const title = quickAddTitle.trim();
+                if (!title) return;
+                setQuickAddTitle("");
+                run(async () => {
+                  await api(`/api/epics/${epic.id}/stories`, "POST", { title });
+                });
+              }}
+              placeholder="Story name, then Enter…"
+              aria-label="New story name"
+              className="min-w-0 flex-1"
+            />
+            <button
+              type="button"
+              className="os-icon-btn"
+              aria-label="Done adding"
+              onClick={() => {
+                setQuickAddTitle("");
+                setNewStoryOpen(false);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {epic.stories.length === 0 && !newStoryOpen ? (
           <p className="text-sm text-muted-foreground italic">No user stories yet.</p>
         ) : (
           <ul
             ref={storyListRef}
-            className={os ? "os-item-list" : "flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x"}
+            className="os-item-list"
           >
-            {epic.stories.map((story) =>
-              editStoryId === story.id && !os ? (
-                <li
-                  key={story.id}
-                  className="w-[22rem] flex-shrink-0 snap-start rounded-lg border bg-muted/20 p-3"
-                  style={{ borderColor: LEVEL_COLOR.story }}
-                >
-                  <StoryForm
-                    busy={busy}
-                    initial={story}
-                    storyOptions={storyOptions.filter((o) => o.id !== story.id)}
-                    onCancel={() => setEditStoryId(null)}
-                    onSubmit={(values) =>
-                      run(async () => {
-                        await api(`/api/stories/${story.id}`, "POST", values);
-                        setEditStoryId(null);
-                      })
-                    }
-                  />
-                </li>
-              ) : os ? (
-                // .quick-add-item: name on the left, one × on the right. The
-                // card below is the classic list's row.
-                <li key={story.id} className="os-item-row">
-                  <Tooltip content={story.title}>
+            {epic.stories.map((story) => (
+              // .quick-add-item: the story's name on the left, one × on the right.
+              <li key={story.id} className="os-item-row">
+                <Tooltip content={story.title}>
                   <button
                     type="button"
                     onClick={() => canEditContent && setEditStoryId(story.id)}
@@ -1224,212 +1054,80 @@ function EpicDetail({
                         content="Quick-captured by name only — open this story to add notes, dates, and priority."
                         placement="right"
                       >
-                      <span
-                        className="os-incomplete-dot"
-                      >
-                        !
-                      </span>
+                        <span className="os-incomplete-dot">!</span>
                       </Tooltip>
                     )}
                     <span className="truncate">{story.title}</span>
                   </button>
-                  </Tooltip>
-                  {canEditContent && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      aria-label={`Remove ${story.title}`}
-                      className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
-                      onClick={async () => {
-                        if (
-                          !(await dialog.confirm({
-                            title: `Delete story "${story.title}"?`,
-                            confirmLabel: "Delete",
-                            tone: "destructive",
-                          }))
-                        )
-                          return;
-                        run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </li>
-              ) : (
-                <li
-                  key={story.id}
-                  className="w-[22rem] flex-shrink-0 snap-start rounded-lg border bg-background p-3 sm:p-4"
-                  style={{
-                    borderColor: `color-mix(in srgb, ${LEVEL_COLOR.story} 45%, transparent)`,
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      {os && isStoryIncomplete(story) && (
-                        <Tooltip
-                          variant="rich"
-                          content="Quick-captured by name only — open this story to add notes, dates, and priority."
-                        >
-                          <span
-                            className="os-incomplete-dot mr-1.5 align-middle"
-                          >
-                            !
-                          </span>
-                        </Tooltip>
-                      )}
-                      <p className="inline text-sm font-medium text-foreground leading-snug">
-                        {story.title}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border bg-muted/30 text-muted-foreground">
-                          {story.status}
-                        </span>
-                        {story.category && (
-                          <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
-                            {story.category}
-                          </span>
-                        )}
-                        {story.priority && (
-                          <Tooltip
-                            variant="rich"
-                            content={
-                              story.priority === "Must"
-                                ? "Must — required for this term's launch. Blocks release."
-                                : story.priority === "Should"
-                                  ? "Should — high value and expected, but not a launch blocker."
-                                  : story.priority === "Could"
-                                    ? "Could — nice-to-have if time allows; deferred if the sprint fills."
-                                    : "Won't — explicitly out of scope this term."
-                            }
-                          >
-                            <span
-                              className={`text-[11px] px-1.5 py-0.5 rounded-full border border-border ${STORY_PRIORITY_TONE[story.priority]}`}
-                            >
-                              {story.priority}
-                            </span>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </div>
-                    {canEditContent && (
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setEditStoryId(story.id)}
-                          className={
-                            os
-                              ? "os-edit-btn os-add-btn--sm"
-                              : "text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
-                          }
-                        >
-                          <Pencil className="h-3 w-3" aria-hidden />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={async () => {
-                            if (
-                              !(await dialog.confirm({
-                                title: `Delete story "${story.title}"?`,
-                                confirmLabel: "Delete",
-                                tone: "destructive",
-                              }))
-                            )
-                              return;
-                            run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                          }}
-                          className="text-xs font-medium text-destructive hover:text-destructive/80 px-2 py-1 rounded-md hover:bg-destructive/10 disabled:opacity-60"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {(story.successMetric || story.acceptanceCriteria || story.notes) && (
-                    <dl className="mt-3 grid gap-2 sm:grid-cols-2 text-xs">
-                      {story.successMetric && (
-                        <div className="min-w-0 sm:col-span-1">
-                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
-                            Success metric
-                          </dt>
-                          <dd className="mt-0.5 whitespace-pre-wrap text-foreground/90">
-                            {story.successMetric}
-                          </dd>
-                        </div>
-                      )}
-                      {story.acceptanceCriteria && (
-                        <div className="min-w-0 sm:col-span-1">
-                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
-                            Acceptance criteria
-                          </dt>
-                          <dd className="mt-0.5 whitespace-pre-wrap text-foreground/90">
-                            {story.acceptanceCriteria}
-                          </dd>
-                        </div>
-                      )}
-                      {story.notes && (
-                        <div className="min-w-0 sm:col-span-2">
-                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
-                            Notes
-                          </dt>
-                          <dd className="mt-0.5 whitespace-pre-wrap text-muted-foreground line-clamp-4">
-                            {story.notes}
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-                  )}
-                </li>
-              ),
-            )}
+                </Tooltip>
+                {canEditContent && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Remove ${story.title}`}
+                    className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
+                    onClick={async () => {
+                      if (
+                        !(await dialog.confirm({
+                          title: `Delete story "${story.title}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        }))
+                      )
+                        return;
+                      run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </li>
+            ))}
           </ul>
         )}
 
         {/* Editing a story is the same .modal-card as creating one, so the two
             paths look and behave alike. Hoisted out of the list: rendering it
             per-<li> would have swapped the card out for a form mid-row. */}
-        {os &&
-          (() => {
-            const editing = epic.stories.find((st) => st.id === editStoryId);
-            if (!editing) return null;
-            return (
-              <Modal
-                open
-                onClose={() => setEditStoryId(null)}
-                labelledBy="edit-story-title"
-                disableEscape={busy}
-                containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
-              >
-                <div className="mb-6 flex items-center justify-between gap-3">
-                  <h2 id="edit-story-title" className="os-type-badge os-type-badge--story">
-                    User story
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setEditStoryId(null)}
-                    aria-label="Close"
-                    className="os-icon-btn"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <StoryForm
-                  busy={busy}
-                  initial={editing}
-                  storyOptions={storyOptions.filter((o) => o.id !== editing.id)}
-                  onCancel={() => setEditStoryId(null)}
-                  onSubmit={(values) =>
-                    run(async () => {
-                      await api(`/api/stories/${editing.id}`, "POST", values);
-                      setEditStoryId(null);
-                    })
-                  }
-                />
-              </Modal>
-            );
-          })()}
+        {(() => {
+          const editing = epic.stories.find((st) => st.id === editStoryId);
+          if (!editing) return null;
+          return (
+            <Modal
+              open
+              onClose={() => setEditStoryId(null)}
+              labelledBy="edit-story-title"
+              disableEscape={busy}
+              containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
+            >
+              <div className="mb-6 flex items-center justify-between gap-3">
+                <h2 id="edit-story-title" className="os-type-badge os-type-badge--story">
+                  User story
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setEditStoryId(null)}
+                  aria-label="Close"
+                  className="os-icon-btn"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <StoryForm
+                busy={busy}
+                initial={editing}
+                storyOptions={storyOptions.filter((o) => o.id !== editing.id)}
+                onCancel={() => setEditStoryId(null)}
+                onSubmit={(values) =>
+                  run(async () => {
+                    await api(`/api/stories/${editing.id}`, "POST", values);
+                    setEditStoryId(null);
+                  })
+                }
+              />
+            </Modal>
+          );
+        })()}
       </section>
     </div>
   );
