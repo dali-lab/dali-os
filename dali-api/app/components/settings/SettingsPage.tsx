@@ -49,7 +49,9 @@ export function SettingsPage({
   useEffect(() => {
     const sync = () => {
       const hash = window.location.hash.slice(1);
-      const tab = HASH_TO_TAB[hash];
+      // A block hash (e.g. "calendar") maps to its tab; a bare tab id (e.g.
+      // "integrations", written by a tab click) is itself the tab.
+      const tab = HASH_TO_TAB[hash] ?? (TABS.some((t) => t.id === hash) ? (hash as TabId) : undefined);
       if (!tab) return;
       setActive(tab);
       // On a merged tab the hash names a block, not the tab — bring it into view.
