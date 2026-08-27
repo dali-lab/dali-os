@@ -213,6 +213,74 @@ export function formatBlockRange(startIso: string, endIso: string, timezone: str
   return `${date} · ${t(start)} – ${t(end)}`;
 }
 
+// ── Overlap layout ─────────────────────────────────────────────────────────
+// Without this, every block is positioned left-0/right-0 and overlapping events
+// stack on top of each other (the later one hides the earlier). This packs a
+// day's events into side-by-side columns, Google-Calendar style.
+
+/** The minimal geometry the packer needs — a block's vertical extent in hours,
+ *  including its buffer frame so a buffered meeting doesn't visually collide. */
+export type LaneInput = { startHour: number; duration: number; bufferBefore?: number; bufferAfter?: number };
+
+/** Horizontal placement as fractions of the column width (0..1). */
+export type EventLane = { left: number; width: number };
+
+const laneSpan = (e: LaneInput) => ({
+  top: e.startHour - (e.bufferBefore ?? 0),
+  bottom: e.startHour + e.duration + (e.bufferAfter ?? 0),
+});
+
+/** Column-pack a day's events so overlapping ones sit side by side instead of
+ *  stacking. Events are grouped into collision clusters (a run of transitively
+ *  overlapping blocks), greedily assigned to the first column they fit, then
+ *  each expands rightward across columns no later event needs. Returns
+ *  {left,width} fractions index-aligned to the input; a block with no overlap
+ *  gets the full width ({0,1}). Touching edges (back-to-back) don't count as
+ *  overlap, so consecutive meetings stay full width. */
+export function computeEventLanes(events: LaneInput[]): EventLane[] {
+  const n = events.length;
+  const lanes: EventLane[] = new Array(n);
+  if (n === 0) return lanes;
+
+  const spans = events.map(laneSpan);
+  const overlaps = (a: number, b: number) => spans[a].top < spans[b].bottom && spans[b].top < spans[a].bottom;
+
+  // Pack in start order (longer first on ties) so a column's last-added event is
+  // always its latest — checking only that last event is enough to place.
+  const order = [...Array(n).keys()].sort((i, j) => spans[i].top - spans[j].top || spans[j].bottom - spans[i].bottom);
+
+  let columns: number[][] = [];
+  let clusterBottom = -Infinity;
+
+  const flush = () => {
+    const numCols = columns.length;
+    for (let c = 0; c < numCols; c++) {
+      for (const idx of columns[c]) {
+        let colSpan = 1;
+        for (let c2 = c + 1; c2 < numCols; c2++) {
+          if (columns[c2].some((o) => overlaps(idx, o))) break;
+          colSpan++;
+        }
+        lanes[idx] = { left: c / numCols, width: colSpan / numCols };
+      }
+    }
+    columns = [];
+  };
+
+  for (const idx of order) {
+    if (spans[idx].top >= clusterBottom) {
+      flush();
+      clusterBottom = -Infinity;
+    }
+    const col = columns.find((c) => !overlaps(idx, c[c.length - 1]));
+    if (col) col.push(idx);
+    else columns.push([idx]);
+    clusterBottom = Math.max(clusterBottom, spans[idx].bottom);
+  }
+  flush();
+  return lanes;
+}
+
 export function shiftWeekParam(weekStartIso: string, weeks: number): string {
   const d = new Date(weekStartIso);
   d.setUTCDate(d.getUTCDate() + weeks * 7);

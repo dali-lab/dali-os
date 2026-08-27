@@ -12,8 +12,9 @@ import type { EventBlock, EventAttendeeDTO, EventLinkDTO, WhDay } from "~/calend
 import {
   HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, STRIPE_STYLE,
-  formatHour, formatHourMinute, readableTextColor,
+  formatHour, formatHourMinute, readableTextColor, computeEventLanes,
 } from "~/calendar/lib/event-block";
+import type { EventLane } from "~/calendar/lib/event-block";
 
 export function useRefreshOnFocus(refresh: () => void) {
   useEffect(() => {
@@ -345,7 +346,7 @@ function formatLoggedHours(h: number): string {
   return `${Number.isInteger(h) ? h : Number(h.toFixed(2))}h`;
 }
 
-export function WeekGridEvent({ e }: { e: EventBlock }) {
+export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
@@ -366,14 +367,23 @@ export function WeekGridEvent({ e }: { e: EventBlock }) {
   const opensDetail = !e.onClick && (isMeeting || hasDetails);
   const clickable = Boolean(e.onClick) || opensDetail;
 
+  // Overlap layout: a block sharing its time with others is narrowed into a
+  // column (left/width as fractions) with a 2px gutter so neighbours don't
+  // touch. A block with no overlap keeps the full width (left-0 right-0), so the
+  // common case is pixel-identical to before.
+  const laned = lane && !(lane.left === 0 && lane.width === 1);
+
   return (
     <div
-      className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
+      className={`absolute ${laned ? "" : "left-0 right-0"} ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
         bufferAfter === 0 ? "rounded-b-md" : ""
       } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : ""}`}
       style={{
         top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
         height: totalHours * HOUR_PX,
+        ...(laned
+          ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
+          : {}),
       }}
       // Always swallow mousedown, even with no onClick. The day column starts
       // a drag-to-create on any mousedown that reaches it, and its mouseup
@@ -951,9 +961,11 @@ export function WeekGrid({
                 </div>
               );
             })()}
-            {(eventsByDay[idx] ?? []).map((e, i) => (
-              <WeekGridEvent key={i} e={e} />
-            ))}
+            {(() => {
+              const dayEvents = eventsByDay[idx] ?? [];
+              const eventLanes = computeEventLanes(dayEvents);
+              return dayEvents.map((e, i) => <WeekGridEvent key={i} e={e} lane={eventLanes[i]} />);
+            })()}
             {overlayLayer?.(idx)}
           </div>
         </div>
