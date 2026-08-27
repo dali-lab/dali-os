@@ -15,6 +15,35 @@ keep using the existing "busy" read); a general offline/local calendar.
 
 ---
 
+## What already exists (the write + recurrence half is largely proven)
+
+The **scheduling-meeting** and **classes** features already exercise most of the
+*write* path — this milestone is less greenfield than it looks:
+
+- **Create a Google event with attendees + RRULE recurrence** —
+  `createScheduledMeeting` (`app/lib/scheduled-meeting.ts`) →
+  `createGoogleCalendarEvent`, storing `externalEventId`. **Phase 1 (create) is
+  mostly solved** — the composer is mostly UI over a proven write.
+- **RRULE expansion with per-occurrence exceptions** — `meeting-occurrences.ts`
+  (`buildRule` / `expandOccurrences` on the `rrule` lib; `MeetingException` keyed
+  by original start + a `cancelled` flag). That's the *concept* for "this
+  occurrence" edits (Phase 3.5), even though external events will apply it via
+  Google's native `recurringEventId`/instances rather than our DB model.
+- **RSVP** (`updateGoogleAttendeeRsvp`) and **patch/delete event**
+  (`patchGoogleCalendarEvent` / `deleteGoogleCalendarEvent`, from classes).
+
+**What meetings do NOT give — the genuinely net-new work:**
+
+1. **Reading arbitrary external events.** Meetings/classes are DALI-owned rows;
+   they're never read *back* from Google as generic events. The calendar UI must
+   read **every** event on the linked calendars with its `id` + `writable` +
+   all-day. Today's read is busy-only and id-less. **This is Phase 0 — the real
+   foundation, and nothing above helps with it.**
+2. **Update.** There is no `updateScheduledMeeting` — meetings are only
+   created/cancelled, never edited. So editing an existing event's time via
+   `events.patch` (and drag move/resize) is exercised **nowhere** yet.
+3. **All-day / multi-day** rendering — meetings are always timed.
+
 ## Where we are today
 
 - **Read is busy-only.** `fetchBusyEvents → fetchBusyForLink → fetchEventsForCalendar`
