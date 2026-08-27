@@ -11,7 +11,7 @@ import { isPayPeriodEnd } from "~/lib/pay-period";
 import type { EventBlock, EventAttendeeDTO, EventLinkDTO, WhDay } from "~/calendar/lib/types";
 import {
   HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
-  RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, STRIPE_STYLE,
+  RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
   formatHour, formatHourMinute, readableTextColor, computeEventLanes,
 } from "~/calendar/lib/event-block";
 import type { EventLane } from "~/calendar/lib/event-block";
@@ -1135,7 +1135,7 @@ export function workingHoursStripeLayer(
   // no "outside hours" stripes at all.
   if (options?.enabled === false) return null;
   const wh = workingHours.find((w) => w.dayOfWeek === dow);
-  if (!wh || wh.segments.length === 0) return <DayBg style={STRIPE_STYLE} />;
+  if (!wh || wh.segments.length === 0) return <DayBg style={OFFHOURS_STYLE} />;
   const sorted = wh.segments
     .map((s) => ({ start: s.startMinute / 60, end: s.endMinute / 60 }))
     .sort((a, b) => a.start - b.start);
@@ -1165,7 +1165,7 @@ export function workingHoursStripeLayer(
           topHour={dayStart}
           startHour={s.startHour}
           duration={s.duration}
-          style={STRIPE_STYLE}
+          style={OFFHOURS_STYLE}
         />
       ))}
     </>

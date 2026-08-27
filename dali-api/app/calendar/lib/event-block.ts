@@ -60,10 +60,12 @@ export const ATTENDEE_DOT: Record<EventAttendeeDTO["status"], string> = {
 // reach, so collapse past this many and let the user expand.
 export const GUESTS_COLLAPSED = 6;
 
-export const STRIPE_STYLE: React.CSSProperties = {
-  backgroundImage:
-    "repeating-linear-gradient(45deg, rgba(120,120,120,0.35) 0 6px, transparent 6px 12px)",
-  backgroundColor: "rgba(120,120,120,0.25)",
+// Hours outside your working hours get a calm, low-contrast solid tint (like
+// Google/Outlook/Notion Calendar) rather than a heavy diagonal hatch — working
+// hours read as clean white, off-hours are gently de-emphasized. Slate at ~6%
+// so it sits subtly on both the light card and the dark os-shell.
+export const OFFHOURS_STYLE: React.CSSProperties = {
+  backgroundColor: "rgba(100,116,139,0.06)",
 };
 
 // datetime-local strings: "YYYY-MM-DDTHH:mm" in the user's local timezone.
