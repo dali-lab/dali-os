@@ -182,6 +182,13 @@ export type ExternalEventDTO = {
   writable?: boolean;
   /** Master event id when this is one instance of a recurring event. */
   recurringEventId?: string | null;
+  // ── In-app (DALI) block editing ──
+  /** When set, this "event" is a ManualBlock edited through the same composer —
+   *  its writes target the block (destination = local), not Google. */
+  manualBlockId?: string | null;
+  isWork?: boolean;
+  assignmentType?: RoleInstance["assignmentType"] | null;
+  roleRefId?: string | null;
   description?: string;
   location?: string;
   organizerName?: string;

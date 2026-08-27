@@ -959,6 +959,64 @@ async function handleEventAction(
       return null;
     }
 
+    // In-app block edit / move / delete — the same composer, editing a
+    // ManualBlock through the local destination.
+    const manualBlockId = get("manualBlockId") || null;
+    if (isLocalDest && manualBlockId) {
+      const block = await prisma.manualBlock.findUnique({ where: { id: manualBlockId } });
+      if (!block || block.userId !== userId) return Response.json({ error: "Not found" }, { status: 404 });
+      if (intent === "event-delete") {
+        await prisma.$transaction([
+          prisma.timeEntry.deleteMany({ where: { manualBlockId, userId } }),
+          prisma.manualBlock.delete({ where: { id: manualBlockId } }),
+        ]);
+        return null;
+      }
+      const startIso = get("startIso");
+      const endIso = get("endIso");
+      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      if (intent === "event-move") {
+        await prisma.manualBlock.update({ where: { id: manualBlockId }, data: { startTime, endTime } });
+        await syncManualBlockTimeEntry({
+          manualBlockId,
+          userId,
+          isWork: block.isWork,
+          assignmentType: block.assignmentType,
+          roleRefId: block.roleRefId,
+          title: block.title,
+          startTime,
+          endTime,
+        });
+        return null;
+      }
+      if (intent === "event-update") {
+        const title = get("title").trim();
+        if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+        const isWork = get("isWork") === "1";
+        const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
+        const roleRefId = get("roleRefId") || null;
+        const allDay = get("allDay") === "1";
+        await prisma.manualBlock.update({
+          where: { id: manualBlockId },
+          data: { title, startTime, endTime, allDay, isWork, assignmentType, roleRefId },
+        });
+        const sync = await syncManualBlockTimeEntry({
+          manualBlockId,
+          userId,
+          isWork,
+          assignmentType,
+          roleRefId,
+          title,
+          startTime,
+          endTime,
+        });
+        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
+        return null;
+      }
+    }
+
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
 
@@ -1930,6 +1988,42 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
+  // In-app blocks edit/move through the SAME composer as Google events — the
+  // block is presented to the composer as a local-destination "event".
+  const editBlock = (b: ManualBlockDTO) =>
+    setComposer({
+      mode: "edit",
+      event: {
+        startIso: b.startTime,
+        endIso: b.endTime,
+        title: b.title,
+        color: null,
+        writable: true,
+        allDay: false,
+        manualBlockId: b.id,
+        isWork: b.isWork,
+        assignmentType: b.assignmentType,
+        roleRefId: b.roleRefId,
+      },
+    });
+  const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number) => {
+    const { year, month, day } = getZonedYMD(new Date(b.startTime), data.timezone);
+    const toIso = (h: number) => {
+      const mins = Math.round(h * 60);
+      return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
+    };
+    eventMoveFetcher.submit(
+      {
+        intent: "event-move",
+        destination: LOCAL_DEST,
+        manualBlockId: b.id,
+        startIso: toIso(startHour),
+        endIso: toIso(endHour),
+        timeZone: data.timezone,
+      },
+      { method: "post" },
+    );
+  };
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -2027,7 +2121,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }));
     }
   }
-  if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days, loggedIndex?.byBlock));
+  if (layers.blocks)
+    layerMaps.push(
+      buildBlocksLayer(
+        data,
+        days,
+        loggedIndex?.byBlock,
+        data.crudEnabled ? editBlock : undefined,
+        data.crudEnabled ? moveBlock : undefined,
+      ),
+    );
   if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
   if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
   if (layers.logged)
@@ -3080,6 +3183,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   const [title, setTitle] = useState(ev?.title ?? "");
   const [allDay, setAllDay] = useState(ev?.allDay ?? false);
   const [destination, setDestination] = useState(() => {
+    if (ev?.manualBlockId) return LOCAL_DEST; // editing an in-app block
     if (ev?.linkId && ev.calendarId) return `${ev.linkId}:${ev.calendarId}`;
     // Default to the last-used destination (cookie); else the first Google
     // calendar; else the in-app DALI calendar.
@@ -3096,8 +3200,10 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   // In-app (DALI) blocks can log to the timesheet — the one property that only
   // makes sense for the local destination.
   const isLocal = destination === LOCAL_DEST;
-  const [isWork, setIsWork] = useState(false);
-  const [roleKey, setRoleKey] = useState("");
+  const [isWork, setIsWork] = useState(ev?.isWork ?? false);
+  const [roleKey, setRoleKey] = useState(
+    ev?.assignmentType && ev?.roleRefId ? `${ev.assignmentType}::${ev.roleRefId}` : "",
+  );
 
   // Timed + all-day inputs, seeded from the event (edit) or the drag (create).
   const seedTimed = ev && !ev.allDay ? { s: isoToLocalDT(ev.startIso), e: isoToLocalDT(ev.endIso) } : null;
@@ -3186,6 +3292,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
           <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3">
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
+            {editing && ev?.manualBlockId && <input type="hidden" name="manualBlockId" value={ev.manualBlockId} />}
             <input type="hidden" name="destination" value={destination} />
             <input type="hidden" name="startIso" value={startIso} />
             <input type="hidden" name="endIso" value={endIso} />
@@ -3245,7 +3352,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
             </label>
 
             {/* Timesheet logging is the one thing unique to the in-app destination. */}
-            {!editing && isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
+            {isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
               <div className="flex flex-col gap-2">
                 <label className="flex items-center gap-2 text-sm text-foreground">
                   <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
@@ -3297,7 +3404,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
                   ))}
                 </div>
               </div>
-            ) : (
+            ) : !editing ? (
               <RepeatField
                 value={repeat}
                 onChange={setRepeat}
@@ -3305,7 +3412,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
                 labelClassName="text-xs text-muted-foreground"
                 fieldClassName={cn(fieldCls, "w-full")}
               />
-            )}
+            ) : null}
 
             {(fetcher.data?.error || deleteFetcher.data?.error) && (
               <p className="text-xs text-red-600">{fetcher.data?.error || deleteFetcher.data?.error}</p>
@@ -3322,7 +3429,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
               >
                 {editing ? "Save" : "Create event"}
               </button>
-              {editing && ev?.writable && ev.eventId && (
+              {editing && ev?.writable && (ev.eventId || ev.manualBlockId) && (
                 <div className="ml-auto">
                   {confirmDelete ? (
                     <button
@@ -3333,7 +3440,8 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
                           {
                             intent: "event-delete",
                             destination,
-                            eventId: ev.eventId!,
+                            eventId: ev.eventId ?? "",
+                            manualBlockId: ev.manualBlockId ?? "",
                             scope: isRecurring ? scope : "this",
                             recurringEventId: ev.recurringEventId ?? "",
                             originalStartIso: ev.startIso ?? "",
