@@ -11,7 +11,7 @@
 // so the same functions feed every view.
 
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import type { EventBlock, LoaderData, TimeEntryDTO } from "./types";
+import type { EventBlock, ExternalEventDTO, LoaderData, TimeEntryDTO } from "./types";
 import {
   CLASS_BG,
   EVENT_CORAL,
@@ -110,9 +110,11 @@ export function buildExternalLayer(
   data: LoaderData,
   days: GridDay[],
   hiddenCalendarIds?: Set<string>,
+  onEdit?: (e: ExternalEventDTO) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const e of data.externalEvents) {
+    if (e.allDay) continue; // all-day events render in the band, not the grid
     if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
     placeBlock(
       days,
@@ -129,9 +131,38 @@ export function buildExternalLayer(
         organizerName: e.organizerName,
         attendees: e.attendees,
         links: e.links,
+        // Editable Google events (writable + flag on) get an Edit affordance in
+        // the detail popover.
+        onEdit: onEdit && e.writable && e.eventId ? () => onEdit(e) : undefined,
       },
       into,
     );
+  }
+  return into;
+}
+
+/** Bucket all-day external events into the day columns they cover (end is
+ *  exclusive, Google-style), for the grid's all-day band. Honours the same
+ *  per-calendar visibility as the timed layer. */
+export function buildAllDayItems(
+  data: LoaderData,
+  days: GridDay[],
+  hiddenCalendarIds?: Set<string>,
+): Record<number, ExternalEventDTO[]> {
+  const into: Record<number, ExternalEventDTO[]> = {};
+  for (const e of data.externalEvents) {
+    if (!e.allDay) continue;
+    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
+    const start = new Date(e.startIso).getTime();
+    const end = new Date(e.endIso).getTime(); // exclusive
+    days.forEach((d, idx) => {
+      const dayMs = d.dateUtc.getTime();
+      const nextMs = dayMs + 86_400_000;
+      // The day overlaps [start, end): the event covers this column.
+      if (start < nextMs && end > dayMs) {
+        (into[idx] ??= []).push(e);
+      }
+    });
   }
   return into;
 }

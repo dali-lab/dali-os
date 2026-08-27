@@ -51,6 +51,8 @@ interface GoogleCalendarListEntry {
   summary: string;
   primary?: boolean;
   backgroundColor?: string;
+  /** "owner" | "writer" | "reader" | "freeBusyReader" — from calendarList API */
+  accessRole?: string;
 }
 
 const REFRESH_BUFFER_MS = 60_000;
@@ -431,6 +433,189 @@ export async function fetchBusyEvents(
   return results.flat();
 }
 
+// ─── Full-calendar read ─────────────────────────────────────────────────────
+
+/**
+ * A single Google Calendar event normalised for the full calendar UI.
+ * Unlike BusyEvent (busy-only, no all-day, declines filtered), CalendarEvent
+ * carries every event the viewer can see: all-day, free, tentative, declined.
+ */
+export interface CalendarEvent {
+  eventId: string;
+  calendarId: string;
+  linkId: string;
+  startIso: string;
+  endIso: string;
+  allDay: boolean;
+  title: string;
+  description?: string;
+  location?: string;
+  attendees?: EventAttendee[];
+  organizerName?: string;
+  htmlLink?: string;
+  meetingUrl?: string;
+  recurringEventId?: string;
+  /** The calendar's backgroundColor hex, for per-calendar tinting. */
+  color?: string;
+  /** True when the viewer's access role for this calendar is owner or writer. */
+  writable: boolean;
+  /** The viewer's own RSVP (self attendee); undefined when not an attendee. */
+  responseStatus?: "accepted" | "declined" | "tentative" | "needsAction";
+}
+
+// Fetches ALL events for one sub-calendar in the window — all-day, free,
+// tentative, and declined are all included (only cancelled is skipped).
+// Does NOT reuse fetchEventsForCalendar, which enforces busy-only semantics.
+async function fetchAllEventsForCalendar(
+  token: string,
+  calendarId: string,
+  linkId: string,
+  calendarMeta: GoogleCalendarListEntry | undefined,
+  start: Date,
+  end: Date,
+): Promise<CalendarEvent[]> {
+  const params = new URLSearchParams({
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "250",
+    fields:
+      "items(id,recurringEventId,summary,description,location,status,transparency," +
+      "start(dateTime,date),end(dateTime,date)," +
+      "htmlLink,hangoutLink,conferenceData(entryPoints(entryPointType,uri))," +
+      "organizer(email,displayName,self)," +
+      "attendees(email,displayName,self,organizer,optional,responseStatus))",
+  });
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { items?: (GoogleEvent & { recurringEventId?: string })[] };
+  const color = calendarMeta?.backgroundColor;
+  const writable =
+    calendarMeta?.accessRole === "owner" || calendarMeta?.accessRole === "writer";
+  const out: CalendarEvent[] = [];
+  for (const ev of data.items ?? []) {
+    if (ev.status === "cancelled") continue;
+    const allDay = Boolean(ev.start?.date && !ev.start?.dateTime);
+    let startIso: string;
+    let endIso: string;
+    if (allDay) {
+      // Use UTC midnight so the grid can treat these as full-day spans without
+      // timezone shifting.
+      startIso = new Date(ev.start!.date! + "T00:00:00.000Z").toISOString();
+      endIso = new Date(ev.end!.date! + "T00:00:00.000Z").toISOString();
+    } else {
+      if (!ev.start?.dateTime || !ev.end?.dateTime) continue;
+      startIso = ev.start.dateTime;
+      endIso = ev.end.dateTime;
+    }
+    const selfAttendee = ev.attendees?.find((a) => a.self);
+    const responseStatus = selfAttendee
+      ? attendeeResponse(selfAttendee.responseStatus)
+      : undefined;
+    out.push({
+      eventId: ev.id ?? "",
+      calendarId,
+      linkId,
+      startIso,
+      endIso,
+      allDay,
+      title: ev.summary?.trim() || "(No title)",
+      description: ev.description ? plainTextFromGoogleHtml(ev.description) : undefined,
+      location: ev.location?.trim() || undefined,
+      attendees: ev.attendees?.slice(0, MAX_ATTENDEES).map((a) => ({
+        name: a.displayName?.trim() || a.email || "Guest",
+        email: a.email,
+        responseStatus: attendeeResponse(a.responseStatus),
+        organizer: a.organizer,
+        self: a.self,
+        optional: a.optional,
+      })),
+      organizerName: ev.organizer?.displayName?.trim() || ev.organizer?.email || undefined,
+      htmlLink: ev.htmlLink,
+      meetingUrl: conferenceUrl(ev),
+      recurringEventId: (ev as { recurringEventId?: string }).recurringEventId,
+      color,
+      writable,
+      responseStatus,
+    });
+  }
+  return out;
+}
+
+/**
+ * Fetch ALL Google Calendar events for a user across all enabled links.
+ * Returns every event the viewer can see (all-day, free, tentative, declined);
+ * only cancelled events are omitted.
+ *
+ * Structured like `fetchBusyEvents` — callers may pass pre-fetched tokens and
+ * calendar lists to avoid redundant round-trips:
+ * - `prefetchedTokens`: Map<linkId, accessToken>
+ * - `prefetchedCalendarLists`: Map<linkId, GoogleCalendarListEntry[]>
+ *
+ * One bad link throws to its own catch block and returns [] for that link, so
+ * the rest of the calendar still loads.
+ */
+export async function fetchCalendarEvents(
+  userId: string,
+  start: Date,
+  end: Date,
+  prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
+  prefetchedTokens?: Map<string, string>,
+): Promise<CalendarEvent[]> {
+  const links = await prisma.userCalendarLink.findMany({
+    where: { userId, provider: "Google", enabled: true },
+    select: { id: true, subCalendarIds: true },
+  });
+  if (links.length === 0) return [];
+  const results = await Promise.all(
+    links.map(async (l) => {
+      try {
+        const token = prefetchedTokens?.get(l.id) ?? await getValidAccessTokenForLink(l.id);
+
+        // Build a map of calendarId → entry (has both backgroundColor + accessRole).
+        let entryById = new Map<string, GoogleCalendarListEntry>();
+        const prefetchedList = prefetchedCalendarLists?.get(l.id);
+        if (prefetchedList) {
+          entryById = new Map(prefetchedList.map((c) => [c.id, c]));
+        } else {
+          try {
+            const list = await listCalendarsForLink(l.id, token);
+            entryById = new Map(list.map((c) => [c.id, c]));
+          } catch {
+            // Best-effort; events still load without color/writable metadata.
+          }
+        }
+
+        const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
+        const perCalendar = await Promise.all(
+          calendarIds.map((id) =>
+            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
+          ),
+        );
+        await prisma.userCalendarLink.update({
+          where: { id: l.id },
+          data: { lastSyncedAt: new Date(), syncError: null },
+        });
+        return perCalendar.flat();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        await prisma.userCalendarLink
+          .update({ where: { id: l.id }, data: { syncError: message } })
+          .catch(() => {});
+        return [] as CalendarEvent[];
+      }
+    }),
+  );
+  return results.flat();
+}
+
 // ─── events.insert / events.patch ──────────────────────────────────────────
 
 export type GoogleAttendee = {
@@ -454,6 +639,9 @@ export type CreateGoogleEventInput = {
   attendees: GoogleAttendee[];
   // Sub-calendar id to write into. Defaults to "primary".
   calendarId?: string;
+  // All-day event: startIso/endIso are read as dates (YYYY-MM-DD portion); end
+  // is Google-exclusive, so pass the day AFTER the last day.
+  allDay?: boolean;
 };
 
 export async function createGoogleCalendarEvent(
@@ -464,8 +652,12 @@ export async function createGoogleCalendarEvent(
   const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {
     summary: input.summary,
-    start: { dateTime: input.startIso, timeZone },
-    end: { dateTime: input.endIso, timeZone },
+    start: input.allDay
+      ? { date: input.startIso.slice(0, 10) }
+      : { dateTime: input.startIso, timeZone },
+    end: input.allDay
+      ? { date: input.endIso.slice(0, 10) }
+      : { dateTime: input.endIso, timeZone },
   };
   if (input.description) body.description = input.description;
   if (input.location) body.location = input.location;
@@ -506,6 +698,7 @@ export async function patchGoogleCalendarEvent(input: {
   location?: string;
   startIso?: string;
   endIso?: string;
+  allDay?: boolean;
   recurrenceRule?: string | null;
   timeZone?: string;
 }): Promise<void> {
@@ -516,8 +709,8 @@ export async function patchGoogleCalendarEvent(input: {
   if (input.summary !== undefined) body.summary = input.summary;
   if (input.description !== undefined) body.description = input.description;
   if (input.location !== undefined) body.location = input.location;
-  if (input.startIso) body.start = { dateTime: input.startIso, timeZone };
-  if (input.endIso) body.end = { dateTime: input.endIso, timeZone };
+  if (input.startIso) body.start = input.allDay ? { date: input.startIso.slice(0, 10) } : { dateTime: input.startIso, timeZone };
+  if (input.endIso) body.end = input.allDay ? { date: input.endIso.slice(0, 10) } : { dateTime: input.endIso, timeZone };
   if (input.recurrenceRule !== undefined) {
     body.recurrence = input.recurrenceRule
       ? [input.recurrenceRule.startsWith("RRULE:") ? input.recurrenceRule : `RRULE:${input.recurrenceRule}`]

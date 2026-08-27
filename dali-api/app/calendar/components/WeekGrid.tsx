@@ -364,7 +364,7 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
   const hasDetails = Boolean(
     e.location || e.description || e.organizerName || e.attendees?.length || e.links?.length,
   );
-  const opensDetail = !e.onClick && (isMeeting || hasDetails);
+  const opensDetail = !e.onClick && (isMeeting || hasDetails || Boolean(e.onEdit));
   const clickable = Boolean(e.onClick) || opensDetail;
 
   // Overlap layout: a block sharing its time with others is narrowed into a
@@ -500,6 +500,19 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
                 </div>
                 <MeetingDetailToggles meeting={e.meeting} />
               </div>
+            ) : e.onEdit ? (
+              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailOpen(false);
+                    e.onEdit?.();
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                >
+                  Edit event
+                </button>
+              </div>
             ) : null
           }
         />
@@ -507,6 +520,8 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
     </div>
   );
 }
+
+export type AllDayBlock = { label: string; color?: string | null; onClick?: () => void };
 
 export function WeekGrid({
   days,
@@ -524,6 +539,7 @@ export function WeekGrid({
   timezone,
   markPayPeriodEnds = false,
   fillAndScroll = false,
+  allDayByDay,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -555,6 +571,9 @@ export function WeekGrid({
   // Also makes the day-header row + hour axis sticky. Availability opts in;
   // Schedule/Timesheet keep the page-flow layout.
   fillAndScroll?: boolean;
+  // Optional all-day events band. Keyed by day-column index (matching
+  // eventsByDay). Only rendered when at least one day has events.
+  allDayByDay?: Record<number, AllDayBlock[]>;
 }) {
   // Current time, in this timezone, for the today-highlight + now-line. Both are
   // skipped until `now` is set (post-mount) and when no timezone is provided.
@@ -749,11 +768,76 @@ export function WeekGrid({
     };
   }, [move, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
+  // Determine whether there are any all-day events to show.
+  const hasAllDay =
+    allDayByDay != null &&
+    Object.values(allDayByDay).some((blocks) => blocks.length > 0);
+
+  // In fillAndScroll mode the weekday header is sticky at top-0 (height h-9 or
+  // h-16). The all-day band must be sticky immediately below it so it doesn't
+  // scroll away with the hour grid.
+  const headerHeight = showProviderRow ? "lg:top-16" : "lg:top-9";
+
   return (
     <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    {hasAllDay && (
+      <div
+        className={`flex border-x border-b border-border bg-card select-none ${
+          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30` : ""
+        }`}
+      >
+        {/* Left gutter — matches the hour-axis width */}
+        <div className="w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
+          <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground leading-none">
+            all-day
+          </span>
+        </div>
+        {/* One cell per day column */}
+        {days.map((_d, idx) => {
+          const blocks = allDayByDay?.[idx] ?? [];
+          const visible = blocks.slice(0, 3);
+          const overflow = blocks.length - visible.length;
+          return (
+            <div
+              key={idx}
+              className="flex-1 min-w-0 border-r last:border-r-0 border-border py-0.5 px-0.5 flex flex-col gap-0.5"
+            >
+              {visible.map((block, bi) => {
+                const hasColor = Boolean(block.color);
+                return (
+                  <button
+                    key={bi}
+                    type="button"
+                    onClick={block.onClick}
+                    className={`w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight ${
+                      block.onClick ? "cursor-pointer" : "cursor-default"
+                    } ${hasColor ? "" : "bg-muted text-foreground"}`}
+                    style={
+                      hasColor
+                        ? {
+                            backgroundColor: block.color!,
+                            color: readableTextColor(block.color!),
+                          }
+                        : undefined
+                    }
+                  >
+                    <span className="truncate block">{block.label}</span>
+                  </button>
+                );
+              })}
+              {overflow > 0 && (
+                <span className="px-1.5 text-[10px] text-muted-foreground leading-tight">
+                  +{overflow} more
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    )}
     <div
       ref={scrollRef}
-      className={`flex border border-border rounded-md overflow-hidden select-none ${
+      className={`flex border border-border ${hasAllDay ? "border-t-0 rounded-b-md" : "rounded-md"} overflow-hidden select-none ${
         // items-start: size the hour-axis + day columns to their full 24h
         // content height and scroll, instead of stretching (align-items:stretch)
         // them to the shorter viewport. Stretch clipped each column's box to the

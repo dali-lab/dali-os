@@ -58,9 +58,14 @@ import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import {
   fetchBusyEvents,
+  fetchCalendarEvents,
+  createGoogleCalendarEvent,
+  patchGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
   getValidAccessTokenForLink,
   listCalendarsForLink,
   subscribeCalendarForLink,
+  type CalendarEvent,
 } from "~/lib/google-calendar";
 import {
   generalCalendarId,
@@ -103,6 +108,7 @@ import type {
   MemberClassDTO,
   ClassOccurrenceDTO,
   ClassDestinationDTO,
+  ExternalEventDTO,
   EventAttendeeDTO,
   EventLinkDTO,
   LoaderData,
@@ -127,6 +133,7 @@ import {
   workingHoursStripeLayer, DayBg, BlockBlock,
   SelectionPopoverPortal, CalendarEventDetailPopover,
   MeetingDetailToggles, EventGuestList,
+  type AllDayBlock,
 } from "~/calendar/components/WeekGrid";
 import {
   buildGridDays,
@@ -134,6 +141,7 @@ import {
   buildBlocksLayer,
   buildMeetingsLayer,
   buildClassesLayer,
+  buildAllDayItems,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
@@ -177,6 +185,25 @@ const GOOGLE_RSVP_LABEL: Record<
   tentative: "Tentative",
   needsAction: "Pending",
 };
+
+// Shared external-event → DTO mappers (both the busy read and the full
+// calendar-crud read produce the same attendee/link shapes).
+function externalAttendees(
+  atts: { name: string; responseStatus: "accepted" | "declined" | "tentative" | "needsAction"; organizer?: boolean; optional?: boolean }[] | undefined,
+): EventAttendeeDTO[] | undefined {
+  return atts?.map((a) => ({
+    name: a.name,
+    status: GOOGLE_RSVP_LABEL[a.responseStatus],
+    organizer: a.organizer,
+    optional: a.optional,
+  }));
+}
+function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
+  return [
+    ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl }] : []),
+    ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink }] : []),
+  ];
+}
 
 function userDisplayName(
   u: { firstName: string | null; lastName: string | null; daliEmail: string | null } | undefined,
@@ -488,11 +515,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     calendarListResults.map(({ linkId, items }) => [linkId, items]),
   );
 
+  // Resolve roles + flags once, up front — the calendar-crud read (all events,
+  // with edit identity) replaces the busy-only read when the flag is on.
+  const roles = await getUserRoles(userId, request);
+  const crudEnabled = await isFeatureEnabled("calendar-google-crud", userId, roles, request);
+
   let ingestionError: string | null = null;
-  const [externalBusyRaw, calendarLinks, inviteRows] = await Promise.all([
-    fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens).catch((err) => {
-      ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
-      return [] as Awaited<ReturnType<typeof fetchBusyEvents>>;
+  const [externalRaw, calendarLinks, inviteRows] = await Promise.all([
+    (crudEnabled
+      ? fetchCalendarEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
+      : fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
+    ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
+      ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
+      return [];
     }),
     Promise.all(
       links.map(async (l): Promise<CalendarLinkDTO> => {
@@ -522,6 +557,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           color: it.backgroundColor ?? null,
           enabled:
             l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
+          writable: it.accessRole === "owner" || it.accessRole === "writer",
         }));
         return { ...base, subCalendars };
       }),
@@ -624,8 +660,40 @@ export async function loader({ request }: Route.LoaderArgs) {
   // round-trip.
   const generalCalendar = generalCalendarState(calendarLinks);
 
+  // Map the external read to display DTOs. The crud read carries edit identity
+  // (eventId/linkId/writable/allDay); the busy read is title/time only.
+  const externalEvents: ExternalEventDTO[] = crudEnabled
+    ? (externalRaw as CalendarEvent[]).map((e) => ({
+        startIso: e.startIso,
+        endIso: e.endIso,
+        title: e.title || "Busy",
+        color: e.color ?? null,
+        calendarId: e.calendarId,
+        eventId: e.eventId,
+        linkId: e.linkId,
+        allDay: e.allDay,
+        writable: e.writable,
+        recurringEventId: e.recurringEventId ?? null,
+        description: e.description,
+        location: e.location,
+        organizerName: e.organizerName,
+        attendees: externalAttendees(e.attendees),
+        links: externalLinks(e.meetingUrl, e.htmlLink),
+      }))
+    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
+        startIso: e.start,
+        endIso: e.end,
+        title: e.title ?? "Busy",
+        color: e.color ?? null,
+        calendarId: e.calendarId ?? null,
+        description: e.description,
+        location: e.location,
+        organizerName: e.organizerName,
+        attendees: externalAttendees(e.attendees),
+        links: externalLinks(e.meetingUrl, e.htmlLink),
+      }));
+
   // Classes this term (flag-gated). Only touch the table when the flag is on.
-  const roles = await getUserRoles(userId, request);
   const classesEnabled = await isFeatureEnabled("calendar-classes", userId, roles, request);
   let memberClasses: MemberClassDTO[] = [];
   let classOccurrences: ClassOccurrenceDTO[] = [];
@@ -676,26 +744,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     view,
     rangeStartIso: rangeStart.toISOString(),
     rangeEndIso: rangeEnd.toISOString(),
-    externalEvents: externalBusyRaw.map((e) => ({
-      startIso: e.start,
-      endIso: e.end,
-      title: e.title ?? "Busy",
-      color: e.color ?? null,
-      calendarId: e.calendarId ?? null,
-      description: e.description,
-      location: e.location,
-      organizerName: e.organizerName,
-      attendees: e.attendees?.map((a) => ({
-        name: a.name,
-        status: GOOGLE_RSVP_LABEL[a.responseStatus],
-        organizer: a.organizer,
-        optional: a.optional,
-      })),
-      links: [
-        ...(e.meetingUrl ? [{ label: "Join video call", href: e.meetingUrl }] : []),
-        ...(e.htmlLink ? [{ label: "Open in Google Calendar", href: e.htmlLink }] : []),
-      ],
-    })),
+    externalEvents,
     ingestionError,
     groups,
     users,
@@ -725,8 +774,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     memberClasses,
     classOccurrences,
     classDestinations,
+    crudEnabled,
+    defaultEventDest: readCookie(request, "dali_event_dest"),
   };
   return data;
+}
+
+/** Read a single cookie value from the request's Cookie header. */
+function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get("Cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name) return decodeURIComponent(v.join("="));
+  }
+  return null;
 }
 
 function hhmmToMinute(s: string): number | null {
@@ -807,6 +869,94 @@ async function handleClassAction(
   }
 }
 
+async function assertLinkOwned(userId: string, linkId: string): Promise<void> {
+  const link = await prisma.userCalendarLink.findFirst({
+    where: { id: linkId, userId, provider: "Google" },
+    select: { id: true },
+  });
+  if (!link) throw new Error("That calendar isn't connected to your account.");
+}
+
+// Create / edit / delete a Google Calendar event (calendar-google-crud flag).
+// `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a date
+// (all-day, end exclusive). Editing recurrence rules is deferred — an edit
+// patches this event/occurrence's fields only.
+async function handleEventAction(
+  intent: string,
+  raw: Record<string, FormDataEntryValue>,
+  userId: string,
+  request: Request,
+): Promise<Response | null> {
+  const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
+  const roles = await getUserRoles(userId, request);
+  if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
+    return Response.json({ error: "Not enabled" }, { status: 403 });
+  }
+  const [linkId, calendarId] = get("destination").split(":");
+  try {
+    if (intent === "event-delete") {
+      const eventId = get("eventId");
+      if (!linkId || !eventId) return Response.json({ error: "Missing event" }, { status: 400 });
+      await assertLinkOwned(userId, linkId);
+      await deleteGoogleCalendarEvent({ linkId, calendarId: calendarId || undefined, eventId });
+      return null;
+    }
+
+    const title = get("title").trim();
+    if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+    if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
+    await assertLinkOwned(userId, linkId);
+    const startIso = get("startIso");
+    const endIso = get("endIso");
+    if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+    const allDay = get("allDay") === "1";
+    const description = get("description").trim();
+    const location = get("location").trim();
+    const timeZone = get("timeZone").trim() || undefined;
+
+    if (intent === "event-create") {
+      const recurrenceRule = get("recurrenceRule").trim() || null;
+      await createGoogleCalendarEvent({
+        linkId,
+        calendarId: calendarId || undefined,
+        summary: title,
+        description: description || undefined,
+        location: location || undefined,
+        startIso,
+        endIso,
+        allDay,
+        recurrenceRule,
+        timeZone,
+        attendees: [],
+      });
+      return null;
+    }
+    if (intent === "event-update") {
+      const eventId = get("eventId");
+      if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
+      // No recurrenceRule on edit — this patches the single event/occurrence.
+      await patchGoogleCalendarEvent({
+        linkId,
+        calendarId: calendarId || undefined,
+        eventId,
+        summary: title,
+        description,
+        location,
+        startIso,
+        endIso,
+        allDay,
+        timeZone,
+      });
+      return null;
+    }
+    return Response.json({ error: "Unknown event action" }, { status: 400 });
+  } catch (err) {
+    console.error("event action failed", err);
+    const msg = err instanceof Error && err.message.includes("connected") ? err.message : "Couldn't save to Google Calendar.";
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -822,6 +972,9 @@ export async function action({ request }: Route.ActionArgs) {
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
   if (rawIntent.startsWith("class-")) {
     return handleClassAction(rawIntent, raw, userId, request);
+  }
+  if (rawIntent.startsWith("event-")) {
+    return handleEventAction(rawIntent, raw, userId, request);
   }
 
   // Coerce string-encoded fields into the shape Zod expects.
@@ -1600,6 +1753,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [calendarsOpen, setCalendarsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [classesOpen, setClassesOpen] = useState(false);
+  const [composer, setComposer] = useState<ComposerState | null>(null);
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -1675,7 +1829,27 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
 
   const layerMaps: Record<number, EventBlock[]>[] = [];
-  if (layers.external) layerMaps.push(buildExternalLayer(data, days, hiddenCals));
+  if (layers.external)
+    layerMaps.push(
+      buildExternalLayer(
+        data,
+        days,
+        hiddenCals,
+        data.crudEnabled ? (e) => setComposer({ mode: "edit", event: e }) : undefined,
+      ),
+    );
+  // All-day events (crud read) render in the grid's all-day band.
+  const allDayByDay: Record<number, AllDayBlock[]> = {};
+  if (data.crudEnabled) {
+    const items = buildAllDayItems(data, days, hiddenCals);
+    for (const [idx, evs] of Object.entries(items)) {
+      allDayByDay[Number(idx)] = evs.map((e) => ({
+        label: e.title,
+        color: e.color,
+        onClick: e.writable && e.eventId ? () => setComposer({ mode: "edit", event: e }) : undefined,
+      }));
+    }
+  }
   if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days, loggedIndex?.byBlock));
   if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
   if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
@@ -1882,6 +2056,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   tabIndex={-1}
                 />
                 <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
+                  {data.crudEnabled && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                      onClick={() => {
+                        setComposer({ mode: "create" });
+                        setCreateOpen(false);
+                      }}
+                    >
+                      <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Event
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
@@ -1890,7 +2076,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       setCreateOpen(false);
                     }}
                   >
-                    <Plus className="h-4 w-4 text-muted-foreground" /> Event / log time
+                    <Plus className="h-4 w-4 text-muted-foreground" />{" "}
+                    {data.crudEnabled ? "In-app block" : "Event / log time"}
                   </button>
                   <button
                     type="button"
@@ -1945,17 +2132,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       : null
                   }
                   eventsByDay={eventsByDay}
+                  allDayByDay={allDayByDay}
                   onDayPointerSelect={(dayIdx, startHour, endHour) => {
                     const day = days[dayIdx];
                     if (!day) return;
-                    setEditor({
-                      kind: "create",
-                      dayIdx,
-                      startHour,
-                      endHour,
-                      startLocal: dayHourToLocal(day.dateUtc, startHour),
-                      endLocal: dayHourToLocal(day.dateUtc, endHour),
-                    });
+                    const startLocal = dayHourToLocal(day.dateUtc, startHour);
+                    const endLocal = dayHourToLocal(day.dateUtc, endHour);
+                    // With Google CRUD on, dragging drafts a real event; otherwise
+                    // it drafts an in-app block.
+                    if (data.crudEnabled) {
+                      setComposer({ mode: "create", startLocal, endLocal });
+                      return;
+                    }
+                    setEditor({ kind: "create", dayIdx, startHour, endHour, startLocal, endLocal });
                   }}
                   selection={
                     editor ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour } : null
@@ -2011,6 +2200,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {settingsOpen && <CalendarSettingsModal data={data} onClose={() => setSettingsOpen(false)} />}
       {classesOpen && data.classesEnabled && (
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
+      )}
+      {composer && data.crudEnabled && (
+        <EventComposer data={data} state={composer} onClose={() => setComposer(null)} />
       )}
     </div>
   );
@@ -2685,6 +2877,255 @@ function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClose: () 
               </div>
             </fetcher.Form>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Event composer (calendar-google-crud) ─────────────────────────────────
+// Create / edit / delete a Google Calendar event. Recurrence-create is deferred
+// (single events for now); editing patches this event/occurrence's fields.
+
+const dtPad = (n: number) => String(n).padStart(2, "0");
+function isoToLocalDT(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${dtPad(d.getMonth() + 1)}-${dtPad(d.getDate())}T${dtPad(d.getHours())}:${dtPad(d.getMinutes())}`;
+}
+function isoToDateInput(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10); // all-day = UTC-midnight date
+}
+function addDaysToDate(dateStr: string, days: number): string {
+  return new Date(new Date(`${dateStr}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+}
+function browserTz(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "America/New_York";
+  }
+}
+
+/** Writable Google calendars, as composer destination options. */
+function writableDestinations(data: LoaderData): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const link of data.calendarLinks) {
+    if (link.provider !== "Google" || !link.subCalendars) continue;
+    const account = link.displayName || link.externalEmail || "Google";
+    for (const sub of link.subCalendars) {
+      if (!sub.writable) continue;
+      out.push({ value: `${link.id}:${sub.id}`, label: `${account} · ${sub.primary ? "Primary" : sub.summary}` });
+    }
+  }
+  return out;
+}
+
+type ComposerState =
+  | { mode: "create"; startLocal?: string; endLocal?: string }
+  | { mode: "edit"; event: ExternalEventDTO };
+
+function EventComposer({ data, state, onClose }: { data: LoaderData; state: ComposerState; onClose: () => void }) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const editing = state.mode === "edit";
+  const ev = editing ? state.event : null;
+  const dests = writableDestinations(data);
+
+  const [title, setTitle] = useState(ev?.title ?? "");
+  const [allDay, setAllDay] = useState(ev?.allDay ?? false);
+  const [destination, setDestination] = useState(() => {
+    if (ev?.linkId && ev.calendarId) return `${ev.linkId}:${ev.calendarId}`;
+    const def = data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest) ? data.defaultEventDest : null;
+    return def ?? dests[0]?.value ?? "";
+  });
+  const [location, setLocation] = useState(ev?.location ?? "");
+  const [description, setDescription] = useState(ev?.description ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Timed + all-day inputs, seeded from the event (edit) or the drag (create).
+  const seedTimed = ev && !ev.allDay ? { s: isoToLocalDT(ev.startIso), e: isoToLocalDT(ev.endIso) } : null;
+  const createSeed = state.mode === "create" ? { s: state.startLocal, e: state.endLocal } : null;
+  const [dtStart, setDtStart] = useState(seedTimed?.s ?? createSeed?.s ?? "");
+  const [dtEnd, setDtEnd] = useState(seedTimed?.e ?? createSeed?.e ?? "");
+  const [dStart, setDStart] = useState(
+    ev?.allDay ? isoToDateInput(ev.startIso) : (seedTimed?.s ?? createSeed?.s ?? "").slice(0, 10),
+  );
+  const [dEnd, setDEnd] = useState(
+    ev?.allDay ? addDaysToDate(isoToDateInput(ev.endIso), -1) : (seedTimed?.e ?? createSeed?.e ?? "").slice(0, 10),
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Close on a successful create/edit/delete.
+  const prev = useRef(fetcher.state);
+  useEffect(() => {
+    if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) onClose();
+    prev.current = fetcher.state;
+  }, [fetcher.state, fetcher.data, onClose]);
+  const prevDel = useRef(deleteFetcher.state);
+  useEffect(() => {
+    if (prevDel.current !== "idle" && deleteFetcher.state === "idle" && !deleteFetcher.data?.error) onClose();
+    prevDel.current = deleteFetcher.state;
+  }, [deleteFetcher.state, deleteFetcher.data, onClose]);
+
+  // Derived hidden values.
+  const startIso = allDay ? (dStart ? `${dStart}T00:00:00.000Z` : "") : dtStart ? new Date(dtStart).toISOString() : "";
+  const endIso = allDay
+    ? dEnd
+      ? `${addDaysToDate(dEnd, 1)}T00:00:00.000Z` // Google end is exclusive
+      : ""
+    : dtEnd
+      ? new Date(dtEnd).toISOString()
+      : "";
+  const canSubmit = title.trim() !== "" && destination !== "" && startIso !== "" && endIso !== "" && startIso < endIso;
+  const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
+
+  const rememberDest = () => {
+    try {
+      document.cookie = `dali_event_dest=${encodeURIComponent(destination)}; path=/; max-age=31536000`;
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={editing ? "Edit event" : "New event"}
+        className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-brand-3"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">{editing ? "Edit event" : "New event"}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {dests.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Connect a Google Calendar you can write to first (Settings → Calendar).
+          </p>
+        ) : (
+          <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3">
+            <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
+            {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
+            <input type="hidden" name="destination" value={destination} />
+            <input type="hidden" name="startIso" value={startIso} />
+            <input type="hidden" name="endIso" value={endIso} />
+            <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
+            <input type="hidden" name="timeZone" value={browserTz()} />
+
+            <input
+              name="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Add title"
+              className={cn(fieldCls, "text-base font-medium")}
+              autoFocus
+            />
+
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <Checkbox checked={allDay} onChange={() => setAllDay((v) => !v)} /> All day
+            </label>
+
+            {allDay ? (
+              <div className="flex items-center gap-2 text-sm">
+                <input type="date" value={dStart} onChange={(e) => setDStart(e.target.value)} className={fieldCls} />
+                <span className="text-muted-foreground">to</span>
+                <input type="date" value={dEnd} onChange={(e) => setDEnd(e.target.value)} className={fieldCls} />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 text-sm">
+                <input type="datetime-local" value={dtStart} onChange={(e) => setDtStart(e.target.value)} className={fieldCls} />
+                <input type="datetime-local" value={dtEnd} onChange={(e) => setDtEnd(e.target.value)} className={fieldCls} />
+              </div>
+            )}
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Calendar</span>
+              <Select
+                value={destination}
+                onChange={setDestination}
+                options={dests}
+                placeholder="Pick a calendar"
+                buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+              />
+            </label>
+
+            <input
+              name="location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Location"
+              className={fieldCls}
+            />
+            <textarea
+              name="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description"
+              rows={2}
+              className={cn(fieldCls, "resize-y")}
+            />
+
+            {(fetcher.data?.error || deleteFetcher.data?.error) && (
+              <p className="text-xs text-red-600">{fetcher.data?.error || deleteFetcher.data?.error}</p>
+            )}
+            {editing && !ev?.writable && (
+              <p className="text-xs text-muted-foreground">This event is read-only.</p>
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={!canSubmit || submitting || (editing && !ev?.writable)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50"
+              >
+                {editing ? "Save" : "Create event"}
+              </button>
+              {editing && ev?.writable && ev.eventId && (
+                <div className="ml-auto">
+                  {confirmDelete ? (
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() =>
+                        deleteFetcher.submit(
+                          { intent: "event-delete", destination, eventId: ev.eventId! },
+                          { method: "post" },
+                        )
+                      }
+                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+                    >
+                      Confirm delete
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(true)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </fetcher.Form>
         )}
       </div>
     </div>
