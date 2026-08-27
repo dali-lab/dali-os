@@ -301,8 +301,10 @@ export type EventBlock = {
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
   /** When set, the event's detail popover shows an "Edit" action — a writable
-   *  Google event under the calendar-google-crud flag. Opens the composer. */
-  onEdit?: () => void;
+   *  Google event or in-app block under the calendar-google-crud flag. Opens the
+   *  composer, anchored to the block's on-screen rect (passed through so the
+   *  composer pops up next to the event, Google-Calendar style). */
+  onEdit?: (anchor?: DOMRect) => void;
   /** When set, the block can be dragged to move (whole block, keeping duration)
    *  or resized by its top/bottom edges; fires on drop with the new start/end
    *  hours within the same day column. Writable Google events only. */

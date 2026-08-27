@@ -735,8 +735,9 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
                 <button
                   type="button"
                   onClick={() => {
+                    const anchor = anchorEl?.getBoundingClientRect();
                     setDetailOpen(false);
-                    e.onEdit?.();
+                    e.onEdit?.(anchor);
                   }}
                   className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
                 >
@@ -751,7 +752,25 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
   );
 }
 
-export type AllDayBlock = { label: string; color?: string | null; onClick?: () => void };
+export type AllDayBlock = {
+  label: string;
+  color?: string | null;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+};
+
+/** Short timezone abbreviation for the current instant (e.g. "EDT", "PST") —
+ *  shown in the grid's top-left corner the way Google Calendar labels the axis. */
+function tzAbbrev(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export function WeekGrid({
   days,
@@ -776,7 +795,9 @@ export function WeekGrid({
   backgroundLayer?: (dayIdx: number) => React.ReactNode;
   overlayLayer?: (dayIdx: number) => React.ReactNode;
   showProviderRow?: boolean;
-  onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number) => void;
+  // anchorRect is the dragged slot's on-screen rect, so a create popover can pop
+  // up next to it (Google-Calendar style) instead of as a centered modal.
+  onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number, anchorRect?: DOMRect) => void;
   // A committed selection (controlled by the parent) drawn as a persistent
   // accent block. selectionPopover renders the editor in a viewport-clamped
   // portal; onSelectionDismiss fires when the user clicks the grid backdrop.
@@ -910,7 +931,13 @@ export function WeekGrid({
       const hi = Math.max(drag.anchor, drag.hover);
       const start = lo;
       const end = hi - lo < SNAP_HOURS ? Math.min(MAX_HOUR, lo + SNAP_HOURS * 2) : hi;
-      onDayPointerSelect(drag.dayIdx, start, end);
+      let anchorRect: DOMRect | undefined;
+      if (col) {
+        const cr = col.getBoundingClientRect();
+        const topY = cr.top + (start - MIN_HOUR) * HOUR_PX;
+        anchorRect = new DOMRect(cr.left, topY, cr.width, Math.max(1, (end - start) * HOUR_PX));
+      }
+      onDayPointerSelect(drag.dayIdx, start, end, anchorRect);
       setDrag(null);
     };
     window.addEventListener("mousemove", onMove);
@@ -1079,8 +1106,14 @@ export function WeekGrid({
       {/* Hour axis */}
       <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
         <div
-          className={`shrink-0 bg-card border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
-        />
+          className={`shrink-0 bg-card border-b border-border flex items-center justify-center ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
+        >
+          {timezone && (
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">
+              {tzAbbrev(timezone)}
+            </span>
+          )}
+        </div>
         {HOURS.map((h) => (
           <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
             {formatHour(h)}

@@ -110,7 +110,7 @@ export function buildExternalLayer(
   data: LoaderData,
   days: GridDay[],
   hiddenCalendarIds?: Set<string>,
-  onEdit?: (e: ExternalEventDTO) => void,
+  onEdit?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
   onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
@@ -135,7 +135,7 @@ export function buildExternalLayer(
         links: e.links,
         // Editable Google events (writable + flag on) get an Edit affordance in
         // the detail popover and can be dragged to move/resize.
-        onEdit: onEdit && editable ? () => onEdit(e) : undefined,
+        onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
         onMoveResize: onMoveResize && editable ? (s, en) => onMoveResize(e, s, en) : undefined,
       },
       into,
@@ -204,7 +204,7 @@ export function buildBlocksLayer(
   data: LoaderData,
   days: GridDay[],
   loggedByBlock?: Map<string, LoggedAccent>,
-  onEditBlock?: (b: ManualBlockDTO) => void,
+  onEditBlock?: (b: ManualBlockDTO, anchor?: DOMRect) => void,
   onMoveBlock?: (b: ManualBlockDTO, startHour: number, endHour: number) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
@@ -219,8 +219,11 @@ export function buildBlocksLayer(
         className: EVENT_CORAL,
         borderClassName: "border-accent-coral-light",
         loggedAccent: loggedByBlock?.get(b.id),
-        // Click opens the same composer (edit mode); drag moves/resizes it.
-        onClick: onEditBlock ? () => onEditBlock(b) : undefined,
+        // Click opens the read-only detail popover (Google-style), whose "Edit"
+        // action opens the composer; drag moves/resizes it. Using onEdit (not
+        // onClick) keeps blocks consistent with Google events — a view popup
+        // first, then edit.
+        onEdit: onEditBlock ? (anchor) => onEditBlock(b, anchor) : undefined,
         onMoveResize: onMoveBlock ? (s, en) => onMoveBlock(b, s, en) : undefined,
       },
       into,

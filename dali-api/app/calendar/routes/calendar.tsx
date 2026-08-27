@@ -1990,9 +1990,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   };
   // In-app blocks edit/move through the SAME composer as Google events — the
   // block is presented to the composer as a local-destination "event".
-  const editBlock = (b: ManualBlockDTO) =>
+  const editBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
     setComposer({
       mode: "edit",
+      anchor,
       event: {
         startIso: b.startTime,
         endIso: b.endTime,
@@ -2105,7 +2106,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         data,
         days,
         hiddenCals,
-        data.crudEnabled ? (e) => setComposer({ mode: "edit", event: e }) : undefined,
+        data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
         data.crudEnabled ? moveEvent : undefined,
       ),
     );
@@ -2117,7 +2118,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       allDayByDay[Number(idx)] = evs.map((e) => ({
         label: e.title,
         color: e.color,
-        onClick: e.writable && e.eventId ? () => setComposer({ mode: "edit", event: e }) : undefined,
+        onClick:
+          e.writable && e.eventId
+            ? (ev) => setComposer({ mode: "edit", event: e, anchor: ev.currentTarget.getBoundingClientRect() })
+            : undefined,
       }));
     }
   }
@@ -2347,8 +2351,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={() => {
-                        setComposer({ mode: "create" });
+                      onClick={(e) => {
+                        setComposer({ mode: "create", anchor: e.currentTarget.getBoundingClientRect() });
                         setCreateOpen(false);
                       }}
                     >
@@ -2420,7 +2424,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   }
                   eventsByDay={eventsByDay}
                   allDayByDay={allDayByDay}
-                  onDayPointerSelect={(dayIdx, startHour, endHour) => {
+                  onDayPointerSelect={(dayIdx, startHour, endHour, anchorRect) => {
                     const day = days[dayIdx];
                     if (!day) return;
                     const startLocal = dayHourToLocal(day.dateUtc, startHour);
@@ -2428,7 +2432,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                     // With Google CRUD on, dragging drafts a real event; otherwise
                     // it drafts an in-app block.
                     if (data.crudEnabled) {
-                      setComposer({ mode: "create", startLocal, endLocal });
+                      setComposer({ mode: "create", startLocal, endLocal, anchor: anchorRect });
                       return;
                     }
                     setEditor({ kind: "create", dayIdx, startHour, endHour, startLocal, endLocal });
@@ -3169,9 +3173,107 @@ function eventDestinations(data: LoaderData): { value: string; label: string }[]
   return out;
 }
 
+/** A floating card anchored next to an on-screen rect (a clicked event, a
+ *  dragged slot, or the New button), Google-Calendar style — prefers the
+ *  anchor's right side, flips left / shifts up to stay on-screen, and centers
+ *  near the top when no anchor is given. Dismisses on Escape and on an outside
+ *  mousedown; clicks inside the card or inside a floating dropdown portal (the
+ *  card's own Selects / RepeatField) are not treated as outside. No dark
+ *  backdrop — it's a popover, not a full-screen modal. */
+function AnchoredPopover({
+  anchor,
+  onClose,
+  ariaLabel,
+  className,
+  children,
+}: {
+  anchor?: DOMRect | null;
+  onClose: () => void;
+  ariaLabel?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (cardRef.current?.contains(target)) return;
+      // The card's own dropdowns (Select, RepeatField) render into their own
+      // floating portal at <body>, so they're not inside cardRef — a click
+      // there isn't an outside click.
+      const el = target instanceof Element ? target : (target.parentElement as Element | null);
+      if (el?.closest("[data-floating-ui-portal],[data-calendar-popover]")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDocMouseDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDocMouseDown, true);
+    };
+  }, [onClose]);
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const gap = 8;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const a =
+        anchor ??
+        ({ left: vw / 2 - cw / 2, right: vw / 2 + cw / 2, top: 72, bottom: 72 } as DOMRect);
+      let left = a.right + gap;
+      if (left + cw + margin > vw) left = a.left - gap - cw; // flip to the left side
+      left = Math.max(margin, Math.min(left, vw - cw - margin));
+      let top = a.top;
+      if (top + ch + margin > vh) top = vh - ch - margin; // shift up to fit
+      top = Math.max(margin, top);
+      setPos((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
+    window.addEventListener("resize", place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, [anchor]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      data-calendar-popover
+      role="dialog"
+      aria-label={ariaLabel}
+      onMouseDown={(e) => e.stopPropagation()}
+      className={cn("fixed z-50", className)}
+      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? "visible" : "hidden" }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 type ComposerState =
-  | { mode: "create"; startLocal?: string; endLocal?: string }
-  | { mode: "edit"; event: ExternalEventDTO };
+  // anchor is the on-screen rect of the clicked event / dragged slot / New
+  // button, so the composer pops up next to it (Google-Calendar style) rather
+  // than as a centered full-screen modal. Null → centered fallback.
+  | { mode: "create"; startLocal?: string; endLocal?: string; anchor?: DOMRect | null }
+  | { mode: "edit"; event: ExternalEventDTO; anchor?: DOMRect | null };
 
 function EventComposer({ data, state, onClose }: { data: LoaderData; state: ComposerState; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string } | null>();
@@ -3217,12 +3319,6 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     ev?.allDay ? addDaysToDate(isoToDateInput(ev.endIso), -1) : (seedTimed?.e ?? createSeed?.e ?? "").slice(0, 10),
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   // Close on a successful create/edit/delete.
   const prev = useRef(fetcher.state);
   useEffect(() => {
@@ -3264,14 +3360,12 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
-      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? "Edit event" : "New event"}
-        className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-brand-3"
-      >
+    <AnchoredPopover
+      anchor={state.anchor}
+      onClose={onClose}
+      ariaLabel={editing ? "Edit event" : "New event"}
+      className="w-[22rem] max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-brand-3"
+    >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold text-foreground">{editing ? "Edit event" : "New event"}</h2>
           <button
@@ -3467,8 +3561,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
             </div>
           </fetcher.Form>
         )}
-      </div>
-    </div>
+    </AnchoredPopover>
   );
 }
 
