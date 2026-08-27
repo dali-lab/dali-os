@@ -109,7 +109,7 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Staffing", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
-      { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
+      { label: "Growth", href: "/core/growth", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
     ],
   },
   {
@@ -248,7 +248,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
-      { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },
+      { label: "Growth", href: "/core/growth", icon: ArrowUpCircle },
       { label: "Roles & Permissions", href: "/core/access/roles", icon: Shield },
       { label: "Domains", href: "/core/access/domains", icon: Globe },
       ...coreClusterSubtabs,
@@ -316,10 +316,31 @@ function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
  * through, and NAV_AREAS survives only to keep favourites saved under the old
  * nav resolvable (see ALL_AREAS).
  */
-export function areasFor(_flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   // Deep-link email templates directly into Drive (agreements has its own Core
   // console page at /core/agreements).
-  return applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  let areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  // Domain hubs live behind the domain-hubs flag — nav + routes + hubs flip
+  // together — so the Domains sub-tab is injected only when it's on.
+  if (flags["domain-hubs"]) areas = withDomainsSubtab(areas);
+  return areas;
+}
+
+// Insert the "Domains" sub-tab into the General area (after Projects, before
+// People). Kept out of the static REGROUPED_AREAS so the whole feature stays
+// behind the flag.
+function withDomainsSubtab(areas: NavArea[]): NavArea[] {
+  return areas.map((a) => {
+    if (a.key !== "projects") return a;
+    const subtabs = [...a.subtabs];
+    const at = subtabs.findIndex((t) => t.href === "/members");
+    subtabs.splice(at === -1 ? subtabs.length : at, 0, {
+      label: "Domains",
+      href: "/domains",
+      icon: Globe,
+    });
+    return { ...a, subtabs };
+  });
 }
 
 /**

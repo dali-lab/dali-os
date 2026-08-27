@@ -189,6 +189,20 @@ export const EVENT_TYPES = {
     description: "When your project assignment for a term is confirmed.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "domain.level-up-requested": {
+    kind: "General",
+    area: "Staffing",
+    label: "Level-up requests",
+    description: "When a member requests a level up in a domain you lead.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "domain.transfer-requested": {
+    kind: "General",
+    area: "Staffing",
+    label: "Domain join requests",
+    description: "When a member requests to join a domain you lead.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "hiring.interview_assigned": {
     kind: "General",
     area: "Hiring",

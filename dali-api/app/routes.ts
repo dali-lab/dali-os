@@ -97,6 +97,9 @@ export default [
     route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),
     route("core/project-bids", "core/routes/core.project-bids.tsx"),
     route("core/project-bids/:userId", "core/routes/core.project-bids.$userId.tsx"),
+    route("core/growth", "core/routes/core.growth.tsx"),
+    route("core/growth/:userId", "core/routes/core.growth.$userId.tsx"),
+    // Former Level Up URLs — redirect to Growth (see the redirect route files).
     route("core/level-up", "core/routes/core.level-up.tsx"),
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
@@ -107,6 +110,11 @@ export default [
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
     route("core/communications/email/:id", "core/routes/core.communications.email.$id.tsx"),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
+
+    // Domains. Per-domain knowledge hubs (General ▸ Domains). Feature-flagged
+    // (domain-hubs); the loaders redirect when the flag is off.
+    route("domains", "domains/routes/domains.tsx"),
+    route("domains/:domainId", "domains/routes/domains.$domainId.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
@@ -122,11 +130,6 @@ export default [
     route(
       "projects/project-bids/:userId",
       "projects/routes/projects.project-bids.$userId.tsx",
-    ),
-    route("projects/level-up", "projects/routes/projects.level-up.tsx"),
-    route(
-      "projects/level-up/:userId",
-      "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
     route(

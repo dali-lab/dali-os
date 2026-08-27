@@ -11,6 +11,7 @@ import {
   GraduationCap,
   HardDrive,
   Shield,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleFlags } from "~/lib/nav-areas";
@@ -127,6 +128,21 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     systemKey: "drive:hiring-root",
     groupQuery: "hiring",
     gate: (r) => r.hasHiringAccess,
+  },
+  {
+    // Per-skill-domain knowledge hubs. One synthetic sub-space per domain,
+    // backed by the domain's auto-provisioned hub Folder (systemKey
+    // domain:<id>:root). Enumerated in drive-scopes.server.ts via the
+    // `workspace-multi` strategy (same pattern as Projects/Education).
+    // The feature flag gate lives in loadDriveScopes — the space is always
+    // registered here so nothing breaks when the flag is off (no domains
+    // appear in the browser if the scope list is empty).
+    key: "domains",
+    label: "Domains",
+    icon: Layers,
+    backing: "workspace-multi",
+    // Whole-lab readable — no role gate; the scope loader filters to only
+    // domains whose hub folder exists.
   },
 ];
 

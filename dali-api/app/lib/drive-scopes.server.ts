@@ -8,6 +8,8 @@ import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import type { RoleFlags } from "~/lib/nav-areas";
+import { prisma } from "~/lib/db";
+import { skillDomainWhere } from "~/lib/domains.server";
 
 // Tag each doc/folder item with whether the viewer has favorited it (drives the
 // inline star). Files/forms/agreements aren't page-favoritable, so they pass
@@ -108,6 +110,7 @@ export async function loadDriveScopes({
   canManageAgreements,
   isCore,
   hasHiringAccess,
+  domainHubsEnabled = false,
   request,
 }: {
   userSub: string;
@@ -121,6 +124,12 @@ export async function loadDriveScopes({
   isCore: boolean;
   /** Whether the viewer has hiring access — gates the auto-provisioned Hiring drive. */
   hasHiringAccess: boolean;
+  /**
+   * When true, enumerate each skill domain's hub folder as a Domains space
+   * in the Drive. Callers pass the resolved feature-flag value; defaults to
+   * false so existing call sites that predate domain-hubs need no changes.
+   */
+  domainHubsEnabled?: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
   // Build the minimal RoleFlags needed by the drive-spaces gates. The registry
@@ -144,6 +153,32 @@ export async function loadDriveScopes({
   // this viewer (same as legacy — avoids unnecessary idempotent creates).
   const needsCore = spaces.some((s) => s.key === "core");
   const needsHiring = spaces.some((s) => s.key === "hiring");
+
+  // When domain hubs are on, load every skill domain's hub folder systemKey so
+  // we can carve out their subtrees from the Lab load (same pattern as Core/Hiring).
+  // Domain hubs are whole-lab readable, so no access gate here — the Lab page
+  // load already applies getPageAccess per-page. We only need the folder ids.
+  type DomainFolder = { domainId: string; displayName: string; folderId: string };
+  let domainFolders: DomainFolder[] = [];
+  if (domainHubsEnabled) {
+    const domains = await prisma.domain.findMany({
+      where: skillDomainWhere(),
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true },
+    });
+    const keys = domains.map((d) => `domain:${d.id}:root`);
+    const pages = await prisma.page.findMany({
+      where: { systemKey: { in: keys }, archivedAt: null },
+      select: { id: true, systemKey: true },
+    });
+    const folderByKey = new Map(pages.map((p) => [p.systemKey!, p.id]));
+    for (const d of domains) {
+      const folderId = folderByKey.get(`domain:${d.id}:root`);
+      // Only include domains whose hub has been provisioned (ensureDomainHubRoot
+      // runs on hub page load, so unvisited hubs won't appear in Drive yet).
+      if (folderId) domainFolders.push({ domainId: d.id, displayName: d.displayName, folderId });
+    }
+  }
 
   const [coreRoot, hiringRoot, favIds, linkedProcessMap] = await Promise.all([
     needsCore ? ensureCoreDriveRoot(userSub) : Promise.resolve(null),
@@ -251,6 +286,26 @@ export async function loadDriveScopes({
       hiringRoot.id,
       ...hiringItems.filter((i) => i.type === "folder").map((i) => i.id),
     ]);
+  }
+
+  // Carve out each domain hub's subtree from the post-Core/Hiring lab items.
+  // Domain folders are Lab pages (workspaceType=Lab) identified by their
+  // systemKey (domain:<id>:root). Items inside each domain's subtree are
+  // reparented under a synthetic domain folder id in the Domains scope below.
+  type DomainItemsEntry = { folder: DomainFolder; items: DriveItem[] };
+  const domainItemEntries: DomainItemsEntry[] = [];
+  if (domainFolders.length > 0) {
+    for (const df of domainFolders) {
+      const inDomain = subtreeIds(labVisibleItems, df.folderId);
+      const remaining = labVisibleItems.filter((it) => !inDomain.has(it.id));
+      const domainItems = liftRootChildren(
+        // Exclude the hub folder itself (it IS the scope, like core/hiring root).
+        labVisibleItems.filter((it) => it.id !== df.folderId && inDomain.has(it.id)),
+        df.folderId,
+      );
+      labVisibleItems = remaining;
+      domainItemEntries.push({ folder: df, items: domainItems });
+    }
   }
 
   // Strip managed artifacts from the Lab scope (same as legacy).
@@ -455,6 +510,42 @@ export async function loadDriveScopes({
             items: tagFavorites(syntheticEducationItems, favIds),
             systemManaged: false,
             scopeAudience: "Enrolled members",
+          });
+        } else if (space.key === "domains" && domainItemEntries.length > 0) {
+          // Same synthetic-wrapper pattern as Projects: one top-level synthetic
+          // folder per skill domain, each linking to the domain's hub page.
+          const syntheticDomainItems: DriveItem[] = [];
+          for (const { folder, items } of domainItemEntries) {
+            syntheticDomainItems.push({
+              type: "folder",
+              id: folder.domainId,
+              title: folder.displayName,
+              iconEmoji: null,
+              parentFolderId: null,
+              href: `/domains/${folder.domainId}`,
+              updatedAt: new Date(0),
+              sizeBytes: null,
+              favorited: false,
+              linkedProcess: null,
+              systemKey: null,
+            } as DriveItem);
+
+            for (const item of items) {
+              syntheticDomainItems.push(
+                item.parentFolderId === null
+                  ? { ...item, parentFolderId: folder.domainId }
+                  : item,
+              );
+            }
+          }
+
+          result.push({
+            id: "domains",
+            label: "Domains",
+            iconEmoji: null,
+            items: tagFavorites(syntheticDomainItems, favIds),
+            systemManaged: true,
+            scopeAudience: "Everyone in the lab",
           });
         }
         break;

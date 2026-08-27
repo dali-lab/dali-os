@@ -156,6 +156,30 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
   ],
+  // A join request targets a domain the member is NOT yet eligible in and
+  // enters at P1. Same role palette as level-up so it reuses the review board;
+  // the bound form should source target-domain from domains:active (any domain).
+  "domain-join": [
+    {
+      role: "target-domain",
+      defaultLabel: "Joining",
+      required: false,
+      constraint: "any",
+      requiredCount: 1,
+    },
+    {
+      role: "target-level",
+      defaultLabel: "Entry level",
+      required: false,
+      // A join enters at P1; the interpreter defaults to P1 when this is
+      // unmapped, so it's optional (kept so a form MAY capture it explicitly).
+      constraint: "choice",
+      requiredCount: 0,
+    },
+    DISPLAY_ROLE,
+    SUBMITTER_ROLE,
+    HIRED_ROLES_ROLE,
+  ],
 };
 
 // Builtins a slot must include in its mapping for the configuration to be
@@ -166,6 +190,7 @@ export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
   "project-bids": ["submitter", "hiredRoles"],
   "intent-to-work": [],
   "level-up": ["submitter"],
+  "domain-join": ["submitter"],
 };
 
 // A column is filled from one of two source kinds: a form question, or a

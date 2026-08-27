@@ -537,6 +537,13 @@ model Domain {
   isSystem        Boolean @default(false)
   // Toggle visibility from Admin Console without code changes.
   active          Boolean @default(true)
+  // Short one-line blurb shown on the domain hub index card + hub header.
+  // Optional; hubs render fine without it.
+  description     String?
+  // Loose FK → Rubric used to score this domain's Growth requests (level-up +
+  // domain-join). Null = no rubric configured (scored review shows no criteria).
+  // Loose (no relation) per the folderPageId/promotedBy convention.
+  levelUpRubricId String?
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
@@ -3670,6 +3677,12 @@ model Form {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Stable key for system-managed, auto-provisioned forms (mirrors
+  // Page.systemKey). Set on the canonical Growth request forms so
+  // ensureStaffingCycle can find + auto-bind them to each term's cycle; null
+  // for every ordinary user-created form.
+  systemKey String? @unique
+
   // Drive unified tree placement. Null = unplaced (rendered at the Lab top
   // level). When set, must point at a Page of
   // kind=Folder. Loose FK — no DB-level constraint — matching the existing
@@ -3859,12 +3872,60 @@ model StaffingCycleFormBinding {
   // until a manager defines this). App-layer validated (see slot-roles.ts).
   columnMapping Json?
 
+  // Core's per-flow open/closed switch. When false, the flow's member-facing
+  // request CTA is hidden and the submit endpoint rejects, even though a form
+  // is bound. Consumed by the Growth flows (level-up, domain-join); other slots
+  // ignore it. Defaults open so an auto-bound flow works out of the box.
+  enabled Boolean @default(true)
+
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
   updatedBy     User          @relation(fields: [updatedById], references: [id])
 
   @@unique([staffingCycleId, slot])
   @@index([formId])
+}
+
+// A Core member's scored evaluation of a Growth request (a FormSubmission in
+// the "level-up" or "domain-join" slot). Records the per-criterion scores
+// against the rubric version in force at review time (pinned by id), the
+// decision, and who reviewed. The eligibility change itself still flows through
+// applyEligibilityWithNotify on approval — this table is the audit/rationale
+// record, mirroring ApplicationReview. Cross-model ids are loose FKs (the app's
+// folderPageId/promotedBy convention) so a deleted submission/user/rubric never
+// cascade-wipes the history.
+model LevelUpReview {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The Growth request being reviewed (FormSubmission id).
+  submissionId String
+
+  // Denormalized request facts — survive form re-versioning and are queryable
+  // without decoding the submission's answers.
+  subjectUserId String
+  domainId      String
+  targetLevel   Level
+
+  // The rubric version scored against, pinned at review time. Null when no
+  // rubric was configured for the flow. Loose FK.
+  rubricVersionId String?
+  // Per-criterion scores keyed by RubricVersion.criteria[].key: { key: number }.
+  scores          Json
+
+  decision LevelUpDecision
+  note     String?
+
+  reviewerId String
+
+  @@index([submissionId])
+  @@index([subjectUserId, domainId])
+}
+
+enum LevelUpDecision {
+  Approved
+  Declined
 }
 
 model EssentialityForm {

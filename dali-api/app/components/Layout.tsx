@@ -164,6 +164,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // This used to read `areaPills` alone, which got both signals backwards —
   // see hasSubnavRow for why calendar was doubling the row.
   const redesign = useFeatureFlag('sidebar-redesign')
+  const domainHubs = useFeatureFlag('domain-hubs')
   const ownsSubnavRow = hasSubnavRow(matches, redesign)
   const {
     workspaceRef,
@@ -237,9 +238,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
-  // The nav-regroup flag was retired; the nav-areas registry no longer branches
-  // on any flag, so an empty map is all the helpers need.
-  const navFlags = {}
+  // nav-areas injects the flag-gated Domains sub-tab into General, so thread the
+  // domain-hubs flag through. (nav-regroup was retired; nothing else branches.)
+  const navFlags = { 'domain-hubs': domainHubs }
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -994,6 +995,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={navFlags}
         onOpen={openFromPalette}
       />
     </div>

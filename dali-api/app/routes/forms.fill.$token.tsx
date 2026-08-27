@@ -10,6 +10,9 @@ import {
   ordinaryFillBlock,
 } from "~/forms/lib/public-form";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
+import { prisma } from "~/lib/db";
+import { parseColumnMapping } from "~/projects/lib/slot-roles";
+import { GROWTH_SLOTS } from "~/projects/lib/growth.server";
 import {
   MemberFormFillView,
   MemberFormShell,
@@ -69,6 +72,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const form = await loadPublicForm(params.token!, userId);
   if (!form) throw new Response("Not found", { status: 404 });
 
+  // A Growth request CTA (domain hub) can pre-fill the target domain via
+  // ?domain=<id>. Resolve the bound form's target-domain question key so the
+  // fill view pre-selects it. Ignored for any non-Growth form / unknown domain.
+  const domainParam = url.searchParams.get("domain");
+  let prefill: Record<string, string> | undefined;
+  if (domainParam) {
+    const growthBinding = await prisma.staffingCycleFormBinding.findFirst({
+      where: { formId: form.formId, slot: { in: [...GROWTH_SLOTS] } },
+      orderBy: { updatedAt: "desc" },
+      select: { columnMapping: true },
+    });
+    const domainEntry = parseColumnMapping(growthBinding?.columnMapping)?.entries.find(
+      (e) => e.role === "target-domain" && e.source === "question",
+    );
+    if (
+      domainEntry?.source === "question" &&
+      (await prisma.domain.count({ where: { id: domainParam } })) > 0
+    ) {
+      prefill = { [domainEntry.questionKey]: domainParam };
+    }
+  }
+
   // One-response gate (Form.oneResponsePerMember): education-context fills
   // are per-session and exempt; anonymous fills have no identity to key on;
   // ordinaryFillBlock also exempts slot-bound forms, mirroring
@@ -86,6 +111,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     token: params.token!,
     educationSessionId,
     educationOfferingId,
+    prefill,
     alreadySubmitted: block ? { at: block.at.toISOString() } : null,
   };
 }
@@ -131,6 +157,7 @@ export default function MemberFormFill() {
     <MemberFormShell allowExit>
       <MemberFormFillView
         data={data}
+        prefill={data.prefill}
         extraBody={
           data.educationSessionId || data.educationOfferingId
             ? {

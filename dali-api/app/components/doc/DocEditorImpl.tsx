@@ -542,7 +542,13 @@ function DocView(
       <SuggestionMenuController
         triggerCharacter="/"
         getItems={(query) =>
-          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [])
+          getFilteredDocSlashMenuItems(
+            editor,
+            features,
+            query,
+            aiItems ?? [],
+            props.onCreatePage,
+          )
         }
       />
       {features.mentions && (

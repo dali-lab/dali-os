@@ -65,11 +65,51 @@ function calloutItem(editor: DocEditorInstance): KeyedItem {
   };
 }
 
+// Host callback that creates a page and returns its id/title (see
+// DocEditorProps.onCreatePage). Typed locally to avoid importing the props
+// module here.
+type CreatePageFn = (
+  title: string,
+) => Promise<{ id: string; title: string } | null>;
+
+// "New page" item: creates a page via the host callback, then inserts a
+// page-mention chip linking to it. Only added when features.mentions is on (the
+// pageMention inline spec must be registered) AND a host callback is provided.
+function newPageItem(
+  editor: DocEditorInstance,
+  onCreatePage: CreatePageFn,
+): KeyedItem {
+  return {
+    key: "new-page",
+    title: "New page",
+    subtext: "Create a sub-page and link it here",
+    aliases: ["page", "subpage", "sub-page", "new page"],
+    group: (editor.dictionary.slash_menu.paragraph as { group: string }).group,
+    icon: (
+      <span style={{ fontSize: 18, lineHeight: 1 }} aria-hidden>
+        📄
+      </span>
+    ),
+    onItemClick: async () => {
+      const created = await onCreatePage("Untitled");
+      if (!created) return;
+      editor.insertInlineContent([
+        {
+          type: "pageMention",
+          props: { pageId: created.id, label: created.title || "Untitled" },
+        },
+        " ",
+      ]);
+    },
+  };
+}
+
 /** Full item list for a feature set (unfiltered by query). */
 export function getDocSlashMenuItems(
   editor: DocEditorInstance,
   features: Features,
   aiItems: DefaultReactSuggestionItem[] = [],
+  onCreatePage?: CreatePageFn,
 ): DefaultReactSuggestionItem[] {
   const defaults = (getDefaultReactSlashMenuItems(editor) as KeyedItem[]).filter(
     (item) => item.key !== undefined && ALLOWED_KEYS.has(item.key),
@@ -77,6 +117,9 @@ export function getDocSlashMenuItems(
   let items = defaults;
   if (features.richBlocks) {
     items = insertItemIntoGroup(items, calloutItem(editor));
+  }
+  if (features.mentions && onCreatePage) {
+    items = insertItemIntoGroup(items, newPageItem(editor, onCreatePage));
   }
   if (features.pageBreak) {
     // getPageBreakSlashMenuItems returns [] when the block isn't in the schema.
@@ -97,6 +140,10 @@ export async function getFilteredDocSlashMenuItems(
   features: Features,
   query: string,
   aiItems: DefaultReactSuggestionItem[] = [],
+  onCreatePage?: CreatePageFn,
 ): Promise<DefaultReactSuggestionItem[]> {
-  return filterSuggestionItems(getDocSlashMenuItems(editor, features, aiItems), query);
+  return filterSuggestionItems(
+    getDocSlashMenuItems(editor, features, aiItems, onCreatePage),
+    query,
+  );
 }

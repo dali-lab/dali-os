@@ -36,12 +36,19 @@ export default function HelpStaffingPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-lg font-semibold">Level-up</h2>
+        <h2 className="text-lg font-semibold">Growth</h2>
         <p className="mt-2 text-sm text-foreground">
-          If you want to move up a role level this term (e.g. Developer →
-          Senior Developer), submit a level-up request. Your domain lead
-          reviews these alongside staffing — promotions land before
-          assignments are locked.
+          The Growth board covers two request flows. <strong>Level up:</strong>{" "}
+          if you want to move up a role level this term (e.g. Developer →
+          Senior Developer), submit a level-up request. Your domain lead reviews
+          it alongside staffing — promotions land before assignments are locked.{" "}
+          <strong>Domain join:</strong> if you want to start working in a new
+          domain you don't have eligibility in yet, submit a join request to
+          enter at P1. Both flows appear on the{" "}
+          <a href="/core/growth" className="text-accent-teal hover:underline">
+            Growth board
+          </a>{" "}
+          in Core.
         </p>
       </section>
 

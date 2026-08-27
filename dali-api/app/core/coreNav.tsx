@@ -57,6 +57,7 @@ const STANDALONE_LABELS: Record<string, string> = {
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
   "level-up": "Level Up",
+  "growth": "Growth",
   roles: "Roles & Permissions",
   domains: "Domains",
   agreements: "Agreements",
