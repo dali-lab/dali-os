@@ -911,6 +911,7 @@ export function WeekGrid({
   markPayPeriodEnds = false,
   fillAndScroll = false,
   allDayByDay,
+  clickDurationHours,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -920,6 +921,9 @@ export function WeekGrid({
   // anchorRect is the dragged slot's on-screen rect, so a create popover can pop
   // up next to it (Google-Calendar style) instead of as a centered modal.
   onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number, anchorRect?: DOMRect) => void;
+  // Duration a single click (no drag) creates, in hours — the user's default
+  // event length. Falls back to two snap steps when unset.
+  clickDurationHours?: number;
   // A committed selection (controlled by the parent) drawn as a persistent
   // accent block. selectionPopover renders the editor in a viewport-clamped
   // portal; onSelectionDismiss fires when the user clicks the grid backdrop.
@@ -1070,7 +1074,8 @@ export function WeekGrid({
       const lo = Math.min(drag.anchor, drag.hover);
       const hi = Math.max(drag.anchor, drag.hover);
       const start = lo;
-      const end = hi - lo < SNAP_HOURS ? Math.min(MAX_HOUR, lo + SNAP_HOURS * 2) : hi;
+      const clickDur = clickDurationHours && clickDurationHours > 0 ? clickDurationHours : SNAP_HOURS * 2;
+      const end = hi - lo < SNAP_HOURS ? Math.min(MAX_HOUR, lo + clickDur) : hi;
       let anchorRect: DOMRect | undefined;
       if (col) {
         const cr = col.getBoundingClientRect();
@@ -1086,7 +1091,7 @@ export function WeekGrid({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [drag, onDayPointerSelect, MAX_HOUR]);
+  }, [drag, onDayPointerSelect, MAX_HOUR, clickDurationHours]);
 
   // Resizing the committed selection by dragging its top/bottom handle. The
   // moving edge follows the cursor (snapped, clamped, never crossing the fixed

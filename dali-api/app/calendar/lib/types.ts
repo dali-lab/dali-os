@@ -10,7 +10,7 @@ import type { RoleInstance } from "~/lib/roles";
 import type { GeneralCalendarState } from "~/lib/general-calendar";
 
 /** The unified calendar's three views. */
-export type CalendarView = "day" | "week" | "month";
+export type CalendarView = "day" | "week" | "month" | "agenda";
 
 export type WhSegment = {
   id: string;
@@ -274,6 +274,9 @@ export type LoaderData = {
   // calendar (from the dali_event_dest cookie), "linkId:calendarId".
   crudEnabled: boolean;
   defaultEventDest: string | null;
+  /** New-event default length in minutes (dali_event_duration cookie; 60 when
+   *  unset). Used by quick-create and a single click on the grid. */
+  defaultEventDurationMin: number;
 };
 
 /** A positioned block on the week/day grid. Every layer builder emits these. */

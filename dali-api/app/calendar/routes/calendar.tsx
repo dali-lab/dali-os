@@ -167,6 +167,8 @@ import {
   type GridDay,
 } from "~/calendar/lib/layers";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
+import { AgendaView } from "~/calendar/components/AgendaView";
+import { MiniMonth } from "~/calendar/components/MiniMonth";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -270,7 +272,7 @@ function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date }
 }
 
 function parseView(v: string | null): CalendarView {
-  return v === "day" || v === "month" ? v : "week";
+  return v === "day" || v === "month" || v === "agenda" ? v : "week";
 }
 
 // Window for the unified screen's active view. Day = the anchor's calendar day;
@@ -790,8 +792,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     classDestinations,
     crudEnabled,
     defaultEventDest: readCookie(request, "dali_event_dest"),
+    defaultEventDurationMin: parseDurationCookie(readCookie(request, "dali_event_duration")),
   };
   return data;
+}
+
+// New-event default length (minutes), from the cookie the defaults popover
+// writes; clamped to the offered options, 60 when unset/invalid.
+const EVENT_DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
+const DEFAULT_EVENT_DURATION_MIN = 60;
+function parseDurationCookie(raw: string | null): number {
+  const n = raw ? Number(raw) : NaN;
+  return (EVENT_DURATION_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_EVENT_DURATION_MIN;
 }
 
 /** Read a single cookie value from the request's Cookie header. */
@@ -1898,7 +1910,7 @@ function LegacyCalendarTabs({ data }: { data: LoaderData }) {
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
-const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day" };
+const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -1983,9 +1995,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [calendarsOpen, setCalendarsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
+  // Anchored popovers that replaced the old settings modal: working-hours edit
+  // (from the layer row), new-event defaults (from the toolbar gear), and the
+  // mini-month navigator (from the range label). Null anchor = closed.
+  const [hoursAnchor, setHoursAnchor] = useState<DOMRect | null>(null);
+  const [defaultsAnchor, setDefaultsAnchor] = useState<DOMRect | null>(null);
+  const [miniMonthAnchor, setMiniMonthAnchor] = useState<DOMRect | null>(null);
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
@@ -2167,7 +2184,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const days = buildGridDays(data.rangeStartIso, dayCount);
   // The date the view is centered on (prev/next math + the month label). For
   // month view rangeStart is the Sunday before the 1st, so +14d lands mid-month.
-  const focusDate = view === "month" ? new Date(rangeStart.getTime() + 14 * 86_400_000) : rangeStart;
+  // Agenda shares the month window, so its focus/label track the month too.
+  const focusDate =
+    view === "month" || view === "agenda" ? new Date(rangeStart.getTime() + 14 * 86_400_000) : rangeStart;
   const anchorMonth = { year: focusDate.getUTCFullYear(), month: focusDate.getUTCMonth() + 1 };
 
   const setParams = (mut: (p: URLSearchParams) => void) =>
@@ -2213,7 +2232,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // ←/→ page. Only in browse mode, never while a dialog is open or while typing
   // into a field. Modifier chords are left for the browser/OS.
   const anyModalOpen =
-    Boolean(composer) || settingsOpen || classesOpen || calMgrOpen || createOpen || Boolean(searchAnchor);
+    Boolean(composer) ||
+    classesOpen ||
+    calMgrOpen ||
+    createOpen ||
+    Boolean(searchAnchor) ||
+    Boolean(hoursAnchor) ||
+    Boolean(defaultsAnchor) ||
+    Boolean(miniMonthAnchor);
   useEffect(() => {
     if (mode !== "browse" || anyModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -2224,6 +2250,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         case "d": changeView("day"); break;
         case "w": changeView("week"); break;
         case "m": changeView("month"); break;
+        case "a": changeView("agenda"); break;
         case "t": goToday(); break;
         case "arrowleft": navigate(-1); break;
         case "arrowright": navigate(1); break;
@@ -2379,7 +2406,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, ...opts }).format(d);
   let rangeLabel: string;
   if (view === "day") rangeLabel = df(focusDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  else if (view === "month") rangeLabel = df(focusDate, { month: "long", year: "numeric" });
+  else if (view === "month" || view === "agenda") rangeLabel = df(focusDate, { month: "long", year: "numeric" });
   else {
     const last = days[days.length - 1].dateUtc;
     rangeLabel = `${df(rangeStart, { month: "short", day: "numeric" })} – ${df(last, {
@@ -2399,7 +2426,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // range, 9–10am) — the New-menu path when there's no drag. Month view has no
   // time grid, so switch to week first.
   const openQuickCreate = () => {
-    if (view === "month") {
+    // Neither month nor agenda has a time grid to drop into — jump to week first.
+    if (view === "month" || view === "agenda") {
       changeView("week");
       return;
     }
@@ -2413,13 +2441,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     const idx = found >= 0 ? found : 0;
     const day = days[idx];
     if (!day) return;
+    const endHour = 9 + data.defaultEventDurationMin / 60;
     setEditor({
       kind: "create",
       dayIdx: idx,
       startHour: 9,
-      endHour: 10,
+      endHour,
       startLocal: dayHourToLocal(day.dateUtc, 9),
-      endLocal: dayHourToLocal(day.dateUtc, 10),
+      endLocal: dayHourToLocal(day.dateUtc, endHour),
     });
   };
 
@@ -2446,7 +2475,21 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
+        {mode === "browse" ? (
+          <button
+            type="button"
+            onClick={(e) =>
+              setMiniMonthAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))
+            }
+            aria-label="Jump to date"
+            aria-expanded={Boolean(miniMonthAnchor)}
+            className="rounded-md font-heading text-xl font-semibold text-foreground hover:text-accent-coral"
+          >
+            {rangeLabel}
+          </button>
+        ) : (
+          <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {mode === "browse" && (
@@ -2466,7 +2509,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               </Tooltip>
 
               <div className="inline-flex rounded-lg bg-muted p-0.5">
-                {(["month", "week", "day"] as CalendarView[]).map((v) => (
+                {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
                   <button
                     key={v}
                     type="button"
@@ -2481,11 +2524,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 ))}
               </div>
 
-              <Tooltip content="Calendar settings">
+              <Tooltip content="Event defaults">
                 <button
                   type="button"
-                  onClick={() => setSettingsOpen(true)}
-                  aria-label="Calendar settings"
+                  onClick={(e) =>
+                    setDefaultsAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))
+                  }
+                  aria-label="Event defaults"
+                  aria-expanded={Boolean(defaultsAnchor)}
                   className={cn(iconToolBtn, "w-8 justify-center px-0")}
                 >
                   <Settings className="h-4 w-4" />
@@ -2527,9 +2573,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                           setCalendarsOpen(false);
                           setClassesOpen(true);
                         }}
-                        onOpenSettings={() => {
+                        onEditHours={(rect) => {
                           setCalendarsOpen(false);
-                          setSettingsOpen(true);
+                          setHoursAnchor(rect);
                         }}
                         crudEnabled={data.crudEnabled}
                         onManageCalendars={() => {
@@ -2616,7 +2662,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       ) : (
         <div className="flex flex-col lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
           <section className={cn(panel, "flex flex-col p-3 lg:flex-1 lg:min-h-0")}>
-              {view === "month" ? (
+              {view === "agenda" ? (
+                <AgendaView
+                  days={days}
+                  eventsByDay={eventsByDay}
+                  timezone={data.timezone}
+                  onSelectDay={goToDay}
+                />
+              ) : view === "month" ? (
                 <MonthGrid
                   days={days}
                   eventsByDay={eventsByDay}
@@ -2630,6 +2683,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   clean
                   days={days}
                   timezone={data.timezone}
+                  clickDurationHours={data.defaultEventDurationMin / 60}
                   markPayPeriodEnds={layers.logged}
                   backgroundLayer={(dayIdx) =>
                     layers.workingHours
@@ -2712,7 +2766,34 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           )}
         </div>
       )}
-      {settingsOpen && <CalendarSettingsModal data={data} onClose={() => setSettingsOpen(false)} />}
+      {hoursAnchor && (
+        <WorkingHoursPopover data={data} anchor={hoursAnchor} onClose={() => setHoursAnchor(null)} />
+      )}
+      {defaultsAnchor && (
+        <EventDefaultsPopover data={data} anchor={defaultsAnchor} onClose={() => setDefaultsAnchor(null)} />
+      )}
+      {miniMonthAnchor && (
+        <AnchoredPopover
+          anchor={miniMonthAnchor}
+          onClose={() => setMiniMonthAnchor(null)}
+          ariaLabel="Jump to date"
+          className="rounded-xl border border-border bg-card shadow-brand-3"
+        >
+          <MiniMonth
+            focusDate={focusDate}
+            timezone={data.timezone}
+            onPick={(dateUtc) => {
+              setMiniMonthAnchor(null);
+              // Keep the current view; just move the anchor to the picked day.
+              setParams((p) => {
+                p.set("view", view);
+                p.set("anchor", ymdUtc(dateUtc));
+                p.delete("weekStart");
+              });
+            }}
+          />
+        </AnchoredPopover>
+      )}
       {classesOpen && data.classesEnabled && (
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
@@ -2864,7 +2945,7 @@ function CalendarLayerList({
   classCount,
   localClassCount,
   onManageClasses,
-  onOpenSettings,
+  onEditHours,
   crudEnabled,
   onManageCalendars,
 }: {
@@ -2880,7 +2961,7 @@ function CalendarLayerList({
   classCount: number;
   localClassCount: number;
   onManageClasses: () => void;
-  onOpenSettings: () => void;
+  onEditHours: (anchor: DOMRect) => void;
   crudEnabled: boolean;
   onManageCalendars: () => void;
 }) {
@@ -2912,12 +2993,12 @@ function CalendarLayerList({
                 <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
               </button>
             )}
-            {/* Edit-hours bridge to Settings, under Working hours */}
+            {/* Working-hours editor opens inline, anchored to this row. */}
             {spec.key === "workingHours" && (
               <div className="mb-1 ml-8 mt-0.5">
                 <button
                   type="button"
-                  onClick={onOpenSettings}
+                  onClick={(e) => onEditHours(e.currentTarget.getBoundingClientRect())}
                   className="text-xs font-medium text-accent-teal hover:underline"
                 >
                   Edit hours
@@ -3022,8 +3103,8 @@ function CalendarLayerList({
         );
       })}
     </ul>
-    <div className="mt-1 border-t border-border pt-1">
-      {crudEnabled && (
+    {crudEnabled && (
+      <div className="mt-1 border-t border-border pt-1">
         <button
           type="button"
           onClick={onManageCalendars}
@@ -3031,15 +3112,8 @@ function CalendarLayerList({
         >
           <CalendarDays className="h-3.5 w-3.5" /> Manage calendars
         </button>
-      )}
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <Settings className="h-3.5 w-3.5" /> Calendar settings
-      </button>
-    </div>
+      </div>
+    )}
     </>
   );
 }
@@ -3226,48 +3300,156 @@ function CalendarSearchBar({
 }
 
 // Calendar settings (integrations, working hours, buffers, manual blocks) as a
-// centered modal opened from the toolbar gear — off the main canvas so the grid
-// keeps the full width.
-function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+// popovers anchored to their trigger. Working-hours editing lives on the layer
+// row; new-event defaults live on the toolbar gear. Connecting accounts stays in
+// global Settings, and show/hide + create/rename/delete calendars live in the
+// Calendars menu — none are duplicated here.
+function WorkingHoursPopover({
+  data,
+  anchor,
+  onClose,
+}: {
+  data: LoaderData;
+  anchor: DOMRect;
+  onClose: () => void;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
-      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close settings" onClick={onClose} tabIndex={-1} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Calendar settings"
-        className="relative z-10 w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-brand-3"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold text-foreground">Calendar settings</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+    <AnchoredPopover
+      anchor={anchor}
+      onClose={onClose}
+      ariaLabel="Working hours"
+      className="w-[22rem] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
+    >
+      <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
+    </AnchoredPopover>
+  );
+}
+
+function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h && m) return `${h}h ${m}m`;
+  return h ? `${h}h` : `${m}m`;
+}
+
+function EventDefaultsPopover({
+  data,
+  anchor,
+  onClose,
+}: {
+  data: LoaderData;
+  anchor: DOMRect;
+  onClose: () => void;
+}) {
+  const revalidator = useRevalidator();
+  const bufferFetcher = useFetcher();
+  const dests = eventDestinations(data);
+  const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+  const chip = (on: boolean) =>
+    cn(
+      "rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+      on ? "bg-accent-coral text-white" : "border border-border bg-background text-foreground hover:bg-muted",
+    );
+  const bufferOptions = [
+    { label: "None", value: 0 },
+    { label: "5m", value: 5 },
+    { label: "10m", value: 10 },
+    { label: "15m", value: 15 },
+    { label: "30m", value: 30 },
+  ];
+  const pendingBuffer = bufferFetcher.formData?.get("defaultEventBufferMin");
+  const selectedBuffer = pendingBuffer != null ? Number(pendingBuffer) : data.defaultEventBufferMin;
+
+  // Default calendar + duration persist in cookies (like the composer's
+  // last-used destination); revalidate so the change takes effect immediately.
+  const writeCookie = (name: string, value: string) => {
+    try {
+      document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000`;
+    } catch {
+      /* ignore */
+    }
+    revalidator.revalidate();
+  };
+
+  const currentDest =
+    data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
+      ? data.defaultEventDest
+      : dests.find((d) => d.value !== LOCAL_DEST)?.value ?? LOCAL_DEST;
+
+  return (
+    <AnchoredPopover
+      anchor={anchor}
+      onClose={onClose}
+      ariaLabel="New event defaults"
+      className="w-80 max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
+    >
+      <h2 className="mb-3 font-heading text-sm font-semibold text-foreground">New event defaults</h2>
+      <div className="flex flex-col gap-4">
+        {data.generalCalendar === "missing" && data.calendarLinks.length > 0 && (
+          <GeneralCalendarPrompt links={data.calendarLinks} />
+        )}
+
+        {data.crudEnabled && dests.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Default calendar
+            </label>
+            <Select
+              value={currentDest}
+              onChange={(v) => writeCookie("dali_event_dest", v)}
+              options={dests}
+              buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+            />
+            <p className="text-[11px] text-muted-foreground">Where a new event is created unless you change it.</p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Default duration
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {EVENT_DURATION_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={data.defaultEventDurationMin === m}
+                onClick={() => writeCookie("dali_event_duration", String(m))}
+                className={chip(data.defaultEventDurationMin === m)}
+              >
+                {fmtDuration(m)}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">Length of a quick-created or single-click event.</p>
         </div>
-        {/* Behavior only — connecting accounts lives in global Settings, and
-            calendars (show/hide, create/rename/delete) live in the Calendars
-            menu, so they're not duplicated here. */}
-        <div className="flex flex-col gap-6">
-          {data.generalCalendar === "missing" && data.calendarLinks.length > 0 && (
-            <GeneralCalendarPrompt links={data.calendarLinks} />
-          )}
-          <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
-          <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Event buffer
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {bufferOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={selectedBuffer === o.value}
+                onClick={() =>
+                  bufferFetcher.submit(
+                    { intent: "set-event-buffer", defaultEventBufferMin: String(o.value) },
+                    { method: "post" },
+                  )
+                }
+                className={chip(selectedBuffer === o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">Reserved padding drawn around each event.</p>
         </div>
       </div>
-    </div>
+    </AnchoredPopover>
   );
 }
 
