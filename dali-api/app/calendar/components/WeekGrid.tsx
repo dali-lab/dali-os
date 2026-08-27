@@ -367,7 +367,18 @@ function formatLoggedHours(h: number): string {
 // Only `livePos` is state, updated each mousemove to drive the visual position.
 // `engaged` on a move drag flips true once the 4px threshold is crossed.
 type BlockDragState =
-  | { kind: "move"; grabOffset: number; duration: number; colEl: HTMLElement; startClientY: number; engaged: boolean }
+  | {
+      kind: "move";
+      grabOffset: number;
+      duration: number;
+      colEl: HTMLElement;
+      startClientY: number;
+      startClientX: number;
+      engaged: boolean;
+      originDay: number;
+      targetDay: number;
+      colWidth: number;
+    }
   | { kind: "resize-top"; fixed: number; colEl: HTMLElement }
   | { kind: "resize-bottom"; fixed: number; colEl: HTMLElement };
 
@@ -388,10 +399,24 @@ function hourFromColY(clientY: number, colEl: HTMLElement): number {
   return clampHour(snapHour(raw));
 }
 
-export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) {
+export function WeekGridEvent({
+  e,
+  lane,
+  dayIdx,
+  hitTestDay,
+}: {
+  e: EventBlock;
+  lane?: EventLane;
+  // This event's day column, and a hit-test to resolve a pointer X → day index,
+  // so a body-move drag can cross columns to another date.
+  dayIdx?: number;
+  hitTestDay?: (clientX: number) => number | null;
+}) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
+  // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
+  const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
   const bufferAfter = e.bufferAfter ?? 0;
   const totalHours = bufferBefore + e.duration + bufferAfter;
@@ -463,21 +488,26 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
     if (!colEl) return;
 
     const pointerHour = hourFromColY(ev.clientY, colEl);
+    const originDay = dayIdx ?? 0;
     dragRef.current = {
       kind: "move",
       grabOffset: pointerHour - e.startHour,
       duration: e.duration,
       colEl,
       startClientY: ev.clientY,
+      startClientX: ev.clientX,
       engaged: false,
+      originDay,
+      targetDay: originDay,
+      colWidth: colEl.getBoundingClientRect().width,
     };
 
     const onMove = (mev: MouseEvent) => {
       const ds = dragRef.current;
       if (!ds || ds.kind !== "move") return;
-      // Engage only after crossing 4px so a click doesn't snap the block.
+      // Engage after crossing 4px in EITHER axis so a click doesn't snap the block.
       if (!ds.engaged) {
-        if (Math.abs(mev.clientY - ds.startClientY) < 4) return;
+        if (Math.abs(mev.clientY - ds.startClientY) < 4 && Math.abs(mev.clientX - ds.startClientX) < 4) return;
         ds.engaged = true;
         setIsDragging(true);
       }
@@ -488,14 +518,24 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
         BLOCK_MAX_HOUR - ds.duration,
       );
       setLivePos({ startHour: start, endHour: start + ds.duration });
+      // Horizontal: which day column is the pointer over? Shift the block there.
+      if (hitTestDay && dayIdx != null) {
+        const td = hitTestDay(mev.clientX);
+        if (td != null && td !== ds.targetDay) {
+          ds.targetDay = td;
+          setLiveDayShift(td === ds.originDay ? null : { offset: td - ds.originDay, colWidth: ds.colWidth });
+        }
+      }
     };
 
     const onUp = (uev: MouseEvent) => {
       const ds = dragRef.current;
       cleanupRef.current?.();
       dragRef.current = null;
-      const wasEngaged = ds?.kind === "move" && ds.engaged;
+      const move = ds?.kind === "move" ? ds : null;
+      const wasEngaged = Boolean(move?.engaged);
       setIsDragging(false);
+      setLiveDayShift(null);
       if (!wasEngaged) {
         // Below-threshold release: treat as click (let synthetic click fire).
         setLivePos(null);
@@ -503,10 +543,12 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
       }
       // A real drag occurred — suppress the synthetic click that will follow.
       suppressNextClick.current = true;
-      const didMove = Math.abs(uev.clientY - (ds as Extract<BlockDragState, { kind: "move" }>).startClientY) >= 4;
+      const dayChanged = move != null && move.targetDay !== move.originDay;
+      const didMove = dayChanged || Math.abs(uev.clientY - (move as NonNullable<typeof move>).startClientY) >= 4;
+      const targetDay = move?.targetDay;
       setLivePos((prev) => {
         if (didMove && prev) {
-          e.onMoveResize?.(prev.startHour, prev.endHour);
+          e.onMoveResize?.(prev.startHour, prev.endHour, targetDay);
         }
         return null;
       });
@@ -514,7 +556,7 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
 
     attachWindowListeners(onMove, onUp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners]);
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay]);
 
   // Handle mousedown: starts a resize drag (top = start edge, bottom = end edge).
   const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.MouseEvent<HTMLElement>) => {
@@ -597,6 +639,8 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
       style={{
         top: (displayStart - displayBufferBefore - HOURS[0]) * HOUR_PX,
         height: displayTotalHours * HOUR_PX,
+        // Live horizontal shift while a move drag crosses to another day column.
+        ...(liveDayShift ? { transform: `translateX(${liveDayShift.offset * liveDayShift.colWidth}px)` } : {}),
         ...(laned
           ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
           : {}),
@@ -955,6 +999,24 @@ export function WeekGrid({
 
   const MIN_HOUR = HOURS[0];
   const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
+
+  // Resolve a viewport X to the day-column index under it (clamped to the ends),
+  // so a dragged event can be dropped onto another date.
+  const hitTestDay = useCallback((clientX: number): number | null => {
+    const cols = columnRefs.current;
+    let firstLeft = Infinity;
+    let lastIdx = -1;
+    for (let i = 0; i < cols.length; i++) {
+      const el = cols[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clientX >= r.left && clientX < r.right) return i;
+      firstLeft = Math.min(firstLeft, r.left);
+      lastIdx = i;
+    }
+    if (lastIdx < 0) return null;
+    return clientX < firstLeft ? 0 : lastIdx; // clamp to the nearest edge column
+  }, []);
 
   // In fill-and-scroll mode the grid scrolls internally: keep the day-header row
   // and hour axis pinned, and open scrolled to the working-day start (once, so a
@@ -1389,7 +1451,9 @@ export function WeekGrid({
             {(() => {
               const dayEvents = eventsByDay[idx] ?? [];
               const eventLanes = computeEventLanes(dayEvents);
-              return dayEvents.map((e, i) => <WeekGridEvent key={i} e={e} lane={eventLanes[i]} />);
+              return dayEvents.map((e, i) => (
+                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} hitTestDay={hitTestDay} />
+              ));
             })()}
             {overlayLayer?.(idx)}
           </div>

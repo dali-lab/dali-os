@@ -1988,16 +1988,30 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // dragged-out event stays visible (and tracks the composer's time edits)
   // instead of vanishing the moment the popover appears.
   const [createSel, setCreateSel] = useState<{ dayIdx: number; startHour: number; endHour: number } | null>(null);
+  // While EDITING an event, overrides that event's time on the grid so the block
+  // resizes/moves live as the composer's start/end change — before saving.
+  // key is `g:<eventId>` (Google) or `b:<manualBlockId>` (in-app block).
+  const [draftEdit, setDraftEdit] = useState<{ key: string; startIso: string; endIso: string } | null>(null);
   const closeComposer = () => {
     setComposer(null);
     setCreateSel(null);
+    setDraftEdit(null);
   };
   const eventMoveFetcher = useFetcher();
-  // Drag-move/resize of a writable event → patch just its time (same calendar
-  // day, new hours), in the display timezone.
-  const moveEvent = (e: ExternalEventDTO, startHour: number, endHour: number) => {
+  // The wall-clock Y/M/D a drag lands on: the target day column when the move
+  // crossed to another date, else the item's own start day. dayIdx columns are
+  // UTC-midnight anchored, so their calendar date reads off the UTC fields.
+  const dropYmd = (fallbackIso: string, dayIdx?: number) => {
+    const col = dayIdx != null ? days[dayIdx] : undefined;
+    if (col)
+      return { year: col.dateUtc.getUTCFullYear(), month: col.dateUtc.getUTCMonth() + 1, day: col.dateUtc.getUTCDate() };
+    return getZonedYMD(new Date(fallbackIso), data.timezone);
+  };
+  // Drag-move/resize of a writable event → patch just its time (new day when the
+  // move crossed columns, new hours), in the display timezone.
+  const moveEvent = (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => {
     if (!e.eventId || !e.linkId) return;
-    const { year, month, day } = getZonedYMD(new Date(e.startIso), data.timezone);
+    const { year, month, day } = dropYmd(e.startIso, dayIdx);
     const toIso = (h: number) => {
       const mins = Math.round(h * 60);
       return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
@@ -2034,8 +2048,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         workNote: b.workNote,
       },
     });
-  const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number) => {
-    const { year, month, day } = getZonedYMD(new Date(b.startTime), data.timezone);
+  const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number, dayIdx?: number) => {
+    const { year, month, day } = dropYmd(b.startTime, dayIdx);
     const toIso = (h: number) => {
       const mins = Math.round(h * 60);
       return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
@@ -2209,11 +2223,25 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // source layer is actually visible — a hidden meeting still needs its block).
   const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
 
+  // While editing, override the edited event's/block's time so its block resizes
+  // and moves live on the grid as the composer changes — before Save.
+  const layerData: LoaderData = draftEdit
+    ? {
+        ...data,
+        externalEvents: data.externalEvents.map((e) =>
+          `g:${e.eventId}` === draftEdit.key ? { ...e, startIso: draftEdit.startIso, endIso: draftEdit.endIso } : e,
+        ),
+        manualBlocks: data.manualBlocks.map((b) =>
+          `b:${b.id}` === draftEdit.key ? { ...b, startTime: draftEdit.startIso, endTime: draftEdit.endIso } : b,
+        ),
+      }
+    : data;
+
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external)
     layerMaps.push(
       buildExternalLayer(
-        data,
+        layerData,
         days,
         hiddenCals,
         data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
@@ -2225,7 +2253,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // All-day events (crud read) render in the grid's all-day band.
   const allDayByDay: Record<number, AllDayBlock[]> = {};
   if (data.crudEnabled) {
-    const items = buildAllDayItems(data, days, hiddenCals);
+    const items = buildAllDayItems(layerData, days, hiddenCals);
     for (const [idx, evs] of Object.entries(items)) {
       allDayByDay[Number(idx)] = evs.map((e) => ({
         label: e.title,
@@ -2240,7 +2268,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   if (layers.blocks)
     layerMaps.push(
       buildBlocksLayer(
-        data,
+        layerData,
         days,
         loggedIndex?.byBlock,
         data.crudEnabled ? editBlock : undefined,
@@ -2274,9 +2302,24 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     );
   const eventsByDay = mergeLayers(...layerMaps);
 
-  // Keep the tentative create block in step with the composer's time edits. An
-  // all-day or off-grid draft drops the block (nothing sensible to draw).
-  const syncCreateSel = (startIso: string, endIso: string, isAllDay: boolean) => {
+  // Keep the grid in step with the composer's time edits. Creating → a tentative
+  // block (createSel); editing → override the real event's time (draftEdit) so
+  // its block resizes/moves live. All-day or empty draft drops the live preview.
+  const syncDraft = (startIso: string, endIso: string, isAllDay: boolean) => {
+    if (!composer) return;
+    if (composer.mode === "edit") {
+      const ev = composer.event;
+      const key = ev.eventId ? `g:${ev.eventId}` : ev.manualBlockId ? `b:${ev.manualBlockId}` : null;
+      if (!key || isAllDay || !startIso || !endIso) {
+        setDraftEdit((p) => (p ? null : p));
+        return;
+      }
+      setDraftEdit((p) =>
+        p && p.key === key && p.startIso === startIso && p.endIso === endIso ? p : { key, startIso, endIso },
+      );
+      return;
+    }
+    // Create mode → tentative selection block.
     if (isAllDay || !startIso || !endIso) {
       setCreateSel(null);
       return;
@@ -2634,7 +2677,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
       {composer && data.crudEnabled && (
-        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncCreateSel} />
+        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncDraft} />
       )}
       {calMgrOpen && data.crudEnabled && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />
@@ -3279,22 +3322,28 @@ function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClose: () 
 // (single events for now); editing patches this event/occurrence's fields.
 
 const dtPad = (n: number) => String(n).padStart(2, "0");
-function isoToLocalDT(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${dtPad(d.getMonth() + 1)}-${dtPad(d.getDate())}T${dtPad(d.getHours())}:${dtPad(d.getMinutes())}`;
+// ISO instant → { date:"YYYY-MM-DD", time:"HH:mm" } as wall-clock in `timezone`,
+// so the composer's fields match where the grid actually places the event. The
+// grid renders in the user's configured timezone, which may differ from the
+// browser's — reading the instant with getHours() (browser-local) would drift.
+function isoToZonedFields(iso: string, timezone: string): { date: string; time: string } {
+  const { year, month, day } = getZonedYMD(new Date(iso), timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(iso));
+  let hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+  if (hh === "24") hh = "00"; // some ICU builds render midnight as "24"
+  return { date: `${year}-${dtPad(month)}-${dtPad(day)}`, time: `${hh}:${mm}` };
 }
 function isoToDateInput(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10); // all-day = UTC-midnight date
 }
 function addDaysToDate(dateStr: string, days: number): string {
   return new Date(new Date(`${dateStr}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
-}
-function browserTz(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "America/New_York";
-  }
 }
 
 export const LOCAL_DEST = "local";
@@ -3510,20 +3559,22 @@ function EventComposer({
   const [workNote, setWorkNote] = useState(base?.workNote ?? "");
 
   // Timed inputs are split into one date + start/end times (custom DateField /
-  // TimeField). Seeded from the event/seed or the drag — the seed strings are
-  // "yyyy-MM-ddThh:mm", so date = [0..10] and time = [11..16].
-  const seedTimed = base && !base.allDay ? { s: isoToLocalDT(base.startIso), e: isoToLocalDT(base.endIso) } : null;
+  // TimeField), seeded as wall-clock in the user's timezone (the grid's) so the
+  // composer and the on-grid block agree even when the browser timezone differs.
+  // The drag seed (state.startLocal, "yyyy-MM-ddThh:mm") is already wall-clock.
+  const seedTimed =
+    base && !base.allDay
+      ? { start: isoToZonedFields(base.startIso, data.timezone), end: isoToZonedFields(base.endIso, data.timezone) }
+      : null;
   const createSeed = state.mode === "create" ? { s: state.startLocal, e: state.endLocal } : null;
-  const initStartDT = seedTimed?.s ?? createSeed?.s ?? "";
-  const initEndDT = seedTimed?.e ?? createSeed?.e ?? "";
-  const [date, setDate] = useState(initStartDT.slice(0, 10));
-  const [startTime, setStartTime] = useState(initStartDT.slice(11, 16));
-  const [endTime, setEndTime] = useState(initEndDT.slice(11, 16));
-  const [dStart, setDStart] = useState(
-    base?.allDay ? isoToDateInput(base.startIso) : initStartDT.slice(0, 10),
-  );
+  const initStart = seedTimed?.start ?? { date: createSeed?.s?.slice(0, 10) ?? "", time: createSeed?.s?.slice(11, 16) ?? "" };
+  const initEnd = seedTimed?.end ?? { date: createSeed?.e?.slice(0, 10) ?? "", time: createSeed?.e?.slice(11, 16) ?? "" };
+  const [date, setDate] = useState(initStart.date);
+  const [startTime, setStartTime] = useState(initStart.time);
+  const [endTime, setEndTime] = useState(initEnd.time);
+  const [dStart, setDStart] = useState(base?.allDay ? isoToDateInput(base.startIso) : initStart.date);
   const [dEnd, setDEnd] = useState(
-    base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : initEndDT.slice(0, 10),
+    base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : initEnd.date,
   );
 
   // Close on a successful create/edit/delete.
@@ -3539,23 +3590,24 @@ function EventComposer({
   }, [deleteFetcher.state, deleteFetcher.data, onClose]);
 
   // Derived hidden values. Timed events use one date + start/end times; an end
-  // that's earlier than the start is read as crossing midnight (next day).
-  const startLocalDT = date && startTime ? `${date}T${startTime}` : "";
+  // that's earlier than the start is read as crossing midnight (next day). Times
+  // are interpreted in the user's timezone (data.timezone) via localDayTimeToIso
+  // — NOT the browser's — so a typed "9:00" lands where the grid draws 9:00.
+  const startLocalDT = date && startTime ? `${date}T${startTime}` : ""; // RepeatField anchor
   const endDate = date && startTime && endTime && endTime < startTime ? addDaysToDate(date, 1) : date;
-  const endLocalDT = endDate && endTime ? `${endDate}T${endTime}` : "";
   const startIso = allDay
     ? dStart
       ? `${dStart}T00:00:00.000Z`
       : ""
-    : startLocalDT
-      ? new Date(startLocalDT).toISOString()
+    : date && startTime
+      ? localDayTimeToIso(date, startTime, data.timezone) ?? ""
       : "";
   const endIso = allDay
     ? dEnd
       ? `${addDaysToDate(dEnd, 1)}T00:00:00.000Z` // Google end is exclusive
       : ""
-    : endLocalDT
-      ? new Date(endLocalDT).toISOString()
+    : endDate && endTime
+      ? localDayTimeToIso(endDate, endTime, data.timezone) ?? ""
       : "";
   const canSubmit =
     title.trim() !== "" &&
@@ -3566,9 +3618,9 @@ function EventComposer({
     (!(isLocal && isWork) || (roleKey !== "" && workNote.trim() !== ""));
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
-  // Keep the grid's tentative create block in sync with the times as they change.
+  // Report the draft times to the grid so the live preview (a tentative block
+  // when creating, or the edited event's own block when editing) tracks edits.
   useEffect(() => {
-    if (state.mode !== "create") return;
     onDraftChange?.(startIso, endIso, allDay);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startIso, endIso, allDay]);
@@ -3624,7 +3676,7 @@ function EventComposer({
             <input type="hidden" name="startIso" value={startIso} />
             <input type="hidden" name="endIso" value={endIso} />
             <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
-            <input type="hidden" name="timeZone" value={browserTz()} />
+            <input type="hidden" name="timeZone" value={data.timezone} />
             <input type="hidden" name="recurrenceRule" value={!isRecurring ? (repeatSpecToRRule(repeat) ?? "") : ""} />
             <input type="hidden" name="isWork" value={isLocal && isWork ? "1" : ""} />
             <input type="hidden" name="assignmentType" value={isLocal && isWork ? roleKey.split("::")[0] ?? "" : ""} />
