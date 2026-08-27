@@ -1998,6 +1998,15 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     setDraftEdit(null);
   };
   const eventMoveFetcher = useFetcher();
+  // Optimistic move: hold the block at its dropped position until the loader
+  // revalidates, so it doesn't flash back to the old frame during the server
+  // round-trip. Cleared when the move fetcher settles (data is fresh by then).
+  const [dragOverride, setDragOverride] = useState<{ key: string; startIso: string; endIso: string } | null>(null);
+  const prevMoveState = useRef(eventMoveFetcher.state);
+  useEffect(() => {
+    if (prevMoveState.current !== "idle" && eventMoveFetcher.state === "idle") setDragOverride(null);
+    prevMoveState.current = eventMoveFetcher.state;
+  }, [eventMoveFetcher.state]);
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
   // UTC-midnight anchored, so their calendar date reads off the UTC fields.
@@ -2016,13 +2025,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       const mins = Math.round(h * 60);
       return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
     };
+    const startIso = toIso(startHour);
+    const endIso = toIso(endHour);
+    setDragOverride({ key: `g:${e.eventId}`, startIso, endIso });
     eventMoveFetcher.submit(
       {
         intent: "event-move",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
         eventId: e.eventId,
-        startIso: toIso(startHour),
-        endIso: toIso(endHour),
+        startIso,
+        endIso,
         timeZone: data.timezone,
       },
       { method: "post" },
@@ -2054,13 +2066,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       const mins = Math.round(h * 60);
       return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
     };
+    const startIso = toIso(startHour);
+    const endIso = toIso(endHour);
+    setDragOverride({ key: `b:${b.id}`, startIso, endIso });
     eventMoveFetcher.submit(
       {
         intent: "event-move",
         destination: LOCAL_DEST,
         manualBlockId: b.id,
-        startIso: toIso(startHour),
-        endIso: toIso(endHour),
+        startIso,
+        endIso,
         timeZone: data.timezone,
       },
       { method: "post" },
@@ -2223,17 +2238,22 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // source layer is actually visible — a hidden meeting still needs its block).
   const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
 
-  // While editing, override the edited event's/block's time so its block resizes
-  // and moves live on the grid as the composer changes — before Save.
-  const layerData: LoaderData = draftEdit
+  // Live time overrides so a block draws at its pending position instead of the
+  // stored one: the composer's edit-in-progress (draftEdit) and a just-dropped
+  // drag awaiting revalidation (dragOverride). Both keep the block from flashing
+  // back to the old frame.
+  const overrides = [draftEdit, dragOverride].filter(Boolean) as { key: string; startIso: string; endIso: string }[];
+  const layerData: LoaderData = overrides.length
     ? {
         ...data,
-        externalEvents: data.externalEvents.map((e) =>
-          `g:${e.eventId}` === draftEdit.key ? { ...e, startIso: draftEdit.startIso, endIso: draftEdit.endIso } : e,
-        ),
-        manualBlocks: data.manualBlocks.map((b) =>
-          `b:${b.id}` === draftEdit.key ? { ...b, startTime: draftEdit.startIso, endTime: draftEdit.endIso } : b,
-        ),
+        externalEvents: data.externalEvents.map((e) => {
+          const o = overrides.find((ov) => ov.key === `g:${e.eventId}`);
+          return o ? { ...e, startIso: o.startIso, endIso: o.endIso } : e;
+        }),
+        manualBlocks: data.manualBlocks.map((b) => {
+          const o = overrides.find((ov) => ov.key === `b:${b.id}`);
+          return o ? { ...b, startTime: o.startIso, endTime: o.endIso } : b;
+        }),
       }
     : data;
 
