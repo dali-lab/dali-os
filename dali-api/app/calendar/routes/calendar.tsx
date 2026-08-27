@@ -1430,9 +1430,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [calendarsOpen, setCalendarsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // A time carried from a drag → "Schedule meeting", so the overlay opens with
-  // the dragged slot prefilled.
-  const [meetingSeed, setMeetingSeed] = useState<{ startLocal: string; endLocal: string } | null>(null);
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -1552,9 +1549,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
-  // Hand a slot to the scheduling overlay (from the New menu or a drag → Meeting).
-  const startMeeting = (seed?: { startLocal: string; endLocal: string }) => {
-    setMeetingSeed(seed ?? null);
+  // Open the scheduling overlay (from the New menu). A meeting's time comes from
+  // the group's availability, so there's no slot to carry in — it's picked on
+  // the availability grid after participants are chosen.
+  const startMeeting = () => {
     setEditor(null);
     setMode("meeting");
   };
@@ -1722,7 +1720,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {mode === "meeting" ? (
         <section className="flex flex-col gap-3">
           <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
-          <MeetingComposer data={data} seed={meetingSeed} />
+          <MeetingComposer data={data} />
         </section>
       ) : mode === "timesheet" ? (
         <section className="flex flex-col gap-3">
@@ -1787,7 +1785,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                               endLocal={editor.endLocal}
                               myRoles={data.myRoles}
                               onClose={() => setEditor(null)}
-                              onScheduleMeeting={(s, e) => startMeeting({ startLocal: s, endLocal: e })}
                             />
                           )
                       : undefined
@@ -1844,14 +1841,7 @@ function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => voi
 // existing ScheduleWeekGrid + CreateScheduledMeetingForm — the same wiring as
 // the legacy Schedule tab, re-laid-out to sit beside the grid. Week-scoped
 // (scheduling happens within a week); the toolbar's week nav still applies.
-function MeetingComposer({
-  data,
-  seed,
-}: {
-  data: LoaderData;
-  /** A slot handed in from a drag → "Schedule meeting", prefilling start/end. */
-  seed?: { startLocal: string; endLocal: string } | null;
-}) {
+function MeetingComposer({ data }: { data: LoaderData }) {
   const [searchParams] = useSearchParams();
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
@@ -1860,8 +1850,8 @@ function MeetingComposer({
     const g = data.groups.find((grp) => grp.projectId === projectParam);
     return g ? [g.id] : [];
   });
-  const [startLocal, setStartLocal] = useState<string>(seed?.startLocal ?? "");
-  const [endLocal, setEndLocal] = useState<string>(seed?.endLocal ?? "");
+  const [startLocal, setStartLocal] = useState<string>("");
+  const [endLocal, setEndLocal] = useState<string>("");
 
   const groupsById = new Map(data.groups.map((g) => [g.id, g]));
   const resolvedParticipantIds = (() => {
@@ -3417,14 +3407,11 @@ function CreateFromDragPopover({
   endLocal,
   myRoles,
   onClose,
-  onScheduleMeeting,
 }: {
   startLocal: string;
   endLocal: string;
   myRoles: RoleInstance[];
   onClose: () => void;
-  /** Hand the dragged slot to the meeting scheduler (adds the Meeting tab). */
-  onScheduleMeeting?: (startLocal: string, endLocal: string) => void;
 }) {
   const { os, popover, formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
@@ -3439,9 +3426,10 @@ function CreateFromDragPopover({
     setEnd(endLocal);
   }, [startLocal, endLocal]);
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  // Block, Log time (a work-marked block → TimeEntry), or hand off to the
-  // meeting scheduler — all from the same dragged slot.
-  const [kind, setKind] = useState<"block" | "logtime" | "meeting">("block");
+  // A dragged slot is a specific time, so it creates a Block or logs Time (a
+  // work-marked block → TimeEntry). Meetings aren't here: their time comes from
+  // the group's availability, not a pre-picked slot — book them via New → Meeting.
+  const [kind, setKind] = useState<"block" | "logtime">("block");
   const isWork = kind === "logtime";
   const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
   const [submitting, setSubmitting] = useState(false);
@@ -3451,7 +3439,6 @@ function CreateFromDragPopover({
     !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
   const isRecurring = repeat.freq !== "none";
   const canSubmit =
-    kind !== "meeting" &&
     title.trim().length > 0 &&
     startEndValid &&
     !submitting &&
@@ -3473,8 +3460,7 @@ function CreateFromDragPopover({
     setError(null);
     try {
       // Block and Log time both create a manual block — Log time just marks it
-      // as work against a role (which syncs to a TimeEntry). Meeting is a
-      // separate hand-off (see the Meeting tab), never submitted here.
+      // as work against a role (which syncs to a TimeEntry).
       const body = new FormData();
       body.set("intent", "add-manual-block");
       body.set("title", title.trim());
@@ -3505,10 +3491,9 @@ function CreateFromDragPopover({
     }
   }
 
-  const tabs: { key: "block" | "logtime" | "meeting"; label: string }[] = [
+  const tabs: { key: "block" | "logtime"; label: string }[] = [
     { key: "block", label: "Block" },
     ...(myRoles.length > 0 ? [{ key: "logtime" as const, label: "Log time" }] : []),
-    ...(onScheduleMeeting ? [{ key: "meeting" as const, label: "Meeting" }] : []),
   ];
 
   const cancelBtn =
@@ -3525,7 +3510,7 @@ function CreateFromDragPopover({
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
         <h2 className="font-heading font-semibold text-sm text-foreground">
-          {kind === "logtime" ? "Log time" : kind === "meeting" ? "Schedule meeting" : "New block"}
+          {kind === "logtime" ? "Log time" : "New block"}
         </h2>
         <button
           type="button"
@@ -3558,23 +3543,21 @@ function CreateFromDragPopover({
       )}
 
       <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
-          {kind !== "meeting" && (
-            <div>
-              <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
-                {kind === "logtime" ? "What did you work on?" : "Title"}
-              </label>
-              <input
-                id="drag-title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                autoFocus
-                placeholder={kind === "logtime" ? "e.g. Sprint planning" : "e.g. Focus time"}
-                className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
-          )}
+          <div>
+            <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
+              {kind === "logtime" ? "What did you work on?" : "Title"}
+            </label>
+            <input
+              id="drag-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              autoFocus
+              placeholder={kind === "logtime" ? "e.g. Sprint planning" : "e.g. Focus time"}
+              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3632,38 +3615,15 @@ function CreateFromDragPopover({
             </div>
           )}
 
-          {kind === "meeting" ? (
-            <>
-              <p className="text-xs text-muted-foreground">
-                Opens the scheduler with participant availability for this slot — you can adjust the time and add people there.
-              </p>
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button type="button" onClick={onClose} className={cancelBtn}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={!startEndValid}
-                  onClick={() => startEndValid && onScheduleMeeting?.(start, end)}
-                  className={primaryBtn}
-                >
-                  Continue →
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              {error && <p className="text-sm text-red-700">{error}</p>}
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button type="button" onClick={onClose} className={cancelBtn}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={!canSubmit} className={primaryBtn}>
-                  {submitting ? "Saving…" : kind === "logtime" ? "Log time" : "Add block"}
-                </button>
-              </div>
-            </>
-          )}
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className={cancelBtn}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!canSubmit} className={primaryBtn}>
+              {submitting ? "Saving…" : kind === "logtime" ? "Log time" : "Add block"}
+            </button>
+          </div>
         </form>
     </div>
   );
