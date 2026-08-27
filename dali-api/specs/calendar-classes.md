@@ -34,7 +34,12 @@ of truth so period and custom classes share one render path), `location?`,
 - **Google-stored** classes are real recurring events
   (`FREQ=WEEKLY;BYDAY=…;UNTIL=<term end>`, x-hour = a second event) written via
   `createGoogleCalendarEvent`. They appear through the **existing Google/external
-  layer** — never re-drawn locally.
+  layer** (under "Linked calendars", in that calendar's Google colour) — never
+  re-drawn locally. Because `fetchBusyEvents` only pulls calendars in the link's
+  `subCalendarIds`, writing a class also **subscribes + enables** its target
+  calendar (`ensureCalendarVisible`, seeding the real primary first when the set
+  was empty) so a brand-new dedicated "Classes" calendar shows up immediately
+  rather than needing a manual toggle in settings.
 - **Local** classes are expanded server-side across the fetched range
   (`expandClassOccurrences`) and drawn by `buildClassesLayer` as a toggleable
   navy "Classes" layer.
