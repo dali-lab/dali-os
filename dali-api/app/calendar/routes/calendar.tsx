@@ -23,6 +23,11 @@ import {
   Settings,
   SlidersHorizontal,
   Pencil,
+  MapPin,
+  AlignLeft,
+  Repeat,
+  Copy,
+  GripVertical,
 } from "lucide-react";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -2025,6 +2030,61 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
+  // Detail-popover Duplicate: open the composer in create mode, prefilled from
+  // the event/block (a fresh event — identity fields are dropped).
+  const duplicateEvent = (e: ExternalEventDTO, anchor?: DOMRect) =>
+    setComposer({ mode: "create", anchor, seed: e });
+  const duplicateBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
+    setComposer({
+      mode: "create",
+      anchor,
+      seed: {
+        startIso: b.startTime,
+        endIso: b.endTime,
+        title: b.title,
+        color: null,
+        writable: true,
+        allDay: false,
+        manualBlockId: b.id, // drives the destination default → in-app
+        isWork: b.isWork,
+        assignmentType: b.assignmentType,
+        roleRefId: b.roleRefId,
+      },
+    });
+  // Detail-popover Delete. Recurring events need the this/following/all scope
+  // prompt, so route those through the composer; one-offs delete straight away.
+  const deleteEvent = (e: ExternalEventDTO) => {
+    if (!e.eventId || !e.linkId) return;
+    if (e.recurringEventId) {
+      setComposer({ mode: "edit", event: e });
+      return;
+    }
+    eventMoveFetcher.submit(
+      {
+        intent: "event-delete",
+        destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
+        eventId: e.eventId,
+        manualBlockId: "",
+        scope: "this",
+        recurringEventId: "",
+        originalStartIso: e.startIso ?? "",
+      },
+      { method: "post" },
+    );
+  };
+  const deleteBlock = (b: ManualBlockDTO) =>
+    eventMoveFetcher.submit(
+      {
+        intent: "event-delete",
+        destination: LOCAL_DEST,
+        manualBlockId: b.id,
+        eventId: "",
+        scope: "this",
+        recurringEventId: "",
+        originalStartIso: "",
+      },
+      { method: "post" },
+    );
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -2092,6 +2152,33 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       p.delete("weekStart");
     });
 
+  // Keyboard nav (Google-Calendar style): D/W/M switch view, T jumps to today,
+  // ←/→ page. Only in browse mode, never while a dialog is open or while typing
+  // into a field. Modifier chords are left for the browser/OS.
+  const anyModalOpen = Boolean(composer) || settingsOpen || classesOpen || calMgrOpen || createOpen;
+  useEffect(() => {
+    if (mode !== "browse" || anyModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      switch (e.key.toLowerCase()) {
+        case "d": changeView("day"); break;
+        case "w": changeView("week"); break;
+        case "m": changeView("month"); break;
+        case "t": goToday(); break;
+        case "arrowleft": navigate(-1); break;
+        case "arrowright": navigate(1); break;
+        default: return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // changeView/goToday/navigate close over view + focusDate (derived from
+    // rangeStartIso); re-bind when the visible range or view changes.
+  }, [mode, anyModalOpen, view, data.rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // When the logged layer is on, an event that's also logged (a meeting or a
   // work-block) shows a role accent on its own block rather than a second
   // overlapping logged block. Index the sourced entries so the meeting/block
@@ -2108,6 +2195,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         hiddenCals,
         data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
         data.crudEnabled ? moveEvent : undefined,
+        data.crudEnabled ? duplicateEvent : undefined,
+        data.crudEnabled ? deleteEvent : undefined,
       ),
     );
   // All-day events (crud read) render in the grid's all-day band.
@@ -2133,6 +2222,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         loggedIndex?.byBlock,
         data.crudEnabled ? editBlock : undefined,
         data.crudEnabled ? moveBlock : undefined,
+        data.crudEnabled ? duplicateBlock : undefined,
+        data.crudEnabled ? deleteBlock : undefined,
       ),
     );
   if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
@@ -3185,16 +3276,48 @@ function AnchoredPopover({
   onClose,
   ariaLabel,
   className,
+  draggable = false,
   children,
 }: {
   anchor?: DOMRect | null;
   onClose: () => void;
   ariaLabel?: string;
   className?: string;
+  // When true, mousedown on a [data-drag-handle] region (minus its buttons)
+  // moves the card freely, overriding the anchored position until it closes.
+  draggable?: boolean;
   children: React.ReactNode;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // Free position once the user drags the card by its handle; overrides `pos`.
+  const [dragPos, setDragPos] = useState<{ left: number; top: number } | null>(null);
+
+  const startDrag = (e: React.MouseEvent) => {
+    if (!draggable || e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (!target.closest("[data-drag-handle]")) return;
+    if (target.closest("button,a,input,select,textarea")) return; // let the X (etc.) work
+    const card = cardRef.current;
+    if (!card) return;
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const offX = e.clientX - rect.left;
+    const offY = e.clientY - rect.top;
+    const onMove = (mev: MouseEvent) => {
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const left = Math.max(8, Math.min(mev.clientX - offX, window.innerWidth - cw - 8));
+      const top = Math.max(8, Math.min(mev.clientY - offY, window.innerHeight - ch - 8));
+      setDragPos({ left, top });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -3218,6 +3341,9 @@ function AnchoredPopover({
       document.removeEventListener("mousedown", onDocMouseDown, true);
     };
   }, [onClose]);
+
+  // A fresh anchor means a fresh open — drop any leftover drag position.
+  useLayoutEffect(() => setDragPos(null), [anchor]);
 
   useLayoutEffect(() => {
     const place = () => {
@@ -3252,15 +3378,19 @@ function AnchoredPopover({
 
   if (typeof document === "undefined") return null;
 
+  const shown = dragPos ?? pos;
   return createPortal(
     <div
       ref={cardRef}
       data-calendar-popover
       role="dialog"
       aria-label={ariaLabel}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        startDrag(e);
+      }}
       className={cn("fixed z-50", className)}
-      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? "visible" : "hidden" }}
+      style={{ left: shown?.left ?? 0, top: shown?.top ?? 0, visibility: shown ? "visible" : "hidden" }}
     >
       {children}
     </div>,
@@ -3271,8 +3401,10 @@ function AnchoredPopover({
 type ComposerState =
   // anchor is the on-screen rect of the clicked event / dragged slot / New
   // button, so the composer pops up next to it (Google-Calendar style) rather
-  // than as a centered full-screen modal. Null → centered fallback.
-  | { mode: "create"; startLocal?: string; endLocal?: string; anchor?: DOMRect | null }
+  // than as a centered full-screen modal. Null → centered fallback. seed
+  // prefills a create from an existing event (Duplicate) — its identity fields
+  // (eventId/manualBlockId) are ignored, so it saves as a brand-new event.
+  | { mode: "create"; startLocal?: string; endLocal?: string; anchor?: DOMRect | null; seed?: ExternalEventDTO }
   | { mode: "edit"; event: ExternalEventDTO; anchor?: DOMRect | null };
 
 function EventComposer({ data, state, onClose }: { data: LoaderData; state: ComposerState; onClose: () => void }) {
@@ -3280,20 +3412,24 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   const deleteFetcher = useFetcher<{ error?: string } | null>();
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
+  // Prefill source: the event being edited, or a Duplicate seed in create mode.
+  // Identity (eventId/manualBlockId/recurringEventId) stays on `ev` so a
+  // duplicate saves as a brand-new event; `base` only drives the field values.
+  const base = ev ?? (state.mode === "create" ? state.seed ?? null : null);
   const dests = eventDestinations(data);
 
-  const [title, setTitle] = useState(ev?.title ?? "");
-  const [allDay, setAllDay] = useState(ev?.allDay ?? false);
+  const [title, setTitle] = useState(base?.title ?? "");
+  const [allDay, setAllDay] = useState(base?.allDay ?? false);
   const [destination, setDestination] = useState(() => {
-    if (ev?.manualBlockId) return LOCAL_DEST; // editing an in-app block
-    if (ev?.linkId && ev.calendarId) return `${ev.linkId}:${ev.calendarId}`;
+    if (base?.manualBlockId) return LOCAL_DEST; // in-app block
+    if (base?.linkId && base.calendarId) return `${base.linkId}:${base.calendarId}`;
     // Default to the last-used destination (cookie); else the first Google
     // calendar; else the in-app DALI calendar.
     if (data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)) return data.defaultEventDest;
     return dests.find((d) => d.value !== LOCAL_DEST)?.value ?? LOCAL_DEST;
   });
-  const [location, setLocation] = useState(ev?.location ?? "");
-  const [description, setDescription] = useState(ev?.description ?? "");
+  const [location, setLocation] = useState(base?.location ?? "");
+  const [description, setDescription] = useState(base?.description ?? "");
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   // A recurring instance carries recurringEventId; editing it prompts for scope.
   const isRecurring = Boolean(ev?.recurringEventId);
@@ -3302,21 +3438,21 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   // In-app (DALI) blocks can log to the timesheet — the one property that only
   // makes sense for the local destination.
   const isLocal = destination === LOCAL_DEST;
-  const [isWork, setIsWork] = useState(ev?.isWork ?? false);
+  const [isWork, setIsWork] = useState(base?.isWork ?? false);
   const [roleKey, setRoleKey] = useState(
-    ev?.assignmentType && ev?.roleRefId ? `${ev.assignmentType}::${ev.roleRefId}` : "",
+    base?.assignmentType && base?.roleRefId ? `${base.assignmentType}::${base.roleRefId}` : "",
   );
 
-  // Timed + all-day inputs, seeded from the event (edit) or the drag (create).
-  const seedTimed = ev && !ev.allDay ? { s: isoToLocalDT(ev.startIso), e: isoToLocalDT(ev.endIso) } : null;
+  // Timed + all-day inputs, seeded from the event/seed or the drag (create).
+  const seedTimed = base && !base.allDay ? { s: isoToLocalDT(base.startIso), e: isoToLocalDT(base.endIso) } : null;
   const createSeed = state.mode === "create" ? { s: state.startLocal, e: state.endLocal } : null;
   const [dtStart, setDtStart] = useState(seedTimed?.s ?? createSeed?.s ?? "");
   const [dtEnd, setDtEnd] = useState(seedTimed?.e ?? createSeed?.e ?? "");
   const [dStart, setDStart] = useState(
-    ev?.allDay ? isoToDateInput(ev.startIso) : (seedTimed?.s ?? createSeed?.s ?? "").slice(0, 10),
+    base?.allDay ? isoToDateInput(base.startIso) : (seedTimed?.s ?? createSeed?.s ?? "").slice(0, 10),
   );
   const [dEnd, setDEnd] = useState(
-    ev?.allDay ? addDaysToDate(isoToDateInput(ev.endIso), -1) : (seedTimed?.e ?? createSeed?.e ?? "").slice(0, 10),
+    base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : (seedTimed?.e ?? createSeed?.e ?? "").slice(0, 10),
   );
 
   // Close on a successful create/edit/delete.
@@ -3363,11 +3499,20 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     <AnchoredPopover
       anchor={state.anchor}
       onClose={onClose}
+      draggable
       ariaLabel={editing ? "Edit event" : "New event"}
-      className="w-[22rem] max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-brand-3"
+      className="w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-card shadow-brand-3"
     >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold text-foreground">{editing ? "Edit event" : "New event"}</h2>
+        {/* Header — doubles as the drag handle (grab anywhere but the close X).
+            Sticky + opaque so it stays grabbable if the form scrolls. */}
+        <div
+          data-drag-handle
+          className="sticky top-0 z-10 flex cursor-move select-none items-center justify-between rounded-t-xl border-b border-border bg-muted px-4 py-2.5"
+        >
+          <div className="flex items-center gap-1.5">
+            <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+            <h2 className="font-heading text-sm font-semibold text-foreground">{editing ? "Edit event" : "New event"}</h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -3379,11 +3524,11 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
         </div>
 
         {dests.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="px-4 py-5 text-sm text-muted-foreground">
             Connect a Google Calendar you can write to first (Settings → Calendar).
           </p>
         ) : (
-          <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3">
+          <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3 px-4 py-4">
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
             {editing && ev?.manualBlockId && <input type="hidden" name="manualBlockId" value={ev.manualBlockId} />}
@@ -3402,110 +3547,143 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
             )}
             {isRecurring && ev?.startIso && <input type="hidden" name="originalStartIso" value={ev.startIso} />}
 
+            {/* Title */}
             <input
               name="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Add title"
-              className={cn(fieldCls, "text-base font-medium")}
+              className="rounded-md border border-border bg-background px-3 py-2 text-base font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground focus:border-accent-coral focus:outline-none"
               autoFocus
             />
 
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <Checkbox checked={allDay} onChange={() => setAllDay((v) => !v)} /> All day
-            </label>
-
-            {allDay ? (
-              <div className="flex items-center gap-2 text-sm">
-                <input type="date" value={dStart} onChange={(e) => setDStart(e.target.value)} className={fieldCls} />
-                <span className="text-muted-foreground">to</span>
-                <input type="date" value={dEnd} onChange={(e) => setDEnd(e.target.value)} className={fieldCls} />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2 text-sm">
-                <input type="datetime-local" value={dtStart} onChange={(e) => setDtStart(e.target.value)} className={fieldCls} />
-                <input type="datetime-local" value={dtEnd} onChange={(e) => setDtEnd(e.target.value)} className={fieldCls} />
-              </div>
-            )}
-
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Calendar</span>
-              {editing ? (
-                <span className={cn(fieldCls, "text-muted-foreground")}>
-                  {dests.find((d) => d.value === destination)?.label ?? "This calendar"}
-                </span>
-              ) : (
-                <Select
-                  value={destination}
-                  onChange={setDestination}
-                  options={dests}
-                  placeholder="Pick a calendar"
-                  buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
-                />
-              )}
-            </label>
-
-            {/* Timesheet logging is the one thing unique to the in-app destination. */}
-            {isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
-              <div className="flex flex-col gap-2">
+            {/* When — all-day toggle + start/end */}
+            <div className="flex items-start gap-3">
+              <Clock className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <label className="flex items-center gap-2 text-sm text-foreground">
-                  <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
+                  <Checkbox checked={allDay} onChange={() => setAllDay((v) => !v)} /> All day
                 </label>
-                {isWork && (
+                {allDay ? (
+                  <div className="flex items-center gap-2 text-sm">
+                    <input type="date" value={dStart} onChange={(e) => setDStart(e.target.value)} className={cn(fieldCls, "min-w-0 flex-1")} />
+                    <span className="text-muted-foreground">to</span>
+                    <input type="date" value={dEnd} onChange={(e) => setDEnd(e.target.value)} className={cn(fieldCls, "min-w-0 flex-1")} />
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2 text-sm">
+                    <input type="datetime-local" value={dtStart} onChange={(e) => setDtStart(e.target.value)} className={cn(fieldCls, "w-full")} />
+                    <input type="datetime-local" value={dtEnd} onChange={(e) => setDtEnd(e.target.value)} className={cn(fieldCls, "w-full")} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Calendar destination */}
+            <div className="flex items-center gap-3">
+              <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                {editing ? (
+                  <span className={cn(fieldCls, "block text-muted-foreground")}>
+                    {dests.find((d) => d.value === destination)?.label ?? "This calendar"}
+                  </span>
+                ) : (
                   <Select
-                    value={roleKey}
-                    onChange={setRoleKey}
-                    options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
-                    placeholder="Which role?"
+                    value={destination}
+                    onChange={setDestination}
+                    options={dests}
+                    placeholder="Pick a calendar"
                     buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
                   />
                 )}
               </div>
+            </div>
+
+            {/* Timesheet logging is the one thing unique to the in-app destination —
+                nested under Calendar with an empty icon gutter to keep alignment. */}
+            {isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
+              <div className="flex items-start gap-3">
+                <div className="w-4 shrink-0" aria-hidden />
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
+                  </label>
+                  {isWork && (
+                    <Select
+                      value={roleKey}
+                      onChange={setRoleKey}
+                      options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
+                      placeholder="Which role?"
+                      buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+                    />
+                  )}
+                </div>
+              </div>
             )}
 
-            <input
-              name="location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Location"
-              className={fieldCls}
-            />
-            <textarea
-              name="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Description"
-              rows={2}
-              className={cn(fieldCls, "resize-y")}
-            />
+            <div className="my-0.5 border-t border-border/60" />
 
+            {/* Location */}
+            <div className="flex items-center gap-3">
+              <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                name="location"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Add location"
+                className={cn(fieldCls, "min-w-0 flex-1")}
+              />
+            </div>
+
+            {/* Description */}
+            <div className="flex items-start gap-3">
+              <AlignLeft className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
+              <textarea
+                name="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add description"
+                rows={2}
+                className={cn(fieldCls, "min-w-0 flex-1 resize-y")}
+              />
+            </div>
+
+            {/* Repeat */}
             {isRecurring ? (
-              <div className="flex flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Repeating event — apply to</span>
-                <div className="inline-flex w-fit rounded-md border border-border p-0.5 text-xs">
-                  {(["this", "following", "all"] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setScope(s)}
-                      className={cn(
-                        "rounded px-2 py-1",
-                        scope === s ? "bg-accent-coral text-white" : "text-foreground hover:bg-muted",
-                      )}
-                    >
-                      {s === "this" ? "This event" : s === "following" ? "This & following" : "All events"}
-                    </button>
-                  ))}
+              <div className="flex items-start gap-3">
+                <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Repeating event — apply to</span>
+                  <div className="inline-flex w-fit rounded-md border border-border p-0.5 text-xs">
+                    {(["this", "following", "all"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setScope(s)}
+                        className={cn(
+                          "rounded px-2 py-1",
+                          scope === s ? "bg-accent-coral text-white" : "text-foreground hover:bg-muted",
+                        )}
+                      >
+                        {s === "this" ? "This event" : s === "following" ? "This & following" : "All events"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : !editing ? (
-              <RepeatField
-                value={repeat}
-                onChange={setRepeat}
-                anchorLocal={allDay ? dStart : dtStart}
-                labelClassName="text-xs text-muted-foreground"
-                fieldClassName={cn(fieldCls, "w-full")}
-              />
+              <div className="flex items-center gap-3">
+                <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <RepeatField
+                    value={repeat}
+                    onChange={setRepeat}
+                    anchorLocal={allDay ? dStart : dtStart}
+                    labelClassName="sr-only"
+                    fieldClassName={cn(fieldCls, "w-full")}
+                  />
+                </div>
+              </div>
             ) : null}
 
             {(fetcher.data?.error || deleteFetcher.data?.error) && (
@@ -3515,7 +3693,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
               <p className="text-xs text-muted-foreground">This event is read-only.</p>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-2 border-t border-border pt-3">
               <button
                 type="submit"
                 disabled={!canSubmit || submitting || (editing && !ev?.writable)}

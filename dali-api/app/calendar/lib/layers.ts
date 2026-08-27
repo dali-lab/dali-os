@@ -112,7 +112,19 @@ export function buildExternalLayer(
   hiddenCalendarIds?: Set<string>,
   onEdit?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
   onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number) => void,
+  onDuplicate?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
+  onDelete?: (e: ExternalEventDTO) => void,
 ): Record<number, EventBlock[]> {
+  // calendarId → human label ("Account · Primary"), for the detail popover's
+  // source line.
+  const calNames = new Map<string, string>();
+  for (const link of data.calendarLinks) {
+    if (link.provider !== "Google" || !link.subCalendars) continue;
+    const account = link.displayName || link.externalEmail || "Google";
+    for (const sub of link.subCalendars) {
+      calNames.set(sub.id, `${account} · ${sub.primary ? "Primary" : sub.summary}`);
+    }
+  }
   const into: Record<number, EventBlock[]> = {};
   for (const e of data.externalEvents) {
     if (e.allDay) continue; // all-day events render in the band, not the grid
@@ -133,10 +145,14 @@ export function buildExternalLayer(
         organizerName: e.organizerName,
         attendees: e.attendees,
         links: e.links,
-        // Editable Google events (writable + flag on) get an Edit affordance in
-        // the detail popover and can be dragged to move/resize.
+        calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
+        recurring: Boolean(e.recurringEventId),
+        // Editable Google events (writable + flag on) get Edit / Duplicate /
+        // Delete affordances in the detail popover and can be dragged.
         onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
         onMoveResize: onMoveResize && editable ? (s, en) => onMoveResize(e, s, en) : undefined,
+        onDuplicate: onDuplicate && editable ? (anchor) => onDuplicate(e, anchor) : undefined,
+        onDelete: onDelete && editable ? () => onDelete(e) : undefined,
       },
       into,
     );
@@ -206,6 +222,8 @@ export function buildBlocksLayer(
   loggedByBlock?: Map<string, LoggedAccent>,
   onEditBlock?: (b: ManualBlockDTO, anchor?: DOMRect) => void,
   onMoveBlock?: (b: ManualBlockDTO, startHour: number, endHour: number) => void,
+  onDuplicateBlock?: (b: ManualBlockDTO, anchor?: DOMRect) => void,
+  onDeleteBlock?: (b: ManualBlockDTO) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const b of data.manualBlocks) {
@@ -219,12 +237,15 @@ export function buildBlocksLayer(
         className: EVENT_CORAL,
         borderClassName: "border-accent-coral-light",
         loggedAccent: loggedByBlock?.get(b.id),
-        // Click opens the read-only detail popover (Google-style), whose "Edit"
-        // action opens the composer; drag moves/resizes it. Using onEdit (not
-        // onClick) keeps blocks consistent with Google events — a view popup
-        // first, then edit.
+        calendarLabel: "DALI calendar",
+        // Click opens the read-only detail popover (Google-style), whose Edit /
+        // Duplicate / Delete actions drive the composer; drag moves/resizes it.
+        // Using onEdit (not onClick) keeps blocks consistent with Google events —
+        // a view popup first, then edit.
         onEdit: onEditBlock ? (anchor) => onEditBlock(b, anchor) : undefined,
         onMoveResize: onMoveBlock ? (s, en) => onMoveBlock(b, s, en) : undefined,
+        onDuplicate: onDuplicateBlock ? (anchor) => onDuplicateBlock(b, anchor) : undefined,
+        onDelete: onDeleteBlock ? () => onDeleteBlock(b) : undefined,
       },
       into,
     );

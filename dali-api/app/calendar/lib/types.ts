@@ -305,6 +305,18 @@ export type EventBlock = {
    *  composer, anchored to the block's on-screen rect (passed through so the
    *  composer pops up next to the event, Google-Calendar style). */
   onEdit?: (anchor?: DOMRect) => void;
+  /** Detail-popover "Duplicate" — clones this event into a fresh composer
+   *  (create mode) anchored to the block. */
+  onDuplicate?: (anchor?: DOMRect) => void;
+  /** Detail-popover "Delete" — removes the event. Recurring events route through
+   *  the composer (for the this/following/all scope prompt); the caller decides. */
+  onDelete?: () => void;
+  /** Which calendar this event lives on ("DALI calendar", a Google account +
+   *  sub-calendar) — shown as a source line in the detail popover. */
+  calendarLabel?: string;
+  /** A recurring-series instance — the detail popover routes its Delete through
+   *  the composer so the this/following/all scope prompt is shown. */
+  recurring?: boolean;
   /** When set, the block can be dragged to move (whole block, keeping duration)
    *  or resized by its top/bottom edges; fires on drop with the new start/end
    *  hours within the same day column. Writable Google events only. */
