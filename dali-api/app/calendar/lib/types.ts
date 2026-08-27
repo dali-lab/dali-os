@@ -296,6 +296,10 @@ export type EventBlock = {
   /** When set, the event's detail popover shows an "Edit" action — a writable
    *  Google event under the calendar-google-crud flag. Opens the composer. */
   onEdit?: () => void;
+  /** When set, the block can be dragged to move (whole block, keeping duration)
+   *  or resized by its top/bottom edges; fires on drop with the new start/end
+   *  hours within the same day column. Writable Google events only. */
+  onMoveResize?: (startHour: number, endHour: number) => void;
   /** When this on-grid event (a meeting or manual block) is *also* logged as
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
