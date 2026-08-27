@@ -166,6 +166,7 @@ model User {
   manualBlocks         ManualBlock[]
   meetingAttendances   MeetingAttendance[]
   timeEntries          TimeEntry[]
+  memberClasses        MemberClass[]
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities      DomainEligibility[]
@@ -2134,6 +2135,41 @@ model ManualBlock {
   @@index([userId, startTime])
 }
 
+// A member's Dartmouth class for a term, added to their calendar. Either synced
+// to a linked Google calendar (storage="Google" → real recurring events we
+// created, tracked in googleEventIds so edits/removals patch/delete them) or
+// rendered as a DALI-only layer (storage="Local"). `meetings` holds the
+// resolved weekly patterns (main + optional x-hour) as PeriodMeeting[] JSON, so
+// period-picked and custom classes render and expand through one path.
+model MemberClass {
+  id             String   @id @default(cuid())
+  userId         String
+  termId         String
+  title          String
+  // Dartmouth period code ("10", "10A", …) when picked from the schedule; null
+  // for a custom day/time entry.
+  periodCode     String?
+  // Resolved PeriodMeeting[] { kind, days, startMin, endMin } — source of truth
+  // for rendering and RRULE generation.
+  meetings       Json
+  location       String?
+  // "Google" (synced events on a linked calendar) or "Local" (in-app layer).
+  storage        String   @default("Local")
+  // Google destination + the events we created (main, and x-hour when included).
+  // Soft pointer to CalendarLink (no FK) — an orphaned link surfaces in the
+  // manager rather than cascading. Null for Local classes.
+  linkId         String?
+  calendarId     String?
+  googleEventIds String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  term Term @relation(fields: [termId], references: [id])
+
+  @@index([userId, termId])
+}
+
 // ═══ V0 Phase 1 ═════════════════════════════════════════════════════════════
 //
 // The models below land in `v0-phase1-additive`. They are purely additive
@@ -2179,6 +2215,7 @@ model Term {
   signingBindings       SigningBinding[]
   timelineWeeks         TimelineWeek[]
   timelineDomains       TimelineDomain[]
+  memberClasses         MemberClass[]
 
   @@index([sortKey])
 }

@@ -80,6 +80,52 @@ export type UserOption = {
 
 export type ProjectOption = { id: string; name: string };
 
+// ── Classes this term ────────────────────────────────────────────────────────
+
+/** One resolved weekly meeting pattern of a class (the main block or its
+ *  x-hour). Mirrors PeriodMeeting in dartmouth-periods.ts; days use getDay(). */
+export type ClassMeetingDTO = {
+  kind: "main" | "xhour";
+  days: number[];
+  startMin: number;
+  endMin: number;
+};
+
+/** A member's class this term, for the manager list. */
+export type MemberClassDTO = {
+  id: string;
+  title: string;
+  /** Dartmouth period code when picked from the schedule; null for custom. */
+  periodCode: string | null;
+  meetings: ClassMeetingDTO[];
+  location: string | null;
+  storage: "Google" | "Local";
+  /** Google destination pointers, so the manager can pre-select the same
+   *  calendar when editing. Null for Local classes. */
+  linkId: string | null;
+  calendarId: string | null;
+  /** Where it lives, e.g. "Google · Classes" or "In DALI only". */
+  destinationLabel: string;
+};
+
+/** A single expanded class occurrence for the "Classes" layer. Only Local
+ *  classes are expanded here; Google-stored classes ride the external layer. */
+export type ClassOccurrenceDTO = {
+  classId: string;
+  title: string;
+  startIso: string;
+  endIso: string;
+  kind: "main" | "xhour";
+};
+
+/** A destination the add-class form can target. `local` renders in DALI only;
+ *  the Google kinds write real recurring events to a linked account. */
+export type ClassDestinationDTO =
+  | { kind: "local"; label: string }
+  | { kind: "google-dedicated"; linkId: string; label: string }
+  | { kind: "google-primary"; linkId: string; label: string }
+  | { kind: "google-calendar"; linkId: string; calendarId: string; label: string };
+
 export type TimeEntryDTO = {
   id: string;
   source: "Meeting" | "Manual" | "Block";
@@ -177,6 +223,17 @@ export type LoaderData = {
   // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
   // Notification, not on MeetingAttendance).
   meetingInvites: MeetingInviteDTO[];
+  // Classes this term (behind the calendar-classes flag). classesEnabled gates
+  // the whole surface; classTerm names the term classes are scoped to;
+  // memberClasses feeds the manager; classOccurrences are the Local classes
+  // expanded across the fetched range for the "Classes" layer (Google-stored
+  // classes ride the external layer instead); classDestinations are the add
+  // form's target options (Local + any linked Google calendars).
+  classesEnabled: boolean;
+  classTerm: { id: string; code: string } | null;
+  memberClasses: MemberClassDTO[];
+  classOccurrences: ClassOccurrenceDTO[];
+  classDestinations: ClassDestinationDTO[];
 };
 
 /** A positioned block on the week/day grid. Every layer builder emits these. */

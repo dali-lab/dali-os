@@ -13,6 +13,7 @@
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { EventBlock, LoaderData, TimeEntryDTO } from "./types";
 import {
+  CLASS_BG,
   EVENT_CORAL,
   UNASSIGNED_ROLE_KEY,
   meetingBlockStyle,
@@ -26,7 +27,7 @@ export type GridDay = { dayOfWeek: number; num: number; dateUtc: Date };
 
 /** The toggleable layers, in panel order. "workingHours" is a background layer
  *  (stripes), handled separately from these event layers. */
-export type LayerKey = "blocks" | "external" | "meetings" | "logged";
+export type LayerKey = "blocks" | "external" | "meetings" | "classes" | "logged";
 
 export type LayerVisibility = Record<LayerKey, boolean> & { workingHours: boolean };
 
@@ -35,6 +36,8 @@ export const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
   blocks: true,
   external: true,
   meetings: true,
+  // Classes you've added are part of your week — on by default.
+  classes: true,
   // Logged time is the niche, retrospective view — off until you ask for it.
   logged: false,
 };
@@ -173,6 +176,24 @@ export function buildBlocksLayer(
         borderClassName: "border-accent-coral-light",
         loggedAccent: loggedByBlock?.get(b.id),
       },
+      into,
+    );
+  }
+  return into;
+}
+
+/** Classes-this-term layer — Local classes only (Google-stored classes ride the
+ *  external layer, so they're never drawn twice). Occurrences arrive already
+ *  expanded from the loader; here we just place them in the brand navy. */
+export function buildClassesLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  for (const c of data.classOccurrences) {
+    placeBlock(
+      days,
+      data.timezone,
+      c.startIso,
+      c.endIso,
+      { label: c.kind === "xhour" ? `${c.title} · x-hour` : c.title, className: "", bgColor: CLASS_BG },
       into,
     );
   }

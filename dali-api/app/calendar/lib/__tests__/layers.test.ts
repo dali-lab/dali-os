@@ -4,6 +4,7 @@ import {
   buildBlocksLayer,
   buildExternalLayer,
   buildMeetingsLayer,
+  buildClassesLayer,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
@@ -247,6 +248,21 @@ describe("logged-time de-duplication", () => {
     expect(labels).toContain("Meeting"); // meeting hidden → its logged block still draws
     expect(labels).toContain("Email");
     expect(labels).not.toContain("Time entry"); // block-sourced suppressed
+  });
+});
+
+describe("buildClassesLayer", () => {
+  it("places Local class occurrences and marks the x-hour in the label", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      classOccurrences: [
+        { classId: "c1", title: "CS 52", startIso: "2026-08-17T14:00:00.000Z", endIso: "2026-08-17T15:05:00.000Z", kind: "main" },
+        { classId: "c1", title: "CS 52", startIso: "2026-08-20T16:00:00.000Z", endIso: "2026-08-20T16:50:00.000Z", kind: "xhour" },
+      ],
+    } as unknown as Partial<LoaderData>);
+    const layer = buildClassesLayer(data, days);
+    expect(layer[1][0]).toMatchObject({ label: "CS 52", startHour: 14 }); // Mon
+    expect(layer[4][0].label).toBe("CS 52 · x-hour"); // Thu x-hour
   });
 });
 
