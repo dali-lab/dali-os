@@ -122,24 +122,52 @@ describe("buildExternalLayer", () => {
 });
 
 describe("perCalendarLegend", () => {
-  it("lists enabled sub-calendars by id (not deduped by colour)", () => {
+  it("groups enabled sub-calendars by account, labelling primaries", () => {
     const data = fixture({
       calendarLinks: [
         {
           id: "l1",
+          displayName: "Work",
+          externalEmail: "me@work.com",
           subCalendars: [
-            { id: "c1", summary: "Personal", color: "#aaa", enabled: true, primary: true },
+            { id: "c1", summary: "me@work.com", color: "#aaa", enabled: true, primary: true },
             { id: "c2", summary: "Classes", color: "#aaa", enabled: true, primary: false },
             { id: "c3", summary: "Off", color: "#bbb", enabled: false, primary: false },
           ],
         },
       ] as unknown as LoaderData["calendarLinks"],
     });
-    const rows = perCalendarLegend(data);
-    expect(rows).toEqual([
-      { id: "c1", label: "Personal", color: "#aaa" },
-      { id: "c2", label: "Classes", color: "#aaa" }, // same colour, still separate
+    expect(perCalendarLegend(data)).toEqual([
+      {
+        account: "Work",
+        calendars: [
+          { id: "c1", label: "Primary", color: "#aaa" }, // primary → "Primary", not the email
+          { id: "c2", label: "Classes", color: "#aaa" },
+        ],
+      },
     ]);
+  });
+
+  it("keeps each account's calendars in their own group", () => {
+    const data = fixture({
+      calendarLinks: [
+        {
+          id: "l1",
+          displayName: null,
+          externalEmail: "a@x.com",
+          subCalendars: [{ id: "c1", summary: "a@x.com", color: "#111", enabled: true, primary: true }],
+        },
+        {
+          id: "l2",
+          displayName: null,
+          externalEmail: "b@y.com",
+          subCalendars: [{ id: "c2", summary: "b@y.com", color: "#222", enabled: true, primary: true }],
+        },
+      ] as unknown as LoaderData["calendarLinks"],
+    });
+    const groups = perCalendarLegend(data);
+    expect(groups.map((g) => g.account)).toEqual(["a@x.com", "b@y.com"]);
+    expect(groups.every((g) => g.calendars.length === 1)).toBe(true);
   });
 });
 

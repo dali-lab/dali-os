@@ -156,6 +156,7 @@ import {
   buildLoggedSourceIndex,
   mergeLayers,
   perCalendarLegend,
+  type CalendarLegendGroup,
   computeRoleBuckets,
   timeEntryRange,
   toGridRange,
@@ -2813,7 +2814,7 @@ function CalendarLayerList({
 }: {
   layers: LayerVisibility;
   toggleLayer: (key: keyof LayerVisibility) => void;
-  calendars: { id: string; label: string; color: string | null }[];
+  calendars: CalendarLegendGroup[];
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   roleBuckets: { key: string; label: string; hours: number }[];
@@ -2867,31 +2868,49 @@ function CalendarLayerList({
                 </button>
               </div>
             )}
-            {/* Per-calendar visibility toggles under Linked calendars */}
+            {/* Per-calendar visibility toggles under Linked calendars, grouped by
+                account (headers shown only when more than one is linked). */}
             {spec.key === "external" && on && calendars.length > 0 && (
-              <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-0.5">
-                {calendars.map((c) => {
-                  const hidden = hiddenCals.has(c.id);
-                  return (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleHiddenCal(c.id)}
-                        aria-pressed={!hidden}
-                        className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
-                      >
-                        <span
-                          className={cn("h-2.5 w-2.5 rounded-[3px]", hidden && "opacity-30")}
-                          style={{ backgroundColor: c.color ?? "var(--color-accent-coral)" }}
-                        />
-                        <span className={cn("truncate", hidden ? "text-muted-foreground line-through" : "text-foreground")}>
-                          {c.label}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="mb-1 ml-8 mt-0.5 flex flex-col gap-1.5">
+                {calendars.map((group) => (
+                  <div key={group.account} className="flex flex-col gap-0.5">
+                    {calendars.length > 1 && (
+                      <div className="truncate px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {group.account}
+                      </div>
+                    )}
+                    {group.calendars.map((c) => {
+                      const hidden = hiddenCals.has(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => toggleHiddenCal(c.id)}
+                          aria-pressed={!hidden}
+                          className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
+                        >
+                          <span
+                            className={cn("h-2.5 w-2.5 shrink-0 rounded-[3px]", hidden && "opacity-30")}
+                            style={{ backgroundColor: c.color ?? "var(--color-accent-coral)" }}
+                          />
+                          <span className={cn("truncate", hidden ? "text-muted-foreground line-through" : "text-foreground")}>
+                            {c.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+                {/* Enabling which calendars sync lives in global Settings. */}
+                <a
+                  href="/settings/calendar"
+                  target="_top"
+                  rel="noopener"
+                  className="px-1 pt-0.5 text-[11px] font-medium text-accent-teal hover:underline"
+                >
+                  Manage accounts & calendars →
+                </a>
+              </div>
             )}
             {/* No linked calendars yet → clear connect CTA */}
             {spec.key === "external" && on && calendars.length === 0 && (

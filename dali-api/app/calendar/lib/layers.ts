@@ -397,18 +397,26 @@ export function externalCalendarLegend(data: LoaderData): { swatch: string; labe
  *  per-calendar visibility list under "Linked calendars". Unlike the legend
  *  this keeps the id so a calendar can be hidden on the grid individually, and
  *  isn't deduped by colour. */
-export function perCalendarLegend(data: LoaderData): { id: string; label: string; color: string | null }[] {
-  const rows: { id: string; label: string; color: string | null }[] = [];
-  const seen = new Set<string>();
+export type CalendarLegendGroup = {
+  /** The linked Google account this group's calendars belong to. */
+  account: string;
+  calendars: { id: string; label: string; color: string | null }[];
+};
+
+/** Enabled sub-calendars grouped by the account they come from, so the Calendars
+ *  panel can label/disambiguate calendars when several Google accounts are
+ *  linked (two "Primary"s, same-named calendars, etc.). */
+export function perCalendarLegend(data: LoaderData): CalendarLegendGroup[] {
+  const groups: CalendarLegendGroup[] = [];
   for (const link of data.calendarLinks) {
-    for (const sub of link.subCalendars ?? []) {
-      if (sub.enabled && !seen.has(sub.id)) {
-        seen.add(sub.id);
-        rows.push({ id: sub.id, label: sub.summary, color: sub.color });
-      }
+    const calendars = (link.subCalendars ?? [])
+      .filter((sub) => sub.enabled)
+      .map((sub) => ({ id: sub.id, label: sub.primary ? "Primary" : sub.summary, color: sub.color }));
+    if (calendars.length) {
+      groups.push({ account: link.displayName || link.externalEmail || "Google", calendars });
     }
   }
-  return rows;
+  return groups;
 }
 
 /** Role buckets present across the pay period, with hours totalled — feeds the
