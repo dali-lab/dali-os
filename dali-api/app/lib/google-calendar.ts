@@ -773,6 +773,123 @@ export async function getOrCreateNamedCalendar(linkId: string, summary: string):
   return data.id;
 }
 
+// ─── Calendar management ───────────────────────────────────────────────────
+
+/** Always create a new Google Calendar (does not check for an existing one by
+ *  name — use `getOrCreateNamedCalendar` for find-or-create behaviour).
+ *  Returns the new calendar's id. */
+export async function createCalendar(linkId: string, summary: string): Promise<string> {
+  const token = await getValidAccessTokenForLink(linkId);
+  const res = await fetch("https://www.googleapis.com/calendar/v3/calendars", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google calendars.insert failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error("Google calendars.insert returned no id");
+  return data.id;
+}
+
+/** Rename and/or recolor a calendar the user owns.
+ *  - `summary` patches the underlying calendar resource (visible to all users of that calendar).
+ *  - `color` (hex, e.g. "#d50000") patches the per-user calendarList entry so the color shows
+ *    only for this linked account. Requires colorRgbFormat=true per the Google API. */
+export async function patchCalendar(opts: {
+  linkId: string;
+  calendarId: string;
+  summary?: string;
+  color?: string;
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const encodedId = encodeURIComponent(opts.calendarId);
+
+  if (opts.summary !== undefined) {
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodedId}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ summary: opts.summary }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await extractGoogleErrorDetail(res);
+      throw new Error(`Google calendars.patch failed (${res.status}): ${detail}`);
+    }
+  }
+
+  if (opts.color !== undefined) {
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/users/me/calendarList/${encodedId}?colorRgbFormat=true`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ backgroundColor: opts.color, foregroundColor: "#000000" }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await extractGoogleErrorDetail(res);
+      throw new Error(`Google calendarList.patch (color) failed (${res.status}): ${detail}`);
+    }
+  }
+}
+
+/** Delete a Google Calendar the user owns. 404/410 (already gone) are treated
+ *  as success. Throws before calling Google if calendarId is "primary" — the
+ *  primary calendar cannot be deleted. */
+export async function deleteCalendar(linkId: string, calendarId: string): Promise<void> {
+  if (calendarId === "primary") {
+    throw new Error("Can't delete your primary calendar");
+  }
+  const token = await getValidAccessTokenForLink(linkId);
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`,
+    { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google calendars.delete failed (${res.status}): ${detail}`);
+  }
+}
+
+/** Fetch a single Google Calendar event — primarily used to read a recurring
+ *  master event's RRULE when splitting a series. Returns only the fields needed
+ *  for that use-case (recurrence, start dateTime/date). */
+export async function getGoogleEvent(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+}): Promise<{ id: string; recurrence: string[]; startIso: string | null; startDate: string | null }> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const params = new URLSearchParams({ fields: "id,recurrence,start(dateTime,date)" });
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.get failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as {
+    id?: string;
+    recurrence?: string[];
+    start?: { dateTime?: string; date?: string };
+  };
+  return {
+    id: data.id ?? opts.eventId,
+    recurrence: data.recurrence ?? [],
+    startIso: data.start?.dateTime ?? null,
+    startDate: data.start?.date ?? null,
+  };
+}
+
+// ─── RSVP ──────────────────────────────────────────────────────────────────
+
 type AttendeeResponse = "accepted" | "declined" | "tentative" | "needsAction";
 
 export async function updateGoogleAttendeeRsvp(opts: {

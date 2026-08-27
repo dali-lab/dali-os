@@ -346,6 +346,33 @@ function formatLoggedHours(h: number): string {
   return `${Number.isInteger(h) ? h : Number(h.toFixed(2))}h`;
 }
 
+// Block-level drag state for move/resize interactions on writable event blocks.
+// Stored in a ref (not useState) so window listeners always see the current
+// value without stale-closure issues, and so mousemove doesn't trigger renders.
+// Only `livePos` is state, updated each mousemove to drive the visual position.
+// `engaged` on a move drag flips true once the 4px threshold is crossed.
+type BlockDragState =
+  | { kind: "move"; grabOffset: number; duration: number; colEl: HTMLElement; startClientY: number; engaged: boolean }
+  | { kind: "resize-top"; fixed: number; colEl: HTMLElement }
+  | { kind: "resize-bottom"; fixed: number; colEl: HTMLElement };
+
+// Snap + clamp helpers — mirror WeekGrid's `hourFromY` exactly.
+const BLOCK_MIN_HOUR = HOURS[0];
+const BLOCK_MAX_HOUR = HOURS[HOURS.length - 1] + 1;
+const BLOCK_MIN_DURATION = SNAP_HOURS; // one 10-min step minimum
+
+function snapHour(raw: number): number {
+  return Math.round(raw / SNAP_HOURS) * SNAP_HOURS;
+}
+function clampHour(h: number): number {
+  return Math.max(BLOCK_MIN_HOUR, Math.min(BLOCK_MAX_HOUR, h));
+}
+function hourFromColY(clientY: number, colEl: HTMLElement): number {
+  const rect = colEl.getBoundingClientRect();
+  const raw = BLOCK_MIN_HOUR + (clientY - rect.top) / HOUR_PX;
+  return clampHour(snapHour(raw));
+}
+
 export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
@@ -373,14 +400,186 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
   // common case is pixel-identical to before.
   const laned = lane && !(lane.left === 0 && lane.width === 1);
 
+  // ── Per-block move / resize (writable Google events only) ────────────────────
+  // dragRef holds the mutable drag state; livePos drives the visual override
+  // while the drag is in progress. Both are null when idle.
+  const dragRef = useRef<BlockDragState | null>(null);
+  const [livePos, setLivePos] = useState<{ startHour: number; endHour: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  // Suppresses the synthetic click that fires after a completed move/resize drag.
+  // Set true in mouseup (after a real drag) and consumed in onClick.
+  const suppressNextClick = useRef(false);
+  const movable = Boolean(e.onMoveResize);
+
+  // Cleanup: detach window listeners. Called from mouseup and unmount.
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => { cleanupRef.current?.(); };
+  }, []);
+
+  const attachWindowListeners = useCallback((
+    onMove: (ev: MouseEvent) => void,
+    onUp: (ev: MouseEvent) => void,
+  ) => {
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    const cleanup = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    cleanupRef.current = cleanup;
+    return cleanup;
+  }, []);
+
+  // Body mousedown: starts a move drag.
+  const onBodyMouseDown = useCallback((ev: React.MouseEvent<HTMLElement>) => {
+    if (!e.onMoveResize) return;
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+
+    // The outer wrapper is absolutely positioned inside the column body div,
+    // which is position:relative — so offsetParent gives us the column element.
+    // We need it to convert clientY → fractional hour for the same column.
+    const colEl = (ev.currentTarget as HTMLElement).offsetParent as HTMLElement | null;
+    if (!colEl) return;
+
+    const pointerHour = hourFromColY(ev.clientY, colEl);
+    dragRef.current = {
+      kind: "move",
+      grabOffset: pointerHour - e.startHour,
+      duration: e.duration,
+      colEl,
+      startClientY: ev.clientY,
+      engaged: false,
+    };
+
+    const onMove = (mev: MouseEvent) => {
+      const ds = dragRef.current;
+      if (!ds || ds.kind !== "move") return;
+      // Engage only after crossing 4px so a click doesn't snap the block.
+      if (!ds.engaged) {
+        if (Math.abs(mev.clientY - ds.startClientY) < 4) return;
+        ds.engaged = true;
+        setIsDragging(true);
+      }
+      const ph = hourFromColY(mev.clientY, ds.colEl);
+      const rawStart = ph - ds.grabOffset;
+      const start = Math.min(
+        Math.max(BLOCK_MIN_HOUR, snapHour(rawStart)),
+        BLOCK_MAX_HOUR - ds.duration,
+      );
+      setLivePos({ startHour: start, endHour: start + ds.duration });
+    };
+
+    const onUp = (uev: MouseEvent) => {
+      const ds = dragRef.current;
+      cleanupRef.current?.();
+      dragRef.current = null;
+      const wasEngaged = ds?.kind === "move" && ds.engaged;
+      setIsDragging(false);
+      if (!wasEngaged) {
+        // Below-threshold release: treat as click (let synthetic click fire).
+        setLivePos(null);
+        return;
+      }
+      // A real drag occurred — suppress the synthetic click that will follow.
+      suppressNextClick.current = true;
+      const didMove = Math.abs(uev.clientY - (ds as Extract<BlockDragState, { kind: "move" }>).startClientY) >= 4;
+      setLivePos((prev) => {
+        if (didMove && prev) {
+          e.onMoveResize?.(prev.startHour, prev.endHour);
+        }
+        return null;
+      });
+    };
+
+    attachWindowListeners(onMove, onUp);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners]);
+
+  // Handle mousedown: starts a resize drag (top = start edge, bottom = end edge).
+  const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.MouseEvent<HTMLElement>) => {
+    if (!e.onMoveResize) return;
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+
+    // The handle sits inside the outer wrapper (position:absolute), whose
+    // offsetParent is the column body div (position:relative). So:
+    //   handle.offsetParent → outer wrapper
+    //   outer wrapper.offsetParent → column div
+    const outerWrapper = (ev.currentTarget as HTMLElement).offsetParent as HTMLElement | null;
+    const colEl = outerWrapper?.offsetParent as HTMLElement | null;
+    if (!colEl) return;
+
+    const fixed = edge === "top"
+      ? e.startHour + e.duration   // top handle moves start; end is fixed
+      : e.startHour;               // bottom handle moves end; start is fixed
+
+    dragRef.current = {
+      kind: edge === "top" ? "resize-top" : "resize-bottom",
+      fixed,
+      colEl,
+    };
+
+    const onMove = (mev: MouseEvent) => {
+      const ds = dragRef.current;
+      if (!ds || (ds.kind !== "resize-top" && ds.kind !== "resize-bottom")) return;
+      const h = hourFromColY(mev.clientY, ds.colEl);
+      if (ds.kind === "resize-top") {
+        // Moving the start edge; end is fixed.
+        const newStart = Math.min(h, ds.fixed - BLOCK_MIN_DURATION);
+        setLivePos({ startHour: Math.max(BLOCK_MIN_HOUR, newStart), endHour: ds.fixed });
+      } else {
+        // Moving the end edge; start is fixed.
+        const newEnd = Math.max(h, ds.fixed + BLOCK_MIN_DURATION);
+        setLivePos({ startHour: ds.fixed, endHour: Math.min(BLOCK_MAX_HOUR, newEnd) });
+      }
+    };
+
+    const onUp = () => {
+      const ds = dragRef.current;
+      cleanupRef.current?.();
+      dragRef.current = null;
+      // Suppress the synthetic click that follows mouseup after a resize drag.
+      suppressNextClick.current = true;
+      setLivePos((prev) => {
+        if (prev && ds && (ds.kind === "resize-top" || ds.kind === "resize-bottom")) {
+          e.onMoveResize?.(prev.startHour, prev.endHour);
+        }
+        return null;
+      });
+    };
+
+    attachWindowListeners(onMove, onUp);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners]);
+
+  // When dragging, override start/duration for visual positioning.
+  const displayStart = livePos?.startHour ?? e.startHour;
+  const displayDuration = livePos
+    ? livePos.endHour - livePos.startHour
+    : e.duration;
+  const displayBufferBefore = livePos ? 0 : bufferBefore;
+  const displayBufferAfter = livePos ? 0 : bufferAfter;
+  const displayTotalHours = displayBufferBefore + displayDuration + displayBufferAfter;
+  const displayBodyHeight = displayDuration * HOUR_PX;
+  const displayTimeRange = livePos
+    ? `${formatHourMinute(displayStart)} – ${formatHourMinute(livePos.endHour)}`
+    : timeRange;
+
   return (
     <div
-      className={`absolute ${laned ? "" : "left-0 right-0"} ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
-        bufferAfter === 0 ? "rounded-b-md" : ""
-      } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : ""}`}
+      className={`absolute ${laned ? "" : "left-0 right-0"} ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
+        displayBufferAfter === 0 ? "rounded-b-md" : ""
+      } ${border} ${bufferBg} overflow-hidden ${
+        movable ? (isDragging ? "cursor-grabbing" : "cursor-grab") : clickable ? "cursor-pointer" : ""
+      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}`}
       style={{
-        top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
-        height: totalHours * HOUR_PX,
+        top: (displayStart - displayBufferBefore - HOURS[0]) * HOUR_PX,
+        height: displayTotalHours * HOUR_PX,
         ...(laned
           ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
           : {}),
@@ -391,10 +590,25 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
       // an existing block opens a bogus "New entry" popover on top of it.
       // Previously this was gated on `e.onClick`, which is why only the
       // clickable (Manual) blocks were protected.
-      onMouseDown={(ev) => ev.stopPropagation()}
-      onClick={opensDetail ? () => setDetailOpen((v) => !v) : e.onClick}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
+      onMouseDown={movable ? onBodyMouseDown : (ev) => ev.stopPropagation()}
+      onClick={
+        movable
+          ? (ev) => {
+              // After a real drag the mouseup fires onMoveResize and sets
+              // suppressNextClick; consume that flag and bail so the drag
+              // doesn't accidentally open the detail popover.
+              if (suppressNextClick.current) {
+                suppressNextClick.current = false;
+                ev.stopPropagation();
+                return;
+              }
+              if (opensDetail) setDetailOpen((v) => !v);
+              else e.onClick?.();
+            }
+          : (opensDetail ? () => setDetailOpen((v) => !v) : e.onClick)
+      }
+      role={clickable || movable ? "button" : undefined}
+      tabIndex={clickable || movable ? 0 : undefined}
       onKeyDown={
         clickable
           ? (ev) => {
@@ -406,20 +620,28 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
             }
           : undefined
       }
-      aria-label={clickable ? `${e.label}, ${timeRange}` : undefined}
+      aria-label={clickable || movable ? `${e.label}, ${timeRange}` : undefined}
     >
+      {/* Top resize handle — only for movable blocks */}
+      {movable && (
+        <div
+          onMouseDown={onHandleMouseDown("top")}
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          aria-label="Adjust start time"
+        />
+      )}
       <div
         ref={setAnchorEl}
-        className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
-          bufferAfter === 0 ? "rounded-b-md" : ""
+        className={`absolute left-0 right-0 ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
+          displayBufferAfter === 0 ? "rounded-b-md" : ""
         } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          clickable
+          clickable || movable
             ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
             : ""
         }`}
         style={{
-          top: bufferBefore * HOUR_PX,
-          height: bodyHeight,
+          top: displayBufferBefore * HOUR_PX,
+          height: displayBodyHeight,
           ...(e.bgColor
             ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
             : {}),
@@ -433,23 +655,31 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
           />
         )}
         {e.label && <span className="truncate block">{e.label}</span>}
-        {bodyHeight >= 34 && (
+        {displayBodyHeight >= 34 && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
-            {timeRange}
+            {displayTimeRange}
             {e.loggedAccent && ` · logged ${formatLoggedHours(e.loggedAccent.hours)}`}
           </span>
         )}
-        {isMeeting && e.meeting?.rsvp && bodyHeight >= 50 && (
+        {isMeeting && e.meeting?.rsvp && displayBodyHeight >= 50 && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
             {e.meeting.rsvp}
           </span>
         )}
-        {bodyHeight >= 50 && e.location && !isMeeting && (
+        {displayBodyHeight >= 50 && e.location && !isMeeting && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
             {e.location}
           </span>
         )}
       </div>
+      {/* Bottom resize handle — only for movable blocks */}
+      {movable && (
+        <div
+          onMouseDown={onHandleMouseDown("bottom")}
+          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          aria-label="Adjust end time"
+        />
+      )}
       {detailOpen && opensDetail && (
         <CalendarEventDetailPopover
           anchorEl={anchorEl}

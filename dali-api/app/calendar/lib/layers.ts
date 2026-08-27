@@ -111,11 +111,13 @@ export function buildExternalLayer(
   days: GridDay[],
   hiddenCalendarIds?: Set<string>,
   onEdit?: (e: ExternalEventDTO) => void,
+  onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number) => void,
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const e of data.externalEvents) {
     if (e.allDay) continue; // all-day events render in the band, not the grid
     if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
+    const editable = e.writable && Boolean(e.eventId);
     placeBlock(
       days,
       data.timezone,
@@ -132,8 +134,9 @@ export function buildExternalLayer(
         attendees: e.attendees,
         links: e.links,
         // Editable Google events (writable + flag on) get an Edit affordance in
-        // the detail popover.
-        onEdit: onEdit && e.writable && e.eventId ? () => onEdit(e) : undefined,
+        // the detail popover and can be dragged to move/resize.
+        onEdit: onEdit && editable ? () => onEdit(e) : undefined,
+        onMoveResize: onMoveResize && editable ? (s, en) => onMoveResize(e, s, en) : undefined,
       },
       into,
     );
