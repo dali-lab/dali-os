@@ -2219,6 +2219,19 @@ function CalendarLayerList({
                 })}
               </ul>
             )}
+            {/* No linked calendars yet → clear connect CTA */}
+            {spec.key === "external" && on && calendars.length === 0 && (
+              <div className="mb-1 ml-8 mt-0.5">
+                <a
+                  href="/oauth/calendar/google/start"
+                  target="_top"
+                  rel="noopener"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-teal hover:underline"
+                >
+                  ＋ Connect a calendar
+                </a>
+              </div>
+            )}
             {/* Manage-classes entry nested under the Classes layer */}
             {spec.key === "classes" && (
               <div className={cn("mb-1 ml-8", showToggle ? "mt-0.5" : "mt-0")}>
@@ -2305,7 +2318,7 @@ function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: (
           </button>
         </div>
         <div className="flex flex-col gap-6">
-          <CalendarIntegrationsCard
+          <ConnectedCalendarsCard
             links={data.calendarLinks}
             ingestionError={data.ingestionError}
             generalCalendar={data.generalCalendar}
@@ -2315,6 +2328,65 @@ function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: (
         </div>
       </div>
     </div>
+  );
+}
+
+// Connecting/removing calendar accounts and choosing which feed availability
+// live in global Settings (alongside Slack / Connected Apps) — a single home,
+// no drift. On the calendar we only summarize + link there, or, when nothing's
+// connected, show a clear CTA to link one.
+function ConnectedCalendarsCard({
+  links,
+  ingestionError,
+  generalCalendar,
+}: {
+  links: CalendarLinkDTO[];
+  ingestionError: string | null;
+  generalCalendar: GeneralCalendarState;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
+        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Connected calendars
+      </h3>
+      {ingestionError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Couldn't refresh external events: {ingestionError}
+        </div>
+      )}
+      {links.length === 0 ? (
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+          <p className="text-sm font-medium text-foreground">Connect your Google Calendar</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Bring your events onto the grid, block your availability for scheduling, and let classes
+            sync back to Google.
+          </p>
+          <a
+            href="/oauth/calendar/google/start"
+            target="_top"
+            rel="noopener"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
+          >
+            <Plus className="h-4 w-4" /> Connect Google Calendar
+          </a>
+        </div>
+      ) : (
+        <>
+          {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+            <span className="text-sm text-muted-foreground">
+              {links.length} {links.length === 1 ? "account" : "accounts"} connected
+            </span>
+            <Link
+              to="/settings"
+              className="inline-flex items-center gap-1 text-sm font-medium text-accent-teal hover:underline"
+            >
+              Manage in Settings <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
