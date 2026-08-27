@@ -17,11 +17,15 @@ export async function syncManualBlockTimeEntry(params: {
   assignmentType: AssignmentType | null;
   roleRefId: string | null;
   title: string;
+  // The timesheet entry's own description; falls back to the block title when
+  // empty (callers that don't collect one — legacy drag popover, MCP).
+  workNote?: string | null;
   startTime: Date;
   endTime: Date;
 }): Promise<SyncManualBlockTimeEntryResult> {
-  const { manualBlockId, userId, isWork, assignmentType, roleRefId, title, startTime, endTime } =
+  const { manualBlockId, userId, isWork, assignmentType, roleRefId, title, workNote, startTime, endTime } =
     params;
+  const note = workNote?.trim() || title;
 
   if (!isWork || !assignmentType || !roleRefId) {
     await prisma.timeEntry.deleteMany({ where: { manualBlockId, userId } });
@@ -46,7 +50,7 @@ export async function syncManualBlockTimeEntry(params: {
       projectId: resolved.projectId,
       date: startTime,
       hours,
-      note: title,
+      note,
       startTime,
       endTime,
     },
@@ -56,7 +60,7 @@ export async function syncManualBlockTimeEntry(params: {
       projectId: resolved.projectId,
       date: startTime,
       hours,
-      note: title,
+      note,
       startTime,
       endTime,
     },

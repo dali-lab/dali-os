@@ -62,6 +62,7 @@ describe("buildBlocksLayer", () => {
           isWork: false,
           assignmentType: null,
           roleRefId: null,
+          workNote: null,
         },
       ],
     });
@@ -83,6 +84,7 @@ describe("buildBlocksLayer", () => {
           isWork: false,
           assignmentType: null,
           roleRefId: null,
+          workNote: null,
         },
       ],
     });

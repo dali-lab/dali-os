@@ -33,6 +33,9 @@ export type ManualBlockDTO = {
   isWork: boolean;
   assignmentType: RoleInstance["assignmentType"] | null;
   roleRefId: string | null;
+  /** The timesheet entry's own description (distinct from the block title),
+   *  when this block logs to the timesheet. */
+  workNote: string | null;
 };
 
 export type SubCalendarDTO = {
@@ -189,6 +192,8 @@ export type ExternalEventDTO = {
   isWork?: boolean;
   assignmentType?: RoleInstance["assignmentType"] | null;
   roleRefId?: string | null;
+  /** The block's timesheet description (distinct from the event description). */
+  workNote?: string | null;
   description?: string;
   location?: string;
   organizerName?: string;
