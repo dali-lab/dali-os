@@ -3426,11 +3426,10 @@ function CreateFromDragPopover({
     setEnd(endLocal);
   }, [startLocal, endLocal]);
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  // A dragged slot is a specific time, so it creates a Block or logs Time (a
-  // work-marked block → TimeEntry). Meetings aren't here: their time comes from
-  // the group's availability, not a pre-picked slot — book them via New → Meeting.
-  const [kind, setKind] = useState<"block" | "logtime">("block");
-  const isWork = kind === "logtime";
+  // Optional "add to timesheet": marking the block as work also creates a
+  // role-tagged TimeEntry. Meetings aren't created here — their time comes from
+  // group availability, not a pre-picked slot; book them via New → Meeting.
+  const [isWork, setIsWork] = useState(false);
   const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3442,7 +3441,9 @@ function CreateFromDragPopover({
     title.trim().length > 0 &&
     startEndValid &&
     !submitting &&
-    (!isWork || (!isRecurring && roleKey !== ""));
+    // "Add to timesheet" needs a role — but it's ignored on a recurring block
+    // (a series can't be work), so don't block submit in that case.
+    (!isWork || isRecurring || roleKey !== "");
 
   // Close on Escape.
   useEffect(() => {
@@ -3491,11 +3492,6 @@ function CreateFromDragPopover({
     }
   }
 
-  const tabs: { key: "block" | "logtime"; label: string }[] = [
-    { key: "block", label: "Block" },
-    ...(myRoles.length > 0 ? [{ key: "logtime" as const, label: "Log time" }] : []),
-  ];
-
   const cancelBtn =
     "px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted";
   const primaryBtn =
@@ -3509,9 +3505,7 @@ function CreateFromDragPopover({
       aria-label="Create on the calendar"
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
-        <h2 className="font-heading font-semibold text-sm text-foreground">
-          {kind === "logtime" ? "Log time" : "New block"}
-        </h2>
+        <h2 className="font-heading font-semibold text-sm text-foreground">New block</h2>
         <button
           type="button"
           onClick={onClose}
@@ -3522,30 +3516,10 @@ function CreateFromDragPopover({
         </button>
       </div>
 
-      {tabs.length > 1 && (
-        <div className="px-3 pt-3">
-          <div className="inline-flex w-full rounded-lg bg-muted p-0.5">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setKind(t.key)}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                  kind === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
           <div>
             <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
-              {kind === "logtime" ? "What did you work on?" : "Title"}
+              Title
             </label>
             <input
               id="drag-title"
@@ -3554,7 +3528,7 @@ function CreateFromDragPopover({
               onChange={(e) => setTitle(e.target.value)}
               required
               autoFocus
-              placeholder={kind === "logtime" ? "e.g. Sprint planning" : "e.g. Focus time"}
+              placeholder="e.g. Focus time"
               className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
             />
           </div>
@@ -3588,30 +3562,37 @@ function CreateFromDragPopover({
           </div>
           {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
 
-          {kind === "block" && (
-            <RepeatField
-              value={repeat}
-              onChange={setRepeat}
-              anchorLocal={start}
-              labelClassName="block text-sm font-medium text-foreground mb-1"
-              fieldClassName={cn(
-                "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
-                !os && "h-9",
-              )}
-            />
-          )}
+          <RepeatField
+            value={repeat}
+            onChange={setRepeat}
+            anchorLocal={start}
+            labelClassName="block text-sm font-medium text-foreground mb-1"
+            fieldClassName={cn(
+              "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
+              !os && "h-9",
+            )}
+          />
 
-          {kind === "logtime" && (
+          {/* Optional: also log this block as work against a role. Recurring
+              blocks can't be work, so this hides once a repeat is chosen. */}
+          {myRoles.length > 0 && !isRecurring && (
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Role</label>
-              <Select
-                ariaLabel="Which role is this work for"
-                value={roleKey}
-                onChange={(v) => setRoleKey(v)}
-                placeholder="Select a role…"
-                options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-                buttonClassName={cn("border-border", !roleKey && "border-red-500", formTrigger)}
+              <Checkbox
+                label="Add to timesheet"
+                checked={isWork}
+                onChange={(e) => setIsWork(e.target.checked)}
+                className="text-sm font-medium text-foreground"
               />
+              {isWork && (
+                <Select
+                  ariaLabel="Which role is this work for"
+                  value={roleKey}
+                  onChange={(v) => setRoleKey(v)}
+                  placeholder="Select a role…"
+                  options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+                  buttonClassName={cn("mt-2 border-border", !roleKey && "border-red-500", formTrigger)}
+                />
+              )}
             </div>
           )}
 
@@ -3621,7 +3602,7 @@ function CreateFromDragPopover({
               Cancel
             </button>
             <button type="submit" disabled={!canSubmit} className={primaryBtn}>
-              {submitting ? "Saving…" : kind === "logtime" ? "Log time" : "Add block"}
+              {submitting ? "Saving…" : "Add block"}
             </button>
           </div>
         </form>
