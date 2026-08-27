@@ -9,6 +9,7 @@ import {
   buildLoggedSourceIndex,
   mergeLayers,
   externalCalendarLegend,
+  perCalendarLegend,
 } from "../layers";
 import { EVENT_CORAL } from "../event-block";
 import type { LoaderData } from "../types";
@@ -101,6 +102,41 @@ describe("buildExternalLayer", () => {
     expect(layer[0]).toHaveLength(2);
     expect(layer[0][0]).toMatchObject({ label: "Colored", bgColor: "#123456" });
     expect(layer[0][1]).toMatchObject({ label: "Plain", className: EVENT_CORAL });
+  });
+
+  it("hides events from calendars in hiddenCalendarIds", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-16T09:00:00.000Z", endIso: "2026-08-16T10:00:00.000Z", title: "Personal", color: "#111", calendarId: "cal-a" },
+        { startIso: "2026-08-16T12:00:00.000Z", endIso: "2026-08-16T13:00:00.000Z", title: "Class", color: "#222", calendarId: "cal-b" },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildExternalLayer(data, days, new Set(["cal-a"]));
+    expect(layer[0]).toHaveLength(1);
+    expect(layer[0][0].label).toBe("Class");
+  });
+});
+
+describe("perCalendarLegend", () => {
+  it("lists enabled sub-calendars by id (not deduped by colour)", () => {
+    const data = fixture({
+      calendarLinks: [
+        {
+          id: "l1",
+          subCalendars: [
+            { id: "c1", summary: "Personal", color: "#aaa", enabled: true, primary: true },
+            { id: "c2", summary: "Classes", color: "#aaa", enabled: true, primary: false },
+            { id: "c3", summary: "Off", color: "#bbb", enabled: false, primary: false },
+          ],
+        },
+      ] as unknown as LoaderData["calendarLinks"],
+    });
+    const rows = perCalendarLegend(data);
+    expect(rows).toEqual([
+      { id: "c1", label: "Personal", color: "#aaa" },
+      { id: "c2", label: "Classes", color: "#aaa" }, // same colour, still separate
+    ]);
   });
 });
 

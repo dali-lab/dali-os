@@ -137,7 +137,7 @@ import {
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
-  externalCalendarLegend,
+  perCalendarLegend,
   computeRoleBuckets,
   timeEntryRange,
   toGridRange,
@@ -681,6 +681,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       endIso: e.end,
       title: e.title ?? "Busy",
       color: e.color ?? null,
+      calendarId: e.calendarId ?? null,
       description: e.description,
       location: e.location,
       organizerName: e.organizerName,
@@ -1511,6 +1512,7 @@ function LegacyCalendarTabs({ data }: { data: LoaderData }) {
 /* ------------------------------------------------------------------ */
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
+const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day" };
 
 function pad2(n: number) {
@@ -1565,6 +1567,32 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+
+  // Linked calendars hidden on the grid (display only — still fetched, still
+  // count for availability). Persisted so a hidden calendar stays hidden.
+  const [hiddenCals, setHiddenCals] = useState<Set<string>>(() => {
+    try {
+      const stored = window.localStorage.getItem(CALENDAR_HIDDEN_CALS_KEY);
+      if (stored) return new Set(JSON.parse(stored) as string[]);
+    } catch {
+      /* ignore */
+    }
+    return new Set();
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CALENDAR_HIDDEN_CALS_KEY, JSON.stringify([...hiddenCals]));
+    } catch {
+      /* ignore */
+    }
+  }, [hiddenCals]);
+  const toggleHiddenCal = (id: string) =>
+    setHiddenCals((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 
@@ -1647,7 +1675,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
 
   const layerMaps: Record<number, EventBlock[]>[] = [];
-  if (layers.external) layerMaps.push(buildExternalLayer(data, days));
+  if (layers.external) layerMaps.push(buildExternalLayer(data, days, hiddenCals));
   if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days, loggedIndex?.byBlock));
   if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
   if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
@@ -1812,15 +1840,22 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       <CalendarLayerList
                         layers={layers}
                         toggleLayer={toggleLayer}
-                        legend={externalCalendarLegend(data)}
+                        calendars={perCalendarLegend(data)}
+                        hiddenCals={hiddenCals}
+                        toggleHiddenCal={toggleHiddenCal}
                         roleBuckets={layers.logged ? roleBuckets : []}
                         excludedRoleKeys={excludedRoleKeys}
                         toggleRoleKey={toggleRoleKey}
                         classesEnabled={data.classesEnabled}
                         classCount={data.memberClasses.length}
+                        localClassCount={data.memberClasses.filter((c) => c.storage === "Local").length}
                         onManageClasses={() => {
                           setCalendarsOpen(false);
                           setClassesOpen(true);
+                        }}
+                        onOpenSettings={() => {
+                          setCalendarsOpen(false);
+                          setSettingsOpen(true);
                         }}
                       />
                     </div>
@@ -2092,60 +2127,101 @@ const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
 function CalendarLayerList({
   layers,
   toggleLayer,
-  legend,
+  calendars,
+  hiddenCals,
+  toggleHiddenCal,
   roleBuckets,
   excludedRoleKeys,
   toggleRoleKey,
   classesEnabled,
   classCount,
+  localClassCount,
   onManageClasses,
+  onOpenSettings,
 }: {
   layers: LayerVisibility;
   toggleLayer: (key: keyof LayerVisibility) => void;
-  legend: { swatch: string; label: string }[];
+  calendars: { id: string; label: string; color: string | null }[];
+  hiddenCals: Set<string>;
+  toggleHiddenCal: (id: string) => void;
   roleBuckets: { key: string; label: string; hours: number }[];
   excludedRoleKeys: Set<string>;
   toggleRoleKey: (key: string) => void;
   classesEnabled: boolean;
   classCount: number;
+  localClassCount: number;
   onManageClasses: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
+    <>
     <ul className="flex flex-col gap-0.5">
       {CALENDAR_LAYER_SPECS.filter((s) => s.key !== "classes" || classesEnabled).map((spec) => {
         const on = layers[spec.key];
+        // The navy Classes layer only carries DALI-only (Local) classes; hide its
+        // toggle when there are none (Google classes ride "Linked calendars").
+        const showToggle = spec.key !== "classes" || localClassCount > 0;
         return (
           <li key={spec.key}>
-            <button
-              type="button"
-              onClick={() => toggleLayer(spec.key)}
-              aria-pressed={on}
-              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-            >
-              <span
-                className={cn(
-                  "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
-                  on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
-                )}
+            {showToggle && (
+              <button
+                type="button"
+                onClick={() => toggleLayer(spec.key)}
+                aria-pressed={on}
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
               >
-                {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
-              </span>
-              <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
-            </button>
-            {/* Linked-calendar colour key */}
-            {spec.key === "external" && on && legend.length > 0 && (
-              <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-1">
-                {legend.map((c) => (
-                  <li key={c.swatch} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: c.swatch }} />
-                    <span className="truncate">{c.label}</span>
-                  </li>
-                ))}
+                <span
+                  className={cn(
+                    "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
+                    on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
+                  )}
+                >
+                  {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
+                </span>
+                <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
+              </button>
+            )}
+            {/* Edit-hours bridge to Settings, under Working hours */}
+            {spec.key === "workingHours" && (
+              <div className="mb-1 ml-8 mt-0.5">
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="text-xs font-medium text-accent-teal hover:underline"
+                >
+                  Edit hours
+                </button>
+              </div>
+            )}
+            {/* Per-calendar visibility toggles under Linked calendars */}
+            {spec.key === "external" && on && calendars.length > 0 && (
+              <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-0.5">
+                {calendars.map((c) => {
+                  const hidden = hiddenCals.has(c.id);
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleHiddenCal(c.id)}
+                        aria-pressed={!hidden}
+                        className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
+                      >
+                        <span
+                          className={cn("h-2.5 w-2.5 rounded-[3px]", hidden && "opacity-30")}
+                          style={{ backgroundColor: c.color ?? "var(--color-accent-coral)" }}
+                        />
+                        <span className={cn("truncate", hidden ? "text-muted-foreground line-through" : "text-foreground")}>
+                          {c.label}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
             {/* Manage-classes entry nested under the Classes layer */}
             {spec.key === "classes" && (
-              <div className="mb-1 ml-8 mt-0.5">
+              <div className={cn("mb-1 ml-8", showToggle ? "mt-0.5" : "mt-0")}>
                 <button
                   type="button"
                   onClick={onManageClasses}
@@ -2184,6 +2260,16 @@ function CalendarLayerList({
         );
       })}
     </ul>
+    <div className="mt-1 border-t border-border pt-1">
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <Settings className="h-3.5 w-3.5" /> Calendar settings
+      </button>
+    </div>
+    </>
   );
 }
 
@@ -2718,6 +2804,13 @@ function CalendarIntegrationsCard({
         </div>
       )}
       {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
+      {links.length > 0 && (
+        <p className={cn(bodyText, "mb-3 text-xs")}>
+          These control which calendars <strong>feed into DALI</strong> — their events and your
+          availability. To just hide a calendar on the grid, use <strong>Calendars ▾</strong> on the
+          calendar.
+        </p>
+      )}
       <div className="flex flex-col gap-3">
         {links.length === 0 && (
           <div className={cn(card, cardPad, bodyText)}>No external calendars connected.</div>
