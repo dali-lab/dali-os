@@ -111,6 +111,12 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
+  {
+    key: "calendar-unified",
+    label: "Unified calendar",
+    description:
+      "One calendar screen instead of the Availability / Schedule / Timesheet tabs: a Month/Week/Day grid with toggleable colored layers (your blocks, linked Google calendars, meetings, logged time), meeting scheduling as an on-grid overlay, and a docked detail panel. Ships off; the three-tab calendar stays the fallback until this is rolled out.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

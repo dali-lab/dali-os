@@ -1,0 +1,279 @@
+// Pure layer builders for the unified calendar.
+//
+// Each builder turns loader data into positioned EventBlocks, bucketed by day
+// column, using the exact placement logic the legacy per-tab grids use. The
+// unified screen toggles layers on/off and merges the enabled ones into one
+// WeekGrid — so "personal blocks", "linked (Google) calendars", "meetings" and
+// "logged time" become toggleable colored layers instead of separate tabs.
+//
+// Builders are range-agnostic: they place blocks into whatever `days` array
+// they're given (7 for a week, 1 for a day, a full month for the month grid),
+// so the same functions feed every view.
+
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import type { EventBlock, LoaderData, TimeEntryDTO } from "./types";
+import {
+  EVENT_CORAL,
+  UNASSIGNED_ROLE_KEY,
+  meetingBlockStyle,
+  nominalDayRange,
+  roleColor,
+  timeEntryRoleKey,
+} from "./event-block";
+
+/** One column of the grid — a single calendar day, in UTC-anchored form. */
+export type GridDay = { dayOfWeek: number; num: number; dateUtc: Date };
+
+/** The toggleable layers, in panel order. "workingHours" is a background layer
+ *  (stripes), handled separately from these event layers. */
+export type LayerKey = "blocks" | "external" | "meetings" | "logged";
+
+export type LayerVisibility = Record<LayerKey, boolean> & { workingHours: boolean };
+
+export const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
+  workingHours: true,
+  blocks: true,
+  external: true,
+  meetings: true,
+  // Logged time is the niche, retrospective view — off until you ask for it.
+  logged: false,
+};
+
+/** Build the day columns for a view: `count` consecutive days from `startIso`
+ *  (midnight-aligned UTC instants, matching the loader's week window). */
+export function buildGridDays(startIso: string, count: number): GridDay[] {
+  const start = new Date(startIso);
+  return Array.from({ length: count }).map((_, i) => {
+    const d = new Date(start.getTime() + i * 86_400_000);
+    return { dayOfWeek: d.getUTCDay(), num: d.getUTCDate(), dateUtc: d };
+  });
+}
+
+/** Place one block into its day column, timezone-correct. Silently drops blocks
+ *  that fall outside the visible `days`. Mirrors the legacy grids' `placeBlock`. */
+export function placeBlock(
+  days: GridDay[],
+  timezone: string,
+  startIso: string,
+  endIso: string,
+  block: Omit<EventBlock, "startHour" | "duration">,
+  into: Record<number, EventBlock[]>,
+): void {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const ymd = getZonedYMD(start, timezone);
+  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
+  const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
+  const duration = (end.getTime() - start.getTime()) / 3_600_000;
+  const dayIdx = days.findIndex(
+    (d) =>
+      d.dateUtc.getUTCFullYear() === ymd.year &&
+      d.dateUtc.getUTCMonth() + 1 === ymd.month &&
+      d.dateUtc.getUTCDate() === ymd.day,
+  );
+  if (dayIdx < 0) return;
+  if (!into[dayIdx]) into[dayIdx] = [];
+  into[dayIdx].push({ startHour, duration, ...block });
+}
+
+/** Resolve an ISO range to grid coordinates ({dayIdx, startHour, endHour}) —
+ *  the inverse of placeBlock, for anchoring an editor on an existing block. */
+export function toGridRange(
+  days: GridDay[],
+  timezone: string,
+  startIso: string,
+  endIso: string,
+): { dayIdx: number; startHour: number; endHour: number } {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const ymd = getZonedYMD(start, timezone);
+  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
+  const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
+  const endHour = startHour + (end.getTime() - start.getTime()) / 3_600_000;
+  const dayIdx = days.findIndex(
+    (d) =>
+      d.dateUtc.getUTCFullYear() === ymd.year &&
+      d.dateUtc.getUTCMonth() + 1 === ymd.month &&
+      d.dateUtc.getUTCDate() === ymd.day,
+  );
+  return { dayIdx, startHour, endHour };
+}
+
+/** External (Google/Outlook) events — real titles + per-calendar colour. */
+export function buildExternalLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  for (const e of data.externalEvents) {
+    placeBlock(
+      days,
+      data.timezone,
+      e.startIso,
+      e.endIso,
+      {
+        label: e.title,
+        className: e.color ? "" : EVENT_CORAL,
+        bgColor: e.color ?? undefined,
+        borderClassName: e.color ? undefined : "border-accent-coral-light",
+        location: e.location,
+        description: e.description,
+        organizerName: e.organizerName,
+        attendees: e.attendees,
+        links: e.links,
+      },
+      into,
+    );
+  }
+  return into;
+}
+
+/** The user's own manual availability blocks. */
+export function buildBlocksLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  for (const b of data.manualBlocks) {
+    placeBlock(
+      days,
+      data.timezone,
+      b.startTime,
+      b.endTime,
+      { label: b.title || "Busy", className: EVENT_CORAL, borderClassName: "border-accent-coral-light" },
+      into,
+    );
+  }
+  return into;
+}
+
+/** Meeting invites — clickable RSVP blocks styled by response state. The meeting
+ *  metadata (onTimesheet / Core-meeting) drives the detail popover toggles. */
+export function buildMeetingsLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  const meetingIdsOnTimesheet = new Set(
+    data.timeEntries.flatMap((t) => (t.scheduledMeetingId ? [t.scheduledMeetingId] : [])),
+  );
+  for (const inv of data.meetingInvites) {
+    const style = meetingBlockStyle(inv.rsvp);
+    placeBlock(
+      days,
+      data.timezone,
+      inv.startIso,
+      inv.endIso,
+      {
+        label: inv.title,
+        className: style.className,
+        borderClassName: style.borderClassName,
+        organizerName: inv.organizerName ?? undefined,
+        attendees: inv.attendees,
+        meeting: {
+          notificationId: inv.notificationId,
+          meetingId: inv.meetingId,
+          rsvp: inv.rsvp,
+          notePageId: inv.notePageId,
+          onTimesheet: meetingIdsOnTimesheet.has(inv.meetingId),
+          isCoreMeeting: inv.isCoreMeeting,
+          canMarkCoreMeeting: data.canMarkCoreMeeting,
+        },
+      },
+      into,
+    );
+  }
+  return into;
+}
+
+/** A time entry resolved to a concrete ISO range: its real times when set,
+ *  else a nominal same-day slot so untimed entries still render somewhere. */
+export function timeEntryRange(t: TimeEntryDTO, timezone: string): { startIso: string; endIso: string } {
+  return t.startTime && t.endTime
+    ? { startIso: t.startTime, endIso: t.endTime }
+    : nominalDayRange(t.date, t.hours, timezone);
+}
+
+/** Logged-time layer — role-coloured TimeEntry blocks. `excludedRoleKeys` hides
+ *  filtered role buckets; `onEntryClick` (optional) makes each block open its
+ *  editor. Mirrors the Timesheet grid: work hours only (Block-sourced entries
+ *  already stand in for work-marked manual blocks, so blocks aren't re-drawn). */
+export function buildLoggedTimeLayer(
+  data: LoaderData,
+  days: GridDay[],
+  opts: {
+    excludedRoleKeys?: Set<string>;
+    onEntryClick?: (t: TimeEntryDTO, startIso: string, endIso: string) => void;
+  } = {},
+): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  for (const t of data.timeEntries) {
+    const roleKey = timeEntryRoleKey(t);
+    if (opts.excludedRoleKeys?.has(roleKey)) continue;
+    const { startIso, endIso } = timeEntryRange(t, data.timezone);
+    const color = roleColor(roleKey);
+    placeBlock(
+      days,
+      data.timezone,
+      startIso,
+      endIso,
+      {
+        label: t.source === "Meeting" ? t.note || "Meeting" : t.note || "Time entry",
+        className: color.className,
+        borderClassName: color.borderClassName,
+        onClick: opts.onEntryClick ? () => opts.onEntryClick!(t, startIso, endIso) : undefined,
+      },
+      into,
+    );
+  }
+  return into;
+}
+
+/** Merge several layers' day-bucketed blocks into one map for a single grid. */
+export function mergeLayers(...layers: Record<number, EventBlock[]>[]): Record<number, EventBlock[]> {
+  const out: Record<number, EventBlock[]> = {};
+  for (const layer of layers) {
+    for (const [dayIdx, blocks] of Object.entries(layer)) {
+      const idx = Number(dayIdx);
+      if (!out[idx]) out[idx] = [];
+      out[idx].push(...blocks);
+    }
+  }
+  return out;
+}
+
+/** One swatch per enabled, coloured sub-calendar — the layer panel's color key
+ *  for linked calendars. Deduped by colour. */
+export function externalCalendarLegend(data: LoaderData): { swatch: string; label: string }[] {
+  const legend: { swatch: string; label: string }[] = [];
+  const seen = new Set<string>();
+  for (const link of data.calendarLinks) {
+    for (const sub of link.subCalendars ?? []) {
+      if (sub.enabled && sub.color && !seen.has(sub.color)) {
+        seen.add(sub.color);
+        legend.push({ swatch: sub.color, label: sub.summary });
+      }
+    }
+  }
+  return legend;
+}
+
+/** Role buckets present across the pay period, with hours totalled — feeds the
+ *  logged-time summary rail + filter chips. Mirrors the Timesheet grid's
+ *  bucketing (seed from what's drawn, total the whole period into it). */
+export function computeRoleBuckets(
+  data: LoaderData,
+  periodEntries: TimeEntryDTO[],
+  drawnEntries: TimeEntryDTO[],
+): { key: string; label: string; hours: number }[] {
+  const buckets = new Map<string, { key: string; label: string; hours: number }>();
+  const labelFor = (t: TimeEntryDTO) => {
+    const known =
+      t.assignmentType && t.roleRefId
+        ? data.myRoles.find((r) => r.assignmentType === t.assignmentType && r.roleRefId === t.roleRefId)
+        : undefined;
+    return known?.label ?? (timeEntryRoleKey(t) === UNASSIGNED_ROLE_KEY ? "Unassigned" : "Other role");
+  };
+  for (const t of drawnEntries) {
+    const key = timeEntryRoleKey(t);
+    if (!buckets.has(key)) buckets.set(key, { key, label: labelFor(t), hours: 0 });
+  }
+  for (const t of periodEntries) {
+    const key = timeEntryRoleKey(t);
+    const existing = buckets.get(key);
+    if (existing) existing.hours += t.hours;
+    else buckets.set(key, { key, label: labelFor(t), hours: t.hours });
+  }
+  return [...buckets.values()];
+}

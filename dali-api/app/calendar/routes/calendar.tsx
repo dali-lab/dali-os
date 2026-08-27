@@ -71,6 +71,58 @@ import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
+import type {
+  WhSegment,
+  WhDay,
+  ManualBlockDTO,
+  SubCalendarDTO,
+  CalendarLinkDTO,
+  GroupOption,
+  UserOption,
+  ProjectOption,
+  TimeEntryDTO,
+  MeetingInviteDTO,
+  EventAttendeeDTO,
+  EventLinkDTO,
+  LoaderData,
+  EventBlock,
+  GroupAvailDay,
+  PerUserFree,
+  GroupAvailResponse,
+  CalendarView,
+} from "~/calendar/lib/types";
+import {
+  EVENT_TEXT, EVENT_CORAL, AVAIL_DEEP_GREEN, availabilityTint,
+  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  RSVP_BADGE, DAY_KEYS, DAY_LABELS, ATTENDEE_DOT, GUESTS_COLLAPSED, STRIPE_STYLE,
+  durationMinutesBetween, toDatetimeLocal, dayHourToLocal,
+  ROLE_COLOR_PALETTE, UNASSIGNED_ROLE_KEY, roleColor, timeEntryRoleKey,
+  meetingBlockStyle, readableTextColor,
+  nominalDayRange, localDayTimeToIso, todayDateInputValue,
+  formatHour, formatHourMinute, formatBlockRange, shiftWeekParam,
+} from "~/calendar/lib/event-block";
+import {
+  WeekGrid, WeekGridEvent, useNow, useRefreshOnFocus,
+  workingHoursStripeLayer, DayBg, BlockBlock,
+  SelectionPopoverPortal, CalendarEventDetailPopover,
+  MeetingDetailToggles, EventGuestList,
+} from "~/calendar/components/WeekGrid";
+import {
+  buildGridDays,
+  buildExternalLayer,
+  buildBlocksLayer,
+  buildMeetingsLayer,
+  buildLoggedTimeLayer,
+  mergeLayers,
+  externalCalendarLegend,
+  computeRoleBuckets,
+  timeEntryRange,
+  toGridRange,
+  DEFAULT_LAYER_VISIBILITY,
+  type LayerVisibility,
+  type GridDay,
+} from "~/calendar/lib/layers";
+import { MonthGrid } from "~/calendar/components/MonthGrid";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -86,160 +138,9 @@ const DEFAULT_BUFFER_MIN = 15;
 const DEFAULT_WORK_START_MIN = 9 * 60;
 const DEFAULT_WORK_END_MIN = 17 * 60;
 
-type WhSegment = {
-  id: string;
-  startMinute: number;
-  endMinute: number;
-  location: "InPerson" | "Remote";
-};
-
-type WhDay = {
-  dayOfWeek: number;
-  segments: WhSegment[];
-};
-
-type ManualBlockDTO = {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  recurrenceRule: string | null;
-  isWork: boolean;
-  assignmentType: RoleInstance["assignmentType"] | null;
-  roleRefId: string | null;
-};
-
-type SubCalendarDTO = {
-  id: string;
-  summary: string;
-  primary: boolean;
-  color: string | null;
-  enabled: boolean;
-};
-
-type CalendarLinkDTO = {
-  id: string;
-  provider: "Google" | "Outlook";
-  externalEmail: string;
-  displayName: string | null;
-  enabled: boolean;
-  primary: boolean;
-  syncError: string | null;
-  // null when the upstream list call failed; the UI shows a degraded card.
-  subCalendars: SubCalendarDTO[] | null;
-};
-
-type GroupOption = {
-  id: string;
-  name: string;
-  // Resolved members for this group at load time (either explicit static list
-  // or the resolved Dynamic membership). The picker treats both uniformly.
-  memberIds: string[];
-  // Derived from dynamicQuery ("project:<id>") for system-managed project
-  // groups (see ensureProjectGroup in ~/lib/groups.ts). Lets the Schedule
-  // Meeting form prefill the Project picker when such a group is selected.
-  projectId: string | null;
-};
-
-type UserOption = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  daliEmail: string | null;
-};
-
-type ProjectOption = { id: string; name: string };
-
-type TimeEntryDTO = {
-  id: string;
-  source: "Meeting" | "Manual" | "Block";
-  scheduledMeetingId: string | null;
-  manualBlockId: string | null;
-  meetingNotePageId: string | null;
-  assignmentType: RoleInstance["assignmentType"] | null;
-  roleRefId: string | null;
-  projectId: string | null;
-  date: string;
-  hours: number;
-  note: string | null;
-  // Set when this entry has a precise time range (meeting-sourced, or a
-  // manual entry created by dragging on the Timesheet week grid). Null for
-  // entries added via the plain date+hours form — those don't render as a
-  // grid block.
-  startTime: string | null;
-  endTime: string | null;
-};
-
-type LoaderData = {
-  timezone: string;
-  defaultEventBufferMin: number;
-  workingHours: WhDay[];
-  // True once the user has saved any working-hours state (even "all off"). The
-  // client uses this to (a) show the master toggle as off for brand-new users
-  // and (b) seed the full week on first edit so unsaved defaults aren't lost.
-  hasPersistedWorkingHours: boolean;
-  manualBlocks: ManualBlockDTO[];
-  calendarLinks: CalendarLinkDTO[];
-  generalCalendar: GeneralCalendarState;
-  weekStartIso: string;
-  weekEndIso: string;
-  // External (Google) events for display: real titles + per-calendar colour,
-  // straight from events.list (not the merged availability intervals, which
-  // drop titles). Manual blocks render separately from data.manualBlocks.
-  externalEvents: {
-    startIso: string;
-    endIso: string;
-    title: string;
-    color: string | null;
-    description?: string;
-    location?: string;
-    organizerName?: string;
-    attendees?: EventAttendeeDTO[];
-    /** { label, href } pairs for the detail popover (Meet link, Google page). */
-    links?: EventLinkDTO[];
-  }[];
-  ingestionError: string | null;
-  groups: GroupOption[];
-  users: UserOption[];
-  currentUserId: string;
-  myProjects: ProjectOption[];
-  myRoles: RoleInstance[];
-  timeEntries: TimeEntryDTO[];
-  /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */
-  canSetSelfCheckIn: boolean;
-  /** Core — can mark a meeting as a Core meeting (shows on the Core hub calendar). */
-  canMarkCoreMeeting: boolean;
-  // Scheduled meetings the viewer was invited to whose start falls in the
-  // visible week. Rendered as RSVP-able blocks on the My Availability grid so
-  // Accept/Maybe/Decline is available in the calendar, not just in tasks.
-  // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
-  // Notification, not on MeetingAttendance).
-  meetingInvites: MeetingInviteDTO[];
-};
-
-type MeetingInviteDTO = {
-  notificationId: string;
-  meetingId: string;
-  title: string;
-  startIso: string;
-  endIso: string;
-  rsvp: "Accepted" | "Declined" | "Tentative" | null;
-  notePageId: string | null;
-  organizerName: string | null;
-  attendees: EventAttendeeDTO[];
-  /** Drives the detail popover's "Core meeting" checkbox (Core viewers only). */
-  isCoreMeeting: boolean;
-};
-
-/** One invitee row in an event's detail popover, from either source. */
-type EventAttendeeDTO = {
-  name: string;
-  status: "Accepted" | "Declined" | "Tentative" | "Pending";
-  organizer?: boolean;
-  optional?: boolean;
-};
-
-type EventLinkDTO = { label: string; href: string };
+// Data DTOs, EventBlock, and group-availability types live in
+// ~/calendar/lib/types (imported above) so the extracted components and the
+// unified screen can share them without importing this server-coupled route.
 
 // Google's responseStatus vocabulary → the labels the detail popover shows,
 // shared with the DALI-native RSVP wording so one guest list reads the same
@@ -303,6 +204,33 @@ function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date }
     timezone,
   );
   return { start, end };
+}
+
+function parseView(v: string | null): CalendarView {
+  return v === "day" || v === "month" ? v : "week";
+}
+
+// Window for the unified screen's active view. Day = the anchor's calendar day;
+// Week = weekWindow (Sun..Sun); Month = the Sunday on/before the 1st .. the
+// Sunday after the last day (the 5–6 week month grid). Boundaries snap through
+// zonedDayStartUtc so they stay DST-correct in the user's timezone, matching
+// weekWindow.
+function viewWindow(timezone: string, view: CalendarView, anchor?: Date): { start: Date; end: Date } {
+  if (view === "week") return weekWindow(timezone, anchor);
+  const ymd = getZonedYMD(anchor ?? new Date(), timezone);
+  const snap = (utcMidnight: Date) =>
+    zonedDayStartUtc(utcMidnight.getUTCFullYear(), utcMidnight.getUTCMonth() + 1, utcMidnight.getUTCDate(), timezone);
+  if (view === "day") {
+    const start = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
+    const end = snap(new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day) + 86_400_000));
+    return { start, end };
+  }
+  // month
+  const firstUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, 1));
+  const gridStartUtc = new Date(firstUtc.getTime() - firstUtc.getUTCDay() * 86_400_000);
+  const lastUtc = new Date(Date.UTC(ymd.year, ymd.month, 0)); // day 0 of next month = this month's last day
+  const gridEndUtc = new Date(lastUtc.getTime() + (7 - lastUtc.getUTCDay()) * 86_400_000); // Sunday after the last day
+  return { start: snap(gridStartUtc), end: snap(gridEndUtc) };
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -433,21 +361,29 @@ export async function loader({ request }: Route.LoaderArgs) {
   // local Y/M/D in any of the timezones we support (i.e. not split across
   // midnight on either side).
   const url = new URL(request.url);
-  const weekStartParam = url.searchParams.get("weekStart");
+  // `?anchor=` is the unified screen's date param; `?weekStart=` is the legacy
+  // week-nav param (still honored). Either anchors the visible range.
+  const anchorParam = url.searchParams.get("anchor") ?? url.searchParams.get("weekStart");
   let anchor: Date | undefined;
-  if (weekStartParam) {
-    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekStartParam);
+  if (anchorParam) {
+    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(anchorParam);
     if (ymdMatch) {
       const y = Number(ymdMatch[1]);
       const m = Number(ymdMatch[2]);
       const d = Number(ymdMatch[3]);
       anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
     } else {
-      const parsed = new Date(weekStartParam);
+      const parsed = new Date(anchorParam);
       if (!isNaN(parsed.getTime())) anchor = parsed;
     }
   }
+  const view = parseView(url.searchParams.get("view"));
+  // The containing week (back-compat: weekStartIso + the timesheet lower bound).
   const { start: weekStart, end: weekEnd } = weekWindow(timezone, anchor);
+  // The range the unified screen actually shows — equal to the week window in
+  // week view, wider in month view, one day in day view. Drives the event +
+  // meeting fetch so month view has a month of data.
+  const { start: rangeStart, end: rangeEnd } = viewWindow(timezone, view, anchor);
 
   // Rolling lower bound for time entries: keep ~8 weeks back from the visible
   // week so the timesheet prefill form has ample recent entries to copy from,
@@ -530,7 +466,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   let ingestionError: string | null = null;
   const [externalBusyRaw, calendarLinks, inviteRows] = await Promise.all([
-    fetchBusyEvents(userId, weekStart, weekEnd, prefetchedCalendarLists, prefetchedTokens).catch((err) => {
+    fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens).catch((err) => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
       return [] as Awaited<ReturnType<typeof fetchBusyEvents>>;
     }),
@@ -577,7 +513,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         scheduledMeetingId: { not: null },
         scheduledMeeting: {
           status: { not: "Cancelled" },
-          selectedAt: { gte: weekStart, lt: weekEnd },
+          selectedAt: { gte: rangeStart, lt: rangeEnd },
         },
       },
       select: {
@@ -683,6 +619,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     generalCalendar,
     weekStartIso: weekStart.toISOString(),
     weekEndIso: weekEnd.toISOString(),
+    view,
+    rangeStartIso: rangeStart.toISOString(),
+    rangeEndIso: rangeEnd.toISOString(),
     externalEvents: externalBusyRaw.map((e) => ({
       startIso: e.start,
       endIso: e.end,
@@ -1350,6 +1289,11 @@ const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-c
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
+  const unified = useFeatureFlag("calendar-unified");
+  return unified ? <CalendarScreen data={data} /> : <LegacyCalendarTabs data={data} />;
+}
+
+function LegacyCalendarTabs({ data }: { data: LoaderData }) {
   const { os } = useOsChrome();
   const [searchParams] = useSearchParams();
   // Persist the active tab in sessionStorage so navigating away and back
@@ -1414,6 +1358,643 @@ export default function CalendarPage() {
       {tab === "availability" && <AvailabilityView data={data} />}
       {tab === "schedule" && <ScheduleView data={data} />}
       {tab === "timesheet" && <TimesheetView data={data} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Unified calendar (behind the `calendar-unified` flag)               */
+/* ------------------------------------------------------------------ */
+
+const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
+const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day" };
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function ymdUtc(d: Date) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+// One screen, three views, toggleable colored layers. Scheduling and timesheet
+// are reachable from the Create menu (they reuse the existing Schedule/Timesheet
+// UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
+// (?tab=schedule|timesheet) translate to the matching mode/layer.
+function CalendarScreen({ data }: { data: LoaderData }) {
+  const { os, panel } = useOsChrome();
+  const revalidator = useRevalidator();
+  const refresh = () => revalidator.revalidate();
+  useRefreshOnFocus(refresh);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [mode, setMode] = useState<"browse" | "meeting" | "timesheet">(() => {
+    const t = searchParams.get("tab");
+    if (t === "schedule") return "meeting";
+    if (t === "timesheet") return "timesheet";
+    return "browse";
+  });
+
+  const [layers, setLayers] = useState<LayerVisibility>(() => {
+    const base: LayerVisibility = { ...DEFAULT_LAYER_VISIBILITY };
+    if (searchParams.get("tab") === "timesheet") base.logged = true;
+    if (typeof window === "undefined") return base;
+    try {
+      const stored = window.localStorage.getItem(CALENDAR_LAYERS_KEY);
+      if (stored) return { ...base, ...(JSON.parse(stored) as Partial<LayerVisibility>) };
+    } catch {
+      /* ignore */
+    }
+    return base;
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CALENDAR_LAYERS_KEY, JSON.stringify(layers));
+    } catch {
+      /* ignore */
+    }
+  }, [layers]);
+  const toggleLayer = (key: keyof LayerVisibility) => setLayers((p) => ({ ...p, [key]: !p[key] }));
+
+  const [excludedRoleKeys, setExcludedRoleKeys] = useState<Set<string>>(new Set());
+  const toggleRoleKey = (key: string) =>
+    setExcludedRoleKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const [createOpen, setCreateOpen] = useState(false);
+  // One grid editor slot, shared by drag-to-create (a new block/entry) and
+  // click-to-edit (an existing logged-time block). The active layer/action
+  // decides which the drag means; a logged block click always edits.
+  type CalendarEditor =
+    | { kind: "create"; dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string }
+    | {
+        kind: "edit";
+        entry: TimeEntryDTO;
+        dayIdx: number;
+        startHour: number;
+        endHour: number;
+        startLocal: string;
+        endLocal: string;
+      };
+  const [editor, setEditor] = useState<CalendarEditor | null>(null);
+
+  const view = data.view;
+  const rangeStart = new Date(data.rangeStartIso);
+  const dayCount = Math.max(
+    1,
+    Math.round((new Date(data.rangeEndIso).getTime() - rangeStart.getTime()) / 86_400_000),
+  );
+  const days = buildGridDays(data.rangeStartIso, dayCount);
+  // The date the view is centered on (prev/next math + the month label). For
+  // month view rangeStart is the Sunday before the 1st, so +14d lands mid-month.
+  const focusDate = view === "month" ? new Date(rangeStart.getTime() + 14 * 86_400_000) : rangeStart;
+  const anchorMonth = { year: focusDate.getUTCFullYear(), month: focusDate.getUTCMonth() + 1 };
+
+  const setParams = (mut: (p: URLSearchParams) => void) =>
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        mut(p);
+        return p;
+      },
+      { preventScrollReset: true },
+    );
+  const changeView = (v: CalendarView) =>
+    setParams((p) => {
+      p.set("view", v);
+      p.set("anchor", ymdUtc(focusDate));
+      p.delete("weekStart");
+    });
+  const navigate = (delta: number) => {
+    const d = new Date(focusDate);
+    if (view === "day") d.setUTCDate(d.getUTCDate() + delta);
+    else if (view === "week") d.setUTCDate(d.getUTCDate() + delta * 7);
+    else d.setUTCMonth(d.getUTCMonth() + delta);
+    setParams((p) => {
+      p.set("view", view);
+      p.set("anchor", ymdUtc(d));
+      p.delete("weekStart");
+    });
+  };
+  const goToday = () =>
+    setParams((p) => {
+      p.set("view", view);
+      p.delete("anchor");
+      p.delete("weekStart");
+    });
+  const goToDay = (dateUtc: Date) =>
+    setParams((p) => {
+      p.set("view", "day");
+      p.set("anchor", ymdUtc(dateUtc));
+      p.delete("weekStart");
+    });
+
+  const layerMaps: Record<number, EventBlock[]>[] = [];
+  if (layers.external) layerMaps.push(buildExternalLayer(data, days));
+  if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days));
+  if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days));
+  if (layers.logged)
+    layerMaps.push(
+      buildLoggedTimeLayer(data, days, {
+        excludedRoleKeys,
+        onEntryClick: (t, startIso, endIso) => {
+          const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
+          const day = days[dayIdx];
+          if (!day) return;
+          setEditor({
+            kind: "edit",
+            entry: t,
+            dayIdx,
+            startHour,
+            endHour,
+            startLocal: dayHourToLocal(day.dateUtc, startHour),
+            endLocal: dayHourToLocal(day.dateUtc, endHour),
+          });
+        },
+      }),
+    );
+  const eventsByDay = mergeLayers(...layerMaps);
+
+  // Logged-time summary: hours per role across the pay period the visible week
+  // belongs to (matches the Timesheet grid's period totals).
+  const weekPeriod = payPeriodFor(new Date(data.weekStartIso));
+  const periodEntries = data.timeEntries.filter(
+    (t) => payPeriodFor(timeEntryDayUtc(t, data.timezone)).index === weekPeriod.index,
+  );
+  const rangeEndMs = new Date(data.rangeEndIso).getTime();
+  const drawnEntries = data.timeEntries.filter((t) => {
+    const start = new Date(timeEntryRange(t, data.timezone).startIso).getTime();
+    return start >= rangeStart.getTime() && start < rangeEndMs;
+  });
+  const roleBuckets = computeRoleBuckets(data, periodEntries, drawnEntries);
+
+  const df = (d: Date, opts: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, ...opts }).format(d);
+  let rangeLabel: string;
+  if (view === "day") rangeLabel = df(focusDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  else if (view === "month") rangeLabel = df(focusDate, { month: "long", year: "numeric" });
+  else {
+    const last = days[days.length - 1].dateUtc;
+    rangeLabel = `${df(rangeStart, { month: "short", day: "numeric" })} – ${df(last, {
+      month: "short",
+      day: "numeric",
+    })}, ${df(last, { year: "numeric" })}`;
+  }
+
+  const navBtn =
+    "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
+
+  return (
+    <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
+      <header className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={goToday}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+          >
+            Today
+          </button>
+          <button type="button" className={navBtn} onClick={() => navigate(1)} aria-label="Next">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
+
+        <div className="ml-auto flex items-center gap-2">
+          {mode === "browse" && (
+            <div className="inline-flex rounded-lg bg-muted p-0.5">
+              {(["month", "week", "day"] as CalendarView[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => changeView(v)}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                    v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setCreateOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
+            >
+              <Plus className="h-4 w-4" /> New <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {createOpen && (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-40 cursor-default"
+                  aria-hidden
+                  onClick={() => setCreateOpen(false)}
+                  tabIndex={-1}
+                />
+                <div className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                    onClick={() => {
+                      setMode("meeting");
+                      setCreateOpen(false);
+                    }}
+                  >
+                    <CalendarPlus className="h-4 w-4 text-muted-foreground" /> New meeting
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                    onClick={() => {
+                      setLayers((p) => ({ ...p, logged: true }));
+                      setMode("timesheet");
+                      setCreateOpen(false);
+                    }}
+                  >
+                    <Clock className="h-4 w-4 text-muted-foreground" /> Log time
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {mode === "meeting" ? (
+        <section className="flex flex-col gap-3">
+          <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
+          <MeetingComposer data={data} />
+        </section>
+      ) : mode === "timesheet" ? (
+        <section className="flex flex-col gap-3">
+          <BackToCalendarBar label="Timesheet" onBack={() => setMode("browse")} />
+          <TimesheetView data={data} />
+        </section>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 lg:grid-cols-[300px_1fr]">
+          <CalendarLayerPanel
+            data={data}
+            layers={layers}
+            toggleLayer={toggleLayer}
+            legend={externalCalendarLegend(data)}
+            roleBuckets={layers.logged ? roleBuckets : []}
+            excludedRoleKeys={excludedRoleKeys}
+            toggleRoleKey={toggleRoleKey}
+          />
+          <div className="lg:flex lg:flex-col lg:overflow-hidden lg:min-h-0">
+            <section className={cn(panel, "flex flex-col p-3 lg:flex-1 lg:min-h-0")}>
+              {view === "month" ? (
+                <MonthGrid
+                  days={days}
+                  eventsByDay={eventsByDay}
+                  anchorMonth={anchorMonth}
+                  timezone={data.timezone}
+                  onSelectDay={goToDay}
+                />
+              ) : (
+                <WeekGrid
+                  fillAndScroll
+                  days={days}
+                  showProviderRow
+                  showSubHourGrid
+                  timezone={data.timezone}
+                  markPayPeriodEnds={layers.logged}
+                  backgroundLayer={(dayIdx) =>
+                    layers.workingHours
+                      ? workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {
+                          enabled: data.hasPersistedWorkingHours,
+                        })
+                      : null
+                  }
+                  eventsByDay={eventsByDay}
+                  onDayPointerSelect={(dayIdx, startHour, endHour) => {
+                    const day = days[dayIdx];
+                    if (!day) return;
+                    setEditor({
+                      kind: "create",
+                      dayIdx,
+                      startHour,
+                      endHour,
+                      startLocal: dayHourToLocal(day.dateUtc, startHour),
+                      endLocal: dayHourToLocal(day.dateUtc, endHour),
+                    });
+                  }}
+                  selection={
+                    editor ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour } : null
+                  }
+                  selectionPopover={
+                    editor
+                      ? () =>
+                          editor.kind === "edit" ? (
+                            <TimesheetEditPopover
+                              entry={editor.entry}
+                              startLocal={editor.startLocal}
+                              endLocal={editor.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setEditor(null)}
+                            />
+                          ) : (
+                            <CreateFromDragPopover
+                              startLocal={editor.startLocal}
+                              endLocal={editor.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setEditor(null)}
+                            />
+                          )
+                      : undefined
+                  }
+                  onSelectionDismiss={() => setEditor(null)}
+                  onSelectionResize={(startHour, endHour) =>
+                    setEditor((prev) => {
+                      if (!prev) return prev;
+                      const day = days[prev.dayIdx];
+                      if (!day) return prev;
+                      return {
+                        ...prev,
+                        startHour,
+                        endHour,
+                        startLocal: dayHourToLocal(day.dateUtc, startHour),
+                        endLocal: dayHourToLocal(day.dateUtc, endHour),
+                      };
+                    })
+                  }
+                />
+              )}
+            </section>
+            {layers.logged && (
+              <TimesheetSummaryRail
+                roleBuckets={roleBuckets}
+                periodLabel={formatPayPeriod(weekPeriod, data.timezone)}
+                onFocus={() => setMode("timesheet")}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <ChevronLeft className="h-4 w-4" /> Calendar
+      </button>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+    </div>
+  );
+}
+
+// Scheduling as an on-grid overlay: the group free/busy gradient grid on the
+// left (drag to pick a slot), the meeting form docked on the right. Reuses the
+// existing ScheduleWeekGrid + CreateScheduledMeetingForm — the same wiring as
+// the legacy Schedule tab, re-laid-out to sit beside the grid. Week-scoped
+// (scheduling happens within a week); the toolbar's week nav still applies.
+function MeetingComposer({ data }: { data: LoaderData }) {
+  const [searchParams] = useSearchParams();
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
+    const projectParam = searchParams.get("project");
+    if (!projectParam) return [];
+    const g = data.groups.find((grp) => grp.projectId === projectParam);
+    return g ? [g.id] : [];
+  });
+  const [startLocal, setStartLocal] = useState<string>("");
+  const [endLocal, setEndLocal] = useState<string>("");
+
+  const groupsById = new Map(data.groups.map((g) => [g.id, g]));
+  const resolvedParticipantIds = (() => {
+    const set = new Set<string>(selectedUserIds);
+    for (const gid of selectedGroupIds) {
+      const g = groupsById.get(gid);
+      if (g) for (const uid of g.memberIds) set.add(uid);
+    }
+    return Array.from(set);
+  })();
+  const duration = durationMinutesBetween(startLocal, endLocal);
+
+  return (
+    <div className="grid min-w-0 gap-4 lg:min-h-[calc(100vh-11rem)] lg:grid-cols-[1fr_390px]">
+      <div className="order-2 min-w-0 lg:order-1">
+        <ScheduleWeekGrid
+          participantIds={
+            resolvedParticipantIds.length > 0
+              ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
+              : [data.currentUserId]
+          }
+          showingSelfOnly={resolvedParticipantIds.length === 0}
+          users={data.users}
+          workingHours={data.workingHours}
+          workingHoursEnabled={data.hasPersistedWorkingHours}
+          durationMinutes={duration}
+          timezone={data.timezone}
+          weekStartIso={data.weekStartIso}
+          weekEndIso={data.weekEndIso}
+          onSelectRange={(s, e) => {
+            setStartLocal(s);
+            setEndLocal(e);
+          }}
+          selectedStartLocal={startLocal}
+          selectedEndLocal={endLocal}
+        />
+      </div>
+      <aside className="order-1 min-w-0 lg:order-2">
+        <CreateScheduledMeetingForm
+          groups={data.groups}
+          users={data.users}
+          calendarLinks={data.calendarLinks}
+          myProjects={data.myProjects}
+          canSetSelfCheckIn={data.canSetSelfCheckIn}
+          canMarkCoreMeeting={data.canMarkCoreMeeting}
+          startLocal={startLocal}
+          onStartLocalChange={setStartLocal}
+          endLocal={endLocal}
+          onEndLocalChange={setEndLocal}
+          selectedUserIds={selectedUserIds}
+          onChangeSelectedUserIds={setSelectedUserIds}
+          selectedGroupIds={selectedGroupIds}
+          onChangeSelectedGroupIds={setSelectedGroupIds}
+          resolvedParticipantIds={resolvedParticipantIds}
+        />
+      </aside>
+    </div>
+  );
+}
+
+type CalendarLayerSpec = {
+  key: keyof LayerVisibility;
+  label: string;
+  swatch: string;
+};
+
+const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
+  { key: "workingHours", label: "Working hours", swatch: "bg-muted-foreground/40" },
+  { key: "blocks", label: "My blocks", swatch: "bg-accent-coral" },
+  { key: "external", label: "Linked calendars", swatch: "bg-accent-teal-light" },
+  { key: "meetings", label: "Meetings", swatch: "bg-accent-teal" },
+  { key: "logged", label: "Logged time", swatch: "bg-accent-yellow" },
+];
+
+function CalendarLayerPanel({
+  data,
+  layers,
+  toggleLayer,
+  legend,
+  roleBuckets,
+  excludedRoleKeys,
+  toggleRoleKey,
+}: {
+  data: LoaderData;
+  layers: LayerVisibility;
+  toggleLayer: (key: keyof LayerVisibility) => void;
+  legend: { swatch: string; label: string }[];
+  roleBuckets: { key: string; label: string; hours: number }[];
+  excludedRoleKeys: Set<string>;
+  toggleRoleKey: (key: string) => void;
+}) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  return (
+    <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2">
+      <div>
+        <h2 className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calendars</h2>
+        <ul className="flex flex-col gap-0.5">
+          {CALENDAR_LAYER_SPECS.map((spec) => {
+            const on = layers[spec.key];
+            return (
+              <li key={spec.key}>
+                <button
+                  type="button"
+                  onClick={() => toggleLayer(spec.key)}
+                  aria-pressed={on}
+                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                >
+                  <span
+                    className={cn(
+                      "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
+                      on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
+                    )}
+                  >
+                    {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
+                  </span>
+                  <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
+                </button>
+                {/* Linked-calendar colour key */}
+                {spec.key === "external" && on && legend.length > 0 && (
+                  <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-1">
+                    {legend.map((c) => (
+                      <li key={c.swatch} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: c.swatch }} />
+                        <span className="truncate">{c.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* Role filter chips nested under Logged time */}
+                {spec.key === "logged" && on && roleBuckets.length > 0 && (
+                  <ul className="mb-1 ml-8 mt-1 flex flex-wrap gap-1">
+                    {roleBuckets.map((b) => {
+                      const excluded = excludedRoleKeys.has(b.key);
+                      const color = roleColor(b.key);
+                      return (
+                        <li key={b.key}>
+                          <button
+                            type="button"
+                            onClick={() => toggleRoleKey(b.key)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                              excluded ? "border-border text-muted-foreground line-through" : "border-border text-foreground",
+                            )}
+                          >
+                            <span className={cn("h-2 w-2 rounded-full", color.dot)} />
+                            {b.label}
+                            <span className="text-muted-foreground">{b.hours}h</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="border-t border-border pt-2">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((o) => !o)}
+          className="flex w-full items-center gap-1.5 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", settingsOpen ? "" : "-rotate-90")} />
+          Settings
+        </button>
+        {settingsOpen && (
+          <div className="mt-3 flex flex-col gap-6">
+            <CalendarIntegrationsCard
+              links={data.calendarLinks}
+              ingestionError={data.ingestionError}
+              generalCalendar={data.generalCalendar}
+            />
+            <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
+            <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
+            <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function TimesheetSummaryRail({
+  roleBuckets,
+  periodLabel,
+  onFocus,
+}: {
+  roleBuckets: { key: string; label: string; hours: number }[];
+  periodLabel: string;
+  onFocus: () => void;
+}) {
+  const total = roleBuckets.reduce((sum, b) => sum + b.hours, 0);
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+      <span className="text-muted-foreground">
+        Logged time · pay period <span className="font-medium text-foreground">{periodLabel}</span>
+      </span>
+      <span className="font-semibold text-foreground">{Math.round(total * 10) / 10}h</span>
+      {roleBuckets.length > 0 && (
+        <span className="text-xs text-muted-foreground">
+          {roleBuckets.map((b, i) => (
+            <span key={b.key}>
+              {i > 0 && " · "}
+              {b.label} {Math.round(b.hours * 10) / 10}h
+            </span>
+          ))}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onFocus}
+        className="ml-auto rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+      >
+        Focus
+      </button>
     </div>
   );
 }
@@ -1871,8 +2452,6 @@ function WorkingHoursCard({
   );
 }
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 type LocalSegment = { startMinute: number; endMinute: number; location: "InPerson" | "Remote" };
 
 function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
@@ -2320,25 +2899,9 @@ function ManualBlockRow({ block, timezone }: { block: ManualBlockDTO; timezone: 
   );
 }
 
-function formatBlockRange(startIso: string, endIso: string, timezone: string): string {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(start);
-  const t = (d: Date) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
-  return `${date} · ${t(start)} – ${t(end)}`;
-}
-
 /* ------------------------------------------------------------------ */
 /* Week grids                                                          */
 /* ------------------------------------------------------------------ */
-
-function shiftWeekParam(weekStartIso: string, weeks: number): string {
-  const d = new Date(weekStartIso);
-  d.setUTCDate(d.getUTCDate() + weeks * 7);
-  // YYYY-MM-DD is enough — the loader snaps to the Sunday of that week.
-  return d.toISOString().slice(0, 10);
-}
 
 function WeekToolbar({
   legend,
@@ -2423,48 +2986,6 @@ function WeekToolbar({
       </div>
     </div>
   );
-}
-
-// Visible hour rows: the full day, midnight through 11pm (grid bottom edge is
-// midnight). Every downstream bound derives from HOURS[0] / last+1.
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const HOUR_PX = 54;
-// When the grid scrolls internally, open it here (7 AM) instead of pinned to
-// midnight; the rest of the 24h day stays reachable by scrolling up/down.
-const INITIAL_SCROLL_HOUR = 7;
-// Grid is snapped/subdivided into 10-minute cells.
-const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
-const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
-
-// Refetch when the tab regains focus (visibilitychange covers tab switches,
-// focus covers window-level focus on browsers that don't fire visibilitychange
-// for window blur). Used so external Google Calendar edits show up without a
-// manual reload.
-function useRefreshOnFocus(refresh: () => void) {
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refresh]);
-}
-
-// Ticking "current time" used to draw the now-line. Returns null on the first
-// render so SSR and the initial client paint agree (no hydration mismatch),
-// then fills in after mount and re-ticks every `intervalMs`.
-function useNow(intervalMs = 60_000): Date | null {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
 }
 
 function AvailabilityWeekGrid({
@@ -2668,80 +3189,9 @@ function AvailabilityWeekGrid({
   );
 }
 
-// Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
-const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
-const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
-
-// Schedule-preview availability tint: interpolate from white (no one free) to a
-// deep sage (everyone free) by `frac` (0..1). Lerping the color itself — not
-// just opacity over a fixed light green — gives real contrast between the
-// "few free" and "all free" ends. Deep end is a darkened accent-green
-// (#A2D483) so it matches the brand palette while still reading clearly.
-const AVAIL_DEEP_GREEN: [number, number, number] = [92, 145, 72]; // #5C9148
-function availabilityTint(frac: number): string {
-  const f = Math.max(0, Math.min(1, frac));
-  const r = Math.round(255 + (AVAIL_DEEP_GREEN[0] - 255) * f);
-  const g = Math.round(255 + (AVAIL_DEEP_GREEN[1] - 255) * f);
-  const b = Math.round(255 + (AVAIL_DEEP_GREEN[2] - 255) * f);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 /* ------------------------------------------------------------------ */
 /* Schedule view                                                        */
 /* ------------------------------------------------------------------ */
-
-// datetime-local strings: "YYYY-MM-DDTHH:mm" in the user's local timezone.
-function durationMinutesBetween(startLocal: string, endLocal: string): number {
-  if (!startLocal || !endLocal) return 30;
-  const s = new Date(startLocal).getTime();
-  const e = new Date(endLocal).getTime();
-  if (isNaN(s) || isNaN(e) || e <= s) return 30;
-  return Math.round((e - s) / 60_000);
-}
-
-// Format a Date as the "YYYY-MM-DDTHH:mm" string a datetime-local input expects,
-// in the browser's local timezone (no UTC offset suffix).
-function toDatetimeLocal(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
-}
-
-// Map a grid day column (UTC-midnight anchored, as the WeekGrid stores its days)
-// + a fractional hour into the "YYYY-MM-DDTHH:mm" datetime-local string. Shared
-// by the schedule grid and the availability drag-to-create handler.
-function dayHourToLocal(dayDateUtc: Date, hour: number): string {
-  const y = dayDateUtc.getUTCFullYear();
-  const m = dayDateUtc.getUTCMonth();
-  const d = dayDateUtc.getUTCDate();
-  const h = Math.floor(hour);
-  const mins = Math.round((hour - h) * 60);
-  return toDatetimeLocal(new Date(y, m, d, h, mins));
-}
-
-// Small fixed palette for coloring Timesheet blocks by role — accent-coral is
-// reserved for "other calendars" context blocks, so it's excluded here.
-// All four fills are light brand accents, so they take the same dark ink every
-// other event block uses — white washed out on the green and pink, and
-// `text-foreground` inverted to near-white on the yellow in dark mode.
-const ROLE_COLOR_PALETTE: { className: string; borderClassName: string; dot: string }[] = [
-  { className: `bg-accent-teal ${EVENT_TEXT}`, borderClassName: "border-accent-teal", dot: "var(--color-accent-teal)" },
-  { className: `bg-accent-green ${EVENT_TEXT}`, borderClassName: "border-accent-green", dot: "var(--color-accent-green)" },
-  { className: `bg-accent-pink ${EVENT_TEXT}`, borderClassName: "border-accent-pink", dot: "var(--color-accent-pink)" },
-  { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow", dot: "var(--color-accent-yellow)" },
-];
-
-// Deterministic hash of a role bucket key into the palette — stable across
-// reloads/re-renders without needing to persist a color assignment anywhere.
-function roleColor(key: string): (typeof ROLE_COLOR_PALETTE)[number] {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  return ROLE_COLOR_PALETTE[Math.abs(hash) % ROLE_COLOR_PALETTE.length]!;
-}
-
-const UNASSIGNED_ROLE_KEY = "unassigned";
 
 // Shown wherever time can be logged but the user holds no paid role. Every
 // entry must attribute to one, so there's nothing valid to submit.
@@ -2753,10 +3203,6 @@ const NO_ROLES_MESSAGE =
 // native date/time widgets and the select spinner all differ, and by locale —
 // so equal padding does not produce equal heights. Pin them instead.
 const FIELD_BASE = "h-9 px-2 text-sm border";
-
-function timeEntryRoleKey(t: TimeEntryDTO): string {
-  return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
-}
 
 // Overlay-by-default, toggle-to-narrow chip row above the Timesheet grid —
 // mirrors SubCalendarRow's toggle-chip pattern but is a pure client-side
@@ -3148,42 +3594,6 @@ function ScheduleView({ data }: { data: LoaderData }) {
 function userLabel(u: UserOption) {
   const name = fullName(u);
   return name || u.daliEmail || u.id;
-}
-
-// Given a calendar day (any value whose UTC Y/M/D is the intended day — a
-// plain "YYYY-MM-DD" input value, or a TimeEntry.date, both of which encode
-// the picked day as UTC midnight) and a duration, returns a nominal
-// [startHour, startHour+hours) range on that day in `timezone`. Used so a
-// quick-add entry (no time-of-day picked) still places as a real block on
-// the Timesheet week grid.
-function nominalDayRange(
-  dateLike: string,
-  hours: number,
-  timezone: string,
-  startHour = 9,
-): { startIso: string; endIso: string } {
-  const d = new Date(dateLike);
-  const dayStart = zonedDayStartUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), timezone);
-  const start = new Date(dayStart.getTime() + startHour * 3_600_000);
-  const end = new Date(start.getTime() + Math.max(hours, 0.25) * 3_600_000);
-  return { startIso: start.toISOString(), endIso: end.toISOString() };
-}
-
-// Combine a "YYYY-MM-DD" day and a "HH:MM" wall-clock time into the real UTC
-// instant for that moment in `timezone`, so a typed entry lands on the grid
-// exactly where a dragged one would.
-function localDayTimeToIso(date: string, time: string, timezone: string): string | null {
-  const [y, m, d] = date.split("-").map(Number);
-  const [hh, mm] = time.split(":").map(Number);
-  if (!y || !m || !d || hh === undefined || mm === undefined) return null;
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  const dayStart = zonedDayStartUtc(y, m, d, timezone);
-  return new Date(dayStart.getTime() + (hh * 60 + mm) * 60_000).toISOString();
-}
-
-function todayDateInputValue(timezone: string): string {
-  const { year, month, day } = getZonedYMD(new Date(), timezone);
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function TimesheetView({ data }: { data: LoaderData }) {
@@ -4698,18 +5108,6 @@ function ParticipantPicker({
   );
 }
 
-type GroupAvailDay = {
-  dayKey: string;
-  dayOfWeek: number;
-  dayOfMonth: number;
-  matches: { startHour: number; durationHours: number }[];
-  busy: { startHour: number; durationHours: number }[];
-};
-
-type PerUserFree = { userId: string; free: { startIso: string; endIso: string }[] };
-
-type GroupAvailResponse = { days: GroupAvailDay[]; perUser: PerUserFree[] };
-
 function ScheduleWeekGrid({
   participantIds,
   showingSelfOnly = false,
@@ -5293,1241 +5691,6 @@ function SlotAttendeePopover({
       )}
     </div>,
     document.body,
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Week grid primitives                                                */
-/* ------------------------------------------------------------------ */
-
-type EventBlock = {
-  startHour: number;
-  duration: number;
-  label: string;
-  /** Tailwind classes for the colored body (bg + text). */
-  className: string;
-  /** Arbitrary hex background (e.g. a Google calendar colour). Overrides the
-   *  className background when set; text flips to a readable on-colour shade. */
-  bgColor?: string;
-  /** Border color class for the outer wrapper (defaults to matching the body). */
-  borderClassName?: string;
-  /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
-  bufferClassName?: string;
-  /** Hours of buffer above the event body. */
-  bufferBefore?: number;
-  /** Hours of buffer below the event body. */
-  bufferAfter?: number;
-  location?: string;
-  description?: string;
-  organizerName?: string;
-  /** Invitees + their response, shown in the click-opened detail popover. */
-  attendees?: EventAttendeeDTO[];
-  /** Outbound links for the popover (video call, source calendar, notes). */
-  links?: EventLinkDTO[];
-  /** When set, the block is clickable (e.g. Timesheet entries opening an edit
-   *  popover). Stops the mousedown from bubbling to the column's drag-select
-   *  handler so a click doesn't also start a new drag selection. */
-  onClick?: () => void;
-  /** When set, the block is a meeting invite: clicking opens a persistent
-   *  popover with Accept/Maybe/Decline (RSVP lives on the invite Notification,
-   *  so notificationId targets the RSVP endpoint). */
-  meeting?: {
-    notificationId: string;
-    /** ScheduledMeeting id — target of the timesheet / Core-meeting toggles. */
-    meetingId: string;
-    rsvp: "Accepted" | "Declined" | "Tentative" | null;
-    notePageId: string | null;
-    /** Whether the viewer already has a TimeEntry for this meeting. */
-    onTimesheet: boolean;
-    isCoreMeeting: boolean;
-    /** Core only — hides the "Core meeting" checkbox for everyone else. */
-    canMarkCoreMeeting: boolean;
-  };
-};
-
-// RSVP status → block styling on the calendar. Pending (unanswered) invites get
-// a dashed teal outline to read as "needs response"; answered ones adopt a
-// solid tint keyed to the response (declined is muted/greyed).
-function meetingBlockStyle(rsvp: MeetingInviteDTO["rsvp"]): {
-  className: string;
-  borderClassName: string;
-} {
-  switch (rsvp) {
-    case "Accepted":
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-accent-teal" };
-    case "Tentative":
-      return { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow" };
-    case "Declined":
-      return { className: "bg-muted text-muted-foreground line-through", borderClassName: "border-border" };
-    default:
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-dashed border-accent-teal" };
-  }
-}
-
-const RSVP_BADGE: Record<"Accepted" | "Declined" | "Tentative", string> = {
-  Accepted: "bg-green-100 text-green-800",
-  Declined: "bg-red-100 text-red-800",
-  Tentative: "bg-yellow-100 text-yellow-800",
-};
-
-const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
-function CalendarEventDetailPopover({
-  anchorEl,
-  title,
-  timeRange,
-  location,
-  description,
-  organizerName,
-  attendees,
-  links,
-  onClose,
-  footer,
-}: {
-  anchorEl: HTMLElement | null;
-  title: string;
-  timeRange: string;
-  location?: string;
-  description?: string;
-  organizerName?: string;
-  attendees?: EventAttendeeDTO[];
-  links?: EventLinkDTO[];
-  // When set, the popover is interactive (click-opened): a backdrop dismisses
-  // it and Escape closes it. Hover popovers leave this undefined.
-  onClose?: () => void;
-  footer?: React.ReactNode;
-}) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-
-  useEffect(() => {
-    if (!onClose) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  useLayoutEffect(() => {
-    if (!anchorEl) return;
-    const place = () => {
-      const card = cardRef.current;
-      if (!card) return;
-      const a = anchorEl.getBoundingClientRect();
-      const cw = card.offsetWidth;
-      const ch = card.offsetHeight;
-      const gap = 8;
-      const margin = 8;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      let left = a.right + gap;
-      if (left + cw + margin > vw) left = a.left - gap - cw;
-      left = Math.max(margin, Math.min(left, vw - cw - margin));
-      let top = a.top + ch + margin <= vh ? a.top : vh - ch - margin;
-      top = Math.max(margin, top);
-      setPos((prev) =>
-        prev && prev.left === left && prev.top === top ? prev : { left, top },
-      );
-    };
-    place();
-    const ro = new ResizeObserver(place);
-    if (cardRef.current) ro.observe(cardRef.current);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [anchorEl, title, timeRange, location, description, attendees, links]);
-
-  if (typeof document === "undefined") return null;
-
-  const measured = pos != null;
-  let left = pos?.left ?? 0;
-  let top = pos?.top ?? 0;
-  if (!measured) {
-    const a = anchorEl?.getBoundingClientRect();
-    if (a) {
-      const CARD_W = 288;
-      const gap = 8;
-      const margin = 8;
-      left =
-        a.right + gap + CARD_W + margin > window.innerWidth
-          ? a.left - gap - CARD_W
-          : a.right + gap;
-      left = Math.max(margin, left);
-      top = Math.max(margin, a.top);
-    }
-  }
-
-  return createPortal(
-    <>
-      {onClose && (
-        <div
-          className="fixed inset-0 z-40"
-          onMouseDown={onClose}
-          onClick={(ev) => ev.stopPropagation()}
-        />
-      )}
-      <div
-        ref={cardRef}
-        role={onClose ? "dialog" : undefined}
-        aria-label={onClose ? title : undefined}
-        // Rendered through a portal, but React events still bubble to the
-        // calendar block that opened it — which would toggle the card shut on
-        // every click inside it.
-        onClick={(ev) => ev.stopPropagation()}
-        onMouseDown={(ev) => ev.stopPropagation()}
-        className="fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md shadow-lg p-3 text-xs"
-        style={{
-          left,
-          top,
-          visibility: measured ? "visible" : "hidden",
-          backgroundColor: "var(--color-card)",
-          color: "var(--color-foreground)",
-          border: "1px solid var(--color-border)",
-        }}
-      >
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold text-sm text-foreground break-words">{title}</div>
-            <div className="text-muted-foreground mt-0.5">{timeRange}</div>
-          </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close event details"
-              className="-mt-0.5 -mr-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
-              </svg>
-            </button>
-          )}
-        </div>
-        {organizerName && (
-          <div className="mt-1.5 text-muted-foreground">Organized by {organizerName}</div>
-        )}
-        {location && (
-          <div className="mt-2">
-            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-              Location
-            </div>
-            <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
-          </div>
-        )}
-        {links && links.length > 0 && (
-          <div className="mt-2 flex flex-col items-start gap-1">
-            {links.map((l) => (
-              <a
-                key={l.href}
-                href={l.href}
-                target="_blank"
-                rel="noreferrer noopener"
-                onMouseDown={(ev) => ev.stopPropagation()}
-                className="font-medium text-accent-coral hover:underline break-all"
-              >
-                {l.label} →
-              </a>
-            ))}
-          </div>
-        )}
-        {attendees && attendees.length > 0 && (
-          <EventGuestList attendees={attendees} />
-        )}
-        {description && (
-          <div className="mt-2">
-            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-              Description
-            </div>
-            <div className="text-foreground whitespace-pre-wrap break-words">{description}</div>
-          </div>
-        )}
-        {footer}
-      </div>
-    </>,
-    document.body,
-  );
-}
-
-// Dot colour per response, so the guest list scans by status without needing a
-// badge on every row. Pending is a hollow ring — nothing to report yet.
-const ATTENDEE_DOT: Record<EventAttendeeDTO["status"], string> = {
-  Accepted: "bg-green-600",
-  Declined: "bg-red-500",
-  Tentative: "bg-yellow-500",
-  Pending: "border border-muted-foreground/60",
-};
-
-// Long invite lists (a whole-lab event) would push the rest of the card out of
-// reach, so collapse past this many and let the user expand.
-const GUESTS_COLLAPSED = 6;
-
-function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const accepted = attendees.filter((a) => a.status === "Accepted").length;
-  const declined = attendees.filter((a) => a.status === "Declined").length;
-  const pending = attendees.filter((a) => a.status === "Pending").length;
-  const shown = expanded ? attendees : attendees.slice(0, GUESTS_COLLAPSED);
-  const summary = [
-    `${accepted} accepted`,
-    declined > 0 ? `${declined} declined` : null,
-    pending > 0 ? `${pending} awaiting` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <div className="mt-2">
-      <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-        {attendees.length} {attendees.length === 1 ? "guest" : "guests"}
-      </div>
-      <div className="text-[10px] text-muted-foreground mb-1">{summary}</div>
-      <ul className="space-y-0.5">
-        {shown.map((a, i) => (
-          <li key={`${a.name}-${i}`} className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${ATTENDEE_DOT[a.status]}`} />
-            <Tooltip content={a.name}>
-              <span
-                className={`truncate ${a.status === "Declined" ? "text-muted-foreground line-through" : "text-foreground"}`}
-              >
-                {a.name}
-              </span>
-            </Tooltip>
-            {a.organizer && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">organizer</span>
-            )}
-            {a.optional && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">optional</span>
-            )}
-          </li>
-        ))}
-      </ul>
-      {attendees.length > GUESTS_COLLAPSED && (
-        <button
-          type="button"
-          onMouseDown={(ev) => ev.stopPropagation()}
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 text-[11px] font-medium text-accent-coral hover:underline"
-        >
-          {expanded ? "Show fewer" : `Show all ${attendees.length}`}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Pick dark or light ink for a solid fill by its perceived luminance, so
-// custom event colors (which arrive as arbitrary hex — light Google "Banana"
-// through dark "Blueberry") stay readable instead of always getting white text.
-// Falls back to white for anything we can't parse as a hex color.
-function readableTextColor(bg: string): string {
-  const hex = bg.trim().replace(/^#/, "");
-  const full = hex.length === 3 ? hex.replace(/(.)/g, "$1$1") : hex;
-  if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return "#ffffff";
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  // Rec. 601 luma; above ~0.6 the fill reads as light → switch to dark ink.
-  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luma > 0.6 ? "#1e2733" : "#ffffff";
-}
-
-// Per-meeting toggles in the event detail popover: log the meeting on your own
-// timesheet, and (Core only) flag it as a Core meeting. Both write through the
-// calendar route action, so a success revalidates the loader and the Timesheet
-// tab picks the entry up without a reload.
-function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["meeting"]> }) {
-  const timesheetFetcher = useFetcher<{ error?: string }>();
-  const coreFetcher = useFetcher<{ error?: string }>();
-
-  // Revalidation lands a beat after the submission, so read the in-flight value
-  // off formData — otherwise the box visibly snaps back before settling.
-  const onTimesheet = timesheetFetcher.formData
-    ? timesheetFetcher.formData.get("onTimesheet") === "true"
-    : meeting.onTimesheet;
-  const isCoreMeeting = coreFetcher.formData
-    ? coreFetcher.formData.get("isCoreMeeting") === "true"
-    : meeting.isCoreMeeting;
-
-  return (
-    <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
-      <Checkbox
-        checked={onTimesheet}
-        disabled={timesheetFetcher.state !== "idle"}
-        onChange={(ev) =>
-          timesheetFetcher.submit(
-            {
-              intent: "toggle-meeting-time-entry",
-              meetingId: meeting.meetingId,
-              onTimesheet: String(ev.target.checked),
-            },
-            { method: "post" },
-          )
-        }
-        label="Add to timesheet"
-      />
-      {timesheetFetcher.data?.error && (
-        <p className="text-[11px] text-red-600">{timesheetFetcher.data.error}</p>
-      )}
-      {meeting.canMarkCoreMeeting && (
-        <>
-          <Checkbox
-            checked={isCoreMeeting}
-            disabled={coreFetcher.state !== "idle"}
-            onChange={(ev) =>
-              coreFetcher.submit(
-                {
-                  intent: "set-meeting-core",
-                  meetingId: meeting.meetingId,
-                  isCoreMeeting: String(ev.target.checked),
-                },
-                { method: "post" },
-              )
-            }
-            label="Core meeting"
-          />
-          {coreFetcher.data?.error && (
-            <p className="text-[11px] text-red-600">{coreFetcher.data.error}</p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function WeekGridEvent({ e }: { e: EventBlock }) {
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
-  const bufferBefore = e.bufferBefore ?? 0;
-  const bufferAfter = e.bufferAfter ?? 0;
-  const totalHours = bufferBefore + e.duration + bufferAfter;
-  const border = e.borderClassName ? `border-2 ${e.borderClassName}` : "";
-  const bufferBg = e.bufferClassName ?? "";
-  const bodyHeight = e.duration * HOUR_PX;
-  const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
-  const isMeeting = Boolean(e.meeting);
-  // Every block that carries anything worth reading opens the same persistent
-  // popover on click, Google-Calendar style — hover was no good once the card
-  // grew links and a guest list you have to be able to reach with the pointer.
-  // Blocks with their own onClick (Timesheet entries → edit popover) keep it.
-  const hasDetails = Boolean(
-    e.location || e.description || e.organizerName || e.attendees?.length || e.links?.length,
-  );
-  const opensDetail = !e.onClick && (isMeeting || hasDetails);
-  const clickable = Boolean(e.onClick) || opensDetail;
-
-  return (
-    <div
-      className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
-        bufferAfter === 0 ? "rounded-b-md" : ""
-      } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : ""}`}
-      style={{
-        top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
-        height: totalHours * HOUR_PX,
-      }}
-      // Always swallow mousedown, even with no onClick. The day column starts
-      // a drag-to-create on any mousedown that reaches it, and its mouseup
-      // commits a selection even with zero movement — so without this, clicking
-      // an existing block opens a bogus "New entry" popover on top of it.
-      // Previously this was gated on `e.onClick`, which is why only the
-      // clickable (Manual) blocks were protected.
-      onMouseDown={(ev) => ev.stopPropagation()}
-      onClick={opensDetail ? () => setDetailOpen((v) => !v) : e.onClick}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onKeyDown={
-        clickable
-          ? (ev) => {
-              if (ev.target !== ev.currentTarget) return;
-              if (ev.key !== "Enter" && ev.key !== " ") return;
-              ev.preventDefault();
-              if (opensDetail) setDetailOpen((v) => !v);
-              else e.onClick?.();
-            }
-          : undefined
-      }
-      aria-label={clickable ? `${e.label}, ${timeRange}` : undefined}
-    >
-      <div
-        ref={setAnchorEl}
-        className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
-          bufferAfter === 0 ? "rounded-b-md" : ""
-        } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          clickable
-            ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
-            : ""
-        }`}
-        style={{
-          top: bufferBefore * HOUR_PX,
-          height: bodyHeight,
-          ...(e.bgColor
-            ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
-            : {}),
-        }}
-      >
-        {e.label && <span className="truncate block">{e.label}</span>}
-        {bodyHeight >= 34 && (
-          <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
-            {timeRange}
-          </span>
-        )}
-        {isMeeting && e.meeting?.rsvp && bodyHeight >= 50 && (
-          <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
-            {e.meeting.rsvp}
-          </span>
-        )}
-        {bodyHeight >= 50 && e.location && !isMeeting && (
-          <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
-            {e.location}
-          </span>
-        )}
-      </div>
-      {detailOpen && opensDetail && (
-        <CalendarEventDetailPopover
-          anchorEl={anchorEl}
-          title={e.label}
-          timeRange={timeRange}
-          location={e.location}
-          description={e.description}
-          organizerName={e.organizerName}
-          attendees={e.attendees}
-          links={e.links}
-          onClose={() => setDetailOpen(false)}
-          footer={
-            e.meeting ? (
-              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
-                <div className="flex items-center gap-2">
-                  <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
-                    Your RSVP
-                  </span>
-                  {e.meeting.rsvp ? (
-                    <span
-                      className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded ${RSVP_BADGE[e.meeting.rsvp]}`}
-                    >
-                      {e.meeting.rsvp}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground">No response yet</span>
-                  )}
-                </div>
-                <RsvpButtons
-                  notificationId={e.meeting.notificationId}
-                  onResponded={() => setDetailOpen(false)}
-                />
-                {e.meeting.notePageId && (
-                  <Link
-                    to={`/documents/${e.meeting.notePageId}`}
-                    className="mt-2 inline-block text-[11px] font-medium text-accent-coral hover:underline"
-                  >
-                    Open meeting note →
-                  </Link>
-                )}
-                <MeetingDetailToggles meeting={e.meeting} />
-              </div>
-            ) : null
-          }
-        />
-      )}
-    </div>
-  );
-}
-
-function WeekGrid({
-  days,
-  eventsByDay,
-  backgroundLayer,
-  overlayLayer,
-  showProviderRow = false,
-  onDayPointerSelect,
-  selection,
-  selectionPopover,
-  onSelectionDismiss,
-  onSelectionResize,
-  showSubHourGrid = false,
-  timezone,
-  markPayPeriodEnds = false,
-  fillAndScroll = false,
-}: {
-  days: { dayOfWeek: number; num: number; dateUtc: Date }[];
-  eventsByDay: Record<number, EventBlock[]>;
-  backgroundLayer?: (dayIdx: number) => React.ReactNode;
-  overlayLayer?: (dayIdx: number) => React.ReactNode;
-  showProviderRow?: boolean;
-  onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number) => void;
-  // A committed selection (controlled by the parent) drawn as a persistent
-  // accent block. selectionPopover renders the editor in a viewport-clamped
-  // portal; onSelectionDismiss fires when the user clicks the grid backdrop.
-  // onSelectionResize fires while dragging the block's top/bottom handles.
-  selection?: { dayIdx: number; startHour: number; endHour: number } | null;
-  selectionPopover?: () => React.ReactNode;
-  onSelectionDismiss?: () => void;
-  onSelectionResize?: (startHour: number, endHour: number) => void;
-  showSubHourGrid?: boolean;
-  // When set, the column matching "today" in this timezone is highlighted and a
-  // horizontal current-time line is drawn in it.
-  timezone?: string;
-  // Timesheet only: draw a boundary on the last day of each pay period, so it's
-  // visible where hours stop accruing to one period and start on the next.
-  // Availability has no payroll meaning, so it doesn't ask for this.
-  markPayPeriodEnds?: boolean;
-  // Fill the parent's bounded height and scroll internally (24h stays fully
-  // reachable) instead of rendering a fixed 24h block clipped at midnight.
-  // Also makes the day-header row + hour axis sticky. Availability opts in;
-  // Schedule/Timesheet keep the page-flow layout.
-  fillAndScroll?: boolean;
-}) {
-  // Current time, in this timezone, for the today-highlight + now-line. Both are
-  // skipped until `now` is set (post-mount) and when no timezone is provided.
-  const now = useNow();
-  const todayIdx =
-    timezone && now
-      ? (() => {
-          const ymd = getZonedYMD(now, timezone);
-          return days.findIndex(
-            (d) =>
-              d.dateUtc.getUTCFullYear() === ymd.year &&
-              d.dateUtc.getUTCMonth() + 1 === ymd.month &&
-              d.dateUtc.getUTCDate() === ymd.day,
-          );
-        })()
-      : -1;
-  // Pixel offset of the now-line within a column body, or null when "now" falls
-  // outside the visible hour window (line is hidden rather than pinned to an edge).
-  const nowLineTop = (() => {
-    if (!timezone || !now) return null;
-    const frac = getZonedHourFraction(now, timezone);
-    if (frac < HOURS[0] || frac >= HOURS[HOURS.length - 1] + 1) return null;
-    return (frac - HOURS[0]) * HOUR_PX;
-  })();
-  // Drag-to-select state. We snap to 15-minute steps and clamp to the visible
-  // hour range. dragAnchor is where mousedown happened; dragHover is where the
-  // pointer currently is — both are stored as fractional hours.
-  const [drag, setDrag] = useState<
-    null | { dayIdx: number; anchor: number; hover: number }
-  >(null);
-
-  // Resize-drag state for the committed selection's top/bottom handles. `edge`
-  // says which end is moving; `fixed` is the opposite end's hour (held still).
-  const [resize, setResize] = useState<
-    null | { edge: "start" | "end"; fixed: number }
-  >(null);
-  // Dragging the committed selection's body to move it whole (duration fixed).
-  // `grabOffset` is how far into the block the pointer grabbed, so the block
-  // tracks the cursor instead of snapping its top edge under it.
-  const [move, setMove] = useState<null | { grabOffset: number; duration: number }>(null);
-
-  // Column DOM refs so window-level mousemove can compute Y relative to the
-  // column the drag started in, even when the cursor strays elsewhere.
-  const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
-  // The committed selection block element, so the portal popover can anchor to
-  // its real on-screen rect. A callback ref into state (not a plain useRef)
-  // guarantees the portal re-renders the moment the node attaches — a shared
-  // useRef read from a sibling left anchor stuck null.
-  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
-
-  const MIN_HOUR = HOURS[0];
-  const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
-
-  // In fill-and-scroll mode the grid scrolls internally: keep the day-header row
-  // and hour axis pinned, and open scrolled to the working-day start (once, so a
-  // later user scroll isn't yanked back). Assigning scrollTop in the ref callback
-  // runs on the client before paint — no midnight-then-jump flash, no SSR effect.
-  const headerStickyCls = fillAndScroll ? "lg:sticky lg:top-0 lg:z-40" : "";
-  const didInitScroll = useRef(false);
-  const scrollRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      if (fillAndScroll && el && !didInitScroll.current) {
-        el.scrollTop = INITIAL_SCROLL_HOUR * HOUR_PX;
-        didInitScroll.current = true;
-      }
-    },
-    [fillAndScroll],
-  );
-
-  const hourFromY = (offsetY: number): number => {
-    const raw = MIN_HOUR + offsetY / HOUR_PX;
-    const snapped = Math.round(raw / SNAP_HOURS) * SNAP_HOURS;
-    return Math.max(MIN_HOUR, Math.min(MAX_HOUR, snapped));
-  };
-
-  const onDayMouseDown = (dayIdx: number) => (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!onDayPointerSelect) return;
-    if (e.button !== 0) return;
-    // While a selection's editor is open, freeze the grid: a new drag would
-    // move the committed selection out from under the open form. (The popover
-    // itself lives in a body portal, so its clicks never reach a column — this
-    // only guards clicks on the grid behind/around it.)
-    if (selection) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const h = hourFromY(e.clientY - rect.top);
-    setDrag({ dayIdx, anchor: h, hover: h });
-    e.preventDefault();
-  };
-
-  // Window-level mousemove + mouseup so the drag keeps tracking even when the
-  // cursor leaves the original column.
-  useEffect(() => {
-    if (!drag || !onDayPointerSelect) return;
-    const col = columnRefs.current[drag.dayIdx];
-    const onMove = (e: MouseEvent) => {
-      if (!col) return;
-      const rect = col.getBoundingClientRect();
-      setDrag((prev) =>
-        prev ? { ...prev, hover: hourFromY(e.clientY - rect.top) } : prev,
-      );
-    };
-    const onUp = () => {
-      const lo = Math.min(drag.anchor, drag.hover);
-      const hi = Math.max(drag.anchor, drag.hover);
-      const start = lo;
-      const end = hi - lo < SNAP_HOURS ? Math.min(MAX_HOUR, lo + SNAP_HOURS * 2) : hi;
-      onDayPointerSelect(drag.dayIdx, start, end);
-      setDrag(null);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [drag, onDayPointerSelect, MAX_HOUR]);
-
-  // Resizing the committed selection by dragging its top/bottom handle. The
-  // moving edge follows the cursor (snapped, clamped, never crossing the fixed
-  // edge); onSelectionResize streams the new range up so the popover form and
-  // the block stay in sync live.
-  const startResize = (edge: "start" | "end") => (e: React.MouseEvent) => {
-    if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setResize({ edge, fixed: edge === "start" ? selection.endHour : selection.startHour });
-  };
-
-  useEffect(() => {
-    if (!resize || !selection || !onSelectionResize) return;
-    const col = columnRefs.current[selection.dayIdx];
-    const onMove = (e: MouseEvent) => {
-      if (!col) return;
-      const rect = col.getBoundingClientRect();
-      const h = hourFromY(e.clientY - rect.top);
-      // Keep at least one snap-step of height and don't let edges cross.
-      if (resize.edge === "start") {
-        const start = Math.min(h, resize.fixed - SNAP_HOURS);
-        onSelectionResize(Math.max(MIN_HOUR, start), resize.fixed);
-      } else {
-        const end = Math.max(h, resize.fixed + SNAP_HOURS);
-        onSelectionResize(resize.fixed, Math.min(MAX_HOUR, end));
-      }
-    };
-    const onUp = () => setResize(null);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [resize, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
-
-  // Moving the committed selection up/down as a whole. Duration is preserved:
-  // the range slides, and is clamped so neither edge leaves the visible day
-  // rather than being squashed at the boundary.
-  const startMove = (e: React.MouseEvent) => {
-    if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const col = columnRefs.current[selection.dayIdx];
-    if (!col) return;
-    const rect = col.getBoundingClientRect();
-    const pointerHour = hourFromY(e.clientY - rect.top);
-    setMove({
-      grabOffset: pointerHour - selection.startHour,
-      duration: selection.endHour - selection.startHour,
-    });
-  };
-
-  useEffect(() => {
-    if (!move || !selection || !onSelectionResize) return;
-    const col = columnRefs.current[selection.dayIdx];
-    const onMouseMove = (e: MouseEvent) => {
-      if (!col) return;
-      const rect = col.getBoundingClientRect();
-      const pointerHour = hourFromY(e.clientY - rect.top);
-      const start = Math.min(
-        Math.max(MIN_HOUR, pointerHour - move.grabOffset),
-        MAX_HOUR - move.duration,
-      );
-      onSelectionResize(start, start + move.duration);
-    };
-    const onUp = () => setMove(null);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [move, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
-
-  return (
-    <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
-    <div
-      ref={scrollRef}
-      className={`flex border border-border rounded-md overflow-hidden select-none ${
-        // items-start: size the hour-axis + day columns to their full 24h
-        // content height and scroll, instead of stretching (align-items:stretch)
-        // them to the shorter viewport. Stretch clipped each column's box to the
-        // visible height, so its border-r (and the axis's) faded out below the
-        // fold while the absolutely-positioned grid lines kept going.
-        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden" : ""
-      }`}
-    >
-      {/* Hour axis */}
-      <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
-        <div
-          className={`shrink-0 bg-card border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
-        />
-        {HOURS.map((h) => (
-          <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
-            {formatHour(h)}
-          </div>
-        ))}
-      </div>
-      {/* Day columns */}
-      {days.map((d, idx) => {
-        const isToday = idx === todayIdx;
-        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
-        return (
-        <div
-          key={idx}
-          className={`flex-1 min-w-0 border-r last:border-r-0 flex flex-col ${
-            // A solid accent edge on the period's last column, rather than a
-            // badge: the boundary is between this day and the next, so it wants
-            // to be drawn on the seam.
-            periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
-          }`}
-        >
-          <div className={`shrink-0 flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls} ${
-            // Sticky headers need an opaque fill so scrolled rows don't bleed
-            // through the faint today/period tint; today stays marked by its
-            // coral date circle + now-line.
-            fillAndScroll
-              ? "bg-card"
-              : isToday
-                ? "bg-accent-coral/10"
-                : periodEnd
-                  ? "bg-accent-teal/10"
-                  : ""
-          }`}>
-            <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
-            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
-            {periodEnd && !showProviderRow && (
-              <Tooltip content="Last day of this pay period" placement="bottom">
-                <span
-                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
-                >
-                  Pay ends
-                </span>
-              </Tooltip>
-            )}
-            {showProviderRow && (
-              <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
-                <Building2 className="w-2.5 h-2.5" />
-                <Wifi className="w-2.5 h-2.5" />
-              </div>
-            )}
-          </div>
-          <div
-            ref={(el) => {
-              columnRefs.current[idx] = el;
-            }}
-            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair" : ""}`}
-            style={{ height: HOURS.length * HOUR_PX }}
-            onMouseDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
-          >
-            {HOURS.map((_, i) => (
-              <Fragment key={i}>
-                {/* Hour line — distinctly heavier (2px, darker) than the faint
-                    10-minute sub-hour lines. */}
-                <div
-                  className="absolute left-0 right-0 border-t-2 border-foreground/45"
-                  style={{ top: i * HOUR_PX }}
-                />
-                {showSubHourGrid &&
-                  // 10-minute sub-hour lines (skip index 0; that's the hour line).
-                  Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
-                    <div
-                      key={s}
-                      className="absolute left-0 right-0 border-t border-foreground/[0.08]"
-                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
-                    />
-                  ))}
-              </Fragment>
-            ))}
-            {backgroundLayer?.(idx)}
-            {/* Redraw the grid lines above the availability tint so they stay
-                visible over the colored background — but BEFORE events, so
-                Busy blocks render on top of the lines (not the other way
-                round). Hour lines bolder than the 10-minute sub-hour lines. */}
-            {showSubHourGrid &&
-              HOURS.map((_, i) => (
-                <Fragment key={`grid-fg-${i}`}>
-                  <div
-                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none"
-                    style={{ top: i * HOUR_PX }}
-                  />
-                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
-                    <div
-                      key={s}
-                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none"
-                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
-                    />
-                  ))}
-                </Fragment>
-              ))}
-            {isToday && nowLineTop != null && (
-              <div
-                className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
-                style={{ top: nowLineTop }}
-                aria-label="Current time"
-              >
-                <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
-              </div>
-            )}
-            {drag && drag.dayIdx === idx && (() => {
-              const lo = Math.min(drag.anchor, drag.hover);
-              const hi = Math.max(drag.anchor, drag.hover);
-              const heightHours = Math.max(SNAP_HOURS, hi - lo);
-              const top = (lo - MIN_HOUR) * HOUR_PX;
-              // Caption sits above the rectangle's top edge so a short (e.g.
-              // 10-min) selection doesn't have the text spilling through the
-              // box into the slot below. Near the grid's top there's no room
-              // above (the column clips overflow), so drop it just inside.
-              const captionBelow = top < 16;
-              return (
-                <div
-                  className="absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 pointer-events-none rounded-sm z-30 shadow-md"
-                  style={{ top, height: heightHours * HOUR_PX }}
-                >
-                  <div
-                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral ${
-                      captionBelow ? "top-1" : "bottom-full mb-1"
-                    }`}
-                  >
-                    {formatHourMinute(lo)} – {formatHourMinute(hi)}
-                  </div>
-                </div>
-              );
-            })()}
-            {/* Committed selection block — stays drawn where the drag landed,
-                with top/bottom handles to resize it. The editor popover renders
-                in a viewport-clamped portal (below), not clipped by the grid. */}
-            {selection && selection.dayIdx === idx && (() => {
-              const lo = selection.startHour;
-              const hi = selection.endHour;
-              const top = (lo - MIN_HOUR) * HOUR_PX;
-              const height = Math.max(SNAP_HOURS, hi - lo) * HOUR_PX;
-              const resizable = !!onSelectionResize;
-              return (
-                <div
-                  ref={setAnchorEl}
-                  // Body drag moves the whole block; the edge handles below
-                  // resize it (they stopPropagation so they win over this).
-                  onMouseDown={resizable ? startMove : undefined}
-                  className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
-                    resizable ? (move ? "cursor-grabbing" : "cursor-grab") : "pointer-events-none"
-                  }`}
-                  style={{ top, height }}
-                >
-                  {/* Caption above the top edge — see drag-preview note. */}
-                  <div
-                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral pointer-events-none ${
-                      top < 16 ? "top-1" : "bottom-full mb-1"
-                    }`}
-                  >
-                    {formatHourMinute(lo)} – {formatHourMinute(hi)}
-                  </div>
-                  {resizable && (
-                    <>
-                      {/* Top handle */}
-                      <div
-                        onMouseDown={startResize("start")}
-                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
-                        aria-label="Adjust start time"
-                      >
-                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
-                      </div>
-                      {/* Bottom handle */}
-                      <div
-                        onMouseDown={startResize("end")}
-                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
-                        aria-label="Adjust end time"
-                      >
-                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-            {(eventsByDay[idx] ?? []).map((e, i) => (
-              <WeekGridEvent key={i} e={e} />
-            ))}
-            {overlayLayer?.(idx)}
-          </div>
-        </div>
-        );
-      })}
-    </div>
-    {/* Editor popover — rendered in a portal at <body>, anchored to the
-        selection block's real screen rect and clamped to the viewport, so it
-        is never clipped by the grid's overflow or the screen edge. */}
-    {selection && selectionPopover && (
-      <SelectionPopoverPortal
-        anchorEl={anchorEl}
-        onDismiss={() => onSelectionDismiss?.()}
-      >
-        {selectionPopover()}
-      </SelectionPopoverPortal>
-    )}
-    </div>
-  );
-}
-
-// Floats the selection editor next to the committed block. Renders into <body>
-// (so the grid's overflow-hidden can't clip it) and positions itself fixed,
-// preferring the block's right side but flipping left / shifting up to stay
-// fully on-screen. A transparent full-viewport backdrop captures outside clicks
-// to dismiss — and, being in a portal, never lets a click reach a grid column.
-function SelectionPopoverPortal({
-  anchorEl,
-  onDismiss,
-  children,
-}: {
-  anchorEl: HTMLElement | null;
-  onDismiss: () => void;
-  children: React.ReactNode;
-}) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-
-  // Dismiss on a genuine outside click. We can't use a full-viewport backdrop
-  // for this: the selection block (with its resize handles) lives in the grid
-  // *under* this portal, so a covering backdrop would swallow handle mousedowns
-  // and dismiss the selection the instant the user grabs a handle. Instead,
-  // listen at the document and ignore mousedowns that land inside the popover
-  // card or the anchored selection block (so resizing it works).
-  useEffect(() => {
-    const onDocMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (cardRef.current?.contains(target)) return;
-      if (anchorEl?.contains(target)) return;
-      // The card's own dropdowns (Role, and any future Select/Menu/Popover)
-      // render into their own portal at <body>, so they are not inside
-      // cardRef — picking a role counted as an outside click and closed the
-      // whole form. Anything in a floating layer belongs to the card.
-      if (
-        target instanceof Element
-          ? target.closest("[data-floating-ui-portal]")
-          : (target.parentElement as Element | null)?.closest("[data-floating-ui-portal]")
-      ) {
-        return;
-      }
-      onDismiss();
-    };
-    // Capture phase so we see the event even if something stops propagation.
-    document.addEventListener("mousedown", onDocMouseDown, true);
-    return () => document.removeEventListener("mousedown", onDocMouseDown, true);
-  }, [anchorEl, onDismiss]);
-
-  useLayoutEffect(() => {
-    if (!anchorEl) return;
-    const place = () => {
-      const card = cardRef.current;
-      if (!card) return;
-      const a = anchorEl.getBoundingClientRect();
-      const cw = card.offsetWidth;
-      const ch = card.offsetHeight;
-      const gap = 8;
-      const margin = 8;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      // Prefer the right of the block; flip left if it would overflow.
-      let left = a.right + gap;
-      if (left + cw + margin > vw) left = a.left - gap - cw;
-      left = Math.max(margin, Math.min(left, vw - cw - margin));
-      // Vertically hug the block: top-align if the card fits below, else
-      // bottom-align with the block (open upward) so it stays adjacent instead
-      // of being yanked far up by a viewport clamp on a late-day selection.
-      let top = a.top + ch + margin <= vh ? a.top : a.bottom - ch;
-      top = Math.max(margin, Math.min(top, vh - ch - margin));
-      setPos((prev) =>
-        prev && prev.left === left && prev.top === top ? prev : { left, top },
-      );
-    };
-    place();
-    // Re-place when the card resizes (block→meeting grows it) or the window
-    // reflows. Deps include anchorEl so this runs the instant the block mounts.
-    const ro = new ResizeObserver(place);
-    if (cardRef.current) ro.observe(cardRef.current);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [anchorEl]);
-
-  if (typeof document === "undefined") return null;
-
-  // First paint (before the layout effect sets pos): derive a spot from the
-  // anchor's current rect so the popover appears NEXT TO the block, flipping
-  // left / opening upward near the edges. Falls back to centred if no anchor.
-  let left = pos?.left;
-  let top = pos?.top;
-  if (left == null || top == null) {
-    const a = anchorEl?.getBoundingClientRect();
-    if (a) {
-      const CARD_W = 320; // matches w-80
-      const CARD_H = 416; // matches max-h-[26rem]
-      const gap = 8;
-      const margin = 8;
-      left = a.right + gap + CARD_W + gap > window.innerWidth
-        ? a.left - gap - CARD_W // would overflow right → flip to the left side
-        : a.right + gap;
-      left = Math.max(margin, left);
-      const vh = window.innerHeight;
-      const rawTop = a.top + CARD_H + margin <= vh ? a.top : a.bottom - CARD_H;
-      top = Math.max(margin, Math.min(rawTop, vh - CARD_H - margin));
-    } else {
-      left = Math.max(8, window.innerWidth / 2 - 160);
-      top = 80;
-    }
-  }
-
-  return createPortal(
-    // No covering backdrop: the card is positioned `fixed` on its own so it
-    // doesn't sit over the grid's selection block, leaving the block's resize
-    // handles clickable. Outside-click dismissal is handled by the document
-    // listener above. The card still stops propagation so a click inside the
-    // form can't bubble out to anything behind it.
-    <div
-      ref={cardRef}
-      data-calendar-popover
-      className="fixed z-50"
-      style={{ left, top }}
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      {children}
-    </div>,
-    document.body,
-  );
-}
-
-function formatHour(h: number) {
-  if (h === 12) return "12 PM";
-  if (h === 0) return "12 AM";
-  return h > 12 ? `${h - 12} PM` : `${h} AM`;
-}
-
-// Fractional hour → "9:15 AM" / "12:00 PM" style label for drag tooltips.
-function formatHourMinute(h: number) {
-  const totalMin = Math.round(h * 60);
-  const hour24 = Math.floor(totalMin / 60) % 24;
-  const minute = totalMin % 60;
-  const suffix = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
-}
-
-const STRIPE_STYLE: React.CSSProperties = {
-  backgroundImage:
-    "repeating-linear-gradient(45deg, rgba(120,120,120,0.35) 0 6px, transparent 6px 12px)",
-  backgroundColor: "rgba(120,120,120,0.25)",
-};
-
-function DayBg({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={`absolute inset-0 ${className ?? ""}`} style={style} />;
-}
-
-// Renders the striped "outside working hours" overlay for a single day column.
-// Hours inside any working-hours segment are left blank (or washed). Used by
-// both the AvailabilityWeekGrid and the schedule-preview's self-only mode.
-function workingHoursStripeLayer(
-  workingHours: WhDay[],
-  dow: number,
-  options?: { enabled?: boolean },
-): React.ReactNode {
-  // When the Working Hours feature is off, the whole day is unrestricted — draw
-  // no "outside hours" stripes at all.
-  if (options?.enabled === false) return null;
-  const wh = workingHours.find((w) => w.dayOfWeek === dow);
-  if (!wh || wh.segments.length === 0) return <DayBg style={STRIPE_STYLE} />;
-  const sorted = wh.segments
-    .map((s) => ({ start: s.startMinute / 60, end: s.endMinute / 60 }))
-    .sort((a, b) => a.start - b.start);
-  const merged: { start: number; end: number }[] = [];
-  for (const s of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && s.start <= last.end) {
-      if (s.end > last.end) last.end = s.end;
-    } else {
-      merged.push({ ...s });
-    }
-  }
-  const dayStart = HOURS[0];
-  const dayEnd = HOURS[HOURS.length - 1] + 1;
-  const stripes: { startHour: number; duration: number }[] = [];
-  let cursor = dayStart;
-  for (const m of merged) {
-    if (m.start > cursor) stripes.push({ startHour: cursor, duration: m.start - cursor });
-    cursor = Math.max(cursor, m.end);
-  }
-  if (cursor < dayEnd) stripes.push({ startHour: cursor, duration: dayEnd - cursor });
-  return (
-    <>
-      {stripes.map((s, i) => (
-        <BlockBlock
-          key={`stripe-${i}`}
-          topHour={dayStart}
-          startHour={s.startHour}
-          duration={s.duration}
-          style={STRIPE_STYLE}
-        />
-      ))}
-    </>
-  );
-}
-
-function BlockBlock({
-  topHour,
-  startHour,
-  duration,
-  className,
-  style,
-}: {
-  topHour: number;
-  startHour: number;
-  duration: number;
-  className?: string;
-  style?: React.CSSProperties;
-}) {
-  if (duration <= 0) return null;
-  return (
-    <div
-      className={`absolute left-0 right-0 ${className ?? ""}`}
-      style={{
-        top: (startHour - topHour) * HOUR_PX,
-        height: duration * HOUR_PX,
-        ...style,
-      }}
-    />
   );
 }
 
