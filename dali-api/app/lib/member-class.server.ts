@@ -9,6 +9,8 @@ import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   getOrCreateNamedCalendar,
+  listCalendarsForLink,
+  subscribeCalendarForLink,
 } from "~/lib/google-calendar";
 import { classRRule, DARTMOUTH_TZ, firstOccurrenceRange, resolveClassMeetings } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
@@ -48,6 +50,41 @@ function meetingsFor(input: ClassWrite): PeriodMeeting[] {
   return meetings;
 }
 
+async function resolvePrimaryCalendarId(linkId: string): Promise<string> {
+  try {
+    const list = await listCalendarsForLink(linkId);
+    return list.find((c) => c.primary)?.id ?? "primary";
+  } catch {
+    return "primary";
+  }
+}
+
+// A class written to Google only appears in DALI if its calendar is in the
+// link's subCalendarIds (fetchBusyEvents pulls only those; an empty set means
+// primary-only). So make the target calendar visible: subscribe it, then add it
+// to subCalendarIds — seeding the real primary first when the set was empty, so
+// making it explicit doesn't hide the calendar the member already sees.
+async function ensureCalendarVisible(linkId: string, calendarId: string): Promise<void> {
+  try {
+    await subscribeCalendarForLink(linkId, calendarId);
+  } catch {
+    /* already subscribed / owned — subscribe is best-effort */
+  }
+  const link = await prisma.userCalendarLink.findUnique({
+    where: { id: linkId },
+    select: { subCalendarIds: true },
+  });
+  if (!link) return;
+  const set = new Set(link.subCalendarIds);
+  if (set.has(calendarId)) return;
+  if (set.size === 0) set.add(await resolvePrimaryCalendarId(linkId));
+  set.add(calendarId);
+  await prisma.userCalendarLink.update({
+    where: { id: linkId },
+    data: { subCalendarIds: Array.from(set) },
+  });
+}
+
 async function loadTerm(termId: string) {
   const term = await prisma.term.findUnique({ where: { id: termId }, select: { startDate: true, endDate: true } });
   if (!term) throw new MemberClassError("Term not found");
@@ -77,8 +114,11 @@ async function materialize(
     dest.kind === "google-dedicated"
       ? await getOrCreateNamedCalendar(dest.linkId, DEDICATED_CALENDAR_NAME)
       : dest.kind === "google-primary"
-        ? "primary"
+        ? await resolvePrimaryCalendarId(dest.linkId)
         : dest.calendarId;
+
+  // Make the class visible in DALI too: pull this calendar into the layer set.
+  await ensureCalendarVisible(dest.linkId, calendarId);
 
   const googleEventIds: string[] = [];
   for (const m of meetings) {
