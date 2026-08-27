@@ -199,6 +199,9 @@ export type LoaderData = {
     endIso: string;
     title: string;
     color: string | null;
+    /** The linked sub-calendar this event came from, so the Calendars popover
+     *  can hide individual calendars on the grid (client-side display only). */
+    calendarId?: string | null;
     description?: string;
     location?: string;
     organizerName?: string;

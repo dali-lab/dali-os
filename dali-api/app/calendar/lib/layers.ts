@@ -102,10 +102,18 @@ export function toGridRange(
   return { dayIdx, startHour, endHour };
 }
 
-/** External (Google/Outlook) events — real titles + per-calendar colour. */
-export function buildExternalLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+/** External (Google/Outlook) events — real titles + per-calendar colour.
+ *  `hiddenCalendarIds` hides individual calendars on the grid (display only —
+ *  the events are still fetched; disabling a calendar entirely is a Settings
+ *  concern). */
+export function buildExternalLayer(
+  data: LoaderData,
+  days: GridDay[],
+  hiddenCalendarIds?: Set<string>,
+): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const e of data.externalEvents) {
+    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
     placeBlock(
       days,
       data.timezone,
@@ -320,6 +328,24 @@ export function externalCalendarLegend(data: LoaderData): { swatch: string; labe
     }
   }
   return legend;
+}
+
+/** One row per enabled sub-calendar (keyed by its real id) — the toggleable
+ *  per-calendar visibility list under "Linked calendars". Unlike the legend
+ *  this keeps the id so a calendar can be hidden on the grid individually, and
+ *  isn't deduped by colour. */
+export function perCalendarLegend(data: LoaderData): { id: string; label: string; color: string | null }[] {
+  const rows: { id: string; label: string; color: string | null }[] = [];
+  const seen = new Set<string>();
+  for (const link of data.calendarLinks) {
+    for (const sub of link.subCalendars ?? []) {
+      if (sub.enabled && !seen.has(sub.id)) {
+        seen.add(sub.id);
+        rows.push({ id: sub.id, label: sub.summary, color: sub.color });
+      }
+    }
+  }
+  return rows;
 }
 
 /** Role buckets present across the pay period, with hours totalled — feeds the
