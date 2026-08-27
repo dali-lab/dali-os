@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Pencil } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 
 /**
  * Page-level view/edit gate. `canEdit` is the loader-determined permission;
@@ -38,7 +38,7 @@ export function EditModeToggle({
   }
 
   return (
-    <Tooltip label={editMode ? "Done editing" : "Edit"}>
+    <Tooltip content={editMode ? "Done editing" : "Edit"}>
       <button
         type="button"
         onClick={() => setEditMode(!editMode)}

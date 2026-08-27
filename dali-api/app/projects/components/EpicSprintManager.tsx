@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { X, Trash2, Pencil, Plus } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
@@ -447,20 +446,23 @@ export function EpicSprintManager({
           upward into the space above it. */}
       {os && canManage && (
         <div className="flex items-center justify-end gap-2.5">
-          <button
-            type="button"
-            className="os-edit-btn"
-            aria-pressed={editMode}
-            onClick={() => setEditMode((v) => !v)}
-            title={
+          <Tooltip
+            content={
               editMode
                 ? "Done — bars are read-only again"
                 : "Drag a bar to move it, or its ends to change one date"
             }
           >
-            <Pencil className="h-[15px] w-[15px]" aria-hidden />
-            {editMode ? "Done" : "Edit"}
-          </button>
+            <button
+              type="button"
+              className="os-edit-btn"
+              aria-pressed={editMode}
+              onClick={() => setEditMode((v) => !v)}
+            >
+              <Pencil className="h-[15px] w-[15px]" aria-hidden />
+              {editMode ? "Done" : "Edit"}
+            </button>
+          </Tooltip>
 
           <div ref={addMenuRef} className="relative">
             <button
@@ -619,12 +621,13 @@ export function EpicDetail({
     epic.descriptionDocId,
   );
   useEffect(() => {
-    // Already provisioned (this epic, or any past visit by anyone) — nothing
-    // to do; the editor mounts on the existing room name.
-    if (descriptionDocId) return;
-    // Viewers can't trigger the write — they'd just see a "No description
-    // yet" placeholder until a manager opens the epic. That's fine.
+    // Viewers can't trigger the write — they'd just see the plain-text
+    // description (or a placeholder) until a manager opens the epic.
     if (!canManage) return;
+    // Ping on every manager open, even when the room name is already known:
+    // the endpoint is idempotent for the id and also seeds the doc from a
+    // legacy plain-text description if the doc is still empty, so an epic
+    // provisioned-but-empty before that seeding existed still gets migrated.
     let cancelled = false;
     void (async () => {
       try {
@@ -639,14 +642,14 @@ export function EpicDetail({
         }
       } catch {
         // Network failure: the modal still shows the rest of the epic;
-        // the description block falls back to "No description yet." A
-        // future open retries.
+        // the description block falls back to the plain text or a
+        // placeholder. A future open retries.
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [descriptionDocId, canManage, epic.id]);
+  }, [canManage, epic.id]);
 
   // There is no modal-level edit mode: a manager can add a story, rename the
   // epic, or open the details form straight from the read view.
@@ -701,7 +704,7 @@ export function EpicDetail({
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {canManage && (
-            <Tooltip label="Delete epic">
+            <Tooltip content="Delete epic">
               <button
                 type="button"
                 disabled={busy}
@@ -841,24 +844,15 @@ export function EpicDetail({
         </div>
       </section>
 
-      {/* Description — always live as a collab editor (the project's
-          Overview/PRD pattern). The room name is the epic's descriptionDocId
-          (lazily provisioned on first open by a manager). For viewers or
-          while provisioning is in flight, falls back to a quiet placeholder
-          so the modal isn't empty. */}
+      {/* Description — a live collab editor (the project's Overview/PRD
+          pattern). The room name is the epic's descriptionDocId (lazily
+          provisioned on first manager open, and seeded there from any legacy
+          plain-text description). For viewers or while provisioning is in
+          flight, falls back to that plain text, then a placeholder — never
+          both the text and the editor at once. */}
       <div className="os-modal-divider" aria-hidden />
       <section>
         <h3 className="os-section-header">Description</h3>
-        {/* The plain-text `description` column predates the collab doc and
-            nothing in this modal writes it any more — but the timeline's hover
-            card still reads it, so an epic carried over from before the switch
-            showed a paragraph on hover that vanished the moment you clicked the
-            bar. It reads here too now, above the doc, so the two agree. */}
-        {epic.description && (
-          <p className="mb-3 whitespace-pre-wrap text-sm text-foreground">
-            {epic.description}
-          </p>
-        )}
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -876,6 +870,14 @@ export function EpicDetail({
               className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-accent-coral/30"
             />
           </PresenceProvider>
+        ) : epic.description ? (
+          // No live editor yet (a viewer, or provisioning still in flight):
+          // show the plain-text `description` so the modal isn't empty. When a
+          // manager opens the epic the doc is seeded from this same text and
+          // the editor above becomes the single surface — the two never stack.
+          <p className="mb-3 whitespace-pre-wrap text-sm text-foreground">
+            {epic.description}
+          </p>
         ) : canManage ? (
           <p className="text-sm text-muted-foreground italic">Preparing editor…</p>
         ) : descriptionDocId && !collabToken ? (
@@ -883,11 +885,7 @@ export function EpicDetail({
             Sign in again to see the description.
           </p>
         ) : (
-          // With the legacy paragraph above, "No description yet." would
-          // contradict what the reader is looking at — the doc is just empty.
-          !epic.description && (
-            <p className="text-sm text-muted-foreground italic">No description yet.</p>
-          )
+          <p className="text-sm text-muted-foreground italic">No description yet.</p>
         )}
       </section>
 
@@ -967,22 +965,24 @@ export function EpicDetail({
             {epic.stories.map((story) => (
               // .quick-add-item: the story's name on the left, one × on the right.
               <li key={story.id} className="os-item-row">
-                <button
-                  type="button"
-                  onClick={() => canEditContent && setEditStoryId(story.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  title={story.title}
-                >
-                  {isStoryIncomplete(story) && (
-                    <span
-                      className="os-incomplete-dot"
-                      title="Added by name — still needs its details"
-                    >
-                      !
-                    </span>
-                  )}
-                  <span className="truncate">{story.title}</span>
-                </button>
+                <Tooltip content={story.title}>
+                  <button
+                    type="button"
+                    onClick={() => canEditContent && setEditStoryId(story.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    {isStoryIncomplete(story) && (
+                      <Tooltip
+                        variant="rich"
+                        content="Quick-captured by name only — open this story to add notes, dates, and priority."
+                        placement="right"
+                      >
+                        <span className="os-incomplete-dot">!</span>
+                      </Tooltip>
+                    )}
+                    <span className="truncate">{story.title}</span>
+                  </button>
+                </Tooltip>
                 {canEditContent && (
                   <button
                     type="button"
@@ -1473,7 +1473,13 @@ function StoryForm({
               {categoryField}
             </label>
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Priority</span>
+              <span className="text-muted-foreground inline-flex items-center gap-1">
+                Priority
+                <InfoTip
+                  content="MoSCoW priority: Must = required for launch, Should = high value, Could = nice-to-have, Won't = out of scope this term."
+                  placement="top"
+                />
+              </span>
               <Select
                 value={priority}
                 onChange={(value) => setPriority(value as StoryPriority | "")}

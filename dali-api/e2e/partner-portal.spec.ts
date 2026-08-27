@@ -236,8 +236,12 @@ test.describe('partner portal', () => {
       roadmap.getByRole('button', { name: 'User stories' }),
     ).toBeVisible();
     await expect(roadmap.getByRole('button', { name: 'Tasks' })).toHaveCount(0);
-    // The live sprint still names itself in the momentum hero.
-    await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
+    // A bar names its epic — the roadmap is drawn from the project's real
+    // planning data, not an empty grid. (The sprint hero is gone; the timeline
+    // is the one surface now.)
+    await expect(
+      roadmap.getByText('Mentor matching', { exact: true }),
+    ).toBeVisible();
     // Documents and files share one Drive shelf now.
     await expect(
       page.getByRole('heading', { name: 'Drive' }),

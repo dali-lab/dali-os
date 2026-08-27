@@ -4,7 +4,6 @@ import {
   Link,
   redirect,
   useActionData,
-  useFetcher,
   useLoaderData,
   useNavigate,
   useRevalidator,
@@ -19,7 +18,7 @@ import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
@@ -779,44 +778,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Team grouped by term, newest term first. Current = highest sortKey.
-  //
-  // For Core viewers we also surface per-assignment editing context:
-  //   - eligibilityLevel: ceiling enforced by /api/projects/assignments/:id/level
-  //   - activeMenteeCount: a P3→lower demotion is blocked while this > 0
-  // Both lookups are skipped for non-Core viewers (they see read-only badges).
-  const eligibilityCeilings = new Map<string, string>();
-  const menteeCounts = new Map<string, number>();
-  if (core && project.assignments.length > 0) {
-    const eligibilityPairs = new Map<string, { userId: string; domainId: string }>();
-    for (const a of project.assignments) {
-      eligibilityPairs.set(`${a.userId}:${a.domainId}`, {
-        userId: a.userId,
-        domainId: a.domainId,
-      });
-    }
-    const mentorUserIds = [...new Set(project.assignments.map((a) => a.userId))];
-    const [eligibilityRows, mentorRows] = await Promise.all([
-      prisma.domainEligibility.findMany({
-        where: { OR: [...eligibilityPairs.values()] },
-        select: { userId: true, domainId: true, level: true },
-      }),
-      // Over-fetch: any MentorshipPair on this project where any of our
-      // assignees is the mentor. We bucket client-side by the exact
-      // (mentorUserId, termId, domainId) tuple the endpoint checks.
-      prisma.mentorshipPair.findMany({
-        where: { projectId: project.id, mentorUserId: { in: mentorUserIds } },
-        select: { mentorUserId: true, termId: true, domainId: true },
-      }),
-    ]);
-    for (const e of eligibilityRows) {
-      eligibilityCeilings.set(`${e.userId}:${e.domainId}`, e.level);
-    }
-    for (const m of mentorRows) {
-      const key = `${m.mentorUserId}:${m.termId}:${m.domainId}`;
-      menteeCounts.set(key, (menteeCounts.get(key) ?? 0) + 1);
-    }
-  }
-
+  // Levels are read-only here — Core edits them from the member's profile
+  // (the row links out to /members/:id#project-assignments).
   type TeamMember = {
     assignmentId: string;
     userId: string;
@@ -825,8 +788,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domain: string;
     domainId: string;
     level: string;
-    eligibilityLevel: string | null;
-    activeMenteeCount: number;
   };
   const teamByTerm = new Map<
     string,
@@ -854,9 +815,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domain: a.domain.name,
       domainId: a.domainId,
       level: a.level,
-      eligibilityLevel: eligibilityCeilings.get(`${a.userId}:${a.domainId}`) ?? null,
-      activeMenteeCount:
-        menteeCounts.get(`${a.userId}:${a.termId}:${a.domainId}`) ?? 0,
     });
   }
   const teams = [...teamByTerm.values()].sort((a, b) => b.sortKey - a.sortKey);
@@ -1703,7 +1661,7 @@ export default function ProjectDetail() {
         {/* Scope/challenge config lives behind this gear, visible only to
             Core/Admin/Staff. */}
         {canViewScope && (
-          <Tooltip label="Project settings" className="ml-auto -mb-px">
+          <Tooltip content="Project settings" className="ml-auto -mb-px">
             <button
               type="button"
               onClick={() => setScopeSettingsOpen(true)}
@@ -2095,7 +2053,7 @@ function ProjectHeader({
       {canEdit &&
         (editing ? (
           <>
-            <Tooltip label="Cancel">
+            <Tooltip content="Cancel">
               <button
                 type="button"
                 onClick={() => setEditing(false)}
@@ -2105,7 +2063,7 @@ function ProjectHeader({
                 <X className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
-            <Tooltip label="Save">
+            <Tooltip content="Save">
               <button
                 type="button"
                 onClick={() => {
@@ -2120,7 +2078,7 @@ function ProjectHeader({
             </Tooltip>
           </>
         ) : (
-          <Tooltip label="Edit">
+          <Tooltip content="Edit">
             <button
               type="button"
               onClick={openEditor}
@@ -3117,7 +3075,13 @@ function TeamSection({
                     {m.name}
                     <span className="text-muted-foreground">· {m.domain}</span>
                     {canEdit ? (
-                      <TeamLevelEditor member={m} />
+                      <Link
+                        to={`/members/${m.userId}#project-assignments`}
+                        title={`Change ${m.name}'s level on their profile`}
+                        className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
+                      >
+                        {m.level}
+                      </Link>
                     ) : (
                       <span className="text-muted-foreground">{m.level}</span>
                     )}
@@ -3129,75 +3093,6 @@ function TeamSection({
         </div>
       )}
     </div>
-  );
-}
-
-const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
-const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
-
-function TeamLevelEditor({
-  member,
-}: {
-  member: LoaderData["teams"][number]["members"][number];
-}) {
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const ceilingRank = member.eligibilityLevel
-    ? LEVEL_RANK[member.eligibilityLevel as "P1" | "P2" | "P3"]
-    : 0;
-  const currentRank = LEVEL_RANK[member.level as "P1" | "P2" | "P3"];
-  const blockedByMentees = member.activeMenteeCount > 0;
-
-  const value = (fetcher.formData?.get("level") as string | null) ?? member.level;
-  const busy = fetcher.state !== "idle";
-  const error = fetcher.data?.error;
-
-  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
-    if (opt === member.level) return null;
-    if (LEVEL_RANK[opt] > ceilingRank) {
-      return member.eligibilityLevel
-        ? `Eligible only up to ${member.eligibilityLevel} in ${member.domain}. Promote first.`
-        : `No ${member.domain} eligibility. Promote first.`;
-    }
-    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
-      return `Mentoring ${member.activeMenteeCount} mentee${member.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
-    }
-    return null;
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Select
-        ariaLabel={`Level for ${member.name} in ${member.domain}`}
-        value={value}
-        disabled={busy}
-        onChange={(next) => {
-          if (next === member.level) return;
-          fetcher.submit(
-            { level: next },
-            {
-              method: "post",
-              action: `/api/projects/assignments/${member.assignmentId}/level`,
-              encType: "application/json",
-            },
-          );
-        }}
-        options={LEVEL_OPTIONS.map((opt) => {
-          const reason = disabledReason(opt);
-          return {
-            value: opt,
-            label: `${opt}${reason ? " (locked)" : ""}`,
-            description: reason ?? undefined,
-            disabled: reason !== null,
-          };
-        })}
-        buttonClassName="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
-      />
-      {error && (
-        <span className="text-[10px] leading-tight text-destructive" role="alert">
-          {error}
-        </span>
-      )}
-    </span>
   );
 }
 
@@ -3805,7 +3700,7 @@ function PartnersSection({
                 >
                   <input type="hidden" name="intent" value="partner-end" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip label="End partnership (keeps the record)">
+                  <Tooltip content="End partnership (keeps the record)">
                     <button
                       type="submit"
                       aria-label="End partnership"
@@ -3829,7 +3724,7 @@ function PartnersSection({
                 >
                   <input type="hidden" name="intent" value="partner-unlink" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip label="Unlink organization (erases the record)">
+                  <Tooltip content="Unlink organization (erases the record)">
                     <button
                       type="submit"
                       aria-label="Unlink organization"
@@ -3945,14 +3840,14 @@ function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; c
       <div className="flex items-center gap-3 flex-shrink-0">
         {/* Read-only status badges stay inline; all actions live in "⋯". */}
         {doc.partnerVisible && (
-          <Tooltip label="Shared with partner">
+          <Tooltip content="Shared with partner">
             <span className="flex items-center text-accent-teal">
               <Handshake className="w-3.5 h-3.5" />
             </span>
           </Tooltip>
         )}
         {doc.publicVisible && (
-          <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+          <Tooltip content="Public write-up — rendered on this project's page on dali.website">
             <span className="flex items-center text-accent-coral">
               <Globe className="w-3.5 h-3.5" />
             </span>
@@ -4399,7 +4294,7 @@ function DocumentsBlock({
         </Link>
         <div className="flex items-center gap-2 flex-shrink-0">
           {f.partnerVisible && !canEdit && (
-            <Tooltip label="Shared with partner">
+            <Tooltip content="Shared with partner">
               <span className="flex items-center text-accent-teal">
                 <Handshake className="w-3.5 h-3.5" />
               </span>
@@ -4684,7 +4579,7 @@ function DocumentsBlock({
                   </button>
                   {canEdit && (
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <Tooltip label="Add document">
+                      <Tooltip content="Add document">
                         <button
                           type="button"
                           disabled={busy}
@@ -4695,7 +4590,7 @@ function DocumentsBlock({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      <Tooltip label="Upload file into folder">
+                      <Tooltip content="Upload file into folder">
                         <button
                           type="button"
                           disabled={busy}

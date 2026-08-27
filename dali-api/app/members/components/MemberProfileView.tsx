@@ -3,10 +3,11 @@ import {
   Form,
   Link,
   useFetcher,
+  useLocation,
   useNavigation,
   useSubmit,
 } from "react-router";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
   Briefcase as BriefcaseIcon,
   FolderKanban,
@@ -19,7 +20,9 @@ import {
   MessageSquare,
   Plus,
   Shield,
+  Smartphone,
   User as UserIcon,
+  Wallet,
   X,
 } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
@@ -77,6 +80,8 @@ export function MemberProfileView({
     favoriteIds,
     achievements,
     compliance,
+    wallet,
+    canRevokeWalletPass,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -187,14 +192,23 @@ export function MemberProfileView({
           )}
           {presenceLabel && (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span
-                aria-hidden
-                className={`w-1.5 h-1.5 rounded-full ${
+              <Tooltip
+                content={
                   presence?.state === "active"
-                    ? "bg-accent-green"
-                    : "border border-accent-yellow bg-background"
-                }`}
-              />
+                    ? "Active now — seen within the last minute."
+                    : "Recently active — last seen more than a minute ago."
+                }
+                variant="rich"
+              >
+                <span
+                  aria-hidden
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    presence?.state === "active"
+                      ? "bg-accent-green"
+                      : "border border-accent-yellow bg-background"
+                  }`}
+                />
+              </Tooltip>
               {presenceLabel}
             </p>
           )}
@@ -253,7 +267,12 @@ export function MemberProfileView({
         projectAssignments={projectAssignments}
         pendingReviews={pendingReviews}
         showReviewsRow={showReviewsRow}
+        canEditLevel={canManageEligibility}
       />
+
+      {(wallet || (canRevokeWalletPass && !isSelf)) && (
+        <WalletSection wallet={wallet} isSelf={isSelf} canRevoke={canRevokeWalletPass} />
+      )}
 
       {hasEducation && data.education && (
         <EducationSection education={data.education} />
@@ -601,12 +620,138 @@ function PersonalSection({
   );
 }
 
+function WalletSection({
+  wallet,
+  isSelf,
+  canRevoke,
+}: {
+  wallet: { apple: boolean; google: boolean } | null;
+  isSelf: boolean;
+  canRevoke: boolean;
+}) {
+  const revokeFetcher = useFetcher<{ error?: string } | null>();
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const revoking = revokeFetcher.state !== "idle";
+
+  async function addToGoogle() {
+    setGoogleBusy(true);
+    setGoogleError(null);
+    try {
+      const res = await fetch("/api/wallet/google/save-url", { credentials: "include" });
+      const body = (await res.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      if (res.ok && body?.url) {
+        window.open(body.url, "_blank", "noopener");
+      } else {
+        setGoogleError(body?.error ?? "Couldn't build the Google Wallet link.");
+      }
+    } catch {
+      setGoogleError("Network error — try again.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Wallet className="w-4 h-4 text-muted-foreground" aria-hidden />
+        <h2 className="font-heading font-semibold text-foreground">Membership pass</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">
+        {isSelf
+          ? "Add your DALI pass to your phone's wallet, then show it at a meeting to check in — no sign-in needed."
+          : "Reset this member's wallet pass to revoke a lost or shared one — they'll re-add it to get a working pass."}
+      </p>
+
+      {wallet && (wallet.apple || wallet.google) && (
+        <div className="flex flex-wrap gap-2">
+          {wallet.apple && (
+            <a
+              href="/api/wallet/apple/pass"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors"
+            >
+              <Wallet className="w-4 h-4" aria-hidden />
+              Add to Apple Wallet
+            </a>
+          )}
+          {wallet.google && (
+            <button
+              type="button"
+              onClick={() => void addToGoogle()}
+              disabled={googleBusy}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors disabled:opacity-50"
+            >
+              <Smartphone className="w-4 h-4" aria-hidden />
+              {googleBusy ? "Opening…" : "Add to Google Wallet"}
+            </button>
+          )}
+        </div>
+      )}
+      {wallet && !wallet.apple && !wallet.google && (
+        <p className="text-xs text-muted-foreground">
+          Wallet passes aren't configured on this server yet.
+        </p>
+      )}
+      {googleError && <p className="text-xs text-red-700 mt-2">{googleError}</p>}
+
+      {canRevoke && (
+        <div className="mt-3 pt-3 border-t border-border">
+          {confirmRevoke ? (
+            <revokeFetcher.Form
+              method="post"
+              onSubmit={() => setConfirmRevoke(false)}
+              className="flex items-center gap-2 flex-wrap"
+            >
+              <input type="hidden" name="intent" value="revoke-wallet-pass" />
+              <span className="text-sm text-foreground">
+                {isSelf
+                  ? "Reset your pass? Your current one stops working until you re-add it."
+                  : "Revoke this member's pass? Their current one stops working."}
+              </span>
+              <button
+                type="submit"
+                disabled={revoking}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {revoking ? "Resetting…" : isSelf ? "Reset pass" : "Revoke pass"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmRevoke(false)}
+                className="px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </revokeFetcher.Form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmRevoke(true)}
+              className="text-sm text-red-700 hover:underline"
+            >
+              {isSelf ? "Reset my wallet pass" : "Revoke wallet pass"}
+            </button>
+          )}
+          {revokeFetcher.data?.error && (
+            <p className="text-xs text-red-700 mt-2">{revokeFetcher.data.error}</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ActivitySection({
   isSelf,
   termCode,
   projectAssignments,
   pendingReviews,
   showReviewsRow,
+  canEditLevel,
   embedded,
 }: {
   isSelf: boolean;
@@ -614,15 +759,44 @@ function ActivitySection({
   projectAssignments: ProfilePageData["projectAssignments"];
   pendingReviews: number;
   showReviewsRow: boolean;
+  /** Core viewers get the inline P1/P2/P3 editor on each project row — this is
+   *  where assignment levels are changed now that the project hub links here. */
+  canEditLevel: boolean;
   embedded?: boolean;
 }) {
+  // The project hub deep-links to this card (#project-assignments) to change a
+  // level. Scroll it into view and flash it so the target is obvious.
+  const location = useLocation();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [highlight, setHighlight] = useState(false);
+  useEffect(() => {
+    if (location.hash !== "#project-assignments") return;
+    const el = cardRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() =>
+      el.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+    setHighlight(true);
+    const t = setTimeout(() => setHighlight(false), 2000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [location.hash]);
+
   return (
     <div
-      className={
+      id="project-assignments"
+      ref={cardRef}
+      className={`${
         embedded
           ? "flex flex-col gap-3"
           : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      }
+      } ${
+        highlight
+          ? "ring-2 ring-accent-coral ring-offset-2 ring-offset-background transition-shadow"
+          : "transition-shadow"
+      }`}
     >
       {!embedded && (
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
@@ -637,8 +811,9 @@ function ActivitySection({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide inline-flex items-center gap-1">
           Projects
+          <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
         </h3>
         {projectAssignments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -646,22 +821,43 @@ function ActivitySection({
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {projectAssignments.map((a) => (
-              <li key={a.id}>
-                <Link
-                  to={`/projects/${a.project.id}`}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+            {projectAssignments.map((a) =>
+              canEditLevel ? (
+                // The level control is interactive, so the project link can't
+                // wrap the whole row — split them.
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border"
                 >
-                  <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                  <Link
+                    to={`/projects/${a.project.id}`}
+                    className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
+                  >
                     <ProjectIcon iconEmoji={a.project.iconEmoji} />
                     <span className="truncate">{a.project.name}</span>
+                  </Link>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                    {a.domain.name}
+                    <ProfileLevelEditor assignment={a} />
                   </span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {a.domain.name} · {a.level}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                </li>
+              ) : (
+                <li key={a.id}>
+                  <Link
+                    to={`/projects/${a.project.id}`}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                      <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                      <span className="truncate">{a.project.name}</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {a.domain.name} · {a.level}
+                    </span>
+                  </Link>
+                </li>
+              ),
+            )}
           </ul>
         )}
       </div>
@@ -683,6 +879,79 @@ function ActivitySection({
         </div>
       )}
     </div>
+  );
+}
+
+// Core-only inline level editor for one project assignment. Posts to the same
+// resource route the project hub used to call; the guards (eligibility ceiling,
+// mentee-blocked demotion) are enforced server-side and previewed here.
+const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
+const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
+
+function ProfileLevelEditor({
+  assignment,
+}: {
+  assignment: ProfilePageData["projectAssignments"][number];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ceilingRank = assignment.eligibilityLevel
+    ? LEVEL_RANK[assignment.eligibilityLevel as "P1" | "P2" | "P3"]
+    : 0;
+  const currentRank = LEVEL_RANK[assignment.level as "P1" | "P2" | "P3"];
+  const blockedByMentees = assignment.activeMenteeCount > 0;
+
+  const value =
+    (fetcher.formData?.get("level") as string | null) ?? assignment.level;
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
+    if (opt === assignment.level) return null;
+    if (LEVEL_RANK[opt] > ceilingRank) {
+      return assignment.eligibilityLevel
+        ? `Eligible only up to ${assignment.eligibilityLevel} in ${assignment.domain.name}. Promote first.`
+        : `No ${assignment.domain.name} eligibility. Promote first.`;
+    }
+    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
+      return `Mentoring ${assignment.activeMenteeCount} mentee${assignment.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
+    }
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Select
+        ariaLabel={`Assignment level in ${assignment.domain.name}`}
+        value={value}
+        disabled={busy}
+        onChange={(next) => {
+          if (next === assignment.level) return;
+          fetcher.submit(
+            { level: next },
+            {
+              method: "post",
+              action: `/api/projects/assignments/${assignment.id}/level`,
+              encType: "application/json",
+            },
+          );
+        }}
+        options={LEVEL_OPTIONS.map((opt) => {
+          const reason = disabledReason(opt);
+          return {
+            value: opt,
+            label: `${opt}${reason ? " (locked)" : ""}`,
+            description: reason ?? undefined,
+            disabled: reason !== null,
+          };
+        })}
+        buttonClassName="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
+      />
+      {error && (
+        <span className="text-[10px] leading-tight text-destructive" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -1006,13 +1275,20 @@ function AddEligibility({
           buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
       </label>
-      <button
-        type="submit"
-        disabled={submitting || !domainId}
-        className={buttonClasses("primary", "sm")}
+      <Tooltip
+        content={!domainId ? "Select a domain first." : undefined}
+        variant="rich"
       >
-        Add
-      </button>
+        <span>
+          <button
+            type="submit"
+            disabled={submitting || !domainId}
+            className={buttonClasses("primary", "sm")}
+          >
+            Add
+          </button>
+        </span>
+      </Tooltip>
       <button
         type="button"
         onClick={() => {

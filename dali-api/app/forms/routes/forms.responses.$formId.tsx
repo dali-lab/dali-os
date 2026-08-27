@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import { Download, Search } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/forms.responses.$formId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -302,11 +302,10 @@ export default function FormResponses() {
                 className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </div>
-            <Tooltip label="Export CSV">
+            <Tooltip content="Export CSV — exports all responses, ignoring current filters">
               <a
                 href={`/forms/responses/${formId}/export.csv`}
                 download
-                title="Exports all responses (ignores filters)"
                 aria-label="Export CSV"
                 className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap"
               >

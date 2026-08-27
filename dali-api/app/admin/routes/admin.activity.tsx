@@ -16,7 +16,7 @@ import {
   hasAnyFilter,
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { StatusDot, type Tone } from "~/admin/components/console-ui";
 
@@ -293,13 +293,15 @@ export default function AdminConsoleActivity() {
           </select>
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          Person
+          <span className="inline-flex items-center gap-1">
+            Person
+            <InfoTip content="Matches as actor or target — returns events where this person did something or had something done to them." />
+          </span>
           <input
             type="text"
             name="person"
             defaultValue={filters.person ?? ""}
             placeholder="name, email, or id"
-            title="Matches as actor or target — what did this person do, and what was done to them"
             className={inputClass}
           />
         </label>
@@ -329,7 +331,7 @@ export default function AdminConsoleActivity() {
             Apply
           </button>
           {anyFilter && (
-            <Tooltip label="Clear filters">
+            <Tooltip content="Clear filters">
               <Link
                 to="?"
                 aria-label="Clear filters"
@@ -369,7 +371,7 @@ export default function AdminConsoleActivity() {
 
       <nav className="flex items-center justify-between" aria-label="Activity pagination">
         {page > 1 ? (
-          <Tooltip label="Previous">
+          <Tooltip content="Previous">
             <Link
               to={pageHref(page - 1)}
               prefetch="render"
@@ -383,7 +385,7 @@ export default function AdminConsoleActivity() {
           <span />
         )}
         {hasNext ? (
-          <Tooltip label="Next">
+          <Tooltip content="Next">
             <Link
               to={pageHref(page + 1)}
               prefetch="render"

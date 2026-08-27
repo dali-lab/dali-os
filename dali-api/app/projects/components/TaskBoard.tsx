@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
-import { Menu, MenuItem, Popover } from "~/components/ui/floating";
+import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
@@ -654,24 +654,25 @@ export function TaskBoard({
         headerClassName: cn("flex items-center justify-center px-1 py-2", roundedTop),
         headerStyle: { background: accent.fill, color: accent.ink },
         headerExtra: (
-          <button
-            type="button"
-            onClick={() => toggleCollapsed(status)}
-            className="rounded p-0.5 text-current hover:bg-current/10"
-            aria-label={`Expand ${label} column`}
-            title={`Expand ${label}`}
-          >
-            <ChevronsRight className="h-4 w-4" aria-hidden />
-          </button>
+          <Tooltip content={`Expand ${label}`}>
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(status)}
+              className="rounded p-0.5 text-current hover:bg-current/10"
+              aria-label={`Expand ${label} column`}
+            >
+              <ChevronsRight className="h-4 w-4" aria-hidden />
+            </button>
+          </Tooltip>
         ),
         cards: [],
         listClassName: "flex flex-1 flex-col items-center gap-2 py-3",
         renderEmpty: () => (
+          <Tooltip content={`Expand ${label}`}>
           <button
             type="button"
             onClick={() => toggleCollapsed(status)}
             className="flex flex-1 flex-col items-center gap-2 text-muted-foreground hover:text-foreground"
-            title={`Expand ${label}`}
           >
             <span className={cn(META_TEXT(os), "font-medium")}>{cards.length}</span>
             <span
@@ -681,6 +682,7 @@ export function TaskBoard({
               {label}
             </span>
           </button>
+          </Tooltip>
         ),
       };
     }
@@ -845,24 +847,33 @@ export function TaskBoard({
                 </div>
 
                 {termFilterEnabled && (
-                  <FilterGroup label="Term" os={os}>
-                    {termFilterOrder(
-                      options.terms.map((t) => ({
-                        id: t.id,
-                        code: t.code,
-                        isCurrent: t.id === options.currentTermId,
-                      })),
-                    ).map((opt) => (
-                      <FilterPill
-                        key={opt.value}
-                        os={os}
-                        selected={effectiveTerm === opt.value}
-                        onClick={() => setTermFilter(opt.value)}
-                      >
-                        {opt.label}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={cn("text-xs inline-flex items-center gap-1", os ? "text-os-grey" : "text-muted-foreground")}>
+                      Term
+                      <InfoTip
+                        content="Term code format: last two digits of the year + S (spring), F (fall), or X (summer). E.g. 26F = Fall 2026."
+                        placement="right"
+                      />
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {termFilterOrder(
+                        options.terms.map((t) => ({
+                          id: t.id,
+                          code: t.code,
+                          isCurrent: t.id === options.currentTermId,
+                        })),
+                      ).map((opt) => (
+                        <FilterPill
+                          key={opt.value}
+                          os={os}
+                          selected={effectiveTerm === opt.value}
+                          onClick={() => setTermFilter(opt.value)}
+                        >
+                          {opt.label}
+                        </FilterPill>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {showEpicFilter && (
@@ -1393,27 +1404,33 @@ function TaskCard({
             an attached file, a GitHub link: anything that stamps activityAt). */}
         <div className="flex items-start gap-1.5">
           {card.hasUnread && (
-            <Bell
-              aria-label={`Updated ${formatSince(card.activityAt)} ago — you haven't opened it since`}
-              className={cn(
-                "mt-0.5 h-3.5 w-3.5 shrink-0",
-                os ? "text-os-accent" : "text-accent-coral",
-              )}
-            />
+            <Tooltip
+              variant="rich"
+              content={`Updated ${formatSince(card.activityAt)} ago — a field, comment, file, or description changed since you last opened it.`}
+            >
+              <Bell
+                aria-label={`Updated ${formatSince(card.activityAt)} ago — you haven't opened it since`}
+                className={cn(
+                  "mt-0.5 h-3.5 w-3.5 shrink-0",
+                  os ? "text-os-accent" : "text-accent-coral",
+                )}
+              />
+            </Tooltip>
           )}
           <span className="min-w-0 text-foreground">{card.title}</span>
         </div>
 
         {card.assignees.length > 0 && (
-          <div
-            className={cn(
-              "mt-1 truncate text-muted-foreground",
-              META_TEXT(os),
-            )}
-            title={card.assignees.map((a) => a.name).join(", ")}
-          >
-            {card.assignees.map((a) => a.name).join(", ")}
-          </div>
+          <Tooltip content={card.assignees.map((a) => a.name).join(", ")}>
+            <div
+              className={cn(
+                "mt-1 truncate text-muted-foreground",
+                META_TEXT(os),
+              )}
+            >
+              {card.assignees.map((a) => a.name).join(", ")}
+            </div>
+          </Tooltip>
         )}
 
         {/* Counts and dates, each an icon beside its value. */}
@@ -1509,10 +1526,12 @@ function MetaItem({
   children: ReactNode;
 }) {
   return (
-    <span title={title} className={cn("inline-flex items-center gap-1", className)}>
-      {icon}
-      {children}
-    </span>
+    <Tooltip content={title ?? null}>
+      <span className={cn("inline-flex items-center gap-1", className)}>
+        {icon}
+        {children}
+      </span>
+    </Tooltip>
   );
 }
 

@@ -1,5 +1,6 @@
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { Tooltip } from "~/components/ui/floating";
 
 export type RolePillSize = "sm" | "md";
 
@@ -41,25 +42,44 @@ export function RolePills({
   return (
     <span className={cn("inline-flex flex-wrap gap-1", className)}>
       {isAdmin && (
-        <span className={cn(PILL_BASE, adminTone, sizeClass)}>Admin</span>
+        <Tooltip
+          content="Full system access — can manage all settings, members, and data."
+          variant="rich"
+        >
+          <span className={cn(PILL_BASE, adminTone, sizeClass)}>Admin</span>
+        </Tooltip>
       )}
       {isCore && (
-        <span className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}>Core</span>
+        <Tooltip
+          content="Core team member — broad lab access including hiring, staffing, and internal tools."
+          variant="rich"
+        >
+          <span className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}>Core</span>
+        </Tooltip>
       )}
       {coreTitles?.map((title) => (
-        <span key={`core-${title}`} className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}>
-          {title}
-        </span>
+        <Tooltip key={`core-${title}`} content={`Core role: ${title}`} variant="rich">
+          <span className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}>
+            {title}
+          </span>
+        </Tooltip>
       ))}
       {domainRoles?.map((role, i) => (
-        <span
+        <Tooltip
           key={`domain-${role.domainName}-${i}`}
-          className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}
+          content={
+            role.level
+              ? `Domain Lead for ${role.domainName} (Level ${role.level})`
+              : `Domain Lead for ${role.domainName}`
+          }
+          variant="rich"
         >
-          {showLevel && role.level
-            ? `${role.domainName} · ${role.level}`
-            : role.domainName}
-        </span>
+          <span className={cn(PILL_BASE, DEFAULT_TONE, sizeClass)}>
+            {showLevel && role.level
+              ? `${role.domainName} · ${role.level}`
+              : role.domainName}
+          </span>
+        </Tooltip>
       ))}
     </span>
   );

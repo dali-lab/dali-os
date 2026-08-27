@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -333,7 +333,7 @@ export default function FilePage() {
                     })}
                   </div>
                 </div>
-                <Tooltip label="Download">
+                <Tooltip content="Download">
                   <a
                     href={v.downloadUrl}
                     aria-label="Download"

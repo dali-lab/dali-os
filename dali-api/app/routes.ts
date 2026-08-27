@@ -9,6 +9,9 @@ export default [
     route("calendar", "calendar/routes/calendar.tsx"),
     // Standalone self-check-in surface for meetings without a meeting note.
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
+    // Organizer/Core scan station: scan members' wallet passes to mark them
+    // present (the inverse of self-check-in).
+    route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
@@ -380,11 +383,21 @@ export default [
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
+  // Wallet-pass scan check-in: an operator scans a member's pass to mark them
+  // present (inverse of self-check-in; the member is taken from the pass token).
+  route(
+    "api/scheduled-meetings/:id/scan-attendee",
+    "calendar/routes/api.scheduled-meetings.$id.scan-attendee.ts",
+  ),
   // Organizer/Core PDF of the self-check-in QR (print / project at the event).
   route(
     "api/scheduled-meetings/:id/check-in-qr.pdf",
     "calendar/routes/api.scheduled-meetings.$id.check-in-qr.pdf.ts",
   ),
+  // Wallet membership pass: download the signed .pkpass (Apple) or a
+  // save-to-Google-Wallet link, each for the current user only.
+  route("api/wallet/apple/pass", "wallet/routes/api.wallet.apple.pass.ts"),
+  route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),

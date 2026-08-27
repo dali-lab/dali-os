@@ -33,7 +33,7 @@ import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -1319,7 +1319,7 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
           </button>
         </Form>
         {hasLinked && (
-          <Form method="post" preventScrollReset>
+          <Form method="post" preventScrollReset className="inline-flex items-center gap-1">
             <input type="hidden" name="intent" value="mark-ready" />
             <input type="hidden" name="cycleId" value={cycle.id} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1330,6 +1330,7 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
               <CheckCircle className="w-4 h-4" />
               Mark as ready
             </button>
+            <InfoTip content="Confirms this domain's challenge is set and can advance to deliberations — notifies the hiring lead that setup is complete." />
           </Form>
         )}
       </div>
@@ -1750,14 +1751,20 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-foreground">Initial Delibs</p>
+          <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
+            Initial Delibs
+            <InfoTip content="Short for deliberations — the group discussion where domain leads review applications together and decide who advances to interviews." />
+          </p>
           <p className="text-xs text-muted-foreground">Review applications and decide who advances to interviews</p>
         </div>
         {renderButton("Initial", initialSession)}
       </div>
       <div className="border-t border-border pt-3 flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-foreground">Final Delibs</p>
+          <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
+            Final Delibs
+            <InfoTip content="Short for deliberations — the post-interview group discussion where domain leads make final accept, waitlist, or reject decisions." />
+          </p>
           <p className="text-xs text-muted-foreground">Post-interview decisions: accept, waitlist, or reject</p>
         </div>
         {renderButton("Final", finalSession)}
@@ -1802,14 +1809,15 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
   // ring sitting just outside a red/green/etc. border.
   const accent = isCurrent ? "ring-2 ring-offset-1 ring-current/60" : "";
   return (
-    <span
-      title={tooltip}
-      aria-label={tooltip}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border border-current/40 ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
-    >
-      {Icon && <Icon className="w-3 h-3" />}
-      {baseLabel}{rankSuffix}{stageSuffix}
-    </span>
+    <Tooltip content={tooltip} variant="rich">
+      <span
+        aria-label={tooltip}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border border-current/40 ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
+      >
+        {Icon && <Icon className="w-3 h-3" />}
+        {baseLabel}{rankSuffix}{stageSuffix}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1834,14 +1842,15 @@ const PRE_PIPELINE_ICONS: Record<PrePipelinePill, React.ComponentType<{ classNam
 function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
   const Icon = PRE_PIPELINE_ICONS[pill];
   return (
-    <span
-      title={PRE_PIPELINE_TOOLTIPS[pill]}
-      aria-label={PRE_PIPELINE_TOOLTIPS[pill]}
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-current/40"
-    >
-      <Icon className="w-3 h-3" />
-      {PRE_PIPELINE_LABELS[pill]}
-    </span>
+    <Tooltip content={PRE_PIPELINE_TOOLTIPS[pill]} variant="rich">
+      <span
+        aria-label={PRE_PIPELINE_TOOLTIPS[pill]}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-current/40"
+      >
+        <Icon className="w-3 h-3" />
+        {PRE_PIPELINE_LABELS[pill]}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -2057,30 +2066,36 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             </button>
           )}
           {currentStatus === "UnderReview" && (
-            <button
-              onClick={async () => {
-                const res = await fetch(`/api/hiring/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
-                  method: "POST", credentials: "include",
-                });
-                if (res.ok) {
-                  revalidator.revalidate();
-                } else {
-                  const body = await res.json().catch(() => ({}));
-                  toast.error(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
-                }
-              }}
-              disabled={!canAssignReviewers || cycleReviewersForDomain.length === 0}
-              title={
+            <Tooltip
+              content={
                 !canAssignReviewers
-                  ? "Set both domain and general rubrics before assigning reviewers"
+                  ? "A rubric must be set before reviewers can be auto-assigned to applications."
                   : cycleReviewersForDomain.length === 0
-                    ? "Add reviewers to this domain first"
-                    : undefined
+                    ? "Add reviewers to this domain first."
+                    : null
               }
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
+              variant="rich"
             >
-              Auto-Assign Reviewers
-            </button>
+              <span>
+                <button
+                  onClick={async () => {
+                    const res = await fetch(`/api/hiring/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
+                      method: "POST", credentials: "include",
+                    });
+                    if (res.ok) {
+                      revalidator.revalidate();
+                    } else {
+                      const body = await res.json().catch(() => ({}));
+                      toast.error(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
+                    }
+                  }}
+                  disabled={!canAssignReviewers || cycleReviewersForDomain.length === 0}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
+                >
+                  Auto-Assign Reviewers
+                </button>
+              </span>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -2114,7 +2129,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   : <ChevronDown className="w-3 h-3" />)}
               </button>
             </th>
-            <th className="px-6 py-3 text-left">Decisions</th>
+            <th className="px-6 py-3 text-left">
+              <span className="inline-flex items-center gap-1">
+                Decisions
+                <InfoTip content="Pre-pipeline pills show where this application stands before a formal decision — Reviewing, Interview scheduled, or Post-interview. Formal decision pills (Draft → Final → Released) appear once a decision is made." />
+              </span>
+            </th>
             <th className="px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
@@ -2414,8 +2434,8 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               ? `${fullName} — review in progress. Click to view partial scores.`
               : `${fullName} — assigned but not started yet.`;
         return (
+          <Tooltip key={r.id} content={tooltip} variant="rich">
           <span
-            key={r.id}
             role="button"
             tabIndex={0}
             onClick={() => setOpenReview(r)}
@@ -2425,7 +2445,6 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                 setOpenReview(r);
               }
             }}
-            title={tooltip}
             aria-label={tooltip}
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border cursor-pointer hover:brightness-95 transition ${pillClass}`}
           >
@@ -2439,12 +2458,13 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                 }}
                 disabled={removing === r.id}
                 className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
-                title={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
+                aria-label={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
               >
                 <Trash2 className="w-3 h-3" />
               </button>
             )}
           </span>
+          </Tooltip>
         );
       })}
       {editable && adding ? (

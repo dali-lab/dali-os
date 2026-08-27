@@ -19,6 +19,7 @@ import {
   sprintBands as computeSprintBands,
   utcDayOf,
 } from "../lib/timeline-days";
+import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
@@ -357,13 +358,14 @@ function TimelineBarHover({
           {title}
         </div>
         {clickable && (
-          <span
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-container text-os-accent"
-            aria-hidden
-            title="Click the bar to open"
-          >
-            <ArrowUpRight className="h-[15px] w-[15px]" />
-          </span>
+          <Tooltip content="Click the bar to open" placement="right">
+            <span
+              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-container text-os-accent"
+              aria-hidden
+            >
+              <ArrowUpRight className="h-[15px] w-[15px]" />
+            </span>
+          </Tooltip>
         )}
       </div>
       {/* Clamped, not "in full": an epic carried over from before the
@@ -1248,7 +1250,10 @@ export function EpicsTimeline({
                           top: b.top,
                           height: b.height,
                           border: `1px solid ${OS_LEVEL.epic.edge}`,
-                          background: "transparent",
+                          // Fill the bar with its solid level colour, not a
+                          // translucent wash, so the container reads as one
+                          // solid band; nested story/task bars paint on top.
+                          background: OS_LEVEL.epic.fill,
                           ...dragStyle(
                             "epic",
                             b.epic.id,
@@ -1311,7 +1316,9 @@ export function EpicsTimeline({
                         top: b.top,
                         height: b.height,
                         border: `1px solid ${OS_LEVEL.story.edge}`,
-                        background: "transparent",
+                        // Solid fill, like the epic — the story's own hue
+                        // still reads as its own band over the epic it nests in.
+                        background: OS_LEVEL.story.fill,
                         ...dragStyle(
                           "story",
                           b.story.id,

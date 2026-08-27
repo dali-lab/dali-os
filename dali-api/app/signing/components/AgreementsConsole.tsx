@@ -17,9 +17,11 @@ import {
   SCOPE_SHORT,
   AUDIENCE_SHORT,
   CADENCE_SHORT,
+  AUDIENCE_OPTIONS,
 } from "~/signing/lib/document-config";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime } from "~/lib/display";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 
 // The "sign request goes to whom" line for the activation confirm. Turns the
 // resolved audience (null = not enumerable) into a short, honest sentence —
@@ -146,8 +148,9 @@ export function AgreementsConsole() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
+          <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide inline-flex items-center gap-1.5">
             Completion
+            <InfoTip content="Percentage of the audience who have signed each in-force version. Only enumerable audiences (Members, Mentors, New Members) show a progress bar; non-enumerable ones show a raw count." />
           </h2>
           {pastCount > 0 && (
             <button
@@ -188,7 +191,7 @@ export function AgreementsConsole() {
                   <Link to={driveHref(s.documentId)} className="text-accent-coral hover:underline">
                     {s.documentName}
                   </Link>{" "}
-                  · <span title={formatDateTime(s.signedAt, tz)}>{timeAgo(s.signedAt)}</span>
+                  · <Tooltip content={formatDateTime(s.signedAt, tz)}><span>{timeAgo(s.signedAt)}</span></Tooltip>
                 </li>
               ))}
             </ul>
@@ -216,7 +219,12 @@ export function AgreementsConsole() {
                         {a.name}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                        <Pill>{AUDIENCE_SHORT[a.audience] ?? a.audience}</Pill>
+                        <Tooltip
+                          content={AUDIENCE_OPTIONS.find((o) => o.value === a.audience)?.label ?? a.audience}
+                          variant="rich"
+                        >
+                          <span><Pill>{AUDIENCE_SHORT[a.audience] ?? a.audience}</Pill></span>
+                        </Tooltip>
                         <Pill>{CADENCE_SHORT[a.cadence] ?? a.cadence}</Pill>
                         <Pill>{SCOPE_SHORT[a.gateScope] ?? a.gateScope}</Pill>
                         {a.draftPending && <Pill tone="amber">Draft pending</Pill>}
@@ -298,13 +306,18 @@ function NeedsAttentionCard({
                   name="versionId"
                   value={agreement.latestPublishedVersionId}
                 />
-                <button
-                  type="submit"
-                  disabled={activating}
-                  className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90 disabled:opacity-50"
+                <Tooltip
+                  content="Activates this version: sends a sign request to everyone in the agreement's audience and starts tracking completion."
+                  variant="rich"
                 >
-                  <Zap className="w-3.5 h-3.5" /> {activating ? "Activating…" : "Put in force"}
-                </button>
+                  <button
+                    type="submit"
+                    disabled={activating}
+                    className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90 disabled:opacity-50"
+                  >
+                    <Zap className="w-3.5 h-3.5" /> {activating ? "Activating…" : "Put in force"}
+                  </button>
+                </Tooltip>
               </fetcher.Form>
             ) : (
               <Link
@@ -409,24 +422,27 @@ function RemindButton({ binding, tz }: { binding: ConsoleBinding; tz: string }) 
       <fetcher.Form method="post">
         <input type="hidden" name="intent" value="remind" />
         <input type="hidden" name="bindingId" value={binding.bindingId} />
-        <button
-          type="submit"
-          disabled={sending || throttled || justSent}
-          title={
+        <Tooltip
+          content={
             throttled && binding.lastRemindedAt
-              ? `Reminded ${timeAgo(binding.lastRemindedAt)} (${formatDateTime(
-                  binding.lastRemindedAt,
-                  tz,
-                )})`
-              : `Remind the ${binding.outstanding.length} outstanding signer${
+              ? `Already reminded ${timeAgo(binding.lastRemindedAt)} — reminders are throttled to once per 24 hours to avoid inbox noise.`
+              : `Send a reminder to the ${binding.outstanding.length} outstanding signer${
                   binding.outstanding.length !== 1 ? "s" : ""
-                }`
+                }.`
           }
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 disabled:hover:bg-card"
+          variant="rich"
         >
-          {justSent ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> : <Send className="w-3.5 h-3.5" />}
-          {sending ? "Sending…" : justSent ? "Sent" : "Remind"}
-        </button>
+          <span>
+            <button
+              type="submit"
+              disabled={sending || throttled || justSent}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 disabled:hover:bg-card"
+            >
+              {justSent ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> : <Send className="w-3.5 h-3.5" />}
+              {sending ? "Sending…" : justSent ? "Sent" : "Remind"}
+            </button>
+          </span>
+        </Tooltip>
       </fetcher.Form>
       {throttled && binding.lastRemindedAt && !justSent && (
         <p className="mt-1 text-[11px] text-muted-foreground inline-flex items-center gap-1">

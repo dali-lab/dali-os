@@ -31,7 +31,7 @@ import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_COLORS } from '~/hiring/lib/labels'
-import { Select, type SelectOption } from '~/components/ui/floating'
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 const RECOMMENDATION_OPTIONS = [
   'Strong Hire',

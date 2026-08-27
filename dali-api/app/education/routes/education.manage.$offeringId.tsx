@@ -80,6 +80,7 @@ import { DateField } from "~/components/ui/DateField";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
+import { InfoTip } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Manage ${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -958,14 +959,25 @@ export default function ManageOffering() {
             <div className="flex flex-col gap-3">
               {(
                 [
-                  { slot: "session-feedback", label: "Session feedback" },
-                  { slot: "instructor-exit", label: "Instructor exit survey" },
+                  {
+                    slot: "session-feedback",
+                    label: "Session feedback",
+                    tip: "Sent automatically to everyone marked Present after each session. Results are visible to the instructor and Core members.",
+                  },
+                  {
+                    slot: "instructor-exit",
+                    label: "Instructor exit survey",
+                    tip: "Sent to instructors when the offering is closed out. Used to capture end-of-course reflections — separate from the per-session feedback students receive.",
+                  },
                 ] as const
-              ).map(({ slot, label }) => (
+              ).map(({ slot, label, tip }) => (
                 <Form key={slot} method="post" className="flex items-center gap-3">
                   <input type="hidden" name="intent" value="set-form-binding" />
                   <input type="hidden" name="slot" value={slot} />
-                  <span className="text-sm text-foreground w-44">{label}</span>
+                  <span className="text-sm text-foreground w-44 inline-flex items-center gap-1">
+                    {label}
+                    <InfoTip content={tip} />
+                  </span>
                   <Select
                     name="formId"
                     defaultValue={

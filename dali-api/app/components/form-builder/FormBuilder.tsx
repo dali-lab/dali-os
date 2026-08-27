@@ -1,5 +1,5 @@
 import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
-import { Select } from '~/components/ui/floating'
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye, Undo2, Redo2 } from 'lucide-react'
 import {
   DndContext,
@@ -13,7 +13,6 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
-import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { isLayoutOnly } from '~/lib/form-answers'
@@ -413,16 +412,19 @@ export function FormBuilderTab({
           </div>
 
           <div className="flex items-center gap-6 mt-6">
-            <Checkbox
-              checked={editForm.required || false}
-              onChange={(e) =>
-                setEditForm({
-                  ...editForm,
-                  required: e.target.checked,
-                })
-              }
-              label="Required field"
-            />
+            <span className="flex items-center gap-1">
+              <Checkbox
+                checked={editForm.required || false}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    required: e.target.checked,
+                  })
+                }
+                label="Required field"
+              />
+              <InfoTip content="Respondents must answer this question before they can submit. Shown as * in the fill view." />
+            </span>
             {isGeneralForm && (
               <Checkbox
                 checked={editForm.data?.afterDomains || false}
@@ -609,7 +611,7 @@ export function FormBuilderTab({
         </div>
 
         <div className="flex justify-between items-center gap-3 pt-2">
-          <Tooltip label="Remove question">
+          <Tooltip content="Remove question">
             <button
               type="button"
               onClick={() => editForm.key && handleDelete(editForm.key)}
@@ -681,7 +683,10 @@ export function FormBuilderTab({
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             <span className="flex-1 border-t border-dashed border-border" />
-                            Page break
+                            <span className="flex items-center gap-1">
+                              Page break
+                              <InfoTip content="Splits the form into multiple pages at this point. Layout only — not counted as a question and not included in responses." />
+                            </span>
                             <span className="flex-1 border-t border-dashed border-border" />
                           </div>
                           <input
@@ -806,13 +811,19 @@ export function FormBuilderTab({
             <Plus className="w-5 h-5" />
             Add Question
           </button>
-          <button
-            onClick={handleAddPageBreak}
-            className="py-4 px-5 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+          <Tooltip
+            content="A page break splits the form into multiple pages. It's a layout divider — not a question — so it doesn't appear in responses."
+            variant="rich"
+            placement="top"
           >
-            <Plus className="w-5 h-5" />
-            Add Page Break
-          </button>
+            <button
+              onClick={handleAddPageBreak}
+              className="py-4 px-5 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+            >
+              <Plus className="w-5 h-5" />
+              Add Page Break
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -825,7 +836,7 @@ export function FormBuilderTab({
                   collabToken), where the Y.UndoManager provides history. */}
               {formId && collabToken && (
                 <div className="flex items-center gap-1 mr-auto">
-                  <Tooltip label="Undo (⌘Z)">
+                  <Tooltip content="Undo (⌘Z)">
                     <button
                       type="button"
                       onClick={undo}
@@ -836,7 +847,7 @@ export function FormBuilderTab({
                       <Undo2 className="w-4 h-4" />
                     </button>
                   </Tooltip>
-                  <Tooltip label="Redo (⌘⇧Z)">
+                  <Tooltip content="Redo (⌘⇧Z)">
                     <button
                       type="button"
                       onClick={redo}

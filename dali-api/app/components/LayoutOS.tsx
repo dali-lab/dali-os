@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation, useMatches } from 'react-router'
+import { Tooltip } from "~/components/ui/floating";
 import {
   Bell,
   Calendar,
@@ -340,47 +341,49 @@ export function LayoutOS({
     // Accept/Maybe/Decline are available (same as Home).
     if (t.source === 'meeting') {
       return (
+        <Tooltip key={t.id} content={t.title}>
+          <button
+            type="button"
+            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+            onClickCapture={closeBellFlyoutNow}
+            className={taskRowClass}
+          >
+            <span className="truncate">{t.title}</span>
+          </button>
+        </Tooltip>
+      )
+    }
+    return t.link ? (
+      <Tooltip key={t.id} content={t.title}>
         <button
-          key={t.id}
           type="button"
-          title={t.title}
-          {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-          onClickCapture={closeBellFlyoutNow}
+          onClick={() => {
+            closeBellFlyoutNow()
+            // Tasks are notification rows — POST /read clears the tile + drops
+            // the count once the user acts. Self-clearing tasks (a form to
+            // submit, the onboarding checklist) are the exception: opening the
+            // link isn't acting on them, so they clear only when their own
+            // action completes.
+            if (!t.hasAction) {
+              fetch(`/api/notifications/${t.id}/read`, {
+                method: 'POST',
+                credentials: 'include',
+                keepalive: true,
+              }).then(() => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)))
+            }
+            openInWorkspace({ url: t.link!, label: t.title })
+          }}
           className={taskRowClass}
         >
           <span className="truncate">{t.title}</span>
         </button>
-      )
-    }
-    return t.link ? (
-      <button
-        key={t.id}
-        type="button"
-        title={t.title}
-        onClick={() => {
-          closeBellFlyoutNow()
-          // Tasks are notification rows — POST /read clears the tile + drops
-          // the count once the user acts. Self-clearing tasks (a form to
-          // submit, the onboarding checklist) are the exception: opening the
-          // link isn't acting on them, so they clear only when their own
-          // action completes.
-          if (!t.hasAction) {
-            fetch(`/api/notifications/${t.id}/read`, {
-              method: 'POST',
-              credentials: 'include',
-              keepalive: true,
-            }).then(() => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)))
-          }
-          openInWorkspace({ url: t.link!, label: t.title })
-        }}
-        className={taskRowClass}
-      >
-        <span className="truncate">{t.title}</span>
-      </button>
+      </Tooltip>
     ) : (
-      <div key={t.id} title={t.title} className={cn(taskRowClass, 'text-os-muted hover:bg-transparent')}>
-        <span className="truncate">{t.title}</span>
-      </div>
+      <Tooltip key={t.id} content={t.title}>
+        <div className={cn(taskRowClass, 'text-os-muted hover:bg-transparent')}>
+          <span className="truncate">{t.title}</span>
+        </div>
+      </Tooltip>
     )
   }
 
@@ -428,83 +431,88 @@ export function LayoutOS({
               type="button"
               {...tabClickProps({ url: '/', label: 'Home' })}
               className="font-os-logo text-2xl font-semibold text-os-accent focus:outline-none"
-              title="Home"
             >
               dali.os
             </button>
           )}
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          <Tooltip
+            content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            placement="right"
           >
-            {collapsed ? (
-              <PanelLeftOpen className="h-[18px] w-[18px]" />
-            ) : (
-              <PanelLeftClose className="h-[18px] w-[18px]" />
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-[18px] w-[18px]" />
+              ) : (
+                <PanelLeftClose className="h-[18px] w-[18px]" />
+              )}
+            </button>
+          </Tooltip>
         </div>
 
         {/* Search — the visible affordance for the ⌘K palette. */}
-        <button
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-          title="Search (⌘K)"
-          aria-label="Search"
-          className={cn(
-            'flex shrink-0 items-center rounded-os-item bg-os-card text-base text-os-grey transition-colors hover:text-foreground',
-            collapsed ? 'justify-center p-2.5' : 'gap-3 p-3',
-          )}
-        >
-          <Search className="h-[18px] w-[18px] flex-shrink-0 opacity-80" />
-          {!collapsed && (
-            <>
-              <span>Search</span>
-              <kbd className="ml-auto rounded bg-os-container px-1.5 py-0.5 font-mono text-[10px] text-os-muted">
-                ⌘K
-              </kbd>
-            </>
-          )}
-        </button>
+        <Tooltip content={collapsed ? 'Search (⌘K)' : ''} placement="right">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+            className={cn(
+              'flex shrink-0 items-center rounded-os-item bg-os-card text-base text-os-grey transition-colors hover:text-foreground',
+              collapsed ? 'justify-center p-2.5' : 'gap-3 p-3',
+            )}
+          >
+            <Search className="h-[18px] w-[18px] flex-shrink-0 opacity-80" />
+            {!collapsed && (
+              <>
+                <span>Search</span>
+                <kbd className="ml-auto rounded bg-os-container px-1.5 py-0.5 font-mono text-[10px] text-os-muted">
+                  ⌘K
+                </kbd>
+              </>
+            )}
+          </button>
+        </Tooltip>
 
         {/* Pinned surfaces */}
         <div className="flex shrink-0 flex-col gap-3">
-          <button
-            type="button"
-            title={collapsed ? 'Home' : undefined}
-            {...tabClickProps({ url: '/', label: 'Home' })}
-            className={railRowClass(path === '/', collapsed)}
-          >
-            <Home className="h-5 w-5 flex-shrink-0 opacity-85" />
-            {!collapsed && 'Home'}
-          </button>
-          <button
-            type="button"
-            title={collapsed ? 'Calendar' : undefined}
-            {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
-            className={railRowClass(path.startsWith('/calendar'), collapsed)}
-
-          >
-            <Calendar className="h-5 w-5 flex-shrink-0 opacity-85" />
-            {!collapsed && 'Calendar'}
-          </button>
+          <Tooltip content={collapsed ? 'Home' : ''} placement="right">
+            <button
+              type="button"
+              {...tabClickProps({ url: '/', label: 'Home' })}
+              className={railRowClass(path === '/', collapsed)}
+            >
+              <Home className="h-5 w-5 flex-shrink-0 opacity-85" />
+              {!collapsed && 'Home'}
+            </button>
+          </Tooltip>
+          <Tooltip content={collapsed ? 'Calendar' : ''} placement="right">
+            <button
+              type="button"
+              {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
+              className={railRowClass(path.startsWith('/calendar'), collapsed)}
+            >
+              <Calendar className="h-5 w-5 flex-shrink-0 opacity-85" />
+              {!collapsed && 'Calendar'}
+            </button>
+          </Tooltip>
           {pinned.map((item) => {
             const Icon = item.icon
             const active = isPinnedActive(path, item.href, navFlags)
             return (
-              <button
-                key={item.href}
-                type="button"
-                title={collapsed ? item.label : undefined}
-                {...tabClickProps({ url: item.href, label: item.label })}
-                className={railRowClass(active, collapsed)}
-              >
-                <Icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
+              <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
+                <button
+                  type="button"
+                  {...tabClickProps({ url: item.href, label: item.label })}
+                  className={railRowClass(active, collapsed)}
+                >
+                  <Icon className="h-5 w-5 flex-shrink-0 opacity-85" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </button>
+              </Tooltip>
             )
           })}
         </div>
@@ -516,25 +524,26 @@ export function LayoutOS({
             {/* Active-area switcher + its sub-tabs. */}
             {collapsed ? (
               <div className="flex min-h-0 flex-col gap-3">
-                <button
-                  type="button"
-                  title={activeArea.label}
-                  {...tabClickProps({ url: activeArea.hubPath, label: activeArea.label })}
-                  className="flex shrink-0 items-center justify-center rounded-os-item bg-os-card px-3 py-2.5 text-foreground transition-colors hover:bg-os-card-hover"
-                >
-                  <activeArea.icon className="h-5 w-5 flex-shrink-0" />
-                </button>
+                <Tooltip content={activeArea.label} placement="right">
+                  <button
+                    type="button"
+                    {...tabClickProps({ url: activeArea.hubPath, label: activeArea.label })}
+                    className="flex shrink-0 items-center justify-center rounded-os-item bg-os-card px-3 py-2.5 text-foreground transition-colors hover:bg-os-card-hover"
+                  >
+                    <activeArea.icon className="h-5 w-5 flex-shrink-0" />
+                  </button>
+                </Tooltip>
                 <div className="flex min-h-[5rem] flex-col gap-3 overflow-y-auto">
                   {activeSubtabs.map((t) => (
-                    <button
-                      key={t.href}
-                      type="button"
-                      title={t.label}
-                      {...tabClickProps({ url: t.href, label: t.label })}
-                      className={railRowClass(t.href === activeHref, collapsed)}
-                    >
-                      <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                    </button>
+                    <Tooltip key={t.href} content={t.label} placement="right">
+                      <button
+                        type="button"
+                        {...tabClickProps({ url: t.href, label: t.label })}
+                        className={railRowClass(t.href === activeHref, collapsed)}
+                      >
+                        <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               </div>
@@ -547,7 +556,6 @@ export function LayoutOS({
                     aria-haspopup="listbox"
                     aria-expanded={areaMenuOpen}
                     aria-label={`Section: ${activeArea.label}. Switch section`}
-                    title="Switch section"
                     ref={areaTriggerRef}
                     className={cn(
                       'flex w-full items-center justify-between rounded-os-item p-3 text-base transition-colors',
@@ -682,24 +690,28 @@ export function LayoutOS({
             </a>
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setUserMenuOpen((v) => !v)}
-          aria-haspopup="menu"
-          aria-expanded={userMenuOpen}
-          title={collapsed ? `${user.firstName ?? user.email} — account menu` : 'Account menu'}
-          className={cn(
-            'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-os-hover',
-            collapsed && 'justify-center px-0',
-          )}
+        <Tooltip
+          content={collapsed ? `${user.firstName ?? user.email} — account menu` : ''}
+          placement="right"
         >
-          {avatar('h-6 w-6')}
-          {!collapsed && (
-            <span className="truncate text-base font-medium text-os-grey">
-              {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={userMenuOpen}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-os-hover',
+              collapsed && 'justify-center px-0',
+            )}
+          >
+            {avatar('h-6 w-6')}
+            {!collapsed && (
+              <span className="truncate text-base font-medium text-os-grey">
+                {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
+              </span>
+            )}
+          </button>
+        </Tooltip>
       </div>
     </div>
   )
@@ -718,16 +730,16 @@ export function LayoutOS({
           <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
           <div className="flex items-center gap-2">
             {favorites.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                title={p.title || 'Untitled'}
-                {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-              >
-                <FavoriteIcon page={p} glyphClassName="text-os-accent" />
-                <span className="truncate">{p.title || 'Untitled'}</span>
-              </button>
+              <Tooltip key={p.id} content={p.title || 'Untitled'}>
+                <button
+                  type="button"
+                  {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+                  className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                >
+                  <FavoriteIcon page={p} glyphClassName="text-os-accent" />
+                  <span className="truncate">{p.title || 'Untitled'}</span>
+                </button>
+              </Tooltip>
             ))}
           </div>
         </div>
@@ -744,23 +756,24 @@ export function LayoutOS({
           onMouseEnter={taskCount > 0 ? showBellFlyout : undefined}
           onMouseLeave={hideBellFlyout}
         >
-          <button
-            type="button"
-            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-            aria-label={`My Tasks — ${taskCount} open task${taskCount === 1 ? '' : 's'}`}
-            title={`My Tasks (${taskCount})`}
-            className="os-topbar-btn pl-3"
-          >
-            <Bell className="h-5 w-5" />
-            <span
-              className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
-                taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
-              )}
+          <Tooltip content={`My Tasks — ${taskCount} open task${taskCount === 1 ? '' : 's'}`}>
+            <button
+              type="button"
+              {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+              aria-label={`My Tasks — ${taskCount} open task${taskCount === 1 ? '' : 's'}`}
+              className="os-topbar-btn pl-3"
             >
-              {taskCount > 99 ? '99+' : taskCount}
-            </span>
-          </button>
+              <Bell className="h-5 w-5" />
+              <span
+                className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
+                  taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
+                )}
+              >
+                {taskCount > 99 ? '99+' : taskCount}
+              </span>
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>
@@ -799,7 +812,6 @@ export function LayoutOS({
             type="button"
             {...tabClickProps({ url: '/', label: 'Home' })}
             className="font-os-logo text-xl font-semibold text-os-accent"
-            title="Home"
           >
             dali.os
           </button>
@@ -910,7 +922,6 @@ export function LayoutOS({
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            title="Search (⌘K)"
             aria-label="Search"
             className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-hover-strong hover:text-foreground"
           >
@@ -919,18 +930,19 @@ export function LayoutOS({
               ⌘K
             </kbd>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFocusPreference(false)
-              window.location.reload()
-            }}
-            title="Show sidebar"
-            aria-label="Show sidebar"
-            className="rounded-lg p-2 text-os-muted transition-colors hover:bg-os-hover-strong hover:text-foreground"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
+          <Tooltip content="Show sidebar" placement="right">
+            <button
+              type="button"
+              onClick={() => {
+                setFocusPreference(false)
+                window.location.reload()
+              }}
+              aria-label="Show sidebar"
+              className="rounded-lg p-2 text-os-muted transition-colors hover:bg-os-hover-strong hover:text-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          </Tooltip>
         </div>
       )}
 

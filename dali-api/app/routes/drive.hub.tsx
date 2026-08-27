@@ -27,6 +27,7 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
+import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
 import { useDialog } from "~/components/ui/dialog";
@@ -1565,44 +1566,43 @@ export default function DriveHub() {
       (itemTagIds[item.id] ?? []).some((id) => selectedTagIds.has(id));
   }, [selectedTagIds, itemTagIds]);
 
+  // The active tags as removable chips. The picker itself is the compact
+  // DriveTagFilter dropdown in the toolbar (below); this strip only shows what's
+  // currently filtering, so it stays empty — and takes no vertical space — until
+  // a tag is selected.
+  const selectedTags = allTags.filter((t) => selectedTagIds.has(t.id));
   const tagChips =
-    allTags.length > 0 ? (
+    selectedTags.length > 0 ? (
       <div className={cn("flex items-center gap-2 flex-wrap", os && "pb-1")}>
         <TagIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        {allTags.map((tag) => {
-          const active = selectedTagIds.has(tag.id);
-          return (
-            <button
-              key={tag.id}
-              type="button"
-              onClick={() => toggleTag(tag.id)}
-              aria-pressed={active}
-              className={cn(
-                "inline-flex items-center rounded-full border font-medium transition-colors",
-                os ? "px-3.5 py-1.5 text-sm" : "px-2.5 py-0.5 text-xs",
-                active
-                  ? os
-                    ? "border-os-accent bg-os-accent/15 text-os-accent"
-                    : "border-accent-coral bg-accent-coral/10 text-accent-coral"
-                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
-              )}
-            >
-              {tag.label}
-            </button>
-          );
-        })}
-        {selectedTagIds.size > 0 && (
+        {selectedTags.map((tag) => (
           <button
+            key={tag.id}
             type="button"
-            onClick={clearTags}
+            onClick={() => toggleTag(tag.id)}
+            aria-label={`Remove ${tag.label} filter`}
             className={cn(
-              "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground",
-              os ? "text-sm" : "text-xs",
+              "inline-flex items-center gap-1 rounded-full border font-medium transition-colors",
+              os ? "px-3.5 py-1.5 text-sm" : "px-2.5 py-0.5 text-xs",
+              os
+                ? "border-os-accent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
+                : "border-accent-coral bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20",
             )}
           >
-            <X className="w-3 h-3" /> Clear
+            {tag.label}
+            <X className="w-3 h-3" />
           </button>
-        )}
+        ))}
+        <button
+          type="button"
+          onClick={clearTags}
+          className={cn(
+            "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground",
+            os ? "text-sm" : "text-xs",
+          )}
+        >
+          Clear
+        </button>
       </div>
     ) : null;
 
@@ -1628,6 +1628,20 @@ export default function DriveHub() {
       {terms.length > 0 && (
         <div data-testid="drive-term-filter">
           <TermFilter terms={terms} selected={selectedTerm} />
+        </div>
+      )}
+      {/* Multi-select tag filter. Shown only when the lab has tags — otherwise
+          the pill would open onto an empty list. Selection lives in the URL
+          (?tag=), shared with the removable chips under the toolbar. */}
+      {allTags.length > 0 && (
+        <div data-testid="drive-tag-filter">
+          <DriveTagFilter
+            tags={allTags}
+            selectedIds={selectedTagIds}
+            onToggle={toggleTag}
+            onClear={clearTags}
+            os={os}
+          />
         </div>
       )}
     </>

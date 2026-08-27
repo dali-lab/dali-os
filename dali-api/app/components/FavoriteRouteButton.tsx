@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notifyFavoritesChanged } from "~/components/favorites-live";
@@ -119,13 +119,9 @@ export function FavoriteRouteButton({
   if (isNavbarRoute(href)) return null;
 
   return (
-    // portal when compact: these sit inside the tab bar's horizontal scroller,
-    // and an absolutely-positioned tip counts toward a scroll container's
-    // overflow — 20px of phantom vertical scroll before this.
-    <Tooltip
-      label={favorited ? "In your favorites" : "Add this page to your favorites"}
-      portal={compact}
-    >
+    // The tip portals out of the tab bar's horizontal scroller so it can't add
+    // phantom overflow scroll to that container (the Tooltip always portals).
+    <Tooltip content={favorited ? "In your favorites" : "Add this page to your favorites"}>
       <button
         type="button"
         disabled={busy || !ready}

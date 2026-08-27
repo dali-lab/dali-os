@@ -16,7 +16,7 @@ import {
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
 import { ChevronDown, Compass, Trash2, Plus, X } from "lucide-react";
-import { Tooltip } from "~/components/ui/IconButton";
+import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import {
@@ -328,6 +328,9 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
 // the level menu, while the styled badge underneath renders the current value.
 // Transparent background — distinguished by text color only (P1 muted, P2 teal,
 // P3 coral).
+// P1 = beginner · P2 = intermediate · P3 = experienced. Level feeds staffing
+// preferences and role-assignment matching; members only see domains they're
+// eligible for.
 const LEVEL_BADGE: Record<Level, string> = {
   P1: "text-muted-foreground",
   P2: "text-accent-teal",
@@ -364,7 +367,6 @@ function EligibilityLevelSelect({
         onChange={(e) => fetcher.submit(e.currentTarget.form)}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         aria-label="Eligibility level"
-        title="Change level"
       >
         {ALLOWED_LEVELS.map((l) => (
           <option key={l} value={l}>{l}</option>
@@ -411,16 +413,16 @@ function AddEligibilityForm({
       </button>
       <div className="flex gap-1">
         {ALLOWED_LEVELS.map((l) => (
-          <button
-            key={l}
-            type="submit"
-            name="level"
-            value={l}
-            title={`Assign ${l}`}
-            className={`px-1.5 py-0.5 text-[10px] font-bold leading-none rounded border border-border hover:bg-muted/50 ${LEVEL_BADGE[l]}`}
-          >
-            {l}
-          </button>
+          <Tooltip key={l} content={`Assign ${l}`}>
+            <button
+              type="submit"
+              name="level"
+              value={l}
+              className={`px-1.5 py-0.5 text-[10px] font-bold leading-none rounded border border-border hover:bg-muted/50 ${LEVEL_BADGE[l]}`}
+            >
+              {l}
+            </button>
+          </Tooltip>
         ))}
       </div>
     </fetcher.Form>
@@ -439,7 +441,10 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
 
   return (
     <div className="flex flex-wrap gap-1.5 items-center">
-      <span className="text-xs text-muted-foreground/70 mr-1">Members:</span>
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 mr-1">
+        Members:
+        <InfoTip content="Domain eligibility levels: P1 = beginner, P2 = intermediate, P3 = experienced. The badge is a dropdown — click to change. Level drives staffing preferences and role matching." />
+      </span>
       {domain.eligibilities.length === 0 && (
         <span className="text-xs text-muted-foreground/70 italic">none</span>
       )}
@@ -540,16 +545,24 @@ function DomainRowItem({
         <fetcher.Form method="post">
           <input type="hidden" name="intent" value="delete-domain" />
           <input type="hidden" name="domainId" value={domain.id} />
-          <Tooltip label="Delete">
-            <button
-              type="submit"
-              disabled={inUse || isDeleting}
-              title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
-              aria-label="Delete"
-              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
+          <Tooltip
+            content={
+              inUse
+                ? `Cannot delete — in use by ${inUseBy.join(", ")}. Remove all references first.`
+                : "Delete domain"
+            }
+            variant={inUse ? "rich" : "label"}
+          >
+            <span>
+              <button
+                type="submit"
+                disabled={inUse || isDeleting}
+                aria-label="Delete"
+                className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </span>
           </Tooltip>
         </fetcher.Form>
       )}
