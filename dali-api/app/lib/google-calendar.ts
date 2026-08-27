@@ -473,6 +473,9 @@ async function fetchAllEventsForCalendar(
   calendarMeta: GoogleCalendarListEntry | undefined,
   start: Date,
   end: Date,
+  // Free-text query — when set, Google filters events server-side (summary,
+  // description, location, attendees). Used by searchCalendarEvents.
+  q?: string,
 ): Promise<CalendarEvent[]> {
   const params = new URLSearchParams({
     timeMin: start.toISOString(),
@@ -487,6 +490,7 @@ async function fetchAllEventsForCalendar(
       "organizer(email,displayName,self)," +
       "attendees(email,displayName,self,organizer,optional,responseStatus))",
   });
+  if (q && q.trim()) params.set("q", q.trim());
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -609,6 +613,52 @@ export async function fetchCalendarEvents(
         await prisma.userCalendarLink
           .update({ where: { id: l.id }, data: { syncError: message } })
           .catch(() => {});
+        return [] as CalendarEvent[];
+      }
+    }),
+  );
+  return results.flat();
+}
+
+/**
+ * Free-text search across a user's enabled Google calendars, bounded to a time
+ * window. Google filters server-side via the `q` param (summary, description,
+ * location, attendees), so this is one events.list call per sub-calendar — cheap
+ * enough to run on demand from the calendar search bar. Unlike the loader reads
+ * it does NOT touch lastSyncedAt/syncError (search is read-only), and a bad link
+ * is swallowed so the rest of the results still return.
+ */
+export async function searchCalendarEvents(
+  userId: string,
+  q: string,
+  start: Date,
+  end: Date,
+): Promise<CalendarEvent[]> {
+  if (!q.trim()) return [];
+  const links = await prisma.userCalendarLink.findMany({
+    where: { userId, provider: "Google", enabled: true },
+    select: { id: true, subCalendarIds: true },
+  });
+  if (links.length === 0) return [];
+  const results = await Promise.all(
+    links.map(async (l) => {
+      try {
+        const token = await getValidAccessTokenForLink(l.id);
+        let entryById = new Map<string, GoogleCalendarListEntry>();
+        try {
+          const list = await listCalendarsForLink(l.id, token);
+          entryById = new Map(list.map((c) => [c.id, c]));
+        } catch {
+          // Best-effort colour/writable metadata; matches still return.
+        }
+        const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
+        const perCalendar = await Promise.all(
+          calendarIds.map((id) =>
+            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
+          ),
+        );
+        return perCalendar.flat();
+      } catch {
         return [] as CalendarEvent[];
       }
     }),

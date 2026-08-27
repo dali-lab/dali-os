@@ -402,6 +402,7 @@ export default [
   route("api/wallet/apple/pass", "wallet/routes/api.wallet.apple.pass.ts"),
   route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
+  route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
 
