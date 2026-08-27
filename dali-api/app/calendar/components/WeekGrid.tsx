@@ -340,6 +340,11 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
   );
 }
 
+/** Compact hours label for a logged accent: "2h", "1.5h". */
+function formatLoggedHours(h: number): string {
+  return `${Number.isInteger(h) ? h : Number(h.toFixed(2))}h`;
+}
+
 export function WeekGridEvent({ e }: { e: EventBlock }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
@@ -410,10 +415,18 @@ export function WeekGridEvent({ e }: { e: EventBlock }) {
             : {}),
         }}
       >
+        {e.loggedAccent && (
+          <span
+            className="pointer-events-none absolute inset-y-0 right-0 w-1"
+            style={{ backgroundColor: e.loggedAccent.color }}
+            aria-hidden
+          />
+        )}
         {e.label && <span className="truncate block">{e.label}</span>}
         {bodyHeight >= 34 && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
             {timeRange}
+            {e.loggedAccent && ` · logged ${formatLoggedHours(e.loggedAccent.hours)}`}
           </span>
         )}
         {isMeeting && e.meeting?.rsvp && bodyHeight >= 50 && (

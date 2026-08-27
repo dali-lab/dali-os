@@ -208,6 +208,11 @@ export type EventBlock = {
    *  popover). Stops the mousedown from bubbling to the column's drag-select
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
+  /** When this on-grid event (a meeting or manual block) is *also* logged as
+   *  work, the role accent shown ON the block — a right-edge stripe in the role
+   *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
+   *  top of it. `color` is a CSS colour (the role palette's `dot`). */
+  loggedAccent?: { color: string; hours: number };
   /** When set, the block is a meeting invite: clicking opens a persistent
    *  popover with Accept/Maybe/Decline (RSVP lives on the invite Notification,
    *  so notificationId targets the RSVP endpoint). */

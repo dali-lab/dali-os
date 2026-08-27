@@ -125,8 +125,41 @@ export function buildExternalLayer(data: LoaderData, days: GridDay[]): Record<nu
   return into;
 }
 
-/** The user's own manual availability blocks. */
-export function buildBlocksLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+/** A role accent for an event that's also logged as work — the colour + total
+ *  logged hours, keyed by the source event so the block can show it in place of
+ *  a duplicate logged-time block. */
+export type LoggedAccent = { color: string; hours: number };
+
+/** Logged work grouped by the on-grid event it came from (a meeting or a manual
+ *  block), so an event that's *also* logged can show a role accent instead of a
+ *  second overlapping block. Honours `excludedRoleKeys` — a filtered-out role
+ *  annotates nothing. Colour follows the first bucket seen; hours sum. */
+export function buildLoggedSourceIndex(
+  data: LoaderData,
+  excludedRoleKeys?: Set<string>,
+): { byMeeting: Map<string, LoggedAccent>; byBlock: Map<string, LoggedAccent> } {
+  const byMeeting = new Map<string, LoggedAccent>();
+  const byBlock = new Map<string, LoggedAccent>();
+  for (const t of data.timeEntries) {
+    const roleKey = timeEntryRoleKey(t);
+    if (excludedRoleKeys?.has(roleKey)) continue;
+    const map = t.scheduledMeetingId ? byMeeting : t.manualBlockId ? byBlock : null;
+    const id = t.scheduledMeetingId ?? t.manualBlockId;
+    if (!map || !id) continue;
+    const prev = map.get(id);
+    map.set(id, { color: prev?.color ?? roleColor(roleKey).dot, hours: (prev?.hours ?? 0) + t.hours });
+  }
+  return { byMeeting, byBlock };
+}
+
+/** The user's own manual availability blocks. When `loggedByBlock` marks a block
+ *  as also-logged, the block carries a role accent instead of the logged layer
+ *  drawing a duplicate over it. */
+export function buildBlocksLayer(
+  data: LoaderData,
+  days: GridDay[],
+  loggedByBlock?: Map<string, LoggedAccent>,
+): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const b of data.manualBlocks) {
     placeBlock(
@@ -134,7 +167,12 @@ export function buildBlocksLayer(data: LoaderData, days: GridDay[]): Record<numb
       data.timezone,
       b.startTime,
       b.endTime,
-      { label: b.title || "Busy", className: EVENT_CORAL, borderClassName: "border-accent-coral-light" },
+      {
+        label: b.title || "Busy",
+        className: EVENT_CORAL,
+        borderClassName: "border-accent-coral-light",
+        loggedAccent: loggedByBlock?.get(b.id),
+      },
       into,
     );
   }
@@ -142,8 +180,14 @@ export function buildBlocksLayer(data: LoaderData, days: GridDay[]): Record<numb
 }
 
 /** Meeting invites — clickable RSVP blocks styled by response state. The meeting
- *  metadata (onTimesheet / Core-meeting) drives the detail popover toggles. */
-export function buildMeetingsLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
+ *  metadata (onTimesheet / Core-meeting) drives the detail popover toggles. When
+ *  `loggedByMeeting` marks a meeting as also-logged, the block carries a role
+ *  accent instead of the logged layer drawing a duplicate over it. */
+export function buildMeetingsLayer(
+  data: LoaderData,
+  days: GridDay[],
+  loggedByMeeting?: Map<string, LoggedAccent>,
+): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   const meetingIdsOnTimesheet = new Set(
     data.timeEntries.flatMap((t) => (t.scheduledMeetingId ? [t.scheduledMeetingId] : [])),
@@ -161,6 +205,7 @@ export function buildMeetingsLayer(data: LoaderData, days: GridDay[]): Record<nu
         borderClassName: style.borderClassName,
         organizerName: inv.organizerName ?? undefined,
         attendees: inv.attendees,
+        loggedAccent: loggedByMeeting?.get(inv.meetingId),
         meeting: {
           notificationId: inv.notificationId,
           meetingId: inv.meetingId,
@@ -195,12 +240,19 @@ export function buildLoggedTimeLayer(
   opts: {
     excludedRoleKeys?: Set<string>;
     onEntryClick?: (t: TimeEntryDTO, startIso: string, endIso: string) => void;
+    /** Skip entries already represented by a visible source event — its meeting
+     *  or block block carries a `loggedAccent` instead — so a logged meeting or
+     *  work-block doesn't draw a duplicate overlapping block. Standalone
+     *  (Manual) entries, and ones whose source layer is hidden, still draw. */
+    suppressSourced?: { meetings: boolean; blocks: boolean };
   } = {},
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
   for (const t of data.timeEntries) {
     const roleKey = timeEntryRoleKey(t);
     if (opts.excludedRoleKeys?.has(roleKey)) continue;
+    if (opts.suppressSourced?.meetings && t.scheduledMeetingId) continue;
+    if (opts.suppressSourced?.blocks && t.manualBlockId) continue;
     const { startIso, endIso } = timeEntryRange(t, data.timezone);
     const color = roleColor(roleKey);
     placeBlock(

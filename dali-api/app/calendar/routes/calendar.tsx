@@ -115,6 +115,7 @@ import {
   buildBlocksLayer,
   buildMeetingsLayer,
   buildLoggedTimeLayer,
+  buildLoggedSourceIndex,
   mergeLayers,
   externalCalendarLegend,
   computeRoleBuckets,
@@ -1497,14 +1498,22 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       p.delete("weekStart");
     });
 
+  // When the logged layer is on, an event that's also logged (a meeting or a
+  // work-block) shows a role accent on its own block rather than a second
+  // overlapping logged block. Index the sourced entries so the meeting/block
+  // layers can annotate, and the logged layer can skip them (only where that
+  // source layer is actually visible — a hidden meeting still needs its block).
+  const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
+
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external) layerMaps.push(buildExternalLayer(data, days));
-  if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days));
-  if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days));
+  if (layers.blocks) layerMaps.push(buildBlocksLayer(data, days, loggedIndex?.byBlock));
+  if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
   if (layers.logged)
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
+        suppressSourced: { meetings: layers.meetings, blocks: layers.blocks },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
