@@ -917,12 +917,48 @@ async function handleEventAction(
   if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
-  const [linkId, calRaw] = get("destination").split(":");
+  const dest = get("destination");
+  const isLocalDest = dest === LOCAL_DEST;
+  const [linkId, calRaw] = dest.split(":");
   const calendarId = calRaw || undefined;
   const scope = (get("scope") || "this") as EventScope;
   const recurringEventId = get("recurringEventId") || null;
   const originalStartIso = get("originalStartIso") || null;
   try {
+    // In-app (DALI) creation is a ManualBlock; everything else needs a Google link.
+    if (intent === "event-create" && isLocalDest) {
+      const title = get("title").trim();
+      const startIso = get("startIso");
+      const endIso = get("endIso");
+      if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+      const allDay = get("allDay") === "1";
+      const recurrenceRule = get("recurrenceRule").trim() || null;
+      const isWork = get("isWork") === "1";
+      const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
+      const roleRefId = get("roleRefId") || null;
+      if (isWork && recurrenceRule) {
+        return Response.json({ error: "Recurring blocks can't be added to the timesheet yet." }, { status: 400 });
+      }
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      const block = await prisma.manualBlock.create({
+        data: { userId, title, startTime, endTime, allDay, recurrenceRule, isWork, assignmentType, roleRefId },
+      });
+      const sync = await syncManualBlockTimeEntry({
+        manualBlockId: block.id,
+        userId,
+        isWork,
+        assignmentType,
+        roleRefId,
+        title,
+        startTime,
+        endTime,
+      });
+      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
+      return null;
+    }
+
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
 
@@ -2202,7 +2238,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   tabIndex={-1}
                 />
                 <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
-                  {data.crudEnabled && (
+                  {data.crudEnabled ? (
+                    // One "Event" — where it lives (in app vs a Google calendar)
+                    // is just the destination chosen inside the composer.
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
@@ -2213,18 +2251,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                     >
                       <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Event
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                      onClick={() => {
+                        openQuickCreate();
+                        setCreateOpen(false);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 text-muted-foreground" /> Event / log time
+                    </button>
                   )}
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                    onClick={() => {
-                      openQuickCreate();
-                      setCreateOpen(false);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 text-muted-foreground" />{" "}
-                    {data.crudEnabled ? "In-app block" : "Event / log time"}
-                  </button>
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
@@ -2671,12 +2709,13 @@ function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: (
             <X className="h-4 w-4" />
           </button>
         </div>
+        {/* Behavior only — connecting accounts lives in global Settings, and
+            calendars (show/hide, create/rename/delete) live in the Calendars
+            menu, so they're not duplicated here. */}
         <div className="flex flex-col gap-6">
-          <ConnectedCalendarsCard
-            links={data.calendarLinks}
-            ingestionError={data.ingestionError}
-            generalCalendar={data.generalCalendar}
-          />
+          {data.generalCalendar === "missing" && data.calendarLinks.length > 0 && (
+            <GeneralCalendarPrompt links={data.calendarLinks} />
+          )}
           <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
           <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
         </div>
@@ -2685,64 +2724,6 @@ function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: (
   );
 }
 
-// Connecting/removing calendar accounts and choosing which feed availability
-// live in global Settings (alongside Slack / Connected Apps) — a single home,
-// no drift. On the calendar we only summarize + link there, or, when nothing's
-// connected, show a clear CTA to link one.
-function ConnectedCalendarsCard({
-  links,
-  ingestionError,
-  generalCalendar,
-}: {
-  links: CalendarLinkDTO[];
-  ingestionError: string | null;
-  generalCalendar: GeneralCalendarState;
-}) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Connected calendars
-      </h3>
-      {ingestionError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          Couldn't refresh external events: {ingestionError}
-        </div>
-      )}
-      {links.length === 0 ? (
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <p className="text-sm font-medium text-foreground">Connect your Google Calendar</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Bring your events onto the grid, block your availability for scheduling, and let classes
-            sync back to Google.
-          </p>
-          <a
-            href="/oauth/calendar/google/start"
-            target="_top"
-            rel="noopener"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
-          >
-            <Plus className="h-4 w-4" /> Connect Google Calendar
-          </a>
-        </div>
-      ) : (
-        <>
-          {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
-          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-            <span className="text-sm text-muted-foreground">
-              {links.length} {links.length === 1 ? "account" : "accounts"} connected
-            </span>
-            <Link
-              to="/settings"
-              className="inline-flex items-center gap-1 text-sm font-medium text-accent-teal hover:underline"
-            >
-              Manage in Settings <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
 
 const padTwo = (n: number) => String(n).padStart(2, "0");
 const minToHHMM = (m: number) => `${padTwo(Math.floor(m / 60))}:${padTwo(m % 60)}`;
@@ -3068,9 +3049,12 @@ function browserTz(): string {
   }
 }
 
-/** Writable Google calendars, as composer destination options. */
-function writableDestinations(data: LoaderData): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
+export const LOCAL_DEST = "local";
+
+/** Where a new event can go: the in-app DALI calendar, or any writable Google
+ *  calendar. "In app vs Google" is just a destination — not a different thing. */
+function eventDestinations(data: LoaderData): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [{ value: LOCAL_DEST, label: "DALI calendar (in app)" }];
   for (const link of data.calendarLinks) {
     if (link.provider !== "Google" || !link.subCalendars) continue;
     const account = link.displayName || link.externalEmail || "Google";
@@ -3091,14 +3075,16 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   const deleteFetcher = useFetcher<{ error?: string } | null>();
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
-  const dests = writableDestinations(data);
+  const dests = eventDestinations(data);
 
   const [title, setTitle] = useState(ev?.title ?? "");
   const [allDay, setAllDay] = useState(ev?.allDay ?? false);
   const [destination, setDestination] = useState(() => {
     if (ev?.linkId && ev.calendarId) return `${ev.linkId}:${ev.calendarId}`;
-    const def = data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest) ? data.defaultEventDest : null;
-    return def ?? dests[0]?.value ?? "";
+    // Default to the last-used destination (cookie); else the first Google
+    // calendar; else the in-app DALI calendar.
+    if (data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)) return data.defaultEventDest;
+    return dests.find((d) => d.value !== LOCAL_DEST)?.value ?? LOCAL_DEST;
   });
   const [location, setLocation] = useState(ev?.location ?? "");
   const [description, setDescription] = useState(ev?.description ?? "");
@@ -3107,6 +3093,11 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // In-app (DALI) blocks can log to the timesheet — the one property that only
+  // makes sense for the local destination.
+  const isLocal = destination === LOCAL_DEST;
+  const [isWork, setIsWork] = useState(false);
+  const [roleKey, setRoleKey] = useState("");
 
   // Timed + all-day inputs, seeded from the event (edit) or the drag (create).
   const seedTimed = ev && !ev.allDay ? { s: isoToLocalDT(ev.startIso), e: isoToLocalDT(ev.endIso) } : null;
@@ -3147,7 +3138,13 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     : dtEnd
       ? new Date(dtEnd).toISOString()
       : "";
-  const canSubmit = title.trim() !== "" && destination !== "" && startIso !== "" && endIso !== "" && startIso < endIso;
+  const canSubmit =
+    title.trim() !== "" &&
+    destination !== "" &&
+    startIso !== "" &&
+    endIso !== "" &&
+    startIso < endIso &&
+    (!(isLocal && isWork) || roleKey !== "");
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
   const rememberDest = () => {
@@ -3195,6 +3192,9 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
             <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
             <input type="hidden" name="timeZone" value={browserTz()} />
             <input type="hidden" name="recurrenceRule" value={!isRecurring ? (repeatSpecToRRule(repeat) ?? "") : ""} />
+            <input type="hidden" name="isWork" value={isLocal && isWork ? "1" : ""} />
+            <input type="hidden" name="assignmentType" value={isLocal && isWork ? roleKey.split("::")[0] ?? "" : ""} />
+            <input type="hidden" name="roleRefId" value={isLocal && isWork ? roleKey.split("::")[1] ?? "" : ""} />
             {isRecurring && <input type="hidden" name="scope" value={scope} />}
             {isRecurring && ev?.recurringEventId && (
               <input type="hidden" name="recurringEventId" value={ev.recurringEventId} />
@@ -3229,14 +3229,38 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
 
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted-foreground">Calendar</span>
-              <Select
-                value={destination}
-                onChange={setDestination}
-                options={dests}
-                placeholder="Pick a calendar"
-                buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
-              />
+              {editing ? (
+                <span className={cn(fieldCls, "text-muted-foreground")}>
+                  {dests.find((d) => d.value === destination)?.label ?? "This calendar"}
+                </span>
+              ) : (
+                <Select
+                  value={destination}
+                  onChange={setDestination}
+                  options={dests}
+                  placeholder="Pick a calendar"
+                  buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+                />
+              )}
             </label>
+
+            {/* Timesheet logging is the one thing unique to the in-app destination. */}
+            {!editing && isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
+                </label>
+                {isWork && (
+                  <Select
+                    value={roleKey}
+                    onChange={setRoleKey}
+                    options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
+                    placeholder="Which role?"
+                    buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
+                  />
+                )}
+              </div>
+            )}
 
             <input
               name="location"
