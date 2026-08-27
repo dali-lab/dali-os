@@ -2056,7 +2056,6 @@ function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: (
           />
           <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
           <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
-          <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
         </div>
       </div>
     </div>
