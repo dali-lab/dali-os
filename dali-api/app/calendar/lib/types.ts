@@ -324,8 +324,10 @@ export type EventBlock = {
   recurring?: boolean;
   /** When set, the block can be dragged to move (whole block, keeping duration)
    *  or resized by its top/bottom edges; fires on drop with the new start/end
-   *  hours within the same day column. Writable Google events only. */
-  onMoveResize?: (startHour: number, endHour: number) => void;
+   *  hours. A body-move can also cross day columns — `dayIdx` is the target
+   *  column when it changed (omitted for a resize / same-day move). Writable
+   *  Google events + in-app blocks. */
+  onMoveResize?: (startHour: number, endHour: number, dayIdx?: number) => void;
   /** When this on-grid event (a meeting or manual block) is *also* logged as
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on

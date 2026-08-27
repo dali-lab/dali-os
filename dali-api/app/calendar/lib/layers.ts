@@ -111,7 +111,7 @@ export function buildExternalLayer(
   days: GridDay[],
   hiddenCalendarIds?: Set<string>,
   onEdit?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
-  onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number) => void,
+  onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => void,
   onDuplicate?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
   onDelete?: (e: ExternalEventDTO) => void,
 ): Record<number, EventBlock[]> {
@@ -150,7 +150,7 @@ export function buildExternalLayer(
         // Editable Google events (writable + flag on) get Edit / Duplicate /
         // Delete affordances in the detail popover and can be dragged.
         onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
-        onMoveResize: onMoveResize && editable ? (s, en) => onMoveResize(e, s, en) : undefined,
+        onMoveResize: onMoveResize && editable ? (s, en, di) => onMoveResize(e, s, en, di) : undefined,
         onDuplicate: onDuplicate && editable ? (anchor) => onDuplicate(e, anchor) : undefined,
         onDelete: onDelete && editable ? () => onDelete(e) : undefined,
       },
@@ -221,7 +221,7 @@ export function buildBlocksLayer(
   days: GridDay[],
   loggedByBlock?: Map<string, LoggedAccent>,
   onEditBlock?: (b: ManualBlockDTO, anchor?: DOMRect) => void,
-  onMoveBlock?: (b: ManualBlockDTO, startHour: number, endHour: number) => void,
+  onMoveBlock?: (b: ManualBlockDTO, startHour: number, endHour: number, dayIdx?: number) => void,
   onDuplicateBlock?: (b: ManualBlockDTO, anchor?: DOMRect) => void,
   onDeleteBlock?: (b: ManualBlockDTO) => void,
 ): Record<number, EventBlock[]> {
@@ -243,7 +243,7 @@ export function buildBlocksLayer(
         // Using onEdit (not onClick) keeps blocks consistent with Google events —
         // a view popup first, then edit.
         onEdit: onEditBlock ? (anchor) => onEditBlock(b, anchor) : undefined,
-        onMoveResize: onMoveBlock ? (s, en) => onMoveBlock(b, s, en) : undefined,
+        onMoveResize: onMoveBlock ? (s, en, di) => onMoveBlock(b, s, en, di) : undefined,
         onDuplicate: onDuplicateBlock ? (anchor) => onDuplicateBlock(b, anchor) : undefined,
         onDelete: onDeleteBlock ? () => onDeleteBlock(b) : undefined,
       },
