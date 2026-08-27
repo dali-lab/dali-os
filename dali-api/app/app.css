@@ -842,6 +842,51 @@ select:not(:disabled) {
  * dark palette instead of this one, while the shell div — where `.os-shell` is
  * the nearest ancestor — rendered correctly. Matching the arms ties the
  * specificity, and later wins. */
+/* The three record levels, as one set of variables rather than three sets of
+   literals. Epic / story / task are named in CSS (the badge, the timeline bar)
+   *and* in JS (the level filter chips, the inline row borders in
+   EpicsTimeline) — declaring them once is what lets both read the same colour
+   and lets light mode restate it in a single block.
+
+   At the root rather than inside `.os-shell`: the timeline is drawn on the
+   partner portal too, which wears the brand chrome and never gets the shell
+   class. These are the dark values (light mode restates them in the
+   `html.light` block below); the dark fills are 0.8-alpha over the shell's own
+   ground, and light solidifies them, because the same alpha over white washes
+   toward the pale ink the chip carries. */
+:root {
+  --os-epic-fill:        rgba(124, 92, 214, 0.8);
+  --os-epic-fill-hover:  rgba(146, 118, 226, 0.95);
+  --os-epic-edge:        rgba(124, 92, 214, 0.8);
+  --os-epic-ink:         #ece3ff;
+  --os-story-fill:       rgba(0, 173, 171, 0.8);
+  --os-story-fill-hover: rgba(0, 200, 197, 0.9);
+  --os-story-edge:       rgba(0, 173, 171, 0.6);
+  --os-story-ink:        #e0fffb;
+  --os-task-fill:        rgba(224, 147, 11, 0.8);
+  --os-task-fill-hover:  rgba(240, 169, 45, 0.95);
+  --os-task-edge:        rgba(224, 147, 11, 0.8);
+  --os-task-ink:         #2a1c02;
+
+  /* A sprint is not a fourth record level, but its chip sits in the same
+     modal as the epic and task badges and has to read as their sibling. It
+     used to take `--color-os-accent` flat, which is a *ground* colour: on
+     paper that is the darkened cyan, so a row of sprint chips came out as
+     dark slabs beside a mid-tone violet badge. The accent's hue at the
+     plates' tone instead. */
+  --os-sprint-fill:      rgba(108, 182, 202, 0.85);
+  --os-sprint-ink:       #04222a;
+
+  /* The "added by name, still needs its details" mark. Its own pair rather
+     than `--color-os-amber`, which is a text/status colour and goes to
+     #8f5400 in light — a brown coin with pale ink on it. This is the same
+     yellow in both modes: the mark means the same thing on either ground,
+     and it is the one place on the timeline that wants to be louder than
+     what surrounds it. */
+  --os-incomplete-fill:  #ffcf33;
+  --os-incomplete-ink:   #33240a;
+}
+
 .os-shell,
 html.os-shell {
   font-family: var(--font-os);
@@ -890,26 +935,6 @@ html.os-shell {
 
   --radius: var(--radius-os-item);
 
-  /* The three record levels, as one set of variables rather than three sets of
-     literals. Epic / story / task are named in CSS (the badge, the timeline
-     bar) *and* in JS (the level filter chips, the inline row borders in
-     EpicsTimeline) — declaring them here is what lets both read the same
-     colour and lets light mode restate it once. The dark fills are 0.8-alpha
-     over the shell's own ground; light mode solidifies them, because the same
-     alpha over white washes toward the pale ink the chip carries. */
-  --os-epic-fill:        rgba(124, 92, 214, 0.8);
-  --os-epic-fill-hover:  rgba(146, 118, 226, 0.95);
-  --os-epic-edge:        rgba(124, 92, 214, 0.8);
-  --os-epic-ink:         #ece3ff;
-  --os-story-fill:       rgba(0, 173, 171, 0.8);
-  --os-story-fill-hover: rgba(0, 200, 197, 0.9);
-  --os-story-edge:       rgba(0, 173, 171, 0.6);
-  --os-story-ink:        #e0fffb;
-  --os-task-fill:        rgba(224, 147, 11, 0.8);
-  --os-task-fill-hover:  rgba(240, 169, 45, 0.95);
-  --os-task-edge:        rgba(224, 147, 11, 0.8);
-  --os-task-ink:         #2a1c02;
-
   /* The task board's six columns, on the same axis as the level plates above
      and for the same reason: the header is a band of colour with ink printed
      on it, so each status needs a fill/ink pair rather than one hue, and the
@@ -946,8 +971,13 @@ html.os-shell {
  * light (html.light), the os palette flips to a light read of the same ramp.
  * Everything downstream — the semantic-token map above, every `os-` utility,
  * the furniture below — reads these variables, so this block is the whole of
- * it. Both arms, so portalled surfaces mirrored onto <html> flip too (same
- * reason the token map lists `html.os-shell`).
+ * it.
+ *
+ * Keyed on the mode alone, NOT on `.os-shell`. The `os-` utilities and the
+ * level plates are a palette, not shell chrome, and one surface reads them
+ * from outside the shell: the partner portal's roadmap draws the same timeline
+ * inside the brand chrome. While these hung off `.os-shell` that timeline fell
+ * back to the dark values on a white page and rendered a black grid.
  *
  * Two things this is *not*, both of them mistakes the first pass made by
  * taking the dark ramp and inverting it channel by channel:
@@ -967,9 +997,8 @@ html.os-shell {
  * the card taking pure white as the one surface that earns it. That single
  * step is what puts the cards back — they carry no border and no shadow by
  * design, so their ground has to do the work. */
-html.light.os-shell,
-.light .os-shell {
-  color-scheme: light;
+html.light,
+.light {
 
   --color-os-bg:           #e9eef3;  /* page — cool paper, deliberately not white */
   --color-os-nav:          #dde5ed;  /* sidebar + top bar — the recessed frame */
@@ -1017,6 +1046,8 @@ html.light.os-shell,
   --os-task-fill-hover:  #f6c86e;
   --os-task-edge:        #e0930b;
   --os-task-ink:         #3b2400;
+  --os-sprint-fill:      #7ccbdc;
+  --os-sprint-ink:       #06333d;
 
   /* The six columns, same treatment. */
   --os-status-backlog-fill:    #bccbda;
@@ -1284,13 +1315,13 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
  * opens as a *record* — labels over plain values, no boxes, no footer — and
  * the pencil turns it into a form. That is why our modals still read as the
  * old ones even with the right colours on them: they are always a form. */
-.os-shell .os-field-group {
+.os-field-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 20px;
 }
-.os-shell .os-field-label {
+.os-field-label {
   font-size: 11px;
   font-weight: 700;
   color: var(--color-os-grey);
@@ -1307,28 +1338,28 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   color: var(--os-danger-ink);
   margin-left: 2px;
 }
-.os-shell .os-field-row {
+.os-field-row {
   display: flex;
   gap: 16px;
 }
-.os-shell .os-field-row .os-field-group {
+.os-field-row .os-field-group {
   flex: 1;
   margin-bottom: 0;
 }
 /* A .os-field-row carries no bottom margin of its own — its children gave
    theirs up — so the 20px between fields has to be restored on whatever
    follows it, and on the row itself when a plain field comes before. */
-.os-shell .os-field-row + .os-field-group,
-.os-shell .os-field-group + .os-field-row,
-.os-shell .os-field-row + .os-field-row {
+.os-field-row + .os-field-group,
+.os-field-group + .os-field-row,
+.os-field-row + .os-field-row {
   margin-top: 20px;
 }
-.os-shell .os-modal-divider {
+.os-modal-divider {
   height: 1px;
   background: var(--color-os-container);
   margin: 24px 0;
 }
-.os-shell .os-section-header {
+.os-section-header {
   font-size: 12px;
   font-weight: 700;
   color: var(--color-os-fg);
@@ -1358,7 +1389,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 
 /* A row in a list of linked items (the design's .quick-add-item): a task under
    a story, a story under an epic. */
-.os-shell .os-item-row {
+.os-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1370,7 +1401,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   font-size: 13px;
   color: var(--color-os-fg);
 }
-.os-shell .os-item-list {
+.os-item-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1379,7 +1410,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 /* The design's .quick-add-item + .incomplete-dot: a linked item added by name
    only. The amber ! is not a status — it means "created fast, still needs
    filling in", and it follows the item onto the timeline. */
-.os-shell .os-incomplete-dot {
+.os-incomplete-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1387,8 +1418,8 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   height: 16px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--color-os-amber);
-  color: var(--color-os-bg);
+  background: var(--os-incomplete-fill);
+  color: var(--os-incomplete-ink);
   font-size: 11px;
   font-weight: 900;
   line-height: 1;
@@ -1409,7 +1440,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 
    Applied to the label pill for an epic or a story, and to the whole bar for
    a task — at that level the bar is the label. */
-.os-shell .os-bar-label {
+.os-bar-label {
   transition:
     background-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -1421,38 +1452,38 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    come off the text-transform, so what was typed is what's saved.
    Deliberately not applied to the name *fields* in a create form — typing
    into a box that shouts back is a different thing from reading a label. */
-.os-shell .os-record-name,
-.os-shell .os-bar-label,
-.os-shell .os-item-row {
+.os-record-name,
+.os-bar-label,
+.os-item-row {
   text-transform: uppercase;
 }
-.os-shell .os-bar-label--epic {
+.os-bar-label--epic {
   background: var(--os-epic-fill);
   color: var(--os-epic-ink);
 }
-.os-shell .os-bar-label--epic:hover {
+.os-bar-label--epic:hover {
   background: var(--os-epic-fill-hover);
   box-shadow: 0 0 0 1px var(--os-epic-ink);
 }
-.os-shell .os-bar-label--story {
+.os-bar-label--story {
   background: var(--os-story-fill);
   color: var(--os-story-ink);
 }
-.os-shell .os-bar-label--story:hover {
+.os-bar-label--story:hover {
   background: var(--os-story-fill-hover);
   box-shadow: 0 0 0 1px var(--os-story-ink);
 }
-.os-shell .os-bar-label--task {
+.os-bar-label--task {
   background: var(--os-task-fill);
   color: var(--os-task-ink);
 }
-.os-shell .os-bar-label--task:hover {
+.os-bar-label--task:hover {
   background: var(--os-task-fill-hover);
   box-shadow: 0 0 0 1px var(--os-task-ink);
 }
 /* The lift is the affordance, so it stays; only the tween goes. */
 @media (prefers-reduced-motion: reduce) {
-  .os-shell .os-bar-label {
+  .os-bar-label {
     transition: none;
   }
 }
@@ -1461,19 +1492,19 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    place over 120ms rather than snapping in. It stays mounted for the length
    of the fade on the way out so the exit animates too (see FADE_MS in
    EpicsTimeline). */
-.os-shell .os-bar-popover {
+.os-bar-popover {
   opacity: 0;
   transform: translateY(4px);
   transition:
     opacity 0.12s ease,
     transform 0.12s ease;
 }
-.os-shell .os-bar-popover--shown {
+.os-bar-popover--shown {
   opacity: 1;
   transform: translateY(0);
 }
 @media (prefers-reduced-motion: reduce) {
-  .os-shell .os-bar-popover {
+  .os-bar-popover {
     transition: none;
     transform: none;
   }
@@ -1483,12 +1514,12 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    pick, so these are derived from the record's dates and read as a statement
    of which weeks it lands in — the accent fill marks the weeks it actually
    covers, the quiet ones its term's neighbours. */
-.os-shell .os-sprint-chip-row {
+.os-sprint-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.os-shell .os-sprint-chip {
+.os-sprint-chip {
   padding: 6px 14px;
   border-radius: 100px;
   font-size: 12px;
@@ -1497,10 +1528,10 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   border: 1px solid var(--color-os-container);
   color: var(--color-os-grey);
 }
-.os-shell .os-sprint-chip--active {
-  background: var(--color-os-accent);
-  border-color: var(--color-os-accent);
-  color: var(--color-os-bg);
+.os-sprint-chip--active {
+  background: var(--os-sprint-fill);
+  border-color: var(--os-sprint-fill);
+  color: var(--os-sprint-ink);
 }
 
 .os-shell .os-label-chip {

@@ -228,16 +228,31 @@ test.describe('partner portal', () => {
     await expect(page).toHaveURL(/\/partner$/);
   });
 
-  test('project view shows sprint summary and only shared pages', async ({ page }) => {
+  test('project view shows the roadmap timeline and only shared pages', async ({
+    page,
+  }) => {
     await page.goto('/partner/projects/project-tuck-alumni');
     await expect(
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
-    // Sprint name also appears in the momentum hero, so scope to the roadmap.
+    // The roadmap is the project hub's own timeline with the task level
+    // hidden, so the legend offers epics and stories and nothing finer.
+    const roadmap = page.locator('#roadmap');
+    await expect(roadmap.getByRole('button', { name: 'Epics' })).toBeVisible();
     await expect(
-      page.locator('#roadmap').getByText('Sprint 3 — Matching flow'),
+      roadmap.getByRole('button', { name: 'User stories' }),
     ).toBeVisible();
-    await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
+    await expect(roadmap.getByRole('button', { name: 'Tasks' })).toHaveCount(0);
+    // A bar names its epic — the roadmap is drawn from the project's real
+    // planning data, not an empty grid. (The sprint hero is gone; the timeline
+    // is the one surface now.)
+    await expect(
+      roadmap.getByText('Mentor matching', { exact: true }),
+    ).toBeVisible();
+    // Documents and files share one Drive shelf now.
+    await expect(
+      page.getByRole('heading', { name: 'Drive' }),
+    ).toBeVisible();
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });

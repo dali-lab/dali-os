@@ -57,12 +57,10 @@ import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
   type TimelineEpic,
-  type TimelineStory,
-  type TimelineTask,
   type TimelineTerm,
-  type EpicStatus,
   type StoryDependencyEdge,
 } from "../components/EpicsTimeline";
+import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
   EpicSprintManager,
   type EditableEpic,
@@ -701,109 +699,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Every level is nested containment: a story bar sits inside its epic bar, a
   // task bar inside its story bar. Only epics resolve to a null span (rendered
   // as unscheduled); stories and tasks always inherit a span from their parent,
-  // so a bar never disappears out from under its children.
-  //
-  // Resolution is deliberately acyclic: epic *base* span (explicit dates, else
-  // the union of its sprint dates) → story span (explicit, else the union of
-  // its self-dated tasks, else the epic base) → task span (own dates, else the
-  // story's) → epic *final* span (base widened to cover its stories).
-  const tasksByStoryId = new Map<string, typeof project.tasks>();
-  for (const t of project.tasks) {
-    if (!t.storyId) continue;
-    const bucket = tasksByStoryId.get(t.storyId);
-    if (bucket) bucket.push(t);
-    else tasksByStoryId.set(t.storyId, [t]);
-  }
-
-  const epics: TimelineEpic[] = project.epics.map((e) => {
-    const epicSprints = project.sprints
-      .filter((s) => s.epicId === e.id)
-      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-    const sprintStarts = epicSprints.map((s) => s.startsAt.getTime());
-    const sprintEnds = epicSprints.map((s) => s.endsAt.getTime());
-    const sprintStartMs = sprintStarts.length ? Math.min(...sprintStarts) : null;
-    const sprintEndMs = sprintEnds.length ? Math.max(...sprintEnds) : null;
-
-    let startMs = e.startsAt?.getTime() ?? sprintStartMs;
-    let endMs = e.endsAt?.getTime() ?? sprintEndMs;
-    if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
-    if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
-
-    const stories: TimelineStory[] = [];
-    for (const st of e.stories) {
-      const storyTasks = tasksByStoryId.get(st.id) ?? [];
-
-      // A task is "self-dated" only when it carries enough to place itself.
-      // dueAt alone is a valid one-ended span (start := due), so a task with a
-      // deadline and no start still anchors its story.
-      const selfDated = storyTasks
-        .map((t) => {
-          const ts = t.startsAt?.getTime() ?? t.dueAt?.getTime() ?? null;
-          const te = t.dueAt?.getTime() ?? t.startsAt?.getTime() ?? null;
-          return ts != null && te != null ? { t, ts, te: Math.max(ts, te) } : null;
-        })
-        .filter((x): x is { t: (typeof storyTasks)[number]; ts: number; te: number } => x !== null);
-
-      let storyStartMs = st.startsAt?.getTime() ?? null;
-      let storyEndMs = st.endsAt?.getTime() ?? null;
-      if (storyStartMs == null && selfDated.length) {
-        storyStartMs = Math.min(...selfDated.map((x) => x.ts));
-      }
-      if (storyEndMs == null && selfDated.length) {
-        storyEndMs = Math.max(...selfDated.map((x) => x.te));
-      }
-      storyStartMs ??= startMs;
-      storyEndMs ??= endMs;
-      // Nothing anywhere up the chain has a date — the story can't be placed.
-      if (storyStartMs == null || storyEndMs == null) continue;
-      if (storyEndMs < storyStartMs) storyEndMs = storyStartMs;
-
-      const sStart = storyStartMs;
-      const sEnd = storyEndMs;
-      stories.push({
-        id: st.id,
-        title: st.title,
-        description: st.notes,
-        // Mirrors isStoryIncomplete in EpicSprintManager: title only.
-        incomplete: !st.notes && !st.startsAt && !st.endsAt,
-        status: st.status as TimelineStory["status"],
-        startsAt: new Date(sStart).toISOString(),
-        endsAt: new Date(sEnd).toISOString(),
-        tasks: storyTasks.map((t) => {
-          const ts = t.startsAt?.getTime() ?? t.dueAt?.getTime() ?? sStart;
-          const te = t.dueAt?.getTime() ?? t.startsAt?.getTime() ?? sEnd;
-          return {
-            id: t.id,
-            title: t.title,
-            status: t.status as TimelineTask["status"],
-            startsAt: new Date(ts).toISOString(),
-            endsAt: new Date(Math.max(ts, te)).toISOString(),
-            assignees: t.assignees.map((a) => ({
-              id: a.user.id,
-              name: fullName(a.user),
-            })),
-          };
-        }),
-      });
-    }
-
-    // Widen the epic bar to contain every story bar drawn inside it.
-    for (const st of stories) {
-      const ss = Date.parse(st.startsAt);
-      const se = Date.parse(st.endsAt);
-      startMs = startMs == null ? ss : Math.min(startMs, ss);
-      endMs = endMs == null ? se : Math.max(endMs, se);
-    }
-
-    return {
-      id: e.id,
-      title: e.title,
-      description: e.description,
-      status: e.status as EpicStatus,
-      startsAt: startMs != null ? new Date(startMs).toISOString() : null,
-      endsAt: endMs != null ? new Date(endMs).toISOString() : null,
-      stories,
-    };
+  // so a bar never disappears out from under its children. The span resolution
+  // itself lives in ../lib/timeline-epics — the partner hub draws the same bars.
+  const epics: TimelineEpic[] = buildTimelineEpics({
+    epics: project.epics,
+    sprints: project.sprints,
+    tasks: project.tasks,
   });
 
   const editableEpics: EditableEpic[] = project.epics.map((e) => ({
