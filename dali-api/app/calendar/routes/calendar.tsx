@@ -99,6 +99,7 @@ import { Toggle } from "~/components/ui/Toggle";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 import { DateField } from "~/components/ui/DateField";
+import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -1971,6 +1972,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
+  // The tentative block drawn on the grid while a create composer is open, so a
+  // dragged-out event stays visible (and tracks the composer's time edits)
+  // instead of vanishing the moment the popover appears.
+  const [createSel, setCreateSel] = useState<{ dayIdx: number; startHour: number; endHour: number } | null>(null);
+  const closeComposer = () => {
+    setComposer(null);
+    setCreateSel(null);
+  };
   const eventMoveFetcher = useFetcher();
   // Drag-move/resize of a writable event → patch just its time (same calendar
   // day, new hours), in the display timezone.
@@ -2251,6 +2260,25 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     );
   const eventsByDay = mergeLayers(...layerMaps);
 
+  // Keep the tentative create block in step with the composer's time edits. An
+  // all-day or off-grid draft drops the block (nothing sensible to draw).
+  const syncCreateSel = (startIso: string, endIso: string, isAllDay: boolean) => {
+    if (isAllDay || !startIso || !endIso) {
+      setCreateSel(null);
+      return;
+    }
+    const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
+    if (dayIdx < 0 || dayIdx >= days.length) {
+      setCreateSel((p) => (p ? null : p));
+      return;
+    }
+    setCreateSel((p) =>
+      p && p.dayIdx === dayIdx && p.startHour === startHour && p.endHour === endHour
+        ? p
+        : { dayIdx, startHour, endHour },
+    );
+  };
+
   // Logged-time summary: hours per role across the pay period the visible week
   // belongs to (matches the Timesheet grid's period totals).
   const weekPeriod = payPeriodFor(new Date(data.weekStartIso));
@@ -2523,13 +2551,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                     // With Google CRUD on, dragging drafts a real event; otherwise
                     // it drafts an in-app block.
                     if (data.crudEnabled) {
+                      setCreateSel({ dayIdx, startHour, endHour });
                       setComposer({ mode: "create", startLocal, endLocal, anchor: anchorRect });
                       return;
                     }
                     setEditor({ kind: "create", dayIdx, startHour, endHour, startLocal, endLocal });
                   }}
                   selection={
-                    editor ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour } : null
+                    editor
+                      ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour }
+                      : createSel
                   }
                   selectionPopover={
                     editor
@@ -2553,19 +2584,24 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       : undefined
                   }
                   onSelectionDismiss={() => setEditor(null)}
-                  onSelectionResize={(startHour, endHour) =>
-                    setEditor((prev) => {
-                      if (!prev) return prev;
-                      const day = days[prev.dayIdx];
-                      if (!day) return prev;
-                      return {
-                        ...prev,
-                        startHour,
-                        endHour,
-                        startLocal: dayHourToLocal(day.dateUtc, startHour),
-                        endLocal: dayHourToLocal(day.dateUtc, endHour),
-                      };
-                    })
+                  // Only the timesheet editor's selection resizes; the crud create
+                  // preview (createSel) is a static hint driven by the composer.
+                  onSelectionResize={
+                    editor
+                      ? (startHour, endHour) =>
+                          setEditor((prev) => {
+                            if (!prev) return prev;
+                            const day = days[prev.dayIdx];
+                            if (!day) return prev;
+                            return {
+                              ...prev,
+                              startHour,
+                              endHour,
+                              startLocal: dayHourToLocal(day.dateUtc, startHour),
+                              endLocal: dayHourToLocal(day.dateUtc, endHour),
+                            };
+                          })
+                      : undefined
                   }
                 />
               )}
@@ -2584,7 +2620,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
       {composer && data.crudEnabled && (
-        <EventComposer data={data} state={composer} onClose={() => setComposer(null)} />
+        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncCreateSel} />
       )}
       {calMgrOpen && data.crudEnabled && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />
@@ -3327,11 +3363,12 @@ function AnchoredPopover({
       const target = e.target as Node | null;
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
-      // The card's own dropdowns (Select, RepeatField) render into their own
-      // floating portal at <body>, so they're not inside cardRef — a click
-      // there isn't an outside click.
+      // The card's own dropdowns render into a portal at <body>, so they're not
+      // inside cardRef — a click there isn't an outside click. Covers the Select
+      // / RepeatField floating layers and the DateField / TimeField calendar
+      // popovers (both role="dialog").
       const el = target instanceof Element ? target : (target.parentElement as Element | null);
-      if (el?.closest("[data-floating-ui-portal],[data-calendar-popover]")) return;
+      if (el?.closest("[data-floating-ui-portal],[data-calendar-popover],[role='dialog']")) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -3407,7 +3444,19 @@ type ComposerState =
   | { mode: "create"; startLocal?: string; endLocal?: string; anchor?: DOMRect | null; seed?: ExternalEventDTO }
   | { mode: "edit"; event: ExternalEventDTO; anchor?: DOMRect | null };
 
-function EventComposer({ data, state, onClose }: { data: LoaderData; state: ComposerState; onClose: () => void }) {
+function EventComposer({
+  data,
+  state,
+  onClose,
+  onDraftChange,
+}: {
+  data: LoaderData;
+  state: ComposerState;
+  onClose: () => void;
+  // Reports the draft's current start/end while creating, so the grid can draw
+  // a tentative block that tracks the edits.
+  onDraftChange?: (startIso: string, endIso: string, allDay: boolean) => void;
+}) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const deleteFetcher = useFetcher<{ error?: string } | null>();
   const editing = state.mode === "edit";
@@ -3443,16 +3492,21 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     base?.assignmentType && base?.roleRefId ? `${base.assignmentType}::${base.roleRefId}` : "",
   );
 
-  // Timed + all-day inputs, seeded from the event/seed or the drag (create).
+  // Timed inputs are split into one date + start/end times (custom DateField /
+  // TimeField). Seeded from the event/seed or the drag — the seed strings are
+  // "yyyy-MM-ddThh:mm", so date = [0..10] and time = [11..16].
   const seedTimed = base && !base.allDay ? { s: isoToLocalDT(base.startIso), e: isoToLocalDT(base.endIso) } : null;
   const createSeed = state.mode === "create" ? { s: state.startLocal, e: state.endLocal } : null;
-  const [dtStart, setDtStart] = useState(seedTimed?.s ?? createSeed?.s ?? "");
-  const [dtEnd, setDtEnd] = useState(seedTimed?.e ?? createSeed?.e ?? "");
+  const initStartDT = seedTimed?.s ?? createSeed?.s ?? "";
+  const initEndDT = seedTimed?.e ?? createSeed?.e ?? "";
+  const [date, setDate] = useState(initStartDT.slice(0, 10));
+  const [startTime, setStartTime] = useState(initStartDT.slice(11, 16));
+  const [endTime, setEndTime] = useState(initEndDT.slice(11, 16));
   const [dStart, setDStart] = useState(
-    base?.allDay ? isoToDateInput(base.startIso) : (seedTimed?.s ?? createSeed?.s ?? "").slice(0, 10),
+    base?.allDay ? isoToDateInput(base.startIso) : initStartDT.slice(0, 10),
   );
   const [dEnd, setDEnd] = useState(
-    base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : (seedTimed?.e ?? createSeed?.e ?? "").slice(0, 10),
+    base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : initEndDT.slice(0, 10),
   );
 
   // Close on a successful create/edit/delete.
@@ -3467,14 +3521,24 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     prevDel.current = deleteFetcher.state;
   }, [deleteFetcher.state, deleteFetcher.data, onClose]);
 
-  // Derived hidden values.
-  const startIso = allDay ? (dStart ? `${dStart}T00:00:00.000Z` : "") : dtStart ? new Date(dtStart).toISOString() : "";
+  // Derived hidden values. Timed events use one date + start/end times; an end
+  // that's earlier than the start is read as crossing midnight (next day).
+  const startLocalDT = date && startTime ? `${date}T${startTime}` : "";
+  const endDate = date && startTime && endTime && endTime < startTime ? addDaysToDate(date, 1) : date;
+  const endLocalDT = endDate && endTime ? `${endDate}T${endTime}` : "";
+  const startIso = allDay
+    ? dStart
+      ? `${dStart}T00:00:00.000Z`
+      : ""
+    : startLocalDT
+      ? new Date(startLocalDT).toISOString()
+      : "";
   const endIso = allDay
     ? dEnd
       ? `${addDaysToDate(dEnd, 1)}T00:00:00.000Z` // Google end is exclusive
       : ""
-    : dtEnd
-      ? new Date(dtEnd).toISOString()
+    : endLocalDT
+      ? new Date(endLocalDT).toISOString()
       : "";
   const canSubmit =
     title.trim() !== "" &&
@@ -3484,6 +3548,13 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
     startIso < endIso &&
     (!(isLocal && isWork) || roleKey !== "");
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
+
+  // Keep the grid's tentative create block in sync with the times as they change.
+  useEffect(() => {
+    if (state.mode !== "create") return;
+    onDraftChange?.(startIso, endIso, allDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startIso, endIso, allDay]);
 
   const rememberDest = () => {
     try {
@@ -3566,14 +3637,18 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
                 </label>
                 {allDay ? (
                   <div className="flex items-center gap-2 text-sm">
-                    <input type="date" value={dStart} onChange={(e) => setDStart(e.target.value)} className={cn(fieldCls, "min-w-0 flex-1")} />
+                    <DateField mode="date" value={dStart} onChange={setDStart} ariaLabel="Start date" className="min-w-0 flex-1" />
                     <span className="text-muted-foreground">to</span>
-                    <input type="date" value={dEnd} onChange={(e) => setDEnd(e.target.value)} className={cn(fieldCls, "min-w-0 flex-1")} />
+                    <DateField mode="date" value={dEnd} onChange={setDEnd} ariaLabel="End date" className="min-w-0 flex-1" />
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2 text-sm">
-                    <input type="datetime-local" value={dtStart} onChange={(e) => setDtStart(e.target.value)} className={cn(fieldCls, "w-full")} />
-                    <input type="datetime-local" value={dtEnd} onChange={(e) => setDtEnd(e.target.value)} className={cn(fieldCls, "w-full")} />
+                    <DateField mode="date" value={date} onChange={setDate} ariaLabel="Date" className="w-full" />
+                    <div className="flex items-center gap-2">
+                      <TimeComboField value={startTime} onChange={setStartTime} ariaLabel="Start time" className="min-w-0 flex-1" />
+                      <span className="text-muted-foreground">–</span>
+                      <TimeComboField value={endTime} onChange={setEndTime} ariaLabel="End time" className="min-w-0 flex-1" />
+                    </div>
                   </div>
                 )}
               </div>
@@ -3678,7 +3753,7 @@ function EventComposer({ data, state, onClose }: { data: LoaderData; state: Comp
                   <RepeatField
                     value={repeat}
                     onChange={setRepeat}
-                    anchorLocal={allDay ? dStart : dtStart}
+                    anchorLocal={allDay ? dStart : startLocalDT}
                     labelClassName="sr-only"
                     fieldClassName={cn(fieldCls, "w-full")}
                   />
