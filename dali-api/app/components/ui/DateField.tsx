@@ -216,7 +216,12 @@ export function DateField({
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      // Consume Escape so a picker inside a popover (e.g. the calendar composer)
+      // closes just the calendar, not the whole dialog behind it.
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
