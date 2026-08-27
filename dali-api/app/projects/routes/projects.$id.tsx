@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -12,7 +12,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -28,6 +28,7 @@ import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
+import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -152,10 +153,10 @@ function isTab(x: string | null): x is Tab {
 
 // The dali.os cut of the same page. Nothing new is computed for it — the
 // content is the classic tabs redealt: the planning timeline and the task
-// board are one "Progress" surface, the meetings list gets its own tab
-// instead of being a card buried in Overview, and what's left of Overview is
-// the project's details.
-const OS_TABS = ["progress", "meetings", "details", "mentorship"] as const;
+// board are one "Progress" surface, the project's files get their own "Drive"
+// tab, and what's left of Overview is the project's details. Meetings are no
+// longer a tab — they ride the Progress timeline as day-pinned chips.
+const OS_TABS = ["progress", "drive", "details", "mentorship"] as const;
 type OsTab = (typeof OS_TABS)[number];
 function isOsTab(x: string | null): x is OsTab {
   return (OS_TABS as readonly string[]).includes(x ?? "");
@@ -163,7 +164,7 @@ function isOsTab(x: string | null): x is OsTab {
 
 const OS_TAB_LABELS: Record<OsTab, string> = {
   progress: "Progress",
-  meetings: "Meetings",
+  drive: "Drive",
   details: "Project details",
   mentorship: "Mentorship",
 };
@@ -176,10 +177,11 @@ const CLASSIC_TO_OS: Record<Tab, OsTab> = {
   board: "progress",
   mentorship: "mentorship",
 };
-// And back, for a member who lands on an os link with the flag off.
+// And back, for a member who lands on an os link with the flag off. Drive has
+// no classic equivalent — its files live in Overview there.
 const OS_TO_CLASSIC: Record<OsTab, Tab> = {
   progress: "board",
-  meetings: "overview",
+  drive: "overview",
   details: "overview",
   mentorship: "mentorship",
 };
@@ -294,7 +296,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
                 select: {
                   id: true,
                   role: true,
-                  contact: { select: { name: true } },
+                  contact: { select: { name: true, email: true } },
                 },
               },
             },
@@ -485,6 +487,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     bidDomains,
     linkablePartnerOrgs,
     meetingRows,
+    timelineMeetingRows,
     presenceUser,
     activityRows,
   ] = await Promise.all([
@@ -567,6 +570,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { selectedAt: "asc" },
       take: 5,
       select: { id: true, title: true, selectedAt: true, durationMinutes: true },
+    }),
+    // Every confirmed/searching meeting for this project, with the data needed
+    // to expand recurrences — these ride the Progress timeline as day-pinned
+    // chips (os tab set). Cancelled meetings are excluded; unscheduled ones
+    // (selectedAt null) expand to nothing.
+    prisma.scheduledMeeting.findMany({
+      where: { projectId: project.id, status: { not: "Cancelled" } },
+      select: {
+        id: true,
+        title: true,
+        selectedAt: true,
+        durationMinutes: true,
+        recurrenceRule: true,
+        meetingType: true,
+        exceptions: {
+          select: {
+            originalStart: true,
+            overrideStart: true,
+            overrideDurationMin: true,
+            cancelled: true,
+          },
+        },
+      },
     }),
     // Presence user (collab editor wiring).
     getPresenceUser(
@@ -1032,6 +1058,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       contacts: pp.partnerOrg.memberships.map((m) => ({
         id: m.id,
         name: m.contact.name,
+        email: m.contact.email,
         displayRole: m.role,
       })),
     },
@@ -1051,6 +1078,54 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ]
       : [],
   );
+
+  // Meeting chips for the Progress timeline: expand each meeting's occurrences
+  // across the plan's date span (padded), so a recurring sync shows on every
+  // week it lands on. The client positions each by its day and clamps to the
+  // visible range, so a slightly wider window here is harmless.
+  const timelineMeetings = (() => {
+    const DAY_MS = 86_400_000;
+    const times: number[] = [Date.now()];
+    const add = (iso: string | null | undefined) => {
+      if (!iso) return;
+      const n = Date.parse(iso);
+      if (!Number.isNaN(n)) times.push(n);
+    };
+    for (const e of epics) {
+      add(e.startsAt);
+      add(e.endsAt);
+      for (const s of e.stories) {
+        add(s.startsAt);
+        add(s.endsAt);
+        for (const t of s.tasks) {
+          add(t.startsAt);
+          add(t.endsAt);
+        }
+      }
+    }
+    const windowStart = new Date(Math.min(...times) - 45 * DAY_MS);
+    const windowEnd = new Date(Math.max(...times) + 75 * DAY_MS);
+    return timelineMeetingRows
+      .flatMap((m) =>
+        expandOccurrences(
+          {
+            selectedAt: m.selectedAt,
+            durationMinutes: m.durationMinutes,
+            recurrenceRule: m.recurrenceRule,
+          },
+          m.exceptions,
+          windowStart,
+          windowEnd,
+        ).map((occ) => ({
+          id: `${m.id}:${occ.originalStart.getTime()}`,
+          meetingId: m.id,
+          title: m.title,
+          startsAt: occ.start.toISOString(),
+          type: m.meetingType,
+        })),
+      )
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  })();
 
   // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
   const recentActivity = activityRows;
@@ -1121,6 +1196,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1479,6 +1555,7 @@ export default function ProjectDetail() {
     pinnedDocuments,
     files,
     upcomingMeetings,
+    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1516,6 +1593,33 @@ export default function ProjectDetail() {
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+
+  // Progress people filter — shared by the timeline and the board. Lives in the
+  // URL (?people=<id,id>) like the board's other filters, so a person-sliced
+  // view is a link worth sending. Options are only people who hold tasks.
+  const peopleOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const t of tasks) for (const a of t.assignees) byId.set(a.id, a.name);
+    return [...byId]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tasks]);
+  const selectedPeopleIds = useMemo(
+    () => (searchParams.get("people") ?? "").split(",").filter(Boolean),
+    [searchParams],
+  );
+  const setSelectedPeopleIds = useCallback(
+    (ids: string[]) =>
+      setSearchParams(
+        (prev) => {
+          if (ids.length) prev.set("people", ids.join(","));
+          else prev.delete("people");
+          return prev;
+        },
+        { replace: true, preventScrollReset: true },
+      ),
+    [setSearchParams],
+  );
 
   const tabParam = searchParams.get("tab");
   // Read the param under whichever tab set is live, translating one written in
@@ -1589,6 +1693,12 @@ export default function ProjectDetail() {
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
       onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
+      // Progress-tab controls: meeting chips on the timeline, the shared people
+      // filter, and the New ▸ Meeting deep link. Rendered only under os.
+      timelineMeetings={os ? timelineMeetings : []}
+      peopleOptions={os ? peopleOptions : []}
+      selectedPeopleIds={os ? selectedPeopleIds : []}
+      onPeopleChange={setSelectedPeopleIds}
     />
   );
   const board = (
@@ -1600,6 +1710,7 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
+      filterPeopleIds={os ? selectedPeopleIds : []}
     />
   );
 
@@ -1690,6 +1801,7 @@ export default function ProjectDetail() {
           // so Project details renders without it.
           planning={os ? null : planningNode}
           showMeetings={!os}
+          showDocuments={!os}
           project={project}
           teams={teams}
           documents={documents}
@@ -1766,12 +1878,18 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {tab === "meetings" && (
-          <MeetingsSection
-            meetings={upcomingMeetings}
-            calendar={projectCalendar}
+        {/* Drive (os): the project's files, lifted out of Project details onto
+            their own tab — the collab-doc pages and uploaded files in one
+            folder tree. */}
+        {tab === "drive" && (
+          <DocumentsBlock
             projectId={project.id}
-            standalone
+            documents={documents}
+            pinnedDocuments={pinnedDocuments}
+            files={files}
+            fileEpics={boardOptions.epics}
+            canEdit={canEdit}
+            hasActivePartner={hasActivePartner}
           />
         )}
 
@@ -2037,14 +2155,12 @@ function ProjectHeader({
   // them alone on the right, the os layout groups them with the tag clusters.
   const editControls = (
     <div className="flex items-center gap-1.5 shrink-0">
-      {!editing && (
+      {/* Classic keeps a header Schedule-meeting button; under os this folds
+          into the Progress toolbar's New ▸ Meeting. */}
+      {!editing && !os && (
         <Link
           to={`/calendar?tab=schedule&project=${project.id}`}
-          className={
-            os
-              ? "os-edit-btn"
-              : "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-          }
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
         >
           <CalendarPlus className="w-4 h-4" />
           Schedule meeting
@@ -2577,6 +2693,161 @@ function TermsChipsEditor({
 // Calendar email + image URL + term count + repo URLs. One form posting
 // intent=details with the full field set, so the action handler stays
 // unchanged. Section-level Save submits; Cancel reverts via the wrapper.
+// One label/value row of the os Project-details read view: a muted label with
+// its glyph on the left, the value right-aligned.
+function DetailRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-os-container py-3 last:border-0">
+      <span className="flex items-center gap-2.5 text-sm text-os-muted">
+        {icon}
+        {label}
+      </span>
+      <div className="min-w-0 text-right text-sm text-foreground">{children}</div>
+    </div>
+  );
+}
+
+// The os read view of Project details: a compact icon/label row list with the
+// less-common fields folded behind "Additional details". The edit form is
+// unchanged — this only replaces the read layout under the os tab set.
+function DetailsReadOs({
+  project,
+  canEditFinance,
+}: {
+  project: LoaderData["project"];
+  canEditFinance: boolean;
+}) {
+  const [showMore, setShowMore] = useState(false);
+  const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
+  const dash = <span className="text-os-muted">—</span>;
+  const ic = "h-[17px] w-[17px] text-os-muted";
+
+  return (
+    <div className="rounded-2xl border border-os-container bg-os-card px-4">
+      <DetailRow icon={<Mail className={ic} />} label="Calendar email">
+        {project.calendarEmail ? (
+          <a
+            href={`mailto:${project.calendarEmail}`}
+            className="text-accent-coral hover:underline break-all"
+          >
+            {project.calendarEmail}
+          </a>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Github className={ic} />} label="GitHub team">
+        {project.githubTeamSlug ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Slack className={ic} />} label="Slack channel">
+        {project.slackChannelName && project.slackChannelId ? (
+          <a
+            href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+          >
+            #{project.slackChannelName}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        ) : project.slackChannelName ? (
+          `#${project.slackChannelName}`
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Layers className={ic} />} label="Repositories">
+        {project.repoUrls.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {project.repoUrls.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+              >
+                {repoName(url)}
+              </a>
+            ))}
+          </div>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Globe className={ic} />} label="Deployment">
+        {project.deploymentUrl ? (
+          <a
+            href={project.deploymentUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-accent-coral hover:underline break-all"
+          >
+            {project.deploymentUrl.replace(/^https?:\/\//, "")}
+            <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+          </a>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <div className="border-t border-os-container">
+        <button
+          type="button"
+          onClick={() => setShowMore((v) => !v)}
+          aria-expanded={showMore}
+          className="flex w-full items-center gap-1.5 py-2.5 text-sm text-os-muted transition-colors hover:text-foreground"
+        >
+          {showMore ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+          Additional details
+        </button>
+        {showMore && (
+          <div className="pb-1">
+            {project.teamGroupEmail && (
+              <DetailRow icon={<Users className={ic} />} label="Team email group">
+                <a
+                  href={`mailto:${project.teamGroupEmail}`}
+                  className="text-accent-coral hover:underline break-all"
+                >
+                  {project.teamGroupEmail}
+                </a>
+              </DetailRow>
+            )}
+            <DetailRow icon={<CalendarDays className={ic} />} label="Terms required">
+              {project.termCount} {project.termCount === 1 ? "term" : "terms"}
+            </DetailRow>
+            {canEditFinance && (project.chartStringType || project.chartString) && (
+              <DetailRow icon={<Info className={ic} />} label="Payroll">
+                <span className="break-all font-mono text-xs">
+                  {[project.chartStringType, project.chartString]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </DetailRow>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DetailsSegment({
   project,
   canEdit,
@@ -2588,6 +2859,7 @@ function DetailsSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const os = useFeatureFlag("os-redesign");
 
   return (
     <EditableSection
@@ -2596,7 +2868,10 @@ function DetailsSegment({
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
-      {({ editing }) => (
+      {({ editing }) =>
+        os && !editing ? (
+          <DetailsReadOs project={project} canEditFinance={canEditFinance} />
+        ) : (
         <Form method="post" ref={formRef} className="flex flex-col gap-4 w-full">
           <input type="hidden" name="intent" value="details" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3030,6 +3305,7 @@ function TeamSection({
   currentTermCode: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const os = useFeatureFlag("os-redesign");
   // teams is pre-sorted newest term first by the loader.
   const visible = showAll ? teams : teams.slice(0, 1);
 
@@ -3065,29 +3341,70 @@ function TeamSection({
                   </span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {team.members.map((m) => (
-                  <span
-                    key={m.assignmentId}
-                    className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
-                  >
-                    <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
-                    {m.name}
-                    <span className="text-muted-foreground">· {m.domain}</span>
-                    {canEdit ? (
-                      <Link
-                        to={`/members/${m.userId}#project-assignments`}
-                        title={`Change ${m.name}'s level on their profile`}
-                        className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
-                      >
-                        {m.level}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">{m.level}</span>
-                    )}
-                  </span>
-                ))}
-              </div>
+              {os ? (
+                // The design's member cards: avatar, name, a coloured role
+                // pill, and the level (P1/P2/P3) as a badge on the right.
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {team.members.map((m) => (
+                    <div
+                      key={m.assignmentId}
+                      className="flex items-center gap-3 rounded-xl border border-os-container bg-os-card p-3"
+                    >
+                      <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-foreground">
+                          {m.name}
+                        </div>
+                        <span
+                          className={cn(
+                            "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                            osRoleChipClass(m.domain),
+                          )}
+                        >
+                          {m.domain}
+                        </span>
+                      </div>
+                      {canEdit ? (
+                        <Link
+                          to={`/members/${m.userId}#project-assignments`}
+                          title={`Change ${m.name}'s level on their profile`}
+                          className="flex-shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-semibold text-os-grey transition-colors hover:text-foreground"
+                        >
+                          {m.level}
+                        </Link>
+                      ) : (
+                        <span className="flex-shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-semibold text-os-grey">
+                          {m.level}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {team.members.map((m) => (
+                    <span
+                      key={m.assignmentId}
+                      className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
+                    >
+                      <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
+                      {m.name}
+                      <span className="text-muted-foreground">· {m.domain}</span>
+                      {canEdit ? (
+                        <Link
+                          to={`/members/${m.userId}#project-assignments`}
+                          title={`Change ${m.name}'s level on their profile`}
+                          className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
+                        >
+                          {m.level}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">{m.level}</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -3183,6 +3500,7 @@ function OverviewTab({
   fileEpics,
   upcomingMeetings,
   showMeetings = true,
+  showDocuments = true,
   recentActivity,
   canEdit,
   canEditFinance,
@@ -3205,8 +3523,11 @@ function OverviewTab({
   files: LoaderData["files"];
   fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
-  // False under the os tab set, where Meetings is its own tab.
+  // False under the os tab set, where meetings ride the Progress timeline.
   showMeetings?: boolean;
+  // False under the os tab set, where the project's files are their own
+  // "Drive" tab rather than a block at the bottom of Project details.
+  showDocuments?: boolean;
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
   canEditFinance: boolean;
@@ -3351,16 +3672,19 @@ function OverviewTab({
 
       {/* Drive — the project's one file surface: collab-doc pages and uploaded
           files together in one folder tree. Files render inline (root-level
-          at the bottom, folder-placed nested under the matching folder). */}
-      <DocumentsBlock
-        projectId={project.id}
-        documents={documents}
-        pinnedDocuments={pinnedDocuments}
-        files={files}
-        fileEpics={fileEpics}
-        canEdit={canEdit}
-        hasActivePartner={hasActivePartner}
-      />
+          at the bottom, folder-placed nested under the matching folder). Under
+          the os tab set this is lifted out to a "Drive" tab of its own. */}
+      {showDocuments && (
+        <DocumentsBlock
+          projectId={project.id}
+          documents={documents}
+          pinnedDocuments={pinnedDocuments}
+          files={files}
+          fileEpics={fileEpics}
+          canEdit={canEdit}
+          hasActivePartner={hasActivePartner}
+        />
+      )}
 
       {/* Recent project-scoped audit activity — editors only (the loader
           returns an empty list otherwise). Read-only. */}
@@ -3582,6 +3906,212 @@ function ScopeTab({
   );
 }
 
+// Per-contact "⋯" menu in the os Partners view: email the person, or (Core)
+// jump to their organization in the CRM.
+function PartnerContactMenu({
+  name,
+  email,
+  orgId,
+  canManage,
+}: {
+  name: string;
+  email: string | null;
+  orgId: string;
+  canManage: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const itemClass =
+    "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-os-container";
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${name}`}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center justify-center rounded-md p-1.5 text-os-muted transition-colors hover:bg-os-container hover:text-foreground"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+6px)] z-[100] min-w-[184px] rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
+        >
+          {email && (
+            <a role="menuitem" href={`mailto:${email}`} className={itemClass} onClick={() => setOpen(false)}>
+              <Mail className="h-4 w-4 text-os-muted" /> Email
+            </a>
+          )}
+          {canManage && (
+            <Link role="menuitem" to={`/partners/${orgId}`} className={itemClass} onClick={() => setOpen(false)}>
+              <ExternalLink className="h-4 w-4 text-os-muted" /> View organization
+            </Link>
+          )}
+          {!email && !canManage && (
+            <span className="block px-2.5 py-2 text-sm text-os-muted">No actions</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The os Partners view: the people (contacts across the linked orgs) up front,
+// with org lifecycle management (end / unlink) folded behind a Core-only
+// "Organizations" disclosure so the capability isn't lost.
+function PartnersContactsOs({
+  partners,
+  canManage,
+  tz,
+  confirmSubmit,
+}: {
+  partners: LoaderData["project"]["partners"];
+  canManage: boolean;
+  tz: string;
+  confirmSubmit: ReturnType<typeof useConfirmSubmit>;
+}) {
+  const [showOrgs, setShowOrgs] = useState(false);
+  const contacts = partners
+    .filter((p) => !p.endedAt)
+    .flatMap((p) =>
+      p.org.contacts.map((c) => ({ ...c, orgId: p.org.id, orgName: p.org.name })),
+    );
+
+  return (
+    <>
+      {contacts.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">No partner contacts yet.</p>
+      ) : (
+        <div className="flex flex-col divide-y divide-os-container">
+          {contacts.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 py-2.5">
+              <Avatar name={c.name} size="sm" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-foreground">{c.name}</div>
+                <div className="truncate text-xs text-os-muted">
+                  {c.displayRole ?? "Partner contact"}
+                </div>
+              </div>
+              <PartnerContactMenu
+                name={c.name}
+                email={c.email}
+                orgId={c.orgId}
+                canManage={canManage}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canManage && partners.length > 0 && (
+        <div className="mt-3 border-t border-os-container pt-2">
+          <button
+            type="button"
+            onClick={() => setShowOrgs((v) => !v)}
+            aria-expanded={showOrgs}
+            className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium text-os-muted transition-colors hover:text-foreground"
+          >
+            {showOrgs ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+            Organizations ({partners.length})
+          </button>
+          {showOrgs && (
+            <div className="flex flex-col divide-y divide-os-container">
+              {partners.map((p) => (
+                <div key={p.id} className="flex items-center gap-2 py-2">
+                  <Link
+                    to={`/partners/${p.org.id}`}
+                    className="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
+                  >
+                    {p.org.name}
+                  </Link>
+                  {p.endedAt ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
+                      Ended {formatDateShort(p.endedAt, tz)}
+                    </span>
+                  ) : p.startedAt ? (
+                    <span className="text-xs text-muted-foreground">
+                      since {formatDateShort(p.startedAt, tz)}
+                    </span>
+                  ) : null}
+                  {!p.endedAt && (
+                    <Form
+                      method="post"
+                      onSubmit={confirmSubmit({
+                        title: `End the partnership with ${p.org.name}?`,
+                        description:
+                          "The record and its dates are kept — this only marks the partnership as ended today.",
+                        confirmLabel: "End partnership",
+                        tone: "destructive",
+                      })}
+                    >
+                      <input type="hidden" name="intent" value="partner-end" />
+                      <input type="hidden" name="projectPartnerId" value={p.id} />
+                      <Tooltip content="End partnership (keeps the record)">
+                        <button
+                          type="submit"
+                          aria-label="End partnership"
+                          className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 flex-shrink-0"
+                        >
+                          <CalendarX className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
+                    </Form>
+                  )}
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: `Unlink ${p.org.name}?`,
+                      description:
+                        'This erases the partnership record entirely — use "End partnership" instead to keep the history.',
+                      confirmLabel: "Unlink",
+                      tone: "destructive",
+                    })}
+                  >
+                    <input type="hidden" name="intent" value="partner-unlink" />
+                    <input type="hidden" name="projectPartnerId" value={p.id} />
+                    <Tooltip content="Unlink organization (erases the record)">
+                      <button
+                        type="submit"
+                        aria-label="Unlink organization"
+                        className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10 flex-shrink-0"
+                      >
+                        <Unlink className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                  </Form>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function PartnersSection({
   partners,
   linkablePartnerOrgs,
@@ -3594,6 +4124,7 @@ function PartnersSection({
   const confirmSubmit = useConfirmSubmit();
   const [linking, setLinking] = useState(false);
   const tz = useUserTimeZone();
+  const os = useFeatureFlag("os-redesign");
 
   return (
     <section className="bg-card border border-border rounded-lg p-4">
@@ -3634,7 +4165,14 @@ function PartnersSection({
         </Form>
       )}
 
-      {partners.length === 0 ? (
+      {os ? (
+        <PartnersContactsOs
+          partners={partners}
+          canManage={canManage}
+          tz={tz}
+          confirmSubmit={confirmSubmit}
+        />
+      ) : partners.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
           No partner organizations linked.
         </p>
@@ -4674,6 +5212,10 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
+  timelineMeetings = [],
+  peopleOptions = [],
+  selectedPeopleIds = [],
+  onPeopleChange,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -4687,6 +5229,10 @@ function PlanningTab({
   userName: string;
   onTaskClick: (taskId: string) => void;
   onAddTask?: () => void;
+  timelineMeetings?: LoaderData["timelineMeetings"];
+  peopleOptions?: { id: string; name: string }[];
+  selectedPeopleIds?: string[];
+  onPeopleChange?: (ids: string[]) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -4703,6 +5249,10 @@ function PlanningTab({
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
+        timelineMeetings={timelineMeetings}
+        peopleOptions={peopleOptions}
+        selectedPeopleIds={selectedPeopleIds}
+        onPeopleChange={onPeopleChange}
       />
     </div>
   );
