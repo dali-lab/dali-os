@@ -123,6 +123,12 @@ export const FEATURE_FLAGS = [
     description:
       "Add your Dartmouth classes to the calendar from the Calendars menu — pick the class period (10A, 2, …) and we generate the exact weekly meeting times (with x-hour), bounded to the term. Classes can sync to a linked Google calendar or render as a DALI-only layer. Ships off.",
   },
+  {
+    key: "calendar-google-crud",
+    label: "Calendar: create & edit events",
+    description:
+      "Use the calendar as a Google Calendar client: create, edit (via a composer), and delete events on your linked Google calendars, including all-day events. Google write only; Outlook stays read-only. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

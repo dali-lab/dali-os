@@ -41,6 +41,9 @@ export type SubCalendarDTO = {
   primary: boolean;
   color: string | null;
   enabled: boolean;
+  /** The viewer can create/edit events here (accessRole owner/writer) — the
+   *  composer only offers writable calendars as destinations. */
+  writable?: boolean;
 };
 
 export type CalendarLinkDTO = {
@@ -156,6 +159,37 @@ export type EventAttendeeDTO = {
 
 export type EventLinkDTO = { label: string; href: string };
 
+/** One external (Google/Outlook) event for display, from events.list. Carries
+ *  CRUD identity (eventId/linkId/writable) behind the calendar-google-crud flag
+ *  so the calendar can edit/delete Google events it's allowed to. */
+export type ExternalEventDTO = {
+  startIso: string;
+  endIso: string;
+  title: string;
+  color: string | null;
+  /** The linked sub-calendar this event came from, so the Calendars popover
+   *  can hide individual calendars on the grid (client-side display only). */
+  calendarId?: string | null;
+  // ── Google Calendar CRUD identity (calendar-google-crud flag) ──
+  /** The Google event id — target of edit/delete. */
+  eventId?: string | null;
+  /** Which UserCalendarLink this event belongs to (for the write token). */
+  linkId?: string | null;
+  /** Date-only (all-day) event — rendered in the all-day band, not the grid. */
+  allDay?: boolean;
+  /** The viewer can edit/delete this event (calendar accessRole owner/writer,
+   *  and not Outlook). Gates all write affordances. */
+  writable?: boolean;
+  /** Master event id when this is one instance of a recurring event. */
+  recurringEventId?: string | null;
+  description?: string;
+  location?: string;
+  organizerName?: string;
+  attendees?: EventAttendeeDTO[];
+  /** { label, href } pairs for the detail popover (Meet link, Google page). */
+  links?: EventLinkDTO[];
+};
+
 export type MeetingInviteDTO = {
   notificationId: string;
   meetingId: string;
@@ -194,21 +228,7 @@ export type LoaderData = {
   // External (Google) events for display: real titles + per-calendar colour,
   // straight from events.list (not the merged availability intervals, which
   // drop titles). Manual blocks render separately from data.manualBlocks.
-  externalEvents: {
-    startIso: string;
-    endIso: string;
-    title: string;
-    color: string | null;
-    /** The linked sub-calendar this event came from, so the Calendars popover
-     *  can hide individual calendars on the grid (client-side display only). */
-    calendarId?: string | null;
-    description?: string;
-    location?: string;
-    organizerName?: string;
-    attendees?: EventAttendeeDTO[];
-    /** { label, href } pairs for the detail popover (Meet link, Google page). */
-    links?: EventLinkDTO[];
-  }[];
+  externalEvents: ExternalEventDTO[];
   ingestionError: string | null;
   groups: GroupOption[];
   users: UserOption[];
@@ -237,6 +257,11 @@ export type LoaderData = {
   memberClasses: MemberClassDTO[];
   classOccurrences: ClassOccurrenceDTO[];
   classDestinations: ClassDestinationDTO[];
+  // Google Calendar CRUD (calendar-google-crud flag): when on, the calendar can
+  // create/edit/delete Google events. defaultEventDest is the last-used write
+  // calendar (from the dali_event_dest cookie), "linkId:calendarId".
+  crudEnabled: boolean;
+  defaultEventDest: string | null;
 };
 
 /** A positioned block on the week/day grid. Every layer builder emits these. */
@@ -268,6 +293,9 @@ export type EventBlock = {
    *  popover). Stops the mousedown from bubbling to the column's drag-select
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
+  /** When set, the event's detail popover shows an "Edit" action — a writable
+   *  Google event under the calendar-google-crud flag. Opens the composer. */
+  onEdit?: () => void;
   /** When this on-grid event (a meeting or manual block) is *also* logged as
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on

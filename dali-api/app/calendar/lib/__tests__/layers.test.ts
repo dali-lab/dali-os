@@ -5,6 +5,7 @@ import {
   buildExternalLayer,
   buildMeetingsLayer,
   buildClassesLayer,
+  buildAllDayItems,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
@@ -284,6 +285,35 @@ describe("logged-time de-duplication", () => {
     expect(labels).toContain("Meeting"); // meeting hidden → its logged block still draws
     expect(labels).toContain("Email");
     expect(labels).not.toContain("Time entry"); // block-sourced suppressed
+  });
+});
+
+describe("buildAllDayItems (Google CRUD)", () => {
+  it("buckets all-day events into every day they cover (end exclusive) and skips timed", () => {
+    const days = buildGridDays(WEEK, 7); // Sun 8/16 … Sat 8/22
+    const data = fixture({
+      externalEvents: [
+        // 2-day all-day event Mon–Tue (end exclusive Wed).
+        { startIso: "2026-08-17T00:00:00.000Z", endIso: "2026-08-19T00:00:00.000Z", title: "Trip", color: "#123", allDay: true, calendarId: "c1", eventId: "e1", writable: true },
+        // A timed event — must NOT appear in the all-day band.
+        { startIso: "2026-08-17T14:00:00.000Z", endIso: "2026-08-17T15:00:00.000Z", title: "Timed", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const band = buildAllDayItems(data, days);
+    expect(band[1]?.map((e) => e.title)).toEqual(["Trip"]); // Mon
+    expect(band[2]?.map((e) => e.title)).toEqual(["Trip"]); // Tue
+    expect(band[3]).toBeUndefined(); // Wed — end is exclusive
+    expect(band[0]).toBeUndefined(); // Sun — before it starts
+  });
+
+  it("respects hidden calendars", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-17T00:00:00.000Z", endIso: "2026-08-18T00:00:00.000Z", title: "Hidden", color: null, allDay: true, calendarId: "c1" },
+      ] as LoaderData["externalEvents"],
+    });
+    expect(Object.keys(buildAllDayItems(data, days, new Set(["c1"])))).toHaveLength(0);
   });
 });
 
