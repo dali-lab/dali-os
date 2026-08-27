@@ -20,6 +20,8 @@ import {
   X,
   RefreshCw,
   RotateCcw,
+  Settings,
+  SlidersHorizontal,
 } from "lucide-react";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -301,6 +303,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             projectId: r.dynamicQuery?.startsWith("project:")
               ? r.dynamicQuery.slice("project:".length)
               : null,
+            systemKey: r.systemKey ?? null,
           })),
       ),
       prisma.user.findMany({
@@ -1425,6 +1428,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     });
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [calendarsOpen, setCalendarsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // A time carried from a drag → "Schedule meeting", so the overlay opens with
+  // the dragged slot prefilled.
+  const [meetingSeed, setMeetingSeed] = useState<{ startLocal: string; endLocal: string } | null>(null);
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -1544,8 +1552,44 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
+  // Hand a slot to the scheduling overlay (from the New menu or a drag → Meeting).
+  const startMeeting = (seed?: { startLocal: string; endLocal: string }) => {
+    setMeetingSeed(seed ?? null);
+    setEditor(null);
+    setMode("meeting");
+  };
+  // Open the unified create popover at a sensible default slot (today if it's in
+  // range, 9–10am) — the New-menu path when there's no drag. Month view has no
+  // time grid, so switch to week first.
+  const openQuickCreate = () => {
+    if (view === "month") {
+      changeView("week");
+      return;
+    }
+    const nowKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: data.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const found = days.findIndex((d) => ymdUtc(d.dateUtc) === nowKey);
+    const idx = found >= 0 ? found : 0;
+    const day = days[idx];
+    if (!day) return;
+    setEditor({
+      kind: "create",
+      dayIdx: idx,
+      startHour: 9,
+      endHour: 10,
+      startLocal: dayHourToLocal(day.dateUtc, 9),
+      endLocal: dayHourToLocal(day.dateUtc, 10),
+    });
+  };
+
   const navBtn =
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
+  const iconToolBtn =
+    "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
 
   return (
     <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
@@ -1569,21 +1613,66 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
         <div className="ml-auto flex items-center gap-2">
           {mode === "browse" && (
-            <div className="inline-flex rounded-lg bg-muted p-0.5">
-              {(["month", "week", "day"] as CalendarView[]).map((v) => (
+            <>
+              <div className="inline-flex rounded-lg bg-muted p-0.5">
+                {(["month", "week", "day"] as CalendarView[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => changeView(v)}
+                    className={cn(
+                      "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                      v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {VIEW_LABELS[v]}
+                  </button>
+                ))}
+              </div>
+
+              <Tooltip content="Calendar settings">
                 <button
-                  key={v}
                   type="button"
-                  onClick={() => changeView(v)}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-sm font-medium transition-colors",
-                    v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
+                  onClick={() => setSettingsOpen(true)}
+                  aria-label="Calendar settings"
+                  className={cn(iconToolBtn, "w-8 justify-center px-0")}
                 >
-                  {VIEW_LABELS[v]}
+                  <Settings className="h-4 w-4" />
                 </button>
-              ))}
-            </div>
+              </Tooltip>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCalendarsOpen((o) => !o)}
+                  aria-expanded={calendarsOpen}
+                  className={iconToolBtn}
+                >
+                  <SlidersHorizontal className="h-4 w-4" /> Calendars <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {calendarsOpen && (
+                  <>
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-40 cursor-default"
+                      aria-hidden
+                      onClick={() => setCalendarsOpen(false)}
+                      tabIndex={-1}
+                    />
+                    <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-border bg-card p-2 shadow-brand-2">
+                      <CalendarLayerList
+                        layers={layers}
+                        toggleLayer={toggleLayer}
+                        legend={externalCalendarLegend(data)}
+                        roleBuckets={layers.logged ? roleBuckets : []}
+                        excludedRoleKeys={excludedRoleKeys}
+                        toggleRoleKey={toggleRoleKey}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
           )}
           <div className="relative">
             <button
@@ -1602,27 +1691,26 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   onClick={() => setCreateOpen(false)}
                   tabIndex={-1}
                 />
-                <div className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
+                <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
                     onClick={() => {
-                      setMode("meeting");
+                      openQuickCreate();
                       setCreateOpen(false);
                     }}
                   >
-                    <CalendarPlus className="h-4 w-4 text-muted-foreground" /> New meeting
+                    <Plus className="h-4 w-4 text-muted-foreground" /> Event / log time
                   </button>
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
                     onClick={() => {
-                      setLayers((p) => ({ ...p, logged: true }));
-                      setMode("timesheet");
+                      startMeeting();
                       setCreateOpen(false);
                     }}
                   >
-                    <Clock className="h-4 w-4 text-muted-foreground" /> Log time
+                    <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Meeting
                   </button>
                 </div>
               </>
@@ -1634,7 +1722,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {mode === "meeting" ? (
         <section className="flex flex-col gap-3">
           <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
-          <MeetingComposer data={data} />
+          <MeetingComposer data={data} seed={meetingSeed} />
         </section>
       ) : mode === "timesheet" ? (
         <section className="flex flex-col gap-3">
@@ -1642,18 +1730,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           <TimesheetView data={data} />
         </section>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 lg:grid-cols-[300px_1fr]">
-          <CalendarLayerPanel
-            data={data}
-            layers={layers}
-            toggleLayer={toggleLayer}
-            legend={externalCalendarLegend(data)}
-            roleBuckets={layers.logged ? roleBuckets : []}
-            excludedRoleKeys={excludedRoleKeys}
-            toggleRoleKey={toggleRoleKey}
-          />
-          <div className="lg:flex lg:flex-col lg:overflow-hidden lg:min-h-0">
-            <section className={cn(panel, "flex flex-col p-3 lg:flex-1 lg:min-h-0")}>
+        <div className="flex flex-col lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
+          <section className={cn(panel, "flex flex-col p-3 lg:flex-1 lg:min-h-0")}>
               {view === "month" ? (
                 <MonthGrid
                   days={days}
@@ -1665,9 +1743,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               ) : (
                 <WeekGrid
                   fillAndScroll
+                  clean
                   days={days}
-                  showProviderRow
-                  showSubHourGrid
                   timezone={data.timezone}
                   markPayPeriodEnds={layers.logged}
                   backgroundLayer={(dayIdx) =>
@@ -1710,6 +1787,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                               endLocal={editor.endLocal}
                               myRoles={data.myRoles}
                               onClose={() => setEditor(null)}
+                              onScheduleMeeting={(s, e) => startMeeting({ startLocal: s, endLocal: e })}
                             />
                           )
                       : undefined
@@ -1731,17 +1809,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   }
                 />
               )}
-            </section>
-            {layers.logged && (
-              <TimesheetSummaryRail
-                roleBuckets={roleBuckets}
-                periodLabel={formatPayPeriod(weekPeriod, data.timezone)}
-                onFocus={() => setMode("timesheet")}
-              />
-            )}
-          </div>
+          </section>
+          {layers.logged && (
+            <TimesheetSummaryRail
+              roleBuckets={roleBuckets}
+              periodLabel={formatPayPeriod(weekPeriod, data.timezone)}
+              onFocus={() => setMode("timesheet")}
+            />
+          )}
         </div>
       )}
+      {settingsOpen && <CalendarSettingsModal data={data} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -1766,7 +1844,14 @@ function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => voi
 // existing ScheduleWeekGrid + CreateScheduledMeetingForm — the same wiring as
 // the legacy Schedule tab, re-laid-out to sit beside the grid. Week-scoped
 // (scheduling happens within a week); the toolbar's week nav still applies.
-function MeetingComposer({ data }: { data: LoaderData }) {
+function MeetingComposer({
+  data,
+  seed,
+}: {
+  data: LoaderData;
+  /** A slot handed in from a drag → "Schedule meeting", prefilling start/end. */
+  seed?: { startLocal: string; endLocal: string } | null;
+}) {
   const [searchParams] = useSearchParams();
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
@@ -1775,8 +1860,8 @@ function MeetingComposer({ data }: { data: LoaderData }) {
     const g = data.groups.find((grp) => grp.projectId === projectParam);
     return g ? [g.id] : [];
   });
-  const [startLocal, setStartLocal] = useState<string>("");
-  const [endLocal, setEndLocal] = useState<string>("");
+  const [startLocal, setStartLocal] = useState<string>(seed?.startLocal ?? "");
+  const [endLocal, setEndLocal] = useState<string>(seed?.endLocal ?? "");
 
   const groupsById = new Map(data.groups.map((g) => [g.id, g]));
   const resolvedParticipantIds = (() => {
@@ -1821,7 +1906,6 @@ function MeetingComposer({ data }: { data: LoaderData }) {
           calendarLinks={data.calendarLinks}
           myProjects={data.myProjects}
           canSetSelfCheckIn={data.canSetSelfCheckIn}
-          canMarkCoreMeeting={data.canMarkCoreMeeting}
           startLocal={startLocal}
           onStartLocalChange={setStartLocal}
           endLocal={endLocal}
@@ -1851,8 +1935,10 @@ const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
   { key: "logged", label: "Logged time", swatch: "bg-accent-yellow" },
 ];
 
-function CalendarLayerPanel({
-  data,
+// The layer toggles, rendered inside the toolbar's "Calendars" popover. Each row
+// is a colored checkbox + label; the linked-calendar colour key and the logged-
+// time role-filter chips nest under their layer when it's on.
+function CalendarLayerList({
   layers,
   toggleLayer,
   legend,
@@ -1860,7 +1946,6 @@ function CalendarLayerPanel({
   excludedRoleKeys,
   toggleRoleKey,
 }: {
-  data: LoaderData;
   layers: LayerVisibility;
   toggleLayer: (key: keyof LayerVisibility) => void;
   legend: { swatch: string; label: string }[];
@@ -1868,97 +1953,114 @@ function CalendarLayerPanel({
   excludedRoleKeys: Set<string>;
   toggleRoleKey: (key: string) => void;
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   return (
-    <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2">
-      <div>
-        <h2 className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calendars</h2>
-        <ul className="flex flex-col gap-0.5">
-          {CALENDAR_LAYER_SPECS.map((spec) => {
-            const on = layers[spec.key];
-            return (
-              <li key={spec.key}>
-                <button
-                  type="button"
-                  onClick={() => toggleLayer(spec.key)}
-                  aria-pressed={on}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-                >
-                  <span
-                    className={cn(
-                      "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
-                      on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
-                    )}
-                  >
-                    {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
-                  </span>
-                  <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
-                </button>
-                {/* Linked-calendar colour key */}
-                {spec.key === "external" && on && legend.length > 0 && (
-                  <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-1">
-                    {legend.map((c) => (
-                      <li key={c.swatch} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: c.swatch }} />
-                        <span className="truncate">{c.label}</span>
-                      </li>
-                    ))}
-                  </ul>
+    <ul className="flex flex-col gap-0.5">
+      {CALENDAR_LAYER_SPECS.map((spec) => {
+        const on = layers[spec.key];
+        return (
+          <li key={spec.key}>
+            <button
+              type="button"
+              onClick={() => toggleLayer(spec.key)}
+              aria-pressed={on}
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+            >
+              <span
+                className={cn(
+                  "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
+                  on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
                 )}
-                {/* Role filter chips nested under Logged time */}
-                {spec.key === "logged" && on && roleBuckets.length > 0 && (
-                  <ul className="mb-1 ml-8 mt-1 flex flex-wrap gap-1">
-                    {roleBuckets.map((b) => {
-                      const excluded = excludedRoleKeys.has(b.key);
-                      const color = roleColor(b.key);
-                      return (
-                        <li key={b.key}>
-                          <button
-                            type="button"
-                            onClick={() => toggleRoleKey(b.key)}
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
-                              excluded ? "border-border text-muted-foreground line-through" : "border-border text-foreground",
-                            )}
-                          >
-                            <span className={cn("h-2 w-2 rounded-full", color.dot)} />
-                            {b.label}
-                            <span className="text-muted-foreground">{b.hours}h</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+              >
+                {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
+              </span>
+              <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
+            </button>
+            {/* Linked-calendar colour key */}
+            {spec.key === "external" && on && legend.length > 0 && (
+              <ul className="mb-1 ml-8 mt-0.5 flex flex-col gap-1">
+                {legend.map((c) => (
+                  <li key={c.swatch} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: c.swatch }} />
+                    <span className="truncate">{c.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* Role filter chips nested under Logged time */}
+            {spec.key === "logged" && on && roleBuckets.length > 0 && (
+              <ul className="mb-1 ml-8 mt-1 flex flex-wrap gap-1">
+                {roleBuckets.map((b) => {
+                  const excluded = excludedRoleKeys.has(b.key);
+                  const color = roleColor(b.key);
+                  return (
+                    <li key={b.key}>
+                      <button
+                        type="button"
+                        onClick={() => toggleRoleKey(b.key)}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                          excluded ? "border-border text-muted-foreground line-through" : "border-border text-foreground",
+                        )}
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", color.dot)} />
+                        {b.label}
+                        <span className="text-muted-foreground">{b.hours}h</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
-      <div className="border-t border-border pt-2">
-        <button
-          type="button"
-          onClick={() => setSettingsOpen((o) => !o)}
-          className="flex w-full items-center gap-1.5 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
-        >
-          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", settingsOpen ? "" : "-rotate-90")} />
-          Settings
-        </button>
-        {settingsOpen && (
-          <div className="mt-3 flex flex-col gap-6">
-            <CalendarIntegrationsCard
-              links={data.calendarLinks}
-              ingestionError={data.ingestionError}
-              generalCalendar={data.generalCalendar}
-            />
-            <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
-            <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
-            <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
-          </div>
-        )}
+// Calendar settings (integrations, working hours, buffers, manual blocks) as a
+// centered modal opened from the toolbar gear — off the main canvas so the grid
+// keeps the full width.
+function CalendarSettingsModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close settings" onClick={onClose} tabIndex={-1} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Calendar settings"
+        className="relative z-10 w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-brand-3"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">Calendar settings</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex flex-col gap-6">
+          <CalendarIntegrationsCard
+            links={data.calendarLinks}
+            ingestionError={data.ingestionError}
+            generalCalendar={data.generalCalendar}
+          />
+          <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
+          <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
+          <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
+        </div>
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -3315,11 +3417,14 @@ function CreateFromDragPopover({
   endLocal,
   myRoles,
   onClose,
+  onScheduleMeeting,
 }: {
   startLocal: string;
   endLocal: string;
   myRoles: RoleInstance[];
   onClose: () => void;
+  /** Hand the dragged slot to the meeting scheduler (adds the Meeting tab). */
+  onScheduleMeeting?: (startLocal: string, endLocal: string) => void;
 }) {
   const { os, popover, formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
@@ -3334,7 +3439,10 @@ function CreateFromDragPopover({
     setEnd(endLocal);
   }, [startLocal, endLocal]);
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const [isWork, setIsWork] = useState(false);
+  // Block, Log time (a work-marked block → TimeEntry), or hand off to the
+  // meeting scheduler — all from the same dragged slot.
+  const [kind, setKind] = useState<"block" | "logtime" | "meeting">("block");
+  const isWork = kind === "logtime";
   const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3343,6 +3451,7 @@ function CreateFromDragPopover({
     !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
   const isRecurring = repeat.freq !== "none";
   const canSubmit =
+    kind !== "meeting" &&
     title.trim().length > 0 &&
     startEndValid &&
     !submitting &&
@@ -3363,9 +3472,9 @@ function CreateFromDragPopover({
     setSubmitting(true);
     setError(null);
     try {
-      // Drag-to-create only makes personal blocks. Meetings live in the
-      // Schedule Meeting tab where the gradient/picker have room to breathe —
-      // a popover over the grid couldn't show both.
+      // Block and Log time both create a manual block — Log time just marks it
+      // as work against a role (which syncs to a TimeEntry). Meeting is a
+      // separate hand-off (see the Meeting tab), never submitted here.
       const body = new FormData();
       body.set("intent", "add-manual-block");
       body.set("title", title.trim());
@@ -3396,15 +3505,28 @@ function CreateFromDragPopover({
     }
   }
 
+  const tabs: { key: "block" | "logtime" | "meeting"; label: string }[] = [
+    { key: "block", label: "Block" },
+    ...(myRoles.length > 0 ? [{ key: "logtime" as const, label: "Log time" }] : []),
+    ...(onScheduleMeeting ? [{ key: "meeting" as const, label: "Meeting" }] : []),
+  ];
+
+  const cancelBtn =
+    "px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted";
+  const primaryBtn =
+    "px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50";
+
   return (
     <div
-      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
+      className={cn("w-80 max-h-[30rem] overflow-y-auto", popover)}
       role="dialog"
       aria-modal="false"
-      aria-label="New personal block"
+      aria-label="Create on the calendar"
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
-        <h2 className="font-heading font-semibold text-sm text-foreground">New personal block</h2>
+        <h2 className="font-heading font-semibold text-sm text-foreground">
+          {kind === "logtime" ? "Log time" : kind === "meeting" ? "Schedule meeting" : "New block"}
+        </h2>
         <button
           type="button"
           onClick={onClose}
@@ -3415,22 +3537,44 @@ function CreateFromDragPopover({
         </button>
       </div>
 
-      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
-          <div>
-            <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
-              Title
-            </label>
-            <input
-              id="drag-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              autoFocus
-              placeholder="e.g. Focus time"
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            />
+      {tabs.length > 1 && (
+        <div className="px-3 pt-3">
+          <div className="inline-flex w-full rounded-lg bg-muted p-0.5">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setKind(t.key)}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  kind === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
+        </div>
+      )}
+
+      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
+          {kind !== "meeting" && (
+            <div>
+              <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
+                {kind === "logtime" ? "What did you work on?" : "Title"}
+              </label>
+              <input
+                id="drag-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                autoFocus
+                placeholder={kind === "logtime" ? "e.g. Sprint planning" : "e.g. Focus time"}
+                className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3461,54 +3605,65 @@ function CreateFromDragPopover({
           </div>
           {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
 
-          <RepeatField
-            value={repeat}
-            onChange={setRepeat}
-            anchorLocal={start}
-            labelClassName="block text-sm font-medium text-foreground mb-1"
-            fieldClassName={cn(
-              "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
-              !os && "h-9",
-            )}
-          />
-
-          {myRoles.length > 0 && !isRecurring && (
-            <div>
-              <Checkbox
-                label="This is work"
-                checked={isWork}
-                onChange={(e) => setIsWork(e.target.checked)}
-                className="text-sm font-medium text-foreground"
-              />
-              {isWork && (
-                <Select
-                  ariaLabel="Which role is this work for"
-                  value={roleKey}
-                  onChange={(v) => setRoleKey(v)}
-                  options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-                  buttonClassName={cn("mt-2 border-border", formTrigger)}
-                />
+          {kind === "block" && (
+            <RepeatField
+              value={repeat}
+              onChange={setRepeat}
+              anchorLocal={start}
+              labelClassName="block text-sm font-medium text-foreground mb-1"
+              fieldClassName={cn(
+                "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
+                !os && "h-9",
               )}
+            />
+          )}
+
+          {kind === "logtime" && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Role</label>
+              <Select
+                ariaLabel="Which role is this work for"
+                value={roleKey}
+                onChange={(v) => setRoleKey(v)}
+                placeholder="Select a role…"
+                options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+                buttonClassName={cn("border-border", !roleKey && "border-red-500", formTrigger)}
+              />
             </div>
           )}
-          {error && <p className="text-sm text-red-700">{error}</p>}
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
-            >
-              {submitting ? "Creating…" : "Add block"}
-            </button>
-          </div>
+          {kind === "meeting" ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Opens the scheduler with participant availability for this slot — you can adjust the time and add people there.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button type="button" onClick={onClose} className={cancelBtn}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!startEndValid}
+                  onClick={() => startEndValid && onScheduleMeeting?.(start, end)}
+                  className={primaryBtn}
+                >
+                  Continue →
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {error && <p className="text-sm text-red-700">{error}</p>}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button type="button" onClick={onClose} className={cancelBtn}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={!canSubmit} className={primaryBtn}>
+                  {submitting ? "Saving…" : kind === "logtime" ? "Log time" : "Add block"}
+                </button>
+              </div>
+            </>
+          )}
         </form>
     </div>
   );
@@ -3555,7 +3710,6 @@ function ScheduleView({ data }: { data: LoaderData }) {
         calendarLinks={data.calendarLinks}
         myProjects={data.myProjects}
         canSetSelfCheckIn={data.canSetSelfCheckIn}
-        canMarkCoreMeeting={data.canMarkCoreMeeting}
         startLocal={startLocal}
         onStartLocalChange={setStartLocal}
         endLocal={endLocal}
@@ -4461,7 +4615,6 @@ function CreateScheduledMeetingForm({
   calendarLinks,
   myProjects,
   canSetSelfCheckIn,
-  canMarkCoreMeeting,
   startLocal,
   onStartLocalChange,
   endLocal,
@@ -4477,7 +4630,6 @@ function CreateScheduledMeetingForm({
   calendarLinks: CalendarLinkDTO[];
   myProjects: ProjectOption[];
   canSetSelfCheckIn: boolean;
-  canMarkCoreMeeting: boolean;
   startLocal: string;
   onStartLocalChange: (v: string) => void;
   endLocal: string;
@@ -4503,7 +4655,6 @@ function CreateScheduledMeetingForm({
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
-  const [coreMeeting, setCoreMeeting] = useState(false);
   const [status, setStatus] = useState<
     | null
     | {
@@ -4520,6 +4671,9 @@ function CreateScheduledMeetingForm({
 
   const usersById = new Map(users.map((u) => [u.id, u]));
   const groupsById = new Map(groups.map((g) => [g.id, g]));
+  // A Core meeting is derived from inviting the Core group (systemKey "core")
+  // rather than a manual toggle — so it lands on the Core calendar automatically.
+  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
 
   // Prefill the Project picker when exactly one selected group is a
   // system-managed project group (see GroupOption.projectId) — still fully
@@ -4569,7 +4723,7 @@ function CreateScheduledMeetingForm({
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
       }
-      if (canMarkCoreMeeting && coreMeeting) {
+      if (coreSelected) {
         payload.isCoreMeeting = true;
       }
 
@@ -4614,7 +4768,6 @@ function CreateScheduledMeetingForm({
         setMeetingTypeLabel("");
         setProjectId("");
         setSelfCheckIn(false);
-        setCoreMeeting(false);
       }
     } catch (err) {
       setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
@@ -4700,7 +4853,7 @@ function CreateScheduledMeetingForm({
         </div>
 
         {/* Secondary scheduling details — quieter, less visual weight */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-border">
+        <div className="flex flex-col gap-4 pt-1 border-t border-border">
           <div className="pt-3">
             <RepeatField
               value={repeat}
@@ -4710,7 +4863,7 @@ function CreateScheduledMeetingForm({
               fieldClassName={fieldClass}
             />
           </div>
-          <div className="pt-3">
+          <div>
             <label htmlFor="organizer-calendar" className={labelClass}>
               Send invite from
             </label>
@@ -4801,13 +4954,10 @@ function CreateScheduledMeetingForm({
             )}
           </div>
 
-          {canMarkCoreMeeting && (
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Checkbox
-                checked={coreMeeting}
-                onChange={(e) => setCoreMeeting(e.target.checked)}
-                label="Core meeting"
-              />
+          {coreSelected && (
+            <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
+              <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
+              <span>The Core group is invited, so this shows on the Core calendar.</span>
             </div>
           )}
 

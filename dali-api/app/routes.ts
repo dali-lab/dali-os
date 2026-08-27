@@ -7,6 +7,9 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // One meeting surface: details, note link, and attendance (roster + self
+    // check-in QR + wallet scan) in one place.
+    route("calendar/meeting/:id", "calendar/routes/calendar.meeting.$id.tsx"),
     // Standalone self-check-in surface for meetings without a meeting note.
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // Organizer/Core scan station: scan members' wallet passes to mark them

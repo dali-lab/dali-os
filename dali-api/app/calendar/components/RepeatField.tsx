@@ -205,7 +205,7 @@ export function RepeatField({
                 <div className="flex flex-col gap-1.5 py-1">
                   {/* Seven equal cells rather than a left-hugging row — the same
                       shape (and coral selection) as DateField's calendar grid. */}
-                  <div className="grid max-w-[26rem] grid-cols-7 gap-1">
+                  <div className="grid grid-cols-7 gap-1">
                     {DAY_CHIPS.map((chip, day) => {
                       const on = value.byDay.includes(day);
                       return (
@@ -216,10 +216,10 @@ export function RepeatField({
                           aria-label={DAY_NAMES[day]}
                           onClick={() => toggleDay(day)}
                           className={cn(
-                            "h-7 rounded text-[11px] font-semibold transition-colors",
+                            "flex aspect-square min-w-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors",
                             on
                               ? "bg-accent-coral text-white"
-                              : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                              : "border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         >
                           {chip}
@@ -236,31 +236,13 @@ export function RepeatField({
 
             <span className={RAIL_LABEL}>Ends</span>
             <div className="flex flex-col gap-2">
-              <div
-                className="inline-flex h-8 w-full max-w-[26rem] overflow-hidden rounded-md border border-border bg-background"
-                role="group"
-                aria-label="When the repeat ends"
-              >
-                {END_SEGMENTS.map((seg) => {
-                  const active = value.end.type === seg.value;
-                  return (
-                    <button
-                      key={seg.value}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => pickEnd(seg.value)}
-                      className={cn(
-                        "flex-1 border-l border-border text-xs font-medium transition-colors first:border-l-0",
-                        active
-                          ? "bg-accent-coral text-white"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                    >
-                      {seg.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <Select
+                value={value.end.type}
+                onChange={(v) => pickEnd(v as RepeatEnd["type"])}
+                options={END_SEGMENTS.map((s) => ({ value: s.value, label: s.label }))}
+                ariaLabel="When the repeat ends"
+                buttonClassName="inline-flex h-8 w-full items-center justify-between gap-1 rounded-md border border-border bg-background px-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+              />
 
               {value.end.type === "on" && (
                 <DateField
@@ -268,7 +250,7 @@ export function RepeatField({
                   value={value.end.date}
                   min={anchorDate || undefined}
                   onChange={(date) => onChange({ ...value, end: { type: "on", date } })}
-                  className="w-full max-w-[26rem]"
+                  className="w-full"
                   ariaLabel="Repeat end date"
                 />
               )}

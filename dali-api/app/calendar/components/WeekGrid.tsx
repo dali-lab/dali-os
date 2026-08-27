@@ -1,7 +1,7 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useFetcher } from "react-router";
-import { Building2, Wifi } from "lucide-react";
+import { Building2, Wifi, Users, FileText } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { RsvpButtons } from "~/components/RsvpButtons";
@@ -459,14 +459,22 @@ export function WeekGridEvent({ e }: { e: EventBlock }) {
                   notificationId={e.meeting.notificationId}
                   onResponded={() => setDetailOpen(false)}
                 />
-                {e.meeting.notePageId && (
+                <div className="mt-2 flex flex-wrap gap-2">
                   <Link
-                    to={`/documents/${e.meeting.notePageId}`}
-                    className="mt-2 inline-block text-[11px] font-medium text-accent-coral hover:underline"
+                    to={`/calendar/meeting/${e.meeting.meetingId}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
                   >
-                    Open meeting note →
+                    <Users className="h-3 w-3 text-muted-foreground" /> Details &amp; attendance
                   </Link>
-                )}
+                  {e.meeting.notePageId && (
+                    <Link
+                      to={`/documents/${e.meeting.notePageId}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                    >
+                      <FileText className="h-3 w-3 text-muted-foreground" /> Note
+                    </Link>
+                  )}
+                </div>
                 <MeetingDetailToggles meeting={e.meeting} />
               </div>
             ) : null
@@ -489,6 +497,7 @@ export function WeekGrid({
   onSelectionDismiss,
   onSelectionResize,
   showSubHourGrid = false,
+  clean = false,
   timezone,
   markPayPeriodEnds = false,
   fillAndScroll = false,
@@ -508,6 +517,9 @@ export function WeekGrid({
   onSelectionDismiss?: () => void;
   onSelectionResize?: (startHour: number, endHour: number) => void;
   showSubHourGrid?: boolean;
+  // Google/Notion-style calm grid: light single-weight hour lines and no
+  // 10-minute sub-hour lines, for a less busy read. Overrides showSubHourGrid.
+  clean?: boolean;
   // When set, the column matching "today" in this timezone is highlighted and a
   // horizontal current-time line is drawn in it.
   timezone?: string;
@@ -792,13 +804,19 @@ export function WeekGrid({
           >
             {HOURS.map((_, i) => (
               <Fragment key={i}>
-                {/* Hour line — distinctly heavier (2px, darker) than the faint
-                    10-minute sub-hour lines. */}
+                {/* Hour line. Clean mode: a single light line (Google/Notion).
+                    Detailed mode: a heavier 2px line above the faint 10-min
+                    sub-hour lines. */}
                 <div
-                  className="absolute left-0 right-0 border-t-2 border-foreground/45"
+                  className={
+                    clean
+                      ? "absolute left-0 right-0 border-t border-foreground/10"
+                      : "absolute left-0 right-0 border-t-2 border-foreground/45"
+                  }
                   style={{ top: i * HOUR_PX }}
                 />
                 {showSubHourGrid &&
+                  !clean &&
                   // 10-minute sub-hour lines (skip index 0; that's the hour line).
                   Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
                     <div
@@ -810,24 +828,29 @@ export function WeekGrid({
               </Fragment>
             ))}
             {backgroundLayer?.(idx)}
-            {/* Redraw the grid lines above the availability tint so they stay
+            {/* Redraw the grid lines above the background tint so they stay
                 visible over the colored background — but BEFORE events, so
-                Busy blocks render on top of the lines (not the other way
-                round). Hour lines bolder than the 10-minute sub-hour lines. */}
-            {showSubHourGrid &&
+                blocks render on top of the lines (not the other way round). */}
+            {(showSubHourGrid || clean) &&
               HOURS.map((_, i) => (
                 <Fragment key={`grid-fg-${i}`}>
                   <div
-                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none"
+                    className={
+                      clean
+                        ? "absolute left-0 right-0 border-t border-foreground/10 pointer-events-none"
+                        : "absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none"
+                    }
                     style={{ top: i * HOUR_PX }}
                   />
-                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
-                    <div
-                      key={s}
-                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none"
-                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
-                    />
-                  ))}
+                  {showSubHourGrid &&
+                    !clean &&
+                    Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
+                      <div
+                        key={s}
+                        className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none"
+                        style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
+                      />
+                    ))}
                 </Fragment>
               ))}
             {isToday && nowLineTop != null && (

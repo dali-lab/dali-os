@@ -65,6 +65,10 @@ export type GroupOption = {
   // groups (see ensureProjectGroup in ~/lib/groups.ts). Lets the Schedule
   // Meeting form prefill the Project picker when such a group is selected.
   projectId: string | null;
+  // Stable identifier for system groups (e.g. "core"). Lets the meeting form
+  // mark a meeting as a Core meeting when the Core group is invited, instead of
+  // a manual checkbox.
+  systemKey: string | null;
 };
 
 export type UserOption = {

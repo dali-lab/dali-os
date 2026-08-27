@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewForms, isCore } from "~/lib/roles";
+import { canViewForms } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import {
   createScheduledMeeting,
@@ -65,11 +65,10 @@ export async function action({ request }: Route.ActionArgs) {
     return forbidden(request);
   }
 
-  // Marking a meeting as Core is Core-only. Checked here rather than trusted
-  // from the form, which only hides the checkbox.
-  if (body.isCoreMeeting && !(await isCore(auth.user.sub))) {
-    return forbidden(request);
-  }
+  // isCoreMeeting is no longer a manual flag — the form sets it only when the
+  // Core group is among the invited participants, which is what makes a meeting
+  // "Core" (it then surfaces on the Core calendar). The group picker is already
+  // visibility-gated, so there's no separate role check here.
 
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {
