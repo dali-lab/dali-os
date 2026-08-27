@@ -1,7 +1,7 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useFetcher } from "react-router";
-import { Building2, Wifi, Users, FileText } from "lucide-react";
+import { Building2, Wifi, Users, FileText, Pencil, Copy, Trash2 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { RsvpButtons } from "~/components/RsvpButtons";
@@ -101,6 +101,8 @@ export function CalendarEventDetailPopover({
   anchorEl,
   title,
   timeRange,
+  sourceLabel,
+  accentColor,
   location,
   description,
   organizerName,
@@ -112,6 +114,9 @@ export function CalendarEventDetailPopover({
   anchorEl: HTMLElement | null;
   title: string;
   timeRange: string;
+  // Which calendar the event lives on, shown with a color dot under the time.
+  sourceLabel?: string;
+  accentColor?: string | null;
   location?: string;
   description?: string;
   organizerName?: string;
@@ -219,6 +224,16 @@ export function CalendarEventDetailPopover({
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-sm text-foreground break-words">{title}</div>
             <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+            {sourceLabel && (
+              <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: accentColor || "var(--color-accent-coral)" }}
+                  aria-hidden
+                />
+                <span className="truncate">{sourceLabel}</span>
+              </div>
+            )}
           </div>
           {onClose && (
             <button
@@ -375,6 +390,7 @@ function hourFromColY(clientY: number, colEl: HTMLElement): number {
 
 export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) {
   const [detailOpen, setDetailOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
   const bufferAfter = e.bufferAfter ?? 0;
@@ -391,7 +407,8 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
   const hasDetails = Boolean(
     e.location || e.description || e.organizerName || e.attendees?.length || e.links?.length,
   );
-  const opensDetail = !e.onClick && (isMeeting || hasDetails || Boolean(e.onEdit));
+  const opensDetail =
+    !e.onClick && (isMeeting || hasDetails || Boolean(e.onEdit) || Boolean(e.onDuplicate) || Boolean(e.onDelete));
   const clickable = Boolean(e.onClick) || opensDetail;
 
   // Overlap layout: a block sharing its time with others is narrowed into a
@@ -685,12 +702,17 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
           anchorEl={anchorEl}
           title={e.label}
           timeRange={timeRange}
+          sourceLabel={e.calendarLabel}
+          accentColor={e.bgColor}
           location={e.location}
           description={e.description}
           organizerName={e.organizerName}
           attendees={e.attendees}
           links={e.links}
-          onClose={() => setDetailOpen(false)}
+          onClose={() => {
+            setConfirmDelete(false);
+            setDetailOpen(false);
+          }}
           footer={
             e.meeting ? (
               <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
@@ -730,19 +752,75 @@ export function WeekGridEvent({ e, lane }: { e: EventBlock; lane?: EventLane }) 
                 </div>
                 <MeetingDetailToggles meeting={e.meeting} />
               </div>
-            ) : e.onEdit ? (
-              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const anchor = anchorEl?.getBoundingClientRect();
-                    setDetailOpen(false);
-                    e.onEdit?.(anchor);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
-                >
-                  Edit event
-                </button>
+            ) : e.onEdit || e.onDuplicate || e.onDelete ? (
+              <div
+                className="mt-2 flex items-center gap-1 border-t border-border pt-2"
+                onMouseDown={(ev) => ev.stopPropagation()}
+              >
+                {e.onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const anchor = anchorEl?.getBoundingClientRect();
+                      setDetailOpen(false);
+                      e.onEdit?.(anchor);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                  >
+                    <Pencil className="h-3 w-3 text-muted-foreground" /> Edit
+                  </button>
+                )}
+                {e.onDuplicate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const anchor = anchorEl?.getBoundingClientRect();
+                      setDetailOpen(false);
+                      e.onDuplicate?.(anchor);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                  >
+                    <Copy className="h-3 w-3 text-muted-foreground" /> Duplicate
+                  </button>
+                )}
+                {e.onDelete && (
+                  <div className="ml-auto">
+                    {/* Recurring events route straight to the composer (scope
+                        prompt). One-off deletes confirm inline. */}
+                    {e.recurring ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailOpen(false);
+                          e.onDelete?.();
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete…
+                      </button>
+                    ) : confirmDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDelete(false);
+                          setDetailOpen(false);
+                          e.onDelete?.();
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
+                      >
+                        Confirm delete
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(true)}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null
           }
