@@ -36,6 +36,7 @@ import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
@@ -1156,6 +1157,7 @@ function EligibilityRow({
 }) {
   const setFetcher = useFetcher();
   const removeFetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border bg-background/40">
       <span className="text-sm font-medium text-foreground">
@@ -1191,7 +1193,17 @@ function EligibilityRow({
           </span>
         )}
         {canManage && (
-          <removeFetcher.Form method="post" className="inline">
+          <removeFetcher.Form
+            method="post"
+            className="inline"
+            onSubmit={confirmSubmit({
+              title: `Remove ${eligibility.domain.displayName} eligibility?`,
+              description:
+                "This member will no longer be eligible to be staffed in this domain. You can add it back later.",
+              confirmLabel: "Remove",
+              tone: "destructive",
+            })}
+          >
             <input type="hidden" name="intent" value="remove-eligibility" />
             <input
               type="hidden"

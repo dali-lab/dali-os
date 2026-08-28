@@ -628,7 +628,7 @@ export function LayoutOS({
                   // min-h-[5rem]: on a window too short even for this, keep the
                   // list a list and let the rail take the remainder, rather
                   // than squeezing it to a sliver.
-                  <div className="flex min-h-[5rem] flex-col gap-3 overflow-y-auto border-l-2 border-os-container pr-2">
+                  <div className="flex min-h-[5rem] flex-col gap-3 overflow-y-auto pr-2">
                     {activeSubtabs.map((t) => {
                       const active = t.href === activeHref
                       return (
@@ -640,7 +640,7 @@ export function LayoutOS({
                             'flex items-center gap-3 py-2 text-base text-left transition-colors',
                             active
                               ? 'os-subtab-active pl-[22px] font-medium text-foreground'
-                              : 'pl-6 font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+                              : 'rounded-r-os-item pl-6 font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
                           )}
                         >
                           <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
