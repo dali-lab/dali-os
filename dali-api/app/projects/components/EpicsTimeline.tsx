@@ -305,10 +305,14 @@ function TimelineBarHover({
       const margin = 8;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      // The card hangs off the bar's left edge, where its label is. Centring
-      // works for a short task bar but strands the card halfway across the
-      // viewport from an epic that spans the whole screen.
-      let left = a.left;
+      // The card hangs off the bar's left edge, where its (now sticky) label
+      // sits. For a wide bar scrolled off the left, follow the timeline's own
+      // visible left edge rather than the bar's true start — otherwise the card
+      // strands itself against the window edge, disconnected from the label it
+      // belongs to. Clamped to the bar's right so it never detaches past its end.
+      const scroller = anchorEl.closest("[data-timeline-scroller]");
+      const boundLeft = scroller ? scroller.getBoundingClientRect().left : margin;
+      let left = Math.min(Math.max(a.left, boundLeft), a.right);
       left = Math.max(margin, Math.min(left, vw - cw - margin));
       let top = a.bottom + gap;
       if (top + ch + margin > vh) top = a.top - gap - ch;
@@ -1039,6 +1043,7 @@ export function EpicsTimeline({
             nearest scrollport was the page, so it never pinned. */}
         <div
           ref={scrollerRef}
+          data-timeline-scroller
           className="overflow-auto"
           style={{ maxHeight: MAX_BODY_H }}
           onScroll={handleScroll}
