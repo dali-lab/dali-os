@@ -1519,8 +1519,8 @@ export default function ProjectDetail() {
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
 
-  // Progress people filter — shared by the timeline and the board. Lives in the
-  // URL (?people=<id,id>) like the board's other filters, so a person-sliced
+  // Board people filter — narrows the task board to the chosen people. Lives in
+  // the URL (?people=<id,id>) like the board's other filters, so a person-sliced
   // view is a link worth sending. Options are only people who hold tasks.
   const peopleOptions = useMemo(() => {
     const byId = new Map<string, string>();
@@ -1618,11 +1618,6 @@ export default function ProjectDetail() {
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
       onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
-      // Progress-tab controls: the shared people filter and the New ▸ Meeting
-      // deep link. Rendered only under os.
-      peopleOptions={os ? peopleOptions : []}
-      selectedPeopleIds={os ? selectedPeopleIds : []}
-      onPeopleChange={setSelectedPeopleIds}
     />
   );
   const board = (
@@ -1634,7 +1629,11 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
+      // The people filter lives on the board's own toolbar (os), beside search;
+      // it only narrows the board's tasks.
+      peopleOptions={os ? peopleOptions : []}
       filterPeopleIds={os ? selectedPeopleIds : []}
+      onPeopleChange={setSelectedPeopleIds}
     />
   );
 
@@ -5136,9 +5135,6 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
-  peopleOptions = [],
-  selectedPeopleIds = [],
-  onPeopleChange,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -5152,9 +5148,6 @@ function PlanningTab({
   userName: string;
   onTaskClick: (taskId: string) => void;
   onAddTask?: () => void;
-  peopleOptions?: { id: string; name: string }[];
-  selectedPeopleIds?: string[];
-  onPeopleChange?: (ids: string[]) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -5171,9 +5164,6 @@ function PlanningTab({
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
-        peopleOptions={peopleOptions}
-        selectedPeopleIds={selectedPeopleIds}
-        onPeopleChange={onPeopleChange}
       />
     </div>
   );

@@ -1155,7 +1155,7 @@ export function EpicsTimeline({
                       <div
                         key={b.key}
                         className={cn(
-                          "absolute top-0 flex items-center border-b text-sm font-semibold tracking-wide",
+                          "absolute top-0 flex items-center pl-4 border-b text-sm font-semibold tracking-wide",
                           // One band colour for every sprint. It used to
                           // alternate two, but the pair were the epic plate and
                           // the story plate — so a sprint read as an epic on odd
@@ -1167,8 +1167,11 @@ export function EpicsTimeline({
                         style={{ left: b.left, width: b.width, height: HEADER_ROW_H }}
                       >
                         {/* Sticks to the left edge of the scroll box so a
-                            part-scrolled band keeps its label on screen. */}
-                        <span className="sticky left-3 whitespace-nowrap">
+                            part-scrolled band keeps its label on screen. The
+                            sticky inset matches the band's own pl-4 so the
+                            resting indent and the stuck indent are the same and
+                            the label doesn't jump as it detaches. */}
+                        <span className="sticky left-4 whitespace-nowrap">
                           {b.label}
                         </span>
                       </div>
@@ -1297,9 +1300,17 @@ export function EpicsTimeline({
                       >
                         {/* The design seats the label as a filled pill inside
                             the group's top-left rather than notching it into
-                            the border, so it needs no bg-card to punch a hole. */}
-                        <span className="os-bar-label os-bar-label--epic absolute left-1.5 top-1.5 max-w-[calc(100%-12px)] truncate rounded-md px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
-                          {b.epic.title}
+                            the border, so it needs no bg-card to punch a hole.
+                            The pill sticks to the visible left edge as a wide
+                            bar scrolls under it (like the sprint band label
+                            below), so an epic that runs off the left still shows
+                            its name instead of reading as unnamed. The strip is
+                            the bar's reserved top band (EPIC_TOP_PAD), so a
+                            stuck label never rides over a story bar. */}
+                        <span className="pointer-events-none absolute inset-x-1.5 top-1.5 block">
+                          <span className="os-bar-label os-bar-label--epic pointer-events-auto sticky left-1.5 inline-block max-w-full truncate rounded-md px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
+                            {b.epic.title}
+                          </span>
                         </span>
                       </HoverBar>
                     );
@@ -1346,11 +1357,16 @@ export function EpicsTimeline({
                           : undefined,
                       )}
                     >
-                      <span className="os-bar-label os-bar-label--story absolute left-1.5 top-1.5 flex max-w-[calc(100%-12px)] items-center rounded-md px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
-                        {b.story.incomplete && (
-                          <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
-                        )}
-                        <span className="truncate">{b.story.title}</span>
+                      {/* Same sticky-to-the-visible-edge label as the epic bar
+                          above — a wide story that scrolls off the left keeps
+                          its name in view rather than reading as unnamed. */}
+                      <span className="pointer-events-none absolute inset-x-1.5 top-1.5 block">
+                        <span className="os-bar-label os-bar-label--story pointer-events-auto sticky left-1.5 inline-flex max-w-full items-center rounded-md px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
+                          {b.story.incomplete && (
+                            <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
+                          )}
+                          <span className="truncate">{b.story.title}</span>
+                        </span>
                       </span>
                     </HoverBar>
                   ))}
