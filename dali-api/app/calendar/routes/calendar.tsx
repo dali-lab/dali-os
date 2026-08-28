@@ -1456,13 +1456,27 @@ function AvailabilityView({ data }: { data: LoaderData }) {
   }, [sidebarCollapsed]);
   const { os, iconBtn } = useOsChrome();
   return (
-    <div
-      className={cn(
-        "grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0",
-        os ? "pt-1" : "px-3 pt-2",
-        sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]",
-      )}
-    >
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-teal">
+            Your schedule
+          </p>
+          <h2 className={cn("mt-1", os ? "text-2xl font-medium" : "font-heading text-2xl font-bold text-foreground")}>
+            Availability
+          </h2>
+        </div>
+        <p className="max-w-md text-sm text-muted-foreground sm:text-right">
+          Set the hours and commitments others should see when they schedule with you.
+        </p>
+      </div>
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-14rem),56rem)] lg:min-h-0",
+          os ? "pt-1" : "px-3 pt-2",
+          sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]",
+        )}
+      >
       {sidebarCollapsed ? (
         <Tooltip content="Expand settings">
           <button
@@ -1531,6 +1545,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
       )}
       <div className="lg:flex lg:flex-col lg:overflow-hidden lg:min-h-0">
         <AvailabilityWeekGrid data={data} enableDragCreate />
+      </div>
       </div>
     </div>
   );
@@ -3107,45 +3122,58 @@ function ScheduleView({ data }: { data: LoaderData }) {
   };
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-full min-w-0 lg:min-h-[calc(100vh-9rem)]">
-      <CreateScheduledMeetingForm
-        groups={data.groups}
-        users={data.users}
-        calendarLinks={data.calendarLinks}
-        myProjects={data.myProjects}
-        canSetSelfCheckIn={data.canSetSelfCheckIn}
-        canMarkCoreMeeting={data.canMarkCoreMeeting}
-        startLocal={startLocal}
-        onStartLocalChange={setStartLocal}
-        endLocal={endLocal}
-        onEndLocalChange={setEndLocal}
-        selectedUserIds={selectedUserIds}
-        onChangeSelectedUserIds={setSelectedUserIds}
-        selectedGroupIds={selectedGroupIds}
-        onChangeSelectedGroupIds={setSelectedGroupIds}
-        resolvedParticipantIds={resolvedParticipantIds}
-      />
-      <ScheduleWeekGrid
-        // The organizer is always implicitly invited, so include them in the
-        // availability query — otherwise the "All free" overlay can paint over
-        // times when the sender themself is busy.
-        participantIds={
-          resolvedParticipantIds.length > 0
-            ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
-            : [data.currentUserId]
-        }
-        showingSelfOnly={resolvedParticipantIds.length === 0}
-        users={data.users}
-        workingHours={data.workingHours}
-        workingHoursEnabled={data.hasPersistedWorkingHours}
-        durationMinutes={duration}
-        timezone={data.timezone}
-        weekStartIso={data.weekStartIso}
-        weekEndIso={data.weekEndIso}
-        onSelectRange={handleGridSelect}
-        selectedStartLocal={startLocal}
-        selectedEndLocal={endLocal}
-      />
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-5 lg:min-h-[calc(100vh-14rem)]">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-teal">
+            Plan together
+          </p>
+          <h2 className="mt-1 font-heading text-2xl font-medium text-foreground">Events</h2>
+        </div>
+        <p className="max-w-md text-sm text-muted-foreground sm:text-right">
+          Find a time that works for everyone, then send the invitation from one place.
+        </p>
+      </div>
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.2fr)] lg:items-start">
+        <CreateScheduledMeetingForm
+          groups={data.groups}
+          users={data.users}
+          calendarLinks={data.calendarLinks}
+          myProjects={data.myProjects}
+          canSetSelfCheckIn={data.canSetSelfCheckIn}
+          canMarkCoreMeeting={data.canMarkCoreMeeting}
+          startLocal={startLocal}
+          onStartLocalChange={setStartLocal}
+          endLocal={endLocal}
+          onEndLocalChange={setEndLocal}
+          selectedUserIds={selectedUserIds}
+          onChangeSelectedUserIds={setSelectedUserIds}
+          selectedGroupIds={selectedGroupIds}
+          onChangeSelectedGroupIds={setSelectedGroupIds}
+          resolvedParticipantIds={resolvedParticipantIds}
+        />
+        <ScheduleWeekGrid
+          // The organizer is always implicitly invited, so include them in the
+          // availability query — otherwise the "All free" overlay can paint over
+          // times when the sender themself is busy.
+          participantIds={
+            resolvedParticipantIds.length > 0
+              ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
+              : [data.currentUserId]
+          }
+          showingSelfOnly={resolvedParticipantIds.length === 0}
+          users={data.users}
+          workingHours={data.workingHours}
+          workingHoursEnabled={data.hasPersistedWorkingHours}
+          durationMinutes={duration}
+          timezone={data.timezone}
+          weekStartIso={data.weekStartIso}
+          weekEndIso={data.weekEndIso}
+          onSelectRange={handleGridSelect}
+          selectedStartLocal={startLocal}
+          selectedEndLocal={endLocal}
+        />
+      </div>
     </div>
   );
 }
@@ -3237,7 +3265,18 @@ function TimesheetView({ data }: { data: LoaderData }) {
   const serverError = addFetcher.data?.error ?? null;
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-teal">
+            Work log
+          </p>
+          <h2 className="mt-1 font-heading text-2xl font-medium text-foreground">Timesheet</h2>
+        </div>
+        <p className="max-w-md text-sm text-muted-foreground sm:text-right">
+          Review logged hours by role and adjust entries directly from the week grid.
+        </p>
+      </div>
       <section className={cn(card, panelPad)}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className={heading}>Timesheet</h2>
