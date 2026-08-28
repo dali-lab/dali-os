@@ -5,10 +5,10 @@ import { Checkbox } from "~/components/ui/Checkbox";
 
 export type PersonOption = { id: string; name: string };
 
-// The Progress toolbar's "All people" filter: a pill that opens a checkbox
-// list of the people who hold work on this project. Selection is owned by the
-// caller (it lives in the URL so a person-sliced view is shareable) — this is
-// the control, not the state.
+// The task board's "All people" filter: a pill that opens a checkbox list of
+// the people who hold work on this project. Selection is owned by the caller
+// (it lives in the URL so a person-sliced view is shareable) — this is the
+// control, not the state.
 export function PeopleFilter({
   options,
   selected,

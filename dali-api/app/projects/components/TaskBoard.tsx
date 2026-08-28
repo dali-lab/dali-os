@@ -47,6 +47,7 @@ import {
   type TaskStatus,
 } from "../lib/task-board";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
 
 type Props = {
@@ -64,9 +65,14 @@ type Props = {
   // Bumped by an outside control (the timeline's Add ▸ Task) to open the
   // create form. A counter rather than a boolean so repeated adds each fire.
   createNonce?: number;
-  // The shared Progress people filter (os). Empty = no people filter; the
-  // board's own filters (epic/sprint/term/mine/search) still apply on top.
+  // The board's people filter (os). Rendered beside the search input and
+  // applied only to the board's tasks. Empty = no people filter; the board's
+  // own filters (epic/sprint/term/mine/search) still apply on top.
   filterPeopleIds?: string[];
+  // People who hold tasks on this project — the filter's options. Empty (or no
+  // onPeopleChange) hides the control.
+  peopleOptions?: PersonOption[];
+  onPeopleChange?: (ids: string[]) => void;
 };
 
 // Card and list meta. 11px sits below the design's smallest step.
@@ -167,6 +173,8 @@ export function TaskBoard({
   currentUserName,
   createNonce = 0,
   filterPeopleIds = [],
+  peopleOptions = [],
+  onPeopleChange,
 }: Props) {
   // Optimistic board state + rollback live in the shared hook. Server data is
   // adopted whenever it changes and no save is in flight, so teammate edits,
@@ -827,6 +835,18 @@ export function TaskBoard({
           aria-label="Search tasks on this board"
           containerClassName={cn("shrink-0", os ? "w-56 sm:w-72" : "w-44 sm:w-56")}
         />
+
+        {/* People filter sits right next to search — it slices the board's
+            tasks to the chosen assignees, alongside the search box. os only:
+            the control is styled for the os shell and the timeline is where the
+            options come from. */}
+        {os && onPeopleChange && peopleOptions.length > 0 && (
+          <PeopleFilter
+            options={peopleOptions}
+            selected={filterPeopleIds}
+            onChange={onPeopleChange}
+          />
+        )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {/* Every slice lives behind this one control. The filters used to sit
