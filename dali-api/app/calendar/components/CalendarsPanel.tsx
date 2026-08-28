@@ -26,6 +26,7 @@
 // persist the boolean on UserAvailabilitySettings (or a new per-user col).
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import {
   CalendarDays,
@@ -242,12 +243,19 @@ export function CalendarsPanel({
       </div>
 
       {/* ── Sub-modals ────────────────────────────────────────────────── */}
-      {calMgrOpen && (
-        <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />
-      )}
-      {classesOpen && (
-        <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
-      )}
+      {/* Portaled to <body>: the panel opens from inside the toolbar dropdown,
+          whose transformed ancestors would otherwise trap `position: fixed` and
+          pin these modals to the top of the panel instead of the viewport. */}
+      {calMgrOpen &&
+        createPortal(
+          <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />,
+          document.body,
+        )}
+      {classesOpen &&
+        createPortal(
+          <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />,
+          document.body,
+        )}
       {hoursAnchor && (
         <WorkingHoursPopover
           data={data}
@@ -471,8 +479,6 @@ const LAYER_SPECS: Array<{
   hideWhenClassesOff?: boolean;
 }> = [
   { key: "external", label: "Linked calendars", swatch: "bg-accent-teal" },
-  { key: "meetings", label: "Meetings", swatch: "bg-accent-coral" },
-  { key: "classes", label: "Classes", swatch: "bg-[#1E5779]", hideWhenClassesOff: true },
   { key: "logged", label: "Logged time", swatch: "bg-violet-500" },
   { key: "workingHours", label: "Working hours", swatch: "bg-gray-300" },
 ];
@@ -562,8 +568,8 @@ function TimesheetSyncToggle({
         <div className="flex flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">Mirror my timesheet to Google</span>
           <span className="text-xs text-muted-foreground">
-            When on, your logged work hours sync to a "DALI Timesheet" calendar on your DALI Google
-            account. Postgres stays authoritative — this is a portable read-only view.
+            When on, your logged work hours also appear on a "DALI Timesheet" calendar on your DALI
+            Google account.
           </span>
         </div>
         <Toggle

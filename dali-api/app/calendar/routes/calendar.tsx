@@ -76,8 +76,6 @@ import {
 import {
   buildGridDays,
   buildExternalLayer,
-  buildMeetingsLayer,
-  buildClassesLayer,
   buildAllDayItems,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
@@ -211,7 +209,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       return next;
     });
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalSlot, setCreateModalSlot] = useState<{ startLocal: string; endLocal: string } | null>(null);
   const [calendarsOpen, setCalendarsOpen] = useState(false);
@@ -382,7 +379,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     Boolean(composer) ||
     classesOpen ||
     calMgrOpen ||
-    createOpen ||
     createModalOpen ||
     Boolean(searchAnchor) ||
     Boolean(hoursAnchor) ||
@@ -462,13 +458,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }));
     }
   }
-  if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
-  if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
   if (layers.logged)
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        suppressSourced: { meetings: layers.meetings },
+        suppressSourced: { meetings: false },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
@@ -699,59 +693,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           <div className="relative">
             <button
               type="button"
-              onClick={() => setCreateOpen((o) => !o)}
+              onClick={() => {
+                if (data.crudEnabled) {
+                  setCreateModalSlot(null);
+                  setCreateModalOpen(true);
+                } else {
+                  openQuickCreate();
+                }
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
             >
-              <Plus className="h-4 w-4" /> New <ChevronDown className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" /> New
             </button>
-            {createOpen && (
-              <>
-                <button
-                  type="button"
-                  className="fixed inset-0 z-40 cursor-default"
-                  aria-hidden
-                  onClick={() => setCreateOpen(false)}
-                  tabIndex={-1}
-                />
-                <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
-                  {data.crudEnabled ? (
-                    // Single "Create event or meeting" button opens the unified modal.
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={() => {
-                        setCreateModalSlot(null);
-                        setCreateModalOpen(true);
-                        setCreateOpen(false);
-                      }}
-                    >
-                      <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Create event or meeting
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={() => {
-                        openQuickCreate();
-                        setCreateOpen(false);
-                      }}
-                    >
-                      <Plus className="h-4 w-4 text-muted-foreground" /> Event / log time
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                    onClick={() => {
-                      startMeeting();
-                      setCreateOpen(false);
-                    }}
-                  >
-                    <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Meeting
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       </header>
@@ -947,207 +900,3 @@ function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => voi
     </div>
   );
 }
-
-type CalendarLayerSpec = {
-  key: keyof LayerVisibility;
-  label: string;
-  swatch: string;
-};
-
-const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
-  { key: "workingHours", label: "Working hours", swatch: "bg-muted-foreground/40" },
-  { key: "external", label: "Linked calendars", swatch: "bg-accent-teal-light" },
-  { key: "meetings", label: "Meetings", swatch: "bg-accent-teal" },
-  { key: "classes", label: "Classes", swatch: "bg-[#1E5779]" },
-  { key: "logged", label: "Logged time", swatch: "bg-accent-yellow" },
-];
-
-// The layer toggles, rendered inside the toolbar's "Calendars" popover. Each row
-// is a colored checkbox + label; the linked-calendar colour key and the logged-
-// time role-filter chips nest under their layer when it's on.
-function CalendarLayerList({
-  layers,
-  toggleLayer,
-  calendars,
-  hiddenCals,
-  toggleHiddenCal,
-  roleBuckets,
-  excludedRoleKeys,
-  toggleRoleKey,
-  classesEnabled,
-  classCount,
-  localClassCount,
-  onManageClasses,
-  onEditHours,
-  crudEnabled,
-  onManageCalendars,
-}: {
-  layers: LayerVisibility;
-  toggleLayer: (key: keyof LayerVisibility) => void;
-  calendars: CalendarLegendGroup[];
-  hiddenCals: Set<string>;
-  toggleHiddenCal: (id: string) => void;
-  roleBuckets: { key: string; label: string; hours: number }[];
-  excludedRoleKeys: Set<string>;
-  toggleRoleKey: (key: string) => void;
-  classesEnabled: boolean;
-  classCount: number;
-  localClassCount: number;
-  onManageClasses: () => void;
-  onEditHours: (anchor: DOMRect) => void;
-  crudEnabled: boolean;
-  onManageCalendars: () => void;
-}) {
-  return (
-    <>
-    <ul className="flex flex-col gap-0.5">
-      {CALENDAR_LAYER_SPECS.filter((s) => s.key !== "classes" || classesEnabled).map((spec) => {
-        const on = layers[spec.key];
-        // The navy Classes layer only carries DALI-only (Local) classes; hide its
-        // toggle when there are none (Google classes ride "Linked calendars").
-        const showToggle = spec.key !== "classes" || localClassCount > 0;
-        return (
-          <li key={spec.key}>
-            {showToggle && (
-              <button
-                type="button"
-                onClick={() => toggleLayer(spec.key)}
-                aria-pressed={on}
-                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-              >
-                <span
-                  className={cn(
-                    "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
-                    on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
-                  )}
-                >
-                  {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
-                </span>
-                <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
-              </button>
-            )}
-            {/* Working-hours editor opens inline, anchored to this row. */}
-            {spec.key === "workingHours" && (
-              <div className="mb-1 ml-8 mt-0.5">
-                <button
-                  type="button"
-                  onClick={(e) => onEditHours(e.currentTarget.getBoundingClientRect())}
-                  className="text-xs font-medium text-accent-teal hover:underline"
-                >
-                  Edit hours
-                </button>
-              </div>
-            )}
-            {/* Per-calendar visibility toggles under Linked calendars, grouped by
-                account (headers shown only when more than one is linked). */}
-            {spec.key === "external" && on && calendars.length > 0 && (
-              <div className="mb-1 ml-8 mt-0.5 flex flex-col gap-1.5">
-                {calendars.map((group) => (
-                  <div key={group.account} className="flex flex-col gap-0.5">
-                    {calendars.length > 1 && (
-                      <div className="truncate px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {group.account}
-                      </div>
-                    )}
-                    {group.calendars.map((c) => {
-                      const hidden = hiddenCals.has(c.id);
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => toggleHiddenCal(c.id)}
-                          aria-pressed={!hidden}
-                          className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
-                        >
-                          <span
-                            className={cn("h-2.5 w-2.5 shrink-0 rounded-[3px]", hidden && "opacity-30")}
-                            style={{ backgroundColor: c.color ?? "var(--color-accent-coral)" }}
-                          />
-                          <span className={cn("truncate", hidden ? "text-muted-foreground line-through" : "text-foreground")}>
-                            {c.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {/* Enabling which calendars sync lives in global Settings. */}
-                <a
-                  href="/settings/calendar"
-                  target="_top"
-                  rel="noopener"
-                  className="px-1 pt-0.5 text-[11px] font-medium text-accent-teal hover:underline"
-                >
-                  Manage accounts & calendars →
-                </a>
-              </div>
-            )}
-            {/* No linked calendars yet → clear connect CTA */}
-            {spec.key === "external" && on && calendars.length === 0 && (
-              <div className="mb-1 ml-8 mt-0.5">
-                <a
-                  href="/oauth/calendar/google/start"
-                  target="_top"
-                  rel="noopener"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-teal hover:underline"
-                >
-                  ＋ Connect a calendar
-                </a>
-              </div>
-            )}
-            {/* Manage-classes entry nested under the Classes layer */}
-            {spec.key === "classes" && (
-              <div className={cn("mb-1 ml-8", showToggle ? "mt-0.5" : "mt-0")}>
-                <button
-                  type="button"
-                  onClick={onManageClasses}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-teal hover:underline"
-                >
-                  {classCount > 0 ? `Manage classes (${classCount})` : "＋ Add your classes"}
-                </button>
-              </div>
-            )}
-            {/* Role filter chips nested under Logged time */}
-            {spec.key === "logged" && on && roleBuckets.length > 0 && (
-              <ul className="mb-1 ml-8 mt-1 flex flex-wrap gap-1">
-                {roleBuckets.map((b) => {
-                  const excluded = excludedRoleKeys.has(b.key);
-                  const color = roleColor(b.key);
-                  return (
-                    <li key={b.key}>
-                      <button
-                        type="button"
-                        onClick={() => toggleRoleKey(b.key)}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
-                          excluded ? "border-border text-muted-foreground line-through" : "border-border text-foreground",
-                        )}
-                      >
-                        <span className={cn("h-2 w-2 rounded-full", color.dot)} />
-                        {b.label}
-                        <span className="text-muted-foreground">{b.hours}h</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-    {crudEnabled && (
-      <div className="mt-1 border-t border-border pt-1">
-        <button
-          type="button"
-          onClick={onManageCalendars}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <CalendarDays className="h-3.5 w-3.5" /> Manage calendars
-        </button>
-      </div>
-    )}
-    </>
-  );
-}
-

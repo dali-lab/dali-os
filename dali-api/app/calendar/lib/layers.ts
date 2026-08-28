@@ -27,16 +27,13 @@ export type GridDay = { dayOfWeek: number; num: number; dateUtc: Date };
 
 /** The toggleable layers, in panel order. "workingHours" is a background layer
  *  (stripes), handled separately from these event layers. */
-export type LayerKey = "external" | "meetings" | "classes" | "logged";
+export type LayerKey = "external" | "logged";
 
 export type LayerVisibility = Record<LayerKey, boolean> & { workingHours: boolean };
 
 export const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
   workingHours: true,
   external: true,
-  meetings: true,
-  // Classes you've added are part of your week — on by default.
-  classes: true,
   // Logged time is the niche, retrospective view — off until you ask for it.
   logged: false,
 };

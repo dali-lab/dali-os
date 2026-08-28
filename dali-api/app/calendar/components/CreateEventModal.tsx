@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { ChevronLeft, ChevronRight, Clock, MapPin, UsersRound, X } from "lucide-react";
+import { AlignLeft, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
@@ -10,6 +11,12 @@ import {
   ScheduleWeekGrid,
   ParticipantPicker,
 } from "~/calendar/components/scheduling";
+import {
+  NO_REPEAT,
+  RepeatField,
+  repeatSpecToRRule,
+  type RepeatSpec,
+} from "~/calendar/components/RepeatField";
 import { eventDestinations, addDaysToDate } from "~/calendar/components/composer";
 import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
 import type { LoaderData } from "~/calendar/lib/types";
@@ -104,11 +111,21 @@ export function CreateEventModal({
   const [startTime, setStartTime] = useState<string>(() => extractTime(initStart ?? ""));
   const [endTime, setEndTime] = useState<string>(() => extractTime(initEnd ?? ""));
   const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
   const [destination, setDestination] = useState(defaultDest);
+
+  // ── All-day state ────────────────────────────────────────────────────────
+  const [allDay, setAllDay] = useState(false);
+  const [dStart, setDStart] = useState(() => extractDate(initStart ?? ""));
+  const [dEnd, setDEnd] = useState(() => extractDate(initEnd ?? "") || extractDate(initStart ?? ""));
+
+  // ── Repeat / recurrence ──────────────────────────────────────────────────
+  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
 
   // ── Timesheet ────────────────────────────────────────────────────────────
   const [isWork, setIsWork] = useState(false);
   const [roleKey, setRoleKey] = useState("");
+  const [workNote, setWorkNote] = useState("");
 
   // ── Participants / type detection ────────────────────────────────────────
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -157,15 +174,27 @@ export function CreateEventModal({
   const selectedStartLocal = composeDateTimeLocal(date, startTime);
   const selectedEndLocal = composeDateTimeLocal(effEndDate, endTime);
 
-  const startIso = localToIso(selectedStartLocal);
-  const endIso = localToIso(selectedEndLocal);
+  // Derive the ISO instants sent to the server.
+  // All-day: start = YYYY-MM-DDT00:00:00.000Z; end = exclusive next day (Google convention).
+  // Timed: convert via browser locale (same as the existing behavior).
+  const startIso = allDay
+    ? dStart ? `${dStart}T00:00:00.000Z` : ""
+    : localToIso(selectedStartLocal);
+  const endIso = allDay
+    ? dEnd ? `${addDaysToDate(dEnd, 1)}T00:00:00.000Z` : ""
+    : localToIso(selectedEndLocal);
+
+  // The anchor for RepeatField (the series start in local wall-clock form).
+  const repeatAnchorLocal = allDay ? dStart : selectedStartLocal;
 
   // ── Derived duration ─────────────────────────────────────────────────────
-  const durationMinutes = durationMinutesBetween(selectedStartLocal, selectedEndLocal);
+  const durationMinutes = allDay ? 0 : durationMinutesBetween(selectedStartLocal, selectedEndLocal);
   const startEndValid =
-    !selectedStartLocal ||
-    !selectedEndLocal ||
-    new Date(selectedEndLocal).getTime() > new Date(selectedStartLocal).getTime();
+    allDay
+      ? !dStart || !dEnd || dStart <= dEnd
+      : !selectedStartLocal ||
+        !selectedEndLocal ||
+        new Date(selectedEndLocal).getTime() > new Date(selectedStartLocal).getTime();
 
   // ── Submission state ─────────────────────────────────────────────────────
   const eventFetcher = useFetcher<{ error?: string }>();
@@ -195,14 +224,14 @@ export function CreateEventModal({
     startIso !== "" &&
     endIso !== "" &&
     startEndValid &&
-    new Date(startIso).getTime() < new Date(endIso).getTime() &&
-    (!isWork || roleKey !== "");
+    startIso < endIso &&
+    (!isWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
     title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
-    (!isWork || roleKey !== "") &&
+    (!isWork || (roleKey !== "" && workNote.trim() !== "")) &&
     !submitting;
 
   // ── Meeting submit ───────────────────────────────────────────────────────
@@ -262,7 +291,7 @@ export function CreateEventModal({
                 hours: String(durationMinutes / 60),
                 assignmentType,
                 roleRefId,
-                note: "",
+                note: workNote.trim(),
                 startTime: startIso,
                 endTime: endIso,
               },
@@ -284,6 +313,8 @@ export function CreateEventModal({
   const labelClass = "block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1";
 
   // ── Availability caption ─────────────────────────────────────────────────
+  // Show the caption when there are no guests (grid has no availability to show)
+  // or when a time hasn't been picked yet.
   const availCaption = !hasGuests
     ? "Add guests to see their availability"
     : !selectedStartLocal
@@ -295,6 +326,70 @@ export function CreateEventModal({
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === overlayRef.current) onClose();
   };
+
+  // ── Shared timesheet section ──────────────────────────────────────────────
+  // Rendered identically in both Event and Meeting modes. Extracted to avoid
+  // duplication and to keep the toggle/role/workNote wiring in one place.
+  const timesheetSection = (
+    <div className="rounded-md border border-border bg-muted/20 p-3">
+      <Toggle
+        checked={isWork}
+        onChange={(e) => {
+          setIsWork(e.target.checked);
+          if (!e.target.checked) {
+            setRoleKey("");
+            setWorkNote("");
+          }
+        }}
+        label="Count this as work"
+        description="Automatically logs this event to your Timesheet once it's created."
+      />
+      {isWork && (
+        <div className="mt-3 space-y-3">
+          {data.myRoles.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                Role — which role you're hired for this time counts toward
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.myRoles.map((r) => {
+                  const key = `${r.assignmentType}::${r.roleRefId}`;
+                  const active = roleKey === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setRoleKey(active ? "" : key)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
+                        active
+                          ? "bg-accent-coral text-white border-accent-coral"
+                          : "border-border bg-background text-foreground hover:bg-muted",
+                      )}
+                    >
+                      {r.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              What did you work on? <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={workNote}
+              onChange={(e) => setWorkNote(e.target.value)}
+              placeholder="Briefly describe what you worked on…"
+              rows={2}
+              className={cn(fieldClass, "resize-y")}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -328,11 +423,11 @@ export function CreateEventModal({
             </button>
           </div>
 
-          {/* Availability grid */}
+          {/* Availability grid — compact + no self-only tint when no guests */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleWeekGrid
               participantIds={
-                resolvedParticipantIds.length > 0
+                hasGuests
                   ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
                   : [data.currentUserId]
               }
@@ -347,6 +442,8 @@ export function CreateEventModal({
               onSelectRange={handleSelectRange}
               selectedStartLocal={selectedStartLocal || undefined}
               selectedEndLocal={selectedEndLocal || undefined}
+              compact
+              hideAvailability={!hasGuests}
             />
           </div>
 
@@ -402,16 +499,16 @@ export function CreateEventModal({
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="startIso" value={startIso} />
               <input type="hidden" name="endIso" value={endIso} />
-              <input type="hidden" name="allDay" value="" />
+              <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
               <input type="hidden" name="timeZone" value={data.timezone} />
-              <input type="hidden" name="recurrenceRule" value="" />
-              <input type="hidden" name="description" value="" />
+              <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat) ?? ""} />
+              <input type="hidden" name="description" value={description} />
               {isWork && roleKey && (
                 <>
                   <input type="hidden" name="isWork" value="1" />
                   <input type="hidden" name="assignmentType" value={roleKey.split("::")[0] ?? ""} />
                   <input type="hidden" name="roleRefId" value={roleKey.split("::")[1] ?? ""} />
-                  <input type="hidden" name="workNote" value={title.trim()} />
+                  <input type="hidden" name="workNote" value={workNote.trim()} />
                 </>
               )}
 
@@ -452,52 +549,86 @@ export function CreateEventModal({
                 />
               </div>
 
-              {/* Date & Time */}
+              {/* Date & Time — all-day toggle + date/time inputs */}
               <div>
                 <label className={labelClass}>
                   <span className="inline-flex items-center gap-1">
                     <Clock className="h-3 w-3" /> When
                   </span>
                 </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <DateField
-                    mode="date"
-                    value={date}
-                    onChange={(v) => setDate(v)}
-                    ariaLabel="Date"
-                    className="min-w-[130px]"
-                  />
-                  <TimeComboField
-                    value={startTime}
-                    onChange={(v) => setStartTime(v)}
-                    aria-label="Start time"
-                    className="w-[110px]"
-                  />
-                  <span className="text-xs text-muted-foreground">–</span>
-                  <TimeComboField
-                    value={endTime}
-                    onChange={(v) => setEndTime(v)}
-                    aria-label="End time"
-                    className="w-[110px]"
-                  />
-                </div>
+                {/* All-day toggle */}
+                <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox checked={allDay} onChange={() => setAllDay((v) => !v)} /> All day
+                </label>
+                {allDay ? (
+                  /* All-day: start date → end date */
+                  <div className="flex items-center gap-2 text-sm">
+                    <DateField
+                      mode="date"
+                      value={dStart}
+                      onChange={setDStart}
+                      ariaLabel="Start date"
+                      className="min-w-0 flex-1"
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <DateField
+                      mode="date"
+                      value={dEnd}
+                      onChange={setDEnd}
+                      ariaLabel="End date"
+                      className="min-w-0 flex-1"
+                    />
+                  </div>
+                ) : (
+                  /* Timed: single date + start/end times */
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DateField
+                      mode="date"
+                      value={date}
+                      onChange={(v) => setDate(v)}
+                      ariaLabel="Date"
+                      className="min-w-[130px]"
+                    />
+                    <TimeComboField
+                      value={startTime}
+                      onChange={(v) => setStartTime(v)}
+                      aria-label="Start time"
+                      className="w-[110px]"
+                    />
+                    <span className="text-xs text-muted-foreground">–</span>
+                    <TimeComboField
+                      value={endTime}
+                      onChange={(v) => setEndTime(v)}
+                      aria-label="End time"
+                      className="w-[110px]"
+                    />
+                  </div>
+                )}
                 {!startEndValid && (
-                  <p className="mt-1 text-xs text-red-600">End must be after start.</p>
+                  <p className="mt-1 text-xs text-red-600">
+                    {allDay ? "End date must not be before start date." : "End must be after start."}
+                  </p>
                 )}
               </div>
 
-              {/* Destination calendar */}
-              {dests.length > 1 && (
-                <div>
-                  <label className={labelClass}>Calendar</label>
+              {/* Destination calendar — always shown (single-dest falls through as hidden) */}
+              <div>
+                <label className={labelClass}>Calendar</label>
+                {dests.length > 1 ? (
                   <Select
                     value={destination}
                     onChange={(v) => setDestination(v)}
                     options={dests}
                     buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
                   />
-                </div>
-              )}
+                ) : dests.length === 1 ? (
+                  <p className="text-sm text-muted-foreground">{dests[0]!.label}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Connect a Google Calendar… (Settings → Calendar)
+                  </p>
+                )}
+              </div>
 
               {/* Location */}
               <div>
@@ -517,46 +648,43 @@ export function CreateEventModal({
                 />
               </div>
 
-              {/* Timesheet */}
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <Toggle
-                  checked={isWork}
-                  onChange={(e) => {
-                    setIsWork(e.target.checked);
-                    if (!e.target.checked) setRoleKey("");
-                  }}
-                  label="Count this as work"
-                  description="Automatically logs this event to your Timesheet once it's created."
+              {/* Description */}
+              <div>
+                <label htmlFor="cem-description" className={labelClass}>
+                  <span className="inline-flex items-center gap-1">
+                    <AlignLeft className="h-3 w-3" /> Description
+                  </span>
+                </label>
+                <textarea
+                  id="cem-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Add description"
+                  rows={2}
+                  className={cn(fieldClass, "resize-y")}
                 />
-                {isWork && data.myRoles.length > 0 && (
-                  <div className="mt-3">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                      Role — which role you're hired for this time counts toward
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {data.myRoles.map((r) => {
-                        const key = `${r.assignmentType}::${r.roleRefId}`;
-                        const active = roleKey === key;
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => setRoleKey(active ? "" : key)}
-                            className={cn(
-                              "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
-                              active
-                                ? "bg-accent-coral text-white border-accent-coral"
-                                : "border-border bg-background text-foreground hover:bg-muted",
-                            )}
-                          >
-                            {r.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
+
+              {/* Repeat / recurrence — hidden for all-day (Google doesn't support RRULE on all-day events via this flow) */}
+              {!allDay && (
+                <div>
+                  <label className={labelClass}>
+                    <span className="inline-flex items-center gap-1">
+                      <Repeat className="h-3 w-3" /> Repeat
+                    </span>
+                  </label>
+                  <RepeatField
+                    value={repeat}
+                    onChange={setRepeat}
+                    anchorLocal={repeatAnchorLocal}
+                    labelClassName="sr-only"
+                    fieldClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
+                  />
+                </div>
+              )}
+
+              {/* Timesheet */}
+              {timesheetSection}
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (
@@ -683,6 +811,23 @@ export function CreateEventModal({
                 />
               </div>
 
+              {/* Description */}
+              <div>
+                <label htmlFor="cem-mtg-description" className={labelClass}>
+                  <span className="inline-flex items-center gap-1">
+                    <AlignLeft className="h-3 w-3" /> Description
+                  </span>
+                </label>
+                <textarea
+                  id="cem-mtg-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Add description"
+                  rows={2}
+                  className={cn(fieldClass, "resize-y")}
+                />
+              </div>
+
               {/* Meeting notes toggle */}
               <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
                 <button
@@ -740,45 +885,7 @@ export function CreateEventModal({
               </div>
 
               {/* Timesheet */}
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <Toggle
-                  checked={isWork}
-                  onChange={(e) => {
-                    setIsWork(e.target.checked);
-                    if (!e.target.checked) setRoleKey("");
-                  }}
-                  label="Count this as work"
-                  description="Automatically logs this event to your Timesheet once it's created."
-                />
-                {isWork && data.myRoles.length > 0 && (
-                  <div className="mt-3">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                      Role — which role you're hired for this time counts toward
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {data.myRoles.map((r) => {
-                        const key = `${r.assignmentType}::${r.roleRefId}`;
-                        const active = roleKey === key;
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => setRoleKey(active ? "" : key)}
-                            className={cn(
-                              "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
-                              active
-                                ? "bg-accent-coral text-white border-accent-coral"
-                                : "border-border bg-background text-foreground hover:bg-muted",
-                            )}
-                          >
-                            {r.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {timesheetSection}
 
               {/* Status */}
               {meetingStatus?.ok === true && (

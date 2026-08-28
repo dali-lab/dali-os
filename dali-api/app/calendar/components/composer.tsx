@@ -819,7 +819,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 
   const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-10">
       <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
       <div role="dialog" aria-modal="true" aria-label="Manage calendars" className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-brand-3">
         <div className="mb-4 flex items-center justify-between">
@@ -1003,7 +1003,7 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-10">
       <button type="button" className="fixed inset-0 cursor-default" aria-label="Close classes" onClick={onClose} tabIndex={-1} />
       <div
         role="dialog"
