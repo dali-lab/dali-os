@@ -1184,8 +1184,13 @@ export function WeekGrid({
     <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
     {hasAllDay && (
       <div
+        // Reserve the same scrollbar gutter the scrollable grid below reserves,
+        // so this band's day dividers line up with the columns' (the grid's
+        // vertical scrollbar otherwise narrows its columns but not this row's).
+        // overflow-hidden makes it a scroll container so scrollbar-gutter applies
+        // without ever showing a scrollbar on this single-row band.
         className={`flex border-x border-b border-border bg-card select-none ${
-          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30` : ""
+          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30 lg:overflow-y-hidden lg:[scrollbar-gutter:stable]` : ""
         }`}
       >
         {/* Left gutter — matches the hour-axis width */}
@@ -1245,7 +1250,10 @@ export function WeekGrid({
         // them to the shorter viewport. Stretch clipped each column's box to the
         // visible height, so its border-r (and the axis's) faded out below the
         // fold while the absolutely-positioned grid lines kept going.
-        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden" : ""
+        // scrollbar-gutter: stable reserves the vertical scrollbar's width even
+        // before it appears, so the all-day band above can reserve the identical
+        // gutter and their day dividers stay aligned.
+        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden lg:[scrollbar-gutter:stable]" : ""
       }`}
     >
       {/* Hour axis */}
