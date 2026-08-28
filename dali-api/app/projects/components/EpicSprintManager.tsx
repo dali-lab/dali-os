@@ -3,7 +3,6 @@ import { useNavigate, useRevalidator } from "react-router";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { X, Trash2, Pencil, Plus, CheckSquare, FileText, Zap, Calendar } from "lucide-react";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
-import type { TimelineMeeting } from "./EpicsTimeline";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
@@ -134,9 +133,6 @@ type Props = {
   // same surface (the os Progress tab), so the Add menu offers "Task" exactly
   // when there is somewhere for it to land.
   onAddTask?: () => void;
-  // Meeting chips riding the timeline (os Progress tab), already expanded to
-  // one entry per occurrence. Empty off the Progress tab.
-  timelineMeetings?: TimelineMeeting[];
   // The shared people filter (Progress toolbar). Owned by the caller so the
   // board can read the same selection; this renders the control and narrows
   // the timeline to the chosen people.
@@ -210,7 +206,6 @@ export function EpicSprintManager({
   timelineTerms = [],
   onTaskClick,
   onAddTask,
-  timelineMeetings = [],
   peopleOptions = [],
   selectedPeopleIds = [],
   onPeopleChange,
@@ -597,7 +592,6 @@ export function EpicSprintManager({
           defers to the caller, which opens the board's task modal via ?task=. */}
       <EpicsTimeline
         epics={filteredTimelineEpics}
-        meetings={timelineMeetings}
         taskCounts={taskCounts}
         terms={timelineTerms}
         storyDependencies={storyDependencies}
