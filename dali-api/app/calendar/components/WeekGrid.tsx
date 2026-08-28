@@ -1028,15 +1028,47 @@ export function WeekGrid({
   // runs on the client before paint — no midnight-then-jump flash, no SSR effect.
   const headerStickyCls = fillAndScroll ? "lg:sticky lg:top-0 lg:z-40" : "";
   const didInitScroll = useRef(false);
+  const scrollElRef = useRef<HTMLDivElement | null>(null);
+
+  // Width of the scrollable grid's vertical scrollbar, measured live. The
+  // all-day band is a sibling above the scroll container, so its columns only
+  // line up with the grid's if it reserves the same width the scrollbar eats.
+  // CSS scrollbar-gutter alone isn't enough: Blink (web) honors it, but WebKit
+  // (the desktop app's WKWebView) doesn't reserve a gutter on an overflow:hidden
+  // band, so on desktop the band drifted full-width past the grid. Measuring the
+  // real scrollbar and padding the band by it lines them up on every engine.
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  const measureScrollbar = useCallback(() => {
+    const el = scrollElRef.current;
+    if (!el) return;
+    // border-box − content-box − both side borders (border-x is uniform, so
+    // 2×clientLeft covers left+right). 0 on overlay-scrollbar systems.
+    const sbw = el.offsetWidth - el.clientWidth - el.clientLeft * 2;
+    setScrollbarWidth(sbw > 0 ? sbw : 0);
+  }, []);
+
   const scrollRef = useCallback(
     (el: HTMLDivElement | null) => {
+      scrollElRef.current = el;
       if (fillAndScroll && el && !didInitScroll.current) {
         el.scrollTop = INITIAL_SCROLL_HOUR * HOUR_PX;
         didInitScroll.current = true;
       }
+      if (el) measureScrollbar();
     },
-    [fillAndScroll],
+    [fillAndScroll, measureScrollbar],
   );
+
+  // Re-measure on any width change (viewport resize, breakpoint crossing, the
+  // scrollbar appearing/disappearing) so the band's reserved gutter tracks it.
+  useEffect(() => {
+    const el = scrollElRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    measureScrollbar();
+    const ro = new ResizeObserver(measureScrollbar);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fillAndScroll, measureScrollbar]);
 
   const hourFromY = (offsetY: number): number => {
     const raw = MIN_HOUR + offsetY / HOUR_PX;
@@ -1184,14 +1216,15 @@ export function WeekGrid({
     <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
     {hasAllDay && (
       <div
-        // Reserve the same scrollbar gutter the scrollable grid below reserves,
-        // so this band's day dividers line up with the columns' (the grid's
-        // vertical scrollbar otherwise narrows its columns but not this row's).
-        // overflow-hidden makes it a scroll container so scrollbar-gutter applies
-        // without ever showing a scrollbar on this single-row band.
+        // Reserve the same width the scrollable grid below loses to its vertical
+        // scrollbar, so this band's day dividers line up with the grid's columns.
+        // Measured live (scrollbarWidth) rather than via CSS scrollbar-gutter,
+        // which the desktop WKWebView doesn't honor on this band — see the
+        // measureScrollbar note above.
         className={`flex border-x border-b border-border bg-card select-none ${
-          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30 lg:overflow-y-hidden lg:[scrollbar-gutter:stable]` : ""
+          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30` : ""
         }`}
+        style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
       >
         {/* Left gutter — matches the hour-axis width */}
         <div className="w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
@@ -1250,9 +1283,9 @@ export function WeekGrid({
         // them to the shorter viewport. Stretch clipped each column's box to the
         // visible height, so its border-r (and the axis's) faded out below the
         // fold while the absolutely-positioned grid lines kept going.
-        // scrollbar-gutter: stable reserves the vertical scrollbar's width even
-        // before it appears, so the all-day band above can reserve the identical
-        // gutter and their day dividers stay aligned.
+        // scrollbar-gutter: stable keeps this container's own width steady when
+        // the scrollbar toggles; the all-day band above matches its columns to
+        // ours by measuring our real scrollbar width (see measureScrollbar).
         fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden lg:[scrollbar-gutter:stable]" : ""
       }`}
     >
