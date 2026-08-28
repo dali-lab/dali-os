@@ -111,6 +111,24 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
+  {
+    key: "calendar-unified",
+    label: "Unified calendar",
+    description:
+      "One calendar screen instead of the Availability / Schedule / Timesheet tabs: a Month/Week/Day grid with toggleable colored layers (your blocks, linked Google calendars, meetings, logged time), meeting scheduling as an on-grid overlay, and a docked detail panel. Ships off; the three-tab calendar stays the fallback until this is rolled out.",
+  },
+  {
+    key: "calendar-classes",
+    label: "Classes this term",
+    description:
+      "Add your Dartmouth classes to the calendar from the Calendars menu — pick the class period (10A, 2, …) and we generate the exact weekly meeting times (with x-hour), bounded to the term. Classes can sync to a linked Google calendar or render as a DALI-only layer. Ships off.",
+  },
+  {
+    key: "calendar-google-crud",
+    label: "Calendar: create & edit events",
+    description:
+      "Use the calendar as a Google Calendar client: create, edit (via a composer), and delete events on your linked Google calendars, including all-day events. Google write only; Outlook stays read-only. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
