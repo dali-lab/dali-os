@@ -1,4 +1,4 @@
-import { type RoleInstance } from "~/lib/roles";
+import type { RoleInstance } from "~/lib/roles";
 import { Tooltip } from "~/components/ui/floating";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
