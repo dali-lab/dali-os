@@ -28,7 +28,6 @@ import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -487,7 +486,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     bidDomains,
     linkablePartnerOrgs,
     meetingRows,
-    timelineMeetingRows,
     presenceUser,
     activityRows,
   ] = await Promise.all([
@@ -570,29 +568,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { selectedAt: "asc" },
       take: 5,
       select: { id: true, title: true, selectedAt: true, durationMinutes: true },
-    }),
-    // Every confirmed/searching meeting for this project, with the data needed
-    // to expand recurrences — these ride the Progress timeline as day-pinned
-    // chips (os tab set). Cancelled meetings are excluded; unscheduled ones
-    // (selectedAt null) expand to nothing.
-    prisma.scheduledMeeting.findMany({
-      where: { projectId: project.id, status: { not: "Cancelled" } },
-      select: {
-        id: true,
-        title: true,
-        selectedAt: true,
-        durationMinutes: true,
-        recurrenceRule: true,
-        meetingType: true,
-        exceptions: {
-          select: {
-            originalStart: true,
-            overrideStart: true,
-            overrideDurationMin: true,
-            cancelled: true,
-          },
-        },
-      },
     }),
     // Presence user (collab editor wiring).
     getPresenceUser(
@@ -1079,54 +1054,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : [],
   );
 
-  // Meeting chips for the Progress timeline: expand each meeting's occurrences
-  // across the plan's date span (padded), so a recurring sync shows on every
-  // week it lands on. The client positions each by its day and clamps to the
-  // visible range, so a slightly wider window here is harmless.
-  const timelineMeetings = (() => {
-    const DAY_MS = 86_400_000;
-    const times: number[] = [Date.now()];
-    const add = (iso: string | null | undefined) => {
-      if (!iso) return;
-      const n = Date.parse(iso);
-      if (!Number.isNaN(n)) times.push(n);
-    };
-    for (const e of epics) {
-      add(e.startsAt);
-      add(e.endsAt);
-      for (const s of e.stories) {
-        add(s.startsAt);
-        add(s.endsAt);
-        for (const t of s.tasks) {
-          add(t.startsAt);
-          add(t.endsAt);
-        }
-      }
-    }
-    const windowStart = new Date(Math.min(...times) - 45 * DAY_MS);
-    const windowEnd = new Date(Math.max(...times) + 75 * DAY_MS);
-    return timelineMeetingRows
-      .flatMap((m) =>
-        expandOccurrences(
-          {
-            selectedAt: m.selectedAt,
-            durationMinutes: m.durationMinutes,
-            recurrenceRule: m.recurrenceRule,
-          },
-          m.exceptions,
-          windowStart,
-          windowEnd,
-        ).map((occ) => ({
-          id: `${m.id}:${occ.originalStart.getTime()}`,
-          meetingId: m.id,
-          title: m.title,
-          startsAt: occ.start.toISOString(),
-          type: m.meetingType,
-        })),
-      )
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  })();
-
   // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
   const recentActivity = activityRows;
 
@@ -1196,7 +1123,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pinnedDocuments,
     files,
     upcomingMeetings,
-    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1555,7 +1481,6 @@ export default function ProjectDetail() {
     pinnedDocuments,
     files,
     upcomingMeetings,
-    timelineMeetings,
     projectCalendar,
     recentActivity,
     epics,
@@ -1693,9 +1618,8 @@ export default function ProjectDetail() {
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
       onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
-      // Progress-tab controls: meeting chips on the timeline, the shared people
-      // filter, and the New ▸ Meeting deep link. Rendered only under os.
-      timelineMeetings={os ? timelineMeetings : []}
+      // Progress-tab controls: the shared people filter and the New ▸ Meeting
+      // deep link. Rendered only under os.
       peopleOptions={os ? peopleOptions : []}
       selectedPeopleIds={os ? selectedPeopleIds : []}
       onPeopleChange={setSelectedPeopleIds}
@@ -5212,7 +5136,6 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
-  timelineMeetings = [],
   peopleOptions = [],
   selectedPeopleIds = [],
   onPeopleChange,
@@ -5229,7 +5152,6 @@ function PlanningTab({
   userName: string;
   onTaskClick: (taskId: string) => void;
   onAddTask?: () => void;
-  timelineMeetings?: LoaderData["timelineMeetings"];
   peopleOptions?: { id: string; name: string }[];
   selectedPeopleIds?: string[];
   onPeopleChange?: (ids: string[]) => void;
@@ -5249,7 +5171,6 @@ function PlanningTab({
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
-        timelineMeetings={timelineMeetings}
         peopleOptions={peopleOptions}
         selectedPeopleIds={selectedPeopleIds}
         onPeopleChange={onPeopleChange}
