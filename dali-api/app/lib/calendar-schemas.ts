@@ -211,6 +211,14 @@ export const SetMeetingCoreSchema = z.object({
   isCoreMeeting: z.boolean(),
 });
 
+// "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
+// flag on UserAvailabilitySettings and, on enable, lazily provisions the DALI
+// Timesheet Google calendar (see timesheet-mirror.server.ts).
+export const SetTimesheetSyncSchema = z.object({
+  intent: z.literal("set-timesheet-sync"),
+  enabled: z.boolean(),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
   SeedWorkingHoursSchema,
@@ -228,6 +236,7 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
   SetMeetingCoreSchema,
+  SetTimesheetSyncSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

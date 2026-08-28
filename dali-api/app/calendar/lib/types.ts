@@ -273,6 +273,9 @@ export type LoaderData = {
   // create/edit/delete Google events. defaultEventDest is the last-used write
   // calendar (from the dali_event_dest cookie), "linkId:calendarId".
   crudEnabled: boolean;
+  // Whether the user opted into mirroring their timesheet to a "DALI Timesheet"
+  // Google calendar (Phase 3). Drives the Calendars panel toggle's saved state.
+  timesheetGoogleSync: boolean;
   defaultEventDest: string | null;
   /** New-event default length in minutes (dali_event_duration cookie; 60 when
    *  unset). Used by quick-create and a single click on the grid. */
