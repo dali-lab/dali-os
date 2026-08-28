@@ -59,7 +59,6 @@ import {
   type RepeatSpec,
 } from "~/calendar/components/RepeatField";
 import type { Route } from "./+types/calendar";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -1350,7 +1349,6 @@ const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-c
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const { os } = useOsChrome();
   const [searchParams] = useSearchParams();
   // Persist the active tab in sessionStorage so navigating away and back
   // (or the workspace iframe re-mounting on tab focus) restores where the
@@ -1362,12 +1360,14 @@ export default function CalendarPage() {
     if (urlTab === "schedule" || urlTab === "timesheet" || urlTab === "availability") {
       return urlTab;
     }
-    if (typeof window === "undefined") return "availability";
+    if (typeof window === "undefined") return "schedule";
     try {
       const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
-      return stored === "schedule" || stored === "timesheet" ? stored : "availability";
+      return stored === "schedule" || stored === "timesheet" || stored === "availability"
+        ? stored
+        : "schedule";
     } catch {
-      return "availability";
+      return "schedule";
     }
   });
   useEffect(() => {
@@ -1379,37 +1379,29 @@ export default function CalendarPage() {
   }, [tab]);
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-4" : "gap-5")}>
-      <UnderlineTabButtons
-        label="Calendar"
-        // Under os the page title shares the switcher's line, the switcher
-        // pushed to the far right; the brand shell has no title here.
-        heading={
-          os ? (
-            <h1 className="font-heading text-4xl font-medium text-foreground">Calendar</h1>
-          ) : undefined
-        }
-        items={[
-          {
-            label: "My Availability",
-            active: tab === "availability",
-            onClick: () => setTab("availability"),
-            icon: CalendarDays,
-          },
-          {
-            label: "Schedule Meeting",
-            active: tab === "schedule",
-            onClick: () => setTab("schedule"),
-            icon: CalendarPlus,
-          },
-          {
-            label: "Timesheet",
-            active: tab === "timesheet",
-            onClick: () => setTab("timesheet"),
-            icon: Clock,
-          },
-        ]}
-      />
+    <div className="calendar-redesign flex flex-col gap-5">
+      <nav className="flex min-w-0 gap-1 overflow-x-auto border-b border-border" aria-label="Calendar views">
+        {[
+          { value: "schedule" as const, label: "Events" },
+          { value: "availability" as const, label: "Availability" },
+          { value: "timesheet" as const, label: "Timesheet" },
+        ].map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            aria-current={tab === value ? "page" : undefined}
+            onClick={() => setTab(value)}
+            className={cn(
+              "shrink-0 rounded-t-md border-b-[3px] px-4 py-2 text-sm font-semibold transition-colors",
+              tab === value
+                ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {tab === "availability" && <AvailabilityView data={data} />}
       {tab === "schedule" && <ScheduleView data={data} />}
@@ -1451,13 +1443,14 @@ function AvailabilityView({ data }: { data: LoaderData }) {
   }, [sidebarCollapsed]);
   const { os, iconBtn } = useOsChrome();
   return (
-    <div
-      className={cn(
-        "grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0",
-        os ? "pt-1" : "px-3 pt-2",
-        sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]",
-      )}
-    >
+    <div className="flex flex-col gap-5">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-14rem),56rem)] lg:min-h-0",
+          os ? "pt-1" : "px-3 pt-2",
+          sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]",
+        )}
+      >
       {sidebarCollapsed ? (
         <Tooltip content="Expand settings">
           <button
@@ -1526,6 +1519,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
       )}
       <div className="lg:flex lg:flex-col lg:overflow-hidden lg:min-h-0">
         <AvailabilityWeekGrid data={data} enableDragCreate />
+      </div>
       </div>
     </div>
   );
@@ -3102,45 +3096,59 @@ function ScheduleView({ data }: { data: LoaderData }) {
   };
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-full min-w-0 lg:min-h-[calc(100vh-9rem)]">
-      <CreateScheduledMeetingForm
-        groups={data.groups}
-        users={data.users}
-        calendarLinks={data.calendarLinks}
-        myProjects={data.myProjects}
-        canSetSelfCheckIn={data.canSetSelfCheckIn}
-        canMarkCoreMeeting={data.canMarkCoreMeeting}
-        startLocal={startLocal}
-        onStartLocalChange={setStartLocal}
-        endLocal={endLocal}
-        onEndLocalChange={setEndLocal}
-        selectedUserIds={selectedUserIds}
-        onChangeSelectedUserIds={setSelectedUserIds}
-        selectedGroupIds={selectedGroupIds}
-        onChangeSelectedGroupIds={setSelectedGroupIds}
-        resolvedParticipantIds={resolvedParticipantIds}
-      />
-      <ScheduleWeekGrid
-        // The organizer is always implicitly invited, so include them in the
-        // availability query — otherwise the "All free" overlay can paint over
-        // times when the sender themself is busy.
-        participantIds={
-          resolvedParticipantIds.length > 0
-            ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
-            : [data.currentUserId]
-        }
-        showingSelfOnly={resolvedParticipantIds.length === 0}
-        users={data.users}
-        workingHours={data.workingHours}
-        workingHoursEnabled={data.hasPersistedWorkingHours}
-        durationMinutes={duration}
-        timezone={data.timezone}
-        weekStartIso={data.weekStartIso}
-        weekEndIso={data.weekEndIso}
-        onSelectRange={handleGridSelect}
-        selectedStartLocal={startLocal}
-        selectedEndLocal={endLocal}
-      />
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-5 lg:min-h-[calc(100vh-14rem)]">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.2fr)] lg:items-start">
+        <div className="min-w-0 lg:order-2">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-os-item bg-os-card px-4 py-3 text-sm font-semibold text-foreground marker:hidden">
+              Add event
+              <Plus className="h-4 w-4 text-os-grey transition-transform group-open:rotate-45" aria-hidden />
+            </summary>
+            <div className="mt-3">
+          <CreateScheduledMeetingForm
+            groups={data.groups}
+            users={data.users}
+            calendarLinks={data.calendarLinks}
+            myProjects={data.myProjects}
+            canSetSelfCheckIn={data.canSetSelfCheckIn}
+            canMarkCoreMeeting={data.canMarkCoreMeeting}
+            startLocal={startLocal}
+            onStartLocalChange={setStartLocal}
+            endLocal={endLocal}
+            onEndLocalChange={setEndLocal}
+            selectedUserIds={selectedUserIds}
+            onChangeSelectedUserIds={setSelectedUserIds}
+            selectedGroupIds={selectedGroupIds}
+            onChangeSelectedGroupIds={setSelectedGroupIds}
+            resolvedParticipantIds={resolvedParticipantIds}
+          />
+            </div>
+          </details>
+        </div>
+        <div className="min-w-0 lg:order-1">
+          <ScheduleWeekGrid
+          // The organizer is always implicitly invited, so include them in the
+          // availability query — otherwise the "All free" overlay can paint over
+          // times when the sender themself is busy.
+          participantIds={
+            resolvedParticipantIds.length > 0
+              ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
+              : [data.currentUserId]
+          }
+          showingSelfOnly={resolvedParticipantIds.length === 0}
+          users={data.users}
+          workingHours={data.workingHours}
+          workingHoursEnabled={data.hasPersistedWorkingHours}
+          durationMinutes={duration}
+          timezone={data.timezone}
+          weekStartIso={data.weekStartIso}
+          weekEndIso={data.weekEndIso}
+          onSelectRange={handleGridSelect}
+          selectedStartLocal={startLocal}
+          selectedEndLocal={endLocal}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -3232,7 +3240,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
   const serverError = addFetcher.data?.error ?? null;
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-5">
       <section className={cn(card, panelPad)}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className={heading}>Timesheet</h2>
@@ -4222,7 +4230,7 @@ function CreateScheduledMeetingForm({
 
   return (
     <section className={cn(panel, panelPad)}>
-      <h2 className="font-heading font-semibold text-foreground mb-4">Create Meeting</h2>
+      <h2 className="font-heading font-semibold text-foreground mb-4">Add event</h2>
       <form onSubmit={submit} className={cn("space-y-5", formClass)}>
         {/* Essentials */}
         <div className="space-y-3">
@@ -4980,7 +4988,7 @@ function ScheduleWeekGrid({
   return (
     <section className={cn(panel, "p-4 flex flex-col")}>
       <WeekToolbar
-        monthLabel={"Schedule preview"}
+        monthLabel={"Events"}
         weekStartIso={weekStartIso}
         onRefresh={refresh}
         refreshing={loading || revalidator.state !== "idle"}
