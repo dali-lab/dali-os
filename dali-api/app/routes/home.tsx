@@ -358,8 +358,9 @@ function RecentGrid({
           rows of shortcuts read as clutter, so cap it at one. The inner row is
           w-max mx-auto so a short list stays centered, while a long one simply
           overflows and scrolls from the start (justify-center would clip the
-          leading cards out of reach once the row overflows). */}
-      <div className="overflow-x-auto pb-1">
+          leading cards out of reach once the row overflows). no-scrollbar hides
+          the always-on bar (the row still scrolls by wheel/trackpad/drag). */}
+      <div className="overflow-x-auto no-scrollbar">
         <div className="mx-auto flex w-max gap-5">
           {shortcuts.map((p) => (
             <RecentCard key={p.id} page={p} onChanged={onChanged} />
@@ -1111,7 +1112,7 @@ function AttentionBanner({
       </div>
 
       {tasks.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} />
           ))}
