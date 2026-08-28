@@ -1349,7 +1349,6 @@ const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-c
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const { os } = useOsChrome();
   const [searchParams] = useSearchParams();
   // Persist the active tab in sessionStorage so navigating away and back
   // (or the workspace iframe re-mounting on tab focus) restores where the
@@ -1361,12 +1360,14 @@ export default function CalendarPage() {
     if (urlTab === "schedule" || urlTab === "timesheet" || urlTab === "availability") {
       return urlTab;
     }
-    if (typeof window === "undefined") return "availability";
+    if (typeof window === "undefined") return "schedule";
     try {
       const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
-      return stored === "schedule" || stored === "timesheet" ? stored : "availability";
+      return stored === "schedule" || stored === "timesheet" || stored === "availability"
+        ? stored
+        : "schedule";
     } catch {
-      return "availability";
+      return "schedule";
     }
   });
   useEffect(() => {
@@ -1378,43 +1379,29 @@ export default function CalendarPage() {
   }, [tab]);
 
   return (
-    <div className={cn("calendar-redesign flex flex-col", os ? "gap-5" : "gap-6")}>
-      <header className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-accent-teal">
-            Personal workspace
-          </p>
-          <h1 className="font-heading text-4xl font-medium tracking-normal text-foreground">
-            Calendar
-          </h1>
-        </div>
-        <nav
-          aria-label="Calendar views"
-          className="flex w-full gap-1 overflow-x-auto rounded-os-item bg-os-well p-1 sm:w-auto"
-        >
-          {[
-            { value: "schedule" as const, label: "Events", icon: CalendarPlus },
-            { value: "availability" as const, label: "Availability", icon: CalendarDays },
-            { value: "timesheet" as const, label: "Timesheet", icon: Clock },
-          ].map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              aria-current={tab === value ? "page" : undefined}
-              onClick={() => setTab(value)}
-              className={cn(
-                "inline-flex min-h-9 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] px-3 text-sm font-semibold transition-colors sm:flex-none",
-                tab === value
-                  ? "bg-os-container text-foreground shadow-sm"
-                  : "text-os-grey hover:bg-os-hover hover:text-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" aria-hidden />
-              {label}
-            </button>
-          ))}
-        </nav>
-      </header>
+    <div className="calendar-redesign flex flex-col gap-5">
+      <nav className="flex min-w-0 gap-1 overflow-x-auto border-b border-border" aria-label="Calendar views">
+        {[
+          { value: "schedule" as const, label: "Events" },
+          { value: "availability" as const, label: "Availability" },
+          { value: "timesheet" as const, label: "Timesheet" },
+        ].map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            aria-current={tab === value ? "page" : undefined}
+            onClick={() => setTab(value)}
+            className={cn(
+              "shrink-0 rounded-t-md border-b-[3px] px-4 py-2 text-sm font-semibold transition-colors",
+              tab === value
+                ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {tab === "availability" && <AvailabilityView data={data} />}
       {tab === "schedule" && <ScheduleView data={data} />}
@@ -3112,6 +3099,12 @@ function ScheduleView({ data }: { data: LoaderData }) {
     <div className="flex w-full max-w-full min-w-0 flex-col gap-5 lg:min-h-[calc(100vh-14rem)]">
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.2fr)] lg:items-start">
         <div className="min-w-0 lg:order-2">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-os-item bg-os-card px-4 py-3 text-sm font-semibold text-foreground marker:hidden">
+              Add event
+              <Plus className="h-4 w-4 text-os-grey transition-transform group-open:rotate-45" aria-hidden />
+            </summary>
+            <div className="mt-3">
           <CreateScheduledMeetingForm
             groups={data.groups}
             users={data.users}
@@ -3129,6 +3122,8 @@ function ScheduleView({ data }: { data: LoaderData }) {
             onChangeSelectedGroupIds={setSelectedGroupIds}
             resolvedParticipantIds={resolvedParticipantIds}
           />
+            </div>
+          </details>
         </div>
         <div className="min-w-0 lg:order-1">
           <ScheduleWeekGrid
