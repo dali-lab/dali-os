@@ -139,6 +139,7 @@ export function CalendarsPanel({
               href="/oauth/calendar/google/start"
               target="_top"
               rel="noopener"
+              aria-label="Add Google account"
               className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-foreground hover:bg-muted"
             >
               <Plus className="h-3 w-3" /> Add
