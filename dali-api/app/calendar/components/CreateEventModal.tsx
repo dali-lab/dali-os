@@ -397,8 +397,15 @@ export function CreateEventModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={handleOverlayClick}
     >
-      <div className="relative z-10 flex w-full max-w-4xl flex-row overflow-hidden rounded-xl border border-border bg-card shadow-brand-3 max-h-[90vh]">
-        {/* ── Left panel: availability grid ─────────────────────────────── */}
+      <div
+        className={cn(
+          "relative z-10 flex w-full flex-row overflow-hidden rounded-xl border border-border bg-card shadow-brand-3 max-h-[90vh]",
+          hasGuests ? "max-w-4xl" : "max-w-lg",
+        )}
+      >
+        {/* ── Left panel: availability grid — only shown once there are guests
+            (a solo event has no availability worth previewing). ───────────── */}
+        {hasGuests && (
         <div className="flex w-[42%] shrink-0 flex-col gap-3 border-r border-border bg-muted/20 p-4">
           {/* Week nav */}
           <div className="flex items-center gap-2">
@@ -455,6 +462,7 @@ export function CreateEventModal({
             )}
           </div>
         </div>
+        )}
 
         {/* ── Right panel: form ──────────────────────────────────────────── */}
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">

@@ -987,6 +987,24 @@ export function ScheduleWeekGrid({
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
   const CELLS_PER_DAY = Math.round((GRID_END_H - GRID_START_H) / CELL_HOURS);
 
+  // Compact mode renders the full-size grid (legible text) inside a scroll
+  // container rather than scaling it down; focus the initial scroll around the
+  // user's working-hours start (fallback ~7am) so day hours are in view without
+  // dropping the ability to scroll to early-morning / late-night slots.
+  const compactScrollRef = useRef<HTMLDivElement | null>(null);
+  const focusHour = (() => {
+    const starts = (workingHours ?? [])
+      .flatMap((d) => (d.segments ?? []).map((s) => s.startMinute / 60))
+      .filter((h) => Number.isFinite(h));
+    const earliest = starts.length ? Math.min(...starts) : 8;
+    return Math.max(GRID_START_H, earliest - 1);
+  })();
+  useEffect(() => {
+    if (compact && compactScrollRef.current) {
+      compactScrollRef.current.scrollTop = Math.max(0, (focusHour - GRID_START_H) * HOUR_PX);
+    }
+  }, [compact, weekStartIso, focusHour, GRID_START_H]);
+
   // Pre-parse each participant's free intervals into sorted (startMs, endMs)
   // tuples for fast containment checks below.
   const perUserFree: { startMs: number; endMs: number }[][] = data
@@ -1128,13 +1146,6 @@ export function ScheduleWeekGrid({
     }
   }
 
-  // Compact mode: scale down the full-height WeekGrid so it fits in the modal's
-  // left panel without dominating the layout. We wrap in a clipping container so
-  // overflow is hidden (the scaled child is still 24h tall but occupies only the
-  // scaled height in flow). 0.38 gives roughly 9 hours visible at once — enough
-  // to see business hours clearly in a constrained panel.
-  const COMPACT_SCALE = 0.38;
-
   const weekGrid = (
     <WeekGrid
       days={days}
@@ -1243,24 +1254,10 @@ export function ScheduleWeekGrid({
             />
           )}
           {compact ? (
-            // Scale down the 24h grid so it fits in the modal left panel.
-            // The outer div clips at the scaled height; the inner div scales
-            // the fixed-height grid so it doesn't push the panel taller.
-            <div
-              className="w-full overflow-hidden"
-              style={{
-                height: `${HOURS.length * HOUR_PX * COMPACT_SCALE}px`,
-              }}
-            >
-              <div
-                style={{
-                  transform: `scale(${COMPACT_SCALE})`,
-                  transformOrigin: "top left",
-                  width: `${100 / COMPACT_SCALE}%`,
-                }}
-              >
-                {weekGrid}
-              </div>
+            // Full-size grid in a scroll container (legible text), pre-scrolled
+            // to the user's day hours; scroll for early-morning / late slots.
+            <div ref={compactScrollRef} className="w-full overflow-y-auto" style={{ maxHeight: "26rem" }}>
+              {weekGrid}
             </div>
           ) : (
             weekGrid
