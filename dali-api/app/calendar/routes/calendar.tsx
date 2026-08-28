@@ -103,6 +103,8 @@ import {
   GeneralCalendarPrompt,
 } from "~/calendar/components/settings-cards";
 import { MeetingComposer, type AddingMode, ParticipantPicker, ParticipantAvailabilityRoster, SelectedSlotBlock, SlotAttendeePopover, userLabel } from "~/calendar/components/scheduling";
+import { CreateEventModal } from "~/calendar/components/CreateEventModal";
+import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
 import { TimesheetSummaryRail, TimesheetView, CreateFromDragPopover, TimesheetEditPopover } from "~/calendar/components/timesheet";
 import { LegacyCalendarTabs } from "~/calendar/components/legacy-tabs";
 
@@ -217,6 +219,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     });
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createModalSlot, setCreateModalSlot] = useState<{ startLocal: string; endLocal: string } | null>(null);
   const [calendarsOpen, setCalendarsOpen] = useState(false);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
@@ -459,6 +463,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     classesOpen ||
     calMgrOpen ||
     createOpen ||
+    createModalOpen ||
     Boolean(searchAnchor) ||
     Boolean(hoursAnchor) ||
     Boolean(defaultsAnchor) ||
@@ -771,43 +776,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   <SlidersHorizontal className="h-4 w-4" /> Calendars <ChevronDown className="h-3.5 w-3.5" />
                 </button>
                 {calendarsOpen && (
-                  <>
-                    <button
-                      type="button"
-                      className="fixed inset-0 z-40 cursor-default"
-                      aria-hidden
-                      onClick={() => setCalendarsOpen(false)}
-                      tabIndex={-1}
+                  <div className="absolute right-0 z-50 mt-1">
+                    <CalendarsPanel
+                      data={data}
+                      layers={layers}
+                      toggleLayer={toggleLayer}
+                      hiddenCals={hiddenCals}
+                      toggleHiddenCal={toggleHiddenCal}
+                      classesEnabled={data.classesEnabled}
+                      timesheetSyncEnabled={data.timesheetGoogleSync}
+                      onClose={() => setCalendarsOpen(false)}
                     />
-                    <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-border bg-card p-2 shadow-brand-2">
-                      <CalendarLayerList
-                        layers={layers}
-                        toggleLayer={toggleLayer}
-                        calendars={perCalendarLegend(data)}
-                        hiddenCals={hiddenCals}
-                        toggleHiddenCal={toggleHiddenCal}
-                        roleBuckets={layers.logged ? roleBuckets : []}
-                        excludedRoleKeys={excludedRoleKeys}
-                        toggleRoleKey={toggleRoleKey}
-                        classesEnabled={data.classesEnabled}
-                        classCount={data.memberClasses.length}
-                        localClassCount={data.memberClasses.filter((c) => c.storage === "Local").length}
-                        onManageClasses={() => {
-                          setCalendarsOpen(false);
-                          setClassesOpen(true);
-                        }}
-                        onEditHours={(rect) => {
-                          setCalendarsOpen(false);
-                          setHoursAnchor(rect);
-                        }}
-                        crudEnabled={data.crudEnabled}
-                        onManageCalendars={() => {
-                          setCalendarsOpen(false);
-                          setCalMgrOpen(true);
-                        }}
-                      />
-                    </div>
-                  </>
+                  </div>
                 )}
               </div>
             </>
@@ -831,17 +811,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 />
                 <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
                   {data.crudEnabled ? (
-                    // One "Event" — where it lives (in app vs a Google calendar)
-                    // is just the destination chosen inside the composer.
+                    // Single "Create event or meeting" button opens the unified modal.
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={(e) => {
-                        setComposer({ mode: "create", anchor: e.currentTarget.getBoundingClientRect() });
+                      onClick={() => {
+                        setCreateModalSlot(null);
+                        setCreateModalOpen(true);
                         setCreateOpen(false);
                       }}
                     >
-                      <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Event
+                      <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Create event or meeting
                     </button>
                   ) : (
                     <button
@@ -922,11 +902,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                     if (!day) return;
                     const startLocal = dayHourToLocal(day.dateUtc, startHour);
                     const endLocal = dayHourToLocal(day.dateUtc, endHour);
-                    // With Google CRUD on, dragging drafts a real event; otherwise
-                    // it drafts an in-app block.
+                    // With Google CRUD on, dragging opens the unified create modal.
                     if (data.crudEnabled) {
-                      setCreateSel({ dayIdx, startHour, endHour });
-                      setComposer({ mode: "create", startLocal, endLocal, anchor: anchorRect });
+                      setCreateModalSlot({ startLocal, endLocal });
+                      setCreateModalOpen(true);
                       return;
                     }
                     setEditor({ kind: "create", dayIdx, startHour, endHour, startLocal, endLocal });
@@ -1040,6 +1019,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             const { year, month, day } = getZonedYMD(new Date(hit.startIso), data.timezone);
             goToDay(new Date(Date.UTC(year, month - 1, day)));
             setSearchAnchor(null);
+          }}
+        />
+      )}
+      {createModalOpen && (
+        <CreateEventModal
+          data={data}
+          startLocal={createModalSlot?.startLocal}
+          endLocal={createModalSlot?.endLocal}
+          onClose={() => {
+            setCreateModalOpen(false);
+            setCreateModalSlot(null);
           }}
         />
       )}

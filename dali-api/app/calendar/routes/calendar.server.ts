@@ -28,6 +28,11 @@ import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import {
+  setUserTimesheetSync,
+  syncTimeEntryToGoogle,
+  removeTimeEntryFromGoogle,
+} from "~/lib/timesheet-mirror.server";
+import {
   fetchBusyEvents,
   fetchCalendarEvents,
   createGoogleCalendarEvent,
@@ -475,6 +480,34 @@ async function handleEventAction(
         timeZone,
         attendees: [],
       });
+      // NEW: create a standalone Manual TimeEntry for the work log
+      const isWork = get("isWork") === "1";
+      const assignmentType = get("assignmentType") || null;
+      const roleRefId = get("roleRefId") || null;
+      const workNote = get("workNote").trim() || null;
+      if (isWork && assignmentType && roleRefId) {
+        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId);
+        if (resolved) {
+          const startTime = new Date(startIso);
+          const endTime = new Date(endIso);
+          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
+          const logged = await prisma.timeEntry.create({
+            data: {
+              userId,
+              source: "Manual",
+              date: startTime,
+              hours,
+              assignmentType: assignmentType as RoleInstance["assignmentType"],
+              roleRefId,
+              projectId: resolved.projectId,
+              note: workNote,
+              startTime,
+              endTime,
+            },
+          });
+          await syncTimeEntryToGoogle(logged).catch(() => {});
+        }
+      }
       return null;
     }
 
@@ -681,6 +714,8 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
+    case "set-timesheet-sync":
+      return { intent, enabled: asBool(get("enabled")) };
     default:
       return raw;
   }
@@ -721,6 +756,7 @@ export async function loadCalendarData(request: Request) {
         select: {
           timezone: true,
           defaultEventBufferMin: true,
+          timesheetGoogleSync: true,
         },
       }),
       prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
@@ -1179,6 +1215,7 @@ export async function loadCalendarData(request: Request) {
     classOccurrences,
     classDestinations,
     crudEnabled,
+    timesheetGoogleSync: settings?.timesheetGoogleSync ?? false,
     defaultEventDest: readCookie(request, "dali_event_dest"),
     defaultEventDurationMin: parseDurationCookie(readCookie(request, "dali_event_duration")),
   };
@@ -1495,7 +1532,7 @@ export async function submitCalendarAction(request: Request) {
       const resolved = await resolveRoleRef(userId, input.assignmentType, input.roleRefId);
       if (!resolved) return Response.json({ error: "Invalid role" }, { status: 400 });
       const projectId = resolved.projectId;
-      await prisma.timeEntry.create({
+      const created = await prisma.timeEntry.create({
         data: {
           userId,
           source: "Manual",
@@ -1509,6 +1546,7 @@ export async function submitCalendarAction(request: Request) {
           endTime: new Date(input.endTime),
         },
       });
+      await syncTimeEntryToGoogle(created).catch(() => {});
       return null;
     }
 
@@ -1582,7 +1620,7 @@ export async function submitCalendarAction(request: Request) {
         return null;
       }
 
-      await prisma.timeEntry.update({
+      const updated = await prisma.timeEntry.update({
         where: { id: input.id },
         data: {
           date,
@@ -1595,6 +1633,7 @@ export async function submitCalendarAction(request: Request) {
           endTime,
         },
       });
+      await syncTimeEntryToGoogle(updated).catch(() => {});
       return null;
     }
 
@@ -1614,7 +1653,20 @@ export async function submitCalendarAction(request: Request) {
         ]);
         return null;
       }
+      await removeTimeEntryFromGoogle(existing).catch(() => {});
       await prisma.timeEntry.delete({ where: { id: input.id } });
+      return null;
+    }
+
+    case "set-timesheet-sync": {
+      const result = await setUserTimesheetSync(userId, input.enabled);
+      if (!result.ok && result.reason === "needsDaliLink") {
+        return Response.json(
+          { error: "Connect your @dali.dartmouth.edu Google account first.", needsDaliLink: true },
+          { status: 400 },
+        );
+      }
+      if (!result.ok) return Response.json({ error: result.message }, { status: 502 });
       return null;
     }
 

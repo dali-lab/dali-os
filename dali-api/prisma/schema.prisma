@@ -1858,6 +1858,11 @@ model TimeEntry {
   // + duration, and for grid drag-created Manual rows from the dragged range.
   startTime          DateTime?
   endTime            DateTime?
+  // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
+  // MemberClass.linkId/calendarId. Null until the user enables the sync and the
+  // entry is first pushed to Google. Set to null when the mirror event is deleted.
+  googleTimesheetEventId String?
+  googleTimesheetLinkId  String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
@@ -2046,6 +2051,16 @@ model UserAvailabilitySettings {
   // IANA zone, e.g. "America/New_York". Working hours are interpreted in this zone.
   timezone              String   @default("America/New_York")
   defaultEventBufferMin Int      @default(15)
+  // ── Phase 3: DALI Timesheet Google mirror ─────────────────────────────────
+  // Opt-in flag. When true, work TimeEntry rows with startTime+endTime are
+  // mirrored one-way to a "DALI Timesheet" calendar on the user's DALI Google
+  // link. Off by default — see app/lib/timesheet-mirror.server.ts.
+  timesheetGoogleSync    Boolean @default(false)
+  // The UserCalendarLink (DALI @dali.dartmouth.edu Google account) hosting the
+  // timesheet calendar. Soft pointer — no FK — matches the MemberClass pattern.
+  timesheetCalendarLinkId String?
+  // The Google calendar id of the "DALI Timesheet" calendar on that link.
+  timesheetCalendarId     String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
