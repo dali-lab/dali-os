@@ -1,7 +1,7 @@
 import { useFetcher, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
 import { RotateCcw, X } from "lucide-react";
-import { type RoleInstance } from "~/lib/roles";
+import type { RoleInstance } from "~/lib/roles";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
