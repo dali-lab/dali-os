@@ -151,7 +151,7 @@ export type EventAttendeeDTO = {
 export type EventLinkDTO = { label: string; href: string };
 
 /** One external (Google/Outlook) event for display, from events.list. Carries
- *  CRUD identity (eventId/linkId/writable) behind the calendar-google-crud flag
+ *  CRUD identity (eventId/linkId/writable) behind the calendar-unified flag
  *  so the calendar can edit/delete Google events it's allowed to. */
 export type ExternalEventDTO = {
   startIso: string;
@@ -161,7 +161,7 @@ export type ExternalEventDTO = {
   /** The linked sub-calendar this event came from, so the Calendars popover
    *  can hide individual calendars on the grid (client-side display only). */
   calendarId?: string | null;
-  // ── Google Calendar CRUD identity (calendar-google-crud flag) ──
+  // ── Google Calendar CRUD identity (calendar-unified flag) ──
   /** The Google event id — target of edit/delete. */
   eventId?: string | null;
   /** Which UserCalendarLink this event belongs to (for the write token). */
@@ -245,7 +245,7 @@ export type LoaderData = {
   // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
   // Notification, not on MeetingAttendance).
   meetingInvites: MeetingInviteDTO[];
-  // Classes this term (behind the calendar-classes flag). classesEnabled gates
+  // Classes this term (behind the calendar-unified flag). classesEnabled gates
   // the whole surface; classTerm names the current/default term; classTerms is
   // the selectable set (current + upcoming) for the term picker in the modal;
   // memberClasses feeds the manager (all current+upcoming terms); classOccurrences
@@ -258,7 +258,7 @@ export type LoaderData = {
   memberClasses: MemberClassDTO[];
   classOccurrences: ClassOccurrenceDTO[];
   classDestinations: ClassDestinationDTO[];
-  // Google Calendar CRUD (calendar-google-crud flag): when on, the calendar can
+  // Google Calendar CRUD (calendar-unified flag): when on, the calendar can
   // create/edit/delete Google events. defaultEventDest is the last-used write
   // calendar (from the dali_event_dest cookie), "linkId:calendarId".
   crudEnabled: boolean;
@@ -301,7 +301,7 @@ export type EventBlock = {
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
   /** When set, the event's detail popover shows an "Edit" action — a writable
-   *  Google event or in-app block under the calendar-google-crud flag. Opens the
+   *  Google event or in-app block under the calendar-unified flag. Opens the
    *  composer, anchored to the block's on-screen rect (passed through so the
    *  composer pops up next to the event, Google-Calendar style). */
   onEdit?: (anchor?: DOMRect) => void;

@@ -121,7 +121,8 @@ export default function CalendarPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Unified calendar (behind the `calendar-unified` flag)               */
+/* Calendar. The screen always renders; the `calendar-unified` flag gates the   */
+/* full feature set (Google event CRUD, meeting scheduling, classes, timesheet). */
 /* ------------------------------------------------------------------ */
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";

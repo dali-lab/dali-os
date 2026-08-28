@@ -309,7 +309,7 @@ function bareRrule(recurrence: string[]): string | null {
 
 type EventScope = "this" | "following" | "all";
 
-// Create / edit / move / delete a Google Calendar event (calendar-google-crud
+// Create / edit / move / delete a Google Calendar event (calendar-unified
 // flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
@@ -322,7 +322,7 @@ async function handleEventAction(
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
   const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
+  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
   const dest = get("destination");
@@ -466,7 +466,7 @@ async function handleCalendarAction(
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
   const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
+  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
   const linkId = get("linkId");
@@ -816,7 +816,7 @@ export async function loadCalendarData(request: Request) {
   // Resolve roles + flags once, up front — the calendar-crud read (all events,
   // with edit identity) replaces the busy-only read when the flag is on.
   const roles = await getUserRoles(userId, request);
-  const crudEnabled = await isFeatureEnabled("calendar-google-crud", userId, roles, request);
+  const crudEnabled = await isFeatureEnabled("calendar-unified", userId, roles, request);
 
   let ingestionError: string | null = null;
   const [externalRaw, calendarLinks, inviteRows] = await Promise.all([
@@ -991,9 +991,9 @@ export async function loadCalendarData(request: Request) {
         links: externalLinks(e.meetingUrl, e.htmlLink),
       }));
 
-  // Classes (flag-gated). Load all current+upcoming terms for the modal picker;
-  // expand occurrences only for the current term (visible week range).
-  const classesEnabled = await isFeatureEnabled("calendar-classes", userId, roles, request);
+  // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
+  // terms for the modal picker; expand occurrences only for the current term.
+  const classesEnabled = crudEnabled;
   let memberClasses: MemberClassDTO[] = [];
   let classOccurrences: ClassOccurrenceDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
