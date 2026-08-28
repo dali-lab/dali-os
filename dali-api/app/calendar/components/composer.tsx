@@ -942,11 +942,10 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
   const [customEnd, setCustomEnd] = useState("");
   const [location, setLocation] = useState("");
   const [destination, setDestination] = useState(() => {
-    // Default to the first Google destination (classes "live in the linked
-    // calendars"); fall back to Local when no account is connected.
-    const preferred = data.classDestinations.find((d) => d.kind !== "local") ?? data.classDestinations[0];
-    return preferred ? destinationValue(preferred) : "local";
+    const first = data.classDestinations[0];
+    return first ? destinationValue(first) : "";
   });
+  const [selectedTermId, setSelectedTermId] = useState(data.classTerm?.id ?? "");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -994,6 +993,7 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
   const submitting = fetcher.state !== "idle";
   const canSubmit =
     title.trim() !== "" &&
+    destination !== "" &&
     (isPeriod || (mode === "custom" && customDays.length > 0 && customStart !== "" && customEnd !== ""));
 
   const periodOptions = [
@@ -1029,10 +1029,10 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
           <p className="text-sm text-muted-foreground">There's no active term to add classes to yet.</p>
         ) : (
           <div className="flex flex-col gap-4">
-            {/* Existing classes */}
-            {data.memberClasses.length > 0 && (
+            {/* Existing classes — filtered to the selected term */}
+            {data.memberClasses.filter((c) => c.termId === selectedTermId).length > 0 && (
               <ul className="flex flex-col gap-1.5">
-                {data.memberClasses.map((c) => (
+                {data.memberClasses.filter((c) => c.termId === selectedTermId).map((c) => (
                   <li
                     key={c.id}
                     className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
@@ -1078,11 +1078,27 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
               <input type="hidden" name="periodCode" value={isPeriod ? mode : ""} />
               <input type="hidden" name="includeXHour" value={isPeriod && includeXHour && period?.xhour ? "1" : ""} />
               <input type="hidden" name="customDays" value={mode === "custom" ? customDays.join(",") : ""} />
+              <input type="hidden" name="customStart" value={customStart} />
+              <input type="hidden" name="customEnd" value={customEnd} />
               <input type="hidden" name="destination" value={destination} />
+              <input type="hidden" name="termId" value={selectedTermId} />
 
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {editingId ? "Edit class" : "Add a class"}
               </div>
+
+              {data.classTerms.length > 1 && (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Term</span>
+                  <Select
+                    value={selectedTermId}
+                    onChange={setSelectedTermId}
+                    options={data.classTerms.map((t) => ({ value: t.id, label: t.code }))}
+                    placeholder="Choose a term…"
+                    buttonClassName="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left inline-flex items-center justify-between gap-1 hover:bg-muted/40"
+                  />
+                </label>
+              )}
 
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-muted-foreground">Class</span>
@@ -1141,21 +1157,9 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
                     })}
                   </div>
                   <div className="flex items-center gap-2 text-sm">
-                    <input
-                      type="time"
-                      name="customStart"
-                      value={customStart}
-                      onChange={(e) => setCustomStart(e.target.value)}
-                      className="rounded-md border border-border bg-background px-2 py-1"
-                    />
+                    <TimeComboField value={customStart} onChange={setCustomStart} ariaLabel="Class start time" className="min-w-0 flex-1" />
                     <span className="text-muted-foreground">to</span>
-                    <input
-                      type="time"
-                      name="customEnd"
-                      value={customEnd}
-                      onChange={(e) => setCustomEnd(e.target.value)}
-                      className="rounded-md border border-border bg-background px-2 py-1"
-                    />
+                    <TimeComboField value={customEnd} onChange={setCustomEnd} ariaLabel="Class end time" className="min-w-0 flex-1" />
                   </div>
                 </div>
               )}
@@ -1171,16 +1175,22 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Add to</span>
-                <Select
-                  value={destination}
-                  onChange={setDestination}
-                  options={data.classDestinations.map((d) => ({ value: destinationValue(d), label: d.label }))}
-                  placeholder="Where should classes go?"
-                  buttonClassName="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left inline-flex items-center justify-between gap-1 hover:bg-muted/40"
-                />
-              </label>
+              {data.classDestinations.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Connect a Google calendar you can write to to add classes.
+                </p>
+              ) : (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Add to</span>
+                  <Select
+                    value={destination}
+                    onChange={setDestination}
+                    options={data.classDestinations.map((d) => ({ value: destinationValue(d), label: d.label }))}
+                    placeholder="Where should classes go?"
+                    buttonClassName="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left inline-flex items-center justify-between gap-1 hover:bg-muted/40"
+                  />
+                </label>
+              )}
 
               {fetcher.data?.error && <p className="text-xs text-red-600">{fetcher.data.error}</p>}
 

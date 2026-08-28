@@ -98,6 +98,8 @@ export type MemberClassDTO = {
   calendarId: string | null;
   /** Where it lives, e.g. "Google · Classes" or "In DALI only". */
   destinationLabel: string;
+  /** The term this class belongs to (used for multi-term filtering in the modal). */
+  termId: string;
 };
 
 /** A single expanded class occurrence for the "Classes" layer. Only Local
@@ -244,13 +246,15 @@ export type LoaderData = {
   // Notification, not on MeetingAttendance).
   meetingInvites: MeetingInviteDTO[];
   // Classes this term (behind the calendar-classes flag). classesEnabled gates
-  // the whole surface; classTerm names the term classes are scoped to;
-  // memberClasses feeds the manager; classOccurrences are the Local classes
-  // expanded across the fetched range for the "Classes" layer (Google-stored
-  // classes ride the external layer instead); classDestinations are the add
-  // form's target options (Local + any linked Google calendars).
+  // the whole surface; classTerm names the current/default term; classTerms is
+  // the selectable set (current + upcoming) for the term picker in the modal;
+  // memberClasses feeds the manager (all current+upcoming terms); classOccurrences
+  // are the Local classes expanded across the fetched range for the "Classes" layer
+  // (Google-stored classes ride the external layer instead); classDestinations are
+  // the add form's target options (any linked Google calendars).
   classesEnabled: boolean;
   classTerm: { id: string; code: string } | null;
+  classTerms: { id: string; code: string }[];
   memberClasses: MemberClassDTO[];
   classOccurrences: ClassOccurrenceDTO[];
   classDestinations: ClassDestinationDTO[];

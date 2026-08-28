@@ -14,6 +14,7 @@ import {
   type RoleInstance,
 } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { resolveTermFilter } from "~/lib/terms";
 import {
   createClass,
   updateClass,
@@ -211,8 +212,9 @@ function parseCustomMeetings(raw: Record<string, FormDataEntryValue>): PeriodMee
   return [{ kind: "main", days, startMin, endMin }];
 }
 
-// Add / edit / remove a class. The term is resolved server-side (not trusted
-// from the form) so a class can only land on the current term.
+// Add / edit / remove a class. The termId comes from the form but is validated
+// against the allowed set (current + upcoming terms) server-side so past/arbitrary
+// term ids are rejected. Falls back to the current term when omitted.
 async function handleClassAction(
   intent: string,
   raw: Record<string, FormDataEntryValue>,
@@ -228,8 +230,21 @@ async function handleClassAction(
       return null;
     }
 
-    const term = await currentTerm(request);
-    if (!term) return Response.json({ error: "There's no active term to add classes to." }, { status: 400 });
+    // Resolve the allowed terms (current + upcoming) and validate the submitted termId.
+    const termFilter = await resolveTermFilter(request, { default: "upcoming" });
+    const allowedIds = termFilter.termIds ?? [];
+    if (allowedIds.length === 0) {
+      return Response.json({ error: "There's no active term to add classes to." }, { status: 400 });
+    }
+    const submittedTermId = get("termId");
+    // Pick the submitted id if it's allowed; otherwise fall back to the current term
+    // (or the first upcoming term if there's no current term).
+    const currentTermId = termFilter.terms.find((t) => t.isCurrent)?.id ?? allowedIds[0];
+    const termId = allowedIds.includes(submittedTermId) ? submittedTermId : currentTermId;
+
+    // Load the term row (needed for date-range math in createClass/updateClass).
+    const termRow = termFilter.terms.find((t) => t.id === termId);
+    if (!termRow) return Response.json({ error: "Term not found." }, { status: 400 });
 
     const title = get("title").trim();
     if (!title) return Response.json({ error: "Give the class a name." }, { status: 400 });
@@ -245,7 +260,7 @@ async function handleClassAction(
       }
     }
 
-    const params = { userId, termId: term.id, title, location, periodCode, includeXHour, customMeetings, destination };
+    const params = { userId, termId, title, location, periodCode, includeXHour, customMeetings, destination };
     if (intent === "class-add") {
       await createClass(params);
     } else if (intent === "class-update") {
@@ -976,31 +991,44 @@ export async function loadCalendarData(request: Request) {
         links: externalLinks(e.meetingUrl, e.htmlLink),
       }));
 
-  // Classes this term (flag-gated). Only touch the table when the flag is on.
+  // Classes (flag-gated). Load all current+upcoming terms for the modal picker;
+  // expand occurrences only for the current term (visible week range).
   const classesEnabled = await isFeatureEnabled("calendar-classes", userId, roles, request);
   let memberClasses: MemberClassDTO[] = [];
   let classOccurrences: ClassOccurrenceDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  if (classesEnabled && term) {
-    const classRows = await prisma.memberClass.findMany({
-      where: { userId, termId: term.id },
-      orderBy: { createdAt: "asc" },
-    });
-    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
-    classDestinations = buildClassDestinations(calendarLinks);
-    // Expand only Local classes across the fetched range; Google-stored classes
-    // ride the external layer (they're real events on the linked calendar).
-    for (const r of classRows) {
-      if (r.storage !== "Local") continue;
-      const occ = expandClassOccurrences(
-        r.meetings as unknown as PeriodMeeting[],
-        term.startDate,
-        term.endDate,
-        rangeStart,
-        rangeEnd,
-      );
-      for (const o of occ) {
-        classOccurrences.push({ classId: r.id, title: r.title, startIso: o.startIso, endIso: o.endIso, kind: o.kind });
+  let classTerms: { id: string; code: string }[] = [];
+  if (classesEnabled) {
+    // Resolve current+upcoming term ids for the modal's term selector.
+    const termFilter = await resolveTermFilter(request, { default: "upcoming" });
+    const selectableTermIds = termFilter.termIds ?? [];
+    classTerms = termFilter.terms
+      .filter((t) => selectableTermIds.includes(t.id))
+      .map((t) => ({ id: t.id, code: t.code }));
+
+    if (selectableTermIds.length > 0) {
+      const classRows = await prisma.memberClass.findMany({
+        where: { userId, termId: { in: selectableTermIds } },
+        orderBy: { createdAt: "asc" },
+      });
+      memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+      classDestinations = buildClassDestinations(calendarLinks);
+      // Expand only Local classes for the current term across the fetched range;
+      // Google-stored classes ride the external layer (real events on linked calendar).
+      if (term) {
+        for (const r of classRows) {
+          if (r.termId !== term.id || r.storage !== "Local") continue;
+          const occ = expandClassOccurrences(
+            r.meetings as unknown as PeriodMeeting[],
+            term.startDate,
+            term.endDate,
+            rangeStart,
+            rangeEnd,
+          );
+          for (const o of occ) {
+            classOccurrences.push({ classId: r.id, title: r.title, startIso: o.startIso, endIso: o.endIso, kind: o.kind });
+          }
+        }
       }
     }
   }
@@ -1044,6 +1072,7 @@ export async function loadCalendarData(request: Request) {
     meetingInvites,
     classesEnabled,
     classTerm: term ? { id: term.id, code: term.code } : null,
+    classTerms,
     memberClasses,
     classOccurrences,
     classDestinations,
