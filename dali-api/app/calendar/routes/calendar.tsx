@@ -59,7 +59,6 @@ import {
   type RepeatSpec,
 } from "~/calendar/components/RepeatField";
 import type { Route } from "./+types/calendar";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -1379,37 +1378,43 @@ export default function CalendarPage() {
   }, [tab]);
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-4" : "gap-5")}>
-      <UnderlineTabButtons
-        label="Calendar"
-        // Under os the page title shares the switcher's line, the switcher
-        // pushed to the far right; the brand shell has no title here.
-        heading={
-          os ? (
-            <h1 className="font-heading text-4xl font-medium text-foreground">Calendar</h1>
-          ) : undefined
-        }
-        items={[
-          {
-            label: "My Availability",
-            active: tab === "availability",
-            onClick: () => setTab("availability"),
-            icon: CalendarDays,
-          },
-          {
-            label: "Schedule Meeting",
-            active: tab === "schedule",
-            onClick: () => setTab("schedule"),
-            icon: CalendarPlus,
-          },
-          {
-            label: "Timesheet",
-            active: tab === "timesheet",
-            onClick: () => setTab("timesheet"),
-            icon: Clock,
-          },
-        ]}
-      />
+    <div className={cn("calendar-redesign flex flex-col", os ? "gap-5" : "gap-6")}>
+      <header className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-accent-teal">
+            Personal workspace
+          </p>
+          <h1 className="font-heading text-4xl font-medium tracking-normal text-foreground">
+            Calendar
+          </h1>
+        </div>
+        <nav
+          aria-label="Calendar views"
+          className="flex w-full gap-1 overflow-x-auto rounded-os-item bg-os-well p-1 sm:w-auto"
+        >
+          {[
+            { value: "schedule" as const, label: "Events", icon: CalendarPlus },
+            { value: "availability" as const, label: "Availability", icon: CalendarDays },
+            { value: "timesheet" as const, label: "Timesheet", icon: Clock },
+          ].map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              aria-current={tab === value ? "page" : undefined}
+              onClick={() => setTab(value)}
+              className={cn(
+                "inline-flex min-h-9 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] px-3 text-sm font-semibold transition-colors sm:flex-none",
+                tab === value
+                  ? "bg-os-container text-foreground shadow-sm"
+                  : "text-os-grey hover:bg-os-hover hover:text-foreground",
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden />
+              {label}
+            </button>
+          ))}
+        </nav>
+      </header>
 
       {tab === "availability" && <AvailabilityView data={data} />}
       {tab === "schedule" && <ScheduleView data={data} />}

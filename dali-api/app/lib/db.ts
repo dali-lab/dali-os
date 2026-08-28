@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma/client.js";
+import { PrismaClient } from "../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 // Re-export the Prisma namespace through this module so callers can reach
@@ -6,7 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 // generated client. The unit-test job doesn't run `prisma generate`, but tests
 // mock `~/lib/db` (resolvable) — so routing the namespace through here keeps
 // those modules loadable in CI. See app/lib/__mocks__/db.ts for the stub.
-export { Prisma } from "../generated/prisma/client.js";
+export { Prisma } from "../generated/prisma/client";
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
