@@ -354,13 +354,17 @@ function RecentGrid({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-center text-sm tracking-wider text-foreground uppercase">{caption}</p>
-      {/* Wrapping row rather than a grid: the row rarely divides evenly into
-          columns (six shortcuts, four across), and a grid pins the remainder
-          flush left under a centered search box. */}
-      <div className="flex flex-wrap justify-center gap-5">
-        {shortcuts.map((p) => (
-          <RecentCard key={p.id} page={p} onChanged={onChanged} />
-        ))}
+      {/* A single row that scrolls sideways rather than wrapping: two stacked
+          rows of shortcuts read as clutter, so cap it at one. The inner row is
+          w-max mx-auto so a short list stays centered, while a long one simply
+          overflows and scrolls from the start (justify-center would clip the
+          leading cards out of reach once the row overflows). */}
+      <div className="overflow-x-auto pb-1">
+        <div className="mx-auto flex w-max gap-5">
+          {shortcuts.map((p) => (
+            <RecentCard key={p.id} page={p} onChanged={onChanged} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -369,9 +373,10 @@ function RecentGrid({
 function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
   return (
     // Link + star are siblings: the star must not navigate.
-    // The widths keep the old grid's 2-up/4-up rhythm — a wrapping row has no
-    // columns to inherit it from, so each card subtracts its share of the gaps.
-    <div className="group relative w-[calc((100%_-_1.25rem)/2)] sm:w-[calc((100%_-_3.75rem)/4)]">
+    // Fixed width + no shrink: in a single scrolling row the cards must hold
+    // their size rather than divide the container, so the row scrolls instead
+    // of squeezing every card thinner as more are added.
+    <div className="group relative w-40 flex-shrink-0">
       <a
         href={page.href}
         className="flex h-full flex-col items-center gap-3 rounded-os-card bg-os-card p-4 text-center transition-colors hover:bg-os-card-hover"
