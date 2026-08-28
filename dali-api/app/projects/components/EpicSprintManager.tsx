@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { X, Trash2, Pencil, Plus, CheckSquare, FileText, Zap, Calendar } from "lucide-react";
-import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
@@ -133,12 +132,6 @@ type Props = {
   // same surface (the os Progress tab), so the Add menu offers "Task" exactly
   // when there is somewhere for it to land.
   onAddTask?: () => void;
-  // The shared people filter (Progress toolbar). Owned by the caller so the
-  // board can read the same selection; this renders the control and narrows
-  // the timeline to the chosen people.
-  peopleOptions?: PersonOption[];
-  selectedPeopleIds?: string[];
-  onPeopleChange?: (ids: string[]) => void;
 };
 
 function dateInputValue(iso: string): string {
@@ -206,9 +199,6 @@ export function EpicSprintManager({
   timelineTerms = [],
   onTaskClick,
   onAddTask,
-  peopleOptions = [],
-  selectedPeopleIds = [],
-  onPeopleChange,
 }: Props) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -337,144 +327,114 @@ export function EpicSprintManager({
   // It survives revalidation because we look the epic up fresh each render.
   const activeEpic = openEpicId ? epics.find((e) => e.id === openEpicId) : null;
 
-  // The Progress people filter narrows the timeline to the chosen people: a
-  // task survives if one of its assignees is selected, a story if it keeps a
-  // task, an epic if it keeps a story. Nobody selected = timeline untouched.
-  const filteredTimelineEpics = useMemo(() => {
-    if (selectedPeopleIds.length === 0) return timelineEpics;
-    const want = new Set(selectedPeopleIds);
-    return timelineEpics
-      .map((e) => ({
-        ...e,
-        stories: e.stories
-          .map((s) => ({
-            ...s,
-            tasks: s.tasks.filter((t) => t.assignees.some((a) => want.has(a.id))),
-          }))
-          .filter((s) => s.tasks.length > 0),
-      }))
-      .filter((e) => e.stories.length > 0);
-  }, [timelineEpics, selectedPeopleIds]);
+  // The Progress toolbar controls ride on the timeline's own header row now, to
+  // the right of the level legend (Epics / User stories / Tasks) via its
+  // `actions` slot: an Edit toggle that turns the bars draggable, and an Add
+  // menu. Under os and with manage rights only. The people filter used to sit
+  // here too and sliced the timeline; it now lives on the task board beside its
+  // search and only narrows the board's tasks.
+  const progressActions = os && canManage ? (
+    <div className="flex items-center gap-2.5">
+      <button
+        type="button"
+        className="os-edit-btn"
+        aria-pressed={editMode}
+        onClick={() => setEditMode((v) => !v)}
+        title={
+          editMode
+            ? "Done — bars are read-only again"
+            : "Drag a bar to move it, or its ends to change one date"
+        }
+      >
+        <Pencil className="h-[15px] w-[15px]" aria-hidden />
+        {editMode ? "Done" : "Edit"}
+      </button>
 
-  // The Progress toolbar: the people filter on the left, Edit + New on the
-  // right, sitting above the timeline. Shown under os; Edit/New need manage
-  // rights, the filter only needs someone to filter by.
-  const showToolbar = os && (canManage || peopleOptions.length > 0);
-  const progressToolbar = showToolbar ? (
-    <div className="flex items-center justify-between gap-2.5">
-      {peopleOptions.length > 0 && onPeopleChange ? (
-        <PeopleFilter
-          options={peopleOptions}
-          selected={selectedPeopleIds}
-          onChange={onPeopleChange}
-        />
-      ) : (
-        <span />
-      )}
-      {canManage && (
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            className="os-edit-btn"
-            aria-pressed={editMode}
-            onClick={() => setEditMode((v) => !v)}
-            title={
-              editMode
-                ? "Done — bars are read-only again"
-                : "Drag a bar to move it, or its ends to change one date"
-            }
+      <div ref={addMenuRef} className="relative">
+        <button
+          type="button"
+          className="os-add-btn"
+          aria-haspopup="menu"
+          aria-expanded={addMenuOpen}
+          onClick={() => {
+            setAddMenuOpen((v) => !v);
+            setAddStoryPicking(false);
+          }}
+        >
+          <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+          New
+        </button>
+        {addMenuOpen && (
+          <div
+            role="menu"
+            className="absolute top-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
           >
-            <Pencil className="h-[15px] w-[15px]" aria-hidden />
-            {editMode ? "Done" : "Edit"}
-          </button>
-
-          <div ref={addMenuRef} className="relative">
-            <button
-              type="button"
-              className="os-add-btn"
-              aria-haspopup="menu"
-              aria-expanded={addMenuOpen}
-              onClick={() => {
-                setAddMenuOpen((v) => !v);
-                setAddStoryPicking(false);
-              }}
-            >
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-              New
-            </button>
-            {addMenuOpen && (
-              <div
-                role="menu"
-                className="absolute top-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
-              >
-                {addStoryPicking ? (
-                  epics.length === 0 ? (
-                    <p className="px-2.5 py-2 text-sm text-os-muted">
-                      No epics yet — add one first.
-                    </p>
-                  ) : (
-                    <>
-                      <p className="px-2.5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
-                        Add story to
-                      </p>
-                      {epics.map((e) => (
-                        <button
-                          key={e.id}
-                          type="button"
-                          role="menuitem"
-                          className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
-                          onClick={() => {
-                            setAddMenuOpen(false);
-                            setAddStoryPicking(false);
-                            setAutoNewStoryEpicId(e.id);
-                            openEpic(e.id);
-                          }}
-                        >
-                          <span className="truncate">{e.title}</span>
-                        </button>
-                      ))}
-                    </>
-                  )
-                ) : (
-                  <>
-                    {onAddTask && (
-                      <AddMenuItem
-                        label="Task"
-                        icon={<CheckSquare className="h-4 w-4" aria-hidden />}
-                        onClick={() => {
-                          setAddMenuOpen(false);
-                          onAddTask();
-                        }}
-                      />
-                    )}
-                    <AddMenuItem
-                      label="User story"
-                      icon={<FileText className="h-4 w-4" aria-hidden />}
-                      onClick={() => setAddStoryPicking(true)}
-                    />
-                    <AddMenuItem
-                      label="Epic"
-                      icon={<Zap className="h-4 w-4" aria-hidden />}
+            {addStoryPicking ? (
+              epics.length === 0 ? (
+                <p className="px-2.5 py-2 text-sm text-os-muted">
+                  No epics yet — add one first.
+                </p>
+              ) : (
+                <>
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
+                    Add story to
+                  </p>
+                  {epics.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
                       onClick={() => {
                         setAddMenuOpen(false);
-                        setNewEpicOpen(true);
+                        setAddStoryPicking(false);
+                        setAutoNewStoryEpicId(e.id);
+                        openEpic(e.id);
                       }}
-                    />
-                    <AddMenuItem
-                      label="Meeting"
-                      icon={<Calendar className="h-4 w-4" aria-hidden />}
-                      onClick={() => {
-                        setAddMenuOpen(false);
-                        navigate(`/calendar?tab=schedule&project=${projectId}`);
-                      }}
-                    />
-                  </>
+                    >
+                      <span className="truncate">{e.title}</span>
+                    </button>
+                  ))}
+                </>
+              )
+            ) : (
+              <>
+                {onAddTask && (
+                  <AddMenuItem
+                    label="Task"
+                    icon={<CheckSquare className="h-4 w-4" aria-hidden />}
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      onAddTask();
+                    }}
+                  />
                 )}
-              </div>
+                <AddMenuItem
+                  label="User story"
+                  icon={<FileText className="h-4 w-4" aria-hidden />}
+                  onClick={() => setAddStoryPicking(true)}
+                />
+                <AddMenuItem
+                  label="Epic"
+                  icon={<Zap className="h-4 w-4" aria-hidden />}
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setNewEpicOpen(true);
+                  }}
+                />
+                <AddMenuItem
+                  label="Meeting"
+                  icon={<Calendar className="h-4 w-4" aria-hidden />}
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    navigate(`/calendar?tab=schedule&project=${projectId}`);
+                  }}
+                />
+              </>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   ) : null;
 
@@ -584,19 +544,19 @@ export function EpicSprintManager({
         )}
       </Modal>
 
-      {/* The design's toolbar sits above the timeline: people filter left,
-          Edit + New right. Its Add menu opens downward into the timeline. */}
-      {progressToolbar}
-
       {/* Clicking an epic or story bar opens the detail/edit modal; a task bar
-          defers to the caller, which opens the board's task modal via ?task=. */}
+          defers to the caller, which opens the board's task modal via ?task=.
+          The Edit/New controls (os) and the classic "+ Add epic" button ride in
+          the timeline's own header row, right of the level legend. */}
       <EpicsTimeline
-        epics={filteredTimelineEpics}
+        epics={timelineEpics}
         taskCounts={taskCounts}
         terms={timelineTerms}
         storyDependencies={storyDependencies}
         actions={
-          canManage && !os ? (
+          os ? (
+            progressActions
+          ) : canManage ? (
             <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>
               + Add epic
             </Button>
