@@ -854,7 +854,7 @@ function PublicPill({ status }: { status: ShowcaseStatusValue | null }) {
   return (
     <span
       title="Published on dali.website"
-      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border bg-accent-coral/10 text-accent-coral border-accent-coral/40"
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border bg-os-bg/85 text-accent-coral border-accent-coral/40"
     >
       <Globe className="w-3 h-3" />
       {SHOWCASE_LABELS.Published}

@@ -331,24 +331,29 @@ function BoardColumn<TCard>({
           "px-3 py-2 border-b border-border flex items-center justify-between"
         }
       >
-        <div className="min-w-0 flex-1">
-          {/* The os type scale starts a step up from the brand shell's: a
-              column name is 16px there, its counts 12px, not 14/11. */}
-          <div
-            className={cn(
-              "text-foreground truncate",
-              os ? "text-base font-medium" : "text-sm font-semibold",
-            )}
-            title={typeof column.title === "string" ? column.title : undefined}
-          >
-            {column.title}
-          </div>
-          {column.subtitle != null && (
-            <div className={cn("text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
-              {column.subtitle}
+        {/* Only take the growing slot when there's a title/subtitle to show.
+            A collapsed column has none, so an empty flex-1 spacer here would
+            shove its headerExtra (the expand button) off-centre. */}
+        {(column.title != null || column.subtitle != null) && (
+          <div className="min-w-0 flex-1">
+            {/* The os type scale starts a step up from the brand shell's: a
+                column name is 16px there, its counts 12px, not 14/11. */}
+            <div
+              className={cn(
+                "text-foreground truncate",
+                os ? "text-base font-medium" : "text-sm font-semibold",
+              )}
+              title={typeof column.title === "string" ? column.title : undefined}
+            >
+              {column.title}
             </div>
-          )}
-        </div>
+            {column.subtitle != null && (
+              <div className={cn("text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
+                {column.subtitle}
+              </div>
+            )}
+          </div>
+        )}
         {column.headerExtra ?? (
           <div
             className={cn(

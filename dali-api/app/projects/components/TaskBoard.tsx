@@ -749,8 +749,11 @@ export function TaskBoard({
         </div>
       ),
       cards,
-      // The status columns keep the original taller drop zone.
-      listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
+      // The status columns keep the original taller drop zone, but cap their
+      // height and scroll within it so a column with dozens of tasks can't
+      // stretch the whole hub taller than the viewport. Mirrors StaffingBoard.
+      listClassName:
+        "flex flex-col gap-2 p-2 min-h-[360px] max-h-[calc(100vh-14rem)] overflow-y-auto",
       listHeader: canManage ? (
         <button
           type="button"
