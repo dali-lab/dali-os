@@ -15,7 +15,6 @@ import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 const mockPrisma = prisma as unknown as {
   userAvailabilitySettings: { findUnique: ReturnType<typeof vi.fn> };
   workingHoursDay: { findMany: ReturnType<typeof vi.fn> };
-  manualBlock: { findMany: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -26,7 +25,6 @@ beforeEach(() => {
     defaultEventBufferMin: 0,
   });
   mockPrisma.workingHoursDay.findMany.mockResolvedValue([]);
-  mockPrisma.manualBlock.findMany.mockResolvedValue([]);
 });
 
 describe("find_mutual_freebusy", () => {

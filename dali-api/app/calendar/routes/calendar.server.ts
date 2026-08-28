@@ -26,7 +26,6 @@ import {
 import { expandClassOccurrences } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
-import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import {
   setUserTimesheetSync,
   syncTimeEntryToGoogle,
@@ -55,7 +54,6 @@ import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezo
 import type {
   WhSegment,
   WhDay,
-  ManualBlockDTO,
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
@@ -296,10 +294,6 @@ function bareRrule(recurrence: string[]): string | null {
 
 type EventScope = "this" | "following" | "all";
 
-// In-app destination sentinel — kept local so handleEventAction can reference it
-// without importing from the client-side calendar.tsx.
-const LOCAL_DEST = "local";
-
 // Create / edit / move / delete a Google Calendar event (calendar-google-crud
 // flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
@@ -317,116 +311,12 @@ async function handleEventAction(
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
   const dest = get("destination");
-  const isLocalDest = dest === LOCAL_DEST;
   const [linkId, calRaw] = dest.split(":");
   const calendarId = calRaw || undefined;
   const scope = (get("scope") || "this") as EventScope;
   const recurringEventId = get("recurringEventId") || null;
   const originalStartIso = get("originalStartIso") || null;
   try {
-    // In-app (DALI) creation is a ManualBlock; everything else needs a Google link.
-    if (intent === "event-create" && isLocalDest) {
-      const title = get("title").trim();
-      const startIso = get("startIso");
-      const endIso = get("endIso");
-      if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
-      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
-      const allDay = get("allDay") === "1";
-      const recurrenceRule = get("recurrenceRule").trim() || null;
-      const isWork = get("isWork") === "1";
-      const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
-      const roleRefId = get("roleRefId") || null;
-      const workNote = get("workNote").trim() || null;
-      if (isWork && recurrenceRule) {
-        return Response.json({ error: "Recurring blocks can't be added to the timesheet yet." }, { status: 400 });
-      }
-      if (isWork && !workNote) {
-        return Response.json({ error: "Add a timesheet description." }, { status: 400 });
-      }
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      const block = await prisma.manualBlock.create({
-        data: { userId, title, startTime, endTime, allDay, recurrenceRule, isWork, assignmentType, roleRefId, workNote },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: block.id,
-        userId,
-        isWork,
-        assignmentType,
-        roleRefId,
-        title,
-        workNote,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    // In-app block edit / move / delete — the same composer, editing a
-    // ManualBlock through the local destination.
-    const manualBlockId = get("manualBlockId") || null;
-    if (isLocalDest && manualBlockId) {
-      const block = await prisma.manualBlock.findUnique({ where: { id: manualBlockId } });
-      if (!block || block.userId !== userId) return Response.json({ error: "Not found" }, { status: 404 });
-      if (intent === "event-delete") {
-        await prisma.$transaction([
-          prisma.timeEntry.deleteMany({ where: { manualBlockId, userId } }),
-          prisma.manualBlock.delete({ where: { id: manualBlockId } }),
-        ]);
-        return null;
-      }
-      const startIso = get("startIso");
-      const endIso = get("endIso");
-      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      if (intent === "event-move") {
-        await prisma.manualBlock.update({ where: { id: manualBlockId }, data: { startTime, endTime } });
-        await syncManualBlockTimeEntry({
-          manualBlockId,
-          userId,
-          isWork: block.isWork,
-          assignmentType: block.assignmentType,
-          roleRefId: block.roleRefId,
-          title: block.title,
-          workNote: block.workNote,
-          startTime,
-          endTime,
-        });
-        return null;
-      }
-      if (intent === "event-update") {
-        const title = get("title").trim();
-        if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
-        const isWork = get("isWork") === "1";
-        const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
-        const roleRefId = get("roleRefId") || null;
-        const workNote = get("workNote").trim() || null;
-        const allDay = get("allDay") === "1";
-        if (isWork && !workNote) {
-          return Response.json({ error: "Add a timesheet description." }, { status: 400 });
-        }
-        await prisma.manualBlock.update({
-          where: { id: manualBlockId },
-          data: { title, startTime, endTime, allDay, isWork, assignmentType, roleRefId, workNote },
-        });
-        const sync = await syncManualBlockTimeEntry({
-          manualBlockId,
-          userId,
-          isWork,
-          assignmentType,
-          roleRefId,
-          title,
-          workNote,
-          startTime,
-          endTime,
-        });
-        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-        return null;
-      }
-    }
-
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
 
@@ -644,35 +534,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent };
     case "set-event-buffer":
       return { intent, defaultEventBufferMin: asInt(get("defaultEventBufferMin")) };
-    case "add-manual-block":
-      return {
-        intent,
-        title: get("title"),
-        startTime: get("startTime"),
-        endTime: get("endTime"),
-        allDay: get("allDay") ? asBool(get("allDay")) : false,
-        recurrenceRule: get("recurrenceRule") || null,
-        isWork: get("isWork") ? asBool(get("isWork")) : false,
-        assignmentType: get("assignmentType") || null,
-        roleRefId: get("roleRefId") || null,
-      };
-    case "update-manual-block":
-      return {
-        intent,
-        id: get("id"),
-        title: get("title"),
-        startTime: get("startTime"),
-        endTime: get("endTime"),
-        allDay: get("allDay") === undefined ? undefined : asBool(get("allDay")),
-        recurrenceRule:
-          get("recurrenceRule") === undefined ? undefined : get("recurrenceRule") || null,
-        isWork: get("isWork") === undefined ? undefined : asBool(get("isWork")),
-        assignmentType:
-          get("assignmentType") === undefined ? undefined : get("assignmentType") || null,
-        roleRefId: get("roleRefId") === undefined ? undefined : get("roleRefId") || null,
-      };
-    case "remove-manual-block":
-      return { intent, id: get("id") };
     case "remove-calendar-link":
       return { intent, linkId: get("linkId") };
     case "toggle-sub-calendar":
@@ -880,24 +741,9 @@ export async function loadCalendarData(request: Request) {
   // even when the user navigates a few weeks into the past or future.
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
 
-  // blocks and timeEntryRows are fetched here (not in the earlier Promise.all)
-  // because they need weekStart for date-window filtering.
-  const [blocks, timeEntryRows] = await Promise.all([
-    prisma.manualBlock.findMany({
-      where: {
-        userId,
-        // Keep ALL recurring blocks (they expand across any week) and only
-        // filter one-off non-recurring blocks to those that end on/after the
-        // visible week start.
-        OR: [
-          { recurrenceRule: { not: null } },
-          { recurrenceRule: null, endTime: { gte: weekStart } },
-        ],
-      },
-      orderBy: { startTime: "asc" },
-      take: 200,
-    }),
-    prisma.timeEntry.findMany({
+  // timeEntryRows fetched here (not in the earlier Promise.all) because they
+  // need weekStart for the date-window lower bound.
+  const timeEntryRows = await prisma.timeEntry.findMany({
       where: {
         userId,
         date: { gte: timeEntryLowerBound },
@@ -908,7 +754,6 @@ export async function loadCalendarData(request: Request) {
         id: true,
         source: true,
         scheduledMeetingId: true,
-        manualBlockId: true,
         assignmentType: true,
         roleRefId: true,
         projectId: true,
@@ -919,8 +764,7 @@ export async function loadCalendarData(request: Request) {
         endTime: true,
         meeting: { select: { notePage: { select: { id: true } } } },
       },
-    }),
-  ]);
+    });
 
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
@@ -1166,17 +1010,6 @@ export async function loadCalendarData(request: Request) {
     defaultEventBufferMin: bufferMin,
     workingHours,
     hasPersistedWorkingHours: hasAnyPersisted,
-    manualBlocks: blocks.map((b) => ({
-      id: b.id,
-      title: b.title,
-      startTime: b.startTime.toISOString(),
-      endTime: b.endTime.toISOString(),
-      recurrenceRule: b.recurrenceRule,
-      isWork: b.isWork,
-      assignmentType: b.assignmentType,
-      roleRefId: b.roleRefId,
-      workNote: b.workNote,
-    })),
     calendarLinks,
     generalCalendar,
     weekStartIso: weekStart.toISOString(),
@@ -1197,7 +1030,7 @@ export async function loadCalendarData(request: Request) {
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
-      manualBlockId: t.manualBlockId,
+      manualBlockId: null,
       meetingNotePageId: t.meeting?.notePage?.id ?? null,
       assignmentType: t.assignmentType,
       roleRefId: t.roleRefId,
@@ -1380,108 +1213,6 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
-    case "add-manual-block": {
-      const startTime = new Date(input.startTime);
-      const endTime = new Date(input.endTime);
-      if (endTime <= startTime) {
-        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
-      }
-      const recurrenceRule = input.recurrenceRule ?? null;
-      if (input.isWork && recurrenceRule) {
-        return Response.json(
-          { error: "Recurring blocks can't be marked as work yet" },
-          { status: 400 },
-        );
-      }
-      const block = await prisma.manualBlock.create({
-        data: {
-          userId,
-          title: input.title,
-          startTime,
-          endTime,
-          allDay: input.allDay,
-          recurrenceRule,
-          isWork: input.isWork,
-          assignmentType: input.assignmentType ?? null,
-          roleRefId: input.roleRefId ?? null,
-        },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: block.id,
-        userId,
-        isWork: input.isWork,
-        assignmentType: input.assignmentType ?? null,
-        roleRefId: input.roleRefId ?? null,
-        title: input.title,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    case "update-manual-block": {
-      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      const startTime = input.startTime ? new Date(input.startTime) : existing.startTime;
-      const endTime = input.endTime ? new Date(input.endTime) : existing.endTime;
-      if (endTime <= startTime) {
-        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
-      }
-      const title = input.title ?? existing.title;
-      const recurrenceRule =
-        input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule;
-      const isWork = input.isWork ?? existing.isWork;
-      const assignmentType =
-        input.assignmentType === undefined ? existing.assignmentType : input.assignmentType;
-      const roleRefId = input.roleRefId === undefined ? existing.roleRefId : input.roleRefId;
-      if (isWork && recurrenceRule) {
-        return Response.json(
-          { error: "Recurring blocks can't be marked as work yet" },
-          { status: 400 },
-        );
-      }
-      await prisma.manualBlock.update({
-        where: { id: input.id },
-        data: {
-          title,
-          startTime,
-          endTime,
-          allDay: input.allDay ?? existing.allDay,
-          recurrenceRule,
-          isWork,
-          assignmentType,
-          roleRefId,
-        },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: input.id,
-        userId,
-        isWork,
-        assignmentType,
-        roleRefId,
-        title,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    case "remove-manual-block": {
-      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      await prisma.$transaction([
-        prisma.timeEntry.deleteMany({ where: { manualBlockId: input.id, userId } }),
-        prisma.manualBlock.delete({ where: { id: input.id } }),
-      ]);
-      return null;
-    }
-
     case "remove-calendar-link": {
       const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
       if (!link || link.userId !== userId) {
@@ -1586,40 +1317,6 @@ export async function submitCalendarAction(request: Request) {
       const note = input.note === undefined ? existing.note : input.note;
       const date = input.date ? new Date(input.date) : existing.date;
 
-      // Block-sourced rows mirror a ManualBlock on Availability — keep that
-      // block's title/time/role in lockstep so the two views don't diverge.
-      if (existing.source === "Block" && existing.manualBlockId) {
-        if (!startTime || !endTime) {
-          return Response.json({ error: "Block entries need a start and end time" }, { status: 400 });
-        }
-        if (!assignmentType || !roleRefId) {
-          return Response.json({ error: "A role is required" }, { status: 400 });
-        }
-        await prisma.manualBlock.update({
-          where: { id: existing.manualBlockId },
-          data: {
-            title: note?.trim() || "Work",
-            startTime,
-            endTime,
-            isWork: true,
-            assignmentType,
-            roleRefId,
-          },
-        });
-        const sync = await syncManualBlockTimeEntry({
-          manualBlockId: existing.manualBlockId,
-          userId,
-          isWork: true,
-          assignmentType,
-          roleRefId,
-          title: note?.trim() || "Work",
-          startTime,
-          endTime,
-        });
-        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-        return null;
-      }
-
       const updated = await prisma.timeEntry.update({
         where: { id: input.id },
         data: {
@@ -1641,17 +1338,6 @@ export async function submitCalendarAction(request: Request) {
       const existing = await prisma.timeEntry.findUnique({ where: { id: input.id } });
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      // Block rows own a ManualBlock — remove both so Availability doesn't keep
-      // a work block that no longer has hours on the timesheet.
-      if (existing.source === "Block" && existing.manualBlockId) {
-        await prisma.$transaction([
-          prisma.timeEntry.deleteMany({
-            where: { manualBlockId: existing.manualBlockId, userId },
-          }),
-          prisma.manualBlock.delete({ where: { id: existing.manualBlockId } }),
-        ]);
-        return null;
       }
       await removeTimeEntryFromGoogle(existing).catch(() => {});
       await prisma.timeEntry.delete({ where: { id: input.id } });

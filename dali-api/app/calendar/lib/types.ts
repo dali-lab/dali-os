@@ -24,20 +24,6 @@ export type WhDay = {
   segments: WhSegment[];
 };
 
-export type ManualBlockDTO = {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  recurrenceRule: string | null;
-  isWork: boolean;
-  assignmentType: RoleInstance["assignmentType"] | null;
-  roleRefId: string | null;
-  /** The timesheet entry's own description (distinct from the block title),
-   *  when this block logs to the timesheet. */
-  workNote: string | null;
-};
-
 export type SubCalendarDTO = {
   id: string;
   summary: string;
@@ -134,7 +120,7 @@ export type ClassDestinationDTO =
 
 export type TimeEntryDTO = {
   id: string;
-  source: "Meeting" | "Manual" | "Block";
+  source: "Meeting" | "Manual";
   scheduledMeetingId: string | null;
   manualBlockId: string | null;
   meetingNotePageId: string | null;
@@ -224,7 +210,6 @@ export type LoaderData = {
   // client uses this to (a) show the master toggle as off for brand-new users
   // and (b) seed the full week on first edit so unsaved defaults aren't lost.
   hasPersistedWorkingHours: boolean;
-  manualBlocks: ManualBlockDTO[];
   calendarLinks: CalendarLinkDTO[];
   generalCalendar: GeneralCalendarState;
   weekStartIso: string;

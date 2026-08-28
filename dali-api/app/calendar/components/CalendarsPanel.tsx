@@ -472,7 +472,6 @@ const LAYER_SPECS: Array<{
 }> = [
   { key: "external", label: "Linked calendars", swatch: "bg-accent-teal" },
   { key: "meetings", label: "Meetings", swatch: "bg-accent-coral" },
-  { key: "blocks", label: "Manual blocks", swatch: "bg-amber-500" },
   { key: "classes", label: "Classes", swatch: "bg-[#1E5779]", hideWhenClassesOff: true },
   { key: "logged", label: "Logged time", swatch: "bg-violet-500" },
   { key: "workingHours", label: "Working hours", swatch: "bg-gray-300" },

@@ -69,12 +69,9 @@ export function addDaysToDate(dateStr: string, days: number): string {
   return new Date(new Date(`${dateStr}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-export const LOCAL_DEST = "local";
-
-/** Where a new event can go: the in-app DALI calendar, or any writable Google
- *  calendar. "In app vs Google" is just a destination — not a different thing. */
+/** Where a new event can go: any writable Google calendar. */
 export function eventDestinations(data: LoaderData): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [{ value: LOCAL_DEST, label: "DALI calendar (in app)" }];
+  const out: { value: string; label: string }[] = [];
   for (const link of data.calendarLinks) {
     if (link.provider !== "Google" || !link.subCalendars) continue;
     const account = link.displayName || link.externalEmail || "Google";
@@ -371,7 +368,7 @@ export function EventDefaultsPopover({
   const currentDest =
     data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
       ? data.defaultEventDest
-      : dests.find((d) => d.value !== LOCAL_DEST)?.value ?? LOCAL_DEST;
+      : dests[0]?.value ?? "";
 
   return (
     <AnchoredPopover
@@ -480,12 +477,9 @@ export function EventComposer({
   const [title, setTitle] = useState(base?.title ?? "");
   const [allDay, setAllDay] = useState(base?.allDay ?? false);
   const [destination, setDestination] = useState(() => {
-    if (base?.manualBlockId) return LOCAL_DEST; // in-app block
     if (base?.linkId && base.calendarId) return `${base.linkId}:${base.calendarId}`;
-    // Default to the last-used destination (cookie); else the first Google
-    // calendar; else the in-app DALI calendar.
     if (data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)) return data.defaultEventDest;
-    return dests.find((d) => d.value !== LOCAL_DEST)?.value ?? LOCAL_DEST;
+    return dests[0]?.value ?? "";
   });
   const [location, setLocation] = useState(base?.location ?? "");
   const [description, setDescription] = useState(base?.description ?? "");
@@ -494,16 +488,6 @@ export function EventComposer({
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // In-app (DALI) blocks can log to the timesheet — the one property that only
-  // makes sense for the local destination.
-  const isLocal = destination === LOCAL_DEST;
-  const [isWork, setIsWork] = useState(base?.isWork ?? false);
-  const [roleKey, setRoleKey] = useState(
-    base?.assignmentType && base?.roleRefId ? `${base.assignmentType}::${base.roleRefId}` : "",
-  );
-  // The timesheet entry's own description — required when logging, kept separate
-  // from the event description above.
-  const [workNote, setWorkNote] = useState(base?.workNote ?? "");
 
   // Timed inputs are split into one date + start/end times (custom DateField /
   // TimeField), seeded as wall-clock in the user's timezone (the grid's) so the
@@ -561,8 +545,7 @@ export function EventComposer({
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
-    startIso < endIso &&
-    (!(isLocal && isWork) || (roleKey !== "" && workNote.trim() !== ""));
+    startIso < endIso;
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
   // Report the draft times to the grid so the live preview (a tentative block
@@ -618,17 +601,12 @@ export function EventComposer({
           <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3 px-4 py-4">
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
-            {editing && ev?.manualBlockId && <input type="hidden" name="manualBlockId" value={ev.manualBlockId} />}
             <input type="hidden" name="destination" value={destination} />
             <input type="hidden" name="startIso" value={startIso} />
             <input type="hidden" name="endIso" value={endIso} />
             <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
             <input type="hidden" name="timeZone" value={data.timezone} />
             <input type="hidden" name="recurrenceRule" value={!isRecurring ? (repeatSpecToRRule(repeat) ?? "") : ""} />
-            <input type="hidden" name="isWork" value={isLocal && isWork ? "1" : ""} />
-            <input type="hidden" name="assignmentType" value={isLocal && isWork ? roleKey.split("::")[0] ?? "" : ""} />
-            <input type="hidden" name="roleRefId" value={isLocal && isWork ? roleKey.split("::")[1] ?? "" : ""} />
-            <input type="hidden" name="workNote" value={isLocal && isWork ? workNote : ""} />
             {isRecurring && <input type="hidden" name="scope" value={scope} />}
             {isRecurring && ev?.recurringEventId && (
               <input type="hidden" name="recurringEventId" value={ev.recurringEventId} />
@@ -690,48 +668,6 @@ export function EventComposer({
                 )}
               </div>
             </div>
-
-            {/* Timesheet logging is the one thing unique to the in-app destination —
-                nested under Calendar with an empty icon gutter to keep alignment.
-                When on, the block mirrors into a linked timesheet entry with its
-                own role + description (kept separate from the event above). */}
-            {isLocal && data.myRoles.length > 0 && repeatSpecToRRule(repeat) === null && (
-              <div className="flex items-start gap-3">
-                <div className="w-4 shrink-0" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <label className="flex items-center gap-2 text-sm text-foreground">
-                    <Checkbox checked={isWork} onChange={() => setIsWork((v) => !v)} /> Add to timesheet
-                  </label>
-                  {isWork && (
-                    <div className="mt-2 flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-2.5">
-                      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <Clock className="h-3 w-3" /> Linked timesheet entry
-                      </div>
-                      <Select
-                        value={roleKey}
-                        onChange={setRoleKey}
-                        options={data.myRoles.map((r) => ({ value: `${r.assignmentType}::${r.roleRefId}`, label: r.label }))}
-                        placeholder="Which role?"
-                        buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
-                      />
-                      <textarea
-                        value={workNote}
-                        onChange={(e) => setWorkNote(e.target.value)}
-                        placeholder="What did you work on?"
-                        rows={2}
-                        aria-label="Timesheet description"
-                        className={cn(fieldCls, "w-full resize-y")}
-                      />
-                      {workNote.trim() === "" && (
-                        <p className="text-[11px] text-muted-foreground">
-                          A timesheet description is required — it's logged separately from the event.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             <div className="my-0.5 border-t border-border/60" />
 
@@ -813,7 +749,7 @@ export function EventComposer({
               >
                 {editing ? "Save" : "Create event"}
               </button>
-              {editing && ev?.writable && (ev.eventId || ev.manualBlockId) && (
+              {editing && ev?.writable && ev.eventId && (
                 <div className="ml-auto">
                   {confirmDelete ? (
                     <button
@@ -825,7 +761,6 @@ export function EventComposer({
                             intent: "event-delete",
                             destination,
                             eventId: ev.eventId ?? "",
-                            manualBlockId: ev.manualBlockId ?? "",
                             scope: isRecurring ? scope : "this",
                             recurringEventId: ev.recurringEventId ?? "",
                             originalStartIso: ev.startIso ?? "",

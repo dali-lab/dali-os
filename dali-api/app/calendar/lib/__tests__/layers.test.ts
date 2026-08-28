@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   buildGridDays,
-  buildBlocksLayer,
   buildExternalLayer,
   buildMeetingsLayer,
   buildClassesLayer,
@@ -21,7 +20,6 @@ function fixture(overrides: Partial<LoaderData> = {}): LoaderData {
   return {
     timezone: "UTC",
     externalEvents: [],
-    manualBlocks: [],
     meetingInvites: [],
     timeEntries: [],
     calendarLinks: [],
@@ -45,50 +43,6 @@ describe("buildGridDays", () => {
 
   it("supports a single day (day view)", () => {
     expect(buildGridDays("2026-08-18T00:00:00.000Z", 1)).toHaveLength(1);
-  });
-});
-
-describe("buildBlocksLayer", () => {
-  it("places a manual block in the right column at the right hour", () => {
-    const days = buildGridDays(WEEK, 7);
-    const data = fixture({
-      manualBlocks: [
-        {
-          id: "b1",
-          title: "Focus",
-          startTime: "2026-08-17T10:00:00.000Z", // Monday 10:00
-          endTime: "2026-08-17T11:30:00.000Z",
-          recurrenceRule: null,
-          isWork: false,
-          assignmentType: null,
-          roleRefId: null,
-          workNote: null,
-        },
-      ],
-    });
-    const layer = buildBlocksLayer(data, days);
-    expect(layer[1]).toHaveLength(1); // Monday = index 1
-    expect(layer[1][0]).toMatchObject({ startHour: 10, duration: 1.5, label: "Focus", className: EVENT_CORAL });
-  });
-
-  it("drops blocks outside the visible range", () => {
-    const days = buildGridDays(WEEK, 7);
-    const data = fixture({
-      manualBlocks: [
-        {
-          id: "b2",
-          title: "Next week",
-          startTime: "2026-08-30T10:00:00.000Z",
-          endTime: "2026-08-30T11:00:00.000Z",
-          recurrenceRule: null,
-          isWork: false,
-          assignmentType: null,
-          roleRefId: null,
-          workNote: null,
-        },
-      ],
-    });
-    expect(Object.keys(buildBlocksLayer(data, days))).toHaveLength(0);
   });
 });
 
@@ -249,28 +203,11 @@ describe("logged-time de-duplication", () => {
           isCoreMeeting: false,
         },
       ] as unknown as LoaderData["meetingInvites"],
-      manualBlocks: [
-        {
-          id: "b1",
-          title: "Deep work",
-          startTime: "2026-08-18T13:00:00.000Z",
-          endTime: "2026-08-18T15:00:00.000Z",
-          recurrenceRule: null,
-          isWork: true,
-          assignmentType: null,
-          roleRefId: null,
-        },
-      ] as unknown as LoaderData["manualBlocks"],
       timeEntries: [
         {
           id: "t-m", source: "Meeting", scheduledMeetingId: "m1", manualBlockId: null, meetingNotePageId: null,
           assignmentType: null, roleRefId: null, projectId: null, date: "2026-08-18", hours: 0.5, note: null,
           startTime: "2026-08-18T10:00:00.000Z", endTime: "2026-08-18T10:30:00.000Z",
-        },
-        {
-          id: "t-b", source: "Block", scheduledMeetingId: null, manualBlockId: "b1", meetingNotePageId: null,
-          assignmentType: null, roleRefId: null, projectId: null, date: "2026-08-18", hours: 2, note: null,
-          startTime: "2026-08-18T13:00:00.000Z", endTime: "2026-08-18T15:00:00.000Z",
         },
         {
           id: "t-s", source: "Manual", scheduledMeetingId: null, manualBlockId: null, meetingNotePageId: null,
@@ -281,40 +218,36 @@ describe("logged-time de-duplication", () => {
     });
   }
 
-  it("indexes sourced logged hours by meeting and block", () => {
+  it("indexes sourced logged hours by meeting", () => {
     const idx = buildLoggedSourceIndex(loggedFixture());
     expect(idx.byMeeting.get("m1")?.hours).toBe(0.5);
-    expect(idx.byBlock.get("b1")?.hours).toBe(2);
   });
 
-  it("annotates the source block with a logged accent instead of duplicating", () => {
+  it("annotates the source meeting with a logged accent instead of duplicating", () => {
     const data = loggedFixture();
     const idx = buildLoggedSourceIndex(data);
     expect(buildMeetingsLayer(data, days, idx.byMeeting)[2][0].loggedAccent).toMatchObject({ hours: 0.5 });
-    expect(buildBlocksLayer(data, days, idx.byBlock)[2][0].loggedAccent).toMatchObject({ hours: 2 });
   });
 
   it("indexes nothing for a role that's filtered out", () => {
     const idx = buildLoggedSourceIndex(loggedFixture(), new Set(["unassigned"]));
     expect(idx.byMeeting.size).toBe(0);
-    expect(idx.byBlock.size).toBe(0);
   });
 
-  it("suppresses sourced entries whose source layer is visible, keeps standalone", () => {
+  it("suppresses Meeting-sourced entries whose source layer is visible, keeps standalone", () => {
     const logged = buildLoggedTimeLayer(loggedFixture(), days, {
-      suppressSourced: { meetings: true, blocks: true },
+      suppressSourced: { meetings: true },
     });
     expect((logged[2] ?? []).map((b) => b.label)).toEqual(["Email"]);
   });
 
   it("keeps a sourced entry when its source layer is hidden", () => {
     const logged = buildLoggedTimeLayer(loggedFixture(), days, {
-      suppressSourced: { meetings: false, blocks: true },
+      suppressSourced: { meetings: false },
     });
     const labels = (logged[2] ?? []).map((b) => b.label);
     expect(labels).toContain("Meeting"); // meeting hidden → its logged block still draws
     expect(labels).toContain("Email");
-    expect(labels).not.toContain("Time entry"); // block-sourced suppressed
   });
 });
 

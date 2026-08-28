@@ -10,7 +10,7 @@ import {
   ScheduleWeekGrid,
   ParticipantPicker,
 } from "~/calendar/components/scheduling";
-import { eventDestinations, LOCAL_DEST, addDaysToDate } from "~/calendar/components/composer";
+import { eventDestinations, addDaysToDate } from "~/calendar/components/composer";
 import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
 import type { LoaderData } from "~/calendar/lib/types";
 
@@ -91,7 +91,7 @@ export function CreateEventModal({
   onClose,
 }: CreateEventModalProps) {
   // ── Destination (writable Google calendars) ──────────────────────────────
-  const dests = eventDestinations(data).filter((d) => d.value !== LOCAL_DEST);
+  const dests = eventDestinations(data);
   const defaultDest =
     data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
       ? data.defaultEventDest

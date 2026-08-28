@@ -24,8 +24,6 @@ import {
   EventDefaultsPopover,
   CalendarManagerModal,
   ClassesManagerModal,
-  eventDestinations,
-  LOCAL_DEST,
   type ComposerState,
 } from "~/calendar/components/composer";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
@@ -37,11 +35,9 @@ import { buttonClasses } from "~/components/ui/Button";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import type {
   WhDay,
-  ManualBlockDTO,
   CalendarLinkDTO,
   GroupOption,
   UserOption,
@@ -80,7 +76,6 @@ import {
 import {
   buildGridDays,
   buildExternalLayer,
-  buildBlocksLayer,
   buildMeetingsLayer,
   buildClassesLayer,
   buildAllDayItems,
@@ -105,8 +100,7 @@ import {
 import { MeetingComposer, type AddingMode, ParticipantPicker, ParticipantAvailabilityRoster, SelectedSlotBlock, SlotAttendeePopover, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetView, CreateFromDragPopover, TimesheetEditPopover } from "~/calendar/components/timesheet";
-import { LegacyCalendarTabs } from "~/calendar/components/legacy-tabs";
+import { TimesheetSummaryRail, TimesheetView, TimesheetEditPopover } from "~/calendar/components/timesheet";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -125,8 +119,7 @@ export async function action({ request }: Route.ActionArgs) { return submitCalen
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const unified = useFeatureFlag("calendar-unified");
-  return unified ? <CalendarScreen data={data} /> : <LegacyCalendarTabs data={data} />;
+  return <CalendarScreen data={data} />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -289,69 +282,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  // In-app blocks edit/move through the SAME composer as Google events — the
-  // block is presented to the composer as a local-destination "event".
-  const editBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
-    setComposer({
-      mode: "edit",
-      anchor,
-      event: {
-        startIso: b.startTime,
-        endIso: b.endTime,
-        title: b.title,
-        color: null,
-        writable: true,
-        allDay: false,
-        manualBlockId: b.id,
-        isWork: b.isWork,
-        assignmentType: b.assignmentType,
-        roleRefId: b.roleRefId,
-        workNote: b.workNote,
-      },
-    });
-  const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number, dayIdx?: number) => {
-    const { year, month, day } = dropYmd(b.startTime, dayIdx);
-    const toIso = (h: number) => {
-      const mins = Math.round(h * 60);
-      return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
-    };
-    const startIso = toIso(startHour);
-    const endIso = toIso(endHour);
-    setDragOverride({ key: `b:${b.id}`, startIso, endIso });
-    eventMoveFetcher.submit(
-      {
-        intent: "event-move",
-        destination: LOCAL_DEST,
-        manualBlockId: b.id,
-        startIso,
-        endIso,
-        timeZone: data.timezone,
-      },
-      { method: "post" },
-    );
-  };
   // Detail-popover Duplicate: open the composer in create mode, prefilled from
-  // the event/block (a fresh event — identity fields are dropped).
+  // the event (a fresh event — identity fields are dropped).
   const duplicateEvent = (e: ExternalEventDTO, anchor?: DOMRect) =>
     setComposer({ mode: "create", anchor, seed: e });
-  const duplicateBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
-    setComposer({
-      mode: "create",
-      anchor,
-      seed: {
-        startIso: b.startTime,
-        endIso: b.endTime,
-        title: b.title,
-        color: null,
-        writable: true,
-        allDay: false,
-        manualBlockId: b.id, // drives the destination default → in-app
-        isWork: b.isWork,
-        assignmentType: b.assignmentType,
-        roleRefId: b.roleRefId,
-        workNote: b.workNote,
-      },
-    });
   // Detail-popover Delete. Recurring events need the this/following/all scope
   // prompt, so route those through the composer; one-offs delete straight away.
   const deleteEvent = (e: ExternalEventDTO) => {
@@ -365,7 +299,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         intent: "event-delete",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
         eventId: e.eventId,
-        manualBlockId: "",
         scope: "this",
         recurringEventId: "",
         originalStartIso: e.startIso ?? "",
@@ -373,19 +306,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  const deleteBlock = (b: ManualBlockDTO) =>
-    eventMoveFetcher.submit(
-      {
-        intent: "event-delete",
-        destination: LOCAL_DEST,
-        manualBlockId: b.id,
-        eventId: "",
-        scope: "this",
-        recurringEventId: "",
-        originalStartIso: "",
-      },
-      { method: "post" },
-    );
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -511,10 +431,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           const o = overrides.find((ov) => ov.key === `g:${e.eventId}`);
           return o ? { ...e, startIso: o.startIso, endIso: o.endIso } : e;
         }),
-        manualBlocks: data.manualBlocks.map((b) => {
-          const o = overrides.find((ov) => ov.key === `b:${b.id}`);
-          return o ? { ...b, startTime: o.startIso, endTime: o.endIso } : b;
-        }),
       }
     : data;
 
@@ -546,25 +462,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }));
     }
   }
-  if (layers.blocks)
-    layerMaps.push(
-      buildBlocksLayer(
-        layerData,
-        days,
-        loggedIndex?.byBlock,
-        data.crudEnabled ? editBlock : undefined,
-        data.crudEnabled ? moveBlock : undefined,
-        data.crudEnabled ? duplicateBlock : undefined,
-        data.crudEnabled ? deleteBlock : undefined,
-      ),
-    );
   if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
   if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
   if (layers.logged)
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        suppressSourced: { meetings: layers.meetings, blocks: layers.blocks },
+        suppressSourced: { meetings: layers.meetings },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
@@ -916,24 +820,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       : createSel
                   }
                   selectionPopover={
-                    editor
-                      ? () =>
-                          editor.kind === "edit" ? (
-                            <TimesheetEditPopover
-                              entry={editor.entry}
-                              startLocal={editor.startLocal}
-                              endLocal={editor.endLocal}
-                              myRoles={data.myRoles}
-                              onClose={() => setEditor(null)}
-                            />
-                          ) : (
-                            <CreateFromDragPopover
-                              startLocal={editor.startLocal}
-                              endLocal={editor.endLocal}
-                              myRoles={data.myRoles}
-                              onClose={() => setEditor(null)}
-                            />
-                          )
+                    editor?.kind === "edit"
+                      ? () => (
+                          <TimesheetEditPopover
+                            entry={editor.entry}
+                            startLocal={editor.startLocal}
+                            endLocal={editor.endLocal}
+                            myRoles={data.myRoles}
+                            onClose={() => setEditor(null)}
+                          />
+                        )
                       : undefined
                   }
                   onSelectionDismiss={() => setEditor(null)}
@@ -1060,7 +956,6 @@ type CalendarLayerSpec = {
 
 const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
   { key: "workingHours", label: "Working hours", swatch: "bg-muted-foreground/40" },
-  { key: "blocks", label: "My blocks", swatch: "bg-accent-coral" },
   { key: "external", label: "Linked calendars", swatch: "bg-accent-teal-light" },
   { key: "meetings", label: "Meetings", swatch: "bg-accent-teal" },
   { key: "classes", label: "Classes", swatch: "bg-[#1E5779]" },
