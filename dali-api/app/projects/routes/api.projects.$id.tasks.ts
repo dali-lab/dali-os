@@ -161,27 +161,33 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
   }
-  if (body.epicId != null) {
+  // A story pins its epic (UserStory.epicId is required), so the two are never
+  // set independently: a story derives the epic; only a story-less task takes a
+  // free-standing epic. This keeps task.storyId and task.epicId from diverging
+  // — the timeline nests a task under its story's epic regardless of epicId.
+  let epicId: string | null = body.epicId ?? null;
+  const storyId: string | null = body.storyId ?? null;
+  if (storyId != null) {
+    const story = await prisma.userStory.findUnique({
+      where: { id: storyId },
+      select: { epicId: true, epic: { select: { projectId: true } } },
+    });
+    if (!story || story.epic.projectId !== params.id) {
+      return withCors(
+        request,
+        Response.json({ error: "Story is not part of this project" }, { status: 400 }),
+      );
+    }
+    epicId = story.epicId;
+  } else if (epicId != null) {
     const epic = await prisma.epic.findUnique({
-      where: { id: body.epicId },
+      where: { id: epicId },
       select: { projectId: true },
     });
     if (!epic || epic.projectId !== params.id) {
       return withCors(
         request,
         Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
-      );
-    }
-  }
-  if (body.storyId != null) {
-    const story = await prisma.userStory.findUnique({
-      where: { id: body.storyId },
-      select: { epic: { select: { projectId: true } } },
-    });
-    if (!story || story.epic.projectId !== params.id) {
-      return withCors(
-        request,
-        Response.json({ error: "Story is not part of this project" }, { status: 400 }),
       );
     }
   }
@@ -223,8 +229,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       status,
       position,
       sprintId: body.sprintId ?? null,
-      epicId: body.epicId ?? null,
-      storyId: body.storyId ?? null,
+      epicId,
+      storyId,
       dueAt,
       startsAt,
       createdById: auth.user.sub,

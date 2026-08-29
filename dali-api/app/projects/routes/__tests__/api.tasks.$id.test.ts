@@ -26,6 +26,7 @@ const mockPrisma = prisma as unknown as {
   };
   sprint: { findUnique: ReturnType<typeof vi.fn> };
   epic: { findUnique: ReturnType<typeof vi.fn> };
+  userStory: { findUnique: ReturnType<typeof vi.fn> };
   taskAssignee: {
     findMany: ReturnType<typeof vi.fn>;
     createMany: ReturnType<typeof vi.fn>;
@@ -61,6 +62,7 @@ beforeEach(() => {
   };
   mockPrisma.sprint = { findUnique: vi.fn() };
   mockPrisma.epic = { findUnique: vi.fn() };
+  mockPrisma.userStory = { findUnique: vi.fn() };
   mockPrisma.taskAssignee = {
     findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -127,6 +129,72 @@ describe("PATCH /api/tasks/:id epic", () => {
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
       data: { epicId: "epic-1", activityAt: expect.any(Date) },
+    });
+  });
+});
+
+describe("PATCH /api/tasks/:id story", () => {
+  it("rejects a story that belongs to another project", async () => {
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "epic-x",
+      epic: { projectId: "other-project" },
+    });
+    const res = await call("PATCH", { storyId: "story-9" });
+    expect(res.status).toBe(400);
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("links a story and pins the epic to the story's epic", async () => {
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "epic-A",
+      epic: { projectId: PROJECT_ID },
+    });
+    const res = await call("PATCH", { storyId: "story-1" });
+    expect(res.status).toBe(200);
+    // A story implies its epic — both are written, even though only storyId
+    // was sent, so the two can never disagree.
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { storyId: "story-1", epicId: "epic-A", activityAt: expect.any(Date) },
+    });
+  });
+
+  it("drops an orphaned story when the epic moves out from under it", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: TASK_ID,
+      githubIssueNumber: null,
+      projectId: PROJECT_ID,
+      epicId: "epic-A",
+      storyId: "story-1",
+    });
+    // The task's current story still lives under epic-A.
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "epic-A",
+      epic: { projectId: PROJECT_ID },
+    });
+    mockPrisma.epic.findUnique.mockResolvedValue({ projectId: PROJECT_ID });
+    const res = await call("PATCH", { epicId: "epic-B" });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { epicId: "epic-B", storyId: null, activityAt: expect.any(Date) },
+    });
+  });
+
+  it("unlinks the story on null without touching the epic", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: TASK_ID,
+      githubIssueNumber: null,
+      projectId: PROJECT_ID,
+      epicId: "epic-A",
+      storyId: "story-1",
+    });
+    const res = await call("PATCH", { storyId: null });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.userStory.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { storyId: null, activityAt: expect.any(Date) },
     });
   });
 });
