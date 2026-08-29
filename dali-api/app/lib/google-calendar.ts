@@ -692,11 +692,20 @@ export type CreateGoogleEventInput = {
   // All-day event: startIso/endIso are read as dates (YYYY-MM-DD portion); end
   // is Google-exclusive, so pass the day AFTER the last day.
   allDay?: boolean;
+  // Mint a Google Meet conference on the event. Sets conferenceDataVersion=1 and
+  // a createRequest so Google generates a hangoutsMeet link; the returned
+  // `meetUrl` carries the join URL.
+  addMeet?: boolean;
+  // Who Google emails about the event. "all" (default) lets Google send the
+  // Gmail invite on our behalf; "none" suppresses it — used when the caller
+  // owns invite delivery itself (interviews send their own templated emails and
+  // create the event only to host the Meet link).
+  sendUpdates?: "all" | "none";
 };
 
 export async function createGoogleCalendarEvent(
   input: CreateGoogleEventInput,
-): Promise<{ eventId: string; htmlLink: string | null }> {
+): Promise<{ eventId: string; htmlLink: string | null; meetUrl: string | null }> {
   const token = await getValidAccessTokenForLink(input.linkId);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
@@ -718,8 +727,20 @@ export async function createGoogleCalendarEvent(
     body.recurrence = [rule];
   }
   if (input.attendees.length > 0) body.attendees = input.attendees;
+  if (input.addMeet) {
+    body.conferenceData = {
+      createRequest: {
+        // Unique per request; a reused id returns the same conference, so a
+        // random suffix keeps every insert minting a fresh Meet link.
+        requestId: `dali-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
   // sendUpdates=all → Google sends Gmail invites to all attendees on our behalf.
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`;
+  const params = new URLSearchParams({ sendUpdates: input.sendUpdates ?? "all" });
+  if (input.addMeet) params.set("conferenceDataVersion", "1");
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?${params.toString()}`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -732,9 +753,35 @@ export async function createGoogleCalendarEvent(
     const detail = await extractGoogleErrorDetail(res);
     throw new Error(`Google events.insert failed (${res.status}): ${detail}`);
   }
-  const data = (await res.json()) as { id?: string; htmlLink?: string };
+  const data = (await res.json()) as GoogleEvent;
   if (!data.id) throw new Error("Google events.insert returned no event id");
-  return { eventId: data.id, htmlLink: data.htmlLink ?? null };
+  let meetUrl: string | null = null;
+  if (input.addMeet) {
+    // Conference creation is async: the insert can return before Google has
+    // populated the link (createRequest.status "pending"). Take it from the
+    // insert response when present, else re-read the event once.
+    meetUrl =
+      conferenceUrl(data) ??
+      (await fetchEventMeetUrl(token, calendarId, data.id).catch(() => null));
+  }
+  return { eventId: data.id, htmlLink: data.htmlLink ?? null, meetUrl };
+}
+
+/** Re-read a just-created event's Meet link. Called when events.insert returned
+ *  before the conference was minted (status "pending"). Best-effort: any failure
+ *  resolves to null and the link is picked up later on the calendar read path. */
+async function fetchEventMeetUrl(
+  token: string,
+  encodedCalendarId: string,
+  eventId: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}` +
+      `?fields=hangoutLink,conferenceData(entryPoints(entryPointType,uri))`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return null;
+  return conferenceUrl((await res.json()) as GoogleEvent) ?? null;
 }
 
 /** Edit an event we created (a class's time / title / recurrence changed). Only
@@ -751,6 +798,12 @@ export async function patchGoogleCalendarEvent(input: {
   allDay?: boolean;
   recurrenceRule?: string | null;
   timeZone?: string;
+  // Replace the guest list (interviews re-sync attendees on reassignment so the
+  // new interviewer is a recognized guest on the Meet event).
+  attendees?: GoogleAttendee[];
+  // Defaults to Google's own default for patch (no notifications). Pass "all"
+  // to have Google email guests about the change.
+  sendUpdates?: "all" | "none";
 }): Promise<void> {
   const token = await getValidAccessTokenForLink(input.linkId);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
@@ -761,13 +814,17 @@ export async function patchGoogleCalendarEvent(input: {
   if (input.location !== undefined) body.location = input.location;
   if (input.startIso) body.start = input.allDay ? { date: input.startIso.slice(0, 10) } : { dateTime: input.startIso, timeZone };
   if (input.endIso) body.end = input.allDay ? { date: input.endIso.slice(0, 10) } : { dateTime: input.endIso, timeZone };
+  if (input.attendees !== undefined) body.attendees = input.attendees;
   if (input.recurrenceRule !== undefined) {
     body.recurrence = input.recurrenceRule
       ? [input.recurrenceRule.startsWith("RRULE:") ? input.recurrenceRule : `RRULE:${input.recurrenceRule}`]
       : [];
   }
+  const patchUrl =
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.eventId)}` +
+    (input.sendUpdates ? `?sendUpdates=${input.sendUpdates}` : "");
   const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.eventId)}`,
+    patchUrl,
     {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

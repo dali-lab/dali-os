@@ -181,6 +181,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         status: true,
         location: true,
         zoomJoinUrl: true,
+        videoUrl: true,
         // Joint outcome — synced from `interview:{id}:recommendation` doc.
         recommendation: true,
         recommendationNotes: true,
@@ -299,6 +300,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: iv.status,
       location: iv.location,
       zoomJoinUrl: iv.zoomJoinUrl,
+      videoUrl: iv.videoUrl,
       recommendation: iv.recommendation,
       recommendationNotes: iv.recommendationNotes,
       jointNotes: jointNotes
@@ -616,6 +618,7 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     status: iv.status,
     location: iv.location,
     zoomJoinUrl: iv.zoomJoinUrl,
+    videoUrl: iv.videoUrl,
     recommendation: iv.recommendation,
     recommendationNotes: iv.recommendationNotes,
     jointNotes: iv.jointNotes,

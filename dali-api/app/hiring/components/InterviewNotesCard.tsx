@@ -25,6 +25,7 @@ export interface InterviewNotesData {
   status: string; // key into labels.INTERVIEW_STATUS_COLORS
   location?: string | null;
   zoomJoinUrl?: string | null;
+  videoUrl?: string | null;
   recommendation?: string | null;
   recommendationNotes?: string | null;
   // Either the rich shape (full route) or a plain string (sidebar route).
@@ -168,14 +169,14 @@ export function InterviewNotesCard({
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="w-3.5 h-3.5" aria-hidden />
             {locationLabel}
-            {interview.location === "Online" && interview.zoomJoinUrl && (
+            {interview.location === "Online" && (interview.videoUrl ?? interview.zoomJoinUrl) && (
               <a
-                href={interview.zoomJoinUrl}
+                href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline ml-1"
               >
-                link
+                Join Google Meet
               </a>
             )}
           </span>

@@ -2,7 +2,8 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewForms } from "~/lib/roles";
+import { canViewForms, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { parseJson } from "~/lib/validate";
 import {
   createScheduledMeeting,
@@ -27,6 +28,9 @@ const Base = {
   // Core-only marker that lifts the meeting onto the Core hub calendar without
   // changing its participant scope. Gated below, not by the schema.
   isCoreMeeting: z.boolean().optional(),
+  // Opt in to a Google Meet link. Only honored when the google-meet flag is on
+  // for the caller and the meeting is pushed to a linked Google calendar.
+  addMeet: z.boolean().optional(),
 } as const;
 
 const CreateSchema = z
@@ -79,6 +83,17 @@ export async function action({ request }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
+  // Only mint a Meet link when the feature is on for this user; the create
+  // helper further requires an actual Google-calendar push for it to take hold.
+  const addMeet =
+    !!body.addMeet &&
+    (await isFeatureEnabled(
+      "google-meet",
+      auth.user.sub,
+      await getUserRoles(auth.user.sub, request),
+      request,
+    ));
+
   const result = await createScheduledMeeting({
     organizerId: auth.user.sub,
     organizerEmail: auth.user.email,
@@ -93,6 +108,7 @@ export async function action({ request }: Route.ActionArgs) {
     projectId: body.projectId,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: body.isCoreMeeting,
+    addMeet,
   });
 
   if (!result.ok) {

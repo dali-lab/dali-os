@@ -79,6 +79,7 @@ interface InterviewRow {
   status: string
   location: string
   zoomJoinUrl: string | null
+  videoUrl: string | null
   domainApplication: {
     id: string
     domain: { name: string }
@@ -2147,7 +2148,7 @@ export default function HiringLeadCycleDetails() {
                                 if (res.ok) {
                                   const updated = await res.json()
                                   setInterviews(prev => prev.map(i =>
-                                    i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                                    i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
                                   ))
                                 } else {
                                   const body = await res.json().catch(() => ({}))
@@ -2169,39 +2170,9 @@ export default function HiringLeadCycleDetails() {
                              interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
                           </span>
                         )}
-                        {interview.location === 'Online' && isFuture && interview.status === 'Scheduled' && (
-                          <Tooltip content="Saves a location-change email to applicant + both interviewers when you tab away" variant="rich">
-                          <input
-                            type="url"
-                            placeholder="Paste meeting link (emails on save)"
-                            defaultValue={interview.zoomJoinUrl ?? ''}
-                            onBlur={async (e) => {
-                              let meetingUrl = e.target.value.trim()
-                              if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
-                                meetingUrl = `https://${meetingUrl}`
-                                e.target.value = meetingUrl
-                              }
-                              if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
-                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
-                                method: 'PATCH',
-                                credentials: 'include',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ location: 'Online', meetingUrl }),
-                              })
-                              if (res.ok) {
-                                setInterviews(prev => prev.map(i =>
-                                  i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
-                                ))
-                              }
-                            }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                            className="block w-full text-xs border border-border rounded px-1.5 py-0.5 bg-card mt-1 placeholder:text-muted-foreground/50"
-                          />
-                          </Tooltip>
-                        )}
-                        {interview.location === 'Online' && interview.zoomJoinUrl && !(isFuture && interview.status === 'Scheduled') && (
-                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-                             className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                        {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+                          <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
+                             className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -2358,7 +2329,7 @@ export default function HiringLeadCycleDetails() {
                             if (res.ok) {
                               const updated = await res.json()
                               setInterviews(prev => prev.map(i =>
-                                i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                                i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
                               ))
                             } else {
                               const body = await res.json().catch(() => ({}))
@@ -2378,36 +2349,9 @@ export default function HiringLeadCycleDetails() {
                            interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
                         </span>
                       )}
-                      {interview.location === 'Online' && editable && (
-                        <input
-                          type="url"
-                          placeholder="Paste meeting link"
-                          defaultValue={interview.zoomJoinUrl ?? ''}
-                          onBlur={async (e) => {
-                            let meetingUrl = e.target.value.trim()
-                            if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
-                              meetingUrl = `https://${meetingUrl}`
-                              e.target.value = meetingUrl
-                            }
-                            if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
-                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
-                              method: 'PATCH', credentials: 'include',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ location: 'Online', meetingUrl }),
-                            })
-                            if (res.ok) {
-                              setInterviews(prev => prev.map(i =>
-                                i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
-                              ))
-                            }
-                          }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                          className="block w-full text-xs border border-border rounded px-1.5 py-1 bg-card mt-1 placeholder:text-muted-foreground/50"
-                        />
-                      )}
-                      {interview.location === 'Online' && interview.zoomJoinUrl && !editable && (
-                        <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-                           className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                      {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+                        <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
+                           className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
                       )}
                     </div>
                     <div>

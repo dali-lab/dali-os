@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { AlignLeft, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
+import { AlignLeft, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
@@ -157,6 +158,13 @@ export function CreateEventModal({
     googleLinks[0]?.id ?? "",
   );
 
+  // ── Google Meet ──────────────────────────────────────────────────────────
+  // The link is minted on the selected Google calendar, so the option only
+  // makes sense with a Google destination and real guests.
+  const meetEnabled = useFeatureFlag("google-meet");
+  const [addMeet, setAddMeet] = useState(false);
+  const canAddMeet = meetEnabled && !!organizerCalendarLinkId && hasGuests;
+
   // ── Week navigation for the left panel ───────────────────────────────────
   const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
@@ -249,6 +257,7 @@ export function CreateEventModal({
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
       }
       if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      if (canAddMeet && addMeet) payload.addMeet = true;
       if (createNote) {
         payload.meetingType = meetingType;
         if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
@@ -799,6 +808,27 @@ export function CreateEventModal({
                       label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
                     }))}
                     buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
+                  />
+                </div>
+              )}
+
+              {/* Google Meet */}
+              {meetEnabled && googleLinks.length > 0 && (
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <Toggle
+                    checked={canAddMeet && addMeet}
+                    disabled={!canAddMeet}
+                    onChange={(e) => setAddMeet(e.target.checked)}
+                    label={
+                      <span className="inline-flex items-center gap-1.5">
+                        <Video className="h-3.5 w-3.5" /> Add Google Meet
+                      </span>
+                    }
+                    description={
+                      canAddMeet
+                        ? "Generates a Meet link on the selected calendar and includes it in the invite."
+                        : "Pick a Google calendar to send from and add guests to enable a Meet link."
+                    }
                   />
                 </div>
               )}

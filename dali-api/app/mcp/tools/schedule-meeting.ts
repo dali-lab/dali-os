@@ -6,6 +6,8 @@
 // pair this with `search_directory` to resolve participant userIds.
 
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
 
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",
@@ -50,6 +52,11 @@ export const SCHEDULE_MEETING_TOOL = {
         description:
           "Optional UserCalendarLink ID. When provided (and enabled), the meeting is pushed to that external calendar and Gmail invites are sent. Use `list_my_calendar_links` to discover available IDs.",
       },
+      addMeet: {
+        type: "boolean",
+        description:
+          "Attach a Google Meet link. Requires the google-meet feature and an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise.",
+      },
     },
     required: ["title", "durationMinutes", "participantUserIds"],
     additionalProperties: false,
@@ -64,6 +71,7 @@ type Input = {
   startTime?: string;
   recurrenceRule?: string;
   organizerCalendarLinkId?: string;
+  addMeet?: boolean;
 };
 
 export class ScheduleMeetingError extends Error {
@@ -82,6 +90,10 @@ export async function runScheduleMeeting(
     throw new ScheduleMeetingError("Organizer has no daliEmail or dartmouthEmail on file");
   }
 
+  const addMeet =
+    !!input.addMeet &&
+    (await isFeatureEnabled("google-meet", user.id, await getUserRoles(user.id)));
+
   const result = await createScheduledMeeting({
     organizerId: user.id,
     organizerEmail,
@@ -91,6 +103,7 @@ export async function runScheduleMeeting(
     startTime: input.startTime,
     recurrenceRule: input.recurrenceRule,
     organizerCalendarLinkId: input.organizerCalendarLinkId,
+    addMeet,
   });
 
   if (!result.ok) {
@@ -105,6 +118,7 @@ export async function runScheduleMeeting(
     durationMinutes: result.meeting.durationMinutes,
     participantUserIds: result.meeting.participantUserIds,
     externalEventId: result.meeting.externalEventId,
+    meetingUrl: result.meeting.meetingUrl,
     notifiedCount: result.notifiedCount,
     gcalError: result.gcalError,
   };

@@ -34,6 +34,7 @@ type MeetingOut = {
   startsAt: string;
   endsAt: string;
   location: string | null;
+  meetingUrl: string | null;
   attendeeCount: number;
   source: "dali" | "interview";
 };
@@ -72,6 +73,7 @@ export async function runListMyUpcomingMeetings(userId: string, input: Input) {
         startsAt: c.start.toISOString(),
         endsAt: c.end.toISOString(),
         location: null,
+        meetingUrl: m.meetingUrl,
         attendeeCount,
         source: "dali",
       });
@@ -106,6 +108,7 @@ export async function runListMyUpcomingMeetings(userId: string, input: Input) {
       startsAt: iv.startTime.toISOString(),
       endsAt: iv.endTime.toISOString(),
       location: iv.location,
+      meetingUrl: iv.videoUrl,
       attendeeCount: iv.assignments.length + 1, // interviewers + applicant
       source: "interview",
     });

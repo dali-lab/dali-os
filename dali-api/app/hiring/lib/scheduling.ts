@@ -2,6 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
+import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { zonedWallTimeUtc } from "~/lib/timezone";
 
 // New-assignee notifications fire outside transactions (best-effort), so
@@ -499,6 +500,10 @@ export async function reassignInterviewer(
       result.oldCycleInterviewerId,
       result.newInterviewerId,
     ).catch(() => {});
+    // Keep the Meet event's guest list current so the new interviewer is a
+    // recognized guest (no knock) and the old one drops off. Best-effort no-op
+    // when the interview has no Meet event.
+    syncInterviewMeetAttendees(interviewId).catch(() => {});
   }
 
   return result;
