@@ -48,10 +48,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { itemType, itemId, destFolderPageId } = body;
 
-  // ── Block moves on managed types ─────────────────────────────────────────
-  // Agreements, rubrics, and email templates are auto-filed by other processes;
-  // their Drive placement must not be changed via the move endpoint.
-  if (itemType === "agreement" || itemType === "rubric" || itemType === "emailTemplate") {
+  // ── Block moves on placement-locked types ────────────────────────────────
+  // Agreements and rubrics are auto-filed into Core-managed folders by other
+  // processes; their Drive placement must not be changed via the move endpoint.
+  // (Email templates ARE relocatable — handled below with a Core check.)
+  if (itemType === "agreement" || itemType === "rubric") {
     return withCors(
       request,
       Response.json(
@@ -114,22 +115,6 @@ export async function action({ request }: Route.ActionArgs) {
         Response.json({ error: "You can't move this email template" }, { status: 403 }),
       );
     }
-  } else {
-    // rubric | agreement — hiring artifacts. Manage requires Core or the forms
-    // gate; the destination-folder canEdit check below is the real placement
-    // guard (you can only drop into a folder you can edit, e.g. the Hiring drive).
-    const table = itemType === "rubric" ? prisma.rubric : prisma.signingDocument;
-    const exists = await (table as any).findUnique({ where: { id: itemId }, select: { id: true } });
-    if (!exists) {
-      return withCors(request, Response.json({ error: `${itemType} not found` }, { status: 404 }));
-    }
-    const canManage = (await isCore(userId, request)) || (await canViewForms(userId));
-    if (!canManage) {
-      return withCors(
-        request,
-        Response.json({ error: `You can't move this ${itemType}` }, { status: 403 }),
-      );
-    }
   }
 
   // ── Authorise the destination folder ─────────────────────────────────────
@@ -185,18 +170,9 @@ export async function action({ request }: Route.ActionArgs) {
       where: { id: itemId },
       data: { folderPageId: destFolderPageId },
     });
-  } else if (itemType === "rubric") {
-    await prisma.rubric.update({
-      where: { id: itemId },
-      data: { folderPageId: destFolderPageId },
-    });
-  } else if (itemType === "emailTemplate") {
-    await prisma.emailTemplate.update({
-      where: { id: itemId },
-      data: { folderPageId: destFolderPageId },
-    });
   } else {
-    await prisma.signingDocument.update({
+    // emailTemplate — agreements and rubrics are rejected by the guard above.
+    await prisma.emailTemplate.update({
       where: { id: itemId },
       data: { folderPageId: destFolderPageId },
     });

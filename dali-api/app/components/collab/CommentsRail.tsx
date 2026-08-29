@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Trash2, RotateCcw } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { CommentComposer } from "~/components/collab/CommentComposer";
+import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
+import { RichCommentBody } from "~/components/doc/comments/RichCommentBody";
 
 export type Comment = {
   id: string;
@@ -10,6 +12,7 @@ export type Comment = {
   authorId: string;
   authorPhotoUrl?: string | null;
   body: string;
+  bodyJson?: BodySegment[] | null;
   /** Legacy Yjs anchor {from, to}, BlockNote inline marker {kind:"blocknote"},
    *  or null for doc/file-level threads. */
   anchor: { from: string; to: string } | { kind: "blocknote" } | null;
@@ -216,15 +219,33 @@ export function CommentsRail({
     }, 80);
   }, [focusCommentId, comments]);
 
-  async function post(body: string, parentId: string | null, anchor: { from: string; to: string } | null) {
+  async function post(
+    bodyOrSegments: string | BodySegment[],
+    parentId: string | null,
+    anchor: { from: string; to: string } | null,
+  ) {
     setBusy(true);
     setError(null);
+    // Accept both the legacy string form (used by registerRefresh callers) and
+    // the new segment array form (from CommentComposer's onSubmit callback).
+    const isSegments = Array.isArray(bodyOrSegments);
+    const plainBody = isSegments ? segmentsToPlainText(bodyOrSegments) : bodyOrSegments;
+    const bodyJson = isSegments ? bodyOrSegments : undefined;
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath, versionId }),
+        body: JSON.stringify({
+          targetType,
+          targetId,
+          body: plainBody,
+          ...(bodyJson !== undefined ? { bodyJson } : {}),
+          parentId,
+          anchor,
+          path: mentionPath,
+          versionId,
+        }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -320,8 +341,8 @@ export function CommentsRail({
                   }
                 : undefined
             }
-            onSubmit={async () => {
-              const ok = await post(draft.trim(), null, pendingAnchor ?? null);
+            onSubmit={async (segments) => {
+              const ok = await post(segments, null, pendingAnchor ?? null);
               if (ok) {
                 setDraft("");
                 if (pendingAnchor) onClearPendingAnchor?.();
@@ -350,17 +371,17 @@ export function CommentsRail({
                   className={`block w-full text-left ${jumpable ? "cursor-pointer" : "cursor-default"}`}
                 >
                   <CommentHead comment={t.root} versionLabels={versionLabels} inline={Boolean(t.root.anchor)} />
-                  <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
-                    {t.root.body}
-                  </p>
+                  <div className="mt-1 pl-7 leading-relaxed">
+                    <RichCommentBody bodyJson={t.root.bodyJson} body={t.root.body} />
+                  </div>
                 </button>
 
                 {t.replies.map((r) => (
                   <div key={r.id} data-comment-id={r.id} className="mt-3 pl-7">
                     <CommentHead comment={r} versionLabels={versionLabels} />
-                    <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
-                      {r.body}
-                    </p>
+                    <div className="mt-1 pl-7 leading-relaxed">
+                      <RichCommentBody bodyJson={r.bodyJson} body={r.body} />
+                    </div>
                   </div>
                 ))}
 
@@ -378,8 +399,8 @@ export function CommentsRail({
                         setReplyDraft("");
                         setReplyTo(null);
                       }}
-                      onSubmit={async () => {
-                        const ok = await post(replyDraft.trim(), t.root.id, null);
+                      onSubmit={async (segments) => {
+                        const ok = await post(segments, t.root.id, null);
                         if (ok) {
                           setReplyDraft("");
                           setReplyTo(null);

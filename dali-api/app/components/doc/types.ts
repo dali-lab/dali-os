@@ -9,6 +9,9 @@ import type { Features, EditorPresetName } from "./features";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 import type { SigningContextValue } from "./signing-context";
 
+/** Collaborative save/sync state for the document body (collab mode only). */
+export type DocSyncState = "saving" | "saved" | "offline";
+
 export interface DocCollabConfig {
   /** Hocuspocus room name (e.g. Page.contentDocId ?? pageDocName(pageId)). */
   documentName: string;
@@ -87,6 +90,11 @@ export interface DocEditorProps {
   collab?: DocCollabConfig;
   /** Fired (throttled) with the live body word count as content changes. */
   onWordCountChange?: (count: number) => void;
+  /** Fired when the collaborative save/sync state changes (collab mode only).
+   * "saving" = connected with unsynced local changes; "saved" = fully synced;
+   * "offline" = disconnected (edits are cached locally and will sync on
+   * reconnect). Never fires in local (non-collab) mode. */
+  onSyncStateChange?: (state: DocSyncState) => void;
   /** Fired (throttled) with the H1–H3 outline as content changes. */
   onHeadingsChange?: (headings: TocHeading[]) => void;
   /** Signing context (mode/signerRole/variables/values/onFieldChange) for

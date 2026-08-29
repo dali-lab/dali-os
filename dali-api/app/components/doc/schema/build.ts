@@ -26,6 +26,7 @@ import {
 import { codeBlockOptions } from "@blocknote/code-block";
 import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
+import { EmbedSpec } from "./embed";
 import { MentionSpec, PageMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
 
@@ -57,6 +58,7 @@ function fullBlockSpecs() {
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
+    embed: EmbedSpec,
     pageBreak: createPageBreakBlockSpec(),
   };
 }
@@ -87,6 +89,7 @@ export function buildSchema(features: Features = {}) {
     delete blocks.table;
     delete blocks.toggleListItem;
     delete blocks.callout;
+    delete blocks.embed;
   }
   if (!features.mentions) {
     delete inline.mention;

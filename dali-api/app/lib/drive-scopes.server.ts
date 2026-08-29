@@ -466,3 +466,52 @@ export async function loadDriveScopes({
   }
   return result;
 }
+
+/**
+ * Load a single project's Drive scope as a `DriveTreeScope` — the same shape
+ * the main Drive hub uses, scoped to one project. Used by the project hub's
+ * "Drive" tab to render the shared DriveBrowser in embedded mode.
+ *
+ * Mirrors the per-project entries built by `loadDriveScopes` (the "Projects"
+ * workspace-multi branch), with two differences:
+ *   1. The items are NOT reparented under a synthetic project-folder row —
+ *      they are served raw (parentFolderId null = scope root), because this
+ *      scope IS the project and there is no containing "Projects" folder.
+ *   2. The returned scope id is `"project:<projectId>"` so it cannot collide
+ *      with the named spaces ("mine", "lab", "core", etc.) if the caller
+ *      ever passes it alongside a full-drive scope list.
+ *
+ * `canViewForms` is intentionally NOT forwarded: project-scoped forms are
+ * visible only to Core members (same gate used in loadDriveScopes), and the
+ * project hub already loads them separately via the bespoke docs/files query.
+ * Passing false keeps this call cheap and avoids a second form scan.
+ */
+export async function loadProjectDriveScope({
+  userSub,
+  projectId,
+  projectName,
+  projectIconEmoji,
+  request,
+}: {
+  userSub: string;
+  projectId: string;
+  projectName: string;
+  projectIconEmoji: string | null;
+  request: Request;
+}): Promise<DriveTreeScope> {
+  const items: DriveItem[] = await loadDriveScope({
+    userSub,
+    scope: { kind: "Project", projectId },
+    canViewForms: false,
+    request,
+  });
+
+  return {
+    id: `project:${projectId}`,
+    label: projectName,
+    iconEmoji: projectIconEmoji,
+    items,
+    systemManaged: false,
+    scopeAudience: "Project members",
+  };
+}

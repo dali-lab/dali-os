@@ -8,8 +8,8 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, FolderInput, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
-import { DocEditor, type TocHeading } from "~/components/doc";
+import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
+import { DocEditor, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
@@ -128,6 +128,7 @@ export function DocumentEditor({
   // pendingTitle ref tracks the latest text for the debounced save; the DOM is
   // the single source of truth while the user is typing.
   const [savingTitle, setSavingTitle] = useState(false);
+  const [syncState, setSyncState] = useState<DocSyncState | null>(null);
   const pendingTitleRef = useRef(initialTitle);
   const titleFocusedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -497,6 +498,36 @@ export function DocumentEditor({
         <span className="shrink-0">{editedLabel}</span>
       )}
       {savingTitle && <span className="shrink-0 italic">Saving…</span>}
+      {syncState && (
+        <span
+          className={`shrink-0 inline-flex items-center gap-1 ${
+            syncState === "offline" ? "text-amber-600 dark:text-amber-500" : ""
+          }`}
+          title={
+            syncState === "offline"
+              ? "You're offline — changes are saved on this device and will sync when you reconnect."
+              : syncState === "saving"
+                ? "Syncing your changes…"
+                : "All changes saved"
+          }
+        >
+          {syncState === "saving" && (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+            </>
+          )}
+          {syncState === "saved" && (
+            <>
+              <Check className="w-3 h-3" /> Saved
+            </>
+          )}
+          {syncState === "offline" && (
+            <>
+              <CloudOff className="w-3 h-3" /> Offline
+            </>
+          )}
+        </span>
+      )}
 
       <div className="flex-1" />
 
@@ -965,6 +996,7 @@ export function DocumentEditor({
                 aiEnabled={aiEnabled}
                 onWordCountChange={setWordCount}
                 onHeadingsChange={setHeadings}
+                onSyncStateChange={setSyncState}
                 onChange={() => setLocallyEdited(true)}
                 placeholder="Write something, or press '/' for commands"
                 className="min-h-[70vh]"

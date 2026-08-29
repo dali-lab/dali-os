@@ -12,6 +12,7 @@ import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
+import type { BodySegment } from "~/lib/comment-body";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
@@ -33,10 +34,26 @@ const AnchorSchema = z
   .nullable()
   .optional();
 
+// bodyJson segment schema — mirrors the BodySegment union from MentionTextInput.
+// We accept the raw JSON from the client and store it as-is; validation here
+// is permissive (array of objects) to avoid version skew issues.
+const BodySegmentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string().max(5000) }),
+  z.object({
+    type: z.literal("mention"),
+    userId: z.string().min(1).max(256),
+    label: z.string().max(256),
+  }),
+]);
+
 const CreateSchema = z.object({
   targetType: z.enum(["doc", "file", "pagedoc"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
+  /** Rich inline segments. When present, stored in DocComment.bodyJson and used
+   * for mention notifications (userId-based, exact; supplement the handle-based
+   * path which still runs for backward-compat). */
+  bodyJson: z.array(BodySegmentSchema).max(500).nullable().optional(),
   parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
   // Page-doc FAQ comments only: the page path, so @-mention notifications can
@@ -126,6 +143,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       parentId: true,
       authorId: true,
       body: true,
+      bodyJson: true,
       anchor: true,
       resolvedAt: true,
       createdAt: true,
@@ -149,6 +167,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     authorId: r.authorId,
     authorPhotoUrl: photoById.get(r.authorId) ?? null,
     body: r.body,
+    bodyJson: r.bodyJson as BodySegment[] | null,
     anchor: r.anchor as { from: string; to: string } | null,
     resolved: r.resolvedAt !== null,
     createdAt: r.createdAt.toISOString(),
@@ -231,6 +250,8 @@ export async function action({ request }: Route.ActionArgs) {
       parentId: body.parentId ?? null,
       authorId: auth.user.sub,
       body: body.body,
+      // Store rich segments when provided; null for legacy plain-text comments.
+      bodyJson: body.bodyJson ?? undefined,
       anchor: anchor === null ? undefined : anchor,
       // Real FK only on the file side (see schema note).
       fileId: body.targetType === "file" ? body.targetId : null,
@@ -271,9 +292,29 @@ export async function action({ request }: Route.ActionArgs) {
 
   // @-mentions in any comment (document, file, or page-doc FAQ) notify the
   // tagged members. Root or reply.
+  // Two paths, deduped:
+  //   1. bodyJson mention segments — exact userId, no handle resolution needed.
+  //   2. Legacy @handle tokens in plain body — resolves handles for comments
+  //      that arrive without bodyJson (old clients, file comments, pagedoc FAQ).
   void (async () => {
-    const userIds = await resolveHandles(extractHandlesFromText(body.body));
-    if (userIds.length === 0) return;
+    const allIds = new Set<string>();
+
+    // Path 1: userId from bodyJson mention segments (preferred, exact).
+    if (body.bodyJson) {
+      for (const seg of body.bodyJson) {
+        if (seg.type === "mention" && seg.userId) allIds.add(seg.userId);
+      }
+    }
+
+    // Path 2: handle-based for pagedoc/file targets and legacy plain-text.
+    // Skip if bodyJson already gave us the full set (all doc targets with bodyJson).
+    if (body.targetType !== "doc" || !body.bodyJson || body.bodyJson.length === 0) {
+      const handleIds = await resolveHandles(extractHandlesFromText(body.body));
+      for (const id of handleIds) allIds.add(id);
+    }
+
+    if (allIds.size === 0) return;
+
     const base =
       body.targetType === "pagedoc"
         ? pageDocLink(body.path)
@@ -284,7 +325,7 @@ export async function action({ request }: Route.ActionArgs) {
     // flash the exact comment.
     const link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
     await notifyMentions({
-      recipientUserIds: userIds,
+      recipientUserIds: [...allIds],
       actorId: auth.user.sub,
       link,
       title: "You were mentioned in a comment",

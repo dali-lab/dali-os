@@ -43,12 +43,27 @@ function activeMention(text: string, caret: number): { start: number; query: str
   return { start: caret - query.length - 1, query };
 }
 
+// Re-export the shared segment types and helpers from the server-safe module
+// so callers can import them from either location.
+export type {
+  TextSegment,
+  MentionSegment,
+  BodySegment,
+} from "~/lib/comment-body";
+export { parseBodySegments, segmentsToPlainText, segmentMentionUserIds } from "~/lib/comment-body";
+
 /** Imperative handle for composers that drive the input from a toolbar
  *  button (the minimal comment composer's "@" affordance). */
 export type MentionInputHandle = {
   focus: () => void;
   /** Inserts an "@" at the caret and opens the mention dropdown. */
   insertMentionTrigger: () => void;
+  /**
+   * Returns the resolved mention map (handle → userId) from the most recent
+   * typeahead insertion, so the caller can build bodyJson segments. Only
+   * handles the user actually selected from the dropdown are in this map.
+   */
+  getMentionMap: () => Map<string, string>;
 };
 
 type Props = {
@@ -94,6 +109,9 @@ export function MentionTextInput({
   const [sel, setSel] = useState(0);
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const reqId = useRef(0);
+  // Tracks handle → userId for every user selected from the dropdown. Grows
+  // over the lifetime of the composer and is exposed via getMentionMap().
+  const mentionMapRef = useRef<Map<string, string>>(new Map());
 
   function refreshMention(el: HTMLTextAreaElement | HTMLInputElement) {
     const caret = el.selectionStart ?? el.value.length;
@@ -145,6 +163,7 @@ export function MentionTextInput({
           refreshMention(el);
         });
       },
+      getMentionMap: () => mentionMapRef.current,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [value],
@@ -162,6 +181,8 @@ export function MentionTextInput({
     const before = value.slice(0, mentionStart);
     const after = value.slice(caret);
     const inserted = `@${user.handle} `;
+    // Record the handle → userId mapping so the caller can build bodyJson.
+    mentionMapRef.current.set(user.handle.toLowerCase(), user.id);
     onChange(before + inserted + after);
     setOpen(false);
     setMentionStart(null);

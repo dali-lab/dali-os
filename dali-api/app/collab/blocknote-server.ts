@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import type * as Y from "yjs";
 import {
   calloutConfig,
+  embedConfig,
   mentionConfig,
   pageMentionConfig,
   signingFieldConfigs,
@@ -146,11 +147,37 @@ const calloutSpec = createBlockSpec(calloutConfig, {
   },
 })();
 
+// Bookmark/embed: renders as an anchor card so export / version-history HTML
+// keeps the link (content: "none" — no contentDOM).
+const embedSpec = createBlockSpec(embedConfig, {
+  render: (block) => {
+    const url = String(block.props.url ?? "");
+    const title = String(block.props.title ?? "");
+    const dom = document.createElement("a");
+    dom.setAttribute("data-embed", "");
+    if (url) {
+      dom.setAttribute("href", url);
+      dom.setAttribute("target", "_blank");
+      dom.setAttribute("rel", "noopener noreferrer");
+    }
+    let label = title;
+    if (!label && url) {
+      try {
+        label = new URL(url).hostname.replace(/^www\./, "");
+      } catch {
+        label = url;
+      }
+    }
+    dom.textContent = label || url;
+    return { dom };
+  },
+})();
+
 // defaultBlockSpecs includes file and video (and audio, which the app never
 // uses but keeping it in the server schema is harmless — it ensures blocks
 // authored by external tools are preserved, not stripped on server read).
 export const serverSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, pageBreak: createPageBreakBlockSpec() },
+  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,

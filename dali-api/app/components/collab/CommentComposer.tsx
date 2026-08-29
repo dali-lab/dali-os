@@ -11,6 +11,7 @@ import {
   MentionTextInput,
   type MentionInputHandle,
 } from "~/components/MentionTextInput";
+import { type BodySegment, parseBodySegments } from "~/lib/comment-body";
 
 type Identity = { name: string; photoUrl: string | null };
 
@@ -82,8 +83,13 @@ export function CommentComposer({
   currentUserId: string;
   value: string;
   onChange: (v: string) => void;
-  /** Called with the trimmed draft; the caller clears `value` on success. */
-  onSubmit: () => void;
+  /**
+   * Called with the trimmed draft text AND the resolved bodyJson segments when
+   * the user submits. The caller should persist both `body` (plaintext) and
+   * `bodyJson` (segments) so rich rendering and mention notifications work.
+   * Callers that only need the plaintext (legacy surfaces) can ignore segments.
+   */
+  onSubmit: (segments: BodySegment[]) => void;
   /** Escape closes the composer when the host has something to close. */
   onCancel?: () => void;
   busy?: boolean;
@@ -96,11 +102,18 @@ export function CommentComposer({
   const inputRef = useRef<MentionInputHandle>(null);
   const canPost = !busy && value.trim().length > 0;
 
+  function handleSubmit() {
+    if (!canPost) return;
+    const mentionMap = inputRef.current?.getMentionMap() ?? new Map<string, string>();
+    const segments = parseBodySegments(value, mentionMap);
+    onSubmit(segments);
+  }
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (canPost) onSubmit();
+        handleSubmit();
       }}
       className={`flex items-center gap-2.5 border-b border-border py-2 focus-within:border-foreground/30 ${className}`}
     >
@@ -134,7 +147,7 @@ export function CommentComposer({
           // has already claimed Enter when it's open.
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (canPost) onSubmit();
+            handleSubmit();
           }
         }}
       />
