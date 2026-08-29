@@ -52,6 +52,8 @@ import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
+import { WebSocketStatus } from "@hocuspocus/provider";
+
 import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
 import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/DaliThreadStore";
@@ -61,11 +63,11 @@ import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
-import { getMentionMenuItems } from "./schema/mention";
+import { getMentionMenuItems, PageMentionTitleProvider } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
-import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
+import type { DocCollabConfig, DocCommentsConfig, DocEditorProps, DocSyncState } from "./types";
 import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
 import { isAiEnvEnabled } from "./ai/env";
@@ -242,7 +244,67 @@ function CollabDocInner(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry, editor]);
 
+  useReportSyncState(entry.provider, props.onSyncStateChange);
+
   return <DocView {...props} editor={editor} collabEntry={entry} />;
+}
+
+// Report the Hocuspocus save/sync state to the host chrome. "offline" when the
+// socket is down (edits queue in IndexedDB and sync on reconnect), "saving"
+// while connected with unsynced local changes, "saved" once flushed to the
+// server. The host renders this as a persistent "Saving…/Saved/Offline"
+// indicator so the body has the same save reassurance the title already has.
+function useReportSyncState(
+  provider: CollabDocEntry["provider"],
+  onChange: ((state: DocSyncState) => void) | undefined,
+) {
+  const cbRef = useRef(onChange);
+  cbRef.current = onChange;
+  useEffect(() => {
+    if (!cbRef.current) return;
+    // Connection status lives on the underlying websocket; sync/dirty state are
+    // getters on the provider. We track `connected` via events (seeded from the
+    // websocket's current status) and recompute on every relevant signal.
+    let connected =
+      provider.configuration.websocketProvider.status === WebSocketStatus.Connected;
+    let last: DocSyncState | null = null;
+    const emit = () => {
+      const next: DocSyncState = !connected
+        ? "offline"
+        : provider.hasUnsyncedChanges || !provider.synced
+          ? "saving"
+          : "saved";
+      if (next !== last) {
+        last = next;
+        cbRef.current?.(next);
+      }
+    };
+    const onStatus = (e: { status: WebSocketStatus }) => {
+      connected = e.status === WebSocketStatus.Connected;
+      emit();
+    };
+    const onConnect = () => {
+      connected = true;
+      emit();
+    };
+    const onDisconnect = () => {
+      connected = false;
+      emit();
+    };
+    emit();
+    provider.on("status", onStatus);
+    provider.on("synced", emit);
+    provider.on("unsyncedChanges", emit);
+    provider.on("connect", onConnect);
+    provider.on("disconnect", onDisconnect);
+    return () => {
+      provider.off("status", onStatus);
+      provider.off("synced", emit);
+      provider.off("unsyncedChanges", emit);
+      provider.off("connect", onConnect);
+      provider.off("disconnect", onDisconnect);
+    };
+  }, [provider]);
 }
 
 function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
@@ -464,6 +526,41 @@ function DocView(
     return () => dom.removeEventListener("focus", onFocus, true);
   }, [editor]);
 
+  // Cmd/Ctrl+K opens the link editor for the current selection — Google Docs /
+  // Notion muscle memory. BlockNote ships no default binding, so we bind it on
+  // the editor DOM: prompt for a URL (prefilled if the selection is already a
+  // link) and apply it. Gated on a non-empty selection, matching Docs.
+  useEffect(() => {
+    if (!editable) return;
+    const pmView = editor.prosemirrorView;
+    if (!pmView) return;
+    const dom = pmView.dom as HTMLElement;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isK = e.key === "k" || e.key === "K";
+      if (!isK || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (pmView.state.selection.empty) return; // nothing selected to link
+      e.preventDefault();
+      e.stopPropagation();
+      const existing = editor.getSelectedLinkUrl();
+      void (async () => {
+        const url = await dialog.prompt({
+          title: existing ? "Edit link" : "Add link",
+          label: "URL",
+          placeholder: "https://…",
+          defaultValue: existing ?? "",
+          confirmLabel: existing ? "Update" : "Add link",
+        });
+        if (url === null) return; // cancelled
+        const trimmed = url.trim();
+        if (!trimmed) return;
+        editor.focus();
+        editor.createLink(trimmed);
+      })();
+    };
+    dom.addEventListener("keydown", onKeyDown);
+    return () => dom.removeEventListener("keydown", onKeyDown);
+  }, [editor, editable, dialog]);
+
   // Register/unregister the find-replace PM plugin when findOpen toggles.
   // We create a new plugin instance each time so plugin state is fresh.
   const FIND_REPLACE_KEY = "dali-find-replace-ext";
@@ -635,6 +732,7 @@ function DocView(
   );
 
   return (
+    <PageMentionTitleProvider>
     <SigningContext.Provider value={props.signing ?? DEFAULT_SIGNING_CTX}>
       <div
         ref={viewRef}
@@ -702,6 +800,7 @@ function DocView(
         </Modal>
       )}
     </SigningContext.Provider>
+    </PageMentionTitleProvider>
   );
 }
 

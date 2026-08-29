@@ -7,7 +7,7 @@
 
 // THE component.
 export { DocEditor, DocEditorFallback } from "./DocEditor";
-export type { DocEditorProps, DocCollabConfig, DocCommentsConfig } from "./types";
+export type { DocEditorProps, DocCollabConfig, DocCommentsConfig, DocSyncState } from "./types";
 
 // Capability model (pure).
 export {

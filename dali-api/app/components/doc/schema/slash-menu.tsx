@@ -11,6 +11,7 @@
 
 import { filterSuggestionItems, getPageBreakSlashMenuItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
 import { getDefaultReactSlashMenuItems } from "@blocknote/react";
+import { Globe } from "lucide-react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
 import type { Features } from "../features";
@@ -65,6 +66,20 @@ function calloutItem(editor: DocEditorInstance): KeyedItem {
   };
 }
 
+function embedItem(editor: DocEditorInstance): KeyedItem {
+  return {
+    key: "embed",
+    title: "Bookmark",
+    subtext: "Link card with the page's domain",
+    aliases: ["bookmark", "embed", "link", "url", "web"],
+    group: (editor.dictionary.slash_menu.paragraph as { group: string }).group,
+    icon: <Globe size={18} aria-hidden />,
+    onItemClick: () => {
+      insertOrUpdateBlockForSlashMenu(editor, { type: "embed" });
+    },
+  };
+}
+
 /** Full item list for a feature set (unfiltered by query). */
 export function getDocSlashMenuItems(
   editor: DocEditorInstance,
@@ -77,6 +92,7 @@ export function getDocSlashMenuItems(
   let items = defaults;
   if (features.richBlocks) {
     items = insertItemIntoGroup(items, calloutItem(editor));
+    items = insertItemIntoGroup(items, embedItem(editor));
   }
   if (features.pageBreak) {
     // getPageBreakSlashMenuItems returns [] when the block isn't in the schema.

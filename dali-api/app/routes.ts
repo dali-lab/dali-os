@@ -489,6 +489,8 @@ export default [
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
   route("api/drive/files", "routes/api.drive.files.ts"),
+  // Drive Trash: list/restore/purge archived items (docs, files, forms).
+  route("api/drive/trash", "routes/api.drive.trash.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
@@ -517,6 +519,7 @@ export default [
   route("api/mentions/card", "routes/api.mentions.card.ts"),
   route("api/custom-hires", "routes/api.custom-hires.ts"),
   route("api/mentions/pages", "routes/api.mentions.pages.ts"),
+  route("api/mentions/pages/resolve", "routes/api.mentions.pages.resolve.ts"),
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),

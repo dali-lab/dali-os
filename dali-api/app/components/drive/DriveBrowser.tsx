@@ -69,6 +69,7 @@ import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PageIcon } from "~/components/PageIcon";
 import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -99,6 +100,8 @@ export type RowActions = {
   onRename: (item: DriveItem) => void;
   onRequestMove: (item: DriveItem) => void;
   onDelete: (item: DriveItem) => void;
+  /** Open the in-place Share dialog for a page-backed item (doc or folder). */
+  onShare?: (item: DriveItem) => void;
 };
 
 type SortKey = "name" | "modified" | "size";
@@ -136,6 +139,9 @@ export type DriveBrowserProps = {
    * second "active" flag to keep in step with it.
    */
   tagFilter?: (item: DriveItem) => boolean;
+  /** Called when the user picks Share for a doc or folder. The browser mounts
+   *  the ShareDialog in-place with this item as the target. */
+  onShareItem?: (item: DriveItem) => void;
 };
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -307,12 +313,18 @@ function itemMenuItems(
   const isSystemManaged = item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
   const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
-  // allowed); agreements and rubrics remain placement-locked.
+  // allowed); agreements and rubrics remain placement-locked. System-managed
+  // folders (systemKey) are auto-filed and stay put — matching the drag gate.
   const canMove =
+    !isSystemManaged &&
     item.type !== "agreement" &&
     item.type !== "rubric";
   const canDelete = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
   const canFavorite = item.type === "doc" || item.type === "folder";
+  // Sharing via PageShare works for Page-backed items only (doc and folder).
+  // Files, forms, agreements, rubrics, email templates have separate or no
+  // sharing surfaces, so the Share option is intentionally omitted for them.
+  const canShare = (item.type === "doc" || item.type === "folder") && !!actions.onShare;
   return (
     <>
       <Menu.Item icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={onOpen}>
@@ -324,6 +336,11 @@ function itemMenuItems(
           onSelect={() => onToggleFavorite(item)}
         >
           {item.favorited ? "Remove from favorites" : "Add to favorites"}
+        </Menu.Item>
+      )}
+      {canShare && (
+        <Menu.Item icon={<Share2 className="h-3.5 w-3.5" />} onSelect={() => actions.onShare!(item)}>
+          Share…
         </Menu.Item>
       )}
       {(canRename || canMove) && <Menu.Separator />}
@@ -510,11 +527,40 @@ export function DriveBrowser({
   newMenu,
   tagChips,
   tagFilter,
+  onShareItem,
 }: DriveBrowserProps) {
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
     [scopes, currentScopeId],
   );
+
+  // Share dialog state — the item currently targeted for in-place sharing.
+  const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
+
+  // Wrap the hub's getScopeActions to inject the in-place Share handler.
+  // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
+  // onShare so itemMenuItems and the leaf toolbar can show it without the hub
+  // needing to know the browser owns the ShareDialog state.
+  function getInternalScopeActions(scopeId: string): RowActions {
+    const base = getScopeActions(scopeId);
+    return {
+      ...base,
+      onShare: (item: DriveItem) => {
+        if (item.type !== "doc" && item.type !== "folder") return;
+        // workspaceType is not on DriveItem directly; infer from the scope id
+        // so the ShareDialog can show the correct audience label (Lab/Project/Member).
+        const scope = scopes.find((s) => s.id === scopeId);
+        const wt =
+          !scope || scope.id === "lab" || scope.id === "core" || scope.id === "hiring"
+            ? "Lab"
+            : scope.id === "mine"
+              ? "Member"
+              : "Project";
+        setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
+        onShareItem?.(item);
+      },
+    };
+  }
 
   // ── Legacy list/grid state (for non-column views) ──────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -713,10 +759,10 @@ export function DriveBrowser({
       // when searching, else from the current scope's listing.
       if (searching) {
         const hit = hits.find((h) => h.item.id === activeId);
-        if (hit) getScopeActions(hit.scope.id).onRename(hit.item);
+        if (hit) getInternalScopeActions(hit.scope.id).onRename(hit.item);
       } else if (currentScope) {
         const item = listing.find((i) => i.id === activeId);
-        if (item) getScopeActions(currentScope.id).onRename(item);
+        if (item) getInternalScopeActions(currentScope.id).onRename(item);
       }
     }
   }
@@ -909,7 +955,7 @@ export function DriveBrowser({
   if (colSel.leafLevelIdx !== null) {
     leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
   }
-  const leafActions = leafScopeId ? getScopeActions(leafScopeId) : null;
+  const leafActions = leafScopeId ? getInternalScopeActions(leafScopeId) : null;
 
   // Signal ①: system-managed leaf folders hide Delete/Rename in the toolbar too.
   const leafIsSystemManaged =
@@ -938,6 +984,12 @@ export function DriveBrowser({
       selectedLeaf.type === "form");
   // Download: only for files with an href.
   const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
+  // Share: page-backed items only (doc and folder). Folders now support sharing
+  // via PageShare, which was previously impossible from the Drive surface.
+  const canLeafShare =
+    !!selectedLeaf &&
+    (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
+    !!leafActions?.onShare;
 
   return (
     <DriveScale.Provider value={os}>
@@ -1180,19 +1232,25 @@ export function DriveBrowser({
                   <FolderInput className="w-3.5 h-3.5" /> Move
                 </button>
               )}
-              {/* Share: navigate to the item so the user can use the share UI there */}
-              {selectedLeaf.href && (
-                <a
-                  href={selectedLeaf.href}
+              {/* Share: opens the ShareDialog in-place for docs and folders.
+                  Previously this was an <a> that navigated away; now it mounts
+                  ShareDialog directly so the user never leaves Drive. Folder
+                  sharing (PageShare) is now reachable for the first time. */}
+              {canLeafShare && (
+                <button
+                  type="button"
                   data-testid="drive-leaf-share"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    leafActions!.onShare!(selectedLeaf);
+                  }}
                   className={cn(
                     "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     os ? "text-sm" : "text-xs",
                   )}
                 >
                   <Share2 className="w-3.5 h-3.5" /> Share
-                </a>
+                </button>
               )}
               {canLeafDelete && (
                 <button
@@ -1278,7 +1336,7 @@ export function DriveBrowser({
                     >
                       {items.map((item) => {
                         const isHighlighted = highlightedId === item.id;
-                        const scopeActions = sId ? getScopeActions(sId) : null;
+                        const scopeActions = sId ? getInternalScopeActions(sId) : null;
                         return (
                           <ContextMenu
                             key={item.id}
@@ -1339,7 +1397,7 @@ export function DriveBrowser({
                   selected={selected}
                   onRowClick={handleRowClick}
                   onOpen={openById}
-                  getScopeActions={getScopeActions}
+                  getScopeActions={getInternalScopeActions}
                   onToggleFavorite={onToggleFavorite}
                 />
               ) : !currentScope ? (
@@ -1361,7 +1419,7 @@ export function DriveBrowser({
                   onRowClick={handleRowClick}
                   onOpen={openById}
                   onMove={onMove}
-                  actions={getScopeActions(currentScope.id)}
+                  actions={getInternalScopeActions(currentScope.id)}
                   onToggleFavorite={onToggleFavorite}
                   dragging={!!activeDrag}
                   suppressClickRef={suppressClickRef}
@@ -1387,6 +1445,17 @@ export function DriveBrowser({
         )}
       </DragOverlay>
     </DndContext>
+
+    {/* In-place Share dialog — mounted outside DndContext so DnD events don't
+        bleed through; keyed by item id so state resets on a different target. */}
+    {shareTarget && (
+      <ShareDialog
+        key={shareTarget.id}
+        page={shareTarget}
+        open={true}
+        onClose={() => setShareTarget(null)}
+      />
+    )}
     </DriveScale.Provider>
   );
 }

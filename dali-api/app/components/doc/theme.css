@@ -117,6 +117,74 @@
   min-width: 0;
 }
 
+/* Bookmark/embed link card (schema/embed.tsx). Neutral card that reads in both
+ * light and dark via BlockNote's border/background CSS vars (with fallbacks). */
+.dali-embed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--bn-colors-border, rgba(120, 120, 120, 0.25));
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.dali-embed--card {
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.dali-embed--card:hover {
+  border-color: var(--accent-coral, rgba(120, 120, 120, 0.5));
+  background: var(--bn-colors-hovered-background, rgba(120, 120, 120, 0.06));
+}
+.dali-embed__icon {
+  flex: none;
+  display: inline-flex;
+  opacity: 0.6;
+}
+.dali-embed__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dali-embed__title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dali-embed__url {
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dali-embed--input {
+  gap: 8px;
+}
+.dali-embed__field {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font: inherit;
+  color: inherit;
+}
+.dali-embed__add {
+  flex: none;
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--bn-colors-border, rgba(120, 120, 120, 0.25));
+  cursor: pointer;
+}
+.dali-embed--empty {
+  opacity: 0.6;
+  font-style: italic;
+}
+
 /* Child blocks: keep them visually inside the box and aligned with the callout
  * text instead of the default 24px indent-guide offset (core Block.css).
  * 28px = 20px emoji gutter + 8px gap. */

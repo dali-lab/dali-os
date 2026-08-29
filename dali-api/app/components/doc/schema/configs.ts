@@ -63,6 +63,19 @@ export const calloutConfig = {
   content: "inline",
 } as const;
 
+// Bookmark/embed: a block-level link card. `url` is the target; `title` is an
+// optional user-supplied caption (defaults to "", in which case the card shows
+// the domain). content: "none" — the card is not editable inline. Old docs
+// predate this type and are unaffected (distinct type string).
+export const embedConfig = {
+  type: "embed",
+  propSchema: {
+    url: { default: "" },
+    title: { default: "" },
+  },
+  content: "none",
+} as const;
+
 // Signing field family — one inline-content type per legacy TipTap node type
 // (signatureField/dateField/initialField/checkboxField/textField), preserving
 // the node-type↔field-type mapping the conversion mapper and the server-side

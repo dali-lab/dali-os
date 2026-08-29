@@ -1007,6 +1007,10 @@ model CollabDocumentVersion {
   state     Bytes // Y.Doc binary at snapshot time
   plainText String // mirror, for fast preview without decoding `state`
   authorIds String[] // userIds that edited since previous snapshot, best-effort
+  // User-given name for a pinned/named version ("Before the rewrite"). Null =
+  // an ordinary auto-snapshot. A non-null label marks the version as pinned:
+  // named versions are surfaced distinctly and exempt from auto-pruning.
+  label     String?
   createdAt DateTime @default(now())
 
   collabDocument CollabDocument @relation(fields: [name], references: [name], onDelete: Cascade)
@@ -1166,7 +1170,15 @@ model DocComment {
   targetId   String
   parentId   String?
   authorId   String
+  // Flattened plaintext body. Always populated (source of truth for search,
+  // notification previews, and pre-rich comments). Rich content lives in
+  // `bodyJson` when present.
   body       String
+  // Rich comment body: an array of inline segments — text runs (with marks)
+  // and `{ type: "mention", userId, label }` chips. Null for legacy/plaintext
+  // comments, in which case `body` is rendered verbatim. Mention notifications
+  // are derived from the mention segments here.
+  bodyJson   Json?
   // { from: <encoded RelativePosition>, to: <encoded RelativePosition> } for
   // inline doc comments. Null for doc-level / file-level comments.
   anchor     Json?
@@ -3751,6 +3763,11 @@ model Form {
   // boundary exactly once so a later manual publish/unpublish sticks.
   opensAt  DateTime?
   closesAt DateTime?
+
+  // Soft-delete for Drive trash. Non-null = archived (hidden from Drive and
+  // "Forms for you", not fillable), restorable from Trash. A permanent delete
+  // from Trash removes the row (and cascades responses) for real.
+  archivedAt DateTime?
 
   // Per-form response settings (Forms editor "Settings" card).
   // oneResponsePerMember: an authenticated member's ORDINARY fill (not

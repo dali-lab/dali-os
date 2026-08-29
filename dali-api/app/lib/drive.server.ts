@@ -627,10 +627,12 @@ export async function loadForms(
   scopeFolderIds?: string[],
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
+  // archivedAt: null ensures soft-deleted forms are excluded from Drive, matching
+  // how docs/files are filtered (Page.archivedAt: null, ProjectFile.archivedAt: null).
   const where =
     scopeFolderIds !== undefined
-      ? { OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
-      : {};
+      ? { archivedAt: null, OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
+      : { archivedAt: null };
   const rows = await prisma.form.findMany({
     where,
     orderBy: { updatedAt: "desc" },
@@ -667,8 +669,9 @@ export async function loadForms(
 export async function loadOrphanForms(
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
+  // Only surface non-archived orphaned forms; archived forms belong in Trash.
   const placed = await prisma.form.findMany({
-    where: { folderPageId: { not: null } },
+    where: { folderPageId: { not: null }, archivedAt: null },
     select: { id: true, name: true, folderPageId: true, updatedAt: true },
   });
   if (placed.length === 0) return [];
