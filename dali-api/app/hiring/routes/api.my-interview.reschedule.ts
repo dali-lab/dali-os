@@ -6,6 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 
@@ -40,7 +41,7 @@ export async function action({ request }: Route.ActionArgs) {
   // If assignInterviewers throws (no free interviewers at the new slot), the
   // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const { newInterview, oldInterviewId, oldZoomMeetingId, durationMinutes } = await prisma.$transaction(
+    const { newInterview, oldInterviewId, oldCalendarEventId } = await prisma.$transaction(
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
@@ -109,21 +110,17 @@ export async function action({ request }: Route.ActionArgs) {
         return {
           newInterview: created,
           oldInterviewId: current.id,
-          oldZoomMeetingId: current.zoomMeetingId,
-          durationMinutes: config?.slotDurationMinutes ?? 30,
+          oldCalendarEventId: current.calendarEventId,
         };
       },
       { isolationLevel: "Serializable" },
     );
 
-    // S2S Zoom not configured yet — meeting links are set manually by admins
-    // try { await deprovisionZoomMeeting({ zoomMeetingId: oldZoomMeetingId }); }
-    // catch (err) { console.error("Failed to delete old Zoom meeting:", err); }
-    //
-    // if (newInterview.location === "Online") {
-    //   try { await provisionZoomMeeting(newInterview.id, "DALI Lab Interview", new Date(newStart), durationMinutes); }
-    //   catch (err) { console.error("Failed to provision Zoom meeting:", err); }
-    // }
+    // Move the Google Meet link with the interview: tear down the old slot's
+    // event and mint a fresh one for the new slot before the invite email below
+    // re-reads the row. Best-effort. Zoom S2S (app/lib/zoom.ts) stays dormant.
+    await deprovisionInterviewMeet({ id: oldInterviewId, calendarEventId: oldCalendarEventId });
+    await provisionInterviewMeet(newInterview.id);
 
     // Best-effort: cancel old calendar event + send new invite
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});

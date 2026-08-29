@@ -719,6 +719,17 @@ model Interview {
   zoomMeetingId String?
   zoomJoinUrl   String?
 
+  // Auto-provisioned video conference for online interviews (Google Meet).
+  // videoUrl is the join link surfaced to applicant + interviewers and folded
+  // into the interview emails/ICS; calendarEventId is the event on the shared
+  // hiring calendar that hosts the Meet link — retained so reschedule / cancel /
+  // location changes can update or delete it. The zoom* columns above are the
+  // (currently blocked) S2S path and stay untouched. See
+  // app/hiring/lib/interview-meet.ts.
+  videoProvider   VideoProvider?
+  videoUrl        String?
+  calendarEventId String?
+
   // Joint outcome — set by either interviewer when marking complete.
   // recommendation values: 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
   recommendation      String?
@@ -1746,6 +1757,15 @@ model ScheduledMeeting {
   participantUserIds String[]
   selectedAt         DateTime?
   externalEventId    String?
+
+  // Optional video conference for the meeting. meetingUrl is the join link
+  // (surfaced as a "Join" button and carried in notifications); it's minted on
+  // the organizer's linked Google calendar when the organizer opts in at create
+  // time (see createGoogleCalendarEvent `addMeet`). videoProvider records which
+  // service produced it. Both null = no video link.
+  meetingUrl         String?
+  videoProvider      VideoProvider?
+
   status             MeetingStatus @default(Searching)
 
   // RFC 5545 RRULE for recurring meetings.
@@ -1892,6 +1912,15 @@ enum MeetingStatus {
   Searching
   Confirmed
   Cancelled
+}
+
+// Which service produced a meeting's video-conference link. GoogleMeet is the
+// only one minted today; Zoom is reserved for when the (currently blocked) S2S
+// path lands; Manual covers a link entered by hand.
+enum VideoProvider {
+  GoogleMeet
+  Zoom
+  Manual
 }
 
 // In-app notification delivered to a single user. Fan-out at write time:

@@ -413,11 +413,11 @@ export default function InterviewDetailPage() {
                       : 'Online'}
                 </span>
               )}
-              {interview.location === 'Online' && interview.zoomJoinUrl && (
-                <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+              {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+                <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                    className="flex items-center text-sm text-blue-600 hover:underline">
                   <Video className="w-4 h-4 mr-1" />
-                  Join Zoom
+                  Join Google Meet
                 </a>
               )}
               <span

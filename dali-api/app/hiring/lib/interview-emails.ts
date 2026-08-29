@@ -17,6 +17,13 @@ const ORGANIZER: IcsAttendee = {
   name: "DALI Lab",
 };
 
+// The interview's video-conference join link for the invite/ICS: the
+// auto-provisioned Google Meet URL (app/hiring/lib/interview-meet.ts), falling
+// back to a legacy Zoom link if one was ever set.
+function meetingLink(iv: { videoUrl: string | null; zoomJoinUrl: string | null }): string | null {
+  return iv.videoUrl ?? iv.zoomJoinUrl;
+}
+
 function formatLocation(location: string, meetingUrl?: string | null): string {
   if (location === "PodAppa") return "Pod Appa, DALI Lab";
   if (location === "PodMomo") return "Pod Momo, DALI Lab";
@@ -130,8 +137,8 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: da?.domain?.name ?? "DALI Lab",
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl ?? undefined,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview) ?? undefined,
     };
 
     const applicant = await getApplicantRecipient(interview.domainApplicationId);
@@ -206,8 +213,8 @@ export async function sendInterviewInviteEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl ?? undefined,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview) ?? undefined,
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -229,8 +236,8 @@ export async function sendInterviewInviteEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview),
       organizer: ORGANIZER,
       // Initial REQUEST uses the row's current sequence (0 for a fresh
       // interview). No bump here — bumps happen on updates / cancels.
@@ -320,7 +327,7 @@ export async function sendInterviewCancelEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
+      location: formatLocation(interview.location, meetingLink(interview)),
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -422,8 +429,8 @@ export async function sendReassignmentEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl ?? undefined,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview) ?? undefined,
     };
 
     // Bump once for the whole reassignment so the CANCEL to the removed
@@ -492,8 +499,8 @@ export async function sendReassignmentEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview),
       organizer: ORGANIZER,
       sequence,
     } as const;
@@ -564,8 +571,8 @@ export async function sendLocationChangeEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl ?? undefined,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview) ?? undefined,
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -590,8 +597,8 @@ export async function sendLocationChangeEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, interview.zoomJoinUrl),
-      meetingUrl: interview.zoomJoinUrl,
+      location: formatLocation(interview.location, meetingLink(interview)),
+      meetingUrl: meetingLink(interview),
       description: "Updated location",
       organizer: ORGANIZER,
       sequence,

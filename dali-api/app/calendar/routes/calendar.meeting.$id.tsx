@@ -1,6 +1,6 @@
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { ChevronLeft, FileText, Users, ScanLine, Shield } from "lucide-react";
+import { ChevronLeft, FileText, Users, ScanLine, Shield, Video } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -47,6 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       durationMinutes: true,
       status: true,
       isCoreMeeting: true,
+      meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
       notePage: { select: { id: true } },
       attendance: {
@@ -96,6 +97,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     organizerName: fullName(meeting.organizer),
     selectedAtIso: meeting.selectedAt ? meeting.selectedAt.toISOString() : null,
     notePageId: meeting.notePage?.id ?? null,
+    meetingUrl: meeting.meetingUrl,
     canManage,
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
@@ -151,14 +153,26 @@ export default function CalendarMeetingPage() {
           {when}
           {d.organizerName ? ` · ${d.organizerName}` : ""}
         </p>
-        {d.notePageId && (
-          <Link
-            to={`/documents/${d.notePageId}`}
-            className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-          >
-            <FileText className="h-4 w-4 text-muted-foreground" /> Open meeting note
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {d.meetingUrl && (
+            <a
+              href={d.meetingUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 rounded-md bg-accent-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-teal/90"
+            >
+              <Video className="h-4 w-4" /> Join Google Meet
+            </a>
+          )}
+          {d.notePageId && (
+            <Link
+              to={`/documents/${d.notePageId}`}
+              className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              <FileText className="h-4 w-4 text-muted-foreground" /> Open meeting note
+            </Link>
+          )}
+        </div>
       </header>
 
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">

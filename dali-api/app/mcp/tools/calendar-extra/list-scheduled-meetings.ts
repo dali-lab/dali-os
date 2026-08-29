@@ -73,6 +73,7 @@ export async function runListScheduledMeetings(userId: string, input: Input) {
       attendanceMode: true,
       organizerId: true,
       participantUserIds: true,
+      meetingUrl: true,
     },
     orderBy: { createdAt: "desc" },
     take: limit,
@@ -88,6 +89,7 @@ export async function runListScheduledMeetings(userId: string, input: Input) {
       meetingType: m.meetingType,
       projectId: m.projectId,
       attendanceMode: m.attendanceMode,
+      meetingUrl: m.meetingUrl,
       participantCount: new Set([m.organizerId, ...m.participantUserIds]).size,
     })),
   };
