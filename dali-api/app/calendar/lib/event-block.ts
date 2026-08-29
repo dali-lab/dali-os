@@ -1,6 +1,6 @@
 import React from "react";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import type { EventAttendeeDTO, MeetingInviteDTO, TimeEntryDTO } from "~/calendar/lib/types";
+import type { EventAttendeeDTO, TimeEntryDTO } from "~/calendar/lib/types";
 
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
@@ -123,25 +123,6 @@ export const UNASSIGNED_ROLE_KEY = "unassigned";
 
 export function timeEntryRoleKey(t: TimeEntryDTO): string {
   return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
-}
-
-// RSVP status → block styling on the calendar. Pending (unanswered) invites get
-// a dashed teal outline to read as "needs response"; answered ones adopt a
-// solid tint keyed to the response (declined is muted/greyed).
-export function meetingBlockStyle(rsvp: MeetingInviteDTO["rsvp"]): {
-  className: string;
-  borderClassName: string;
-} {
-  switch (rsvp) {
-    case "Accepted":
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-accent-teal" };
-    case "Tentative":
-      return { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow" };
-    case "Declined":
-      return { className: "bg-muted text-muted-foreground line-through", borderClassName: "border-border" };
-    default:
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-dashed border-accent-teal" };
-  }
 }
 
 // Pick dark or light ink for a solid fill by its perceived luminance, so

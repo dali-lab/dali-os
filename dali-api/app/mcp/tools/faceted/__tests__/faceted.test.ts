@@ -87,25 +87,6 @@ vi.mock("../../time-entries", () => ({
   runDeleteTimeEntry: vi.fn(),
 }));
 
-vi.mock("../../manual-blocks", () => ({
-  ADD_MANUAL_BLOCK_TOOL: {
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: ["title", "startTime", "endTime"],
-    },
-  },
-  UPDATE_MANUAL_BLOCK_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["id"] },
-  },
-  DELETE_MANUAL_BLOCK_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["id"] },
-  },
-  runAddManualBlock: vi.fn(),
-  runUpdateManualBlock: vi.fn(),
-  runDeleteManualBlock: vi.fn(),
-}));
-
 vi.mock("../../document-curation", () => ({
   SET_DOCUMENT_SHARING_TOOL: {
     inputSchema: { type: "object", properties: {}, required: ["pageId"] },
@@ -131,7 +112,6 @@ import { MANAGE_SPRINT_TOOL } from "../manage-sprint";
 import { MANAGE_EPIC_TOOL } from "../manage-epic";
 import { MANAGE_STORY_TOOL } from "../manage-story";
 import { MANAGE_TIME_ENTRY_TOOL } from "../manage-time-entry";
-import { MANAGE_MANUAL_BLOCK_TOOL } from "../manage-manual-block";
 import { MANAGE_DOCUMENT_SHARING_TOOL } from "../manage-document-sharing";
 
 import { runCreateSprint } from "../../create-sprint";
@@ -148,7 +128,6 @@ import { runUpdateStory } from "../../update-story";
 import { runDeleteStory } from "../../delete-story";
 
 import { runAddTimeEntry, runUpdateTimeEntry, runDeleteTimeEntry } from "../../time-entries";
-import { runAddManualBlock, runUpdateManualBlock, runDeleteManualBlock } from "../../manual-blocks";
 import {
   runSetDocumentSharing,
   runDeleteProjectDocument,
@@ -373,58 +352,6 @@ describe("manage_time_entry", () => {
   it("delete missing id throws McpInvalidError", async () => {
     await expect(
       MANAGE_TIME_ENTRY_TOOL.run(ctx, { action: "delete" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-});
-
-// ─── manage_manual_block ──────────────────────────────────────────────────────
-
-describe("manage_manual_block", () => {
-  it("advertises mcp:write scope", () => {
-    expect(MANAGE_MANUAL_BLOCK_TOOL.def.requiredScope).toBe("mcp:write");
-  });
-
-  it("unknown action throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_MANUAL_BLOCK_TOOL.run(ctx, { action: "explode" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-
-  it("add routes to runAddManualBlock with userId and stripped args", async () => {
-    vi.mocked(runAddManualBlock).mockResolvedValue({ ok: true, id: "mb1", loggedHours: null } as any);
-    await MANAGE_MANUAL_BLOCK_TOOL.run(ctx, {
-      action: "add",
-      title: "Focus",
-      startTime: "2026-08-01T09:00:00Z",
-      endTime: "2026-08-01T11:00:00Z",
-    });
-    expect(runAddManualBlock).toHaveBeenCalledWith("user-1", {
-      title: "Focus",
-      startTime: "2026-08-01T09:00:00Z",
-      endTime: "2026-08-01T11:00:00Z",
-    });
-  });
-
-  it("update routes to runUpdateManualBlock", async () => {
-    vi.mocked(runUpdateManualBlock).mockResolvedValue({ ok: true, loggedHours: null } as any);
-    await MANAGE_MANUAL_BLOCK_TOOL.run(ctx, {
-      action: "update",
-      id: "mb1",
-      title: "New Title",
-    });
-    expect(runUpdateManualBlock).toHaveBeenCalledWith("user-1", { id: "mb1", title: "New Title" });
-  });
-
-  it("delete routes to runDeleteManualBlock", async () => {
-    vi.mocked(runDeleteManualBlock).mockResolvedValue({ ok: true, removedTimeEntry: false } as any);
-    await MANAGE_MANUAL_BLOCK_TOOL.run(ctx, { action: "delete", id: "mb1" });
-    expect(runDeleteManualBlock).toHaveBeenCalledWith("user-1", { id: "mb1" });
-  });
-
-  it("add missing required fields throws McpInvalidError", async () => {
-    // Missing startTime and endTime
-    await expect(
-      MANAGE_MANUAL_BLOCK_TOOL.run(ctx, { action: "add", title: "Focus" }),
     ).rejects.toBeInstanceOf(McpInvalidError);
   });
 });

@@ -243,12 +243,6 @@ import {
   TimeEntryNotFoundError,
   TimeEntryInvalidError,
 } from "~/mcp/tools/time-entries";
-import {
-  LIST_MY_MANUAL_BLOCKS_TOOL,
-  runListMyManualBlocks,
-  ManualBlockNotFoundError,
-  ManualBlockInvalidError,
-} from "~/mcp/tools/manual-blocks";
 
 import {
   GET_PROJECT_SETTINGS_TOOL,
@@ -324,10 +318,9 @@ const TOOLS = [
   UPLOAD_PROJECT_FILE_TOOL,
   LINK_TASK_TO_GITHUB_TOOL,
   UNLINK_TASK_FROM_GITHUB_TOOL,
-  // Timesheet + calendar-block additions:
+  // Timesheet additions:
   LIST_MY_ROLES_TOOL,
   LIST_MY_TIME_ENTRIES_TOOL,
-  LIST_MY_MANUAL_BLOCKS_TOOL,
   // Project settings (read), showcase, staffing, document/file curation:
   GET_PROJECT_SETTINGS_TOOL,
   GET_PROJECT_SHOWCASE_TOOL,
@@ -392,8 +385,6 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
   if (err instanceof CurationInvalidError) return rpcError(id, -32602, err.message);
   if (err instanceof TimeEntryNotFoundError) return rpcError(id, -32004, err.message);
   if (err instanceof TimeEntryInvalidError) return rpcError(id, -32602, err.message);
-  if (err instanceof ManualBlockNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof ManualBlockInvalidError) return rpcError(id, -32602, err.message);
   if (err instanceof ScheduleMeetingError) return rpcError(id, -32602, err.message);
   if (err instanceof PreferenceValidationError) return rpcError(id, -32602, err.message);
 
@@ -650,12 +641,6 @@ export async function action({ request }: Route.ActionArgs) {
             payload = await runListMyTimeEntries(
               auth.user.id,
               args as Parameters<typeof runListMyTimeEntries>[1],
-            );
-            break;
-          case "list_my_manual_blocks":
-            payload = await runListMyManualBlocks(
-              auth.user.id,
-              args as Parameters<typeof runListMyManualBlocks>[1],
             );
             break;
           case "mark_notification_read":

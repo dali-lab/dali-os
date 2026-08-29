@@ -218,6 +218,7 @@ export function toMemberClassDTO(
     storage: string;
     linkId: string | null;
     calendarId: string | null;
+    termId: string;
   },
   links: CalendarLinkDTO[],
 ): MemberClassDTO {
@@ -231,14 +232,16 @@ export function toMemberClassDTO(
     linkId: row.linkId,
     calendarId: row.calendarId,
     destinationLabel: calendarLabel(row, links),
+    termId: row.termId,
   };
 }
 
-/** The destinations the add-class form offers: DALI-local always, plus each
- *  connected Google account (a dedicated Classes calendar, and either the
- *  account's sub-calendars or its primary as a fallback). */
+/** The destinations the add-class form offers: each connected Google account
+ *  (a dedicated Classes calendar, and either the account's sub-calendars or
+ *  its primary as a fallback). No local-only option — classes must sync to
+ *  Google so they appear in a real calendar. */
 export function buildClassDestinations(links: CalendarLinkDTO[]): ClassDestinationDTO[] {
-  const out: ClassDestinationDTO[] = [{ kind: "local", label: "DALI calendar (in-app only)" }];
+  const out: ClassDestinationDTO[] = [];
   for (const link of links) {
     if (link.provider !== "Google") continue;
     const account = link.displayName || link.externalEmail || "Google";

@@ -24,8 +24,6 @@ import {
   EventDefaultsPopover,
   CalendarManagerModal,
   ClassesManagerModal,
-  eventDestinations,
-  LOCAL_DEST,
   type ComposerState,
 } from "~/calendar/components/composer";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
@@ -37,19 +35,15 @@ import { buttonClasses } from "~/components/ui/Button";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import type {
   WhDay,
-  ManualBlockDTO,
   CalendarLinkDTO,
   GroupOption,
   UserOption,
   ProjectOption,
   TimeEntryDTO,
-  MeetingInviteDTO,
   MemberClassDTO,
-  ClassOccurrenceDTO,
   ClassDestinationDTO,
   ExternalEventDTO,
   EventAttendeeDTO,
@@ -80,9 +74,6 @@ import {
 import {
   buildGridDays,
   buildExternalLayer,
-  buildBlocksLayer,
-  buildMeetingsLayer,
-  buildClassesLayer,
   buildAllDayItems,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
@@ -105,8 +96,7 @@ import {
 import { MeetingComposer, type AddingMode, ParticipantPicker, ParticipantAvailabilityRoster, SelectedSlotBlock, SlotAttendeePopover, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetView, CreateFromDragPopover, TimesheetEditPopover } from "~/calendar/components/timesheet";
-import { LegacyCalendarTabs } from "~/calendar/components/legacy-tabs";
+import { TimesheetSummaryRail, TimesheetView, TimesheetEditPopover } from "~/calendar/components/timesheet";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -125,12 +115,12 @@ export async function action({ request }: Route.ActionArgs) { return submitCalen
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const unified = useFeatureFlag("calendar-unified");
-  return unified ? <CalendarScreen data={data} /> : <LegacyCalendarTabs data={data} />;
+  return <CalendarScreen data={data} />;
 }
 
 /* ------------------------------------------------------------------ */
-/* Unified calendar (behind the `calendar-unified` flag)               */
+/* Calendar. The screen always renders; the `calendar-unified` flag gates the   */
+/* full feature set (Google event CRUD, meeting scheduling, classes, timesheet). */
 /* ------------------------------------------------------------------ */
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
@@ -218,7 +208,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       return next;
     });
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalSlot, setCreateModalSlot] = useState<{ startLocal: string; endLocal: string } | null>(null);
   const [calendarsOpen, setCalendarsOpen] = useState(false);
@@ -289,69 +278,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  // In-app blocks edit/move through the SAME composer as Google events — the
-  // block is presented to the composer as a local-destination "event".
-  const editBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
-    setComposer({
-      mode: "edit",
-      anchor,
-      event: {
-        startIso: b.startTime,
-        endIso: b.endTime,
-        title: b.title,
-        color: null,
-        writable: true,
-        allDay: false,
-        manualBlockId: b.id,
-        isWork: b.isWork,
-        assignmentType: b.assignmentType,
-        roleRefId: b.roleRefId,
-        workNote: b.workNote,
-      },
-    });
-  const moveBlock = (b: ManualBlockDTO, startHour: number, endHour: number, dayIdx?: number) => {
-    const { year, month, day } = dropYmd(b.startTime, dayIdx);
-    const toIso = (h: number) => {
-      const mins = Math.round(h * 60);
-      return zonedWallTimeUtc(year, month, day, Math.floor(mins / 60), mins % 60, data.timezone).toISOString();
-    };
-    const startIso = toIso(startHour);
-    const endIso = toIso(endHour);
-    setDragOverride({ key: `b:${b.id}`, startIso, endIso });
-    eventMoveFetcher.submit(
-      {
-        intent: "event-move",
-        destination: LOCAL_DEST,
-        manualBlockId: b.id,
-        startIso,
-        endIso,
-        timeZone: data.timezone,
-      },
-      { method: "post" },
-    );
-  };
   // Detail-popover Duplicate: open the composer in create mode, prefilled from
-  // the event/block (a fresh event — identity fields are dropped).
+  // the event (a fresh event — identity fields are dropped).
   const duplicateEvent = (e: ExternalEventDTO, anchor?: DOMRect) =>
     setComposer({ mode: "create", anchor, seed: e });
-  const duplicateBlock = (b: ManualBlockDTO, anchor?: DOMRect) =>
-    setComposer({
-      mode: "create",
-      anchor,
-      seed: {
-        startIso: b.startTime,
-        endIso: b.endTime,
-        title: b.title,
-        color: null,
-        writable: true,
-        allDay: false,
-        manualBlockId: b.id, // drives the destination default → in-app
-        isWork: b.isWork,
-        assignmentType: b.assignmentType,
-        roleRefId: b.roleRefId,
-        workNote: b.workNote,
-      },
-    });
   // Detail-popover Delete. Recurring events need the this/following/all scope
   // prompt, so route those through the composer; one-offs delete straight away.
   const deleteEvent = (e: ExternalEventDTO) => {
@@ -365,7 +295,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         intent: "event-delete",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
         eventId: e.eventId,
-        manualBlockId: "",
         scope: "this",
         recurringEventId: "",
         originalStartIso: e.startIso ?? "",
@@ -373,19 +302,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  const deleteBlock = (b: ManualBlockDTO) =>
-    eventMoveFetcher.submit(
-      {
-        intent: "event-delete",
-        destination: LOCAL_DEST,
-        manualBlockId: b.id,
-        eventId: "",
-        scope: "this",
-        recurringEventId: "",
-        originalStartIso: "",
-      },
-      { method: "post" },
-    );
   // One grid editor slot, shared by drag-to-create (a new block/entry) and
   // click-to-edit (an existing logged-time block). The active layer/action
   // decides which the drag means; a logged block click always edits.
@@ -462,7 +378,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     Boolean(composer) ||
     classesOpen ||
     calMgrOpen ||
-    createOpen ||
     createModalOpen ||
     Boolean(searchAnchor) ||
     Boolean(hoursAnchor) ||
@@ -511,10 +426,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           const o = overrides.find((ov) => ov.key === `g:${e.eventId}`);
           return o ? { ...e, startIso: o.startIso, endIso: o.endIso } : e;
         }),
-        manualBlocks: data.manualBlocks.map((b) => {
-          const o = overrides.find((ov) => ov.key === `b:${b.id}`);
-          return o ? { ...b, startTime: o.startIso, endTime: o.endIso } : b;
-        }),
       }
     : data;
 
@@ -546,25 +457,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }));
     }
   }
-  if (layers.blocks)
-    layerMaps.push(
-      buildBlocksLayer(
-        layerData,
-        days,
-        loggedIndex?.byBlock,
-        data.crudEnabled ? editBlock : undefined,
-        data.crudEnabled ? moveBlock : undefined,
-        data.crudEnabled ? duplicateBlock : undefined,
-        data.crudEnabled ? deleteBlock : undefined,
-      ),
-    );
-  if (layers.meetings) layerMaps.push(buildMeetingsLayer(data, days, loggedIndex?.byMeeting));
-  if (data.classesEnabled && layers.classes) layerMaps.push(buildClassesLayer(data, days));
   if (layers.logged)
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        suppressSourced: { meetings: layers.meetings, blocks: layers.blocks },
+        suppressSourced: { meetings: false },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
@@ -643,13 +540,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
-  // Open the scheduling overlay (from the New menu). A meeting's time comes from
-  // the group's availability, so there's no slot to carry in — it's picked on
-  // the availability grid after participants are chosen.
-  const startMeeting = () => {
-    setEditor(null);
-    setMode("meeting");
-  };
   // Open the unified create popover at a sensible default slot (today if it's in
   // range, 9–10am) — the New-menu path when there's no drag. Month view has no
   // time grid, so switch to week first.
@@ -785,6 +675,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       toggleHiddenCal={toggleHiddenCal}
                       classesEnabled={data.classesEnabled}
                       timesheetSyncEnabled={data.timesheetGoogleSync}
+                      roleBuckets={layers.logged ? roleBuckets : []}
+                      excludedRoleKeys={excludedRoleKeys}
+                      toggleRoleKey={toggleRoleKey}
                       onClose={() => setCalendarsOpen(false)}
                     />
                   </div>
@@ -795,59 +688,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           <div className="relative">
             <button
               type="button"
-              onClick={() => setCreateOpen((o) => !o)}
+              onClick={() => {
+                if (data.crudEnabled) {
+                  setCreateModalSlot(null);
+                  setCreateModalOpen(true);
+                } else {
+                  openQuickCreate();
+                }
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
             >
-              <Plus className="h-4 w-4" /> New <ChevronDown className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" /> New
             </button>
-            {createOpen && (
-              <>
-                <button
-                  type="button"
-                  className="fixed inset-0 z-40 cursor-default"
-                  aria-hidden
-                  onClick={() => setCreateOpen(false)}
-                  tabIndex={-1}
-                />
-                <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-brand-2">
-                  {data.crudEnabled ? (
-                    // Single "Create event or meeting" button opens the unified modal.
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={() => {
-                        setCreateModalSlot(null);
-                        setCreateModalOpen(true);
-                        setCreateOpen(false);
-                      }}
-                    >
-                      <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Create event or meeting
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      onClick={() => {
-                        openQuickCreate();
-                        setCreateOpen(false);
-                      }}
-                    >
-                      <Plus className="h-4 w-4 text-muted-foreground" /> Event / log time
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                    onClick={() => {
-                      startMeeting();
-                      setCreateOpen(false);
-                    }}
-                  >
-                    <CalendarPlus className="h-4 w-4 text-muted-foreground" /> Meeting
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       </header>
@@ -916,24 +768,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       : createSel
                   }
                   selectionPopover={
-                    editor
-                      ? () =>
-                          editor.kind === "edit" ? (
-                            <TimesheetEditPopover
-                              entry={editor.entry}
-                              startLocal={editor.startLocal}
-                              endLocal={editor.endLocal}
-                              myRoles={data.myRoles}
-                              onClose={() => setEditor(null)}
-                            />
-                          ) : (
-                            <CreateFromDragPopover
-                              startLocal={editor.startLocal}
-                              endLocal={editor.endLocal}
-                              myRoles={data.myRoles}
-                              onClose={() => setEditor(null)}
-                            />
-                          )
+                    editor?.kind === "edit"
+                      ? () => (
+                          <TimesheetEditPopover
+                            entry={editor.entry}
+                            startLocal={editor.startLocal}
+                            endLocal={editor.endLocal}
+                            myRoles={data.myRoles}
+                            onClose={() => setEditor(null)}
+                          />
+                        )
                       : undefined
                   }
                   onSelectionDismiss={() => setEditor(null)}
@@ -1051,208 +895,3 @@ function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => voi
     </div>
   );
 }
-
-type CalendarLayerSpec = {
-  key: keyof LayerVisibility;
-  label: string;
-  swatch: string;
-};
-
-const CALENDAR_LAYER_SPECS: CalendarLayerSpec[] = [
-  { key: "workingHours", label: "Working hours", swatch: "bg-muted-foreground/40" },
-  { key: "blocks", label: "My blocks", swatch: "bg-accent-coral" },
-  { key: "external", label: "Linked calendars", swatch: "bg-accent-teal-light" },
-  { key: "meetings", label: "Meetings", swatch: "bg-accent-teal" },
-  { key: "classes", label: "Classes", swatch: "bg-[#1E5779]" },
-  { key: "logged", label: "Logged time", swatch: "bg-accent-yellow" },
-];
-
-// The layer toggles, rendered inside the toolbar's "Calendars" popover. Each row
-// is a colored checkbox + label; the linked-calendar colour key and the logged-
-// time role-filter chips nest under their layer when it's on.
-function CalendarLayerList({
-  layers,
-  toggleLayer,
-  calendars,
-  hiddenCals,
-  toggleHiddenCal,
-  roleBuckets,
-  excludedRoleKeys,
-  toggleRoleKey,
-  classesEnabled,
-  classCount,
-  localClassCount,
-  onManageClasses,
-  onEditHours,
-  crudEnabled,
-  onManageCalendars,
-}: {
-  layers: LayerVisibility;
-  toggleLayer: (key: keyof LayerVisibility) => void;
-  calendars: CalendarLegendGroup[];
-  hiddenCals: Set<string>;
-  toggleHiddenCal: (id: string) => void;
-  roleBuckets: { key: string; label: string; hours: number }[];
-  excludedRoleKeys: Set<string>;
-  toggleRoleKey: (key: string) => void;
-  classesEnabled: boolean;
-  classCount: number;
-  localClassCount: number;
-  onManageClasses: () => void;
-  onEditHours: (anchor: DOMRect) => void;
-  crudEnabled: boolean;
-  onManageCalendars: () => void;
-}) {
-  return (
-    <>
-    <ul className="flex flex-col gap-0.5">
-      {CALENDAR_LAYER_SPECS.filter((s) => s.key !== "classes" || classesEnabled).map((spec) => {
-        const on = layers[spec.key];
-        // The navy Classes layer only carries DALI-only (Local) classes; hide its
-        // toggle when there are none (Google classes ride "Linked calendars").
-        const showToggle = spec.key !== "classes" || localClassCount > 0;
-        return (
-          <li key={spec.key}>
-            {showToggle && (
-              <button
-                type="button"
-                onClick={() => toggleLayer(spec.key)}
-                aria-pressed={on}
-                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-              >
-                <span
-                  className={cn(
-                    "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
-                    on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
-                  )}
-                >
-                  {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
-                </span>
-                <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>{spec.label}</span>
-              </button>
-            )}
-            {/* Working-hours editor opens inline, anchored to this row. */}
-            {spec.key === "workingHours" && (
-              <div className="mb-1 ml-8 mt-0.5">
-                <button
-                  type="button"
-                  onClick={(e) => onEditHours(e.currentTarget.getBoundingClientRect())}
-                  className="text-xs font-medium text-accent-teal hover:underline"
-                >
-                  Edit hours
-                </button>
-              </div>
-            )}
-            {/* Per-calendar visibility toggles under Linked calendars, grouped by
-                account (headers shown only when more than one is linked). */}
-            {spec.key === "external" && on && calendars.length > 0 && (
-              <div className="mb-1 ml-8 mt-0.5 flex flex-col gap-1.5">
-                {calendars.map((group) => (
-                  <div key={group.account} className="flex flex-col gap-0.5">
-                    {calendars.length > 1 && (
-                      <div className="truncate px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {group.account}
-                      </div>
-                    )}
-                    {group.calendars.map((c) => {
-                      const hidden = hiddenCals.has(c.id);
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => toggleHiddenCal(c.id)}
-                          aria-pressed={!hidden}
-                          className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
-                        >
-                          <span
-                            className={cn("h-2.5 w-2.5 shrink-0 rounded-[3px]", hidden && "opacity-30")}
-                            style={{ backgroundColor: c.color ?? "var(--color-accent-coral)" }}
-                          />
-                          <span className={cn("truncate", hidden ? "text-muted-foreground line-through" : "text-foreground")}>
-                            {c.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {/* Enabling which calendars sync lives in global Settings. */}
-                <a
-                  href="/settings/calendar"
-                  target="_top"
-                  rel="noopener"
-                  className="px-1 pt-0.5 text-[11px] font-medium text-accent-teal hover:underline"
-                >
-                  Manage accounts & calendars →
-                </a>
-              </div>
-            )}
-            {/* No linked calendars yet → clear connect CTA */}
-            {spec.key === "external" && on && calendars.length === 0 && (
-              <div className="mb-1 ml-8 mt-0.5">
-                <a
-                  href="/oauth/calendar/google/start"
-                  target="_top"
-                  rel="noopener"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-teal hover:underline"
-                >
-                  ＋ Connect a calendar
-                </a>
-              </div>
-            )}
-            {/* Manage-classes entry nested under the Classes layer */}
-            {spec.key === "classes" && (
-              <div className={cn("mb-1 ml-8", showToggle ? "mt-0.5" : "mt-0")}>
-                <button
-                  type="button"
-                  onClick={onManageClasses}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-teal hover:underline"
-                >
-                  {classCount > 0 ? `Manage classes (${classCount})` : "＋ Add your classes"}
-                </button>
-              </div>
-            )}
-            {/* Role filter chips nested under Logged time */}
-            {spec.key === "logged" && on && roleBuckets.length > 0 && (
-              <ul className="mb-1 ml-8 mt-1 flex flex-wrap gap-1">
-                {roleBuckets.map((b) => {
-                  const excluded = excludedRoleKeys.has(b.key);
-                  const color = roleColor(b.key);
-                  return (
-                    <li key={b.key}>
-                      <button
-                        type="button"
-                        onClick={() => toggleRoleKey(b.key)}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
-                          excluded ? "border-border text-muted-foreground line-through" : "border-border text-foreground",
-                        )}
-                      >
-                        <span className={cn("h-2 w-2 rounded-full", color.dot)} />
-                        {b.label}
-                        <span className="text-muted-foreground">{b.hours}h</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-    {crudEnabled && (
-      <div className="mt-1 border-t border-border pt-1">
-        <button
-          type="button"
-          onClick={onManageCalendars}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <CalendarDays className="h-3.5 w-3.5" /> Manage calendars
-        </button>
-      </div>
-    )}
-    </>
-  );
-}
-
