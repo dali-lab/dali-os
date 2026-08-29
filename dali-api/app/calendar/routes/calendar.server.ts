@@ -1408,6 +1408,11 @@ export async function submitCalendarAction(request: Request) {
         return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
       }
       if (!input.onTimesheet) {
+        // Clean up the Google mirror event (if any) before removing the row.
+        const existing = await prisma.timeEntry.findUnique({
+          where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+        });
+        if (existing) await removeTimeEntryFromGoogle(existing).catch(() => {});
         await prisma.timeEntry.deleteMany({ where: { scheduledMeetingId: meeting.id, userId } });
         return null;
       }
@@ -1424,7 +1429,7 @@ export async function submitCalendarAction(request: Request) {
       // MeetingAttendance flip — logging your own hours isn't a claim that the
       // organizer marked you present. The role is left unset: the Timesheet
       // edit popover is where it gets attributed, as with attendance rows.
-      await prisma.timeEntry.upsert({
+      const meetingEntry = await prisma.timeEntry.upsert({
         where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
         create: {
           userId,
@@ -1438,6 +1443,10 @@ export async function submitCalendarAction(request: Request) {
         },
         update: { projectId: meeting.projectId, date: startTime, hours, startTime, endTime },
       });
+      // Mirror to the DALI Timesheet calendar if the entry carries a role (no-ops
+      // for the unattributed create above; syncs once the Timesheet popover
+      // attributes a role and re-toggles).
+      await syncTimeEntryToGoogle(meetingEntry).catch(() => {});
       return null;
     }
 

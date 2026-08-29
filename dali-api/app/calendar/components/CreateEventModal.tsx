@@ -790,13 +790,10 @@ export function CreateEventModal({
                   <Select
                     value={organizerCalendarLinkId}
                     onChange={(v) => setOrganizerCalendarLinkId(v)}
-                    options={[
-                      { value: "", label: "No invite (in-app notification only)" },
-                      ...googleLinks.map((l) => ({
-                        value: l.id,
-                        label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
-                      })),
-                    ]}
+                    options={googleLinks.map((l) => ({
+                      value: l.id,
+                      label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
+                    }))}
                     buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
                   />
                 </div>
