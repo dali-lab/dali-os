@@ -27,6 +27,8 @@ import {
   externalFinalizeAllowed,
   EXTERNAL_FINALIZE_SKIP_MESSAGE,
 } from "~/projects/lib/finalize-external.server";
+import { vaultwardenConfigured } from "~/lib/vaultwarden";
+import { provisionVaultGroup } from "~/projects/lib/vaultwarden-group-sync";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
@@ -35,7 +37,7 @@ import { dedupeLiveAssignments } from "./staffing-board";
 import { publishCycleChange } from "./staffing-events.server";
 import { derivePairings, findDomainsMissingMentors } from "./mentorship-pairings";
 
-const AUTOMATIONS = ["assignments", "slack", "gmail", "github"] as const;
+const AUTOMATIONS = ["assignments", "slack", "gmail", "github", "vaultwarden"] as const;
 type Automation = (typeof AUTOMATIONS)[number];
 
 type StepResult = { status: "ok" | "skipped" | "error"; message: string };
@@ -60,6 +62,7 @@ export type FinalizeStaffingBody = {
   automations: string[];
   slackChannel?: string;
   githubTeamSlug?: string;
+  vaultwardenCollectionId?: string;
   saveFieldsOnly?: boolean;
   promoteMentors?: boolean;
 };
@@ -95,13 +98,19 @@ export async function finalizeStaffing(
       slackChannelName: true,
       repoUrls: true,
       teamGroupEmail: true,
+      vaultwardenGroupId: true,
+      vaultwardenCollectionId: true,
     },
   });
   if (!project) throw new Error("Project not found");
 
   // ── saveFieldsOnly ──────────────────────────────────────────────────────────
   if (body.saveFieldsOnly) {
-    const data: { slackChannelName?: string | null; githubTeamSlug?: string | null } = {};
+    const data: {
+      slackChannelName?: string | null;
+      githubTeamSlug?: string | null;
+      vaultwardenCollectionId?: string | null;
+    } = {};
     if (body.slackChannel !== undefined) {
       const v = body.slackChannel.trim();
       data.slackChannelName = v === "" ? null : v;
@@ -109,6 +118,10 @@ export async function finalizeStaffing(
     if (body.githubTeamSlug !== undefined) {
       const v = body.githubTeamSlug.trim();
       data.githubTeamSlug = v === "" ? null : v;
+    }
+    if (body.vaultwardenCollectionId !== undefined) {
+      const v = body.vaultwardenCollectionId.trim();
+      data.vaultwardenCollectionId = v === "" ? null : v;
     }
     if (Object.keys(data).length > 0) {
       await prisma.project.update({ where: { id: project.id }, data });
@@ -649,6 +662,65 @@ export async function finalizeStaffing(
         };
       } catch (err) {
         results.github = { status: "error", message: slackErrorMessage(err) };
+      }
+    }
+  }
+
+  // ── vaultwarden ────────────────────────────────────────────────────────────
+  if (selected.has("vaultwarden")) {
+    if (!externalFinalizeAllowed()) {
+      results.vaultwarden = { status: "skipped", message: EXTERNAL_FINALIZE_SKIP_MESSAGE };
+    } else if (!vaultwardenConfigured()) {
+      results.vaultwarden = { status: "skipped", message: "Vaultwarden is not configured." };
+    } else {
+      try {
+        const collectionId =
+          body.vaultwardenCollectionId !== undefined
+            ? body.vaultwardenCollectionId.trim() || null
+            : project.vaultwardenCollectionId ?? null;
+        // Persist a body-provided collection id so the project row reflects it.
+        if (
+          body.vaultwardenCollectionId !== undefined &&
+          collectionId !== (project.vaultwardenCollectionId ?? null)
+        ) {
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { vaultwardenCollectionId: collectionId },
+          });
+        }
+        const roster = await prisma.staffingAssignment.findMany({
+          where: { staffingCycleId: cycle.id, projectId: project.id, status: "Confirmed" },
+          select: {
+            user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+          },
+        });
+        // Dedupe by user id (one staffingAssignment row per domain).
+        const byUser = new Map<string, { name: string; email: string | null }>();
+        for (const r of roster) {
+          byUser.set(r.user.id, {
+            name: `${r.user.firstName} ${r.user.lastName}`.trim(),
+            email: r.user.daliEmail?.trim().toLowerCase() || null,
+          });
+        }
+        const rep = await provisionVaultGroup({
+          projectId: project.id,
+          projectName: project.name,
+          boundGroupId: project.vaultwardenGroupId,
+          collectionId,
+          roster: [...byUser.values()],
+          onGroupEnsured: async (groupId) => {
+            await prisma.project.update({
+              where: { id: project.id },
+              data: { vaultwardenGroupId: groupId },
+            });
+          },
+        });
+        results.vaultwarden = {
+          status: rep.status === "skipped" ? "skipped" : rep.status,
+          message: rep.message,
+        };
+      } catch (err) {
+        results.vaultwarden = { status: "error", message: slackErrorMessage(err) };
       }
     }
   }

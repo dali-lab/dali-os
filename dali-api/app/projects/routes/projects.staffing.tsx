@@ -164,7 +164,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       orderBy: [{ status: "asc" }, { name: "asc" }],
       // githubTeamSlug pre-fills the Finalize modal's editable GitHub field.
-      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true },
+      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true, vaultwardenCollectionId: true },
     }),
     prisma.domain.findMany({ select: { id: true, displayName: true } }),
     // Read only to union in projects being staffed this term that have no
@@ -203,7 +203,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (stagedProjectIds.length > 0) {
     const strays = await prisma.project.findMany({
       where: { id: { in: stagedProjectIds }, status: { not: "Archived" } },
-      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true },
+      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true, vaultwardenCollectionId: true },
     });
     projects.push(...strays);
     projects.sort(

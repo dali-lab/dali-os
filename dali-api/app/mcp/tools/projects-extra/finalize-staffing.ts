@@ -18,7 +18,7 @@ import { finalizeStaffing } from "~/projects/lib/finalize-staffing.server";
 export const FINALIZE_STAFFING_TOOL = {
   name: "finalize_staffing",
   description:
-    "HIGH-BLAST: Confirm proposed staffing assignments for one project and optionally provision their Slack channel, GitHub team, and Google Group. Each automation step reports its own outcome. Idempotent — safe to re-run. Staffing managers only (mcp:admin). automations: any subset of ['assignments','slack','gmail','github']. Pass saveFieldsOnly: true to persist channel/slug fields without running any automations.",
+    "HIGH-BLAST: Confirm proposed staffing assignments for one project and optionally provision their Slack channel, GitHub team, Google Group, and Vaultwarden group. Each automation step reports its own outcome. Idempotent — safe to re-run. Staffing managers only (mcp:admin). automations: any subset of ['assignments','slack','gmail','github','vaultwarden']. Pass saveFieldsOnly: true to persist channel/slug/collection fields without running any automations.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -26,7 +26,10 @@ export const FINALIZE_STAFFING_TOOL = {
       projectId: { type: "string", minLength: 1, description: "Project.id to finalize." },
       automations: {
         type: "array",
-        items: { type: "string", enum: ["assignments", "slack", "gmail", "github"] },
+        items: {
+          type: "string",
+          enum: ["assignments", "slack", "gmail", "github", "vaultwarden"],
+        },
         description: "Subset of automations to run.",
       },
       slackChannel: {
@@ -37,9 +40,15 @@ export const FINALIZE_STAFFING_TOOL = {
         type: "string",
         description: "Optional GitHub team slug override. Persisted and used if provided.",
       },
+      vaultwardenCollectionId: {
+        type: "string",
+        description:
+          "Optional Vaultwarden collection id the project's group is granted access to. Persisted and used if provided.",
+      },
       saveFieldsOnly: {
         type: "boolean",
-        description: "When true, persist slackChannel/githubTeamSlug without running automations.",
+        description:
+          "When true, persist slackChannel/githubTeamSlug/vaultwardenCollectionId without running automations.",
       },
       promoteMentors: {
         type: "boolean",
@@ -58,6 +67,7 @@ type FinalizeStaffingInput = {
   automations: string[];
   slackChannel?: string;
   githubTeamSlug?: string;
+  vaultwardenCollectionId?: string;
   saveFieldsOnly?: boolean;
   promoteMentors?: boolean;
 };

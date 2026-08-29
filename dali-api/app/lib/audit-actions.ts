@@ -40,6 +40,7 @@ export const AUDIT_ACTIONS = [
   "staffing.finalize",
   "staffing.term_channel",
   "staffing.sync_teams",
+  "staffing.sync_vault",
   "staffing.board-member.add",
   "staffing.board-member.remove",
   "staffing.reorder",
