@@ -62,6 +62,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this page is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "doc";
@@ -80,6 +85,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this page is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "file";
@@ -99,6 +109,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this file is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "form";
@@ -270,6 +285,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
       parentPageId: true,
       iconEmoji: true,
       updatedAt: true,
+      partnerVisible: true,
     },
   });
 
@@ -283,6 +299,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
+          partnerVisible: row.partnerVisible,
         }
       : {
           type: "doc",
@@ -292,6 +309,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
+          partnerVisible: row.partnerVisible,
         },
   );
 }
@@ -508,6 +526,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
       title: true,
       folderPageId: true,
       updatedAt: true,
+      partnerVisible: true,
       currentVersion: { select: { sizeBytes: true } },
     },
   });
@@ -520,6 +539,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
     updatedAt: f.updatedAt,
     href: `/documents/file/${f.id}`,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
+    partnerVisible: f.partnerVisible,
   }));
 }
 

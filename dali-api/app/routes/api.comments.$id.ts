@@ -6,6 +6,8 @@ import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
+import { notifyMentions } from "~/lib/mentions";
+import type { BodySegment } from "~/lib/comment-body";
 
 // POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" | "react" | "unreact" }
 // DELETE /api/comments/:id
@@ -74,20 +76,75 @@ export async function action({ request, params }: Route.ActionArgs) {
   } catch {
     return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
   }
-  const body = raw as { intent?: string; anchor?: unknown; body?: unknown; emoji?: unknown } | null;
+  const body = raw as {
+    intent?: string;
+    anchor?: unknown;
+    body?: unknown;
+    bodyJson?: unknown;
+    emoji?: unknown;
+  } | null;
   const intent = body?.intent;
 
-  // "edit" — author updates body, bumps updatedAt. Any target type.
+  // "edit" — author updates body (+ bodyJson for rich bodies), bumps updatedAt.
   if (intent === "edit") {
     if (!isAuthor) return forbidden(request);
     const newBody = z.string().trim().min(1).max(5000).safeParse(body?.body);
     if (!newBody.success) {
       return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
     }
+
+    // bodyJson is optional — old clients editing a comment may not send it.
+    const newBodyJson = Array.isArray(body?.bodyJson)
+      ? (body.bodyJson as BodySegment[])
+      : undefined;
+
+    // Read the previous bodyJson before overwriting so we can compute
+    // which mentions are genuinely new (not previously notified on this comment).
+    const prev = await prisma.docComment.findUnique({
+      where: { id: comment.id },
+      select: { bodyJson: true, targetId: true, targetType: true },
+    });
+    const prevSegments = Array.isArray(prev?.bodyJson)
+      ? (prev.bodyJson as BodySegment[])
+      : [];
+    const prevMentionIds = new Set(
+      prevSegments
+        .filter((s): s is Extract<BodySegment, { type: "mention" }> => s.type === "mention")
+        .map((s) => s.userId),
+    );
+
     await prisma.docComment.update({
       where: { id: comment.id },
-      data: { body: newBody.data },
+      data: {
+        body: newBody.data,
+        ...(newBodyJson !== undefined ? { bodyJson: newBodyJson } : {}),
+      },
     });
+
+    // Notify newly @-mentioned users (userIds now present that weren't before).
+    if (newBodyJson && newBodyJson.length > 0) {
+      const freshMentionIds = newBodyJson
+        .filter((s): s is Extract<BodySegment, { type: "mention" }> => s.type === "mention")
+        .map((s) => s.userId)
+        .filter((id) => !prevMentionIds.has(id));
+
+      if (freshMentionIds.length > 0) {
+        const link =
+          comment.targetType === "doc"
+            ? `/documents/${comment.targetId}?comment=${comment.id}`
+            : `/documents/file/${comment.targetId}?comment=${comment.id}`;
+        void notifyMentions({
+          recipientUserIds: freshMentionIds,
+          actorId: auth.user.sub,
+          link,
+          title: "You were mentioned in a comment",
+          preview: newBody.data,
+        }).catch((err) =>
+          console.error(`comment ${comment.id}: edit mention notify failed`, err),
+        );
+      }
+    }
+
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }

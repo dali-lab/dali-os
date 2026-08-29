@@ -17,7 +17,9 @@ import { Check, RotateCcw, Trash2 } from "lucide-react";
 
 import { Avatar } from "~/components/ui/Avatar";
 import { CommentComposer } from "~/components/collab/CommentComposer";
+import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
 import { DaliThreadStore, getOrCreateStore } from "./DaliThreadStore";
+import { RichCommentBody } from "./RichCommentBody";
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,7 @@ interface ApiComment {
   authorId: string;
   authorPhotoUrl?: string | null;
   body: string;
+  bodyJson?: BodySegment[] | null;
   anchor: { kind?: string; from?: string; to?: string } | null;
   resolved: boolean;
   createdAt: string;
@@ -149,15 +152,26 @@ export function DocCommentsPanel({
     return () => { mounted.current = false; };
   }, [open, fetchDocComments]);
 
-  async function postDocComment(body: string, parentId: string | null) {
+  async function postDocComment(
+    segments: BodySegment[],
+    parentId: string | null,
+  ) {
     setBusy(true);
     setPostErr(null);
+    const plainBody = segmentsToPlainText(segments);
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType: "doc", targetId: pageId, body, parentId, anchor: null }),
+        body: JSON.stringify({
+          targetType: "doc",
+          targetId: pageId,
+          body: plainBody,
+          bodyJson: segments,
+          parentId,
+          anchor: null,
+        }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -256,8 +270,8 @@ export function DocCommentsPanel({
             value={draft}
             onChange={setDraft}
             busy={busy}
-            onSubmit={async () => {
-              const ok = await postDocComment(draft.trim(), null);
+            onSubmit={async (segments) => {
+              const ok = await postDocComment(segments, null);
               if (ok) setDraft("");
             }}
           />
@@ -304,16 +318,16 @@ export function DocCommentsPanel({
                     }`}
                   >
                     <CommentHead comment={root} />
-                    <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
-                      {root.body}
-                    </p>
+                    <div className="mt-1 pl-7 leading-relaxed text-foreground">
+                      <RichCommentBody bodyJson={root.bodyJson} body={root.body} />
+                    </div>
 
                     {replies.map((r) => (
                       <div key={r.id} data-comment-id={r.id} className="mt-3 pl-7">
                         <CommentHead comment={r} />
-                        <p className="mt-1 whitespace-pre-wrap pl-7 leading-relaxed text-foreground">
-                          {r.body}
-                        </p>
+                        <div className="mt-1 pl-7 leading-relaxed text-foreground">
+                          <RichCommentBody bodyJson={r.bodyJson} body={r.body} />
+                        </div>
                       </div>
                     ))}
 
@@ -331,8 +345,8 @@ export function DocCommentsPanel({
                             setReplyDraft("");
                             setReplyTo(null);
                           }}
-                          onSubmit={async () => {
-                            const ok = await postDocComment(replyDraft.trim(), root.id);
+                          onSubmit={async (segments) => {
+                            const ok = await postDocComment(segments, root.id);
                             if (ok) {
                               setReplyDraft("");
                               setReplyTo(null);
