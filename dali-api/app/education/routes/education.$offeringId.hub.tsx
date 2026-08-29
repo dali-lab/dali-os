@@ -71,25 +71,16 @@ export default function MemberCourseHub() {
 
   return (
     <div className="flex flex-col gap-4">
-      {previewAsStudent && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent-teal/40 bg-accent-teal/5 px-4 py-2">
-          <p className="text-sm text-foreground">
-            👁 You're previewing this course as a student sees it.
-          </p>
-          <Link
-            to={`/education/${hub.offering.id}/hub`}
-            className={buttonClasses("secondary", "sm")}
-          >
-            Exit student view
-          </Link>
-        </div>
-      )}
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
             {hub.offering.title}
           </h1>
         </div>
+        {/* Manager affordances only when NOT previewing — during a preview the
+            page is rendered exactly as a student sees it (isManager=false), so
+            the only added chrome is the floating exit pill below, which is
+            fixed-position and doesn't shift the hub's layout. */}
         {hub.isManager && (
           <div className="flex items-center gap-2">
             <Link
@@ -112,6 +103,19 @@ export default function MemberCourseHub() {
         basePath={`/education/${hub.offering.id}`}
         collabToken={collabToken}
       />
+      {previewAsStudent && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-brand-2 backdrop-blur">
+            <span className="text-sm font-medium text-foreground">👁 Viewing as a student</span>
+            <Link
+              to={`/education/${hub.offering.id}/hub`}
+              className={buttonClasses("secondary", "sm")}
+            >
+              Exit
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
