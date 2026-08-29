@@ -1,5 +1,5 @@
 // MCP `update_task` — edit fields on a task (title/priority/dueAt/sprintId/
-// epicId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core or project
+// epicId/storyId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core or project
 // member). Use `update_task_status` for status changes (it has special
 // column-rebalance semantics).
 
@@ -14,7 +14,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const UPDATE_TASK_TOOL = {
   name: "update_task",
   description:
-    "Edit fields on a project task (title, priority, due date, sprint, epic, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged.",
+    "Edit fields on a project task (title, priority, due date, sprint, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -32,6 +32,11 @@ export const UPDATE_TASK_TOOL = {
       epicId: {
         type: "string",
         description: "Epic link. Empty string = unlinked.",
+      },
+      storyId: {
+        type: "string",
+        description:
+          "Parent user story. Pins the epic to the story's epic (overrides epicId). Empty string unlinks. A bare epicId change drops a now-orphaned story.",
       },
       domainId: {
         type: "string",
@@ -56,6 +61,7 @@ type Input = {
   dueAt?: string;
   sprintId?: string;
   epicId?: string;
+  storyId?: string;
   domainId?: string;
   assigneeUserIds?: string[];
 };
@@ -74,6 +80,8 @@ export async function runUpdateTask(callerId: string, input: Input) {
       id: true,
       projectId: true,
       githubIssueNumber: true,
+      epicId: true,
+      storyId: true,
       assignees: { select: { userId: true } },
     },
   });
@@ -89,6 +97,7 @@ export async function runUpdateTask(callerId: string, input: Input) {
     dueAt?: Date | null;
     sprintId?: string | null;
     epicId?: string | null;
+    storyId?: string | null;
     domainId?: string | null;
   } = {};
 
@@ -125,19 +134,45 @@ export async function runUpdateTask(callerId: string, input: Input) {
       data.sprintId = input.sprintId;
     }
   }
-  if (input.epicId !== undefined) {
-    if (input.epicId === "") {
-      data.epicId = null;
-    } else {
+  // Epic and story reconcile together, never independently: a story pins its
+  // epic (UserStory.epicId is required). An explicit story wins and sets the
+  // epic; a bare epic change drops a now-orphaned story so the two can't
+  // diverge (matches the web PATCH route). Empty string clears either.
+  const epicInBody = input.epicId !== undefined;
+  const storyInBody = input.storyId !== undefined;
+  if (epicInBody || storyInBody) {
+    const currentEpicId = task.epicId ?? null;
+    const currentStoryId = task.storyId ?? null;
+    let nextEpicId = epicInBody ? (input.epicId === "" ? null : input.epicId!) : currentEpicId;
+    let nextStoryId = storyInBody ? (input.storyId === "" ? null : input.storyId!) : currentStoryId;
+
+    if (nextStoryId !== null) {
+      const story = await prisma.userStory.findUnique({
+        where: { id: nextStoryId },
+        select: { epicId: true, epic: { select: { projectId: true } } },
+      });
+      if (!story || story.epic.projectId !== task.projectId) {
+        throw new UpdateTaskError("Story is not part of this project", 400);
+      }
+      if (storyInBody) {
+        nextEpicId = story.epicId;
+      } else if (nextEpicId !== story.epicId) {
+        nextStoryId = null;
+      }
+    }
+
+    if (nextStoryId === null && nextEpicId !== null && nextEpicId !== currentEpicId) {
       const epic = await prisma.epic.findUnique({
-        where: { id: input.epicId },
+        where: { id: nextEpicId },
         select: { projectId: true },
       });
       if (!epic || epic.projectId !== task.projectId) {
         throw new UpdateTaskError("Epic is not part of this project", 400);
       }
-      data.epicId = input.epicId;
     }
+
+    if (nextEpicId !== currentEpicId) data.epicId = nextEpicId;
+    if (nextStoryId !== currentStoryId) data.storyId = nextStoryId;
   }
   if (input.domainId !== undefined) {
     data.domainId = input.domainId === "" ? null : input.domainId;

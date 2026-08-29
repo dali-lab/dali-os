@@ -23,6 +23,8 @@ import {
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
+  epic: { findUnique: ReturnType<typeof vi.fn> };
+  userStory: { findUnique: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -85,5 +87,84 @@ describe("update_task", () => {
     mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: null, assignees: [] });
     const out = await runUpdateTask("u1", { taskId: "t1" });
     expect(out).toMatchObject({ noop: true });
+  });
+
+  it("links a story and pins the epic to the story's epic", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      projectId: "p1",
+      githubIssueNumber: null,
+      epicId: null,
+      storyId: null,
+      assignees: [],
+    });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "e-A",
+      epic: { projectId: "p1" },
+    });
+    const update = vi.fn();
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        task: { update },
+        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+    // Story wins over a contradictory epic in the same call.
+    await runUpdateTask("u1", { taskId: "t1", storyId: "s1", epicId: "e-ignored" });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { epicId: "e-A", storyId: "s1" },
+    });
+  });
+
+  it("drops an orphaned story when the epic moves out from under it", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      projectId: "p1",
+      githubIssueNumber: null,
+      epicId: "e-A",
+      storyId: "s1",
+      assignees: [],
+    });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "e-A",
+      epic: { projectId: "p1" },
+    });
+    mockPrisma.epic.findUnique.mockResolvedValue({ projectId: "p1" });
+    const update = vi.fn();
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        task: { update },
+        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+    await runUpdateTask("u1", { taskId: "t1", epicId: "e-B" });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { epicId: "e-B", storyId: null },
+    });
+  });
+
+  it("rejects a story from another project", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      projectId: "p1",
+      githubIssueNumber: null,
+      epicId: null,
+      storyId: null,
+      assignees: [],
+    });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "e",
+      epic: { projectId: "other" },
+    });
+    await expect(
+      runUpdateTask("u1", { taskId: "t1", storyId: "s1" }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });
