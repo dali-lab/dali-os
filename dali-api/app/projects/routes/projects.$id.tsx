@@ -74,6 +74,11 @@ import {
   type Priority,
 } from "../lib/task-board";
 import { groupFilesByEpic } from "../lib/file-groups";
+import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
+import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import type { DriveItem } from "~/lib/drive.server";
+import { DriveBrowser } from "~/components/drive/DriveBrowser";
+import type { RowActions } from "~/components/drive/DriveBrowser";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -1060,16 +1065,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // The Meetings tab's month grid. Gated on the tab: it costs a viewer lookup
   // and a meetings query, and every other tab would pay for a grid it never
   // renders. Deadlines reuse `epics`, already built for the timeline.
-  const projectCalendar =
-    new URL(request.url).searchParams.get("tab") === "meetings"
-      ? await buildProjectCalendar({
+  const tabParam = new URL(request.url).searchParams.get("tab");
+  const [projectCalendar, projectDriveScope] = await Promise.all([
+    tabParam === "meetings"
+      ? buildProjectCalendar({
           request,
           viewerId: auth.user.sub,
           projectId: project.id,
           calendarEmail: project.calendarEmail,
           epics,
         })
-      : null;
+      : Promise.resolve(null),
+    // Drive tab scope — loaded always so tab-switching is instant. The two
+    // underlying Prisma queries (pages + files) are comparable in cost to the
+    // Stage 2 pageRows/fileRows already fetched above.
+    loadProjectDriveScope({
+      userSub: auth.user.sub,
+      projectId: project.id,
+      projectName: project.name,
+      projectIconEmoji: project.iconEmoji,
+      request,
+    }),
+  ]);
 
   return {
     project: {
@@ -1148,6 +1165,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentUserId: auth.user.sub,
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
+    projectDriveScope,
   };
 }
 
@@ -1507,6 +1525,7 @@ export default function ProjectDetail() {
     currentUserId,
     presencePhotoUrl,
     presenceSubtitle,
+    projectDriveScope,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
@@ -1801,16 +1820,13 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Drive (os): the project's files, lifted out of Project details onto
-            their own tab — the collab-doc pages and uploaded files in one
-            folder tree. */}
+        {/* Drive (os): the project's files and collab-doc pages in the shared
+            DriveBrowser, embedded and scoped to this project. Replaces the
+            bespoke DocumentsBlock for the os tab set. */}
         {tab === "drive" && (
-          <DocumentsBlock
+          <ProjectDriveTab
             projectId={project.id}
-            documents={documents}
-            pinnedDocuments={pinnedDocuments}
-            files={files}
-            fileEpics={boardOptions.epics}
+            projectDriveScope={projectDriveScope}
             canEdit={canEdit}
             hasActivePartner={hasActivePartner}
           />
@@ -4358,6 +4374,202 @@ function DocRow({
     <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
       <DocRowInner doc={doc} indent={indent} ctx={ctx} />
     </div>
+  );
+}
+
+// ── ProjectDriveTab ──────────────────────────────────────────────────────────
+// Renders the shared DriveBrowser locked to this project's scope. Replaces the
+// bespoke DocumentsBlock for the os tab set's "Drive" tab.
+//
+// Trade-off (callers must be aware):
+//   • Epic-grouping of uploaded files (previously via `fileEpics` in
+//     DocumentsBlock) is NOT present here. Files are positioned in the folder
+//     tree by their real Drive placement (folderPageId), which is the consistent
+//     Drive model across the whole app. Epic-grouping was a DocumentsBlock-only
+//     feature and is intentionally not ported into the shared browser.
+//
+// What IS preserved:
+//   • Partner-visibility toggle (Share with partner / Stop sharing) on docs and
+//     files, shown when the project has an active partner and canEdit is true.
+//   • Doc title change sync via postMessage revalidation.
+//   • All DriveBrowser capabilities: list/grid/columns, DnD, context menus,
+//     multi-select, bulk, tags, search, rename, move, delete, favorites.
+
+function ProjectDriveTab({
+  projectId,
+  projectDriveScope,
+  canEdit,
+  hasActivePartner,
+}: {
+  projectId: string;
+  projectDriveScope: DriveTreeScope;
+  canEdit: boolean;
+  hasActivePartner: boolean;
+}) {
+  const revalidator = useRevalidator();
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const scopeId = projectDriveScope.id;
+
+  // Sync doc-title changes made in the split-pane editor back to this listing.
+  // DocumentsBlock used the same mechanism (postMessage from the editor shell).
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string; pageId?: string } | undefined;
+      if (data?.type !== "dali:documentTitleChanged") return;
+      const pageIds = new Set(projectDriveScope.items.map((i) => i.id));
+      if (!data.pageId || !pageIds.has(data.pageId)) return;
+      revalidator.revalidate();
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [projectDriveScope.items, revalidator]);
+
+  // Toggle partner visibility for a page (doc/folder). Posts to the same
+  // endpoint DocumentsBlock used, then revalidates so the badge updates.
+  const togglePagePartnerVisible = useCallback(async (item: DriveItem, next: boolean) => {
+    if (item.type !== "doc" && item.type !== "file") return;
+    const endpoint =
+      item.type === "file"
+        ? `/api/files/${item.id}/partner-visible`
+        : `/api/pages/${item.id}/partner-visible`;
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch {
+      // Silently fail — the user can retry. The badge state is loader-authoritative.
+    }
+  }, [revalidator]);
+
+  const onNavigate = useCallback(
+    (_scopeId: string | null, folderId: string | null) => {
+      setCurrentFolderId(folderId);
+    },
+    [],
+  );
+
+  const onOpenItem = useCallback(
+    (item: DriveItem) => {
+      if (item.href) navigate(item.href);
+    },
+    [navigate],
+  );
+
+  const onMove = useCallback(
+    async (_scopeId: string, item: DriveItem, destFolderId: string | null) => {
+      // Pages move via POST /api/pages/:id/move; files use the unified
+      // POST /api/drive/move endpoint introduced in Drive Wave 3.
+      const isFile = item.type === "file";
+      try {
+        let res: Response;
+        if (isFile) {
+          res = await fetch("/api/drive/move", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ itemType: "file", itemId: item.id, destFolderPageId: destFolderId }),
+          });
+        } else {
+          res = await fetch(`/api/pages/${item.id}/move`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folderId: destFolderId }),
+          });
+        }
+        if (!res.ok) return;
+        revalidator.revalidate();
+      } catch {
+        // Silently fail.
+      }
+    },
+    [revalidator],
+  );
+
+  const getScopeActions = useCallback(
+    (_scopeId: string): RowActions => ({
+      onRename: async (item) => {
+        const newTitle = window.prompt("Rename", item.title || "") ?? "";
+        if (!newTitle || newTitle === item.title) return;
+        const isFile = item.type === "file";
+        try {
+          let res: Response;
+          if (isFile) {
+            // Files: POST /api/files/:id with { intent: "rename", title }
+            res = await fetch(`/api/files/${item.id}`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intent: "rename", title: newTitle }),
+            });
+          } else {
+            // Docs/folders: POST /api/documents/:id with { title }
+            res = await fetch(`/api/documents/${item.id}`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: newTitle }),
+            });
+          }
+          if (!res.ok) return;
+          revalidator.revalidate();
+        } catch {
+          // Silently fail.
+        }
+      },
+      onRequestMove: async (item) => {
+        // Move within the project scope is the same as onMove with null dest —
+        // handled inline by DnD. A "Move to…" dialog is deferred; for now no-op.
+        void item;
+      },
+      onDelete: async (item) => {
+        if (!window.confirm(`Delete "${item.title || "this item"}"? This cannot be undone.`)) return;
+        const isFile = item.type === "file";
+        try {
+          // Files: DELETE /api/files/:id
+          // Docs/folders: DELETE /api/documents/:id (soft-archives; guards system folders)
+          const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
+          const res = await fetch(endpoint, {
+            method: "DELETE",
+            credentials: "include",
+          });
+          if (!res.ok) return;
+          revalidator.revalidate();
+        } catch {
+          // Silently fail.
+        }
+      },
+    }),
+    [revalidator],
+  );
+
+  return (
+    <DriveBrowser
+      scopes={[projectDriveScope]}
+      currentScopeId={scopeId}
+      currentFolderId={currentFolderId}
+      typeFilter="all"
+      search={search}
+      onSearchChange={setSearch}
+      onNavigate={onNavigate}
+      onOpenItem={onOpenItem}
+      onMove={onMove}
+      getScopeActions={getScopeActions}
+      embeddedScopeId={scopeId}
+      onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
+      hasActivePartner={hasActivePartner}
+    />
   );
 }
 

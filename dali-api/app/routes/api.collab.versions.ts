@@ -7,7 +7,8 @@ const PREVIEW_CHARS = 200;
 
 // GET /api/collab/versions?name=review:abc123:feedback
 // Returns all snapshots for the given doc, newest first, with truncated
-// previews and hydrated author display names.
+// previews and hydrated author display names. Each item includes `label`
+// (string | null) so the client can render named/pinned versions distinctly.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -24,7 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const versions = await prisma.collabDocumentVersion.findMany({
     where: { name },
     orderBy: { createdAt: "desc" },
-    select: { id: true, createdAt: true, plainText: true, authorIds: true },
+    select: { id: true, createdAt: true, plainText: true, authorIds: true, label: true },
   });
 
   // Batch-hydrate all unique author IDs across every version.
@@ -37,6 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       versions.map((v) => ({
         id: v.id,
         createdAt: v.createdAt,
+        label: v.label ?? null,
         plainTextPreview:
           v.plainText.length > PREVIEW_CHARS
             ? `${v.plainText.slice(0, PREVIEW_CHARS).trimEnd()}\u2026`

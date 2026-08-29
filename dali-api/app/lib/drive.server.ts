@@ -62,6 +62,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this page is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "doc";
@@ -80,6 +85,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this page is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "file";
@@ -99,6 +109,11 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
+      /**
+       * Whether this file is shared with the project's partner org(s).
+       * Only populated in project-scoped Drive loads; null/undefined elsewhere.
+       */
+      partnerVisible?: boolean | null;
     }
   | {
       type: "form";
@@ -270,6 +285,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
       parentPageId: true,
       iconEmoji: true,
       updatedAt: true,
+      partnerVisible: true,
     },
   });
 
@@ -283,6 +299,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
+          partnerVisible: row.partnerVisible,
         }
       : {
           type: "doc",
@@ -292,6 +309,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
+          partnerVisible: row.partnerVisible,
         },
   );
 }
@@ -508,6 +526,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
       title: true,
       folderPageId: true,
       updatedAt: true,
+      partnerVisible: true,
       currentVersion: { select: { sizeBytes: true } },
     },
   });
@@ -520,6 +539,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
     updatedAt: f.updatedAt,
     href: `/documents/file/${f.id}`,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
+    partnerVisible: f.partnerVisible,
   }));
 }
 
@@ -627,10 +647,12 @@ export async function loadForms(
   scopeFolderIds?: string[],
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
+  // archivedAt: null ensures soft-deleted forms are excluded from Drive, matching
+  // how docs/files are filtered (Page.archivedAt: null, ProjectFile.archivedAt: null).
   const where =
     scopeFolderIds !== undefined
-      ? { OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
-      : {};
+      ? { archivedAt: null, OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
+      : { archivedAt: null };
   const rows = await prisma.form.findMany({
     where,
     orderBy: { updatedAt: "desc" },
@@ -667,8 +689,9 @@ export async function loadForms(
 export async function loadOrphanForms(
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
+  // Only surface non-archived orphaned forms; archived forms belong in Trash.
   const placed = await prisma.form.findMany({
-    where: { folderPageId: { not: null } },
+    where: { folderPageId: { not: null }, archivedAt: null },
     select: { id: true, name: true, folderPageId: true, updatedAt: true },
   });
   if (placed.length === 0) return [];

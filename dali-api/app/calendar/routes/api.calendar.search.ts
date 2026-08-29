@@ -33,23 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const like = { contains: q, mode: "insensitive" as const };
 
-  const [blocks, meetingRows] = await Promise.all([
-    prisma.manualBlock.findMany({
-      where: { userId, OR: [{ title: like }, { workNote: like }] },
-      orderBy: { startTime: "desc" },
-      take: LOCAL_TAKE,
-      select: {
-        id: true,
-        title: true,
-        startTime: true,
-        endTime: true,
-        allDay: true,
-        recurrenceRule: true,
-      },
-    }),
-    // Mirror the loader's meeting source: meetings surface via the viewer's
-    // MeetingInvite notification, so search the same set for consistency.
-    prisma.notification.findMany({
+  const meetingRows = await prisma.notification.findMany({
       where: {
         recipientUserId: userId,
         kind: "MeetingInvite",
@@ -66,19 +50,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           select: { id: true, title: true, selectedAt: true, durationMinutes: true },
         },
       },
-    }),
-  ]);
-
-  const blockHits: CalendarSearchHit[] = blocks.map((b) => ({
-    id: `block:${b.id}`,
-    source: "block",
-    title: b.title,
-    startIso: b.startTime.toISOString(),
-    endIso: b.endTime.toISOString(),
-    allDay: b.allDay,
-    location: null,
-    recurring: b.recurrenceRule != null,
-  }));
+    });
 
   // A user can hold more than one MeetingInvite row per meeting — dedupe by id.
   const seenMeeting = new Set<string>();
@@ -101,7 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const local = sortHits([...meetingHits, ...blockHits], nowIso);
+  const local = sortHits([...meetingHits], nowIso);
 
   let google: CalendarSearchHit[] = [];
   let googleError: string | null = null;

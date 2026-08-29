@@ -26,6 +26,7 @@
 // persist the boolean on UserAvailabilitySettings (or a new per-user col).
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import {
   CalendarDays,
@@ -70,6 +71,11 @@ export type CalendarsPanelProps = {
   classesEnabled?: boolean;
   // "Mirror my timesheet to Google" current saved state.  Default = false.
   timesheetSyncEnabled?: boolean;
+  // Per-role filter chips for the Logged-time layer — show/hide your logged
+  // hours by paid role. The controls are hidden if these are omitted.
+  roleBuckets?: { key: string; label: string; hours: number }[];
+  excludedRoleKeys?: Set<string>;
+  toggleRoleKey?: (key: string) => void;
 };
 
 // ── CalendarsPanel ─────────────────────────────────────────────────────────────
@@ -84,6 +90,9 @@ export function CalendarsPanel({
   onClose,
   classesEnabled,
   timesheetSyncEnabled = false,
+  roleBuckets = [],
+  excludedRoleKeys,
+  toggleRoleKey,
 }: CalendarsPanelProps) {
   // Sub-modal state
   const [calMgrOpen, setCalMgrOpen] = useState(false);
@@ -138,6 +147,7 @@ export function CalendarsPanel({
               href="/oauth/calendar/google/start"
               target="_top"
               rel="noopener"
+              aria-label="Add Google account"
               className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-foreground hover:bg-muted"
             >
               <Plus className="h-3 w-3" /> Add
@@ -186,7 +196,14 @@ export function CalendarsPanel({
           <div className={sectionHead}>
             Layers
           </div>
-          <LayerToggles layers={layers} toggleLayer={toggleLayer} classesEnabled={classesEnabled ?? data.classesEnabled} />
+          <LayerToggles
+            layers={layers}
+            toggleLayer={toggleLayer}
+            classesEnabled={classesEnabled ?? data.classesEnabled}
+            roleBuckets={roleBuckets}
+            excludedRoleKeys={excludedRoleKeys}
+            toggleRoleKey={toggleRoleKey}
+          />
         </section>
 
         {/* ── Section 3: Working hours ────────────────────────────────── */}
@@ -242,12 +259,19 @@ export function CalendarsPanel({
       </div>
 
       {/* ── Sub-modals ────────────────────────────────────────────────── */}
-      {calMgrOpen && (
-        <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />
-      )}
-      {classesOpen && (
-        <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
-      )}
+      {/* Portaled to <body>: the panel opens from inside the toolbar dropdown,
+          whose transformed ancestors would otherwise trap `position: fixed` and
+          pin these modals to the top of the panel instead of the viewport. */}
+      {calMgrOpen &&
+        createPortal(
+          <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />,
+          document.body,
+        )}
+      {classesOpen &&
+        createPortal(
+          <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />,
+          document.body,
+        )}
       {hoursAnchor && (
         <WorkingHoursPopover
           data={data}
@@ -471,9 +495,6 @@ const LAYER_SPECS: Array<{
   hideWhenClassesOff?: boolean;
 }> = [
   { key: "external", label: "Linked calendars", swatch: "bg-accent-teal" },
-  { key: "meetings", label: "Meetings", swatch: "bg-accent-coral" },
-  { key: "blocks", label: "Manual blocks", swatch: "bg-amber-500" },
-  { key: "classes", label: "Classes", swatch: "bg-[#1E5779]", hideWhenClassesOff: true },
   { key: "logged", label: "Logged time", swatch: "bg-violet-500" },
   { key: "workingHours", label: "Working hours", swatch: "bg-gray-300" },
 ];
@@ -482,10 +503,16 @@ function LayerToggles({
   layers,
   toggleLayer,
   classesEnabled,
+  roleBuckets = [],
+  excludedRoleKeys,
+  toggleRoleKey,
 }: {
   layers: LayerVisibility;
   toggleLayer: (key: keyof LayerVisibility) => void;
   classesEnabled: boolean;
+  roleBuckets?: { key: string; label: string; hours: number }[];
+  excludedRoleKeys?: Set<string>;
+  toggleRoleKey?: (key: string) => void;
 }) {
   return (
     <ul className="flex flex-col gap-0.5">
@@ -511,6 +538,32 @@ function LayerToggles({
                 {spec.label}
               </span>
             </button>
+            {/* Per-role filter chips under the Logged-time layer: click a role
+                to hide/show your logged hours for it (excludedRoleKeys). */}
+            {spec.key === "logged" && on && toggleRoleKey && roleBuckets.length > 0 && (
+              <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                {roleBuckets.map((b) => {
+                  const excluded = excludedRoleKeys?.has(b.key) ?? false;
+                  return (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => toggleRoleKey(b.key)}
+                      aria-pressed={!excluded}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        excluded
+                          ? "border-border bg-transparent text-muted-foreground line-through"
+                          : "border-violet-500/40 bg-violet-500/10 text-foreground",
+                      )}
+                    >
+                      {b.label}
+                      <span className="text-muted-foreground">{Math.round(b.hours * 10) / 10}h</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </li>
         );
       })}
@@ -563,8 +616,8 @@ function TimesheetSyncToggle({
         <div className="flex flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">Mirror my timesheet to Google</span>
           <span className="text-xs text-muted-foreground">
-            When on, your logged work hours sync to a "DALI Timesheet" calendar on your DALI Google
-            account. Postgres stays authoritative — this is a portable read-only view.
+            When on, your logged work hours also appear on a "DALI Timesheet" calendar on your DALI
+            Google account.
           </span>
         </div>
         <Toggle

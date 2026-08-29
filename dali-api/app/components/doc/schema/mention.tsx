@@ -15,6 +15,14 @@ import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import type { DocEditorInstance } from "./build";
 import { mentionConfig, pageMentionConfig } from "./configs";
 import { MentionHoverCard } from "./MentionHoverCard";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 export type MentionUser = {
   id: string;
@@ -39,6 +47,127 @@ const MENTION_CLASS =
 const PAGE_MENTION_CLASS =
   "rounded bg-primary/10 px-1 py-0.5 font-medium text-primary cursor-pointer hover:bg-primary/20";
 
+// ─── Live page-title resolution ──────────────────────────────────────────────
+//
+// The stored `label` prop is a snapshot taken at insertion time. Pages can be
+// renamed after insertion. This context resolves pageIds → current titles from
+// the server and caches results so all chips in a document share one request.
+//
+// Design:
+//  - PageMentionTitleProvider collects pageIds registered by rendered chips
+//    and fires ONE batched fetch after a short debounce (16 ms — next frame).
+//  - Already-resolved ids are served from the cache without a new request.
+//  - While loading or if the server omits an id (archived/no-access), the chip
+//    falls back to its stored `label` — never blank, never an error.
+//  - The context default is a no-op hook that returns the fallback, so chips
+//    render fine in any tree that doesn't mount the provider.
+
+type TitleCache = Record<string, string>;
+
+interface PageMentionTitleCtx {
+  // Register a pageId for resolution; returns the current resolved title or
+  // undefined if not yet resolved (caller falls back to stored label).
+  register: (pageId: string) => string | undefined;
+  // Resolved title cache (stable reference changes trigger re-renders).
+  cache: TitleCache;
+}
+
+const noop = () => undefined;
+const defaultCtx: PageMentionTitleCtx = { register: noop, cache: {} };
+
+const PageMentionTitleContext = createContext<PageMentionTitleCtx>(defaultCtx);
+
+/** Mount once near the doc editor root to enable live page-title resolution. */
+export function PageMentionTitleProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // Resolved title cache; state so updates cause chip re-renders.
+  const [cache, setCache] = useState<TitleCache>({});
+
+  // Pending ids queued since the last flush.
+  const pendingRef = useRef<Set<string>>(new Set());
+  // Ids already fetched (resolved or confirmed absent) — skip re-fetching.
+  const fetchedRef = useRef<Set<string>>(new Set());
+  // Debounce timer handle.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = useCallback(async () => {
+    timerRef.current = null;
+    const pending = pendingRef.current;
+    pendingRef.current = new Set();
+    const toFetch = [...pending].filter((id) => !fetchedRef.current.has(id));
+    if (toFetch.length === 0) return;
+
+    // Mark as fetched before the request so concurrent flushes don't double-fetch.
+    for (const id of toFetch) fetchedRef.current.add(id);
+
+    try {
+      const res = await fetch(
+        `/api/mentions/pages/resolve?ids=${toFetch.map(encodeURIComponent).join(",")}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { titles?: TitleCache };
+      const titles = data.titles;
+      if (!titles || typeof titles !== "object") return;
+      setCache((prev) => {
+        // Only update state if there is new data to merge in.
+        const hasNew = Object.keys(titles).some((id) => prev[id] !== titles[id]);
+        return hasNew ? { ...prev, ...titles } : prev;
+      });
+    } catch {
+      // Network errors are silenced; chips display their stored label fallback.
+    }
+  }, []);
+
+  const register = useCallback(
+    (pageId: string): string | undefined => {
+      // If already cached, return immediately.
+      // Even if absent from cache (not fetched yet OR inaccessible after fetch),
+      // we still queue the id on the first encounter to ensure we tried once.
+      if (!fetchedRef.current.has(pageId)) {
+        pendingRef.current.add(pageId);
+        // Debounce: coalesce registrations arriving in the same render pass.
+        if (!timerRef.current) {
+          timerRef.current = setTimeout(flush, 16);
+        }
+      }
+      // Return undefined if not yet resolved; caller uses stored label.
+      return cache[pageId];
+    },
+    [cache, flush],
+  );
+
+  // Clean up the debounce timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const ctx: PageMentionTitleCtx = { register, cache };
+  return (
+    <PageMentionTitleContext.Provider value={ctx}>
+      {children}
+    </PageMentionTitleContext.Provider>
+  );
+}
+
+/**
+ * Returns the live page title for `pageId`, falling back to `fallbackLabel`
+ * while loading or when the page is inaccessible/archived. Safe to call
+ * outside a `PageMentionTitleProvider` (returns fallbackLabel in that case).
+ */
+function usePageMentionTitle(pageId: string, fallbackLabel: string): string {
+  const ctx = useContext(PageMentionTitleContext);
+  const resolved = ctx.register(pageId);
+  return resolved ?? fallbackLabel;
+}
+
+// ─── Specs ───────────────────────────────────────────────────────────────────
+
 export const MentionSpec = createReactInlineContentSpec(mentionConfig, {
   render: ({ inlineContent }) => (
     <MentionHoverCard userId={inlineContent.props.id}>
@@ -52,7 +181,11 @@ export const MentionSpec = createReactInlineContentSpec(mentionConfig, {
 export const PageMentionSpec = createReactInlineContentSpec(pageMentionConfig, {
   render: ({ inlineContent }) => {
     const pageId = inlineContent.props.pageId;
-    const label = inlineContent.props.label || "Untitled";
+    const storedLabel = inlineContent.props.label || "Untitled";
+    // usePageMentionTitle registers the pageId with the nearest
+    // PageMentionTitleProvider and returns the live title once resolved.
+    // Falls back to the stored snapshot gracefully (no-op outside provider).
+    const label = usePageMentionTitle(pageId, storedLabel);
     return (
       <span
         className={PAGE_MENTION_CLASS}

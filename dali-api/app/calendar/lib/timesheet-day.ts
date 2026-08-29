@@ -3,8 +3,7 @@
 // TimeEntry.date holds two different things depending on how the row was
 // written, and they can't be read the same way:
 //
-//   - Meeting- and Block-sourced rows store `date: startTime` — a real instant
-//     (see syncManualBlockTimeEntry).
+//   - Meeting-sourced rows store `date: startTime` — a real instant.
 //   - Rows from the Timesheet's add form store the picked "YYYY-MM-DD" parsed
 //     as UTC midnight — a date-only value that is NOT the instant work started.
 //

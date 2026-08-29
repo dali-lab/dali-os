@@ -148,15 +148,13 @@ describe("setUserTimesheetSync — enable, DALI link present", () => {
     );
   });
 
-  it("calls ensureCalendarVisible (subscribe + subCalendarIds update)", async () => {
+  it("does NOT subscribe the calendar into DALI's own layer", async () => {
+    // The Timesheet calendar is a Google-side mirror; DALI renders those hours
+    // via its logged-time layer, so we must not add it to subCalendarIds (doing
+    // so is what doubled every logged block).
     await setUserTimesheetSync("user-1", true);
-    expect(googleCalendarMock.subscribeCalendarForLink).toHaveBeenCalledWith("link-dali", "cal-ts-id");
-    expect(prismaMock.userCalendarLink.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "link-dali" },
-        data: expect.objectContaining({ subCalendarIds: expect.arrayContaining(["cal-ts-id"]) }),
-      }),
-    );
+    expect(googleCalendarMock.subscribeCalendarForLink).not.toHaveBeenCalled();
+    expect(prismaMock.userCalendarLink.update).not.toHaveBeenCalled();
   });
 
   it("returns { ok: false, reason: 'error' } when getOrCreateNamedCalendar throws", async () => {

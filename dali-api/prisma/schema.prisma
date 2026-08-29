@@ -163,7 +163,6 @@ model User {
   scheduledMeetings    ScheduledMeeting[]
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
-  manualBlocks         ManualBlock[]
   meetingAttendances   MeetingAttendance[]
   timeEntries          TimeEntry[]
   memberClasses        MemberClass[]
@@ -1007,6 +1006,10 @@ model CollabDocumentVersion {
   state     Bytes // Y.Doc binary at snapshot time
   plainText String // mirror, for fast preview without decoding `state`
   authorIds String[] // userIds that edited since previous snapshot, best-effort
+  // User-given name for a pinned/named version ("Before the rewrite"). Null =
+  // an ordinary auto-snapshot. A non-null label marks the version as pinned:
+  // named versions are surfaced distinctly and exempt from auto-pruning.
+  label     String?
   createdAt DateTime @default(now())
 
   collabDocument CollabDocument @relation(fields: [name], references: [name], onDelete: Cascade)
@@ -1166,7 +1169,15 @@ model DocComment {
   targetId   String
   parentId   String?
   authorId   String
+  // Flattened plaintext body. Always populated (source of truth for search,
+  // notification previews, and pre-rich comments). Rich content lives in
+  // `bodyJson` when present.
   body       String
+  // Rich comment body: an array of inline segments — text runs (with marks)
+  // and `{ type: "mention", userId, label }` chips. Null for legacy/plaintext
+  // comments, in which case `body` is rendered verbatim. Mention notifications
+  // are derived from the mention segments here.
+  bodyJson   Json?
   // { from: <encoded RelativePosition>, to: <encoded RelativePosition> } for
   // inline doc comments. Null for doc-level / file-level comments.
   anchor     Json?
@@ -1826,16 +1837,13 @@ model MeetingAttendance {
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
 // Meeting-sourced rows are managed automatically by the attendance-toggle
 // route (one row per present participant, kept in sync as attendance is
-// checked/unchecked); Block-sourced rows are managed automatically by the
-// manual-block action handlers in the same way (see ManualBlock.isWork);
-// neither is directly editable here — only plain Manual rows are
-// user-authored CRUD entries for work not captured by a block or meeting.
+// checked/unchecked); Manual rows are user-authored entries — from the
+// create-event modal's "count as work" toggle or the timesheet ledger.
 model TimeEntry {
   id                 String          @id @default(cuid())
   userId             String
   source             TimeEntrySource
   scheduledMeetingId String?
-  manualBlockId      String?
   // Which concrete paid role (ProjectAssignment / CoreAssignment /
   // InstructorAssignment / DomainLeadAssignment / AdminMembership) this entry
   // is attributed to. Untyped at DB layer — dispatched in app code by
@@ -1868,11 +1876,9 @@ model TimeEntry {
 
   user        User              @relation(fields: [userId], references: [id])
   meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
-  manualBlock ManualBlock?      @relation(fields: [manualBlockId], references: [id])
   project     Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
-  @@unique([manualBlockId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
 }
@@ -1880,7 +1886,6 @@ model TimeEntry {
 enum TimeEntrySource {
   Meeting
   Manual
-  Block
 }
 
 enum MeetingStatus {
@@ -2120,39 +2125,6 @@ model WorkingHoursDay {
 enum WorkLocation {
   InPerson
   Remote
-}
-
-// User-defined busy blocks, optionally recurring (RFC 5545 RRULE).
-model ManualBlock {
-  id              String          @id @default(cuid())
-  userId          String
-  title           String
-  startTime       DateTime
-  endTime         DateTime
-  allDay          Boolean         @default(false)
-  // Nullable: a one-off block has no rule. When set, startTime/endTime define
-  // the first occurrence; subsequent ones are expanded by rrule.
-  recurrenceRule  String?
-  // Optional cached UNTIL for query bounds; not authoritative.
-  recurrenceUntil DateTime?
-  // When true (app-level restricted to non-recurring blocks — recurrence
-  // expansion isn't implemented for TimeEntry), this block mirrors itself
-  // into a Block-sourced TimeEntry for the chosen role, kept in sync by the
-  // manual-block action handlers (see syncManualBlockTimeEntry).
-  isWork          Boolean         @default(false)
-  assignmentType  AssignmentType?
-  roleRefId       String?
-  // The timesheet entry's own description, kept distinct from the calendar
-  // block's title (logging a meeting is a different note than the meeting's own
-  // description). Mirrored into the linked TimeEntry.note by
-  // syncManualBlockTimeEntry; null falls back to the block title.
-  workNote        String?
-  createdAt       DateTime        @default(now())
-
-  user        User        @relation(fields: [userId], references: [id])
-  timeEntries TimeEntry[]
-
-  @@index([userId, startTime])
 }
 
 // A member's Dartmouth class for a term, added to their calendar. Either synced
@@ -3760,6 +3732,11 @@ model Form {
   // boundary exactly once so a later manual publish/unpublish sticks.
   opensAt  DateTime?
   closesAt DateTime?
+
+  // Soft-delete for Drive trash. Non-null = archived (hidden from Drive and
+  // "Forms for you", not fillable), restorable from Trash. A permanent delete
+  // from Trash removes the row (and cascades responses) for real.
+  archivedAt DateTime?
 
   // Per-form response settings (Forms editor "Settings" card).
   // oneResponsePerMember: an authenticated member's ORDINARY fill (not

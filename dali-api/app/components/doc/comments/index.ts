@@ -3,6 +3,7 @@ export {
   DaliThreadStoreAuth,
   BLOCKNOTE_ANCHOR,
   bodyToPlainText,
+  blockBodyToSegments,
   serializeBody,
   deserializeBody,
   apiCommentsToThreadMap,
@@ -11,3 +12,4 @@ export {
 } from "./DaliThreadStore";
 export type { DaliThreadStoreConfig } from "./DaliThreadStore";
 export { DocCommentsPanel, useDocThreadCounts } from "./DocCommentsPanel";
+export { RichCommentBody } from "./RichCommentBody";

@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { fullName } from "~/lib/display";
 import { listAllGroups } from "~/lib/groups";
 import {
   canViewForms,
@@ -14,6 +13,7 @@ import {
   type RoleInstance,
 } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { resolveTermFilter } from "~/lib/terms";
 import {
   createClass,
   updateClass,
@@ -23,10 +23,8 @@ import {
   buildClassDestinations,
   MemberClassError,
 } from "~/lib/member-class.server";
-import { expandClassOccurrences } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
-import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import {
   setUserTimesheetSync,
   syncTimeEntryToGoogle,
@@ -55,16 +53,13 @@ import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezo
 import type {
   WhSegment,
   WhDay,
-  ManualBlockDTO,
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
   UserOption,
   ProjectOption,
   TimeEntryDTO,
-  MeetingInviteDTO,
   MemberClassDTO,
-  ClassOccurrenceDTO,
   ClassDestinationDTO,
   ExternalEventDTO,
   EventAttendeeDTO,
@@ -113,13 +108,6 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
     ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl }] : []),
     ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink }] : []),
   ];
-}
-
-function userDisplayName(
-  u: { firstName: string | null; lastName: string | null; daliEmail: string | null } | undefined,
-): string | null {
-  if (!u) return null;
-  return fullName(u) || u.daliEmail || null;
 }
 
 // Window for the visible week grid. We compute Sunday→following Sunday in the
@@ -213,8 +201,9 @@ function parseCustomMeetings(raw: Record<string, FormDataEntryValue>): PeriodMee
   return [{ kind: "main", days, startMin, endMin }];
 }
 
-// Add / edit / remove a class. The term is resolved server-side (not trusted
-// from the form) so a class can only land on the current term.
+// Add / edit / remove a class. The termId comes from the form but is validated
+// against the allowed set (current + upcoming terms) server-side so past/arbitrary
+// term ids are rejected. Falls back to the current term when omitted.
 async function handleClassAction(
   intent: string,
   raw: Record<string, FormDataEntryValue>,
@@ -230,8 +219,21 @@ async function handleClassAction(
       return null;
     }
 
-    const term = await currentTerm(request);
-    if (!term) return Response.json({ error: "There's no active term to add classes to." }, { status: 400 });
+    // Resolve the allowed terms (current + upcoming) and validate the submitted termId.
+    const termFilter = await resolveTermFilter(request, { default: "upcoming" });
+    const allowedIds = termFilter.termIds ?? [];
+    if (allowedIds.length === 0) {
+      return Response.json({ error: "There's no active term to add classes to." }, { status: 400 });
+    }
+    const submittedTermId = get("termId");
+    // Pick the submitted id if it's allowed; otherwise fall back to the current term
+    // (or the first upcoming term if there's no current term).
+    const currentTermId = termFilter.terms.find((t) => t.isCurrent)?.id ?? allowedIds[0];
+    const termId = allowedIds.includes(submittedTermId) ? submittedTermId : currentTermId;
+
+    // Load the term row (needed for date-range math in createClass/updateClass).
+    const termRow = termFilter.terms.find((t) => t.id === termId);
+    if (!termRow) return Response.json({ error: "Term not found." }, { status: 400 });
 
     const title = get("title").trim();
     if (!title) return Response.json({ error: "Give the class a name." }, { status: 400 });
@@ -247,7 +249,7 @@ async function handleClassAction(
       }
     }
 
-    const params = { userId, termId: term.id, title, location, periodCode, includeXHour, customMeetings, destination };
+    const params = { userId, termId, title, location, periodCode, includeXHour, customMeetings, destination };
     if (intent === "class-add") {
       await createClass(params);
     } else if (intent === "class-update") {
@@ -296,11 +298,7 @@ function bareRrule(recurrence: string[]): string | null {
 
 type EventScope = "this" | "following" | "all";
 
-// In-app destination sentinel — kept local so handleEventAction can reference it
-// without importing from the client-side calendar.tsx.
-const LOCAL_DEST = "local";
-
-// Create / edit / move / delete a Google Calendar event (calendar-google-crud
+// Create / edit / move / delete a Google Calendar event (calendar-unified
 // flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
@@ -313,120 +311,16 @@ async function handleEventAction(
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
   const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
+  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
   const dest = get("destination");
-  const isLocalDest = dest === LOCAL_DEST;
   const [linkId, calRaw] = dest.split(":");
   const calendarId = calRaw || undefined;
   const scope = (get("scope") || "this") as EventScope;
   const recurringEventId = get("recurringEventId") || null;
   const originalStartIso = get("originalStartIso") || null;
   try {
-    // In-app (DALI) creation is a ManualBlock; everything else needs a Google link.
-    if (intent === "event-create" && isLocalDest) {
-      const title = get("title").trim();
-      const startIso = get("startIso");
-      const endIso = get("endIso");
-      if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
-      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
-      const allDay = get("allDay") === "1";
-      const recurrenceRule = get("recurrenceRule").trim() || null;
-      const isWork = get("isWork") === "1";
-      const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
-      const roleRefId = get("roleRefId") || null;
-      const workNote = get("workNote").trim() || null;
-      if (isWork && recurrenceRule) {
-        return Response.json({ error: "Recurring blocks can't be added to the timesheet yet." }, { status: 400 });
-      }
-      if (isWork && !workNote) {
-        return Response.json({ error: "Add a timesheet description." }, { status: 400 });
-      }
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      const block = await prisma.manualBlock.create({
-        data: { userId, title, startTime, endTime, allDay, recurrenceRule, isWork, assignmentType, roleRefId, workNote },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: block.id,
-        userId,
-        isWork,
-        assignmentType,
-        roleRefId,
-        title,
-        workNote,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    // In-app block edit / move / delete — the same composer, editing a
-    // ManualBlock through the local destination.
-    const manualBlockId = get("manualBlockId") || null;
-    if (isLocalDest && manualBlockId) {
-      const block = await prisma.manualBlock.findUnique({ where: { id: manualBlockId } });
-      if (!block || block.userId !== userId) return Response.json({ error: "Not found" }, { status: 404 });
-      if (intent === "event-delete") {
-        await prisma.$transaction([
-          prisma.timeEntry.deleteMany({ where: { manualBlockId, userId } }),
-          prisma.manualBlock.delete({ where: { id: manualBlockId } }),
-        ]);
-        return null;
-      }
-      const startIso = get("startIso");
-      const endIso = get("endIso");
-      if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      if (intent === "event-move") {
-        await prisma.manualBlock.update({ where: { id: manualBlockId }, data: { startTime, endTime } });
-        await syncManualBlockTimeEntry({
-          manualBlockId,
-          userId,
-          isWork: block.isWork,
-          assignmentType: block.assignmentType,
-          roleRefId: block.roleRefId,
-          title: block.title,
-          workNote: block.workNote,
-          startTime,
-          endTime,
-        });
-        return null;
-      }
-      if (intent === "event-update") {
-        const title = get("title").trim();
-        if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
-        const isWork = get("isWork") === "1";
-        const assignmentType = (get("assignmentType") || null) as RoleInstance["assignmentType"] | null;
-        const roleRefId = get("roleRefId") || null;
-        const workNote = get("workNote").trim() || null;
-        const allDay = get("allDay") === "1";
-        if (isWork && !workNote) {
-          return Response.json({ error: "Add a timesheet description." }, { status: 400 });
-        }
-        await prisma.manualBlock.update({
-          where: { id: manualBlockId },
-          data: { title, startTime, endTime, allDay, isWork, assignmentType, roleRefId, workNote },
-        });
-        const sync = await syncManualBlockTimeEntry({
-          manualBlockId,
-          userId,
-          isWork,
-          assignmentType,
-          roleRefId,
-          title,
-          workNote,
-          startTime,
-          endTime,
-        });
-        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-        return null;
-      }
-    }
-
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
 
@@ -467,6 +361,43 @@ async function handleEventAction(
 
     if (intent === "event-create") {
       const recurrenceRule = get("recurrenceRule").trim() || null;
+      const isWork = get("isWork") === "1";
+      const assignmentType = get("assignmentType") || null;
+      const roleRefId = get("roleRefId") || null;
+      const workNote = get("workNote").trim() || null;
+      const loggingWork = isWork && Boolean(assignmentType) && Boolean(roleRefId);
+
+      // A "count this as work" block is a timesheet entry, not a personal event.
+      // Its single Google representation lives on the dedicated DALI Timesheet
+      // calendar (written by syncTimeEntryToGoogle), so we DON'T push it to the
+      // chosen destination — that's what kept the primary clean was for, and a
+      // second copy there is exactly the duplication we're removing. A plain
+      // event (no work) still lands on its destination calendar as before.
+      if (loggingWork) {
+        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId!);
+        if (resolved) {
+          const startTime = new Date(startIso);
+          const endTime = new Date(endIso);
+          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
+          const logged = await prisma.timeEntry.create({
+            data: {
+              userId,
+              source: "Manual",
+              date: startTime,
+              hours,
+              assignmentType: assignmentType as RoleInstance["assignmentType"],
+              roleRefId: roleRefId!,
+              projectId: resolved.projectId,
+              note: workNote ?? title,
+              startTime,
+              endTime,
+            },
+          });
+          await syncTimeEntryToGoogle(logged).catch(() => {});
+        }
+        return null;
+      }
+
       await createGoogleCalendarEvent({
         linkId,
         calendarId,
@@ -480,34 +411,6 @@ async function handleEventAction(
         timeZone,
         attendees: [],
       });
-      // NEW: create a standalone Manual TimeEntry for the work log
-      const isWork = get("isWork") === "1";
-      const assignmentType = get("assignmentType") || null;
-      const roleRefId = get("roleRefId") || null;
-      const workNote = get("workNote").trim() || null;
-      if (isWork && assignmentType && roleRefId) {
-        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId);
-        if (resolved) {
-          const startTime = new Date(startIso);
-          const endTime = new Date(endIso);
-          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
-          const logged = await prisma.timeEntry.create({
-            data: {
-              userId,
-              source: "Manual",
-              date: startTime,
-              hours,
-              assignmentType: assignmentType as RoleInstance["assignmentType"],
-              roleRefId,
-              projectId: resolved.projectId,
-              note: workNote,
-              startTime,
-              endTime,
-            },
-          });
-          await syncTimeEntryToGoogle(logged).catch(() => {});
-        }
-      }
       return null;
     }
 
@@ -561,7 +464,7 @@ async function handleCalendarAction(
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
   const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-google-crud", userId, roles, request))) {
+  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
   }
   const linkId = get("linkId");
@@ -644,35 +547,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent };
     case "set-event-buffer":
       return { intent, defaultEventBufferMin: asInt(get("defaultEventBufferMin")) };
-    case "add-manual-block":
-      return {
-        intent,
-        title: get("title"),
-        startTime: get("startTime"),
-        endTime: get("endTime"),
-        allDay: get("allDay") ? asBool(get("allDay")) : false,
-        recurrenceRule: get("recurrenceRule") || null,
-        isWork: get("isWork") ? asBool(get("isWork")) : false,
-        assignmentType: get("assignmentType") || null,
-        roleRefId: get("roleRefId") || null,
-      };
-    case "update-manual-block":
-      return {
-        intent,
-        id: get("id"),
-        title: get("title"),
-        startTime: get("startTime"),
-        endTime: get("endTime"),
-        allDay: get("allDay") === undefined ? undefined : asBool(get("allDay")),
-        recurrenceRule:
-          get("recurrenceRule") === undefined ? undefined : get("recurrenceRule") || null,
-        isWork: get("isWork") === undefined ? undefined : asBool(get("isWork")),
-        assignmentType:
-          get("assignmentType") === undefined ? undefined : get("assignmentType") || null,
-        roleRefId: get("roleRefId") === undefined ? undefined : get("roleRefId") || null,
-      };
-    case "remove-manual-block":
-      return { intent, id: get("id") };
     case "remove-calendar-link":
       return { intent, linkId: get("linkId") };
     case "toggle-sub-calendar":
@@ -694,6 +568,7 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         note: get("note") || null,
         startTime: get("startTime") || null,
         endTime: get("endTime") || null,
+        scheduledMeetingId: get("scheduledMeetingId") || undefined,
       };
     case "update-time-entry":
       return {
@@ -757,6 +632,7 @@ export async function loadCalendarData(request: Request) {
           timezone: true,
           defaultEventBufferMin: true,
           timesheetGoogleSync: true,
+          timesheetCalendarId: true,
         },
       }),
       prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
@@ -809,10 +685,31 @@ export async function loadCalendarData(request: Request) {
       isCore(userId, request),
     ]);
 
+  // Group rosters can include members outside the current-term member set
+  // (alumni, users inactive this term, etc.), so those ids aren't in `users`
+  // above. Without names, the scheduling grid falls back to rendering a raw
+  // user id (a cuid). Fetch display names for any such member and merge them
+  // in so every resolvable participant renders as a person, not an id.
+  const knownUserIds = new Set(users.map((u) => u.id));
+  const missingMemberIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
+  );
+  const extraGroupMembers = missingMemberIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: missingMemberIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      })
+    : [];
+  const allUsers = [...users, ...extraGroupMembers];
+
   // Working hours are interpreted in the availability-settings zone when set;
   // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
   const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
+  // The dedicated DALI Timesheet Google calendar (when the mirror is enabled).
+  // Filtered out of both the linked-calendar list and the external event read
+  // below — DALI represents those hours in its own logged-time layer.
+  const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).
   // Skip rows with enabled=false or invalid bounds; the UI treats them as deleted.
@@ -880,24 +777,9 @@ export async function loadCalendarData(request: Request) {
   // even when the user navigates a few weeks into the past or future.
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
 
-  // blocks and timeEntryRows are fetched here (not in the earlier Promise.all)
-  // because they need weekStart for date-window filtering.
-  const [blocks, timeEntryRows] = await Promise.all([
-    prisma.manualBlock.findMany({
-      where: {
-        userId,
-        // Keep ALL recurring blocks (they expand across any week) and only
-        // filter one-off non-recurring blocks to those that end on/after the
-        // visible week start.
-        OR: [
-          { recurrenceRule: { not: null } },
-          { recurrenceRule: null, endTime: { gte: weekStart } },
-        ],
-      },
-      orderBy: { startTime: "asc" },
-      take: 200,
-    }),
-    prisma.timeEntry.findMany({
+  // timeEntryRows fetched here (not in the earlier Promise.all) because they
+  // need weekStart for the date-window lower bound.
+  const timeEntryRows = await prisma.timeEntry.findMany({
       where: {
         userId,
         date: { gte: timeEntryLowerBound },
@@ -908,7 +790,6 @@ export async function loadCalendarData(request: Request) {
         id: true,
         source: true,
         scheduledMeetingId: true,
-        manualBlockId: true,
         assignmentType: true,
         roleRefId: true,
         projectId: true,
@@ -919,8 +800,7 @@ export async function loadCalendarData(request: Request) {
         endTime: true,
         meeting: { select: { notePage: { select: { id: true } } } },
       },
-    }),
-  ]);
+    });
 
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
@@ -957,10 +837,10 @@ export async function loadCalendarData(request: Request) {
   // Resolve roles + flags once, up front — the calendar-crud read (all events,
   // with edit identity) replaces the busy-only read when the flag is on.
   const roles = await getUserRoles(userId, request);
-  const crudEnabled = await isFeatureEnabled("calendar-google-crud", userId, roles, request);
+  const crudEnabled = await isFeatureEnabled("calendar-unified", userId, roles, request);
 
   let ingestionError: string | null = null;
-  const [externalRaw, calendarLinks, inviteRows] = await Promise.all([
+  const [externalRaw, calendarLinks] = await Promise.all([
     (crudEnabled
       ? fetchCalendarEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
       : fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
@@ -989,120 +869,38 @@ export async function loadCalendarData(request: Request) {
         }
         const enabledSet = new Set(l.subCalendarIds);
         // When subCalendarIds is empty, treat the primary as the only one in use.
-        const subCalendars: SubCalendarDTO[] = items.map((it) => ({
-          id: it.id,
-          summary: it.summary,
-          primary: it.primary === true,
-          color: it.backgroundColor ?? null,
-          enabled:
-            l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
-          writable: it.accessRole === "owner" || it.accessRole === "writer",
-        }));
+        const subCalendars: SubCalendarDTO[] = items
+          // The DALI Timesheet calendar is a Google-side mirror of logged hours;
+          // DALI shows those natively in the logged-time layer, so it never
+          // appears as a linked calendar here (hidden even for users who had it
+          // auto-subscribed before this became a mirror-only calendar).
+          .filter((it) => it.id !== timesheetCalendarId)
+          .map((it) => ({
+            id: it.id,
+            summary: it.summary,
+            primary: it.primary === true,
+            color: it.backgroundColor ?? null,
+            enabled:
+              l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
+            writable: it.accessRole === "owner" || it.accessRole === "writer",
+          }));
         return { ...base, subCalendars };
       }),
     ),
-    // Meetings the viewer was invited to whose selected time lands in this
-    // week — the MeetingInvite notification carries both the per-user RSVP and
-    // the id the RSVP endpoint expects. Cancelled meetings are hidden, matching
-    // the tasks/banner surfaces.
-    prisma.notification.findMany({
-      where: {
-        recipientUserId: userId,
-        kind: "MeetingInvite",
-        scheduledMeetingId: { not: null },
-        scheduledMeeting: {
-          status: { not: "Cancelled" },
-          selectedAt: { gte: rangeStart, lt: rangeEnd },
-        },
-      },
-      select: {
-        id: true,
-        rsvp: true,
-        scheduledMeeting: {
-          select: {
-            id: true,
-            title: true,
-            selectedAt: true,
-            durationMinutes: true,
-            organizerId: true,
-            participantUserIds: true,
-            isCoreMeeting: true,
-            notePage: { select: { id: true } },
-            // Every invitee's RSVP lives on their own MeetingInvite row, so the
-            // popover's guest list reads them all, not just the viewer's.
-            notifications: {
-              where: { kind: "MeetingInvite" },
-              select: { recipientUserId: true, rsvp: true },
-            },
-          },
-        },
-      },
-    }),
   ]);
-
-  // Names for every organizer/participant on this week's invites, in one hit —
-  // the picker's `users` list is current-term members only, so it can't be
-  // relied on to resolve an organizer who has since gone alumni.
-  const inviteeIds = new Set<string>();
-  for (const n of inviteRows) {
-    const m = n.scheduledMeeting;
-    if (!m) continue;
-    inviteeIds.add(m.organizerId);
-    for (const id of m.participantUserIds) inviteeIds.add(id);
-  }
-  const inviteeRows =
-    inviteeIds.size > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: [...inviteeIds] } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        })
-      : [];
-  const inviteeById = new Map(inviteeRows.map((u) => [u.id, u]));
-
-  const meetingInvites: MeetingInviteDTO[] = inviteRows.flatMap((n) => {
-    const m = n.scheduledMeeting;
-    if (!m?.selectedAt) return [];
-    const start = m.selectedAt;
-    const end = new Date(start.getTime() + m.durationMinutes * 60_000);
-    const rsvpByUser = new Map(
-      m.notifications.map((row) => [row.recipientUserId, row.rsvp] as const),
-    );
-    // Organizer first, then participants — the organizer isn't always in
-    // participantUserIds, so dedupe rather than assume.
-    const rosterIds = [m.organizerId, ...m.participantUserIds.filter((id) => id !== m.organizerId)];
-    return [
-      {
-        notificationId: n.id,
-        meetingId: m.id,
-        title: m.title,
-        startIso: start.toISOString(),
-        endIso: end.toISOString(),
-        rsvp: n.rsvp,
-        notePageId: m.notePage?.id ?? null,
-        isCoreMeeting: m.isCoreMeeting,
-        organizerName: userDisplayName(inviteeById.get(m.organizerId)),
-        attendees: rosterIds.map((id) => {
-          const u = inviteeById.get(id);
-          return {
-            name: userDisplayName(u) ?? "Unknown member",
-            // The organizer scheduled it, so treat them as attending rather
-            // than showing them permanently "Pending" on their own meeting.
-            status: id === m.organizerId ? "Accepted" : rsvpByUser.get(id) || "Pending",
-            organizer: id === m.organizerId,
-          };
-        }),
-      },
-    ];
-  });
 
   // Derived from the calendar lists already fetched above — no extra Google
   // round-trip.
   const generalCalendar = generalCalendarState(calendarLinks);
 
   // Map the external read to display DTOs. The crud read carries edit identity
-  // (eventId/linkId/writable/allDay); the busy read is title/time only.
+  // (eventId/linkId/writable/allDay); the busy read is title/time only. Events
+  // from the DALI Timesheet mirror calendar are dropped — the logged-time layer
+  // already shows those hours, so keeping them would double every work block.
   const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? (externalRaw as CalendarEvent[]).map((e) => ({
+    ? (externalRaw as CalendarEvent[])
+        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
+        .map((e) => ({
         startIso: e.startIso,
         endIso: e.endIso,
         title: e.title || "Busy",
@@ -1132,32 +930,27 @@ export async function loadCalendarData(request: Request) {
         links: externalLinks(e.meetingUrl, e.htmlLink),
       }));
 
-  // Classes this term (flag-gated). Only touch the table when the flag is on.
-  const classesEnabled = await isFeatureEnabled("calendar-classes", userId, roles, request);
+  // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
+  // terms for the modal picker.
+  const classesEnabled = crudEnabled;
   let memberClasses: MemberClassDTO[] = [];
-  let classOccurrences: ClassOccurrenceDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  if (classesEnabled && term) {
-    const classRows = await prisma.memberClass.findMany({
-      where: { userId, termId: term.id },
-      orderBy: { createdAt: "asc" },
-    });
-    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
-    classDestinations = buildClassDestinations(calendarLinks);
-    // Expand only Local classes across the fetched range; Google-stored classes
-    // ride the external layer (they're real events on the linked calendar).
-    for (const r of classRows) {
-      if (r.storage !== "Local") continue;
-      const occ = expandClassOccurrences(
-        r.meetings as unknown as PeriodMeeting[],
-        term.startDate,
-        term.endDate,
-        rangeStart,
-        rangeEnd,
-      );
-      for (const o of occ) {
-        classOccurrences.push({ classId: r.id, title: r.title, startIso: o.startIso, endIso: o.endIso, kind: o.kind });
-      }
+  let classTerms: { id: string; code: string }[] = [];
+  if (classesEnabled) {
+    // Resolve current+upcoming term ids for the modal's term selector.
+    const termFilter = await resolveTermFilter(request, { default: "upcoming" });
+    const selectableTermIds = termFilter.termIds ?? [];
+    classTerms = termFilter.terms
+      .filter((t) => selectableTermIds.includes(t.id))
+      .map((t) => ({ id: t.id, code: t.code }));
+
+    if (selectableTermIds.length > 0) {
+      const classRows = await prisma.memberClass.findMany({
+        where: { userId, termId: { in: selectableTermIds } },
+        orderBy: { createdAt: "asc" },
+      });
+      memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+      classDestinations = buildClassDestinations(calendarLinks);
     }
   }
 
@@ -1166,17 +959,6 @@ export async function loadCalendarData(request: Request) {
     defaultEventBufferMin: bufferMin,
     workingHours,
     hasPersistedWorkingHours: hasAnyPersisted,
-    manualBlocks: blocks.map((b) => ({
-      id: b.id,
-      title: b.title,
-      startTime: b.startTime.toISOString(),
-      endTime: b.endTime.toISOString(),
-      recurrenceRule: b.recurrenceRule,
-      isWork: b.isWork,
-      assignmentType: b.assignmentType,
-      roleRefId: b.roleRefId,
-      workNote: b.workNote,
-    })),
     calendarLinks,
     generalCalendar,
     weekStartIso: weekStart.toISOString(),
@@ -1187,7 +969,7 @@ export async function loadCalendarData(request: Request) {
     externalEvents,
     ingestionError,
     groups,
-    users,
+    users: allUsers,
     currentUserId: userId,
     myProjects,
     myRoles,
@@ -1197,7 +979,7 @@ export async function loadCalendarData(request: Request) {
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
-      manualBlockId: t.manualBlockId,
+      manualBlockId: null,
       meetingNotePageId: t.meeting?.notePage?.id ?? null,
       assignmentType: t.assignmentType,
       roleRefId: t.roleRefId,
@@ -1208,11 +990,10 @@ export async function loadCalendarData(request: Request) {
       startTime: t.startTime ? t.startTime.toISOString() : null,
       endTime: t.endTime ? t.endTime.toISOString() : null,
     })),
-    meetingInvites,
     classesEnabled,
     classTerm: term ? { id: term.id, code: term.code } : null,
+    classTerms,
     memberClasses,
-    classOccurrences,
     classDestinations,
     crudEnabled,
     timesheetGoogleSync: settings?.timesheetGoogleSync ?? false,
@@ -1380,108 +1161,6 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
-    case "add-manual-block": {
-      const startTime = new Date(input.startTime);
-      const endTime = new Date(input.endTime);
-      if (endTime <= startTime) {
-        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
-      }
-      const recurrenceRule = input.recurrenceRule ?? null;
-      if (input.isWork && recurrenceRule) {
-        return Response.json(
-          { error: "Recurring blocks can't be marked as work yet" },
-          { status: 400 },
-        );
-      }
-      const block = await prisma.manualBlock.create({
-        data: {
-          userId,
-          title: input.title,
-          startTime,
-          endTime,
-          allDay: input.allDay,
-          recurrenceRule,
-          isWork: input.isWork,
-          assignmentType: input.assignmentType ?? null,
-          roleRefId: input.roleRefId ?? null,
-        },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: block.id,
-        userId,
-        isWork: input.isWork,
-        assignmentType: input.assignmentType ?? null,
-        roleRefId: input.roleRefId ?? null,
-        title: input.title,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    case "update-manual-block": {
-      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      const startTime = input.startTime ? new Date(input.startTime) : existing.startTime;
-      const endTime = input.endTime ? new Date(input.endTime) : existing.endTime;
-      if (endTime <= startTime) {
-        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
-      }
-      const title = input.title ?? existing.title;
-      const recurrenceRule =
-        input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule;
-      const isWork = input.isWork ?? existing.isWork;
-      const assignmentType =
-        input.assignmentType === undefined ? existing.assignmentType : input.assignmentType;
-      const roleRefId = input.roleRefId === undefined ? existing.roleRefId : input.roleRefId;
-      if (isWork && recurrenceRule) {
-        return Response.json(
-          { error: "Recurring blocks can't be marked as work yet" },
-          { status: 400 },
-        );
-      }
-      await prisma.manualBlock.update({
-        where: { id: input.id },
-        data: {
-          title,
-          startTime,
-          endTime,
-          allDay: input.allDay ?? existing.allDay,
-          recurrenceRule,
-          isWork,
-          assignmentType,
-          roleRefId,
-        },
-      });
-      const sync = await syncManualBlockTimeEntry({
-        manualBlockId: input.id,
-        userId,
-        isWork,
-        assignmentType,
-        roleRefId,
-        title,
-        startTime,
-        endTime,
-      });
-      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-      return null;
-    }
-
-    case "remove-manual-block": {
-      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      await prisma.$transaction([
-        prisma.timeEntry.deleteMany({ where: { manualBlockId: input.id, userId } }),
-        prisma.manualBlock.delete({ where: { id: input.id } }),
-      ]);
-      return null;
-    }
-
     case "remove-calendar-link": {
       const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
       if (!link || link.userId !== userId) {
@@ -1532,19 +1211,34 @@ export async function submitCalendarAction(request: Request) {
       const resolved = await resolveRoleRef(userId, input.assignmentType, input.roleRefId);
       if (!resolved) return Response.json({ error: "Invalid role" }, { status: 400 });
       const projectId = resolved.projectId;
+      const common = {
+        date: new Date(input.date),
+        hours: input.hours,
+        assignmentType: input.assignmentType,
+        roleRefId: input.roleRefId,
+        projectId,
+        note: input.note ?? null,
+        startTime: new Date(input.startTime),
+        endTime: new Date(input.endTime),
+      };
+      if (input.scheduledMeetingId) {
+        // Logged against a real meeting: link it (so the meeting block shows a
+        // role accent rather than a second block) and DON'T mirror to the
+        // Timesheet calendar — the meeting is already on the real calendar.
+        await prisma.timeEntry.upsert({
+          where: {
+            scheduledMeetingId_userId: {
+              scheduledMeetingId: input.scheduledMeetingId,
+              userId,
+            },
+          },
+          create: { userId, source: "Meeting", scheduledMeetingId: input.scheduledMeetingId, ...common },
+          update: common,
+        });
+        return null;
+      }
       const created = await prisma.timeEntry.create({
-        data: {
-          userId,
-          source: "Manual",
-          date: new Date(input.date),
-          hours: input.hours,
-          assignmentType: input.assignmentType,
-          roleRefId: input.roleRefId,
-          projectId,
-          note: input.note ?? null,
-          startTime: new Date(input.startTime),
-          endTime: new Date(input.endTime),
-        },
+        data: { userId, source: "Manual", ...common },
       });
       await syncTimeEntryToGoogle(created).catch(() => {});
       return null;
@@ -1586,40 +1280,6 @@ export async function submitCalendarAction(request: Request) {
       const note = input.note === undefined ? existing.note : input.note;
       const date = input.date ? new Date(input.date) : existing.date;
 
-      // Block-sourced rows mirror a ManualBlock on Availability — keep that
-      // block's title/time/role in lockstep so the two views don't diverge.
-      if (existing.source === "Block" && existing.manualBlockId) {
-        if (!startTime || !endTime) {
-          return Response.json({ error: "Block entries need a start and end time" }, { status: 400 });
-        }
-        if (!assignmentType || !roleRefId) {
-          return Response.json({ error: "A role is required" }, { status: 400 });
-        }
-        await prisma.manualBlock.update({
-          where: { id: existing.manualBlockId },
-          data: {
-            title: note?.trim() || "Work",
-            startTime,
-            endTime,
-            isWork: true,
-            assignmentType,
-            roleRefId,
-          },
-        });
-        const sync = await syncManualBlockTimeEntry({
-          manualBlockId: existing.manualBlockId,
-          userId,
-          isWork: true,
-          assignmentType,
-          roleRefId,
-          title: note?.trim() || "Work",
-          startTime,
-          endTime,
-        });
-        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
-        return null;
-      }
-
       const updated = await prisma.timeEntry.update({
         where: { id: input.id },
         data: {
@@ -1641,17 +1301,6 @@ export async function submitCalendarAction(request: Request) {
       const existing = await prisma.timeEntry.findUnique({ where: { id: input.id } });
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      // Block rows own a ManualBlock — remove both so Availability doesn't keep
-      // a work block that no longer has hours on the timesheet.
-      if (existing.source === "Block" && existing.manualBlockId) {
-        await prisma.$transaction([
-          prisma.timeEntry.deleteMany({
-            where: { manualBlockId: existing.manualBlockId, userId },
-          }),
-          prisma.manualBlock.delete({ where: { id: existing.manualBlockId } }),
-        ]);
-        return null;
       }
       await removeTimeEntryFromGoogle(existing).catch(() => {});
       await prisma.timeEntry.delete({ where: { id: input.id } });
@@ -1693,6 +1342,11 @@ export async function submitCalendarAction(request: Request) {
         return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
       }
       if (!input.onTimesheet) {
+        // Clean up the Google mirror event (if any) before removing the row.
+        const existing = await prisma.timeEntry.findUnique({
+          where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+        });
+        if (existing) await removeTimeEntryFromGoogle(existing).catch(() => {});
         await prisma.timeEntry.deleteMany({ where: { scheduledMeetingId: meeting.id, userId } });
         return null;
       }
@@ -1709,6 +1363,10 @@ export async function submitCalendarAction(request: Request) {
       // MeetingAttendance flip — logging your own hours isn't a claim that the
       // organizer marked you present. The role is left unset: the Timesheet
       // edit popover is where it gets attributed, as with attendance rows.
+      // Not mirrored to the DALI Timesheet calendar: a meeting is a real event
+      // that already lives on the organizer's/attendees' calendars, so a second
+      // copy on the Timesheet calendar would just duplicate it. Meeting-logged
+      // time surfaces in DALI as a role accent on the meeting block instead.
       await prisma.timeEntry.upsert({
         where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
         create: {

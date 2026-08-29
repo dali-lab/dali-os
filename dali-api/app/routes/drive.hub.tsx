@@ -8,11 +8,14 @@ import {
   Mail,
   Paperclip,
   FolderOpen,
+  Folder,
   Plus,
   ChevronDown,
   LayoutTemplate,
   Upload,
   Tag as TagIcon,
+  Trash2,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
@@ -828,12 +831,14 @@ function makeScopeActions({
 
   // The raw delete request for an item, routed to the right endpoint. No
   // confirm/toast — the single-item `remove` and the hub's bulk delete wrap it.
+  // Forms are now SOFT-ARCHIVED (archivedAt = now) from Drive, matching how
+  // docs and files are handled. Hard-delete is reserved for Trash ("purge").
   async function deleteItem(item: DriveItem): Promise<Response> {
     if (item.type === "form") {
       const fd = new FormData();
-      fd.set("intent", "delete-form");
+      fd.set("intent", "archive-form");
       fd.set("id", item.id);
-      return fetch("/api/forms", { method: "POST", body: fd, credentials: "include" });
+      return fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
     }
     if (item.type === "file") {
       return fetch(`/api/files/${item.id}`, { method: "DELETE", credentials: "include" });
@@ -854,16 +859,42 @@ function makeScopeActions({
         item.type === "folder"
           ? "The folder must be empty first."
           : item.type === "form"
-            ? "This permanently deletes the form and its responses. Forms still in use can't be deleted."
+            ? "The form will be moved to Trash. Restore it any time from Trash, or purge it there permanently."
             : "It will be archived and removed from your Drive.",
       tone: "destructive",
       confirmLabel: "Delete",
     });
     if (!confirmed) return;
 
+    const prevFolderId = item.parentFolderId;
     const res = await deleteItem(item);
     if (res.ok) {
-      toast.success("Deleted");
+      // Undo: restore the item from Trash. For forms, restore via Trash API;
+      // for files/docs the existing archive path already handles it.
+      if (item.type === "form") {
+        toast.info(
+          <span className="flex items-center gap-2">
+            Moved to Trash
+            <button
+              type="button"
+              className="underline font-medium hover:no-underline"
+              onClick={async () => {
+                const fd = new FormData();
+                fd.set("intent", "restore");
+                fd.set("type", "form");
+                fd.set("id", item.id);
+                await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
+                revalidate();
+              }}
+            >
+              Undo
+            </button>
+          </span>,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success("Deleted");
+      }
       revalidate();
     } else {
       toast.error((await errorFrom(res)) ?? "Couldn't delete");
@@ -925,8 +956,27 @@ function makeScopeActions({
         body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: target }),
       });
     }
-    if (res.ok) toast.success("Moved");
-    else toast.error((await errorFrom(res)) ?? "Couldn't move");
+    if (res.ok) {
+      // Undo: move the item back to its previous folder.
+      const prevFolderId = item.parentFolderId;
+      toast.info(
+        <span className="flex items-center gap-2">
+          Moved
+          <button
+            type="button"
+            className="underline font-medium hover:no-underline"
+            onClick={async () => {
+              await performMove({ ...item, parentFolderId: destFolderId }, prevFolderId);
+            }}
+          >
+            Undo
+          </button>
+        </span>,
+        { duration: 6000 },
+      );
+    } else {
+      toast.error((await errorFrom(res)) ?? "Couldn't move");
+    }
     revalidate();
   }
 
@@ -1080,6 +1130,7 @@ export default function DriveHub() {
   const toast = useToast();
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -1151,12 +1202,18 @@ export default function DriveHub() {
     (scopeId: string | null, folderId: string | null) => {
       // Clicking into the tree leaves search mode.
       setSearch("");
-      patchParams((p) => {
-        if (scopeId) p.set("scope", scopeId);
-        else p.delete("scope");
-        if (folderId) p.set("folder", folderId);
-        else p.delete("folder");
-      });
+      // Tree navigation PUSHES a history entry (unlike filter/search churn,
+      // which replaces) so the browser Back button steps up the folder tree
+      // instead of exiting Drive entirely.
+      patchParams(
+        (p) => {
+          if (scopeId) p.set("scope", scopeId);
+          else p.delete("scope");
+          if (folderId) p.set("folder", folderId);
+          else p.delete("folder");
+        },
+        { replace: false },
+      );
     },
     [setSearchParams],
   );
@@ -1308,8 +1365,28 @@ export default function DriveHub() {
           body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: parent }),
         });
       }
-      if (res.ok) toast.success("Moved");
-      else toast.error((await errorFrom(res)) ?? "Couldn't move");
+      if (res.ok) {
+        // Undo: move back to the original scope + folder.
+        const prevScopeId = sourceScopeId;
+        const prevFolderId = item.parentFolderId;
+        toast.info(
+          <span className="flex items-center gap-2">
+            Moved
+            <button
+              type="button"
+              className="underline font-medium hover:no-underline"
+              onClick={() =>
+                void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
+              }
+            >
+              Undo
+            </button>
+          </span>,
+          { duration: 6000 },
+        );
+      } else {
+        toast.error((await errorFrom(res)) ?? "Couldn't move");
+      }
       revalidator.revalidate();
     },
     [driveScopes, dialog, toast, revalidator],
@@ -1661,8 +1738,7 @@ export default function DriveHub() {
       />
     ) : null;
 
-  // Toolbar actions: the Templates gallery link (shown at every scope including
-  // the root) alongside the scope's New menu.
+  // Toolbar actions: the Templates gallery link + Trash button + scope New menu.
   const toolbarActions = (
     <>
       <Link
@@ -1675,6 +1751,18 @@ export default function DriveHub() {
         <LayoutTemplate className="w-3.5 h-3.5" />
         Templates
       </Link>
+      <button
+        type="button"
+        data-testid="drive-trash-button"
+        onClick={() => setTrashOpen(true)}
+        className={cn(
+          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
+          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
+        )}
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+        Trash
+      </button>
       {newMenuNode}
     </>
   );
@@ -1749,6 +1837,161 @@ export default function DriveHub() {
           onConfirm={(dest) => resolveMovePicker(dest)}
         />
       )}
+
+      {trashOpen && (
+        <TrashPanel
+          onClose={() => setTrashOpen(false)}
+          onRevalidate={() => revalidator.revalidate()}
+          dialog={dialog}
+          toast={toast}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Trash panel ────────────────────────────────────────────────────────────────
+
+type TrashItem = {
+  id: string;
+  type: "doc" | "folder" | "file" | "form";
+  title: string;
+  archivedAt: string;
+};
+
+function TrashPanel({
+  onClose,
+  onRevalidate,
+  dialog,
+  toast,
+}: {
+  onClose: () => void;
+  onRevalidate: () => void;
+  dialog: ReturnType<typeof useDialog>;
+  toast: ReturnType<typeof useToast>;
+}) {
+  const [items, setItems] = useState<TrashItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchTrash() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/drive/trash", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load trash");
+      const data = await res.json() as { items: TrashItem[] };
+      setItems(data.items ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load trash");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void fetchTrash(); }, []);
+
+  async function restore(item: TrashItem) {
+    const fd = new FormData();
+    fd.set("intent", "restore");
+    fd.set("type", item.type);
+    fd.set("id", item.id);
+    const res = await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
+    if (res.ok) {
+      toast.success("Restored");
+      void fetchTrash();
+      onRevalidate();
+    } else {
+      toast.error("Couldn't restore");
+    }
+  }
+
+  async function purge(item: TrashItem) {
+    const confirmed = await dialog.confirm({
+      title: `Delete "${item.title || "Untitled"}" permanently?`,
+      description: "This can't be undone.",
+      tone: "destructive",
+      confirmLabel: "Delete permanently",
+    });
+    if (!confirmed) return;
+    const fd = new FormData();
+    fd.set("intent", "purge");
+    fd.set("type", item.type);
+    fd.set("id", item.id);
+    const res = await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
+    if (res.ok) {
+      toast.success("Deleted permanently");
+      void fetchTrash();
+      onRevalidate();
+    } else {
+      toast.error("Couldn't delete");
+    }
+  }
+
+  function trashItemIcon(type: TrashItem["type"]) {
+    switch (type) {
+      case "folder": return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
+      case "form": return <ClipboardList className="w-4 h-4 text-muted-foreground shrink-0" />;
+      case "file": return <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />;
+      default: return <FileText className="w-4 h-4 text-muted-foreground shrink-0" />;
+    }
+  }
+
+  const titleId = "trash-panel-title";
+
+  return (
+    <Modal open onClose={onClose} labelledBy={titleId}
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto max-h-[80vh] flex flex-col"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h2 id={titleId} className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Trash2 className="w-4 h-4 text-muted-foreground" /> Trash
+        </h2>
+        <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      {loading && <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>}
+      {error && <p className="text-sm text-destructive py-2">{error}</p>}
+      {!loading && !error && items.length === 0 && (
+        <p className="text-sm text-muted-foreground italic py-8 text-center">Trash is empty.</p>
+      )}
+      {!loading && !error && items.length > 0 && (
+        <div className="flex flex-col gap-0.5 overflow-y-auto flex-1 -mx-1 px-1">
+          {items.map((item) => (
+            <div
+              key={`${item.type}:${item.id}`}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-muted/40 group"
+            >
+              {trashItemIcon(item.type)}
+              <span className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-foreground truncate block">{item.title || "Untitled"}</span>
+                <span className="text-xs text-muted-foreground">
+                  Deleted {new Date(item.archivedAt).toLocaleDateString()}
+                </span>
+              </span>
+              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => void restore(item)}
+                  title="Restore"
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Restore
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void purge(item)}
+                  title="Delete permanently"
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }

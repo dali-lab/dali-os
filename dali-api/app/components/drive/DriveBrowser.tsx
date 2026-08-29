@@ -42,6 +42,7 @@ import {
   ClipboardList,
   FileSignature,
   Folder,
+  Handshake,
   MoreHorizontal,
   Paperclip,
   Pencil,
@@ -69,6 +70,7 @@ import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PageIcon } from "~/components/PageIcon";
 import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -99,6 +101,8 @@ export type RowActions = {
   onRename: (item: DriveItem) => void;
   onRequestMove: (item: DriveItem) => void;
   onDelete: (item: DriveItem) => void;
+  /** Open the in-place Share dialog for a page-backed item (doc or folder). */
+  onShare?: (item: DriveItem) => void;
 };
 
 type SortKey = "name" | "modified" | "size";
@@ -136,6 +140,28 @@ export type DriveBrowserProps = {
    * second "active" flag to keep in step with it.
    */
   tagFilter?: (item: DriveItem) => boolean;
+  /** Called when the user picks Share for a doc or folder. The browser mounts
+   *  the ShareDialog in-place with this item as the target. */
+  onShareItem?: (item: DriveItem) => void;
+  /**
+   * When set, the browser is locked to the single scope whose id matches this
+   * value. Column 0 (the scope list) is suppressed — the user is already inside
+   * the scoped context (e.g. the project hub's Drive tab). Every other
+   * capability — list/grid/columns, DnD, context menus, multi-select, tags,
+   * Share, Trash — works as normal. When absent, `/drive` behaviour is unchanged.
+   */
+  embeddedScopeId?: string;
+  /**
+   * Toggle partner visibility for an item (doc or file). When provided, a
+   * "Share with partner" / "Stop sharing with partner" option is added to each
+   * item's context menu, and partner-visible items show a teal handshake badge.
+   * Only shown when `hasActivePartner` is also true — the prop alone is not
+   * enough; the caller must pass both.
+   */
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
+  /** Whether the project has an active partner relationship. Controls whether
+   *  the partner-visibility toggle is shown in item menus. */
+  hasActivePartner?: boolean;
 };
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -301,18 +327,30 @@ function itemMenuItems(
   actions: RowActions,
   onOpen: () => void,
   onToggleFavorite?: (item: DriveItem) => void,
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void,
 ): ReactNode {
   // Signal ①: system-managed folders (systemKey set) hide Delete/Rename entirely.
   // The gate extends the existing type-based canMove gate at lines 258-260.
   const isSystemManaged = item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
   const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
-  // allowed); agreements and rubrics remain placement-locked.
+  // allowed); agreements and rubrics remain placement-locked. System-managed
+  // folders (systemKey) are auto-filed and stay put — matching the drag gate.
   const canMove =
+    !isSystemManaged &&
     item.type !== "agreement" &&
     item.type !== "rubric";
   const canDelete = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
   const canFavorite = item.type === "doc" || item.type === "folder";
+  // Sharing via PageShare works for Page-backed items only (doc and folder).
+  // Files, forms, agreements, rubrics, email templates have separate or no
+  // sharing surfaces, so the Share option is intentionally omitted for them.
+  const canShare = (item.type === "doc" || item.type === "folder") && !!actions.onShare;
+  // Partner visibility toggle: applies to docs and files in project-scoped Drive.
+  // partnerVisible lives on the doc/file variant — access it via cast to avoid
+  // widening the union type unnecessarily.
+  const itemPartnerVisible = (item as { partnerVisible?: boolean | null }).partnerVisible ?? false;
+  const canTogglePartner = !!onTogglePartnerVisible && (item.type === "doc" || item.type === "file");
   return (
     <>
       <Menu.Item icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={onOpen}>
@@ -324,6 +362,19 @@ function itemMenuItems(
           onSelect={() => onToggleFavorite(item)}
         >
           {item.favorited ? "Remove from favorites" : "Add to favorites"}
+        </Menu.Item>
+      )}
+      {canShare && (
+        <Menu.Item icon={<Share2 className="h-3.5 w-3.5" />} onSelect={() => actions.onShare!(item)}>
+          Share…
+        </Menu.Item>
+      )}
+      {canTogglePartner && (
+        <Menu.Item
+          icon={<Handshake className={`h-3.5 w-3.5 ${itemPartnerVisible ? "text-accent-teal" : ""}`} />}
+          onSelect={() => onTogglePartnerVisible!(item, !itemPartnerVisible)}
+        >
+          {itemPartnerVisible ? "Stop sharing with partner" : "Share with partner"}
         </Menu.Item>
       )}
       {(canRename || canMove) && <Menu.Separator />}
@@ -354,11 +405,13 @@ function RowActionsMenu({
   actions,
   onOpen,
   onToggleFavorite,
+  onTogglePartnerVisible,
 }: {
   item: DriveItem;
   actions: RowActions;
   onOpen: () => void;
   onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   return (
     <Menu
@@ -377,7 +430,7 @@ function RowActionsMenu({
         </button>
       }
     >
-      {itemMenuItems(item, actions, onOpen, onToggleFavorite)}
+      {itemMenuItems(item, actions, onOpen, onToggleFavorite, onTogglePartnerVisible)}
     </Menu>
   );
 }
@@ -510,11 +563,43 @@ export function DriveBrowser({
   newMenu,
   tagChips,
   tagFilter,
+  onShareItem,
+  embeddedScopeId,
+  onTogglePartnerVisible,
+  hasActivePartner,
 }: DriveBrowserProps) {
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
     [scopes, currentScopeId],
   );
+
+  // Share dialog state — the item currently targeted for in-place sharing.
+  const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
+
+  // Wrap the hub's getScopeActions to inject the in-place Share handler.
+  // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
+  // onShare so itemMenuItems and the leaf toolbar can show it without the hub
+  // needing to know the browser owns the ShareDialog state.
+  function getInternalScopeActions(scopeId: string): RowActions {
+    const base = getScopeActions(scopeId);
+    return {
+      ...base,
+      onShare: (item: DriveItem) => {
+        if (item.type !== "doc" && item.type !== "folder") return;
+        // workspaceType is not on DriveItem directly; infer from the scope id
+        // so the ShareDialog can show the correct audience label (Lab/Project/Member).
+        const scope = scopes.find((s) => s.id === scopeId);
+        const wt =
+          !scope || scope.id === "lab" || scope.id === "core" || scope.id === "hiring"
+            ? "Lab"
+            : scope.id === "mine"
+              ? "Member"
+              : "Project";
+        setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
+        onShareItem?.(item);
+      },
+    };
+  }
 
   // ── Legacy list/grid state (for non-column views) ──────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -713,10 +798,10 @@ export function DriveBrowser({
       // when searching, else from the current scope's listing.
       if (searching) {
         const hit = hits.find((h) => h.item.id === activeId);
-        if (hit) getScopeActions(hit.scope.id).onRename(hit.item);
+        if (hit) getInternalScopeActions(hit.scope.id).onRename(hit.item);
       } else if (currentScope) {
         const item = listing.find((i) => i.id === activeId);
-        if (item) getScopeActions(currentScope.id).onRename(item);
+        if (item) getInternalScopeActions(currentScope.id).onRename(item);
       }
     }
   }
@@ -909,7 +994,7 @@ export function DriveBrowser({
   if (colSel.leafLevelIdx !== null) {
     leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
   }
-  const leafActions = leafScopeId ? getScopeActions(leafScopeId) : null;
+  const leafActions = leafScopeId ? getInternalScopeActions(leafScopeId) : null;
 
   // Signal ①: system-managed leaf folders hide Delete/Rename in the toolbar too.
   const leafIsSystemManaged =
@@ -938,6 +1023,12 @@ export function DriveBrowser({
       selectedLeaf.type === "form");
   // Download: only for files with an href.
   const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
+  // Share: page-backed items only (doc and folder). Folders now support sharing
+  // via PageShare, which was previously impossible from the Drive surface.
+  const canLeafShare =
+    !!selectedLeaf &&
+    (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
+    !!leafActions?.onShare;
 
   return (
     <DriveScale.Provider value={os}>
@@ -1180,19 +1271,25 @@ export function DriveBrowser({
                   <FolderInput className="w-3.5 h-3.5" /> Move
                 </button>
               )}
-              {/* Share: navigate to the item so the user can use the share UI there */}
-              {selectedLeaf.href && (
-                <a
-                  href={selectedLeaf.href}
+              {/* Share: opens the ShareDialog in-place for docs and folders.
+                  Previously this was an <a> that navigated away; now it mounts
+                  ShareDialog directly so the user never leaves Drive. Folder
+                  sharing (PageShare) is now reachable for the first time. */}
+              {canLeafShare && (
+                <button
+                  type="button"
                   data-testid="drive-leaf-share"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    leafActions!.onShare!(selectedLeaf);
+                  }}
                   className={cn(
                     "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     os ? "text-sm" : "text-xs",
                   )}
                 >
                   <Share2 className="w-3.5 h-3.5" /> Share
-                </a>
+                </button>
               )}
               {canLeafDelete && (
                 <button
@@ -1241,26 +1338,29 @@ export function DriveBrowser({
                   column, which caps itself (see MillerColumn), so a shallow
                   Drive doesn't paint an empty panel down to the fold. */}
               <div className="flex divide-x divide-border/60">
-                {/* Column 0: scope list */}
-                <MillerColumn
-                  testid="drive-col-root"
-                  isEmpty={scopes.length === 0}
-                  emptyMessage="No drives available."
-                >
-                  {scopes.map((scope) => {
-                    const isHighlighted = colSel.highlightedIds[0] === scope.id;
-                    return (
-                      <ColumnScopeRow
-                        key={scope.id}
-                        scope={scope}
-                        isHighlighted={isHighlighted}
-                        isDragging={!!activeDrag}
-                        onClick={() => handleScopeClick(scope.id)}
-                        onDoubleClick={() => handleScopeDblClick(scope.id)}
-                      />
-                    );
-                  })}
-                </MillerColumn>
+                {/* Column 0: scope list — hidden in embedded mode (the user is
+                    already inside the project context, no cross-scope nav). */}
+                {!embeddedScopeId && (
+                  <MillerColumn
+                    testid="drive-col-root"
+                    isEmpty={scopes.length === 0}
+                    emptyMessage="No drives available."
+                  >
+                    {scopes.map((scope) => {
+                      const isHighlighted = colSel.highlightedIds[0] === scope.id;
+                      return (
+                        <ColumnScopeRow
+                          key={scope.id}
+                          scope={scope}
+                          isHighlighted={isHighlighted}
+                          isDragging={!!activeDrag}
+                          onClick={() => handleScopeClick(scope.id)}
+                          onDoubleClick={() => handleScopeDblClick(scope.id)}
+                        />
+                      );
+                    })}
+                  </MillerColumn>
+                )}
 
                 {/* Columns 1+: scope/folder contents */}
                 {colSel.levels.slice(1).map((level, relIdx) => {
@@ -1268,6 +1368,12 @@ export function DriveBrowser({
                   const sId = scopeIdForLevel(level);
                   const items = itemsForLevel(level);
                   const highlightedId = colSel.highlightedIds[levelIdx] ?? null;
+                  // Partner-visible toggle: only wire it when the project has an
+                  // active partner and the caller provided the callback.
+                  const partnerToggle =
+                    hasActivePartner && onTogglePartnerVisible
+                      ? onTogglePartnerVisible
+                      : undefined;
 
                   return (
                     <MillerColumn
@@ -1278,7 +1384,7 @@ export function DriveBrowser({
                     >
                       {items.map((item) => {
                         const isHighlighted = highlightedId === item.id;
-                        const scopeActions = sId ? getScopeActions(sId) : null;
+                        const scopeActions = sId ? getInternalScopeActions(sId) : null;
                         return (
                           <ContextMenu
                             key={item.id}
@@ -1289,6 +1395,7 @@ export function DriveBrowser({
                                     scopeActions,
                                     () => onOpenItem(item),
                                     onToggleFavorite,
+                                    partnerToggle,
                                   )
                                 : null
                             }
@@ -1301,6 +1408,7 @@ export function DriveBrowser({
                               isSelected={selected.has(item.id)}
                               scopeActions={scopeActions}
                               onToggleFavorite={onToggleFavorite}
+                              onTogglePartnerVisible={partnerToggle}
                               onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
                               onDoubleClick={() => handleColumnRowDblClick(item)}
                               onOpen={() => onOpenItem(item)}
@@ -1339,10 +1447,13 @@ export function DriveBrowser({
                   selected={selected}
                   onRowClick={handleRowClick}
                   onOpen={openById}
-                  getScopeActions={getScopeActions}
+                  getScopeActions={getInternalScopeActions}
                   onToggleFavorite={onToggleFavorite}
                 />
               ) : !currentScope ? (
+                // In embedded mode the scope is always pre-selected, so this
+                // branch only renders in the full /drive browser. Embedded mode
+                // always has a currentScope because currentScopeId = embeddedScopeId.
                 <ScopeList
                   scopes={scopes}
                   selected={selected}
@@ -1361,8 +1472,11 @@ export function DriveBrowser({
                   onRowClick={handleRowClick}
                   onOpen={openById}
                   onMove={onMove}
-                  actions={getScopeActions(currentScope.id)}
+                  actions={getInternalScopeActions(currentScope.id)}
                   onToggleFavorite={onToggleFavorite}
+                  onTogglePartnerVisible={
+                    hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
+                  }
                   dragging={!!activeDrag}
                   suppressClickRef={suppressClickRef}
                 />
@@ -1387,6 +1501,17 @@ export function DriveBrowser({
         )}
       </DragOverlay>
     </DndContext>
+
+    {/* In-place Share dialog — mounted outside DndContext so DnD events don't
+        bleed through; keyed by item id so state resets on a different target. */}
+    {shareTarget && (
+      <ShareDialog
+        key={shareTarget.id}
+        page={shareTarget}
+        open={true}
+        onClose={() => setShareTarget(null)}
+      />
+    )}
     </DriveScale.Provider>
   );
 }
@@ -1463,6 +1588,7 @@ function ColumnItemRow({
   isSelected,
   scopeActions,
   onToggleFavorite,
+  onTogglePartnerVisible,
   onClick,
   onDoubleClick,
   onOpen,
@@ -1473,6 +1599,7 @@ function ColumnItemRow({
   isSelected: boolean;
   scopeActions: RowActions | null;
   onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   onClick: (e: ReactMouseEvent) => void;
   onDoubleClick: () => void;
   onOpen: () => void;
@@ -1525,6 +1652,17 @@ function ColumnItemRow({
           </span>
         </Tooltip>
       )}
+      {/* Partner-visible badge: teal handshake shown when this doc/file is
+          shared with the project's partner org. Mirrors the badge used in
+          the legacy DocumentsBlock. */}
+      {(item.type === "doc" || item.type === "file") &&
+        (item as { partnerVisible?: boolean | null }).partnerVisible && (
+          <Tooltip content="Shared with partner">
+            <span className="flex items-center text-accent-teal shrink-0">
+              <Handshake className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )}
       {/* Inline star for favorites */}
       {(item.type === "doc" || item.type === "folder") && onToggleFavorite && (
         <button
@@ -1549,6 +1687,7 @@ function ColumnItemRow({
           actions={scopeActions}
           onOpen={onOpen}
           onToggleFavorite={onToggleFavorite}
+          onTogglePartnerVisible={onTogglePartnerVisible}
         />
       )}
       {isFolder && (
@@ -1805,6 +1944,7 @@ function ScopeContents({
   onMove,
   actions,
   onToggleFavorite,
+  onTogglePartnerVisible,
   dragging,
   suppressClickRef,
 }: {
@@ -1820,6 +1960,7 @@ function ScopeContents({
   onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   dragging: boolean;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
@@ -1840,6 +1981,7 @@ function ScopeContents({
             onOpen={onOpen}
             actions={actions}
             onToggleFavorite={onToggleFavorite}
+            onTogglePartnerVisible={onTogglePartnerVisible}
             suppressClickRef={suppressClickRef}
           />
         ))}
@@ -1871,6 +2013,7 @@ function ScopeContents({
             onOpen={onOpen}
             actions={actions}
             onToggleFavorite={onToggleFavorite}
+            onTogglePartnerVisible={onTogglePartnerVisible}
             suppressClickRef={suppressClickRef}
           />
         ))}
@@ -1919,6 +2062,7 @@ function ListRow({
   onOpen,
   actions,
   onToggleFavorite,
+  onTogglePartnerVisible,
   suppressClickRef,
 }: {
   item: DriveItem;
@@ -1929,6 +2073,7 @@ function ListRow({
   onOpen: (id: string) => void;
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
   const t = useDriveText();
@@ -1994,6 +2139,15 @@ function ListRow({
             </span>
           </Tooltip>
         )}
+        {/* Partner-visible badge: teal handshake when shared with the project's partner. */}
+        {(item.type === "doc" || item.type === "file") &&
+          (item as { partnerVisible?: boolean | null }).partnerVisible && (
+            <Tooltip content="Shared with partner">
+              <span className="flex items-center text-accent-teal shrink-0">
+                <Handshake className="w-3.5 h-3.5" />
+              </span>
+            </Tooltip>
+          )}
       </span>
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
       <span className={`${t.meta} text-muted-foreground tabular-nums text-right`}>{formatSize(item.sizeBytes)}</span>
@@ -2004,6 +2158,7 @@ function ListRow({
           actions={actions}
           onOpen={() => onOpen(item.id)}
           onToggleFavorite={onToggleFavorite}
+          onTogglePartnerVisible={onTogglePartnerVisible}
         />
       </span>
     </div>
@@ -2011,7 +2166,7 @@ function ListRow({
 
   return (
     <ContextMenu
-      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite)}
+      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite, onTogglePartnerVisible)}
       ariaLabel="Item actions"
     >
       {row}
@@ -2028,6 +2183,7 @@ function GridTile({
   onOpen,
   actions,
   onToggleFavorite,
+  onTogglePartnerVisible,
   suppressClickRef,
 }: {
   item: DriveItem;
@@ -2038,6 +2194,7 @@ function GridTile({
   onOpen: (id: string) => void;
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
   const t = useDriveText();
@@ -2089,8 +2246,19 @@ function GridTile({
           actions={actions}
           onOpen={() => onOpen(item.id)}
           onToggleFavorite={onToggleFavorite}
+          onTogglePartnerVisible={onTogglePartnerVisible}
         />
       </div>
+      {/* Partner-visible badge: positioned top-left so it doesn't conflict
+          with the actions/star buttons on the right. */}
+      {(item.type === "doc" || item.type === "file") &&
+        (item as { partnerVisible?: boolean | null }).partnerVisible && (
+          <Tooltip content="Shared with partner">
+            <span className="absolute left-1 top-1 flex items-center text-accent-teal">
+              <Handshake className="w-3 h-3" />
+            </span>
+          </Tooltip>
+        )}
       {itemIcon(item, true)}
       <span className={`w-full truncate ${t.meta} font-medium text-foreground`}>{item.title || "Untitled"}</span>
       {/* Signal ②: process linkage pill. Centered below the title. */}
@@ -2115,7 +2283,7 @@ function GridTile({
 
   return (
     <ContextMenu
-      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite)}
+      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite, onTogglePartnerVisible)}
       ariaLabel="Item actions"
     >
       {tile}

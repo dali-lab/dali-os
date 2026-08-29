@@ -2,10 +2,10 @@
 // Postgres DocComment table via /api/comments and /api/comments/:id.
 //
 // Body format decision: BlockNote's CommentBody is an array of blocks (any[]).
-// We serialize it as JSON into DocComment.body. The CommentsRail only needs a
-// plain-text preview; we extract that from the first text-content block at
-// read time so existing rail rendering and notify() previews stay readable.
-// Round-trip: BlockNote → JSON.stringify → DB body → JSON.parse → BlockNote.
+// We send two fields on every write:
+//   body     — plain text extracted via bodyToPlainText (search / notify previews)
+//   bodyJson — BodySegment[] derived via blockBodyToSegments (rich rendering +
+//              @mention notifications via userId, not handle string)
 //
 // Thread ↔ DocComment mapping:
 //   - A BlockNote "thread" maps to a root DocComment (parentId = null).
@@ -29,6 +29,7 @@ import {
   type CommentBody,
   type CommentReactionData,
 } from "@blocknote/core/comments";
+import type { BodySegment } from "~/lib/comment-body";
 
 // Marker stored in DocComment.anchor to distinguish inline BlockNote threads
 // from legacy Yjs-position anchors and doc-level threads.
@@ -71,6 +72,85 @@ export function bodyToPlainText(body: CommentBody): string {
     }
   }
   return parts.join("").trim();
+}
+
+/**
+ * Convert a BlockNote CommentBody (block array) into a flat BodySegment array
+ * for storage in DocComment.bodyJson.
+ *
+ * BlockNote mention nodes have the shape:
+ *   { type: "mention", props: { id: userId, label: handle } }
+ *
+ * All other inline content is collapsed to text segments. The result is a
+ * flat sequence — no block structure — suitable for single-line rendering in
+ * comment cards.
+ */
+export function blockBodyToSegments(body: CommentBody): BodySegment[] {
+  const segments: BodySegment[] = [];
+
+  type InlineNode = {
+    type?: string;
+    text?: string;
+    props?: { id?: string; label?: string };
+    content?: InlineNode[];
+  };
+  type BlockNode = {
+    type?: string;
+    content?: InlineNode[];
+    children?: BlockNode[];
+  };
+
+  const walkInline = (node: InlineNode) => {
+    if (node.type === "mention") {
+      const userId = node.props?.id;
+      const label = node.props?.label ?? "";
+      if (userId) {
+        segments.push({ type: "mention", userId, label });
+        return;
+      }
+    }
+    if (typeof node.text === "string" && node.text) {
+      // Merge consecutive text runs.
+      const last = segments[segments.length - 1];
+      if (last?.type === "text") {
+        last.text += node.text;
+      } else {
+        segments.push({ type: "text", text: node.text });
+      }
+    }
+    if (Array.isArray(node.content)) {
+      for (const child of node.content) walkInline(child);
+    }
+  };
+
+  const walkBlock = (block: BlockNode, index: number) => {
+    if (Array.isArray(block.content)) {
+      // Separate blocks with a newline (except before the first block).
+      if (index > 0) {
+        const last = segments[segments.length - 1];
+        if (last?.type === "text") {
+          last.text += "\n";
+        } else {
+          segments.push({ type: "text", text: "\n" });
+        }
+      }
+      for (const inline of block.content) walkInline(inline);
+    }
+    for (const child of block.children ?? []) walkBlock(child, index);
+  };
+
+  if (Array.isArray(body)) {
+    (body as BlockNode[]).forEach((block, i) => walkBlock(block, i));
+  }
+
+  // Trim trailing whitespace/newlines from the last text segment.
+  const last = segments[segments.length - 1];
+  if (last?.type === "text") {
+    last.text = last.text.trimEnd();
+    if (!last.text) segments.pop();
+  }
+
+  return segments;
 }
 
 /** Serialize CommentBody for storage. */
@@ -382,6 +462,7 @@ export class DaliThreadStore extends ThreadStore {
     metadata?: unknown;
   }): Promise<ThreadData> {
     const bodyText = bodyToPlainText(options.initialComment.body);
+    const bodyJson = blockBodyToSegments(options.initialComment.body);
     const res = await fetch("/api/comments", {
       method: "POST",
       credentials: "include",
@@ -390,6 +471,7 @@ export class DaliThreadStore extends ThreadStore {
         targetType: "doc",
         targetId: this.pageId,
         body: bodyText,
+        bodyJson,
         parentId: null,
         // anchor is set by addThreadToDocument after the mark is placed
         anchor: null,
@@ -431,6 +513,7 @@ export class DaliThreadStore extends ThreadStore {
     threadId: string;
   }): Promise<CommentData> {
     const bodyText = bodyToPlainText(options.comment.body);
+    const bodyJson = blockBodyToSegments(options.comment.body);
     const res = await fetch("/api/comments", {
       method: "POST",
       credentials: "include",
@@ -439,6 +522,7 @@ export class DaliThreadStore extends ThreadStore {
         targetType: "doc",
         targetId: this.pageId,
         body: bodyText,
+        bodyJson,
         parentId: options.threadId,
         anchor: null,
       }),
@@ -469,14 +553,15 @@ export class DaliThreadStore extends ThreadStore {
     threadId: string;
     commentId: string;
   }): Promise<void> {
-    // W3's API adds intent:"edit" {body} to POST /api/comments/:id.
-    // bodyToPlainText keeps comments as plain text (existing decision).
+    // Sends both plain-text body (for previews/search) and bodyJson (for rich
+    // rendering + re-notifying newly mentioned users on edit).
     const bodyText = bodyToPlainText(options.comment.body);
+    const bodyJson = blockBodyToSegments(options.comment.body);
     const res = await fetch(`/api/comments/${options.commentId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "edit", body: bodyText }),
+      body: JSON.stringify({ intent: "edit", body: bodyText, bodyJson }),
     });
     if (!res.ok) {
       // If the endpoint doesn't exist yet (W3 not deployed), swallow silently —

@@ -5,8 +5,10 @@
 //   - Postgres TimeEntry is the source of truth for payroll.
 //   - Google is a best-effort read view ("my paid hours, portable").
 //   - Google failures are swallowed (logged, never thrown to callers).
-//   - `ensureCalendarVisible` seeds subCalendarIds so the timesheet calendar
-//     appears in DALI's external calendar layer without extra user action.
+//   - The calendar is deliberately NOT subscribed into DALI's own external
+//     layer — DALI renders paid hours via the logged-time layer, so showing the
+//     Google mirror there too would duplicate every block. It's a portable view
+//     for the user's Google Calendar, off their primary.
 //
 // Entry points for the route wiring (calendar.server.ts time-entry handlers):
 //   on create  → await syncTimeEntryToGoogle(entry)
@@ -18,9 +20,7 @@ import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   getOrCreateNamedCalendar,
-  listCalendarsForLink,
   patchGoogleCalendarEvent,
-  subscribeCalendarForLink,
 } from "~/lib/google-calendar";
 import { getRoleLabel } from "~/lib/roles";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -35,42 +35,6 @@ export type EnableSyncResult =
   | { ok: false; reason: "error"; message: string };
 
 // ── Helpers (private) ────────────────────────────────────────────────────────
-
-/** Find a primary calendar's id for a link (best-effort: falls back to "primary"). */
-async function resolvePrimaryCalendarId(linkId: string): Promise<string> {
-  try {
-    const list = await listCalendarsForLink(linkId);
-    return list.find((c) => c.primary)?.id ?? "primary";
-  } catch {
-    return "primary";
-  }
-}
-
-/**
- * Make the timesheet calendar visible in DALI's external layer by subscribing
- * the link to it and adding its id to subCalendarIds. Identical pattern to the
- * private `ensureCalendarVisible` in member-class.server.ts.
- */
-async function ensureCalendarVisible(linkId: string, calendarId: string): Promise<void> {
-  try {
-    await subscribeCalendarForLink(linkId, calendarId);
-  } catch {
-    /* already subscribed / owned — best-effort */
-  }
-  const link = await prisma.userCalendarLink.findUnique({
-    where: { id: linkId },
-    select: { subCalendarIds: true },
-  });
-  if (!link) return;
-  const set = new Set(link.subCalendarIds);
-  if (set.has(calendarId)) return;
-  if (set.size === 0) set.add(await resolvePrimaryCalendarId(linkId));
-  set.add(calendarId);
-  await prisma.userCalendarLink.update({
-    where: { id: linkId },
-    data: { subCalendarIds: Array.from(set) },
-  });
-}
 
 /** The subset of columns this module writes — plain values so the same patch is
  *  valid for both `create` and `update` (the generated `update` type otherwise
@@ -145,7 +109,10 @@ export async function setUserTimesheetSync(
 
   try {
     const calendarId = await getOrCreateNamedCalendar(daliLink.id, TIMESHEET_CALENDAR_NAME);
-    await ensureCalendarVisible(daliLink.id, calendarId);
+    // Intentionally NOT subscribed into DALI's own calendar layer: the Timesheet
+    // calendar is a Google-side view of paid hours ("portable, off my primary"),
+    // while DALI already renders those hours natively via the logged-time layer.
+    // Surfacing the mirror inside DALI would double every logged block.
     await upsertAvailabilitySettings(userId, {
       timesheetGoogleSync: true,
       timesheetCalendarLinkId: daliLink.id,

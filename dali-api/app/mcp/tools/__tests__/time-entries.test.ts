@@ -138,14 +138,10 @@ describe("update_time_entry", () => {
     await expect(runUpdateTimeEntry(ME, { id: "te-1" })).rejects.toThrow(TimeEntryNotFoundError);
   });
 
-  it("refuses Meeting- and Block-sourced entries, which are owned elsewhere", async () => {
+  it("refuses Meeting-sourced entries, which are owned elsewhere", async () => {
     mockPrisma.timeEntry.findUnique.mockResolvedValue({ ...existing, source: "Meeting" });
     await expect(runUpdateTimeEntry(ME, { id: "te-1", hours: 3 })).rejects.toThrow(
       /meeting attendance/,
-    );
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ ...existing, source: "Block" });
-    await expect(runUpdateTimeEntry(ME, { id: "te-1", hours: 3 })).rejects.toThrow(
-      /calendar block/,
     );
     expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
   });
@@ -201,9 +197,9 @@ describe("delete_time_entry", () => {
     expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
   });
 
-  it("refuses a Block-sourced entry", async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ userId: ME, source: "Block" });
-    await expect(runDeleteTimeEntry(ME, { id: "te-1" })).rejects.toThrow(/Block-sourced/);
+  it("refuses a non-Manual entry", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue({ userId: ME, source: "Meeting" });
+    await expect(runDeleteTimeEntry(ME, { id: "te-1" })).rejects.toThrow(/Manual/);
   });
 });
 
@@ -227,7 +223,7 @@ describe("list_my_time_entries", () => {
         date: new Date("2026-07-28T00:00:00.000Z"),
         hours: 1,
         note: null,
-        source: "Block",
+        source: "Meeting",
         assignmentType: "Core",
         roleRefId: "ca-1",
         projectId: null,

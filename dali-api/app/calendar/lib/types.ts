@@ -24,20 +24,6 @@ export type WhDay = {
   segments: WhSegment[];
 };
 
-export type ManualBlockDTO = {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  recurrenceRule: string | null;
-  isWork: boolean;
-  assignmentType: RoleInstance["assignmentType"] | null;
-  roleRefId: string | null;
-  /** The timesheet entry's own description (distinct from the block title),
-   *  when this block logs to the timesheet. */
-  workNote: string | null;
-};
-
 export type SubCalendarDTO = {
   id: string;
   summary: string;
@@ -112,16 +98,8 @@ export type MemberClassDTO = {
   calendarId: string | null;
   /** Where it lives, e.g. "Google · Classes" or "In DALI only". */
   destinationLabel: string;
-};
-
-/** A single expanded class occurrence for the "Classes" layer. Only Local
- *  classes are expanded here; Google-stored classes ride the external layer. */
-export type ClassOccurrenceDTO = {
-  classId: string;
-  title: string;
-  startIso: string;
-  endIso: string;
-  kind: "main" | "xhour";
+  /** The term this class belongs to (used for multi-term filtering in the modal). */
+  termId: string;
 };
 
 /** A destination the add-class form can target. `local` renders in DALI only;
@@ -134,7 +112,7 @@ export type ClassDestinationDTO =
 
 export type TimeEntryDTO = {
   id: string;
-  source: "Meeting" | "Manual" | "Block";
+  source: "Meeting" | "Manual";
   scheduledMeetingId: string | null;
   manualBlockId: string | null;
   meetingNotePageId: string | null;
@@ -163,7 +141,7 @@ export type EventAttendeeDTO = {
 export type EventLinkDTO = { label: string; href: string };
 
 /** One external (Google/Outlook) event for display, from events.list. Carries
- *  CRUD identity (eventId/linkId/writable) behind the calendar-google-crud flag
+ *  CRUD identity (eventId/linkId/writable) behind the calendar-unified flag
  *  so the calendar can edit/delete Google events it's allowed to. */
 export type ExternalEventDTO = {
   startIso: string;
@@ -173,7 +151,7 @@ export type ExternalEventDTO = {
   /** The linked sub-calendar this event came from, so the Calendars popover
    *  can hide individual calendars on the grid (client-side display only). */
   calendarId?: string | null;
-  // ── Google Calendar CRUD identity (calendar-google-crud flag) ──
+  // ── Google Calendar CRUD identity (calendar-unified flag) ──
   /** The Google event id — target of edit/delete. */
   eventId?: string | null;
   /** Which UserCalendarLink this event belongs to (for the write token). */
@@ -202,20 +180,6 @@ export type ExternalEventDTO = {
   links?: EventLinkDTO[];
 };
 
-export type MeetingInviteDTO = {
-  notificationId: string;
-  meetingId: string;
-  title: string;
-  startIso: string;
-  endIso: string;
-  rsvp: "Accepted" | "Declined" | "Tentative" | null;
-  notePageId: string | null;
-  organizerName: string | null;
-  attendees: EventAttendeeDTO[];
-  /** Drives the detail popover's "Core meeting" checkbox (Core viewers only). */
-  isCoreMeeting: boolean;
-};
-
 export type LoaderData = {
   timezone: string;
   defaultEventBufferMin: number;
@@ -224,7 +188,6 @@ export type LoaderData = {
   // client uses this to (a) show the master toggle as off for brand-new users
   // and (b) seed the full week on first edit so unsaved defaults aren't lost.
   hasPersistedWorkingHours: boolean;
-  manualBlocks: ManualBlockDTO[];
   calendarLinks: CalendarLinkDTO[];
   generalCalendar: GeneralCalendarState;
   weekStartIso: string;
@@ -252,24 +215,17 @@ export type LoaderData = {
   canSetSelfCheckIn: boolean;
   /** Core — can mark a meeting as a Core meeting (shows on the Core hub calendar). */
   canMarkCoreMeeting: boolean;
-  // Scheduled meetings the viewer was invited to whose start falls in the
-  // visible week. Rendered as RSVP-able blocks on the My Availability grid so
-  // Accept/Maybe/Decline is available in the calendar, not just in tasks.
-  // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
-  // Notification, not on MeetingAttendance).
-  meetingInvites: MeetingInviteDTO[];
-  // Classes this term (behind the calendar-classes flag). classesEnabled gates
-  // the whole surface; classTerm names the term classes are scoped to;
-  // memberClasses feeds the manager; classOccurrences are the Local classes
-  // expanded across the fetched range for the "Classes" layer (Google-stored
-  // classes ride the external layer instead); classDestinations are the add
-  // form's target options (Local + any linked Google calendars).
+  // Classes this term (behind the calendar-unified flag). classesEnabled gates
+  // the whole surface; classTerm names the current/default term; classTerms is
+  // the selectable set (current + upcoming) for the term picker in the modal;
+  // memberClasses feeds the manager (all current+upcoming terms);
+  // classDestinations are the add form's target options (any linked Google calendars).
   classesEnabled: boolean;
   classTerm: { id: string; code: string } | null;
+  classTerms: { id: string; code: string }[];
   memberClasses: MemberClassDTO[];
-  classOccurrences: ClassOccurrenceDTO[];
   classDestinations: ClassDestinationDTO[];
-  // Google Calendar CRUD (calendar-google-crud flag): when on, the calendar can
+  // Google Calendar CRUD (calendar-unified flag): when on, the calendar can
   // create/edit/delete Google events. defaultEventDest is the last-used write
   // calendar (from the dali_event_dest cookie), "linkId:calendarId".
   crudEnabled: boolean;
@@ -312,7 +268,7 @@ export type EventBlock = {
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
   /** When set, the event's detail popover shows an "Edit" action — a writable
-   *  Google event or in-app block under the calendar-google-crud flag. Opens the
+   *  Google event or in-app block under the calendar-unified flag. Opens the
    *  composer, anchored to the block's on-screen rect (passed through so the
    *  composer pops up next to the event, Google-Calendar style). */
   onEdit?: (anchor?: DOMRect) => void;
