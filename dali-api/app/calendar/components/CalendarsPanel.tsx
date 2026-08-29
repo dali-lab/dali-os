@@ -71,6 +71,11 @@ export type CalendarsPanelProps = {
   classesEnabled?: boolean;
   // "Mirror my timesheet to Google" current saved state.  Default = false.
   timesheetSyncEnabled?: boolean;
+  // Per-role filter chips for the Logged-time layer — show/hide your logged
+  // hours by paid role. The controls are hidden if these are omitted.
+  roleBuckets?: { key: string; label: string; hours: number }[];
+  excludedRoleKeys?: Set<string>;
+  toggleRoleKey?: (key: string) => void;
 };
 
 // ── CalendarsPanel ─────────────────────────────────────────────────────────────
@@ -85,6 +90,9 @@ export function CalendarsPanel({
   onClose,
   classesEnabled,
   timesheetSyncEnabled = false,
+  roleBuckets = [],
+  excludedRoleKeys,
+  toggleRoleKey,
 }: CalendarsPanelProps) {
   // Sub-modal state
   const [calMgrOpen, setCalMgrOpen] = useState(false);
@@ -188,7 +196,14 @@ export function CalendarsPanel({
           <div className={sectionHead}>
             Layers
           </div>
-          <LayerToggles layers={layers} toggleLayer={toggleLayer} classesEnabled={classesEnabled ?? data.classesEnabled} />
+          <LayerToggles
+            layers={layers}
+            toggleLayer={toggleLayer}
+            classesEnabled={classesEnabled ?? data.classesEnabled}
+            roleBuckets={roleBuckets}
+            excludedRoleKeys={excludedRoleKeys}
+            toggleRoleKey={toggleRoleKey}
+          />
         </section>
 
         {/* ── Section 3: Working hours ────────────────────────────────── */}
@@ -488,10 +503,16 @@ function LayerToggles({
   layers,
   toggleLayer,
   classesEnabled,
+  roleBuckets = [],
+  excludedRoleKeys,
+  toggleRoleKey,
 }: {
   layers: LayerVisibility;
   toggleLayer: (key: keyof LayerVisibility) => void;
   classesEnabled: boolean;
+  roleBuckets?: { key: string; label: string; hours: number }[];
+  excludedRoleKeys?: Set<string>;
+  toggleRoleKey?: (key: string) => void;
 }) {
   return (
     <ul className="flex flex-col gap-0.5">
@@ -517,6 +538,32 @@ function LayerToggles({
                 {spec.label}
               </span>
             </button>
+            {/* Per-role filter chips under the Logged-time layer: click a role
+                to hide/show your logged hours for it (excludedRoleKeys). */}
+            {spec.key === "logged" && on && toggleRoleKey && roleBuckets.length > 0 && (
+              <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                {roleBuckets.map((b) => {
+                  const excluded = excludedRoleKeys?.has(b.key) ?? false;
+                  return (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => toggleRoleKey(b.key)}
+                      aria-pressed={!excluded}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        excluded
+                          ? "border-border bg-transparent text-muted-foreground line-through"
+                          : "border-violet-500/40 bg-violet-500/10 text-foreground",
+                      )}
+                    >
+                      {b.label}
+                      <span className="text-muted-foreground">{b.hours}h</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </li>
         );
       })}

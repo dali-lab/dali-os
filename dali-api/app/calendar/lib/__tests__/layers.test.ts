@@ -2,8 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   buildGridDays,
   buildExternalLayer,
-  buildMeetingsLayer,
-  buildClassesLayer,
   buildAllDayItems,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
@@ -20,7 +18,6 @@ function fixture(overrides: Partial<LoaderData> = {}): LoaderData {
   return {
     timezone: "UTC",
     externalEvents: [],
-    meetingInvites: [],
     timeEntries: [],
     calendarLinks: [],
     myRoles: [],
@@ -125,34 +122,6 @@ describe("perCalendarLegend", () => {
   });
 });
 
-describe("buildMeetingsLayer", () => {
-  it("carries meeting metadata and reflects timesheet state", () => {
-    const days = buildGridDays(WEEK, 7);
-    const data = fixture({
-      canMarkCoreMeeting: true,
-      timeEntries: [{ scheduledMeetingId: "m1" }] as unknown as LoaderData["timeEntries"],
-      meetingInvites: [
-        {
-          notificationId: "n1",
-          meetingId: "m1",
-          title: "Standup",
-          startIso: "2026-08-18T10:00:00.000Z",
-          endIso: "2026-08-18T10:30:00.000Z",
-          rsvp: "Accepted",
-          notePageId: null,
-          organizerName: "Sara",
-          attendees: [],
-          isCoreMeeting: false,
-        },
-      ],
-    });
-    const layer = buildMeetingsLayer(data, days);
-    const block = layer[2][0]; // Tuesday
-    expect(block).toMatchObject({ label: "Standup", startHour: 10, duration: 0.5 });
-    expect(block.meeting).toMatchObject({ meetingId: "m1", onTimesheet: true, canMarkCoreMeeting: true });
-  });
-});
-
 describe("buildLoggedTimeLayer", () => {
   it("places timed entries and honours excluded roles", () => {
     const days = buildGridDays(WEEK, 7);
@@ -189,20 +158,6 @@ describe("logged-time de-duplication", () => {
 
   function loggedFixture() {
     return fixture({
-      meetingInvites: [
-        {
-          notificationId: "n1",
-          meetingId: "m1",
-          title: "Standup",
-          startIso: "2026-08-18T10:00:00.000Z",
-          endIso: "2026-08-18T10:30:00.000Z",
-          rsvp: "Accepted",
-          notePageId: null,
-          organizerName: "Sara",
-          attendees: [],
-          isCoreMeeting: false,
-        },
-      ] as unknown as LoaderData["meetingInvites"],
       timeEntries: [
         {
           id: "t-m", source: "Meeting", scheduledMeetingId: "m1", manualBlockId: null, meetingNotePageId: null,
@@ -221,12 +176,6 @@ describe("logged-time de-duplication", () => {
   it("indexes sourced logged hours by meeting", () => {
     const idx = buildLoggedSourceIndex(loggedFixture());
     expect(idx.byMeeting.get("m1")?.hours).toBe(0.5);
-  });
-
-  it("annotates the source meeting with a logged accent instead of duplicating", () => {
-    const data = loggedFixture();
-    const idx = buildLoggedSourceIndex(data);
-    expect(buildMeetingsLayer(data, days, idx.byMeeting)[2][0].loggedAccent).toMatchObject({ hours: 0.5 });
   });
 
   it("indexes nothing for a role that's filtered out", () => {
@@ -277,21 +226,6 @@ describe("buildAllDayItems (Google CRUD)", () => {
       ] as LoaderData["externalEvents"],
     });
     expect(Object.keys(buildAllDayItems(data, days, new Set(["c1"])))).toHaveLength(0);
-  });
-});
-
-describe("buildClassesLayer", () => {
-  it("places Local class occurrences and marks the x-hour in the label", () => {
-    const days = buildGridDays(WEEK, 7);
-    const data = fixture({
-      classOccurrences: [
-        { classId: "c1", title: "CS 52", startIso: "2026-08-17T14:00:00.000Z", endIso: "2026-08-17T15:05:00.000Z", kind: "main" },
-        { classId: "c1", title: "CS 52", startIso: "2026-08-20T16:00:00.000Z", endIso: "2026-08-20T16:50:00.000Z", kind: "xhour" },
-      ],
-    } as unknown as Partial<LoaderData>);
-    const layer = buildClassesLayer(data, days);
-    expect(layer[1][0]).toMatchObject({ label: "CS 52", startHour: 14 }); // Mon
-    expect(layer[4][0].label).toBe("CS 52 · x-hour"); // Thu x-hour
   });
 });
 

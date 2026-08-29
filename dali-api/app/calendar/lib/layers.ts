@@ -13,10 +13,8 @@
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { EventBlock, ExternalEventDTO, LoaderData, TimeEntryDTO } from "./types";
 import {
-  CLASS_BG,
   EVENT_CORAL,
   UNASSIGNED_ROLE_KEY,
-  meetingBlockStyle,
   nominalDayRange,
   roleColor,
   timeEntryRoleKey,
@@ -205,67 +203,6 @@ export function buildLoggedSourceIndex(
     byMeeting.set(id, { color: prev?.color ?? roleColor(roleKey).dot, hours: (prev?.hours ?? 0) + t.hours });
   }
   return { byMeeting };
-}
-
-/** Classes-this-term layer — Local classes only (Google-stored classes ride the
- *  external layer, so they're never drawn twice). Occurrences arrive already
- *  expanded from the loader; here we just place them in the brand navy. */
-export function buildClassesLayer(data: LoaderData, days: GridDay[]): Record<number, EventBlock[]> {
-  const into: Record<number, EventBlock[]> = {};
-  for (const c of data.classOccurrences) {
-    placeBlock(
-      days,
-      data.timezone,
-      c.startIso,
-      c.endIso,
-      { label: c.kind === "xhour" ? `${c.title} · x-hour` : c.title, className: "", bgColor: CLASS_BG },
-      into,
-    );
-  }
-  return into;
-}
-
-/** Meeting invites — clickable RSVP blocks styled by response state. The meeting
- *  metadata (onTimesheet / Core-meeting) drives the detail popover toggles. When
- *  `loggedByMeeting` marks a meeting as also-logged, the block carries a role
- *  accent instead of the logged layer drawing a duplicate over it. */
-export function buildMeetingsLayer(
-  data: LoaderData,
-  days: GridDay[],
-  loggedByMeeting?: Map<string, LoggedAccent>,
-): Record<number, EventBlock[]> {
-  const into: Record<number, EventBlock[]> = {};
-  const meetingIdsOnTimesheet = new Set(
-    data.timeEntries.flatMap((t) => (t.scheduledMeetingId ? [t.scheduledMeetingId] : [])),
-  );
-  for (const inv of data.meetingInvites) {
-    const style = meetingBlockStyle(inv.rsvp);
-    placeBlock(
-      days,
-      data.timezone,
-      inv.startIso,
-      inv.endIso,
-      {
-        label: inv.title,
-        className: style.className,
-        borderClassName: style.borderClassName,
-        organizerName: inv.organizerName ?? undefined,
-        attendees: inv.attendees,
-        loggedAccent: loggedByMeeting?.get(inv.meetingId),
-        meeting: {
-          notificationId: inv.notificationId,
-          meetingId: inv.meetingId,
-          rsvp: inv.rsvp,
-          notePageId: inv.notePageId,
-          onTimesheet: meetingIdsOnTimesheet.has(inv.meetingId),
-          isCoreMeeting: inv.isCoreMeeting,
-          canMarkCoreMeeting: data.canMarkCoreMeeting,
-        },
-      },
-      into,
-    );
-  }
-  return into;
 }
 
 /** A time entry resolved to a concrete ISO range: its real times when set,

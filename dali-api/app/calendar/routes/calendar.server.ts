@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { fullName } from "~/lib/display";
 import { listAllGroups } from "~/lib/groups";
 import {
   canViewForms,
@@ -24,7 +23,6 @@ import {
   buildClassDestinations,
   MemberClassError,
 } from "~/lib/member-class.server";
-import { expandClassOccurrences } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import {
@@ -61,9 +59,7 @@ import type {
   UserOption,
   ProjectOption,
   TimeEntryDTO,
-  MeetingInviteDTO,
   MemberClassDTO,
-  ClassOccurrenceDTO,
   ClassDestinationDTO,
   ExternalEventDTO,
   EventAttendeeDTO,
@@ -112,13 +108,6 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
     ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl }] : []),
     ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink }] : []),
   ];
-}
-
-function userDisplayName(
-  u: { firstName: string | null; lastName: string | null; daliEmail: string | null } | undefined,
-): string | null {
-  if (!u) return null;
-  return fullName(u) || u.daliEmail || null;
 }
 
 // Window for the visible week grid. We compute Sunday→following Sunday in the
@@ -819,7 +808,7 @@ export async function loadCalendarData(request: Request) {
   const crudEnabled = await isFeatureEnabled("calendar-unified", userId, roles, request);
 
   let ingestionError: string | null = null;
-  const [externalRaw, calendarLinks, inviteRows] = await Promise.all([
+  const [externalRaw, calendarLinks] = await Promise.all([
     (crudEnabled
       ? fetchCalendarEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
       : fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
@@ -860,99 +849,7 @@ export async function loadCalendarData(request: Request) {
         return { ...base, subCalendars };
       }),
     ),
-    // Meetings the viewer was invited to whose selected time lands in this
-    // week — the MeetingInvite notification carries both the per-user RSVP and
-    // the id the RSVP endpoint expects. Cancelled meetings are hidden, matching
-    // the tasks/banner surfaces.
-    prisma.notification.findMany({
-      where: {
-        recipientUserId: userId,
-        kind: "MeetingInvite",
-        scheduledMeetingId: { not: null },
-        scheduledMeeting: {
-          status: { not: "Cancelled" },
-          selectedAt: { gte: rangeStart, lt: rangeEnd },
-        },
-      },
-      select: {
-        id: true,
-        rsvp: true,
-        scheduledMeeting: {
-          select: {
-            id: true,
-            title: true,
-            selectedAt: true,
-            durationMinutes: true,
-            organizerId: true,
-            participantUserIds: true,
-            isCoreMeeting: true,
-            notePage: { select: { id: true } },
-            // Every invitee's RSVP lives on their own MeetingInvite row, so the
-            // popover's guest list reads them all, not just the viewer's.
-            notifications: {
-              where: { kind: "MeetingInvite" },
-              select: { recipientUserId: true, rsvp: true },
-            },
-          },
-        },
-      },
-    }),
   ]);
-
-  // Names for every organizer/participant on this week's invites, in one hit —
-  // the picker's `users` list is current-term members only, so it can't be
-  // relied on to resolve an organizer who has since gone alumni.
-  const inviteeIds = new Set<string>();
-  for (const n of inviteRows) {
-    const m = n.scheduledMeeting;
-    if (!m) continue;
-    inviteeIds.add(m.organizerId);
-    for (const id of m.participantUserIds) inviteeIds.add(id);
-  }
-  const inviteeRows =
-    inviteeIds.size > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: [...inviteeIds] } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        })
-      : [];
-  const inviteeById = new Map(inviteeRows.map((u) => [u.id, u]));
-
-  const meetingInvites: MeetingInviteDTO[] = inviteRows.flatMap((n) => {
-    const m = n.scheduledMeeting;
-    if (!m?.selectedAt) return [];
-    const start = m.selectedAt;
-    const end = new Date(start.getTime() + m.durationMinutes * 60_000);
-    const rsvpByUser = new Map(
-      m.notifications.map((row) => [row.recipientUserId, row.rsvp] as const),
-    );
-    // Organizer first, then participants — the organizer isn't always in
-    // participantUserIds, so dedupe rather than assume.
-    const rosterIds = [m.organizerId, ...m.participantUserIds.filter((id) => id !== m.organizerId)];
-    return [
-      {
-        notificationId: n.id,
-        meetingId: m.id,
-        title: m.title,
-        startIso: start.toISOString(),
-        endIso: end.toISOString(),
-        rsvp: n.rsvp,
-        notePageId: m.notePage?.id ?? null,
-        isCoreMeeting: m.isCoreMeeting,
-        organizerName: userDisplayName(inviteeById.get(m.organizerId)),
-        attendees: rosterIds.map((id) => {
-          const u = inviteeById.get(id);
-          return {
-            name: userDisplayName(u) ?? "Unknown member",
-            // The organizer scheduled it, so treat them as attending rather
-            // than showing them permanently "Pending" on their own meeting.
-            status: id === m.organizerId ? "Accepted" : rsvpByUser.get(id) || "Pending",
-            organizer: id === m.organizerId,
-          };
-        }),
-      },
-    ];
-  });
 
   // Derived from the calendar lists already fetched above — no extra Google
   // round-trip.
@@ -992,10 +889,9 @@ export async function loadCalendarData(request: Request) {
       }));
 
   // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
-  // terms for the modal picker; expand occurrences only for the current term.
+  // terms for the modal picker.
   const classesEnabled = crudEnabled;
   let memberClasses: MemberClassDTO[] = [];
-  let classOccurrences: ClassOccurrenceDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
   let classTerms: { id: string; code: string }[] = [];
   if (classesEnabled) {
@@ -1013,23 +909,6 @@ export async function loadCalendarData(request: Request) {
       });
       memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
       classDestinations = buildClassDestinations(calendarLinks);
-      // Expand only Local classes for the current term across the fetched range;
-      // Google-stored classes ride the external layer (real events on linked calendar).
-      if (term) {
-        for (const r of classRows) {
-          if (r.termId !== term.id || r.storage !== "Local") continue;
-          const occ = expandClassOccurrences(
-            r.meetings as unknown as PeriodMeeting[],
-            term.startDate,
-            term.endDate,
-            rangeStart,
-            rangeEnd,
-          );
-          for (const o of occ) {
-            classOccurrences.push({ classId: r.id, title: r.title, startIso: o.startIso, endIso: o.endIso, kind: o.kind });
-          }
-        }
-      }
     }
   }
 
@@ -1069,12 +948,10 @@ export async function loadCalendarData(request: Request) {
       startTime: t.startTime ? t.startTime.toISOString() : null,
       endTime: t.endTime ? t.endTime.toISOString() : null,
     })),
-    meetingInvites,
     classesEnabled,
     classTerm: term ? { id: term.id, code: term.code } : null,
     classTerms,
     memberClasses,
-    classOccurrences,
     classDestinations,
     crudEnabled,
     timesheetGoogleSync: settings?.timesheetGoogleSync ?? false,

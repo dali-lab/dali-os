@@ -102,16 +102,6 @@ export type MemberClassDTO = {
   termId: string;
 };
 
-/** A single expanded class occurrence for the "Classes" layer. Only Local
- *  classes are expanded here; Google-stored classes ride the external layer. */
-export type ClassOccurrenceDTO = {
-  classId: string;
-  title: string;
-  startIso: string;
-  endIso: string;
-  kind: "main" | "xhour";
-};
-
 /** A destination the add-class form can target. `local` renders in DALI only;
  *  the Google kinds write real recurring events to a linked account. */
 export type ClassDestinationDTO =
@@ -190,20 +180,6 @@ export type ExternalEventDTO = {
   links?: EventLinkDTO[];
 };
 
-export type MeetingInviteDTO = {
-  notificationId: string;
-  meetingId: string;
-  title: string;
-  startIso: string;
-  endIso: string;
-  rsvp: "Accepted" | "Declined" | "Tentative" | null;
-  notePageId: string | null;
-  organizerName: string | null;
-  attendees: EventAttendeeDTO[];
-  /** Drives the detail popover's "Core meeting" checkbox (Core viewers only). */
-  isCoreMeeting: boolean;
-};
-
 export type LoaderData = {
   timezone: string;
   defaultEventBufferMin: number;
@@ -239,24 +215,15 @@ export type LoaderData = {
   canSetSelfCheckIn: boolean;
   /** Core — can mark a meeting as a Core meeting (shows on the Core hub calendar). */
   canMarkCoreMeeting: boolean;
-  // Scheduled meetings the viewer was invited to whose start falls in the
-  // visible week. Rendered as RSVP-able blocks on the My Availability grid so
-  // Accept/Maybe/Decline is available in the calendar, not just in tasks.
-  // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
-  // Notification, not on MeetingAttendance).
-  meetingInvites: MeetingInviteDTO[];
   // Classes this term (behind the calendar-unified flag). classesEnabled gates
   // the whole surface; classTerm names the current/default term; classTerms is
   // the selectable set (current + upcoming) for the term picker in the modal;
-  // memberClasses feeds the manager (all current+upcoming terms); classOccurrences
-  // are the Local classes expanded across the fetched range for the "Classes" layer
-  // (Google-stored classes ride the external layer instead); classDestinations are
-  // the add form's target options (any linked Google calendars).
+  // memberClasses feeds the manager (all current+upcoming terms);
+  // classDestinations are the add form's target options (any linked Google calendars).
   classesEnabled: boolean;
   classTerm: { id: string; code: string } | null;
   classTerms: { id: string; code: string }[];
   memberClasses: MemberClassDTO[];
-  classOccurrences: ClassOccurrenceDTO[];
   classDestinations: ClassDestinationDTO[];
   // Google Calendar CRUD (calendar-unified flag): when on, the calendar can
   // create/edit/delete Google events. defaultEventDest is the last-used write

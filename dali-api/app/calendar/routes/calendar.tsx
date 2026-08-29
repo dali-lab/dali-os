@@ -43,9 +43,7 @@ import type {
   UserOption,
   ProjectOption,
   TimeEntryDTO,
-  MeetingInviteDTO,
   MemberClassDTO,
-  ClassOccurrenceDTO,
   ClassDestinationDTO,
   ExternalEventDTO,
   EventAttendeeDTO,
@@ -542,13 +540,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
-  // Open the scheduling overlay (from the New menu). A meeting's time comes from
-  // the group's availability, so there's no slot to carry in — it's picked on
-  // the availability grid after participants are chosen.
-  const startMeeting = () => {
-    setEditor(null);
-    setMode("meeting");
-  };
   // Open the unified create popover at a sensible default slot (today if it's in
   // range, 9–10am) — the New-menu path when there's no drag. Month view has no
   // time grid, so switch to week first.
@@ -684,6 +675,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       toggleHiddenCal={toggleHiddenCal}
                       classesEnabled={data.classesEnabled}
                       timesheetSyncEnabled={data.timesheetGoogleSync}
+                      roleBuckets={layers.logged ? roleBuckets : []}
+                      excludedRoleKeys={excludedRoleKeys}
+                      toggleRoleKey={toggleRoleKey}
                       onClose={() => setCalendarsOpen(false)}
                     />
                   </div>
