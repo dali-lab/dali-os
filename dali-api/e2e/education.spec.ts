@@ -105,8 +105,9 @@ test.describe('portal RSVP, waitlist, and auto-promotion', () => {
     await page.goto(`/portal/education/${WORKSHOP_ID}`);
     await expect(page.getByText('Enrolled', { exact: true })).toBeVisible();
 
-    // The enrolled student can open the course hub.
+    // The enrolled student can open the course hub (the session Timeline is the
+    // default tab).
     await page.getByRole('link', { name: 'Open course hub' }).click();
-    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible();
   });
 });
