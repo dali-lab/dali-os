@@ -113,6 +113,11 @@ export const AddTimeEntrySchema = z.object({
   // whether dragged on the grid or typed into the add form.
   startTime: isoString,
   endTime: isoString,
+  // Set when the entry is logged against a just-created meeting (the unified
+  // Create modal's "count as work"): links it to the meeting so it renders as a
+  // role accent on the meeting block instead of a duplicate, and skips the
+  // Timesheet-calendar mirror (the meeting already lives on the real calendar).
+  scheduledMeetingId: z.string().optional(),
 });
 
 export const UpdateTimeEntrySchema = z.object({

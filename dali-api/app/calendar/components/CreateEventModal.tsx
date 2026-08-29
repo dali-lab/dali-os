@@ -280,9 +280,12 @@ export function CreateEventModal({
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
         });
-        // If isWork, create a TimeEntry for the meeting slot
+        // If isWork, log the organizer's time against the meeting we just
+        // created — linked by its id so it shows as an accent on the meeting
+        // block (not a duplicate) and isn't mirrored to the Timesheet calendar.
         if (isWork && roleKey && startIso && endIso) {
           const [assignmentType, roleRefId] = roleKey.split("::");
+          const meetingId = json.meeting?.id as string | undefined;
           if (assignmentType && roleRefId) {
             timeFetcher.submit(
               {
@@ -294,6 +297,7 @@ export function CreateEventModal({
                 note: workNote.trim(),
                 startTime: startIso,
                 endTime: endIso,
+                ...(meetingId ? { scheduledMeetingId: meetingId } : {}),
               },
               { method: "post" },
             );
