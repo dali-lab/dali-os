@@ -807,7 +807,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             <TimesheetSummaryRail
               roleBuckets={roleBuckets}
               periodLabel={formatPayPeriod(weekPeriod, data.timezone)}
-              onFocus={() => setMode("timesheet")}
             />
           )}
         </div>

@@ -280,9 +280,12 @@ export function CreateEventModal({
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
         });
-        // If isWork, create a TimeEntry for the meeting slot
+        // If isWork, log the organizer's time against the meeting we just
+        // created — linked by its id so it shows as an accent on the meeting
+        // block (not a duplicate) and isn't mirrored to the Timesheet calendar.
         if (isWork && roleKey && startIso && endIso) {
           const [assignmentType, roleRefId] = roleKey.split("::");
+          const meetingId = json.meeting?.id as string | undefined;
           if (assignmentType && roleRefId) {
             timeFetcher.submit(
               {
@@ -294,6 +297,7 @@ export function CreateEventModal({
                 note: workNote.trim(),
                 startTime: startIso,
                 endTime: endIso,
+                ...(meetingId ? { scheduledMeetingId: meetingId } : {}),
               },
               { method: "post" },
             );
@@ -509,7 +513,7 @@ export function CreateEventModal({
               <input type="hidden" name="endIso" value={endIso} />
               <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
               <input type="hidden" name="timeZone" value={data.timezone} />
-              <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat) ?? ""} />
+              <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat, repeatAnchorLocal) ?? ""} />
               <input type="hidden" name="description" value={description} />
               {isWork && roleKey && (
                 <>
@@ -834,16 +838,15 @@ export function CreateEventModal({
               </div>
 
               {/* Meeting notes toggle */}
-              <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateNote((v) => !v)}
-                  className="text-sm font-medium text-foreground hover:text-accent-coral transition-colors"
-                >
-                  {createNote ? "Meeting notes: on" : "+ Create meeting notes"}
-                </button>
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <Toggle
+                  checked={createNote}
+                  onChange={(e) => setCreateNote(e.target.checked)}
+                  label="Create meeting notes"
+                  description="Starts a shared notes doc linked to this meeting."
+                />
                 {createNote && (
-                  <div className="space-y-3 pt-1">
+                  <div className="mt-3 space-y-3 pt-1">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label className={labelClass}>Meeting type</label>

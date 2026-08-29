@@ -361,6 +361,43 @@ async function handleEventAction(
 
     if (intent === "event-create") {
       const recurrenceRule = get("recurrenceRule").trim() || null;
+      const isWork = get("isWork") === "1";
+      const assignmentType = get("assignmentType") || null;
+      const roleRefId = get("roleRefId") || null;
+      const workNote = get("workNote").trim() || null;
+      const loggingWork = isWork && Boolean(assignmentType) && Boolean(roleRefId);
+
+      // A "count this as work" block is a timesheet entry, not a personal event.
+      // Its single Google representation lives on the dedicated DALI Timesheet
+      // calendar (written by syncTimeEntryToGoogle), so we DON'T push it to the
+      // chosen destination — that's what kept the primary clean was for, and a
+      // second copy there is exactly the duplication we're removing. A plain
+      // event (no work) still lands on its destination calendar as before.
+      if (loggingWork) {
+        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId!);
+        if (resolved) {
+          const startTime = new Date(startIso);
+          const endTime = new Date(endIso);
+          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
+          const logged = await prisma.timeEntry.create({
+            data: {
+              userId,
+              source: "Manual",
+              date: startTime,
+              hours,
+              assignmentType: assignmentType as RoleInstance["assignmentType"],
+              roleRefId: roleRefId!,
+              projectId: resolved.projectId,
+              note: workNote ?? title,
+              startTime,
+              endTime,
+            },
+          });
+          await syncTimeEntryToGoogle(logged).catch(() => {});
+        }
+        return null;
+      }
+
       await createGoogleCalendarEvent({
         linkId,
         calendarId,
@@ -374,34 +411,6 @@ async function handleEventAction(
         timeZone,
         attendees: [],
       });
-      // NEW: create a standalone Manual TimeEntry for the work log
-      const isWork = get("isWork") === "1";
-      const assignmentType = get("assignmentType") || null;
-      const roleRefId = get("roleRefId") || null;
-      const workNote = get("workNote").trim() || null;
-      if (isWork && assignmentType && roleRefId) {
-        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId);
-        if (resolved) {
-          const startTime = new Date(startIso);
-          const endTime = new Date(endIso);
-          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
-          const logged = await prisma.timeEntry.create({
-            data: {
-              userId,
-              source: "Manual",
-              date: startTime,
-              hours,
-              assignmentType: assignmentType as RoleInstance["assignmentType"],
-              roleRefId,
-              projectId: resolved.projectId,
-              note: workNote,
-              startTime,
-              endTime,
-            },
-          });
-          await syncTimeEntryToGoogle(logged).catch(() => {});
-        }
-      }
       return null;
     }
 
@@ -559,6 +568,7 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         note: get("note") || null,
         startTime: get("startTime") || null,
         endTime: get("endTime") || null,
+        scheduledMeetingId: get("scheduledMeetingId") || undefined,
       };
     case "update-time-entry":
       return {
@@ -622,6 +632,7 @@ export async function loadCalendarData(request: Request) {
           timezone: true,
           defaultEventBufferMin: true,
           timesheetGoogleSync: true,
+          timesheetCalendarId: true,
         },
       }),
       prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
@@ -674,10 +685,31 @@ export async function loadCalendarData(request: Request) {
       isCore(userId, request),
     ]);
 
+  // Group rosters can include members outside the current-term member set
+  // (alumni, users inactive this term, etc.), so those ids aren't in `users`
+  // above. Without names, the scheduling grid falls back to rendering a raw
+  // user id (a cuid). Fetch display names for any such member and merge them
+  // in so every resolvable participant renders as a person, not an id.
+  const knownUserIds = new Set(users.map((u) => u.id));
+  const missingMemberIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
+  );
+  const extraGroupMembers = missingMemberIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: missingMemberIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      })
+    : [];
+  const allUsers = [...users, ...extraGroupMembers];
+
   // Working hours are interpreted in the availability-settings zone when set;
   // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
   const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
+  // The dedicated DALI Timesheet Google calendar (when the mirror is enabled).
+  // Filtered out of both the linked-calendar list and the external event read
+  // below — DALI represents those hours in its own logged-time layer.
+  const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).
   // Skip rows with enabled=false or invalid bounds; the UI treats them as deleted.
@@ -837,15 +869,21 @@ export async function loadCalendarData(request: Request) {
         }
         const enabledSet = new Set(l.subCalendarIds);
         // When subCalendarIds is empty, treat the primary as the only one in use.
-        const subCalendars: SubCalendarDTO[] = items.map((it) => ({
-          id: it.id,
-          summary: it.summary,
-          primary: it.primary === true,
-          color: it.backgroundColor ?? null,
-          enabled:
-            l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
-          writable: it.accessRole === "owner" || it.accessRole === "writer",
-        }));
+        const subCalendars: SubCalendarDTO[] = items
+          // The DALI Timesheet calendar is a Google-side mirror of logged hours;
+          // DALI shows those natively in the logged-time layer, so it never
+          // appears as a linked calendar here (hidden even for users who had it
+          // auto-subscribed before this became a mirror-only calendar).
+          .filter((it) => it.id !== timesheetCalendarId)
+          .map((it) => ({
+            id: it.id,
+            summary: it.summary,
+            primary: it.primary === true,
+            color: it.backgroundColor ?? null,
+            enabled:
+              l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
+            writable: it.accessRole === "owner" || it.accessRole === "writer",
+          }));
         return { ...base, subCalendars };
       }),
     ),
@@ -856,9 +894,13 @@ export async function loadCalendarData(request: Request) {
   const generalCalendar = generalCalendarState(calendarLinks);
 
   // Map the external read to display DTOs. The crud read carries edit identity
-  // (eventId/linkId/writable/allDay); the busy read is title/time only.
+  // (eventId/linkId/writable/allDay); the busy read is title/time only. Events
+  // from the DALI Timesheet mirror calendar are dropped — the logged-time layer
+  // already shows those hours, so keeping them would double every work block.
   const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? (externalRaw as CalendarEvent[]).map((e) => ({
+    ? (externalRaw as CalendarEvent[])
+        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
+        .map((e) => ({
         startIso: e.startIso,
         endIso: e.endIso,
         title: e.title || "Busy",
@@ -927,7 +969,7 @@ export async function loadCalendarData(request: Request) {
     externalEvents,
     ingestionError,
     groups,
-    users,
+    users: allUsers,
     currentUserId: userId,
     myProjects,
     myRoles,
@@ -1169,19 +1211,34 @@ export async function submitCalendarAction(request: Request) {
       const resolved = await resolveRoleRef(userId, input.assignmentType, input.roleRefId);
       if (!resolved) return Response.json({ error: "Invalid role" }, { status: 400 });
       const projectId = resolved.projectId;
+      const common = {
+        date: new Date(input.date),
+        hours: input.hours,
+        assignmentType: input.assignmentType,
+        roleRefId: input.roleRefId,
+        projectId,
+        note: input.note ?? null,
+        startTime: new Date(input.startTime),
+        endTime: new Date(input.endTime),
+      };
+      if (input.scheduledMeetingId) {
+        // Logged against a real meeting: link it (so the meeting block shows a
+        // role accent rather than a second block) and DON'T mirror to the
+        // Timesheet calendar — the meeting is already on the real calendar.
+        await prisma.timeEntry.upsert({
+          where: {
+            scheduledMeetingId_userId: {
+              scheduledMeetingId: input.scheduledMeetingId,
+              userId,
+            },
+          },
+          create: { userId, source: "Meeting", scheduledMeetingId: input.scheduledMeetingId, ...common },
+          update: common,
+        });
+        return null;
+      }
       const created = await prisma.timeEntry.create({
-        data: {
-          userId,
-          source: "Manual",
-          date: new Date(input.date),
-          hours: input.hours,
-          assignmentType: input.assignmentType,
-          roleRefId: input.roleRefId,
-          projectId,
-          note: input.note ?? null,
-          startTime: new Date(input.startTime),
-          endTime: new Date(input.endTime),
-        },
+        data: { userId, source: "Manual", ...common },
       });
       await syncTimeEntryToGoogle(created).catch(() => {});
       return null;
@@ -1306,7 +1363,11 @@ export async function submitCalendarAction(request: Request) {
       // MeetingAttendance flip — logging your own hours isn't a claim that the
       // organizer marked you present. The role is left unset: the Timesheet
       // edit popover is where it gets attributed, as with attendance rows.
-      const meetingEntry = await prisma.timeEntry.upsert({
+      // Not mirrored to the DALI Timesheet calendar: a meeting is a real event
+      // that already lives on the organizer's/attendees' calendars, so a second
+      // copy on the Timesheet calendar would just duplicate it. Meeting-logged
+      // time surfaces in DALI as a role accent on the meeting block instead.
+      await prisma.timeEntry.upsert({
         where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
         create: {
           userId,
@@ -1320,10 +1381,6 @@ export async function submitCalendarAction(request: Request) {
         },
         update: { projectId: meeting.projectId, date: startTime, hours, startTime, endTime },
       });
-      // Mirror to the DALI Timesheet calendar if the entry carries a role (no-ops
-      // for the unattributed create above; syncs once the Timesheet popover
-      // attributes a role and re-toggles).
-      await syncTimeEntryToGoogle(meetingEntry).catch(() => {});
       return null;
     }
 

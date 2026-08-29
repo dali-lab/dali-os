@@ -30,11 +30,9 @@ const NO_ROLES_MESSAGE =
 export function TimesheetSummaryRail({
   roleBuckets,
   periodLabel,
-  onFocus,
 }: {
   roleBuckets: { key: string; label: string; hours: number }[];
   periodLabel: string;
-  onFocus: () => void;
 }) {
   const total = roleBuckets.reduce((sum, b) => sum + b.hours, 0);
   return (
@@ -53,13 +51,6 @@ export function TimesheetSummaryRail({
           ))}
         </span>
       )}
-      <button
-        type="button"
-        onClick={onFocus}
-        className="ml-auto rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-      >
-        Focus
-      </button>
     </div>
   );
 }
