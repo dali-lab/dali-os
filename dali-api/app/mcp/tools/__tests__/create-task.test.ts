@@ -25,6 +25,7 @@ import {
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
   task: { findFirst: ReturnType<typeof vi.fn> };
+  userStory: { findUnique: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -82,6 +83,48 @@ describe("create_task", () => {
         title: "t",
         mirrorToGithubRepo: "dali/other",
       }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("links a story and derives the epic from it (overriding epicId)", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", repoUrls: [] });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "e-A",
+      epic: { projectId: "p1" },
+    });
+    mockPrisma.task.findFirst.mockResolvedValue(null);
+    const create = vi.fn().mockResolvedValue({ id: "t-new" });
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        task: { create },
+        taskAssignee: { createMany: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+
+    await runCreateTask("u1", {
+      projectId: "p1",
+      title: "Build",
+      storyId: "s1",
+      epicId: "e-ignored",
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ storyId: "s1", epicId: "e-A" }),
+      }),
+    );
+  });
+
+  it("rejects a story from another project", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", repoUrls: [] });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      epicId: "e",
+      epic: { projectId: "other" },
+    });
+    await expect(
+      runCreateTask("u1", { projectId: "p1", title: "t", storyId: "s1" }),
     ).rejects.toMatchObject({ status: 400 });
   });
 

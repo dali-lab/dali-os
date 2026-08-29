@@ -105,7 +105,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true, githubIssueNumber: true, projectId: true },
+    select: { id: true, githubIssueNumber: true, projectId: true, epicId: true, storyId: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -202,11 +202,43 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     data.sprintId = sprintId;
   }
-  if ("epicId" in body) {
-    const epicId = body.epicId ?? null;
-    if (epicId !== null) {
+  // Epic and story are reconciled together, never independently: a story pins
+  // its epic (UserStory.epicId is required). An explicit story wins and sets
+  // the epic; a bare epic change drops a now-orphaned story so task.epicId and
+  // task.storyId can't diverge. Only fields that actually change are written.
+  const epicInBody = "epicId" in body;
+  const storyInBody = "storyId" in body;
+  if (epicInBody || storyInBody) {
+    const currentEpicId = task.epicId ?? null;
+    const currentStoryId = task.storyId ?? null;
+    let nextEpicId = epicInBody ? body.epicId ?? null : currentEpicId;
+    let nextStoryId = storyInBody ? body.storyId ?? null : currentStoryId;
+
+    if (nextStoryId !== null) {
+      const story = await prisma.userStory.findUnique({
+        where: { id: nextStoryId },
+        select: { epicId: true, epic: { select: { projectId: true } } },
+      });
+      if (!story || story.epic.projectId !== task.projectId) {
+        return withCors(
+          request,
+          Response.json({ error: "Story is not part of this project" }, { status: 400 }),
+        );
+      }
+      if (storyInBody) {
+        // A story set in this request pins the epic, overriding any epic here.
+        nextEpicId = story.epicId;
+      } else if (nextEpicId !== story.epicId) {
+        // Story carried over from the task, but the epic moved out from under
+        // it — drop the orphan rather than leave epic/story mismatched.
+        nextStoryId = null;
+      }
+    }
+
+    // Validate a free-standing epic (one not already vouched for by a story).
+    if (nextStoryId === null && nextEpicId !== null && nextEpicId !== currentEpicId) {
       const epic = await prisma.epic.findUnique({
-        where: { id: epicId },
+        where: { id: nextEpicId },
         select: { projectId: true },
       });
       if (!epic || epic.projectId !== task.projectId) {
@@ -216,23 +248,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
       }
     }
-    data.epicId = epicId;
-  }
-  if ("storyId" in body) {
-    const storyId = body.storyId ?? null;
-    if (storyId !== null) {
-      const story = await prisma.userStory.findUnique({
-        where: { id: storyId },
-        select: { epic: { select: { projectId: true } } },
-      });
-      if (!story || story.epic.projectId !== task.projectId) {
-        return withCors(
-          request,
-          Response.json({ error: "Story is not part of this project" }, { status: 400 }),
-        );
-      }
-    }
-    data.storyId = storyId;
+
+    if (nextEpicId !== currentEpicId) data.epicId = nextEpicId;
+    if (nextStoryId !== currentStoryId) data.storyId = nextStoryId;
   }
   if ("checklist" in body) {
     if (body.checklist === null) {

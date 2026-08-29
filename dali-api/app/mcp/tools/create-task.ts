@@ -27,6 +27,11 @@ export const CREATE_TASK_TOOL = {
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
       sprintId: { type: "string", description: "Omit or empty string for backlog." },
       epicId: { type: "string", description: "Optional epic linkage." },
+      storyId: {
+        type: "string",
+        description:
+          "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
+      },
       domainId: { type: "string", description: "Optional domain chip." },
       dueAt: {
         type: "string",
@@ -56,6 +61,7 @@ type Input = {
   priority?: Priority;
   sprintId?: string;
   epicId?: string;
+  storyId?: string;
   domainId?: string;
   dueAt?: string;
   assigneeUserIds?: string[];
@@ -98,9 +104,23 @@ export async function runCreateTask(callerId: string, input: Input) {
       throw new CreateTaskError("Sprint is not part of this project", 400);
     }
   }
-  if (input.epicId && input.epicId !== "") {
+  // A story pins its epic (UserStory.epicId is required), so the two are never
+  // set independently: a story derives the epic; only a story-less task takes a
+  // free-standing epic (matches the web create route).
+  let epicId: string | null = input.epicId && input.epicId !== "" ? input.epicId : null;
+  const storyId: string | null = input.storyId && input.storyId !== "" ? input.storyId : null;
+  if (storyId) {
+    const story = await prisma.userStory.findUnique({
+      where: { id: storyId },
+      select: { epicId: true, epic: { select: { projectId: true } } },
+    });
+    if (!story || story.epic.projectId !== input.projectId) {
+      throw new CreateTaskError("Story is not part of this project", 400);
+    }
+    epicId = story.epicId;
+  } else if (epicId) {
     const epic = await prisma.epic.findUnique({
-      where: { id: input.epicId },
+      where: { id: epicId },
       select: { projectId: true },
     });
     if (!epic || epic.projectId !== input.projectId) {
@@ -149,7 +169,8 @@ export async function runCreateTask(callerId: string, input: Input) {
         position,
         priority: input.priority ?? "Normal",
         sprintId: input.sprintId && input.sprintId !== "" ? input.sprintId : null,
-        epicId: input.epicId && input.epicId !== "" ? input.epicId : null,
+        epicId,
+        storyId,
         domainId: input.domainId && input.domainId !== "" ? input.domainId : null,
         dueAt,
         createdById: callerId,
