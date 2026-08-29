@@ -152,17 +152,29 @@ test.describe('internal Organizations pages (Core)', () => {
 });
 
 test.describe('project hub share toggle (member)', () => {
-  test.beforeEach(async ({ loginAs }) => {
+  test.beforeEach(async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+    // The project Drive tab now renders the shared DriveBrowser. Pin the
+    // deterministic list view (its default is Miller columns) so rows have a
+    // stable title-then-menu layout for the locators below.
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem('dali_drive_view', 'list');
+      } catch {
+        /* storage unavailable — list view is best-effort */
+      }
+    });
   });
 
-  // Each doc row's actions live behind its own "⋯" menu. `following::` picks the
-  // actions button of the row the title belongs to, since a row renders its
-  // title before its menu.
+  // Each row's actions live behind its own "⋯" menu trigger, marked with a
+  // data-testid="drive-item-actions-<id>". The title renders as a span, so
+  // anchor on its text and take the next actions trigger in document order —
+  // that's this row's menu. (The shared Menu puts its aria-label on the popup
+  // panel, not the trigger, so we key off the trigger's data-testid.)
   const docMenu = (page: import('@playwright/test').Page, title: string) =>
     page
-      .getByRole('button', { name: title, exact: true })
-      .locator('xpath=following::button[@aria-label="Document actions"][1]');
+      .getByText(title, { exact: true })
+      .locator('xpath=following::button[starts-with(@data-testid, "drive-item-actions-")][1]');
 
   test('project details shows the Partners section; drive shows share states', async ({ page }) => {
     // Partners live on Project details; the project's files (and their
@@ -195,7 +207,7 @@ test.describe('project hub share toggle (member)', () => {
     await docMenu(page, 'Internal Retro Notes').click();
     await page.getByRole('menuitem', { name: 'Share with partner' }).click();
     await expect(
-      page.getByRole('button', { name: 'Internal Retro Notes', exact: true }),
+      page.getByText('Internal Retro Notes', { exact: true }),
     ).toBeVisible();
     await docMenu(page, 'Internal Retro Notes').click();
     await expect(
