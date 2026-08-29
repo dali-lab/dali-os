@@ -402,16 +402,21 @@ async function termIdForDate(date: Date): Promise<string | null> {
 }
 
 /**
- * Recompute startsAt, endsAt, and termId from the offering's sessions.
- * Called after every session add/update/delete so the catalog dates stay
- * in sync with what instructors actually scheduled.
- * Zero sessions → all three set to null (offering is a draft stub).
+ * Recompute startsAt, endsAt, and termId from the offering's sessions AND
+ * renumber the sessions so "Session N" always matches chronological order.
+ * Called after every session add/update/delete/generate so both the catalog
+ * dates and the session labels stay in sync with what instructors scheduled —
+ * this is what keeps a Mon/Wed class from listing as "1, 2" then "3, 4" out of
+ * date order. Renumbering only touches `sequence` (a display/order field);
+ * attendance, assignments, and CE credits key off `sessionId`, so it's safe.
+ * Zero sessions → dates/term set to null (offering is a draft stub).
  */
 export async function recomputeOfferingDates(offeringId: string): Promise<void> {
   const sessions = await prisma.educationSession.findMany({
     where: { offeringId },
-    orderBy: { datetime: "asc" },
-    select: { datetime: true },
+    // Ties (same start) fall back to id for a stable, deterministic order.
+    orderBy: [{ datetime: "asc" }, { id: "asc" }],
+    select: { id: true, sequence: true, datetime: true, endsAt: true },
   });
   if (sessions.length === 0) {
     await prisma.educationOffering.update({
@@ -420,8 +425,21 @@ export async function recomputeOfferingDates(offeringId: string): Promise<void> 
     });
     return;
   }
+  // Renumber only the rows whose sequence drifted from chronological order, so
+  // an unchanged schedule writes nothing.
+  const renumber = sessions
+    .map((s, i) => ({ id: s.id, seq: i + 1, current: s.sequence }))
+    .filter((s) => s.seq !== s.current);
+  if (renumber.length > 0) {
+    await prisma.$transaction(
+      renumber.map((s) =>
+        prisma.educationSession.update({ where: { id: s.id }, data: { sequence: s.seq } }),
+      ),
+    );
+  }
   const startsAt = sessions[0].datetime;
-  const endsAt = sessions[sessions.length - 1].datetime;
+  const last = sessions[sessions.length - 1];
+  const endsAt = last.endsAt ?? last.datetime;
   await prisma.educationOffering.update({
     where: { id: offeringId },
     data: { startsAt, endsAt, termId: await termIdForDate(startsAt) },
@@ -699,6 +717,8 @@ export async function runOfferingAction(
     case "add-session": {
       const datetime = parseDate(formData.get("datetime"));
       if (!datetime) return bad("Session date/time is required");
+      const endsAt = parseDate(formData.get("endsAt"));
+      if (endsAt && endsAt <= datetime) return bad("Session end must be after its start");
       const last = await prisma.educationSession.findFirst({
         where: { offeringId },
         orderBy: { sequence: "desc" },
@@ -710,6 +730,7 @@ export async function runOfferingAction(
           sequence: (last?.sequence ?? 0) + 1,
           title: String(formData.get("title") ?? "").trim() || null,
           datetime,
+          endsAt,
           location: String(formData.get("location") ?? "").trim() || null,
           notes: String(formData.get("notes") ?? "").trim() || null,
         },
@@ -726,41 +747,91 @@ export async function runOfferingAction(
     }
 
     case "generate-sessions": {
-      // Bulk-create N sessions spaced intervalDays apart from a start — the
-      // common "weekly for 6 weeks" setup, in one action instead of N.
-      const start = parseDate(formData.get("startDatetime"));
-      if (!start) return bad("Start date/time is required");
-      const count = Math.min(
-        30,
-        Math.max(1, Number.parseInt(String(formData.get("count") ?? "1"), 10) || 1),
-      );
-      const intervalDays = Math.min(
-        30,
-        Math.max(1, Number.parseInt(String(formData.get("intervalDays") ?? "7"), 10) || 7),
-      );
+      // Two shapes:
+      //  - Weekday mode (the UI): pick one or more weekdays + a start/end time +
+      //    how many weeks, and get every class meeting across the range in one
+      //    go. This is what lets a Mon/Wed class generate as interleaved dates
+      //    rather than two separate mislabeled runs.
+      //  - Interval mode (legacy / MCP generate_series): N sessions spaced
+      //    intervalDays apart from a single start datetime.
+      // Either way, recomputeOfferingDates renumbers everything chronologically
+      // afterward, so "Session N" always follows the calendar.
       const location = String(formData.get("location") ?? "").trim() || null;
+      const weekdays = formData
+        .getAll("weekdays")
+        .map((d) => Number.parseInt(String(d), 10))
+        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+
+      const draft: { datetime: Date; endsAt: Date | null }[] = [];
+      if (weekdays.length > 0) {
+        const startDate = String(formData.get("startDate") ?? "").trim();
+        const startTime = String(formData.get("startTime") ?? "").trim();
+        const endTime = String(formData.get("endTime") ?? "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return bad("Start date is required");
+        if (!/^\d{2}:\d{2}$/.test(startTime)) return bad("Start time is required");
+        const weeks = Math.min(
+          26,
+          Math.max(1, Number.parseInt(String(formData.get("weeks") ?? "1"), 10) || 1),
+        );
+        // Anchor on the calendar date in UTC so getUTCDay() and the date string
+        // stay off-by-one-proof; the time is then appended and parsed the same
+        // way a single add-session datetime-local is, keeping timezone handling
+        // identical across both paths.
+        const anchor = new Date(`${startDate}T00:00:00Z`);
+        const anchorDay = anchor.getUTCDay();
+        const uniqueWeekdays = [...new Set(weekdays)];
+        for (let w = 0; w < weeks; w += 1) {
+          for (const wd of uniqueWeekdays) {
+            const offsetDays = ((wd - anchorDay + 7) % 7) + w * 7;
+            const dateStr = new Date(anchor.getTime() + offsetDays * 86_400_000)
+              .toISOString()
+              .slice(0, 10);
+            const datetime = new Date(`${dateStr}T${startTime}`);
+            const endsAt = /^\d{2}:\d{2}$/.test(endTime) ? new Date(`${dateStr}T${endTime}`) : null;
+            if (Number.isNaN(datetime.getTime())) continue;
+            draft.push({ datetime, endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null });
+          }
+        }
+      } else {
+        const start = parseDate(formData.get("startDatetime"));
+        if (!start) return bad("Start date/time is required");
+        const count = Math.min(
+          30,
+          Math.max(1, Number.parseInt(String(formData.get("count") ?? "1"), 10) || 1),
+        );
+        const intervalDays = Math.min(
+          30,
+          Math.max(1, Number.parseInt(String(formData.get("intervalDays") ?? "7"), 10) || 7),
+        );
+        for (let i = 0; i < count; i += 1) {
+          draft.push({ datetime: new Date(start.getTime() + i * intervalDays * 86_400_000), endsAt: null });
+        }
+      }
+
+      if (draft.length === 0) return bad("Pick at least one day to schedule");
+      // Order chronologically and cap the batch — the recompute renumbers, but a
+      // sane starting sequence keeps createMany tidy.
+      draft.sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
+      const capped = draft.slice(0, 60);
       const last = await prisma.educationSession.findFirst({
         where: { offeringId },
         orderBy: { sequence: "desc" },
         select: { sequence: true },
       });
       let sequence = last?.sequence ?? 0;
-      const rows = [];
-      for (let i = 0; i < count; i += 1) {
-        sequence += 1;
-        rows.push({
-          offeringId,
-          sequence,
-          datetime: new Date(start.getTime() + i * intervalDays * 86_400_000),
-          location,
-        });
-      }
+      const rows = capped.map((d) => ({
+        offeringId,
+        sequence: (sequence += 1),
+        datetime: d.datetime,
+        endsAt: d.endsAt,
+        location,
+      }));
       await prisma.educationSession.createMany({ data: rows });
       await logAuditEvent({
         action: "education.session.create",
         userId: actorId,
         targetId: offeringId,
-        metadata: { offeringId, count, intervalDays, bulk: true },
+        metadata: { offeringId, count: rows.length, weekdays, bulk: true },
       });
       await recomputeOfferingDates(offeringId);
       return { ok: true };
@@ -776,11 +847,14 @@ export async function runOfferingAction(
         return bad("Session not found", 404);
       const datetime = parseDate(formData.get("datetime"));
       if (!datetime) return bad("Session date/time is required");
+      const endsAt = parseDate(formData.get("endsAt"));
+      if (endsAt && endsAt <= datetime) return bad("Session end must be after its start");
       await prisma.educationSession.update({
         where: { id: sessionId },
         data: {
           title: String(formData.get("title") ?? "").trim() || null,
           datetime,
+          endsAt,
           location: String(formData.get("location") ?? "").trim() || null,
           notes: String(formData.get("notes") ?? "").trim() || null,
           recordingUrl: String(formData.get("recordingUrl") ?? "").trim() || null,

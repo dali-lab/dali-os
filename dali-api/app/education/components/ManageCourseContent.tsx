@@ -39,8 +39,9 @@ export function ManageMaterials({
     sessionId: string | null;
     children: { id: string; title: string; sessionId: string | null }[];
   }[];
-  /** Uploaded S3-backed files for this offering. */
-  files?: { id: string; title: string; href: string }[];
+  /** Uploaded S3-backed files for this offering. folderPageId nests them under
+   *  a materials folder (a Page id); null/unmatched = the offering root. */
+  files?: { id: string; title: string; href: string; folderPageId: string | null }[];
   workspaceDocs: { id: string; title: string }[];
   sessions?: { id: string; sequence: number }[];
   /** Page ids the viewer has starred, for the per-row favorite toggle. */
@@ -85,48 +86,52 @@ export function ManageMaterials({
     }
   }
 
-  // Drag a material onto a folder to nest it, or onto the top-level strip to
-  // pull it back out. Folders don't move — they're always top-level.
+  // Drag a material (a page) or an uploaded file onto a folder to file it, or
+  // onto the top-level strip to pull it back out. Folders don't move — they're
+  // always top-level. The dragged item carries its kind so the drop posts the
+  // right intent (pages reparent via parentPageId, files via folderPageId).
   const moveFetcher = useFetcher();
   // Session-change fetcher for per-row session select.
   const sessionFetcher = useFetcher();
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragged, setDragged] = useState<{ id: string; kind: "page" | "file" } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
 
-  function move(pageId: string, parentPageId: string | null) {
-    setDragId(null);
+  function move(item: { id: string; kind: "page" | "file" }, target: string | null) {
+    setDragged(null);
     setDropTarget(null);
     moveFetcher.submit(
-      { intent: "move-page", pageId, parentPageId: parentPageId ?? "" },
+      item.kind === "file"
+        ? { intent: "move-file", fileId: item.id, folderId: target ?? "" }
+        : { intent: "move-page", pageId: item.id, parentPageId: target ?? "" },
       { method: "post" },
     );
   }
 
   const dropProps = (target: string | "root") => ({
     onDragOver: (e: React.DragEvent) => {
-      if (!dragId) return;
+      if (!dragged) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       if (dropTarget !== target) setDropTarget(target);
     },
     onDragLeave: () => setDropTarget((t) => (t === target ? null : t)),
     onDrop: (e: React.DragEvent) => {
-      if (!dragId) return;
+      if (!dragged) return;
       e.preventDefault();
       e.stopPropagation();
-      move(dragId, target === "root" ? null : target);
+      move(dragged, target === "root" ? null : target);
     },
   });
 
-  const dragProps = (id: string) => ({
+  const dragProps = (id: string, kind: "page" | "file") => ({
     draggable: true,
     onDragStart: (e: React.DragEvent) => {
-      setDragId(id);
+      setDragged({ id, kind });
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", id);
     },
     onDragEnd: () => {
-      setDragId(null);
+      setDragged(null);
       setDropTarget(null);
     },
   });
@@ -137,12 +142,27 @@ export function ManageMaterials({
     ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
   ];
 
+  // Split uploaded files into ones filed inside a materials folder and loose
+  // ones at the offering root, so a PDF dragged into a folder renders there.
+  const folderIds = new Set(folders.map((f) => f.id));
+  const filesByFolder = new Map<string, typeof files>();
+  const rootFiles: typeof files = [];
+  for (const f of files) {
+    if (f.folderPageId && folderIds.has(f.folderPageId)) {
+      const list = filesByFolder.get(f.folderPageId) ?? [];
+      list.push(f);
+      filesByFolder.set(f.folderPageId, list);
+    } else {
+      rootFiles.push(f);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs text-muted-foreground">
-          Materials are read-only for students; shared docs are co-edited live. Drag a material
-          onto a folder to file it.
+          Materials are read-only for students; shared docs are co-edited live. Drag a material or
+          uploaded file onto a folder to file it.
         </p>
         <div className="ml-auto flex items-center gap-2">
           {/* Hidden file input; triggered by the Upload file menu item. */}
@@ -220,9 +240,9 @@ export function ManageMaterials({
           {materials.map((p) => (
             <li
               key={p.id}
-              {...(p.isFolder ? dropProps(p.id) : dragProps(p.id))}
+              {...(p.isFolder ? dropProps(p.id) : dragProps(p.id, "page"))}
               className={`px-4 py-3 ${p.isFolder ? "" : "cursor-grab active:cursor-grabbing"} ${
-                dragId === p.id ? "opacity-50" : ""
+                dragged?.id === p.id ? "opacity-50" : ""
               } ${dropTarget === p.id ? "bg-accent-coral/10" : ""}`}
             >
               {p.isFolder ? (
@@ -253,14 +273,14 @@ export function ManageMaterials({
                   )}
                 </div>
               )}
-              {p.children.length > 0 && (
+              {(p.children.length > 0 || (filesByFolder.get(p.id)?.length ?? 0) > 0) && (
                 <ul className="mt-2 ml-6 flex flex-col gap-1.5">
                   {p.children.map((c) => (
                     <li
                       key={c.id}
-                      {...dragProps(c.id)}
+                      {...dragProps(c.id, "page")}
                       className={`cursor-grab active:cursor-grabbing ${
-                        dragId === c.id ? "opacity-50" : ""
+                        dragged?.id === c.id ? "opacity-50" : ""
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -281,13 +301,31 @@ export function ManageMaterials({
                       </div>
                     </li>
                   ))}
+                  {(filesByFolder.get(p.id) ?? []).map((f) => (
+                    <li
+                      key={f.id}
+                      {...dragProps(f.id, "file")}
+                      className={`cursor-grab active:cursor-grabbing ${
+                        dragged?.id === f.id ? "opacity-50" : ""
+                      }`}
+                    >
+                      <FileRow href={f.href} title={f.title} />
+                    </li>
+                  ))}
                 </ul>
               )}
             </li>
           ))}
-          {/* Uploaded files (S3-backed) rendered after pages */}
-          {files.map((f) => (
-            <li key={f.id} className="px-4 py-3">
+          {/* Loose uploaded files (S3-backed) at the offering root — draggable
+              into any folder above. Files filed inside a folder render nested. */}
+          {rootFiles.map((f) => (
+            <li
+              key={f.id}
+              {...dragProps(f.id, "file")}
+              className={`px-4 py-3 cursor-grab active:cursor-grabbing ${
+                dragged?.id === f.id ? "opacity-50" : ""
+              }`}
+            >
               <FileRow href={f.href} title={f.title} />
             </li>
           ))}

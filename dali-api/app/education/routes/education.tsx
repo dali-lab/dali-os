@@ -5,10 +5,13 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listCatalog, listMyApplications } from "~/education/lib/offerings.server";
+import { getStudentDashboard } from "~/education/lib/lms.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
+import { StudentDashboard } from "~/education/components/StudentDashboard";
 import { educationPills } from "~/education/components/educationPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Link } from "react-router";
 
 export const handle = { areaPills: true };
@@ -21,16 +24,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const [offerings, myApplications, ceStanding, roles] = await Promise.all([
+  const [offerings, myApplications, ceStanding, dashboard, roles] = await Promise.all([
     listCatalog(auth.user.sub),
     listMyApplications(auth.user.sub),
     myCreditStanding(auth.user.sub),
+    getStudentDashboard(auth.user.sub),
     getUserRoles(auth.user.sub),
   ]);
   return {
     offerings,
     myApplications,
     ceStanding,
+    dashboard,
     canManage: roles.isCore || roles.isInstructor,
     isCore: roles.isCore,
   };
@@ -45,14 +50,16 @@ const APPLICATION_STATUS_STYLE: Record<string, string> = {
 };
 
 export default function EducationCatalog() {
-  const { offerings, myApplications, ceStanding, canManage, isCore } =
+  const { offerings, myApplications, ceStanding, dashboard, canManage, isCore } =
     useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   const now = Date.now();
   const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date | null }) =>
     o.closedOutAt != null || (o.endsAt != null && new Date(o.endsAt).getTime() < now);
 
-  const enrolled = offerings.filter((o) => o.myStatus === "Approved" && !isPast(o));
-  const upcoming = offerings.filter((o) => !isPast(o));
+  // Enrolled courses live in the dashboard's "My courses"; the catalog below is
+  // for offerings the student can still apply to or RSVP for.
+  const upcoming = offerings.filter((o) => !isPast(o) && o.myStatus !== "Approved");
   const past = offerings.filter(isPast);
 
   return (
@@ -91,27 +98,19 @@ export default function EducationCatalog() {
         </div>
       )}
 
-      {enrolled.length > 0 && (
-        <section>
-          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            You&apos;re enrolled in
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {enrolled.map((o) => (
-              <OfferingCard
-                key={o.id}
-                offering={o}
-                myStatus={o.myStatus}
-                openAssignments={o.openAssignments}
-                to={`/education/${o.id}/hub`}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      <StudentDashboard
+        dashboard={dashboard}
+        tz={tz}
+        paths={{
+          course: (id) => `/education/${id}/hub`,
+          checkIn: (sessionId) => `/education/check-in/${sessionId}`,
+          assignment: (offeringId, assignmentId) =>
+            `/education/${offeringId}/assignments/${assignmentId}`,
+        }}
+      />
 
       <section>
-        {enrolled.length > 0 && (
+        {dashboard.myCourses.some((c) => !c.isPast) && (
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Open &amp; upcoming
           </h2>

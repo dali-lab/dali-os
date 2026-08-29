@@ -28,7 +28,11 @@ import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 export function modalCardClass(os: boolean, size?: string) {
   return cn(
     os ? "os-modal-card" : "bg-card rounded-2xl shadow-brand-2 p-5 sm:p-6",
-    "w-full my-auto",
+    // Cap the card to the viewport and let it scroll inside: a tall dialog (a
+    // long edit form) was overflowing the centered overlay so its lower fields
+    // and Save button were unreachable. The Select menus portal out, so an
+    // overflow here doesn't clip their dropdowns.
+    "w-full my-auto max-h-[85vh] overflow-y-auto",
     size,
   );
 }

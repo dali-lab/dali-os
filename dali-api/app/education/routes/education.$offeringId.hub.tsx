@@ -35,16 +35,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     params.offeringId!,
     "member",
   );
+  // Canvas-style "Student View": a manager can render the hub as a student sees
+  // it (no manage affordances, student-framed empty state) to sanity-check the
+  // experience. Only a real manager can enter it — a student passing ?as has no
+  // manager flag to drop.
+  const previewAsStudent =
+    isManager && new URL(request.url).searchParams.get("as") === "student";
   const hub = await getHubData({
     offeringId: params.offeringId!,
     userId: auth.user.sub,
     applicationId,
-    isManager,
+    isManager: isManager && !previewAsStudent,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
   // After the enrollment gate — the hub the viewer can open lands in recents.
   recordRouteVisit(auth.user.sub, `/education/${hub.offering.id}/hub`, hub.offering.title, request);
-  return { hub, collabToken: parseSessionCookie(request) };
+  return { hub, collabToken: parseSessionCookie(request), previewAsStudent };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -61,7 +67,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberCourseHub() {
-  const { hub, collabToken } = useLoaderData<typeof loader>();
+  const { hub, collabToken, previewAsStudent } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,13 +77,25 @@ export default function MemberCourseHub() {
             {hub.offering.title}
           </h1>
         </div>
+        {/* Manager affordances only when NOT previewing — during a preview the
+            page is rendered exactly as a student sees it (isManager=false), so
+            the only added chrome is the floating exit pill below, which is
+            fixed-position and doesn't shift the hub's layout. */}
         {hub.isManager && (
-          <Link
-            to={`/education/manage/${hub.offering.id}`}
-            className={buttonClasses("secondary", "sm")}
-          >
-            Manage
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/education/${hub.offering.id}/hub?as=student`}
+              className={buttonClasses("ghost", "sm")}
+            >
+              View as student
+            </Link>
+            <Link
+              to={`/education/manage/${hub.offering.id}`}
+              className={buttonClasses("secondary", "sm")}
+            >
+              Manage
+            </Link>
+          </div>
         )}
       </header>
       <CourseHub
@@ -85,6 +103,19 @@ export default function MemberCourseHub() {
         basePath={`/education/${hub.offering.id}`}
         collabToken={collabToken}
       />
+      {previewAsStudent && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-brand-2 backdrop-blur">
+            <span className="text-sm font-medium text-foreground">👁 Viewing as a student</span>
+            <Link
+              to={`/education/${hub.offering.id}/hub`}
+              className={buttonClasses("secondary", "sm")}
+            >
+              Exit
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

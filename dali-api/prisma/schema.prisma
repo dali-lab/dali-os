@@ -3238,6 +3238,10 @@ model EducationSession {
   // back to "Session N" in the UI.
   title          String?
   datetime       DateTime
+  // Optional end of the session. Null falls back to a default duration in the
+  // UI (and the self-check-in window). Nullable for back-compat with sessions
+  // created before end times existed.
+  endsAt         DateTime?
   location       String?
   // Free text the instructor wants students to read alongside the session —
   // prep work, what to bring, a reading link. Shown on the course hub; distinct
@@ -3247,6 +3251,11 @@ model EducationSession {
   // page workspace instead. Kept for a possible per-session doc link later.
   materialsDocId String?
   recordingUrl   String?
+
+  // Stamped when an instructor opens self-check-in for this session (students
+  // scan a projected QR to mark themselves Present). Null = closed. Read
+  // alongside the session's time window in app/education/lib/session-checkin.
+  checkInOpenAt  DateTime?
 
   // Stamped when session-feedback todos/emails have been fanned out for this
   // session (first attendance save). Guards against duplicate fan-out.
