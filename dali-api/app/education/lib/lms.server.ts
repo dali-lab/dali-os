@@ -264,6 +264,142 @@ export async function moveMaterialFile(args: {
   return { ok: true };
 }
 
+/**
+ * Cross-course student dashboard for the /education landing: what needs the
+ * student's attention now (open check-ins + unsubmitted assignments) and their
+ * enrolled courses with progress. Powers the thin "what's next" shell that
+ * wraps the per-course timeline (see specs/education-student-ui.md).
+ */
+export async function getStudentDashboard(userId: string) {
+  const apps = await prisma.educationApplication.findMany({
+    where: { applicantUserId: userId, status: "Approved" },
+    select: {
+      offeringId: true,
+      offering: {
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          status: true,
+          endsAt: true,
+          closedOutAt: true,
+          sessions: {
+            orderBy: { sequence: "asc" },
+            select: {
+              id: true,
+              sequence: true,
+              title: true,
+              datetime: true,
+              endsAt: true,
+              checkInOpenAt: true,
+            },
+          },
+        },
+      },
+      attendances: { select: { sessionId: true, status: true } },
+    },
+  });
+
+  const now = new Date();
+  const openCheckIns: {
+    sessionId: string;
+    offeringTitle: string;
+    sessionLabel: string;
+    datetime: Date;
+    endsAt: Date | null;
+  }[] = [];
+  const myCourses: {
+    offeringId: string;
+    title: string;
+    type: string;
+    attended: number;
+    total: number;
+    nextSessionAt: Date | null;
+    isPast: boolean;
+  }[] = [];
+
+  for (const app of apps) {
+    const off = app.offering;
+    if (off.status === "Archived") continue;
+    const present = new Set(
+      app.attendances.filter((a) => a.status === "Present").map((a) => a.sessionId),
+    );
+    const upcoming = off.sessions
+      .filter((s) => new Date(s.endsAt ?? s.datetime) >= now)
+      .sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
+    myCourses.push({
+      offeringId: off.id,
+      title: off.title,
+      type: off.type,
+      attended: off.sessions.filter((s) => present.has(s.id)).length,
+      total: off.sessions.length,
+      nextSessionAt: upcoming[0]?.datetime ?? null,
+      isPast: off.closedOutAt != null || (off.endsAt != null && off.endsAt < now),
+    });
+    for (const s of off.sessions) {
+      if (present.has(s.id)) continue;
+      if (isSessionCheckInOpen(s)) {
+        openCheckIns.push({
+          sessionId: s.id,
+          offeringTitle: off.title,
+          sessionLabel: s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`,
+          datetime: s.datetime,
+          endsAt: s.endsAt,
+        });
+      }
+    }
+  }
+
+  // Unsubmitted assignments across enrolled courses, soonest-due first.
+  const offeringIds = apps.map((a) => a.offeringId);
+  const sessionIds = apps.flatMap((a) => a.offering.sessions.map((s) => s.id));
+  const assignments =
+    offeringIds.length > 0
+      ? await prisma.educationAssignment.findMany({
+          where: {
+            OR: [{ offeringId: { in: offeringIds } }, { sessionId: { in: sessionIds } }],
+          },
+          select: {
+            id: true,
+            title: true,
+            dueAt: true,
+            offeringId: true,
+            session: { select: { offeringId: true } },
+          },
+        })
+      : [];
+  const mySubs =
+    assignments.length > 0
+      ? await prisma.educationSubmission.findMany({
+          where: { studentId: userId, assignmentId: { in: assignments.map((a) => a.id) } },
+          select: { assignmentId: true, submittedAt: true },
+        })
+      : [];
+  const submitted = new Set(
+    mySubs.filter((s) => s.submittedAt != null).map((s) => s.assignmentId),
+  );
+  const titleByOffering = new Map(apps.map((a) => [a.offeringId, a.offering.title]));
+  const dueSoon = assignments
+    .filter((a) => !submitted.has(a.id))
+    .map((a) => {
+      const offeringId = a.offeringId ?? a.session?.offeringId ?? null;
+      return {
+        assignmentId: a.id,
+        offeringId,
+        offeringTitle: offeringId ? (titleByOffering.get(offeringId) ?? "") : "",
+        title: a.title,
+        dueAt: a.dueAt,
+      };
+    })
+    .filter((a) => a.offeringId != null)
+    .sort(
+      (x, y) =>
+        (x.dueAt ? +new Date(x.dueAt) : Infinity) - (y.dueAt ? +new Date(y.dueAt) : Infinity),
+    );
+
+  return { openCheckIns, dueSoon, myCourses };
+}
+
 /** Session list for the hub — includes the caller's own attendance marks. */
 export async function listSessionsWithMyAttendance(
   offeringId: string,
