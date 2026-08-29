@@ -558,7 +558,7 @@ function LayerToggles({
                       )}
                     >
                       {b.label}
-                      <span className="text-muted-foreground">{b.hours}h</span>
+                      <span className="text-muted-foreground">{Math.round(b.hours * 10) / 10}h</span>
                     </button>
                   );
                 })}

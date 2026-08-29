@@ -674,6 +674,23 @@ export async function loadCalendarData(request: Request) {
       isCore(userId, request),
     ]);
 
+  // Group rosters can include members outside the current-term member set
+  // (alumni, users inactive this term, etc.), so those ids aren't in `users`
+  // above. Without names, the scheduling grid falls back to rendering a raw
+  // user id (a cuid). Fetch display names for any such member and merge them
+  // in so every resolvable participant renders as a person, not an id.
+  const knownUserIds = new Set(users.map((u) => u.id));
+  const missingMemberIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
+  );
+  const extraGroupMembers = missingMemberIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: missingMemberIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      })
+    : [];
+  const allUsers = [...users, ...extraGroupMembers];
+
   // Working hours are interpreted in the availability-settings zone when set;
   // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
   const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
@@ -927,7 +944,7 @@ export async function loadCalendarData(request: Request) {
     externalEvents,
     ingestionError,
     groups,
-    users,
+    users: allUsers,
     currentUserId: userId,
     myProjects,
     myRoles,

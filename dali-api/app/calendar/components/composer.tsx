@@ -317,7 +317,7 @@ export function WorkingHoursPopover({
       anchor={anchor}
       onClose={onClose}
       ariaLabel="Working hours"
-      className="w-[22rem] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
+      className="w-[25rem] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
     >
       <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
     </AnchoredPopover>
@@ -606,7 +606,7 @@ export function EventComposer({
             <input type="hidden" name="endIso" value={endIso} />
             <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
             <input type="hidden" name="timeZone" value={data.timezone} />
-            <input type="hidden" name="recurrenceRule" value={!isRecurring ? (repeatSpecToRRule(repeat) ?? "") : ""} />
+            <input type="hidden" name="recurrenceRule" value={!isRecurring ? (repeatSpecToRRule(repeat, allDay ? dStart : startLocalDT) ?? "") : ""} />
             {isRecurring && <input type="hidden" name="scope" value={scope} />}
             {isRecurring && ev?.recurringEventId && (
               <input type="hidden" name="recurringEventId" value={ev.recurringEventId} />

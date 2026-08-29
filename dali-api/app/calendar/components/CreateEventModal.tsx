@@ -509,7 +509,7 @@ export function CreateEventModal({
               <input type="hidden" name="endIso" value={endIso} />
               <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
               <input type="hidden" name="timeZone" value={data.timezone} />
-              <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat) ?? ""} />
+              <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat, repeatAnchorLocal) ?? ""} />
               <input type="hidden" name="description" value={description} />
               {isWork && roleKey && (
                 <>
@@ -834,16 +834,15 @@ export function CreateEventModal({
               </div>
 
               {/* Meeting notes toggle */}
-              <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateNote((v) => !v)}
-                  className="text-sm font-medium text-foreground hover:text-accent-coral transition-colors"
-                >
-                  {createNote ? "Meeting notes: on" : "+ Create meeting notes"}
-                </button>
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <Toggle
+                  checked={createNote}
+                  onChange={(e) => setCreateNote(e.target.checked)}
+                  label="Create meeting notes"
+                  description="Starts a shared notes doc linked to this meeting."
+                />
                 {createNote && (
-                  <div className="space-y-3 pt-1">
+                  <div className="mt-3 space-y-3 pt-1">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label className={labelClass}>Meeting type</label>

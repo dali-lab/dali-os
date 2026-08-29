@@ -46,8 +46,42 @@ describe("repeatSpecToRRule", () => {
     expect(repeatSpecToRRule(spec({ freq: "weekly", byDay: [] }))).toBe("FREQ=WEEKLY");
   });
 
-  it("only emits BYDAY for weekly", () => {
+  it("only emits weekly BYDAY for weekly", () => {
     expect(repeatSpecToRRule(spec({ freq: "monthly", byDay: [1] }))).toBe("FREQ=MONTHLY");
+  });
+
+  it("supports a yearly frequency", () => {
+    expect(repeatSpecToRRule(spec({ freq: "yearly" }))).toBe("FREQ=YEARLY");
+    expect(repeatSpecToRRule(spec({ freq: "yearly", interval: 2 }))).toBe(
+      "FREQ=YEARLY;INTERVAL=2",
+    );
+  });
+
+  it("monthly-on-day stays a plain FREQ=MONTHLY", () => {
+    // 2026-09-14 is a Monday; onDay must not emit BYDAY.
+    expect(
+      repeatSpecToRRule(spec({ freq: "monthly", monthlyMode: "onDay" }), "2026-09-14"),
+    ).toBe("FREQ=MONTHLY");
+  });
+
+  it("monthly-on-weekday emits the ordinal weekday from the anchor", () => {
+    // 2026-09-14 = the second Monday of September.
+    expect(
+      repeatSpecToRRule(spec({ freq: "monthly", monthlyMode: "onWeekday" }), "2026-09-14"),
+    ).toBe("FREQ=MONTHLY;BYDAY=2MO");
+  });
+
+  it("monthly-on-weekday collapses a 5th occurrence to last", () => {
+    // 2026-09-29 = the fifth Tuesday → BYDAY=-1TU.
+    expect(
+      repeatSpecToRRule(spec({ freq: "monthly", monthlyMode: "onWeekday" }), "2026-09-29"),
+    ).toBe("FREQ=MONTHLY;BYDAY=-1TU");
+  });
+
+  it("monthly-on-weekday without an anchor falls back to plain monthly", () => {
+    expect(repeatSpecToRRule(spec({ freq: "monthly", monthlyMode: "onWeekday" }))).toBe(
+      "FREQ=MONTHLY",
+    );
   });
 
   it("caps the occurrence count", () => {

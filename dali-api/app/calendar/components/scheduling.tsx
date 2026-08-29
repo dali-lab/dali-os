@@ -695,7 +695,7 @@ export function ParticipantPicker({
       <div className="flex items-center justify-between mb-1">
         <label className="block text-sm font-medium text-foreground inline-flex items-center gap-1">
           Participants
-          <InfoTip content="Add individuals or groups. Groups marked with a team icon are dynamic — their membership resolves at invite time, so new members added after scheduling will not be included." />
+          <InfoTip content="Add individuals or groups to invite them to the meeting." />
         </label>
         <span className="text-xs text-muted-foreground">
           {resolvedCount} unique user{resolvedCount === 1 ? "" : "s"}
