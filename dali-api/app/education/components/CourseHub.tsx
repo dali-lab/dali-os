@@ -2,7 +2,7 @@ import { Link, Form, useSearchParams } from "react-router";
 import { useEffect, useState } from "react";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { formatDateTime } from "~/lib/display";
+import { formatDateTime, formatSessionWhen } from "~/lib/display";
 // Aliased: this file already has a DiscussionPost for the assignment threads.
 import {
   OfferingDiscussion,
@@ -30,8 +30,11 @@ export type HubData = {
     sequence: number;
     title: string | null;
     datetime: string | Date;
+    endsAt: string | Date | null;
     location: string | null;
+    notes: string | null;
     recordingUrl: string | null;
+    checkInOpen: boolean;
     myAttendance: "Present" | "Absent" | "Excused" | null;
   }[];
   materials: {
@@ -46,8 +49,11 @@ export type HubData = {
     id: string;
     title: string;
     dueAt: string | Date | null;
+    points: number | null;
     sessionSequence: number | null;
     mySubmittedAt: string | Date | null;
+    myGrade: string | null;
+    myScore: number | null;
   }[];
   threads: DiscussionPost[];
   myFeedback: {
@@ -117,6 +123,17 @@ export function CourseHub({
         (a) => !a.mySubmittedAt && (!a.dueAt || new Date(a.dueAt) > new Date()),
       ).length;
 
+  // Student "how am I doing / what's next" rollups for the Overview dashboard.
+  const now = new Date();
+  const totalSessions = data.sessions.length;
+  const presentCount = data.sessions.filter((s) => s.myAttendance === "Present").length;
+  const nextSession =
+    [...data.sessions]
+      .filter((s) => new Date(s.endsAt ?? s.datetime) >= now)
+      .sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime))[0] ?? null;
+  const submittedCount = data.assignments.filter((a) => a.mySubmittedAt).length;
+  const gradedAssignments = data.assignments.filter((a) => a.myGrade != null || a.myScore != null);
+
   return (
     <div className="flex flex-col gap-5">
       <nav className="flex gap-1 border-b border-border overflow-x-auto">
@@ -144,6 +161,87 @@ export function CourseHub({
 
       {tab === "overview" && (
         <div className="flex flex-col gap-5">
+          {!data.isManager && (
+            <>
+              {/* "What's next" — the next upcoming session, with a check-in
+                  button when the instructor has opened it (so a student can mark
+                  in with one tap instead of scanning). */}
+              {nextSession && (
+                <section className="rounded-lg border border-accent-coral/30 bg-accent-coral/5 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-accent-coral">
+                    Up next
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">
+                        {nextSession.title
+                          ? `${nextSession.sequence}. ${nextSession.title}`
+                          : `Session ${nextSession.sequence}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatSessionWhen(nextSession.datetime, nextSession.endsAt, tz)}
+                        {nextSession.location ? ` · ${nextSession.location}` : ""}
+                      </p>
+                    </div>
+                    {nextSession.checkInOpen && (
+                      <SessionCheckInButton
+                        sessionId={nextSession.id}
+                        initialPresent={nextSession.myAttendance === "Present"}
+                      />
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Progress at a glance: attendance and assignment standing, the
+                  two things a student most wants to know walking in. */}
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <StatCard
+                  label="Attendance"
+                  value={totalSessions > 0 ? `${presentCount}/${totalSessions}` : "—"}
+                  hint={
+                    totalSessions > 0
+                      ? `${Math.round((presentCount / totalSessions) * 100)}% of sessions`
+                      : "No sessions yet"
+                  }
+                />
+                <StatCard
+                  label="Assignments"
+                  value={
+                    data.assignments.length > 0
+                      ? `${submittedCount}/${data.assignments.length}`
+                      : "—"
+                  }
+                  hint={data.assignments.length > 0 ? "submitted" : "None assigned"}
+                />
+                <StatCard
+                  label="Graded"
+                  value={`${gradedAssignments.length}`}
+                  hint={gradedAssignments.length === 1 ? "assignment graded" : "assignments graded"}
+                />
+              </section>
+
+              {gradedAssignments.length > 0 && (
+                <section className="rounded-lg border border-border bg-card p-4">
+                  <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Grades
+                  </h2>
+                  <ul className="mt-2 divide-y divide-border">
+                    {gradedAssignments.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+                        <span className="min-w-0 truncate text-sm text-foreground">{a.title}</span>
+                        <span className="shrink-0 text-sm font-semibold text-foreground">
+                          {a.myScore != null && a.points != null
+                            ? `${a.myScore}/${a.points}`
+                            : (a.myGrade ?? (a.myScore != null ? String(a.myScore) : "—"))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          )}
           {data.myCertificateId && (
             <section className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
               <p className="text-sm text-foreground">
@@ -261,20 +359,30 @@ export function CourseHub({
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateTime(s.datetime, tz)}
+                  {formatSessionWhen(s.datetime, s.endsAt, tz)}
                   {s.location ? ` · ${s.location}` : ""}
                 </p>
+                {s.notes && (
+                  <p className="mt-1 text-xs text-muted-foreground/90 whitespace-pre-line">
+                    {s.notes}
+                  </p>
+                )}
               </div>
-              {s.recordingUrl && (
-                <a
-                  href={s.recordingUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonClasses("ghost", "sm")}
-                >
-                  Recording
-                </a>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {!data.isManager && s.checkInOpen && s.myAttendance !== "Present" && (
+                  <SessionCheckInButton sessionId={s.id} initialPresent={false} />
+                )}
+                {s.recordingUrl && (
+                  <a
+                    href={s.recordingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonClasses("ghost", "sm")}
+                  >
+                    Recording
+                  </a>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -731,6 +839,64 @@ function WorkspaceTab({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One number on the Overview progress row (attendance, assignments, grades). */
+function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 font-heading text-2xl font-bold text-foreground">{value}</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+/** One-tap self-check-in for the student, used on the Overview "up next" card and
+ *  each open session row. Posts to the same endpoint the projected QR opens. */
+function SessionCheckInButton({
+  sessionId,
+  initialPresent,
+}: {
+  sessionId: string;
+  initialPresent: boolean;
+}) {
+  const [present, setPresent] = useState(initialPresent);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function checkIn() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/education/sessions/${sessionId}/check-in`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        setError(j?.error ?? "Check-in failed");
+        return;
+      }
+      setPresent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (present) {
+    return <span className="text-xs font-semibold text-accent-teal">✓ Checked in</span>;
+  }
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button type="button" size="sm" onClick={checkIn} disabled={submitting}>
+        {submitting ? "Checking in…" : "Check in"}
+      </Button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
 }

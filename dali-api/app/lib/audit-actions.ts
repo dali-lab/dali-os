@@ -106,6 +106,8 @@ export const AUDIT_ACTIONS = [
   "education.session.create",
   "education.session.update",
   "education.session.delete",
+  "education.session.checkin.open",
+  "education.session.checkin.close",
   "education.instructors.set",
   "education.instructors.invite",
   "education.instructors.removeExternal",

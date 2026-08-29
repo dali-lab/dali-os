@@ -184,6 +184,9 @@ export default [
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    // Standalone session self-check-in surface (the projected QR / link target).
+    // Literal "check-in" precedes :offeringId so it isn't read as an offering id.
+    route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
     route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
@@ -468,6 +471,12 @@ export default [
   route("api/education/:offeringId/documents", "education/routes/api.education.$offeringId.documents.ts"),
   // Education offering files (uploaded S3-backed materials, mirrors api/projects/:id/files)
   route("api/education/:offeringId/files", "education/routes/api.education.$offeringId.files.ts"),
+  // Session self-check-in: an enrolled student marks themselves present by
+  // scanning the projected QR (the user is taken from their own session).
+  route(
+    "api/education/sessions/:sessionId/check-in",
+    "education/routes/api.education.sessions.$sessionId.check-in.ts",
+  ),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),

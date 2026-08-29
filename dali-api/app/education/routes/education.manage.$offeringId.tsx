@@ -32,7 +32,13 @@ import {
   listWorkspaceDocs,
   createMaterialPage,
   moveMaterialPage,
+  moveMaterialFile,
 } from "~/education/lib/lms.server";
+import QRCode from "qrcode";
+import {
+  isSessionCheckInOpen,
+  setSessionCheckInOpen,
+} from "~/education/lib/session-checkin.server";
 import {
   listAssignments,
   createAssignment,
@@ -77,7 +83,7 @@ import { OfferingFields, toDatetimeLocal } from "~/education/components/Offering
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { DateField } from "~/components/ui/DateField";
-import { formatDateTime } from "~/lib/display";
+import { formatDateTime, formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { InfoTip } from "~/components/ui/floating";
@@ -106,6 +112,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const rosterSessionId = requestedSessionId ?? offering.sessions[0]?.id ?? null;
   const roster = rosterSessionId
     ? await getSessionRoster(params.offeringId!, rosterSessionId)
+    : null;
+
+  // Self-check-in for the selected session: its open state + a QR the instructor
+  // projects for students to scan. One QR (just the selected session), so this
+  // stays cheap regardless of how many sessions the offering has.
+  const rosterSession = rosterSessionId
+    ? offering.sessions.find((s) => s.id === rosterSessionId) ?? null
+    : null;
+  const checkInUrl = rosterSession
+    ? `${new URL(request.url).origin}/education/check-in/${rosterSession.id}`
+    : null;
+  const checkInQrSvg = checkInUrl
+    ? await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 200 })
+    : null;
+  const sessionCheckIn = rosterSession
+    ? {
+        sessionId: rosterSession.id,
+        open: isSessionCheckInOpen(rosterSession),
+        checkInUrl,
+        checkInQrSvg,
+      }
     : null;
 
   const core = await isCore(gate.auth.user.sub);
@@ -162,7 +189,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       archivedAt: null,
     },
     orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true },
+    select: { id: true, title: true, folderPageId: true },
   });
 
   const notes = await notesForOffering(params.offeringId!);
@@ -292,6 +319,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         : null,
     })),
     roster,
+    sessionCheckIn,
     attendanceMatrix,
     // Performance view data (plain — no Prisma types, safe to pass to client).
     performanceByApp,
@@ -321,6 +349,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     offeringFiles: offeringFiles.map((f) => ({
       id: f.id,
       title: f.title,
+      folderPageId: f.folderPageId,
       href: `/documents/file/${f.id}`,
     })),
     workspaceDocs,
@@ -368,12 +397,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     "decide-application",
     "create-page",
     "move-page",
+    "move-file",
     "set-material-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
     "post-announcement",
     "save-attendance",
+    "set-session-check-in",
     "save-student-note",
     "close-out-offering",
     "set-form-binding",
@@ -409,6 +440,24 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           pageId: String(formData.get("pageId") ?? ""),
           parentPageId: String(formData.get("parentPageId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "move-file": {
+        const result = await moveMaterialFile({
+          offeringId: params.offeringId!,
+          fileId: String(formData.get("fileId") ?? ""),
+          folderId: String(formData.get("folderId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "set-session-check-in": {
+        const result = await setSessionCheckInOpen({
+          offeringId: params.offeringId!,
+          sessionId: String(formData.get("sessionId") ?? ""),
+          open: formData.get("open") === "true",
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -578,11 +627,26 @@ const TABS = [
   { key: "feedback", label: "Feedback" },
 ] as const;
 
+// Weekday chips for the "Generate a session series" picker. Index === JS
+// getDay() (0 = Sunday), so the checkbox value maps straight to the weekday the
+// server schedules on.
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
 export default function ManageOffering() {
   const {
     offering,
     applications,
     roster,
+    sessionCheckIn,
     attendanceMatrix,
     materials,
     offeringFiles,
@@ -642,6 +706,33 @@ export default function ManageOffering() {
           ]
         : [{ to: "Published", label: "Re-publish", variant: "secondary" }];
 
+  // Per-session rollups so the Sessions tab connects to the rest of the offering
+  // (attendance, materials, assignments) instead of being a bare date list.
+  const totalRosterStudents = attendanceMatrix.students.length;
+  const presentBySession = new Map<string, number>();
+  for (const s of attendanceMatrix.sessions) {
+    presentBySession.set(
+      s.id,
+      attendanceMatrix.students.filter((st) => st.marks[s.id] === "Present").length,
+    );
+  }
+  const materialsBySession = new Map<string, { id: string; title: string }[]>();
+  for (const top of materials) {
+    for (const m of [top, ...top.children]) {
+      if (!m.sessionId) continue;
+      const list = materialsBySession.get(m.sessionId) ?? [];
+      list.push({ id: m.id, title: m.title });
+      materialsBySession.set(m.sessionId, list);
+    }
+  }
+  const assignmentsBySession = new Map<string, { id: string; title: string }[]>();
+  for (const a of assignments) {
+    if (!a.sessionId) continue;
+    const list = assignmentsBySession.get(a.sessionId) ?? [];
+    list.push({ id: a.id, title: a.title });
+    assignmentsBySession.set(a.sessionId, list);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
@@ -660,6 +751,12 @@ export default function ManageOffering() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Link
+            to={`/education/${offering.id}/hub?as=student`}
+            className={buttonClasses("ghost", "sm")}
+          >
+            View as student
+          </Link>
           <Form
             method="post"
             onSubmit={confirmSubmit({
@@ -1034,7 +1131,7 @@ export default function ManageOffering() {
                     <p className="text-sm font-semibold text-foreground">
                       {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
                       <span className="ml-2 font-normal text-muted-foreground text-xs">
-                        {formatDateTime(s.datetime, tz)}
+                        {formatSessionWhen(s.datetime, s.endsAt, tz)}
                       </span>
                     </p>
                     <Form
@@ -1068,16 +1165,26 @@ export default function ManageOffering() {
                         className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
                       />
                     </label>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">When</span>
+                      <span className="text-xs font-semibold text-muted-foreground">Starts</span>
                       <DateField
                         mode="datetime-local"
                         name="datetime"
                         required
                         defaultValue={toDatetimeLocal(s.datetime)}
                         className="mt-1 w-full"
-                        ariaLabel="Session date and time"
+                        ariaLabel="Session start date and time"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground">Ends</span>
+                      <DateField
+                        mode="datetime-local"
+                        name="endsAt"
+                        defaultValue={s.endsAt ? toDatetimeLocal(s.endsAt) : ""}
+                        className="mt-1 w-full"
+                        ariaLabel="Session end date and time"
                       />
                     </label>
                     <label className="block">
@@ -1117,6 +1224,52 @@ export default function ManageOffering() {
                       </Button>
                     </div>
                   </Form>
+                  {/* What this session connects to — attendance, materials and
+                      assignments — so the tab isn't just a bare date list. */}
+                  <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-muted-foreground">
+                        {totalRosterStudents > 0
+                          ? `${presentBySession.get(s.id) ?? 0} of ${totalRosterStudents} present`
+                          : "No enrolled students yet"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSearchParams({ tab: "roster", session: s.id })}
+                        className="font-medium text-accent-teal hover:underline"
+                      >
+                        Take attendance →
+                      </button>
+                    </div>
+                    {(materialsBySession.get(s.id)?.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                        <span className="text-muted-foreground">Materials:</span>
+                        {materialsBySession.get(s.id)!.map((m) => (
+                          <a
+                            key={m.id}
+                            href={`/documents/${m.id}`}
+                            className="text-foreground hover:text-accent-coral hover:underline"
+                          >
+                            {m.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {(assignmentsBySession.get(s.id)?.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                        <span className="text-muted-foreground">Assignments:</span>
+                        {assignmentsBySession.get(s.id)!.map((a) => (
+                          <a
+                            key={a.id}
+                            href={`/education/manage/assignments/${a.id}`}
+                            className="text-foreground hover:text-accent-coral hover:underline"
+                          >
+                            {a.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1161,25 +1314,34 @@ export default function ManageOffering() {
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">When</span>
+                <span className="text-xs font-semibold text-muted-foreground">Starts</span>
                 <DateField
                   mode="datetime-local"
                   name="datetime"
                   required
                   className="mt-1 w-full"
-                  ariaLabel="Session date and time"
+                  ariaLabel="Session start date and time"
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Location</span>
-                <input
-                  type="text"
-                  name="location"
-                  placeholder="Sudikoff 007"
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                <span className="text-xs font-semibold text-muted-foreground">Ends</span>
+                <DateField
+                  mode="datetime-local"
+                  name="endsAt"
+                  className="mt-1 w-full"
+                  ariaLabel="Session end date and time"
                 />
               </label>
             </div>
+            <label className="block">
+              <span className="text-xs font-semibold text-muted-foreground">Location</span>
+              <input
+                type="text"
+                name="location"
+                placeholder="Sudikoff 007"
+                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+              />
+            </label>
             <label className="block">
               <span className="text-xs font-semibold text-muted-foreground">
                 Notes for students
@@ -1196,41 +1358,71 @@ export default function ManageOffering() {
           <AddFormModal
             open={generateOpen}
             onClose={() => setGenerateOpen(false)}
-            title="Generate a weekly series"
-            subtitle="You can rename or retime individual sessions afterward."
+            title="Generate a session series"
+            subtitle="Pick the weekdays this class meets — a Mon/Wed class fills in both, in date order. Rename or retime any session afterward."
             intent="generate-sessions"
             submitLabel="Generate"
           >
             <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">First session</span>
+              <span className="text-xs font-semibold text-muted-foreground">Starting the week of</span>
               <DateField
-                mode="datetime-local"
-                name="startDatetime"
+                mode="date"
+                name="startDate"
                 required
                 className="mt-1 w-full"
-                ariaLabel="First session date and time"
+                ariaLabel="Series start date"
               />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="block">
+              <span className="text-xs font-semibold text-muted-foreground">Meets on</span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((label, i) => (
+                  <label
+                    key={i}
+                    className="relative cursor-pointer select-none"
+                    title={WEEKDAY_NAMES[i]}
+                  >
+                    <input
+                      type="checkbox"
+                      name="weekdays"
+                      value={i}
+                      className="peer sr-only"
+                    />
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-sm font-medium text-muted-foreground transition-colors peer-checked:border-accent-coral peer-checked:bg-accent-coral peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40">
+                      {label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
               <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">How many</span>
-                <input
-                  type="number"
-                  name="count"
-                  min={1}
-                  max={30}
-                  defaultValue={6}
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                <span className="text-xs font-semibold text-muted-foreground">Starts</span>
+                <DateField
+                  mode="time"
+                  name="startTime"
+                  required
+                  className="mt-1 w-full"
+                  ariaLabel="Session start time"
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Every N days</span>
+                <span className="text-xs font-semibold text-muted-foreground">Ends</span>
+                <DateField
+                  mode="time"
+                  name="endTime"
+                  className="mt-1 w-full"
+                  ariaLabel="Session end time"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground"># of weeks</span>
                 <input
                   type="number"
-                  name="intervalDays"
+                  name="weeks"
                   min={1}
-                  max={30}
-                  defaultValue={7}
+                  max={26}
+                  defaultValue={6}
                   className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
                 />
               </label>
@@ -1294,6 +1486,53 @@ export default function ManageOffering() {
 
       {tab === "roster" && (
         <div className="flex flex-col gap-4">
+          {sessionCheckIn && (
+            <section className="bg-card border border-border rounded-lg p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-heading font-semibold text-foreground">Self check-in</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground max-w-md">
+                    Open check-in and project the QR — enrolled students scan it to mark
+                    themselves present, instead of you calling the roll. You can still mark anyone
+                    by hand below.
+                  </p>
+                </div>
+                <Form method="post" className="shrink-0">
+                  <input type="hidden" name="intent" value="set-session-check-in" />
+                  <input type="hidden" name="sessionId" value={sessionCheckIn.sessionId} />
+                  <input type="hidden" name="open" value={sessionCheckIn.open ? "false" : "true"} />
+                  <Button type="submit" size="sm" variant={sessionCheckIn.open ? "secondary" : "primary"}>
+                    {sessionCheckIn.open ? "Close check-in" : "Open self check-in"}
+                  </Button>
+                </Form>
+              </div>
+              {sessionCheckIn.open && sessionCheckIn.checkInQrSvg && sessionCheckIn.checkInUrl && (
+                <div className="mt-4 flex flex-wrap items-center gap-4">
+                  <div
+                    className="w-40 h-40 shrink-0 rounded-md bg-white p-2 [&_svg]:w-full [&_svg]:h-full"
+                    dangerouslySetInnerHTML={{ __html: sessionCheckIn.checkInQrSvg }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Check-in is open for this session.
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Students scan the code (signed in) to mark themselves present. Marks appear in
+                      the roster below.
+                    </p>
+                    <a
+                      href={sessionCheckIn.checkInUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-xs text-accent-teal hover:underline break-all"
+                    >
+                      {sessionCheckIn.checkInUrl}
+                    </a>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
           <RosterMatrix
             sessions={attendanceMatrix.sessions.map((s) => ({
               id: s.id,

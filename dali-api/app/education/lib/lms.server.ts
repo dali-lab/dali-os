@@ -10,6 +10,8 @@ import { listDiscussion } from "./announcements.server";
 import { listAssignments } from "./assignments.server";
 import { listThreads, offeringInstructorIds } from "./discussions.server";
 import { studentVisibleFeedback } from "./student-notes.server";
+import { isSessionCheckInOpen } from "./session-checkin.server";
+import type { AttendanceStatus } from "~/generated/prisma/client";
 
 export async function listMaterialPages(offeringId: string) {
   const pages = await prisma.page.findMany({
@@ -216,6 +218,52 @@ export async function moveMaterialPage(args: {
   return { ok: true };
 }
 
+/**
+ * File an uploaded material (a ProjectFile, not a Page) into a materials folder,
+ * or back to the offering root (folderId null). Same-offering guardrails as
+ * moveMaterialPage: the file and the destination folder must both belong to
+ * this offering's workspace, and the destination must be a folder.
+ */
+export async function moveMaterialFile(args: {
+  offeringId: string;
+  fileId: string;
+  folderId: string | null;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const file = await prisma.projectFile.findUnique({
+    where: { id: args.fileId },
+    select: { workspaceType: true, workspaceId: true },
+  });
+  if (
+    !file ||
+    file.workspaceType !== "EducationOffering" ||
+    file.workspaceId !== args.offeringId
+  ) {
+    return { error: "File not found", status: 404 };
+  }
+
+  if (args.folderId) {
+    const folder = await prisma.page.findUnique({
+      where: { id: args.folderId },
+      select: { workspaceType: true, workspaceId: true, kind: true },
+    });
+    if (
+      !folder ||
+      folder.workspaceType !== "EducationOffering" ||
+      folder.workspaceId !== args.offeringId
+    ) {
+      return { error: "Folder not found", status: 404 };
+    }
+    if (folder.kind !== "Folder") return { error: "Files only nest in folders", status: 400 };
+  }
+
+  await prisma.projectFile.update({
+    where: { id: args.fileId },
+    data: { folderPageId: args.folderId },
+  });
+  return { ok: true };
+}
+
 /** Session list for the hub — includes the caller's own attendance marks. */
 export async function listSessionsWithMyAttendance(
   offeringId: string,
@@ -229,20 +277,26 @@ export async function listSessionsWithMyAttendance(
       sequence: true,
       title: true,
       datetime: true,
+      endsAt: true,
       location: true,
+      notes: true,
       recordingUrl: true,
+      checkInOpenAt: true,
     },
   });
-  if (!applicationId) return sessions.map((s) => ({ ...s, myAttendance: null }));
+  // checkInOpenAt is internal — students only need the derived "is it open now"
+  // boolean, so the raw timestamp never leaves the server.
+  const shape = (s: (typeof sessions)[number], status: AttendanceStatus | null) => {
+    const { checkInOpenAt, ...rest } = s;
+    return { ...rest, checkInOpen: isSessionCheckInOpen(s), myAttendance: status };
+  };
+  if (!applicationId) return sessions.map((s) => shape(s, null));
   const marks = await prisma.educationAttendance.findMany({
     where: { applicationId },
     select: { sessionId: true, status: true },
   });
   const bySession = new Map(marks.map((m) => [m.sessionId, m.status]));
-  return sessions.map((s) => ({
-    ...s,
-    myAttendance: bySession.get(s.id) ?? null,
-  }));
+  return sessions.map((s) => shape(s, bySession.get(s.id) ?? null));
 }
 
 /**
@@ -305,7 +359,7 @@ export async function getHubData(args: {
     listThreads(args.offeringId, instructorIds),
     prisma.educationSubmission.findMany({
       where: { studentId: args.userId },
-      select: { assignmentId: true, submittedAt: true },
+      select: { assignmentId: true, submittedAt: true, grade: true, score: true, gradedAt: true },
     }),
     // Student-visible lane only — the safe reader by construction.
     args.applicationId
@@ -324,9 +378,7 @@ export async function getHubData(args: {
       })
     : null;
 
-  const submittedByAssignment = new Map(
-    mySubmissions.map((s) => [s.assignmentId, s.submittedAt]),
-  );
+  const submissionByAssignment = new Map(mySubmissions.map((s) => [s.assignmentId, s]));
 
   return {
     offering: {
@@ -355,13 +407,19 @@ export async function getHubData(args: {
     sessions,
     materials,
     workspaceDocs,
-    assignments: assignments.map((a) => ({
-      id: a.id,
-      title: a.title,
-      dueAt: a.dueAt,
-      sessionSequence: a.sessionSequence,
-      mySubmittedAt: submittedByAssignment.get(a.id) ?? null,
-    })),
+    assignments: assignments.map((a) => {
+      const sub = submissionByAssignment.get(a.id);
+      return {
+        id: a.id,
+        title: a.title,
+        dueAt: a.dueAt,
+        points: a.points,
+        sessionSequence: a.sessionSequence,
+        mySubmittedAt: sub?.submittedAt ?? null,
+        myGrade: sub?.gradedAt ? sub.grade : null,
+        myScore: sub?.gradedAt ? sub.score : null,
+      };
+    }),
     threads,
     myFeedback,
     myCertificateId: myCertificate?.id ?? null,

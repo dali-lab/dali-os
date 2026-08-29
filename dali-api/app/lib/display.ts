@@ -85,3 +85,25 @@ export function formatDateTime(iso: string | Date, timeZone: string = APPLICATIO
 export function formatDateShort(iso: string | Date, timeZone: string = APPLICATION_TZ): string {
   return formatInTimeZone(iso, timeZone, { month: "short", day: "numeric", year: "numeric" });
 }
+
+/** "2:00 PM" in the given zone — just the clock time, no date. */
+export function formatTimeOnly(iso: string | Date, timeZone: string = APPLICATION_TZ): string {
+  return formatInTimeZone(iso, timeZone, { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * A session's when, collapsed to one line: "Aug 29, 2026 at 2:00 PM" with no
+ * end, or "Aug 29, 2026 · 2:00 – 3:00 PM" when an end is set on the same day.
+ * A rare cross-midnight end falls back to spelling both datetimes in full.
+ */
+export function formatSessionWhen(
+  start: string | Date,
+  end: string | Date | null | undefined,
+  timeZone: string = APPLICATION_TZ,
+): string {
+  if (!end) return formatDateTime(start, timeZone);
+  if (formatDateShort(start, timeZone) !== formatDateShort(end, timeZone)) {
+    return `${formatDateTime(start, timeZone)} – ${formatDateTime(end, timeZone)}`;
+  }
+  return `${formatDateShort(start, timeZone)} · ${formatTimeOnly(start, timeZone)} – ${formatTimeOnly(end, timeZone)}`;
+}
