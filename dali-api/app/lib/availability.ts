@@ -21,18 +21,10 @@ export interface WorkingHoursDayInput {
   endMinute: number;
 }
 
-export interface ManualBlockInput {
-  startTime: Date;
-  endTime: Date;
-  // RFC 5545 RRULE string (with or without "RRULE:" prefix). Null for one-off.
-  recurrenceRule: string | null;
-}
-
 export interface ComputeInput {
   windowStart: Date;
   windowEnd: Date;
   workingHours: WorkingHoursDayInput[];
-  manualBlocks: ManualBlockInput[];
   externalBusy: Interval[];
   bufferMin: number;
   timezone: string;
@@ -49,17 +41,14 @@ export interface ComputeOutput {
  * Steps:
  *   1. Project enabled working-hours days onto the calendar dates in the
  *      window (in the user's timezone — DST-correct).
- *   2. Expand each manual block (single occurrence or RRULE) to concrete
- *      intervals overlapping the window.
- *   3. Combine those expansions with externalBusy into a busy set, then
- *      inflate each busy interval by bufferMin minutes on both sides, and
- *      merge overlaps.
- *   4. Subtract the (inflated, merged) busy set from the working-hours
+ *   2. Combine externalBusy into a busy set, inflate each busy interval by
+ *      bufferMin minutes on both sides, and merge overlaps.
+ *   3. Subtract the (inflated, merged) busy set from the working-hours
  *      intervals. The remainder is `free`; the merged busy set is returned
  *      as `busy`.
  */
 export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
-  const { windowStart, windowEnd, workingHours, manualBlocks, externalBusy, bufferMin, timezone } = input;
+  const { windowStart, windowEnd, workingHours, externalBusy, bufferMin, timezone } = input;
 
   if (windowEnd.getTime() <= windowStart.getTime()) {
     return { free: [], busy: [] };
@@ -101,40 +90,9 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
     cursor = new Date(cursor.getTime() + 24 * 60 * 60_000);
   }
 
-  // (2) Expand manual blocks.
-  const expandedManual: Interval[] = [];
-  for (const b of manualBlocks) {
-    const durMs = b.endTime.getTime() - b.startTime.getTime();
-    if (durMs <= 0) continue;
-    if (!b.recurrenceRule) {
-      const c = clipToWindow(b.startTime, b.endTime, windowStart, windowEnd);
-      if (c) expandedManual.push(c);
-      continue;
-    }
-    // rrule expects a DTSTART; build a rule anchored to the block's startTime.
-    const rule = buildRule(b.recurrenceRule, b.startTime);
-    if (!rule) continue;
-    // between(after, before, inc) — pad the window by the block duration so
-    // an occurrence that *starts* before windowStart but *ends* inside it is
-    // still included.
-    const occurrences = rule.between(
-      new Date(windowStart.getTime() - durMs),
-      windowEnd,
-      true,
-    );
-    for (const occStart of occurrences) {
-      const occEnd = new Date(occStart.getTime() + durMs);
-      const c = clipToWindow(occStart, occEnd, windowStart, windowEnd);
-      if (c) expandedManual.push(c);
-    }
-  }
-
-  // (3) Build merged busy set with buffer.
+  // (2) Build merged busy set with buffer.
   const bufferMs = Math.max(0, bufferMin) * 60_000;
   const rawBusy: Interval[] = [];
-  for (const i of expandedManual) {
-    rawBusy.push({ start: new Date(i.start.getTime() - bufferMs), end: new Date(i.end.getTime() + bufferMs) });
-  }
   for (const i of externalBusy) {
     rawBusy.push({ start: new Date(i.start.getTime() - bufferMs), end: new Date(i.end.getTime() + bufferMs) });
   }
@@ -255,11 +213,10 @@ export async function computeUserFreeBusy(
   windowEnd: Date,
   fallbackTimezone: string = DEFAULT_TIMEZONE,
 ): Promise<{ userId: string; free: Interval[]; busy: Interval[] }> {
-  const [settings, userRow, whRows, blocks, busyRaw] = await Promise.all([
+  const [settings, userRow, whRows, busyRaw] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
     prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
-    prisma.manualBlock.findMany({ where: { userId }, take: 500 }),
     fetchBusyEvents(userId, windowStart, windowEnd).catch(
       () => [] as { start: string; end: string }[],
     ),
@@ -299,11 +256,6 @@ export async function computeUserFreeBusy(
     windowStart,
     windowEnd,
     workingHours,
-    manualBlocks: blocks.map((b) => ({
-      startTime: b.startTime,
-      endTime: b.endTime,
-      recurrenceRule: b.recurrenceRule,
-    })),
     externalBusy,
     bufferMin: settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN,
     timezone,

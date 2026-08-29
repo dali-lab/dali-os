@@ -5,14 +5,7 @@ import type { RoleInstance } from "~/lib/roles";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
-import {
-  NO_REPEAT,
-  RepeatField,
-  repeatSpecToRRule,
-  type RepeatSpec,
-} from "~/calendar/components/RepeatField";
 import { Tooltip } from "~/components/ui/floating";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -37,11 +30,9 @@ const NO_ROLES_MESSAGE =
 export function TimesheetSummaryRail({
   roleBuckets,
   periodLabel,
-  onFocus,
 }: {
   roleBuckets: { key: string; label: string; hours: number }[];
   periodLabel: string;
-  onFocus: () => void;
 }) {
   const total = roleBuckets.reduce((sum, b) => sum + b.hours, 0);
   return (
@@ -60,225 +51,6 @@ export function TimesheetSummaryRail({
           ))}
         </span>
       )}
-      <button
-        type="button"
-        onClick={onFocus}
-        className="ml-auto rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-      >
-        Focus
-      </button>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Drag-to-create side modal (My Availability tab)                      */
-/* ------------------------------------------------------------------ */
-
-export function CreateFromDragPopover({
-  startLocal,
-  endLocal,
-  myRoles,
-  onClose,
-}: {
-  startLocal: string;
-  endLocal: string;
-  myRoles: RoleInstance[];
-  onClose: () => void;
-}) {
-  const { os, popover, formClass, fieldLabel, formTrigger } = useOsChrome();
-  const revalidator = useRevalidator();
-  const [title, setTitle] = useState("");
-  const [start, setStart] = useState(startLocal);
-  const [end, setEnd] = useState(endLocal);
-  // Follow the committed selection while the user resizes it on the grid (the
-  // startLocal/endLocal props change). Manual edits to the inputs below still
-  // win until the next resize re-syncs.
-  useEffect(() => {
-    setStart(startLocal);
-    setEnd(endLocal);
-  }, [startLocal, endLocal]);
-  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  // Optional "add to timesheet": marking the block as work also creates a
-  // role-tagged TimeEntry. Meetings aren't created here — their time comes from
-  // group availability, not a pre-picked slot; book them via New → Meeting.
-  const [isWork, setIsWork] = useState(false);
-  const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const startEndValid =
-    !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
-  const isRecurring = repeat.freq !== "none";
-  const canSubmit =
-    title.trim().length > 0 &&
-    startEndValid &&
-    !submitting &&
-    // "Add to timesheet" needs a role — but it's ignored on a recurring block
-    // (a series can't be work), so don't block submit in that case.
-    (!isWork || isRecurring || roleKey !== "");
-
-  // Close on Escape.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      // Block and Log time both create a manual block — Log time just marks it
-      // as work against a role (which syncs to a TimeEntry).
-      const body = new FormData();
-      body.set("intent", "add-manual-block");
-      body.set("title", title.trim());
-      body.set("startTime", new Date(start).toISOString());
-      body.set("endTime", new Date(end).toISOString());
-      const rrule = repeatSpecToRRule(repeat);
-      if (rrule) body.set("recurrenceRule", rrule);
-      if (isWork && !isRecurring) {
-        const role = parseRoleOptionKey(roleKey);
-        if (role) {
-          body.set("isWork", "true");
-          body.set("assignmentType", role.assignmentType);
-          body.set("roleRefId", role.roleRefId);
-        }
-      }
-      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        setError(j?.error ?? "Failed to create block");
-        return;
-      }
-      revalidator.revalidate();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const cancelBtn =
-    "px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted";
-  const primaryBtn =
-    "px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50";
-
-  return (
-    <div
-      className={cn("w-80 max-h-[30rem] overflow-y-auto", popover)}
-      role="dialog"
-      aria-modal="false"
-      aria-label="Create on the calendar"
-    >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
-        <h2 className="font-heading font-semibold text-sm text-foreground">New block</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
-          <div>
-            <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
-              Title
-            </label>
-            <input
-              id="drag-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              autoFocus
-              placeholder="e.g. Focus time"
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="drag-start" className="block text-sm font-medium text-foreground mb-1">
-                Starts
-              </label>
-              <DateField
-                mode="datetime-local"
-                value={start}
-                onChange={(value) => setStart(value)}
-                className="w-full"
-                ariaLabel="Starts"
-              />
-            </div>
-            <div>
-              <label htmlFor="drag-end" className="block text-sm font-medium text-foreground mb-1">
-                Ends
-              </label>
-              <DateField
-                mode="datetime-local"
-                value={end}
-                min={start || undefined}
-                onChange={(value) => setEnd(value)}
-                className="w-full"
-                ariaLabel="Ends"
-              />
-            </div>
-          </div>
-          {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
-
-          <RepeatField
-            value={repeat}
-            onChange={setRepeat}
-            anchorLocal={start}
-            labelClassName="block text-sm font-medium text-foreground mb-1"
-            fieldClassName={cn(
-              "w-full px-3 text-sm border border-border rounded-md bg-background text-foreground",
-              !os && "h-9",
-            )}
-          />
-
-          {/* Optional: also log this block as work against a role. Recurring
-              blocks can't be work, so this hides once a repeat is chosen. */}
-          {myRoles.length > 0 && !isRecurring && (
-            <div>
-              <Checkbox
-                label="Add to timesheet"
-                checked={isWork}
-                onChange={(e) => setIsWork(e.target.checked)}
-                className="text-sm font-medium text-foreground"
-              />
-              {isWork && (
-                <Select
-                  ariaLabel="Which role is this work for"
-                  value={roleKey}
-                  onChange={(v) => setRoleKey(v)}
-                  placeholder="Select a role…"
-                  options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
-                  buttonClassName={cn("mt-2 border-border", !roleKey && "border-red-500", formTrigger)}
-                />
-              )}
-            </div>
-          )}
-
-          {error && <p className="text-sm text-red-700">{error}</p>}
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className={cancelBtn}>
-              Cancel
-            </button>
-            <button type="submit" disabled={!canSubmit} className={primaryBtn}>
-              {submitting ? "Saving…" : "Add block"}
-            </button>
-          </div>
-        </form>
     </div>
   );
 }
@@ -551,10 +323,7 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   // The Timesheet grid shows logged work ONLY — it's a record of paid hours,
   // so an ordinary calendar event (a linked Google event, or a personal block
   // not marked as work) has no place on it and is deliberately not drawn.
-  // Blocks that ARE marked as work already surface here via their synced
-  // source:"Block" TimeEntry (see syncManualBlockTimeEntry), so rendering
-  // data.manualBlocks too would double-draw them. Availability's grid still
-  // shows the full picture — that's the tab for "when am I busy".
+  // Availability's grid still shows the full picture — that's the tab for "when am I busy".
   //
   // Below: this user's TimeEntry rows — timed ones at their real time; untimed
   // ones (e.g. attendance on a meeting with no confirmed start time yet) at a

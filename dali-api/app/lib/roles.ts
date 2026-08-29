@@ -128,7 +128,7 @@ export function instructorRoleLabel(type: OfferingType, title: string): string {
 
 export interface RoleInstance {
   assignmentType: AssignmentType;
-  /** The concrete assignment row's id — stored as TimeEntry/ManualBlock.roleRefId. */
+  /** The concrete assignment row's id — stored as TimeEntry.roleRefId. */
   roleRefId: string;
   label: string;
   /** Only set for assignmentType === "Project" — lets callers keep project-grouped display/export logic. */
@@ -237,10 +237,10 @@ export async function getUserRoleInstances(
 
 /**
  * Validate that `roleRefId` is a real assignment row of the given type
- * belonging to `userId`, before writing it onto a TimeEntry/ManualBlock.
+ * belonging to `userId`, before writing it onto a TimeEntry.
  * Returns null if not found/not owned. For assignmentType === "Project",
  * also resolves the underlying projectId so callers can keep it denormalized
- * on the write (see TimeEntry.projectId / ManualBlock).
+ * on the write (see TimeEntry.projectId).
  */
 export async function resolveRoleRef(
   userId: string,

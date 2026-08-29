@@ -77,39 +77,6 @@ export const SetEventBufferSchema = z.object({
   defaultEventBufferMin: z.number().int().min(0).max(240),
 });
 
-export const AddManualBlockSchema = z.object({
-  intent: z.literal("add-manual-block"),
-  title: z.string().min(1).max(200),
-  startTime: isoString,
-  endTime: isoString,
-  allDay: z.boolean().optional().default(false),
-  recurrenceRule: z.string().max(500).nullish(),
-  // "This is work" — mirrors the block into a Block-sourced TimeEntry for the
-  // chosen role. Rejected in the action handler when recurrenceRule is set
-  // (TimeEntry has no occurrence-expansion concept yet).
-  isWork: z.boolean().optional().default(false),
-  assignmentType: assignmentType.nullish(),
-  roleRefId: z.string().min(1).nullish(),
-});
-
-export const UpdateManualBlockSchema = z.object({
-  intent: z.literal("update-manual-block"),
-  id: z.string().min(1),
-  title: z.string().min(1).max(200).optional(),
-  startTime: isoString.optional(),
-  endTime: isoString.optional(),
-  allDay: z.boolean().optional(),
-  recurrenceRule: z.string().max(500).nullish(),
-  isWork: z.boolean().optional(),
-  assignmentType: assignmentType.nullish(),
-  roleRefId: z.string().min(1).nullish(),
-});
-
-export const RemoveManualBlockSchema = z.object({
-  intent: z.literal("remove-manual-block"),
-  id: z.string().min(1),
-});
-
 export const RemoveCalendarLinkSchema = z.object({
   intent: z.literal("remove-calendar-link"),
   linkId: z.string().min(1),
@@ -146,6 +113,11 @@ export const AddTimeEntrySchema = z.object({
   // whether dragged on the grid or typed into the add form.
   startTime: isoString,
   endTime: isoString,
+  // Set when the entry is logged against a just-created meeting (the unified
+  // Create modal's "count as work"): links it to the meeting so it renders as a
+  // role accent on the meeting block instead of a duplicate, and skips the
+  // Timesheet-calendar mirror (the meeting already lives on the real calendar).
+  scheduledMeetingId: z.string().optional(),
 });
 
 export const UpdateTimeEntrySchema = z.object({
@@ -225,9 +197,6 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   CopyWeekdaysSchema,
   ResetWorkingHoursSchema,
   SetEventBufferSchema,
-  AddManualBlockSchema,
-  UpdateManualBlockSchema,
-  RemoveManualBlockSchema,
   RemoveCalendarLinkSchema,
   ToggleSubCalendarSchema,
   SubscribeGeneralCalendarSchema,

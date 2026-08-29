@@ -441,13 +441,6 @@ export const prisma = {
   workingHoursDay: {
     findMany: vi.fn().mockResolvedValue([]),
   },
-  manualBlock: {
-    findMany: vi.fn().mockResolvedValue([]),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
   projectShowcase: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),

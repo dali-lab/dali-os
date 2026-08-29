@@ -113,21 +113,9 @@ export const FEATURE_FLAGS = [
   },
   {
     key: "calendar-unified",
-    label: "Unified calendar",
+    label: "Calendar",
     description:
-      "One calendar screen instead of the Availability / Schedule / Timesheet tabs: a Month/Week/Day grid with toggleable colored layers (your blocks, linked Google calendars, meetings, logged time), meeting scheduling as an on-grid overlay, and a docked detail panel. Ships off; the three-tab calendar stays the fallback until this is rolled out.",
-  },
-  {
-    key: "calendar-classes",
-    label: "Classes this term",
-    description:
-      "Add your Dartmouth classes to the calendar from the Calendars menu — pick the class period (10A, 2, …) and we generate the exact weekly meeting times (with x-hour), bounded to the term. Classes can sync to a linked Google calendar or render as a DALI-only layer. Ships off.",
-  },
-  {
-    key: "calendar-google-crud",
-    label: "Calendar: create & edit events",
-    description:
-      "Use the calendar as a Google Calendar client: create, edit (via a composer), and delete events on your linked Google calendars, including all-day events. Google write only; Outlook stays read-only. Ships off.",
+      "The full DALI calendar behind one flag: create / edit / delete events on your linked Google calendars (Google write; Outlook read-only), schedule meetings with an availability heatmap, add your Dartmouth classes (period picker → exact weekly times, synced to Google), and the optional timesheet-to-Google mirror. Ships off; without it the calendar is a read-only busy view.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

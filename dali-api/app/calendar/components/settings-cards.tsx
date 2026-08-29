@@ -4,7 +4,6 @@ import {
   CalendarDays,
   Clock,
   Shield,
-  Calendar as CalendarIcon,
   Plus,
   Trash2,
   ChevronDown,
@@ -18,26 +17,18 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
-import { DateField } from "~/components/ui/DateField";
 import {
   defaultWorkingHours,
   DEFAULT_WORK_START_MIN,
   DEFAULT_WORK_END_MIN,
 } from "~/calendar/lib/calendar-defaults";
-import { DAY_LABELS, formatBlockRange } from "~/calendar/lib/event-block";
+import { DAY_LABELS } from "~/calendar/lib/event-block";
 import type {
   WhDay,
-  ManualBlockDTO,
   SubCalendarDTO,
   CalendarLinkDTO,
   LoaderData,
 } from "~/calendar/lib/types";
-import {
-  NO_REPEAT,
-  RepeatField,
-  repeatSpecToRRule,
-  type RepeatSpec,
-} from "~/calendar/components/RepeatField";
 
 /* ------------------------------------------------------------------ */
 /* CalendarIntegrationsCard                                            */
@@ -713,178 +704,3 @@ export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* ManualBlocksCard                                                    */
-/* ------------------------------------------------------------------ */
-
-export function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; timezone: string }) {
-  const { os, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
-  const [adding, setAdding] = useState(false);
-  return (
-    <section>
-      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
-        <h2 className={heading}>
-          <CalendarIcon className={headingIcon} />
-          Manual Blocks
-        </h2>
-        <button type="button" onClick={() => setAdding((v) => !v)} className={quietBtn}>
-          {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-          {adding ? "Cancel" : "Add Block"}
-        </button>
-      </div>
-      {adding && <AddManualBlockForm onDone={() => setAdding(false)} />}
-      <div className="flex flex-col gap-2">
-        {blocks.length === 0 && !adding && (
-          <div className={cn(bodyText, "italic")}>No manual blocks.</div>
-        )}
-        {blocks.map((b) => (
-          <ManualBlockRow key={b.id} block={b} timezone={timezone} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* AddManualBlockForm                                                  */
-/* ------------------------------------------------------------------ */
-
-function AddManualBlockForm({ onDone }: { onDone: () => void }) {
-  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
-  const fetcher = useFetcher();
-  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const [startLocal, setStartLocal] = useState("");
-  const [endLocal, setEndLocal] = useState("");
-  return (
-    <fetcher.Form
-      method="post"
-      onSubmit={() => {
-        // Optimistically close the form; the loader revalidation will reveal the new row.
-        queueMicrotask(onDone);
-      }}
-      className={cn(card, formClass, cardPad, "mb-2 flex flex-col gap-2")}
-    >
-      <input type="hidden" name="intent" value="add-manual-block" />
-      <input
-        name="title"
-        placeholder="Title (e.g. Dentist)"
-        required
-        className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
-      />
-      <div className="flex gap-2">
-        <label className={cn("flex-1 min-w-0", fieldLabel)}>
-          Start
-          <DateField
-            mode="datetime-local"
-            name="startTimeLocal"
-            required
-            className="w-full min-w-0"
-            value={startLocal}
-            onChange={(value) => setStartLocal(value)}
-          />
-          <input type="hidden" name="startTime" value={startLocal ? new Date(startLocal).toISOString() : ""} readOnly />
-        </label>
-        <label className={cn("flex-1 min-w-0", fieldLabel)}>
-          End
-          <DateField
-            mode="datetime-local"
-            name="endTimeLocal"
-            required
-            className="w-full min-w-0"
-            value={endLocal}
-            onChange={(value) => setEndLocal(value)}
-          />
-          <input type="hidden" name="endTime" value={endLocal ? new Date(endLocal).toISOString() : ""} readOnly />
-        </label>
-      </div>
-      <RepeatField
-        value={repeat}
-        onChange={setRepeat}
-        anchorLocal={startLocal}
-        labelClassName={os ? "text-sm text-os-grey" : "text-xs text-muted-foreground"}
-        fieldClassName={cn(
-          "w-full px-2 text-sm border border-border rounded-md bg-background text-foreground",
-          !os && "h-9",
-        )}
-      />
-      {/* The action reads `recurrenceRule` as an RRULE string; derive it from
-          the friendly Repeats choice so non-technical users never see RRULE. */}
-      <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat) ?? ""} />
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onDone}
-          className={cn(
-            "px-3 py-1 text-xs font-medium",
-            os
-              ? "rounded-full text-os-grey hover:bg-os-container hover:text-foreground"
-              : "rounded-md border border-border hover:bg-muted",
-          )}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className={cn(
-            "px-3 py-1 text-xs font-semibold",
-            os
-              ? "rounded-full bg-os-accent text-os-bg hover:bg-os-accent-hover"
-              : "rounded-md bg-accent-coral text-white hover:bg-accent-coral/90",
-          )}
-        >
-          Add
-        </button>
-      </div>
-    </fetcher.Form>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* ManualBlockRow                                                      */
-/* ------------------------------------------------------------------ */
-
-function ManualBlockRow({ block, timezone }: { block: ManualBlockDTO; timezone: string }) {
-  const { os } = useOsChrome();
-  const fetcher = useFetcher();
-  const removing = fetcher.state !== "idle";
-  return (
-    <div
-      className={cn(
-        "border-l-4 border-l-accent-coral px-3 py-2 flex items-start justify-between",
-        // A row, not a panel: the os side takes the 12px item corner and the
-        // flat card fill, keeping the coral edge that matches its grid block.
-        os ? "rounded-os-item bg-os-card" : "bg-card border border-border shadow-brand-1 rounded-md",
-        removing && "opacity-50",
-      )}
-    >
-      <div>
-        <div className="text-sm font-medium text-foreground">
-          {block.title}
-          {block.isWork && (
-            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-accent-teal/15 text-accent-teal">
-              Work
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-muted-foreground mt-0.5">
-          {formatBlockRange(block.startTime, block.endTime, timezone)}
-          {block.recurrenceRule && (
-            <span className="ml-1 italic">· {block.recurrenceRule}</span>
-          )}
-        </div>
-      </div>
-      <fetcher.Form method="post">
-        <input type="hidden" name="intent" value="remove-manual-block" />
-        <input type="hidden" name="id" value={block.id} />
-        <button
-          type="submit"
-          aria-label={`Remove ${block.title}`}
-          disabled={removing}
-          className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </fetcher.Form>
-    </div>
-  );
-}

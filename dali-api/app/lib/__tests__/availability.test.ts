@@ -34,7 +34,6 @@ function baseInput(overrides: Partial<ComputeInput> = {}): ComputeInput {
     windowStart: w.start,
     windowEnd: w.end,
     workingHours: defaultWorkingHours(),
-    manualBlocks: [],
     externalBusy: [],
     bufferMin: 0,
     timezone: TZ,
@@ -82,76 +81,6 @@ describe("computeFreeIntervals — working hours projection", () => {
   });
 });
 
-describe("computeFreeIntervals — manual blocks", () => {
-  it("subtracts a one-off block from working hours", () => {
-    // Block Mon 11:00–12:00 NY.
-    const block = {
-      startTime: new Date("2026-05-11T15:00:00Z"),
-      endTime: new Date("2026-05-11T16:00:00Z"),
-      recurrenceRule: null,
-    };
-    const out = computeFreeIntervals(baseInput({ manualBlocks: [block] }));
-    // 5 days × 8h = 40h, minus 1h = 39h.
-    expect(totalMinutes(out.free)).toBe(39 * 60);
-    // Busy should contain exactly the one block.
-    expect(out.busy).toHaveLength(1);
-  });
-
-  it("expands a weekly RRULE across the window", () => {
-    // Block Mon 11:00–12:00 weekly. Window is one Mon→Mon so only one occurrence.
-    const block = {
-      startTime: new Date("2026-05-11T15:00:00Z"),
-      endTime: new Date("2026-05-11T16:00:00Z"),
-      recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
-    };
-    const out = computeFreeIntervals(baseInput({ manualBlocks: [block] }));
-    expect(totalMinutes(out.free)).toBe(39 * 60);
-
-    // Now expand the window to two weeks → expect two occurrences subtracted.
-    const out2 = computeFreeIntervals(
-      baseInput({
-        manualBlocks: [block],
-        windowEnd: new Date("2026-05-25T04:00:00Z"),
-      }),
-    );
-    expect(totalMinutes(out2.free)).toBe(2 * 40 * 60 - 2 * 60);
-  });
-
-  it("ignores manual blocks entirely outside working hours", () => {
-    // Block Mon 2:00–3:00 AM NY (before working hours).
-    const block = {
-      startTime: new Date("2026-05-11T06:00:00Z"),
-      endTime: new Date("2026-05-11T07:00:00Z"),
-      recurrenceRule: null,
-    };
-    const out = computeFreeIntervals(baseInput({ manualBlocks: [block] }));
-    expect(totalMinutes(out.free)).toBe(40 * 60);
-  });
-
-  it("inflates busy intervals by the buffer on both sides", () => {
-    // 60-min block Mon 11:00–12:00; with 15-min buffer it eats 11:00–12:00
-    // out of working hours but the buffer also bites into adjacent free time.
-    const block = {
-      startTime: new Date("2026-05-11T15:00:00Z"),
-      endTime: new Date("2026-05-11T16:00:00Z"),
-      recurrenceRule: null,
-    };
-    const out = computeFreeIntervals(baseInput({ manualBlocks: [block], bufferMin: 15 }));
-    // Lost time = 60 + 2*15 = 90 min.
-    expect(totalMinutes(out.free)).toBe(40 * 60 - 90);
-  });
-
-  it("merges overlapping busy intervals after buffer inflation", () => {
-    // Two blocks 30 min apart, with a 20-min buffer they overlap into a single span.
-    const blocks = [
-      { startTime: new Date("2026-05-11T15:00:00Z"), endTime: new Date("2026-05-11T16:00:00Z"), recurrenceRule: null },
-      { startTime: new Date("2026-05-11T16:30:00Z"), endTime: new Date("2026-05-11T17:30:00Z"), recurrenceRule: null },
-    ];
-    const out = computeFreeIntervals(baseInput({ manualBlocks: blocks, bufferMin: 20 }));
-    expect(out.busy).toHaveLength(1);
-  });
-});
-
 describe("computeFreeIntervals — external busy", () => {
   it("subtracts external busy intervals from working hours", () => {
     const externalBusy: Interval[] = [
@@ -175,7 +104,6 @@ describe("computeFreeIntervals — DST boundary", () => {
         startMinute: 9 * 60,
         endMinute: 17 * 60,
       })),
-      manualBlocks: [],
       externalBusy: [],
       bufferMin: 0,
       timezone: TZ,

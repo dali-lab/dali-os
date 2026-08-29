@@ -695,7 +695,7 @@ export function ParticipantPicker({
       <div className="flex items-center justify-between mb-1">
         <label className="block text-sm font-medium text-foreground inline-flex items-center gap-1">
           Participants
-          <InfoTip content="Add individuals or groups. Groups marked with a team icon are dynamic — their membership resolves at invite time, so new members added after scheduling will not be included." />
+          <InfoTip content="Add individuals or groups to invite them to the meeting." />
         </label>
         <span className="text-xs text-muted-foreground">
           {resolvedCount} unique user{resolvedCount === 1 ? "" : "s"}
@@ -851,6 +851,8 @@ export function ScheduleWeekGrid({
   onSelectRange,
   selectedStartLocal,
   selectedEndLocal,
+  compact = false,
+  hideAvailability = false,
 }: {
   participantIds: string[];
   // True when the caller is rendering the current user's own availability
@@ -868,6 +870,19 @@ export function ScheduleWeekGrid({
   onSelectRange?: (startLocal: string, endLocal: string) => void;
   selectedStartLocal?: string;
   selectedEndLocal?: string;
+  /**
+   * Reduces per-hour row height substantially for use in space-constrained
+   * contexts like the CreateEventModal left panel. Default false — the full
+   * MeetingComposer grid is unchanged.
+   */
+  compact?: boolean;
+  /**
+   * When true, no availability tint is rendered and no fetch is issued — the
+   * grid shows as a plain week skeleton. Used in CreateEventModal when there
+   * are no guests (showing self-only availability is not useful). Default false
+   * so MeetingComposer is unchanged.
+   */
+  hideAvailability?: boolean;
 }) {
   const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
@@ -893,6 +908,14 @@ export function ScheduleWeekGrid({
   const participantKey = participantIds.slice().sort().join(",");
 
   useEffect(() => {
+    // When hideAvailability is set there's nothing to fetch — clear any stale
+    // data immediately so no tints are painted.
+    if (hideAvailability) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     const ids = participantKey ? participantKey.split(",") : [];
     if (ids.length === 0) {
       setData(null);
@@ -940,7 +963,7 @@ export function ScheduleWeekGrid({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantKey, weekStartIso, weekEndIso, timezone, refreshKey]);
+  }, [participantKey, weekStartIso, weekEndIso, timezone, refreshKey, hideAvailability]);
 
   // Build the 7-day axis from the week window so empty days still render.
   const weekStart = new Date(weekStartIso);
@@ -963,6 +986,24 @@ export function ScheduleWeekGrid({
   const GRID_START_H = HOURS[0];
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
   const CELLS_PER_DAY = Math.round((GRID_END_H - GRID_START_H) / CELL_HOURS);
+
+  // Compact mode renders the full-size grid (legible text) inside a scroll
+  // container rather than scaling it down; focus the initial scroll around the
+  // user's working-hours start (fallback ~7am) so day hours are in view without
+  // dropping the ability to scroll to early-morning / late-night slots.
+  const compactScrollRef = useRef<HTMLDivElement | null>(null);
+  const focusHour = (() => {
+    const starts = (workingHours ?? [])
+      .flatMap((d) => (d.segments ?? []).map((s) => s.startMinute / 60))
+      .filter((h) => Number.isFinite(h));
+    const earliest = starts.length ? Math.min(...starts) : 8;
+    return Math.max(GRID_START_H, earliest - 1);
+  })();
+  useEffect(() => {
+    if (compact && compactScrollRef.current) {
+      compactScrollRef.current.scrollTop = Math.max(0, (focusHour - GRID_START_H) * HOUR_PX);
+    }
+  }, [compact, weekStartIso, focusHour, GRID_START_H]);
 
   // Pre-parse each participant's free intervals into sorted (startMs, endMs)
   // tuples for fast containment checks below.
@@ -1105,6 +1146,72 @@ export function ScheduleWeekGrid({
     }
   }
 
+  const weekGrid = (
+    <WeekGrid
+      days={days}
+      eventsByDay={eventsByDay}
+      showSubHourGrid
+      timezone={timezone}
+      backgroundLayer={(dayIdx) => (
+        <>
+          {!hideAvailability && (
+            hoveredUserId ? (
+              // One participant's own free intervals (solid green), so the
+              // user can read that person's availability at a glance.
+              (hoveredFreeByColIdx[dayIdx] ?? []).map((b, i) => (
+                <BlockBlock
+                  key={`hover-${i}`}
+                  topHour={GRID_START_H}
+                  startHour={b.startHour}
+                  duration={b.durationHours}
+                  style={{ backgroundColor: availabilityTint(1) }}
+                />
+              ))
+            ) : (
+              /* Aggregate gradient. Drawn first so the stripes layer on top. */
+              (tintsByColIdx[dayIdx] ?? []).map((t, i) => (
+                <BlockBlock
+                  key={`tint-${i}`}
+                  topHour={GRID_START_H}
+                  startHour={t.startHour}
+                  duration={CELL_HOURS}
+                  style={{ backgroundColor: availabilityTint(t.alpha) }}
+                />
+              ))
+            )
+          )}
+          {workingHoursStripeLayer(workingHours, days[dayIdx].dayOfWeek, {
+            enabled: workingHoursEnabled,
+          })}
+        </>
+      )}
+      overlayLayer={(dayIdx) => {
+        if (!selectedSlot) return null;
+        if (days[dayIdx]?.dayOfWeek !== selectedSlot.dow) return null;
+        return (
+          <SelectedSlotBlock
+            startHour={selectedSlot.startHour}
+            duration={selectedSlot.duration}
+            available={selectedSlot.available}
+            unavailable={selectedSlot.unavailable}
+          />
+        );
+      }}
+      onDayPointerSelect={
+        onSelectRange
+          ? (dayIdx, startHour, endHour) => {
+              const day = days[dayIdx];
+              if (!day) return;
+              onSelectRange(
+                dayHourToLocal(day.dateUtc, startHour),
+                dayHourToLocal(day.dateUtc, endHour),
+              );
+            }
+          : undefined
+      }
+    />
+  );
+
   return (
     <section className={cn(panel, "p-4 flex flex-col")}>
       <WeekToolbar
@@ -1113,30 +1220,32 @@ export function ScheduleWeekGrid({
         onRefresh={refresh}
         refreshing={loading || revalidator.state !== "idle"}
         legend={
-          showingSelfOnly
-            ? [{ swatch: availabilityTint(1), label: "Free" }]
-            : [
-                { swatch: availabilityTint(0.33), label: "Few free" },
-                { swatch: availabilityTint(0.66), label: "Some free" },
-                { swatch: availabilityTint(1), label: "All free" },
-              ]
+          hideAvailability
+            ? undefined
+            : showingSelfOnly
+              ? [{ swatch: availabilityTint(1), label: "Free" }]
+              : [
+                  { swatch: availabilityTint(0.33), label: "Few free" },
+                  { swatch: availabilityTint(0.66), label: "Some free" },
+                  { swatch: availabilityTint(1), label: "All free" },
+                ]
         }
       />
       {participantIds.length === 0 ? null : (
         <>
-          {loading && (
+          {!hideAvailability && loading && (
             <div className="px-4 py-1 text-xs text-muted-foreground">Loading availability…</div>
           )}
-          {error && (
+          {!hideAvailability && error && (
             <div className="px-4 py-2 text-xs text-red-700">{error}</div>
           )}
-          {!showingSelfOnly && data && participantIds.length > 0 && (
+          {!hideAvailability && !showingSelfOnly && data && participantIds.length > 0 && (
             <div className="flex items-center gap-1 px-2 pt-1">
               <span className="text-xs text-muted-foreground">Hover a name to see their free times.</span>
               <InfoTip content="The grid shades each slot by how many participants are free at that time. The darker the green, the more people are available. Hover a name below to highlight just their free intervals. Free/busy is fetched from each person's working-hours settings and linked Google Calendar." />
             </div>
           )}
-          {!showingSelfOnly && data && participantIds.length > 0 && (
+          {!hideAvailability && !showingSelfOnly && data && participantIds.length > 0 && (
             <ParticipantAvailabilityRoster
               participantIds={participantIds}
               users={users}
@@ -1144,67 +1253,15 @@ export function ScheduleWeekGrid({
               onHover={setHoveredUserId}
             />
           )}
-          <WeekGrid
-            days={days}
-            eventsByDay={eventsByDay}
-            showSubHourGrid
-            timezone={timezone}
-            backgroundLayer={(dayIdx) => (
-              <>
-                {hoveredUserId ? (
-                  // One participant's own free intervals (solid green), so the
-                  // user can read that person's availability at a glance.
-                  (hoveredFreeByColIdx[dayIdx] ?? []).map((b, i) => (
-                    <BlockBlock
-                      key={`hover-${i}`}
-                      topHour={GRID_START_H}
-                      startHour={b.startHour}
-                      duration={b.durationHours}
-                      style={{ backgroundColor: availabilityTint(1) }}
-                    />
-                  ))
-                ) : (
-                  /* Aggregate gradient. Drawn first so the stripes layer on top. */
-                  (tintsByColIdx[dayIdx] ?? []).map((t, i) => (
-                    <BlockBlock
-                      key={`tint-${i}`}
-                      topHour={GRID_START_H}
-                      startHour={t.startHour}
-                      duration={CELL_HOURS}
-                      style={{ backgroundColor: availabilityTint(t.alpha) }}
-                    />
-                  ))
-                )}
-                {workingHoursStripeLayer(workingHours, days[dayIdx].dayOfWeek, {
-                  enabled: workingHoursEnabled,
-                })}
-              </>
-            )}
-            overlayLayer={(dayIdx) => {
-              if (!selectedSlot) return null;
-              if (days[dayIdx]?.dayOfWeek !== selectedSlot.dow) return null;
-              return (
-                <SelectedSlotBlock
-                  startHour={selectedSlot.startHour}
-                  duration={selectedSlot.duration}
-                  available={selectedSlot.available}
-                  unavailable={selectedSlot.unavailable}
-                />
-              );
-            }}
-            onDayPointerSelect={
-              onSelectRange
-                ? (dayIdx, startHour, endHour) => {
-                    const day = days[dayIdx];
-                    if (!day) return;
-                    onSelectRange(
-                      dayHourToLocal(day.dateUtc, startHour),
-                      dayHourToLocal(day.dateUtc, endHour),
-                    );
-                  }
-                : undefined
-            }
-          />
+          {compact ? (
+            // Full-size grid in a scroll container (legible text), pre-scrolled
+            // to the user's day hours; scroll for early-morning / late slots.
+            <div ref={compactScrollRef} className="w-full overflow-y-auto" style={{ maxHeight: "26rem" }}>
+              {weekGrid}
+            </div>
+          ) : (
+            weekGrid
+          )}
         </>
       )}
     </section>

@@ -19,7 +19,12 @@ import { cn } from "~/lib/cn";
 // (its calendar grid and its AM/PM toggle), so the two controls read as one
 // family when they sit side by side in a form.
 
-export type RepeatFreq = "none" | "daily" | "weekly" | "monthly";
+export type RepeatFreq = "none" | "daily" | "weekly" | "monthly" | "yearly";
+
+// Monthly recurrence, matching Google's two custom-monthly choices: repeat on
+// the same day-of-month as the start ("on day 14") vs. the same weekday-of-month
+// ("on the second Tuesday"). The latter needs the series anchor to resolve.
+export type MonthlyMode = "onDay" | "onWeekday";
 
 export type RepeatEnd =
   | { type: "never" }
@@ -31,6 +36,8 @@ export type RepeatSpec = {
   interval: number;
   /** Weekly only. 0=Sun … 6=Sat. Empty => whatever weekday the series starts on. */
   byDay: number[];
+  /** Monthly only. Defaults to "onDay" (same day-of-month as the start). */
+  monthlyMode?: MonthlyMode;
   end: RepeatEnd;
 };
 
@@ -38,18 +45,21 @@ export const NO_REPEAT: RepeatSpec = {
   freq: "none",
   interval: 1,
   byDay: [],
+  monthlyMode: "onDay",
   end: { type: "never" },
 };
 
-// A repeat that ends by count is capped here — the control is for a short
-// series, not an open-ended one (use "Never" for that).
-export const MAX_REPEAT_COUNT = 10;
+// A repeat that ends by count is capped here — high enough to cover a full year
+// of weekly meetings (Google's own limit is far higher, but this keeps the
+// RRULE well under the 500-char server bound and the picker sane).
+export const MAX_REPEAT_COUNT = 100;
 
 const FREQ_OPTIONS: { value: RepeatFreq; label: string }[] = [
   { value: "none", label: "Does not repeat" },
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
 ];
 
 const END_SEGMENTS: { value: RepeatEnd["type"]; label: string }[] = [
@@ -62,6 +72,15 @@ const UNIT_LABEL: Record<Exclude<RepeatFreq, "none">, [string, string]> = {
   daily: ["day", "days"],
   weekly: ["week", "weeks"],
   monthly: ["month", "months"],
+  yearly: ["year", "years"],
+};
+
+const ORDINAL_LABEL: Record<number, string> = {
+  1: "first",
+  2: "second",
+  3: "third",
+  4: "fourth",
+  [-1]: "last",
 };
 
 const RRULE_DAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -89,6 +108,18 @@ export function weekdayOf(localValue: string | undefined): number | null {
   return new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)).getUTCDay();
 }
 
+/**
+ * Which occurrence of its weekday the date is within its month, 1-based; a 5th
+ * occurrence collapses to -1 ("last"), matching Google — every month has a 1st
+ * through 4th of any weekday, but not always a 5th.
+ */
+export function weekdayOrdinalOf(localValue: string | undefined): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(localValue ?? "");
+  if (!m) return null;
+  const ord = Math.ceil(+m[3]! / 7);
+  return ord >= 5 ? -1 : ord;
+}
+
 // UNTIL is an instant, so an end DATE means "through the end of that local day".
 function untilStamp(date: string): string | null {
   const end = new Date(`${date}T23:59:59`);
@@ -96,8 +127,12 @@ function untilStamp(date: string): string | null {
   return `${end.toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`;
 }
 
-/** Build the RRULE for a spec, or null when it doesn't repeat. */
-export function repeatSpecToRRule(spec: RepeatSpec): string | null {
+/**
+ * Build the RRULE for a spec, or null when it doesn't repeat. `anchorLocal`
+ * (the series start, "YYYY-MM-DD…") is only needed for monthly-by-weekday,
+ * where the weekday and its ordinal come from the start date.
+ */
+export function repeatSpecToRRule(spec: RepeatSpec, anchorLocal?: string): string | null {
   if (spec.freq === "none") return null;
   const parts = [`FREQ=${spec.freq.toUpperCase()}`];
   const interval = clampInt(spec.interval, 1, 52);
@@ -105,6 +140,12 @@ export function repeatSpecToRRule(spec: RepeatSpec): string | null {
   if (spec.freq === "weekly" && spec.byDay.length > 0) {
     const days = [...new Set(spec.byDay)].sort((a, b) => a - b);
     parts.push(`BYDAY=${days.map((d) => RRULE_DAYS[d]).join(",")}`);
+  }
+  if (spec.freq === "monthly" && spec.monthlyMode === "onWeekday") {
+    const wd = weekdayOf(anchorLocal);
+    const ord = weekdayOrdinalOf(anchorLocal);
+    // No anchor → fall back to plain FREQ=MONTHLY (same day-of-month).
+    if (wd !== null && ord !== null) parts.push(`BYDAY=${ord}${RRULE_DAYS[wd]}`);
   }
   if (spec.end.type === "after") {
     parts.push(`COUNT=${clampInt(spec.end.count, 1, MAX_REPEAT_COUNT)}`);
@@ -135,6 +176,19 @@ export function RepeatField({
   const [singular, plural] = value.freq === "none" ? ["", ""] : UNIT_LABEL[value.freq];
   const anchorDay = weekdayOf(anchorLocal);
   const anchorDate = anchorLocal?.slice(0, 10);
+  const anchorDayNum = anchorDate ? Number(anchorDate.slice(8, 10)) : null;
+  const anchorOrdinal = weekdayOrdinalOf(anchorLocal);
+  const monthlyMode: MonthlyMode = value.monthlyMode ?? "onDay";
+  const monthlyOptions: { value: MonthlyMode; label: string }[] = [
+    { value: "onDay", label: anchorDayNum ? `Monthly on day ${anchorDayNum}` : "On the same date" },
+    {
+      value: "onWeekday",
+      label:
+        anchorDay !== null && anchorOrdinal !== null
+          ? `On the ${ORDINAL_LABEL[anchorOrdinal]} ${DAY_NAMES[anchorDay]}`
+          : "On the same weekday",
+    },
+  ];
 
   function pickFreq(freq: RepeatFreq) {
     // Weekly with no days chosen would silently fall back to the start's
@@ -231,6 +285,19 @@ export function RepeatField({
                     <p className={HINT}>Repeats on whatever day it starts.</p>
                   )}
                 </div>
+              </>
+            )}
+
+            {value.freq === "monthly" && (
+              <>
+                <span className={RAIL_LABEL}>On</span>
+                <Select
+                  value={monthlyMode}
+                  onChange={(v) => onChange({ ...value, monthlyMode: v as MonthlyMode })}
+                  options={monthlyOptions}
+                  ariaLabel="Which day each month it repeats"
+                  buttonClassName="inline-flex h-8 w-full items-center justify-between gap-1 rounded-md border border-border bg-background px-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+                />
               </>
             )}
 
