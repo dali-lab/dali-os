@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
 const CancelSchema = z.object({
@@ -64,9 +65,9 @@ export async function action({ request }: Route.ActionArgs) {
     return interviewUpdate;
   });
 
-  // S2S Zoom not configured yet — meeting links are set manually by admins
-  // try { await deprovisionZoomMeeting(interview); }
-  // catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
+  // Tear down the Google Meet link / hiring-calendar event. Best-effort no-op
+  // when the interview never had one. Zoom S2S (app/lib/zoom.ts) stays dormant.
+  await deprovisionInterviewMeet({ id: interview.id, calendarEventId: interview.calendarEventId });
 
   // Best-effort: send cancellation ICS to applicant + interviewers
   sendInterviewCancelEmails(interview.id, domainApplicationId).catch(() => {});

@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { provisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { parseJson } from "~/lib/validate";
 import { sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
@@ -92,14 +93,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       interviewMode,
     );
 
-    // S2S Zoom not configured yet — meeting links are set manually by admins
-    // if (interview.location === "Online") {
-    //   try {
-    //     await provisionZoomMeeting(interview.id, "DALI Lab Interview", slotStart, config.slotDurationMinutes);
-    //   } catch (err) {
-    //     console.error("Failed to provision Zoom meeting:", err);
-    //   }
-    // }
+    // Mint a Google Meet link on the shared hiring calendar for online
+    // interviews, awaited so the invite emails below re-read the row and carry
+    // the join link. Best-effort (never blocks booking). The Zoom S2S path
+    // (app/lib/zoom.ts) stays dormant until those credentials land.
+    await provisionInterviewMeet(interview.id);
 
     // Best-effort: send calendar invites to applicant + interviewers
     sendInterviewInviteEmails(interview.id, da.id).catch(() => {});

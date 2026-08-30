@@ -102,6 +102,11 @@ export type CreateScheduledMeetingInput = {
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
   // for checking the setter is Core; this layer just persists the flag.
   isCoreMeeting?: boolean;
+  // Mint a Google Meet link for the meeting. Only takes effect when the meeting
+  // is actually pushed to the organizer's linked Google calendar (a start time,
+  // participants, and an enabled calendar link) — the link is born on that
+  // event and Google's invite carries it. No-op otherwise.
+  addMeet?: boolean;
 };
 
 export type CreateScheduledMeetingResult =
@@ -171,6 +176,7 @@ export async function createScheduledMeeting(
   });
 
   let externalEventId: string | null = null;
+  let meetingUrl: string | null = null;
   let gcalError: string | null = null;
   if (organizerLink && organizerLink.enabled && startDate && participantUserIds.length > 0) {
     const attendeeUsers = await prisma.user.findMany({
@@ -215,11 +221,18 @@ export async function createScheduledMeeting(
           recurrenceRule: input.recurrenceRule ?? null,
           timeZone: pickUserTimezone(organizerSettings?.timezone, organizerUser?.timeZone),
           attendees,
+          addMeet: input.addMeet ?? false,
         });
         externalEventId = result.eventId;
+        meetingUrl = result.meetUrl;
         await prisma.scheduledMeeting.update({
           where: { id: meeting.id },
-          data: { externalEventId },
+          data: {
+            externalEventId,
+            // Google's own invite carries the join link; we store it too so the
+            // meeting page can show a Join button and MCP can return it.
+            ...(meetingUrl ? { meetingUrl, videoProvider: "GoogleMeet" as const } : {}),
+          },
         });
       } catch (err) {
         gcalError = err instanceof Error ? err.message : "Google Calendar push failed";
@@ -327,7 +340,7 @@ export async function createScheduledMeeting(
 
   return {
     ok: true,
-    meeting: { ...meeting, externalEventId },
+    meeting: { ...meeting, externalEventId, meetingUrl },
     notifiedCount,
     gcalError,
     notePageId,

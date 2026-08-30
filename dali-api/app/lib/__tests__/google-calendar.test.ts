@@ -425,7 +425,7 @@ describe("createGoogleCalendarEvent", () => {
       timeZone: "America/Los_Angeles",
     });
     expect(body.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
-    expect(result).toEqual({ eventId: "evt1", htmlLink: "https://cal/evt1" });
+    expect(result).toEqual({ eventId: "evt1", htmlLink: "https://cal/evt1", meetUrl: null });
   });
 
   it("falls back to the lab zone when the caller passes none", async () => {
@@ -441,6 +441,31 @@ describe("createGoogleCalendarEvent", () => {
     const body = insertedBody(fetchMock);
     expect(body.start.timeZone).toBe("America/New_York");
     expect(body.end.timeZone).toBe("America/New_York");
+  });
+
+  it("requests a Google Meet conference and returns the minted link when addMeet is set", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchOnce({
+      id: "evt3",
+      htmlLink: "https://cal/evt3",
+      hangoutLink: "https://meet.google.com/abc-defg-hij",
+    });
+    const result = await createGoogleCalendarEvent({
+      linkId: "link1",
+      summary: "Interview",
+      startIso: "2026-08-12T18:00:00.000Z",
+      endIso: "2026-08-12T18:30:00.000Z",
+      attendees: [{ email: "a@dartmouth.edu" }],
+      addMeet: true,
+      sendUpdates: "none",
+    });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("conferenceDataVersion=1");
+    expect(url).toContain("sendUpdates=none");
+    const body = insertedBody(fetchMock);
+    expect(body.conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
+    expect(body.conferenceData.createRequest.requestId).toMatch(/^dali-/);
+    expect(result.meetUrl).toBe("https://meet.google.com/abc-defg-hij");
   });
 });
 

@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { sendLocationChangeEmails } from "~/hiring/lib/interview-emails";
 
 const VALID_LOCATIONS = ["PodAppa", "PodMomo", "Online"] as const;
@@ -16,17 +17,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const body = await request.json();
-  const { location, meetingUrl } = body;
+  const { location } = body;
 
   if (!location || !VALID_LOCATIONS.includes(location)) {
     return Response.json(
       { error: `location must be one of: ${VALID_LOCATIONS.join(", ")}` },
       { status: 400 },
     );
-  }
-
-  if (meetingUrl !== undefined && typeof meetingUrl !== "string") {
-    return Response.json({ error: "meetingUrl must be a string" }, { status: 400 });
   }
 
   const interview = await prisma.interview.findUnique({
@@ -69,21 +66,26 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
 
-      // Clear meeting URL when switching to in-person; allow setting it for Online
-      const zoomJoinUrl = location === "Online"
-        ? (meetingUrl !== undefined ? (meetingUrl || null) : interview.zoomJoinUrl)
-        : null;
-
       return tx.interview.update({
         where: { id: params.id },
-        data: { location, zoomJoinUrl, zoomMeetingId: location !== "Online" ? null : interview.zoomMeetingId },
+        data: { location },
       });
     }, { isolationLevel: "Serializable" });
+
+    // Provision or tear down the Google Meet link to match the new location,
+    // then re-read so the response (and the location-change email) carry the
+    // current join link. Both calls are best-effort no-ops when Meet is off.
+    if (location === "Online") {
+      await provisionInterviewMeet(interview.id);
+    } else {
+      await deprovisionInterviewMeet({ id: interview.id, calendarEventId: interview.calendarEventId });
+    }
+    const fresh = await prisma.interview.findUnique({ where: { id: params.id } });
 
     // Best-effort: notify applicant + interviewers of location change
     sendLocationChangeEmails(interview.id, interview.domainApplicationId).catch(() => {});
 
-    return Response.json(updated);
+    return Response.json(fresh ?? updated);
   } catch (err: any) {
     if (err?.message === "__POD_OCCUPIED__") {
       return Response.json(

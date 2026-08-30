@@ -1032,6 +1032,7 @@ export default function DomainLeadDashboard() {
                                   : interview.location === 'PodMomo' ? 'Pod Momo'
                                   : 'Online',
                                 zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
+                                videoUrl: interview.location === 'Online' ? interview.videoUrl : null,
                                 inDomain: interview.assignments
                                   .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
                                   .map(fmtAssignment)
@@ -1052,6 +1053,7 @@ export default function DomainLeadDashboard() {
                               time: '—',
                               location: '—',
                               zoomJoinUrl: null,
+                              videoUrl: null,
                               inDomain: '—',
                               crossDomain: '—',
                             }));
@@ -1134,10 +1136,10 @@ export default function DomainLeadDashboard() {
                                           <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
                                           <td className="px-6 py-4 text-muted-foreground text-xs">
                                             {row.location}
-                                            {row.zoomJoinUrl && (
-                                              <a href={row.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                            {(row.videoUrl ?? row.zoomJoinUrl) && (
+                                              <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                                                  onClick={(e) => e.stopPropagation()}
-                                                 className="block text-xs text-blue-600 hover:underline mt-0.5">Zoom</a>
+                                                 className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
                                             )}
                                           </td>
                                           <td className="px-6 py-4">
@@ -1183,10 +1185,10 @@ export default function DomainLeadDashboard() {
                                           <div className="text-xs text-muted-foreground">{row.time}</div>
                                           <div className="text-xs text-muted-foreground">
                                             {row.location}
-                                            {row.zoomJoinUrl && (
-                                              <a href={row.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                            {(row.videoUrl ?? row.zoomJoinUrl) && (
+                                              <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                                                  onClick={(e) => e.stopPropagation()}
-                                                 className="ml-2 text-blue-600 hover:underline">Zoom</a>
+                                                 className="ml-2 text-blue-600 hover:underline">Join Google Meet</a>
                                             )}
                                           </div>
                                           <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
