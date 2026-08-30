@@ -27,8 +27,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!roles.isCore) return redirect("/");
 
   const entries = await listActiveWaitlistEntries();
+  // Core-cycle waitlisters are current lab members — Admin-only. Hide them from
+  // non-admin Core members who use this view for Standard/Fellowship cycles.
+  const visibleEntries = roles.isAdmin
+    ? entries
+    : entries.filter((e) => e.cycle.cycleType !== "Core");
   return {
-    entries,
+    entries: visibleEntries,
     pillRoles: {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,

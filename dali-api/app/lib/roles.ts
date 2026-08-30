@@ -479,6 +479,41 @@ export async function isDomainLead(userId: string): Promise<boolean> {
   return row !== null;
 }
 
+export async function isCoreCycle(cycleId: string): Promise<boolean> {
+  const cycle = await prisma.applicationCycle.findUnique({
+    where: { id: cycleId },
+    select: { cycleType: true },
+  });
+  return cycle?.cycleType === "Core";
+}
+
+/**
+ * The "hiring lead" (create/manage/decide) authority for a single cycle.
+ * Normally Core membership, but Core cycles restrict it to Admins — plain Core
+ * members (e.g. those not graduating, so not seeded into the reviewer pool) get
+ * NO privileged access to Core-cycle applications. Assigned reviewers/
+ * interviewers are handled separately by hasCycleAccess; this is the elevated
+ * tier used to gate creation, setup, decisions, and cross-reviewer edits.
+ */
+export async function isCycleAdmin(userId: string, cycleId: string): Promise<boolean> {
+  if (await isAdmin(userId)) return true;
+  if (await isCoreCycle(cycleId)) return false;
+  return isCore(userId);
+}
+
+/**
+ * Domain-lead authority scoped to a single cycle. Domain leads have blanket
+ * authority over Standard/Fellowship cycles, but NOT over Core cycles — whose
+ * applicants are current lab members, so those are restricted to Admins and the
+ * cycle's assigned reviewers/interviewers. Use this instead of the bare
+ * `isDomainLead` on any surface that reads or acts on a specific cycle's
+ * applications.
+ */
+export async function isDomainLeadForCycle(userId: string, cycleId: string): Promise<boolean> {
+  if (!(await isDomainLead(userId))) return false;
+  return !(await isCoreCycle(cycleId));
+}
+
 // ─── Tier resolution ─────────────────────────────────────────────────────────
 
 export type Tier =
@@ -757,13 +792,21 @@ async function computeIsLabMentor(
 
 /**
  * Check whether a user may read cycle-scoped hiring data.
- * Core (current term) and domain leads pass immediately. Other lab members
- * pass only if they are a CycleReviewer or CycleInterviewer for the cycle.
+ * Admins pass for every cycle. For Standard/Fellowship cycles, Core members
+ * (hiring leads) and domain leads also pass. Core cycles are stricter — their
+ * applicants are current lab members, so beyond Admins only the cycle's assigned
+ * CycleReviewers/CycleInterviewers pass (plain Core membership and domain-lead
+ * status grant nothing). Everyone else passes only via a reviewer/interviewer
+ * assignment on the cycle.
  */
 export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
-  if (roles.isCore || roles.isDomainLead) return true;
+  if (roles.isAdmin) return true;
   if (!roles.isLabMember) return false;
+
+  // Non-Core cycles: hiring leads (Core) and domain leads see everything. Core
+  // cycles skip this — they fall through to the assignment check below.
+  if (!(await isCoreCycle(cycleId)) && (roles.isCore || roles.isDomainLead)) return true;
 
   const [reviewer, interviewer] = await Promise.all([
     prisma.cycleReviewer.findFirst({

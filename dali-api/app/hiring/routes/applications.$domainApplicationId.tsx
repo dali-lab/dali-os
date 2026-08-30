@@ -86,12 +86,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const cycleId = da.application.applicationCycleId;
   const effectiveDomainId = da.domainId; // always set (backfilled)
 
-  // Access: Core/Admin and domain leads see every domain (matching the
-  // analytics + list views). A plain reviewer sees only the domains they
-  // cover for this cycle — hitting a URL outside their domain bounces back
-  // to the list rather than leaking content.
+  // Access: Core/Admin see every domain. Domain leads see every domain too,
+  // EXCEPT on Core cycles — those hold current members' applications and are
+  // limited to Core/Admin and assigned reviewers. A plain reviewer (and a
+  // domain lead on a Core cycle) sees only the domains they cover for this
+  // cycle — hitting a URL outside that bounces back to the list.
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isCore && !roles.isDomainLead) {
+  const isCoreCycle = da.application.applicationCycle.cycleType === "Core";
+  // Admin always; Core (hiring lead) only on non-Core cycles. On Core cycles,
+  // plain Core membership grants nothing — access is Admin + assigned reviewers.
+  const hasLeadAccess = roles.isAdmin || (!isCoreCycle && roles.isCore);
+  const leadSeesAllDomains = roles.isDomainLead && !isCoreCycle;
+  if (!hasLeadAccess && !leadSeesAllDomains) {
     const assigned = await prisma.cycleReviewer.findFirst({
       where: {
         userId: auth.user.sub,
@@ -150,9 +156,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Per-section role flags. Page-level access (above) already restricts plain
   // reviewers to DAs in their own domain; these flags further gate
-  // pre-Released decisions and delibs context to leads only.
-  const canSeePreReleaseDecisions = roles.isCore || roles.isDomainLead;
-  const canSeeDelibs = roles.isCore || roles.isDomainLead;
+  // pre-Released decisions and delibs context to leads only. On Core cycles the
+  // lead grant does not apply, so these stay Core/Admin-only there.
+  const canSeePreReleaseDecisions = hasLeadAccess || leadSeesAllDomains;
+  const canSeeDelibs = hasLeadAccess || leadSeesAllDomains;
 
   // Submitted reviews, interviews (+ assignments + latest note per assignment),
   // decisions, and delibs sessions for this DA — all in parallel.

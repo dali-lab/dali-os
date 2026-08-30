@@ -69,6 +69,8 @@ const noRoles = {
   canViewStaffing: false,
 };
 
+const adminRoles = { ...coreRoles, isAdmin: true };
+
 beforeEach(() => vi.clearAllMocks());
 
 describe("list_hiring_cycles", () => {
@@ -98,6 +100,28 @@ describe("list_hiring_cycles", () => {
     const result = await runListHiringCycles("u1") as any[];
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: "cy1", name: "Fall 2026", status: "Open" });
+  });
+
+  it("returns every cycle unfiltered for an admin", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(adminRoles);
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    await runListHiringCycles("u-admin");
+    expect(mockPrisma.applicationCycle.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {} }),
+    );
+  });
+
+  it("hides Core cycles from a non-admin Core user (except ones they're assigned on)", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    await runListHiringCycles("u-core");
+    expect(mockPrisma.applicationCycle.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { OR: [{ cycleType: { not: "Core" } }, { id: { in: [] } }] },
+      }),
+    );
   });
 
   it("scopes cycles to reviewer assignments for non-Core user", async () => {

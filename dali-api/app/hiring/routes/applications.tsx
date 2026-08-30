@@ -48,16 +48,22 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (!interviewer) return redirect("/");
   }
 
-  // Cycle dropdown: Core sees every cycle; a reviewer sees only the cycles
-  // they're assigned on.
+  // Cycle dropdown: Admins see every cycle. Core (hiring leads) and domain leads
+  // see all Standard/Fellowship cycles; Core cycles appear only for Admins and
+  // for anyone assigned as a reviewer on them.
   const reviewerCycleIds = new Set(reviewerRows.map((r) => r.applicationCycleId));
   const cyclesRaw = await prisma.applicationCycle.findMany({
-    where: isCore ? {} : { id: { in: [...reviewerCycleIds] } },
+    where: isAdmin
+      ? {}
+      : isCore || isDomainLead
+        ? { OR: [{ cycleType: { not: "Core" } }, { id: { in: [...reviewerCycleIds] } }] }
+        : { id: { in: [...reviewerCycleIds] } },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       name: true,
       createdAt: true,
+      cycleType: true,
       // Status is event-sourced; newest update wins, default Draft.
       statusUpdates: {
         orderBy: { createdAt: "desc" },
@@ -70,6 +76,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     id: c.id,
     name: c.name,
     createdAt: c.createdAt,
+    cycleType: c.cycleType,
     currentStatus: c.statusUpdates[0]?.newStatus ?? "Draft",
   }));
 
@@ -102,7 +109,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const reviewerDomainIdsThisCycle = reviewerRows
     .filter((r) => r.applicationCycleId === selected.id)
     .map((r) => r.domainId);
-  const visibleDomainIds = isCore
+  // Admins see all domains. Core (hiring leads) see all domains too, except on
+  // Core cycles — there only assigned reviewers see, so it falls to the
+  // reviewer-scoped list.
+  const seesAllDomains = isAdmin || (selected.cycleType !== "Core" && isCore);
+  const visibleDomainIds = seesAllDomains
     ? allCycleDomainIds
     : reviewerDomainIdsThisCycle;
 

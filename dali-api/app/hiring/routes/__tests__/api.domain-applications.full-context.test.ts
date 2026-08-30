@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { hasCycleAccess } from "~/lib/roles";
+import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { loader } from "~/hiring/routes/api.domain-applications.$id.full-context";
 
 const mockPrisma = prisma as unknown as {
@@ -19,6 +19,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   collabDocumentVersion: { findMany: ReturnType<typeof vi.fn> };
+  cycleReviewer: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-1";
@@ -31,10 +32,14 @@ beforeEach(() => {
   (mockPrisma as any).domainApplicationCycle = { findUnique: vi.fn() };
   (mockPrisma as any).rubricVersion = { findUnique: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).collabDocumentVersion = { findMany: vi.fn() };
+  (mockPrisma as any).cycleReviewer = { findFirst: vi.fn() };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID },
   } as any);
+  // Default to a Core caller so the per-domain reviewer check is bypassed;
+  // reviewer-scoped tests override this.
+  vi.mocked(getUserRoles).mockResolvedValue({ isCore: true, isDomainLead: false } as any);
 });
 
 function makeRequest() {
@@ -44,6 +49,7 @@ function makeRequest() {
 function setupHappyPathDomainApp() {
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: DA_ID,
+    domainId: "dom-1",
     answers: { q1: "challenge answer" },
     challengeFormVersion: {
       questions: [{ key: "q1", data: { label: "Q1" } }],
@@ -178,6 +184,44 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
     } as any);
 
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when a reviewer requests an application outside their assigned domain", async () => {
+    setupHappyPathDomainApp();
+    // Cycle access passes (they review some domain in this cycle), but they are
+    // not assigned to this application's domain.
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue({ isCore: false, isDomainLead: false } as any);
+    mockPrisma.cycleReviewer.findFirst.mockResolvedValue(null);
+
+    const res = await loader({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.cycleReviewer.findFirst).toHaveBeenCalledWith({
+      where: { userId: USER_ID, applicationCycleId: CYCLE_ID, domainId: "dom-1" },
+      select: { id: true },
+    });
+  });
+
+  it("returns the context when a reviewer is assigned to the application's domain", async () => {
+    setupHappyPathDomainApp();
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue({ isCore: false, isDomainLead: false } as any);
+    mockPrisma.cycleReviewer.findFirst.mockResolvedValue({ id: "cr-1" });
+
+    const res = await loader({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    const json: any = await res.json();
+    expect(json.domainApplication.id).toBe(DA_ID);
   });
 
   it("returns 404 when the domain application does not exist", async () => {

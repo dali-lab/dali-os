@@ -5,10 +5,12 @@
 //
 // Access:
 //   hasCycleAccess (Core, domain lead, reviewer, or interviewer for this cycle)
+//   + per-domain scoping (a plain reviewer only reads applications in a domain
+//     they're assigned to for this cycle — mirrors the web detail page)
 //   + signed confidentiality agreement for the cycle.
 
 import { prisma } from "~/lib/db";
-import { hasCycleAccess } from "~/lib/roles";
+import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
@@ -89,6 +91,20 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
 
   if (!(await hasCycleAccess(userId, cycleId))) {
     throw new McpForbiddenError("No access to this cycle");
+  }
+
+  // Per-domain scoping (mirrors list_applications and the web detail page):
+  // Core and domain leads read any domain; a plain reviewer only their assigned
+  // domains for this cycle. Cycle access alone would leak content across domains.
+  const roles = await getUserRoles(userId);
+  if (!roles.isCore && !roles.isDomainLead) {
+    const assigned = await prisma.cycleReviewer.findFirst({
+      where: { userId, applicationCycleId: cycleId, domainId: da.domainId },
+      select: { id: true },
+    });
+    if (!assigned) {
+      throw new McpForbiddenError("No access to this application's domain");
+    }
   }
 
   // Confidentiality gate: caller must have signed the agreement.
