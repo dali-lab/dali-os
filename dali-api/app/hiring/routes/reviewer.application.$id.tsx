@@ -11,6 +11,7 @@ import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
+import { anonLabelMapForCycle, releasedDaIds, blindUser, anonLabel } from '~/hiring/lib/anonymization.server'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
@@ -74,14 +75,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   )
   if (confRedirect) return confRedirect
 
-  // After the cycle-access + confidentiality gates — the application the
-  // reviewer can open lands in their recents, keyed to the applicant's name.
-  recordRouteVisit(
-    auth.user.sub,
-    `/hiring/reviewer/application/${params.id}`,
-    `${applicationBase.user.firstName} ${applicationBase.user.lastName}`.trim(),
-    request,
-  )
+  // recents visit is recorded after the blind-review pass below, so anonymized
+  // applicants land in recents under their "Applicant N" pseudonym, not a name.
 
   // Scope domainApplications to only the domains this reviewer is assigned to
   // for this cycle. Reviewers assigned to one domain should not see that the
@@ -115,6 +110,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
   ])
+
+  // Blind review: hide applicant identity behind a stable pseudonym while this
+  // applicant is still under review (Standard cycle, anonymizeReview on, and no
+  // released decision on the reviewer's assigned domain application). The
+  // pseudonym flows through the H1, page <title>, breadcrumb, and recents because
+  // they all render `${firstName} ${lastName}`. Capture the real user id first —
+  // education engagement below still keys off it, server-side.
+  const applicantUserId = applicationBase.user.id
+  const cycle = applicationBase.applicationCycle
+  if (cycle.cycleType === 'Standard' && cycle.anonymizeReview) {
+    const daIds = domainApplications.map((d) => d.id)
+    const released = await releasedDaIds(daIds)
+    const blinded = daIds.length === 0 || daIds.some((id) => !released.has(id))
+    if (blinded) {
+      const labelMap = await anonLabelMapForCycle(applicationBase.applicationCycleId)
+      applicationBase.user = blindUser(
+        applicationBase.user,
+        labelMap.get(applicationBase.id) ?? anonLabel(1),
+      )
+    }
+  }
+
+  // After the cycle-access + confidentiality gates — the application the reviewer
+  // can open lands in their recents, keyed to the applicant's (possibly blinded)
+  // name.
+  recordRouteVisit(
+    auth.user.sub,
+    `/hiring/reviewer/application/${params.id}`,
+    `${applicationBase.user.firstName} ${applicationBase.user.lastName}`.trim(),
+    request,
+  )
 
   // Helper: resolve a domainApplication's effective Domain.
   function daDomain(da: (typeof domainApplications)[number]) {
@@ -211,7 +237,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Education engagement ("demonstrated interest") — includes internal
   // instructor notes; this page is behind cycle access + confidentiality.
-  const educationEngagement = await getEducationEngagement(applicationBase.user.id)
+  const educationEngagement = await getEducationEngagement(applicantUserId)
 
   return {
     application,

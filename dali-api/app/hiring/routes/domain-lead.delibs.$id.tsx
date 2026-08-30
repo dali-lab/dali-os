@@ -14,6 +14,7 @@ import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
+import { anonLabelMapForCycle, releasedDaIds, blindUser } from "~/hiring/lib/anonymization.server";
 
 // Same recommendation scale + tones used by the ApplicantContextModal, so the
 // card's reviewer/interviewer recommendation pills read consistently.
@@ -95,7 +96,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   //   which has no interview round), no post-interview Final/Released decision.
   const cycleTypeRow = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: session.applicationCycleId },
-    select: { cycleType: true },
+    select: { cycleType: true, anonymizeReview: true },
   });
   const isFellowship = cycleTypeRow.cycleType === "Fellowship";
 
@@ -161,6 +162,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   });
+
+  // Blind review: Standard cycles with anonymizeReview on show "Applicant N" on
+  // the delibs cards until a decision is Released for that applicant. This blinds
+  // the Initial board (pre-decision) while the Final board (released → real
+  // names) is unaffected.
+  if (cycleTypeRow.cycleType === "Standard" && cycleTypeRow.anonymizeReview) {
+    const released = await releasedDaIds(domainApplications.map((d) => d.id));
+    const labelMap = await anonLabelMapForCycle(session.applicationCycleId);
+    for (const da of domainApplications) {
+      if (released.has(da.id)) continue;
+      const label = labelMap.get(da.application.id);
+      if (label) da.application.user = blindUser(da.application.user, label);
+    }
+  }
 
   const collabToken = parseSessionCookie(request);
 

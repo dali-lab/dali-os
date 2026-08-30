@@ -4,6 +4,12 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
+import {
+  isApplicantBlinded,
+  anonLabelMapForCycle,
+  blindUser,
+  anonLabel,
+} from "~/hiring/lib/anonymization.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -18,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           user: { select: { firstName: true, lastName: true } },
           applicationFormVersion: { select: { questions: true } },
-          applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true } },
+          applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true, anonymizeReview: true } },
         },
       },
       reviews: {
@@ -139,6 +145,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
+  // Blind review: on Standard cycles with anonymizeReview on, the applicant is
+  // anonymized in this delibs modal until a decision is Released for them —
+  // Initial delibs show "Applicant N", Final delibs (released) show the name.
+  let applicant = da.application.user;
+  const hasReleased = da.decisions.some((d) => d.stage === "Released");
+  if (isApplicantBlinded(da.application.applicationCycle, hasReleased)) {
+    const labelMap = await anonLabelMapForCycle(cycleId);
+    applicant = blindUser(
+      da.application.user,
+      labelMap.get(da.application.id) ?? anonLabel(1),
+    );
+  }
+
   return Response.json({
       domainApplication: {
         id: da.id,
@@ -151,7 +170,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: da.application.id,
         answers: da.application.answers,
         generalQuestions: da.application.applicationFormVersion?.questions ?? [],
-        applicant: da.application.user,
+        applicant,
       },
       reviews: da.reviews,
       decisions: da.decisions,

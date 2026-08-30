@@ -331,6 +331,14 @@ model ApplicationCycle {
   generalRubricVersionId String?
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
+  // Blind review. When true (Standard cycles only), applicant identity — name,
+  // photo, email, class year, pronouns — is hidden from reviewers behind a
+  // stable pseudonym ("Applicant N") on the reviewer + Initial-delibs surfaces,
+  // until a decision is Released for them (i.e. they move into interviews).
+  // Core/lead cycle-management views are never blinded. Default on (opt-out per
+  // cycle in setup); see app/hiring/lib/anonymization.server.ts.
+  anonymizeReview Boolean @default(true)
+
   // Discriminator. Standard = the normal hire cycle (CAS-authed applicants,
   // general form + per-domain challenge + interviews). Fellowship = current
   // interns converting to full-time; Core = current members applying to join
