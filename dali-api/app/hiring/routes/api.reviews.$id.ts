@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.reviews.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { ReviewPatchSchema } from "~/hiring/lib/review";
@@ -41,8 +41,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     const isOwner = review.cycleReviewer.userId === auth.user.sub;
-    const isLead = await isDomainLead(auth.user.sub);
-    const isHL = await isCore(auth.user.sub);
+    const isLead = await isDomainLeadForCycle(
+      auth.user.sub,
+      review.cycleReviewer.applicationCycleId,
+    );
+    const isHL = await isCycleAdmin(auth.user.sub, review.cycleReviewer.applicationCycleId);
     if (!isOwner && !isLead && !isHL) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -79,8 +82,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    const isLead = await isDomainLead(auth.user.sub);
-    const isHL = await isCore(auth.user.sub);
+    const isLead = await isDomainLeadForCycle(
+      auth.user.sub,
+      review.cycleReviewer.applicationCycleId,
+    );
+    const isHL = await isCycleAdmin(auth.user.sub, review.cycleReviewer.applicationCycleId);
     if (!isLead && !isHL) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }

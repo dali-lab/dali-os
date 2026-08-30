@@ -7,7 +7,7 @@ import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isDomainLead } from "~/lib/roles";
+import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -39,7 +39,6 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isDomainLead(auth.user.sub))) return redirect("/");
 
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
@@ -59,6 +58,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   });
+
+  // Access: the cycle's admin tier (Core hiring leads for Standard/Fellowship,
+  // Admins-only for Core cycles), or a domain lead for THIS session's domain. A
+  // lead for another domain can't open the board — and because Core cycles hang
+  // off the synthetic CORE domain (which regular leads don't hold), Core-cycle
+  // delibs stay limited to Admins (+ any explicit CORE lead).
+  const [admin, leadsThisDomain] = await Promise.all([
+    isCycleAdmin(auth.user.sub, session.applicationCycleId),
+    prisma.domainLeadAssignment.findFirst({
+      where: { userId: auth.user.sub, domainId: session.domainId },
+      select: { id: true },
+    }),
+  ]);
+  if (!admin && !leadsThisDomain) return redirect("/");
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,

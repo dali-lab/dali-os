@@ -24,7 +24,7 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, hasCycleAccess: vi.fn() };
+  return { ...real, hasCycleAccess: vi.fn(), getUserRoles: vi.fn() };
 });
 vi.mock("~/hiring/lib/confidentiality", () => ({
   getCycleConfidentialityState: vi.fn(),
@@ -35,7 +35,7 @@ vi.mock("~/hiring/lib/rubric-criteria", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { hasCycleAccess } from "~/lib/roles";
+import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { GET_APPLICATION_TOOL, runGetApplication } from "../get-application";
 
@@ -44,16 +44,19 @@ const mockPrisma = prisma as unknown as {
   domainApplicationCycle: { findUnique: ReturnType<typeof vi.fn> };
   rubricVersion: { findUnique: ReturnType<typeof vi.fn> };
   collabDocumentVersion: { findMany: ReturnType<typeof vi.fn> };
+  cycleReviewer: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 const fakeDa = {
   id: "da1",
+  domainId: "dom1",
   answers: {},
   interviewPrepNote: null,
   challengeVersion: null,
   domain: { id: "dom1", name: "Design" },
   application: {
     id: "app1",
+    applicationCycleId: "cy1",
     answers: {},
     user: { firstName: "Alice", lastName: "Smith" },
     generalChallengeVersion: null,
@@ -69,7 +72,12 @@ const fakeDa = {
   interviews: [],
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default to a Core caller so the per-domain reviewer check is bypassed;
+  // reviewer-scoped tests override this.
+  vi.mocked(getUserRoles).mockResolvedValue({ isCore: true, isDomainLead: false } as any);
+});
 
 describe("get_application", () => {
   it("requires mcp:read scope", () => {
@@ -89,6 +97,37 @@ describe("get_application", () => {
     await expect(runGetApplication("u1", { domainApplicationId: "da1" })).rejects.toMatchObject({
       status: 403,
     });
+  });
+
+  it("throws forbidden when a reviewer requests an out-of-domain application", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(fakeDa);
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue({ isCore: false, isDomainLead: false } as any);
+    mockPrisma.cycleReviewer.findFirst.mockResolvedValue(null);
+    await expect(runGetApplication("u1", { domainApplicationId: "da1" })).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(mockPrisma.cycleReviewer.findFirst).toHaveBeenCalledWith({
+      where: { userId: "u1", applicationCycleId: "cy1", domainId: "dom1" },
+      select: { id: true },
+    });
+  });
+
+  it("allows a reviewer assigned to the application's domain", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(fakeDa);
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue({ isCore: false, isDomainLead: false } as any);
+    mockPrisma.cycleReviewer.findFirst.mockResolvedValue({ id: "cr1" });
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+    });
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
+    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
+
+    const result = await runGetApplication("u1", { domainApplicationId: "da1" }) as any;
+    expect(result).toMatchObject({ domainApplication: { id: "da1" } });
   });
 
   it("throws forbidden when confidentiality not signed", async () => {

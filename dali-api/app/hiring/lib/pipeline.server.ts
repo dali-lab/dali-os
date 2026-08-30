@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { getUserRoles } from "~/lib/roles";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -55,7 +56,28 @@ export async function getPipelineData(
   userId: string,
   request: Request,
 ): Promise<PipelineData> {
+  // Scope the cycle list to what the caller may access: Admins see all; Core
+  // (hiring leads) and domain leads see Standard/Fellowship cycles plus any Core
+  // cycle they're assigned on; everyone else only their assigned cycles. This
+  // keeps Core-cycle pipeline data (counts + applicant drill-down) out of reach
+  // for non-admin Core members via a hand-crafted ?cycleId=.
+  const roles = await getUserRoles(userId);
+  const [reviewerRows, interviewerRows] = await Promise.all([
+    prisma.cycleReviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
+    prisma.cycleInterviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
+  ]);
+  const assignedCycleIds = [
+    ...new Set([
+      ...reviewerRows.map((r) => r.applicationCycleId),
+      ...interviewerRows.map((r) => r.applicationCycleId),
+    ]),
+  ];
   const allCycles = await prisma.applicationCycle.findMany({
+    where: roles.isAdmin
+      ? {}
+      : roles.isCore || roles.isDomainLead
+        ? { OR: [{ cycleType: { not: "Core" } }, { id: { in: assignedCycleIds } }] }
+        : { id: { in: assignedCycleIds } },
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
     },

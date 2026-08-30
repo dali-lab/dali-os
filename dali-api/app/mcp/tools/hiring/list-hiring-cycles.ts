@@ -1,6 +1,9 @@
 // MCP `list_hiring_cycles` — lists ApplicationCycle rows the caller may see.
 // Access:
-//   Core / any DomainLeadAssignment holder → all cycles.
+//   Admin → all cycles.
+//   Core (hiring lead) / DomainLeadAssignment holder → all Standard/Fellowship
+//     cycles, plus any Core cycle they're assigned on. Core cycles are otherwise
+//     hidden from them (Core-cycle data is Admin + assigned-reviewers only).
 //   CycleReviewer / CycleInterviewer → only cycles they're assigned on.
 //   Everyone else → McpForbiddenError.
 // Requires mcp:read scope.
@@ -25,33 +28,30 @@ export const LIST_HIRING_CYCLES_TOOL = {
 export async function runListHiringCycles(userId: string): Promise<unknown> {
   const roles = await getUserRoles(userId);
 
-  // Hard gate: user must have some hiring role.
-  if (!roles.isCore && !roles.isDomainLead) {
-    // Check for any reviewer / interviewer assignment.
-    const [reviewer, interviewer] = await Promise.all([
-      prisma.cycleReviewer.findFirst({ where: { userId }, select: { applicationCycleId: true } }),
-      prisma.cycleInterviewer.findFirst({ where: { userId }, select: { applicationCycleId: true } }),
-    ]);
-    if (!reviewer && !interviewer) throw new McpForbiddenError("No hiring access");
-  }
-
-  // Build the where clause: Core / domain leads see everything; others see
-  // only the cycles they have a reviewer/interviewer row for.
-  let cycleIdFilter: string[] | null = null;
-  if (!roles.isCore && !roles.isDomainLead) {
-    const [reviewerRows, interviewerRows] = await Promise.all([
-      prisma.cycleReviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
-      prisma.cycleInterviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
-    ]);
-    const ids = new Set([
+  // Assigned cycle ids (reviewer or interviewer) — used for the hard gate and to
+  // surface Core cycles the caller is assigned on even when they aren't Admin.
+  const [reviewerRows, interviewerRows] = await Promise.all([
+    prisma.cycleReviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
+    prisma.cycleInterviewer.findMany({ where: { userId }, select: { applicationCycleId: true } }),
+  ]);
+  const assignedCycleIds = [
+    ...new Set([
       ...reviewerRows.map((r) => r.applicationCycleId),
       ...interviewerRows.map((r) => r.applicationCycleId),
-    ]);
-    cycleIdFilter = [...ids];
+    ]),
+  ];
+
+  // Hard gate: user must have some hiring role.
+  if (!roles.isCore && !roles.isDomainLead && assignedCycleIds.length === 0) {
+    throw new McpForbiddenError("No hiring access");
   }
 
   const cycles = await prisma.applicationCycle.findMany({
-    where: cycleIdFilter ? { id: { in: cycleIdFilter } } : {},
+    where: roles.isAdmin
+      ? {}
+      : roles.isCore || roles.isDomainLead
+        ? { OR: [{ cycleType: { not: "Core" } }, { id: { in: assignedCycleIds } }] }
+        : { id: { in: assignedCycleIds } },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

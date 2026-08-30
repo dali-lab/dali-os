@@ -4,7 +4,7 @@ import type { Route } from "./+types/lead.internal-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
+import { isCycleAdmin } from "~/lib/roles";
 import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
 import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
 import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
@@ -48,7 +48,7 @@ const MIN_POOL_SIZE = 2;
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  if (!(await isCycleAdmin(auth.user.sub, params.id))) return redirect("/");
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
@@ -267,7 +267,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return forbidden(request);
+  if (!(await isCycleAdmin(auth.user.sub, params.id!))) return forbidden(request);
 
   const cycleId = params.id!;
   const formData = await request.formData();

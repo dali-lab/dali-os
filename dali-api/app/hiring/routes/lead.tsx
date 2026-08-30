@@ -4,7 +4,7 @@ import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, getUserRoles } from "~/lib/roles";
+import { isCore, isAdmin, getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
@@ -25,7 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  const cycles = await prisma.applicationCycle.findMany({
+  const allCycles = await prisma.applicationCycle.findMany({
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       domains: { include: { domain: true } },
@@ -33,6 +33,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     orderBy: { createdAt: "desc" },
   });
+  // Core cycles are Admin-managed only; hide them from non-admin Core members
+  // who otherwise use this dashboard to run Standard/Fellowship cycles.
+  const cycles = roles.isAdmin
+    ? allCycles
+    : allCycles.filter((c) => c.cycleType !== "Core");
 
   return {
     cycles,
@@ -55,7 +60,13 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  // Core cycles are Admin-only to create; Standard/Fellowship stay at the Core
+  // (hiring-lead) tier.
+  const canCreate =
+    cycleType === "Core"
+      ? await isAdmin(auth.user.sub)
+      : await isCore(auth.user.sub);
+  if (!canCreate) return redirect("/");
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { id: auth.user.sub },
   });
@@ -169,7 +180,10 @@ export default function HiringLeadDashboard() {
                     options={[
                       { value: "Standard", label: "Standard hire" },
                       { value: "Fellowship", label: "Fellowship" },
-                      { value: "Core", label: "Core" },
+                      // Core cycles are Admin-only to create.
+                      ...(data?.pillRoles?.isAdmin
+                        ? [{ value: "Core", label: "Core" }]
+                        : []),
                     ]}
                     buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />

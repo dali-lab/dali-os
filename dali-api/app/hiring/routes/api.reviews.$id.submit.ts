@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.reviews.$id.submit";
 import { prisma } from "~/lib/db";
 import { requireMemberSession } from "~/lib/auth";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -32,8 +32,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (gate) return gate;
 
   const isOwner = review.cycleReviewer.userId === auth.user.sub;
-  const isLead = await isDomainLead(auth.user.sub);
-  const isHL = await isCore(auth.user.sub);
+  const isLead = await isDomainLeadForCycle(
+    auth.user.sub,
+    review.cycleReviewer.applicationCycleId,
+  );
+  const isHL = await isCycleAdmin(auth.user.sub, review.cycleReviewer.applicationCycleId);
   if (!isOwner && !isLead && !isHL) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }

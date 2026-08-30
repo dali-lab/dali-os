@@ -10,7 +10,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCycleAdmin } from "~/lib/roles";
 import { action } from "~/hiring/routes/lead.internal-cycle.$id";
 
 const CORE_ID = "core-1";
@@ -37,7 +37,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: CORE_ID, email: "core@x.com", type: "user" },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(isCycleAdmin).mockResolvedValue(true);
 });
 
 function makeRequest(form: Record<string, string>) {
@@ -59,7 +59,7 @@ function callAction(form: Record<string, string>) {
 
 describe("lead.internal-cycle.$id action — set-close-date", () => {
   it("returns 403 when caller is not core", async () => {
-    vi.mocked(isCore).mockResolvedValueOnce(false);
+    vi.mocked(isCycleAdmin).mockResolvedValueOnce(false);
     const res = await callAction({ intent: "set-close-date", closeDate: "2026-06-01" });
     expect((res as Response).status).toBe(403);
     expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ describe("lead.internal-cycle.$id action — set-close-date", () => {
 
 describe("lead.internal-cycle.$id action — set-confidentiality-agreement", () => {
   it("returns 403 when caller is not core", async () => {
-    vi.mocked(isCore).mockResolvedValueOnce(false);
+    vi.mocked(isCycleAdmin).mockResolvedValueOnce(false);
     const res = await callAction({
       intent: "set-confidentiality-agreement",
       confidentialityAgreementVersionId: "ver-1",

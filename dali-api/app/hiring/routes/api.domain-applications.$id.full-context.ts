@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { hasCycleAccess } from "~/lib/roles";
+import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 
@@ -54,14 +54,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!da) return Response.json({ error: "Not found" }, { status: 404 });
-  if (!(await hasCycleAccess(auth.user.sub, da.application.applicationCycleId))) {
+  const cycleId = da.application.applicationCycleId;
+  if (!(await hasCycleAccess(auth.user.sub, cycleId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const gate = await requireApiSignedOrForbidden(
-    auth.user.sub,
-    da.application.applicationCycleId,
-  );
+  // Per-domain scoping (mirrors the /hiring/applications detail page): Core and
+  // domain leads read any domain; a plain reviewer only applications in a domain
+  // they cover for this cycle. Cycle access alone would otherwise leak full
+  // application content across domains an interviewer/other-domain reviewer
+  // isn't assigned to.
+  const roles = await getUserRoles(auth.user.sub);
+  if (!roles.isCore && !roles.isDomainLead) {
+    const assigned = await prisma.cycleReviewer.findFirst({
+      where: { userId: auth.user.sub, applicationCycleId: cycleId, domainId: da.domainId },
+      select: { id: true },
+    });
+    if (!assigned) return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, cycleId);
   if (gate) return gate;
 
   const domainId = da.domainId ?? null;
@@ -71,7 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           where: {
             domainId_applicationCycleId: {
               domainId,
-              applicationCycleId: da.application.applicationCycleId,
+              applicationCycleId: cycleId,
             },
           },
           select: { rubricVersionId: true },
