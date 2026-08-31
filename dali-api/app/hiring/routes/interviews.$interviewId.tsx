@@ -576,6 +576,44 @@ export default function InterviewDetailPage() {
         )}
       </div>
 
+      {/* Your Notes — per-interviewer. Only this interviewer can edit them
+          (owner-gated in collabAuth on the rec-notes-{assignmentId} room), but
+          they're surfaced read-only to domain leads in deliberations via
+          InterviewNotesCard's "Per-interviewer notes" — same rooms the delibs
+          read surfaces already show. Optional: a place for your own take,
+          independent of the shared joint notes above. */}
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-1">
+          Personal Notes
+        </h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Optional personal notes — only you can edit them, kept separate from
+          the joint notes above. Shown to the hiring team during deliberations.
+        </p>
+        {collabToken ? (
+          <DocEditor
+            features="notes"
+            editable={!isCompleted}
+            placeholder="Your own notes on this candidate…"
+            className={`rounded-lg border ${
+              isCompleted
+                ? 'border-border bg-muted/50 opacity-75'
+                : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+            }`}
+            collab={{
+              documentName: `interview:${interview.id}:rec-notes-${myAssignment.id}`,
+              token: collabToken,
+              userName,
+              userId: currentUserId,
+            }}
+          />
+        ) : (
+          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+            Session expired — please refresh to enable collaborative editing.
+          </div>
+        )}
+      </div>
+
       {/* Joint Recommendation */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
         <h2 className="text-lg font-semibold text-foreground mb-1">

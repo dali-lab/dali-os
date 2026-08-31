@@ -112,17 +112,29 @@ Then:
 - Move the confidentiality + assignment gate into the registry `authorize`
   (field-aware), keeping the rec-notes "owning assignment only" branch.
 
-## Open question for Kiran
+## Per-interviewer notes — editor restored (decided 2026-08-31)
 
-The 48 `rec-notes-{assignmentId}` docs are currently **read-only history** (the
-per-interviewer editor was removed; joint notes is the active surface). Options:
+The 48 `rec-notes-{assignmentId}` docs were **read-only history** — the
+per-interviewer editor had been removed, leaving only the delibs read surfaces.
+Decision: **restore the editor.** A "Personal Notes" `DocEditor` is now mounted
+on the interview page (`interviews.$interviewId.tsx`), bound to
+`interview:{id}:rec-notes-{myAssignment.id}`.
 
-- **Leave read-only** (recommended) — the joint doc is where interviewers write
-  now; the old private notes stay visible as history.
-- **Restore the per-interviewer editor** — remount a rec-notes `DocEditor` on
-  the interview page if interviewers want private-then-shared notes back.
+Visibility model (unchanged from how the rooms already worked):
 
-No code assumes either; this is a product call.
+- **Owner-only edit** — `collabAuth.ts` gates the room to the assignment whose
+  `cycleInterviewer.userId` is the caller; the page mounts the caller's own
+  assignment id, so nobody edits anyone else's.
+- **Team-readable in deliberations** — domain leads / delibs already read
+  `CollabDocumentVersion.plainText` for these rooms and render them under
+  `InterviewNotesCard`'s "Per-interviewer notes" (`full-context.ts`,
+  `domain-lead.application.$id`, `applications.$domainApplicationId`). No new
+  read plumbing; persistence snapshots plainText for every room.
+
+So these are **personal-not-private**: each interviewer's own independent take
+(anti-anchoring vs the shared joint doc), surfaced to decision-makers. No source
+column — they live in the Yjs room + `CollabDocument` snapshot, like the 48
+existing docs. Nothing in Phase 1 / Phase 2 disturbs this surface.
 
 ## Explicitly out of scope
 
