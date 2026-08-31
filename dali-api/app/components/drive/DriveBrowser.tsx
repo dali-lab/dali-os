@@ -65,6 +65,12 @@ import {
   Columns,
   ClipboardCheck,
   Mail,
+  Info,
+  PanelRightClose,
+  Clock,
+  MapPin,
+  HardDriveDownload,
+  History,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -607,6 +613,16 @@ export function DriveBrowser({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [viewMode, setViewMode] = useState<ViewMode>("columns");
+  // The details rail is a horizontal side-peek: opening it reflows the body's
+  // width once, never its vertical position, so it can never re-target the
+  // cursor the way an inserted top bar did. Toggled from the toolbar, persisted,
+  // and auto-opened the first time a selection is made (see below).
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // A user who closes the rail shouldn't have it spring back on their next
+  // click; auto-open only fires once per "fresh" selection, tracked here.
+  const detailsAutoOpenedRef = useRef(false);
+  // Item queued for the spacebar Quick Look overlay (null = closed).
+  const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
   const [uploadOver, setUploadOver] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DriveItem | null>(null);
   const dragDepth = useRef(0);
@@ -618,17 +634,34 @@ export function DriveBrowser({
   );
   const columnsContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Restore the saved view mode after mount.
+  // Restore the saved view mode + details-rail preference after mount.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("dali_drive_view");
       if (saved === "grid") setViewMode("grid");
       else if (saved === "list") setViewMode("list");
       // default stays "columns"
+      if (window.localStorage.getItem("dali_drive_details") === "1") {
+        setDetailsOpen(true);
+        detailsAutoOpenedRef.current = true;
+      }
     } catch {
       /* ignore */
     }
   }, []);
+
+  function toggleDetails() {
+    setDetailsOpen((prev) => {
+      const next = !prev;
+      detailsAutoOpenedRef.current = next;
+      try {
+        window.localStorage.setItem("dali_drive_details", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   function changeView(v: ViewMode) {
     setViewMode(v);
@@ -787,7 +820,27 @@ export function DriveBrowser({
       } else {
         onNavigate(null, null);
       }
+    } else if (e.key === " " && activeId) {
+      // Space → Quick Look preview of the focused item (no app launch).
+      e.preventDefault();
+      const item = searching
+        ? hits.find((h) => h.item.id === activeId)?.item
+        : listing.find((i) => i.id === activeId);
+      if (item) setPreviewItem(item);
+    } else if ((e.key === "Delete" || e.key === "#") && activeId) {
+      e.preventDefault();
+      if (searching) {
+        const hit = hits.find((h) => h.item.id === activeId);
+        if (hit) getInternalScopeActions(hit.scope.id).onDelete(hit.item);
+      } else if (currentScope) {
+        const item = listing.find((i) => i.id === activeId);
+        if (item) getInternalScopeActions(currentScope.id).onDelete(item);
+      }
     } else if (e.key === "Escape") {
+      if (previewItem) {
+        setPreviewItem(null);
+        return;
+      }
       setSelected(new Set());
       setActiveId(null);
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
@@ -803,6 +856,73 @@ export function DriveBrowser({
         const item = listing.find((i) => i.id === activeId);
         if (item) getInternalScopeActions(currentScope.id).onRename(item);
       }
+    }
+  }
+
+  // ── Keyboard navigation (column view) ──────────────────────────────────────
+  // Operates on the deepest open column. Up/Down move the highlight, Right/Enter
+  // drill or open, Left/Backspace step up a level, Space previews, F2/Delete act
+  // on the selected leaf. The columns container is focused on row click (below)
+  // so these fire without a second tab.
+  function onColumnsKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const lvlIdx = colSel.levels.length - 1;
+    const level = colSel.levels[lvlIdx];
+    if (!level || level.kind !== "scope") return;
+    const sId = level.scopeId;
+    const items = itemsForLevel(level);
+    const curId = selectedLeaf?.id ?? colSel.highlightedIds[lvlIdx] ?? null;
+    const curIdx = curId ? items.findIndex((i) => i.id === curId) : -1;
+
+    const highlightAt = (idx: number) => {
+      const item = items[idx];
+      if (!item) return;
+      const highlights = colSel.highlightedIds.slice(0, lvlIdx + 1);
+      highlights[lvlIdx] = item.id;
+      setColSel({
+        levels: colSel.levels.slice(0, lvlIdx + 1),
+        highlightedIds: highlights,
+        leafLevelIdx: item.type === "folder" ? null : lvlIdx,
+        selectedLeaf: item.type === "folder" ? null : item,
+      });
+      setAnchorId(item.id);
+    };
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (items.length) highlightAt(curIdx < 0 ? 0 : Math.min(curIdx + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (items.length) highlightAt(Math.max(curIdx - 1, 0));
+    } else if (e.key === "ArrowRight" || e.key === "Enter") {
+      e.preventDefault();
+      const item = items[curIdx];
+      if (!item) return;
+      if (item.type === "folder") handleColumnRowClick(lvlIdx, item, sId);
+      else if (e.key === "Enter") onOpenItem(item);
+    } else if (e.key === "ArrowLeft" || e.key === "Backspace") {
+      e.preventDefault();
+      if (lvlIdx > 1) {
+        const parent = colSel.levels[lvlIdx - 1];
+        if (parent.kind === "scope") onNavigate(parent.scopeId, parent.folderId);
+      } else {
+        onNavigate(sId, null);
+      }
+    } else if (e.key === " ") {
+      e.preventDefault();
+      const target = selectedLeaf ?? items[curIdx];
+      if (target && target.type !== "folder") setPreviewItem(target);
+    } else if ((e.key === "Delete" || e.key === "#") && selectedLeaf) {
+      e.preventDefault();
+      if (canItemDelete && detailActions) detailActions.onDelete(selectedLeaf);
+    } else if (e.key === "F2" && selectedLeaf) {
+      e.preventDefault();
+      if (canItemRename && detailActions) detailActions.onRename(selectedLeaf);
+    } else if (e.key === "Escape") {
+      if (previewItem) {
+        setPreviewItem(null);
+        return;
+      }
+      setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }));
     }
   }
 
@@ -897,6 +1017,8 @@ export function DriveBrowser({
   // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
   // instead of navigating, driving the same bulk bar.
   function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e?: ReactMouseEvent) {
+    // Take keyboard focus so arrow/Enter/Space nav works without a second tab.
+    columnsContainerRef.current?.focus({ preventScroll: true });
     if (e && (e.metaKey || e.ctrlKey)) {
       setSelected((prev) => {
         const next = new Set(prev);
@@ -988,47 +1110,111 @@ export function DriveBrowser({
     return level.scopeId;
   }
 
-  // ── Leaf toolbar actions ───────────────────────────────────────────────────
+  // ── Selection detail (the action strip + details rail subject) ─────────────
+  // Column view drives selection through `selectedLeaf`; list / grid / search
+  // drive it through the `selected` set. Resolve them to one `detailItem` so the
+  // strip and the side-peek rail behave identically in every view.
   const { selectedLeaf } = colSel;
   let leafScopeId: string | null = null;
   if (colSel.leafLevelIdx !== null) {
     leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
   }
-  const leafActions = leafScopeId ? getInternalScopeActions(leafScopeId) : null;
 
-  // Signal ①: system-managed leaf folders hide Delete/Rename in the toolbar too.
-  const leafIsSystemManaged =
-    !!selectedLeaf &&
-    selectedLeaf.type === "folder" &&
-    !!(selectedLeaf as { systemKey?: string | null }).systemKey;
-  const canLeafRename =
-    !leafIsSystemManaged &&
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form" ||
-      selectedLeaf.type === "agreement");
+  const columnsActive = viewMode === "columns" && !searching;
+  let detailItem: DriveItem | null = null;
+  let detailScopeId: string | null = null;
+  if (columnsActive) {
+    detailItem = selectedLeaf;
+    detailScopeId = leafScopeId;
+  } else if (selected.size === 1) {
+    const onlyId = Array.from(selected)[0];
+    if (searching) {
+      const hit = hits.find((h) => h.item.id === onlyId);
+      if (hit) {
+        detailItem = hit.item;
+        detailScopeId = hit.scope.id;
+      }
+    } else if (currentScope) {
+      detailItem = listing.find((i) => i.id === onlyId) ?? null;
+      detailScopeId = currentScope.id;
+    }
+  }
+  const detailActions = detailScopeId ? getInternalScopeActions(detailScopeId) : null;
+
+  // Signal ①: system-managed folders hide Delete/Rename.
+  const detailIsSystemManaged =
+    !!detailItem &&
+    detailItem.type === "folder" &&
+    !!(detailItem as { systemKey?: string | null }).systemKey;
+  const canItemRename =
+    !detailIsSystemManaged &&
+    !!detailItem &&
+    (detailItem.type === "folder" ||
+      detailItem.type === "doc" ||
+      detailItem.type === "file" ||
+      detailItem.type === "form" ||
+      detailItem.type === "agreement");
   // drive-spaces: email templates are movable in Drive (card-grid list retired).
-  const canLeafMove =
-    !!selectedLeaf &&
-    selectedLeaf.type !== "agreement" &&
-    selectedLeaf.type !== "rubric";
-  const canLeafDelete =
-    !leafIsSystemManaged &&
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form");
-  // Download: only for files with an href.
-  const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
-  // Share: page-backed items only (doc and folder). Folders now support sharing
-  // via PageShare, which was previously impossible from the Drive surface.
-  const canLeafShare =
-    !!selectedLeaf &&
-    (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
-    !!leafActions?.onShare;
+  const canItemMove =
+    !!detailItem && detailItem.type !== "agreement" && detailItem.type !== "rubric";
+  const canItemDelete =
+    !detailIsSystemManaged &&
+    !!detailItem &&
+    (detailItem.type === "folder" ||
+      detailItem.type === "doc" ||
+      detailItem.type === "file" ||
+      detailItem.type === "form");
+  const canItemDownload = !!detailItem && detailItem.type === "file";
+  // Share: page-backed items only (doc and folder). Folders support sharing via
+  // PageShare, which was previously impossible from the Drive surface.
+  const canItemShare =
+    !!detailItem &&
+    (detailItem.type === "doc" || detailItem.type === "folder") &&
+    !!detailActions?.onShare;
+
+  // The count shown in the action strip's resting state — the current column /
+  // folder's contents, matching what the user is looking at. At the drive-root
+  // chooser (no scope entered yet) it counts the drives on offer.
+  const restingCount = columnsActive
+    ? (() => {
+        const last = colSel.levels[colSel.levels.length - 1];
+        return last && last.kind === "scope" ? itemsForLevel(last).length : scopes.length;
+      })()
+    : searching
+      ? hits.length
+      : currentScope
+        ? listing.length
+        : scopes.length;
+
+  // "Location" line for the rail: scope name + folder chain to the item.
+  const detailScope = detailScopeId ? scopes.find((s) => s.id === detailScopeId) ?? null : null;
+  const detailPathLabel =
+    detailItem && detailScope
+      ? [
+          detailScope.id === "mine" ? "My Drive" : detailScope.id === "lab" ? "Lab" : detailScope.label,
+          ...crumbsFor(detailScope.items, detailItem.parentFolderId).map((c) => c.title),
+        ].join(" / ")
+      : "";
+
+  // First selection in a session reveals the rail so the user discovers it;
+  // once opened (or restored, or explicitly dismissed) the ref is set and the
+  // rail never springs back on its own.
+  const detailItemId = detailItem?.id ?? null;
+  useEffect(() => {
+    if (detailItemId && !detailsAutoOpenedRef.current) {
+      detailsAutoOpenedRef.current = true;
+      setDetailsOpen(true);
+    }
+  }, [detailItemId]);
+
+  function closeDetails() {
+    setDetailsOpen(false);
+    try {
+      window.localStorage.setItem("dali_drive_details", "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   return (
     <DriveScale.Provider value={os}>
@@ -1162,162 +1348,77 @@ export function DriveBrowser({
             </Tooltip>
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-3">{newMenu}</div>
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            <Tooltip content={detailsOpen ? "Hide details" : "Show details"}>
+              <button
+                type="button"
+                data-testid="drive-details-toggle"
+                aria-label={detailsOpen ? "Hide details" : "Show details"}
+                aria-pressed={detailsOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleDetails();
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center border border-border shrink-0",
+                  os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
+                  detailsOpen
+                    ? os
+                      ? "bg-os-container text-foreground"
+                      : "bg-accent-coral/10 text-accent-coral"
+                    : "text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                <Info className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            {newMenu}
+          </div>
         </div>
 
         {tagChips}
 
-        {/* ── Bulk action bar (multi-select, all views) ── */}
-        {showBulk && (
-          <div
-            className={cn(
-              "flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5",
-              os ? "text-base" : "text-sm",
-            )}
-            data-testid="drive-bulk-bar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="font-medium text-foreground">{selected.size} selected</span>
-            {onBulkMove && (
-              <button
-                type="button"
-                data-testid="drive-bulk-move"
-                onClick={() => onBulkMove(selectedItems)}
-                className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
-              >
-                <FolderInput className="w-3.5 h-3.5" /> Move
-              </button>
-            )}
-            {onBulkDelete && (
-              <button
-                type="button"
-                onClick={() => onBulkDelete(selectedItems)}
-                className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="ml-auto text-muted-foreground hover:text-foreground"
-            >
-              Clear
-            </button>
-          </div>
-        )}
+        {/* ── Action strip ──────────────────────────────────────────────────
+            One always-mounted, fixed-height row that SWAPS its contents by
+            selection state rather than a bar that mounts and shoves the list
+            down (which used to re-target the cursor mid-click). Resting → the
+            item count; exactly one selected → that item's quick actions; many →
+            the bulk-action set. Its height never changes, so nothing below it
+            ever moves. ── */}
+        <DriveActionStrip
+          os={os}
+          showBulk={showBulk}
+          selectedCount={selected.size}
+          selectedItems={selectedItems}
+          onBulkMove={onBulkMove}
+          onBulkDelete={onBulkDelete}
+          onClearSelection={() => setSelected(new Set())}
+          item={detailItem}
+          actions={detailActions}
+          canDownload={!!canItemDownload}
+          canRename={!!canItemRename}
+          canMove={!!canItemMove}
+          canShare={!!canItemShare}
+          canDelete={!!canItemDelete}
+          restingCount={restingCount}
+          detailsOpen={detailsOpen}
+          onOpenDetails={() => setDetailsOpen(true)}
+        />
 
-        {/* ── Column-view leaf toolbar (shown above columns when a leaf is selected) ── */}
-        {viewMode === "columns" && !searching && selectedLeaf && leafActions && (
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5",
-              os ? "text-base" : "text-sm",
-            )}
-            data-testid="drive-leaf-toolbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="flex items-center gap-1.5 min-w-0 flex-1">
-              {itemIcon(selectedLeaf)}
-              <span className="font-medium text-foreground truncate">{selectedLeaf.title || "Untitled"}</span>
-              <span className={cn("text-muted-foreground shrink-0", os ? "text-sm" : "text-xs")}>
-                {kindLabel(selectedLeaf)}
-              </span>
-            </span>
-            <div className="flex items-center gap-1 shrink-0">
-              {canLeafDownload && selectedLeaf.href && (
-                <a
-                  href={selectedLeaf.href}
-                  download
-                  data-testid="drive-leaf-download"
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    os ? "text-sm" : "text-xs",
-                  )}
-                >
-                  <Download className="w-3.5 h-3.5" /> Download
-                </a>
-              )}
-              {canLeafRename && (
-                <button
-                  type="button"
-                  data-testid="drive-leaf-rename"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    leafActions.onRename(selectedLeaf);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    os ? "text-sm" : "text-xs",
-                  )}
-                >
-                  <Pencil className="w-3.5 h-3.5" /> Rename
-                </button>
-              )}
-              {canLeafMove && (
-                <button
-                  type="button"
-                  data-testid="drive-leaf-move"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    leafActions.onRequestMove(selectedLeaf);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    os ? "text-sm" : "text-xs",
-                  )}
-                >
-                  <FolderInput className="w-3.5 h-3.5" /> Move
-                </button>
-              )}
-              {/* Share: opens the ShareDialog in-place for docs and folders.
-                  Previously this was an <a> that navigated away; now it mounts
-                  ShareDialog directly so the user never leaves Drive. Folder
-                  sharing (PageShare) is now reachable for the first time. */}
-              {canLeafShare && (
-                <button
-                  type="button"
-                  data-testid="drive-leaf-share"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    leafActions!.onShare!(selectedLeaf);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    os ? "text-sm" : "text-xs",
-                  )}
-                >
-                  <Share2 className="w-3.5 h-3.5" /> Share
-                </button>
-              )}
-              {canLeafDelete && (
-                <button
-                  type="button"
-                  data-testid="drive-leaf-delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    leafActions.onDelete(selectedLeaf);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/10",
-                    os ? "text-sm" : "text-xs",
-                  )}
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Body ── */}
-        <div>
+        {/* ── Body + details rail ────────────────────────────────────────────
+            Horizontal split: the browser body flexes, the side-peek rail takes
+            a fixed width on the right. Opening the rail reflows the body's WIDTH
+            once — never its vertical position — so the columns/rows the cursor
+            is over stay put. ── */}
+        <div className="flex gap-3 min-w-0 items-start">
+          <div className="min-w-0 flex-1">
           {viewMode === "columns" && !searching ? (
             /* ── MILLER COLUMNS ─────────────────────────────────────────── */
             <div
               ref={columnsContainerRef}
-              className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-x-auto"
+              tabIndex={0}
+              onKeyDown={onColumnsKeyDown}
+              className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-x-auto focus:outline-none focus:ring-1 focus:ring-accent-coral/30"
               onDragEnter={onFileDragEnter}
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
@@ -1483,7 +1584,26 @@ export function DriveBrowser({
               )}
             </div>
           )}
+          </div>
 
+          {detailsOpen && (
+            <DriveDetailsPane
+              os={os}
+              item={detailItem}
+              actions={detailActions}
+              scopePathLabel={detailPathLabel}
+              canDownload={!!canItemDownload}
+              canRename={!!canItemRename}
+              canMove={!!canItemMove}
+              canShare={!!canItemShare}
+              canDelete={!!canItemDelete}
+              restingCount={restingCount}
+              onToggleFavorite={onToggleFavorite}
+              onOpenItem={onOpenItem}
+              onPreview={setPreviewItem}
+              onClose={closeDetails}
+            />
+          )}
         </div>
       </div>
 
@@ -1512,7 +1632,434 @@ export function DriveBrowser({
         onClose={() => setShareTarget(null)}
       />
     )}
+
+    {/* Quick Look — spacebar preview overlay. A modal portal, so it never
+        disturbs the browser layout underneath (Google Drive / Finder pattern). */}
+    {previewItem && (
+      <DriveQuickPreview item={previewItem} onClose={() => setPreviewItem(null)} />
+    )}
     </DriveScale.Provider>
+  );
+}
+
+// ── Action strip ─────────────────────────────────────────────────────────────
+// Always mounted, one fixed-height row. Swaps contents by selection state so the
+// list below never moves. `data-testid` is "drive-bulk-bar" in the multi-select
+// state (the e2e and prior behaviour depend on that id + "N selected" text) and
+// "drive-action-strip" otherwise.
+
+function DriveActionStrip({
+  os,
+  showBulk,
+  selectedCount,
+  selectedItems,
+  onBulkMove,
+  onBulkDelete,
+  onClearSelection,
+  item,
+  actions,
+  canDownload,
+  canRename,
+  canMove,
+  canShare,
+  canDelete,
+  restingCount,
+  detailsOpen,
+  onOpenDetails,
+}: {
+  os: boolean;
+  showBulk: boolean;
+  selectedCount: number;
+  selectedItems: DriveItem[];
+  onBulkMove?: (items: DriveItem[]) => void;
+  onBulkDelete?: (items: DriveItem[]) => void;
+  onClearSelection: () => void;
+  item: DriveItem | null;
+  actions: RowActions | null;
+  canDownload: boolean;
+  canRename: boolean;
+  canMove: boolean;
+  canShare: boolean;
+  canDelete: boolean;
+  restingCount: number;
+  detailsOpen: boolean;
+  onOpenDetails: () => void;
+}) {
+  const btn = cn(
+    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+    os ? "text-sm" : "text-xs",
+  );
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md border px-3 min-h-9",
+        showBulk ? "border-accent-coral/40 bg-accent-coral/5" : "border-border bg-card/60",
+        os ? "text-base" : "text-sm",
+      )}
+      data-testid={showBulk ? "drive-bulk-bar" : "drive-action-strip"}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {showBulk ? (
+        <>
+          <span className="font-medium text-foreground">{selectedCount} selected</span>
+          {onBulkMove && (
+            <button
+              type="button"
+              data-testid="drive-bulk-move"
+              onClick={() => onBulkMove(selectedItems)}
+              className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
+            >
+              <FolderInput className="w-3.5 h-3.5" /> Move
+            </button>
+          )}
+          {onBulkDelete && (
+            <button
+              type="button"
+              onClick={() => onBulkDelete(selectedItems)}
+              className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClearSelection}
+            className="ml-auto text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        </>
+      ) : item && actions ? (
+        <>
+          <span className="flex items-center gap-1.5 min-w-0 flex-1">
+            {itemIcon(item)}
+            <span className="font-medium text-foreground truncate">{item.title || "Untitled"}</span>
+            <span className={cn("text-muted-foreground shrink-0", os ? "text-sm" : "text-xs")}>
+              {kindLabel(item)}
+            </span>
+          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            {canDownload && item.href && (
+              <a href={item.href} download data-testid="drive-leaf-download" onClick={(e) => e.stopPropagation()} className={btn}>
+                <Download className="w-3.5 h-3.5" /> Download
+              </a>
+            )}
+            {canRename && (
+              <button type="button" data-testid="drive-leaf-rename" onClick={() => actions.onRename(item)} className={btn}>
+                <Pencil className="w-3.5 h-3.5" /> Rename
+              </button>
+            )}
+            {canMove && (
+              <button type="button" data-testid="drive-leaf-move" onClick={() => actions.onRequestMove(item)} className={btn}>
+                <FolderInput className="w-3.5 h-3.5" /> Move
+              </button>
+            )}
+            {canShare && actions.onShare && (
+              <button type="button" data-testid="drive-leaf-share" onClick={() => actions.onShare!(item)} className={btn}>
+                <Share2 className="w-3.5 h-3.5" /> Share
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                data-testid="drive-leaf-delete"
+                onClick={() => actions.onDelete(item)}
+                className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/10", os ? "text-sm" : "text-xs")}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            )}
+            {!detailsOpen && (
+              <button type="button" data-testid="drive-open-details" aria-label="Show details" onClick={onOpenDetails} className={btn}>
+                <Info className="w-3.5 h-3.5" /> Details
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <span className="text-muted-foreground">
+          {restingCount} {restingCount === 1 ? "item" : "items"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Details rail (side-peek) ─────────────────────────────────────────────────
+// A fixed-width right rail: opening it reflows the body width once (not its
+// vertical position), and switching selection swaps the rail's contents in place
+// — the Google-Drive details-pane / Notion side-peek pattern.
+
+function DriveDetailsPane({
+  os,
+  item,
+  actions,
+  scopePathLabel,
+  canDownload,
+  canRename,
+  canMove,
+  canShare,
+  canDelete,
+  restingCount,
+  onToggleFavorite,
+  onOpenItem,
+  onPreview,
+  onClose,
+}: {
+  os: boolean;
+  item: DriveItem | null;
+  actions: RowActions | null;
+  scopePathLabel: string;
+  canDownload: boolean;
+  canRename: boolean;
+  canMove: boolean;
+  canShare: boolean;
+  canDelete: boolean;
+  restingCount: number;
+  onToggleFavorite?: (item: DriveItem) => void;
+  onOpenItem: (item: DriveItem) => void;
+  onPreview: (item: DriveItem) => void;
+  onClose: () => void;
+}) {
+  const meta = os ? "text-sm" : "text-xs";
+  const canFavorite = !!item && (item.type === "doc" || item.type === "folder") && !!onToggleFavorite;
+  return (
+    <aside
+      data-testid="drive-details-pane"
+      onClick={(e) => e.stopPropagation()}
+      className="hidden w-72 shrink-0 self-stretch rounded-lg border border-border bg-card md:flex md:flex-col"
+    >
+      <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {item ? itemIcon(item) : <Info className="h-4 w-4 text-muted-foreground" />}
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">
+              {item ? item.title || "Untitled" : "Details"}
+            </div>
+            {item && <div className={cn("text-muted-foreground", meta)}>{kindLabel(item)}</div>}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="Hide details"
+          data-testid="drive-details-close"
+          onClick={onClose}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+        >
+          <PanelRightClose className="h-4 w-4" />
+        </button>
+      </div>
+
+      {item ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/* Metadata */}
+          <dl className="flex flex-col gap-2.5 px-4 py-3">
+            <DetailRow icon={MapPin} label="Location" value={scopePathLabel || "—"} meta={meta} />
+            <DetailRow icon={Clock} label="Modified" value={relativeTime(item.updatedAt as unknown as string)} meta={meta} />
+            {item.type === "file" && item.sizeBytes != null && (
+              <DetailRow icon={HardDriveDownload} label="Size" value={formatSize(item.sizeBytes)} meta={meta} />
+            )}
+            {(item.type === "doc" || item.type === "file") &&
+              (item as { partnerVisible?: boolean | null }).partnerVisible && (
+                <DetailRow icon={Handshake} label="Sharing" value="Shared with partner" meta={meta} />
+              )}
+          </dl>
+
+          {/* Actions */}
+          <div className="flex flex-wrap gap-1.5 border-t border-border px-4 py-3">
+            {item.type !== "folder" && (
+              <PaneAction icon={FolderOpen} label="Open" onClick={() => onOpenItem(item)} />
+            )}
+            {item.type !== "folder" && (
+              <PaneAction icon={Search} label="Preview" onClick={() => onPreview(item)} />
+            )}
+            {canFavorite && (
+              <PaneAction
+                icon={Star}
+                label={item.favorited ? "Unstar" : "Star"}
+                active={item.favorited}
+                onClick={() => onToggleFavorite!(item)}
+              />
+            )}
+            {canDownload && item.href && (
+              <a
+                href={item.href}
+                download
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground hover:bg-muted/60"
+              >
+                <Download className="h-3.5 w-3.5" /> Download
+              </a>
+            )}
+            {canRename && actions && (
+              <PaneAction icon={Pencil} label="Rename" onClick={() => actions.onRename(item)} />
+            )}
+            {canMove && actions && (
+              <PaneAction icon={FolderInput} label="Move" onClick={() => actions.onRequestMove(item)} />
+            )}
+            {canShare && actions?.onShare && (
+              <PaneAction icon={Share2} label="Share" onClick={() => actions.onShare!(item)} />
+            )}
+            {canDelete && actions && (
+              <PaneAction icon={Trash2} label="Delete" destructive onClick={() => actions.onDelete(item)} />
+            )}
+          </div>
+
+          {/* Activity — the timeline we can show today; version history slots in
+              here once per-item revisions are surfaced. */}
+          <div className="border-t border-border px-4 py-3">
+            <h4 className={cn("mb-1.5 font-semibold uppercase tracking-wide text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
+              Activity
+            </h4>
+            <div className={cn("flex items-center gap-2 text-muted-foreground", meta)}>
+              <History className="h-3.5 w-3.5 shrink-0" />
+              <span>Last modified {relativeTime(item.updatedAt as unknown as string)}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+          <FolderOpen className="h-8 w-8 text-muted-foreground/60" />
+          <p className={cn("text-muted-foreground", meta)}>Select an item to see its details.</p>
+          <p className={cn("text-muted-foreground/70", meta)}>
+            {restingCount} {restingCount === 1 ? "item" : "items"} here
+          </p>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function DetailRow({
+  icon: Icon,
+  label,
+  value,
+  meta,
+}: {
+  icon: typeof Clock;
+  label: string;
+  value: string;
+  meta: string;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <dt className={cn("text-muted-foreground", meta)}>{label}</dt>
+        <dd className="truncate text-sm text-foreground" title={value}>{value}</dd>
+      </div>
+    </div>
+  );
+}
+
+function PaneAction({
+  icon: Icon,
+  label,
+  onClick,
+  active,
+  destructive,
+}: {
+  icon: typeof Clock;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm",
+        destructive
+          ? "border-border text-destructive hover:bg-destructive/10"
+          : active
+            ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+            : "border-border text-foreground hover:bg-muted/60",
+      )}
+    >
+      <Icon className={cn("h-3.5 w-3.5", active && "fill-current")} /> {label}
+    </button>
+  );
+}
+
+// ── Quick Look overlay (spacebar preview) ────────────────────────────────────
+// A fixed, full-screen modal. Renders images/PDFs inline; everything else gets a
+// large icon + Open. Escape or a backdrop click closes it.
+
+function DriveQuickPreview({ item, onClose }: { item: DriveItem; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const name = (item.title || "").toLowerCase();
+  const isImage = item.type === "file" && /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(name);
+  const isPdf = item.type === "file" && name.endsWith(".pdf");
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6"
+      data-testid="drive-quick-preview"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <span className="flex min-w-0 items-center gap-2">
+            {itemIcon(item)}
+            <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            {item.href && (
+              <a
+                href={item.href}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground hover:bg-muted/60"
+              >
+                <FolderOpen className="h-3.5 w-3.5" /> Open
+              </a>
+            )}
+            <button
+              type="button"
+              aria-label="Close preview"
+              onClick={onClose}
+              className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex min-h-[50vh] flex-1 items-center justify-center overflow-auto bg-muted/30 p-4">
+          {isImage && item.href ? (
+            <img src={item.href} alt={item.title || "Preview"} className="max-h-[70vh] max-w-full object-contain" />
+          ) : isPdf && item.href ? (
+            <iframe src={item.href} title={item.title || "Preview"} className="h-[70vh] w-full rounded border border-border bg-card" />
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <span className="scale-[2.5]">{itemIcon(item)}</span>
+              <p className="text-sm text-muted-foreground">
+                No inline preview for this {kindLabel(item).toLowerCase()}.
+              </p>
+              {item.href && (
+                <a
+                  href={item.href}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" /> Open
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1750,10 +2297,12 @@ function Breadcrumb({
   // goes entirely rather than repeating the word right beneath it — the scope
   // crumb leads, and the h1 is the way back to the root.
   const os = useContext(DriveScale);
-  // On its own row an empty trail would still spend a row gap. Off-flag the
-  // root crumb always renders, so this only bites at a drive's top level under
-  // the redesign — where there is deliberately nothing to show.
-  if (os && folderCrumbs.length === 0) return null;
+  // The trail is always mounted at a constant height: appearing/disappearing as
+  // you enter and leave a folder was the top source of vertical layout shift
+  // (content below jumped by a row + gap). The row now holds its height even at
+  // a drive root, where the scope crumb ("My Drive" / "Lab" / the project name)
+  // stands in as a stable "you are here" — matching Google Drive, whose
+  // breadcrumb is always present.
   const collapse = folderCrumbs.length > 3;
   const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
   const shown = collapse ? folderCrumbs.slice(folderCrumbs.length - 2) : folderCrumbs;
@@ -1762,7 +2311,7 @@ function Breadcrumb({
     <nav
       aria-label="Breadcrumb"
       data-testid="drive-breadcrumb"
-      className={`flex flex-wrap items-center gap-1 min-w-0 ${t.row}`}
+      className={`flex flex-wrap items-center gap-1 min-w-0 min-h-[1.75rem] ${t.row}`}
     >
       {!os && (
         <button
@@ -1778,13 +2327,11 @@ function Breadcrumb({
           Drive
         </button>
       )}
-      {/* The scope crumb only earns its place once you're inside a folder,
-          where it is the way back up. Sitting at the scope root under the
-          redesign it led the trail with no chevron and nothing after it — a
-          lone button beneath the page title whose only destination was the
-          page you were already on. It still leads the trail off-flag, where
-          the root "Drive" crumb above makes it read as a trail. */}
-      {currentScope && (!os || folderCrumbs.length > 0) && (
+      {/* The scope crumb leads the trail and is now always shown while a scope
+          is active — at a drive root it is the constant "you are here" that
+          keeps this row from collapsing (and shifting the page) as you move in
+          and out of folders. */}
+      {currentScope && (
         <Crumb
           label={currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label}
           testid="drive-crumb-scope"

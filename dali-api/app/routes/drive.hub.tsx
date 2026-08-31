@@ -33,6 +33,8 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
@@ -452,96 +454,8 @@ function TemplateGroup({
 
 // ── File upload helper ─────────────────────────────────────────────────────────
 
-// Hidden <input type="file"> that drives the upload flow: presign → PUT S3 →
-// POST /api/drive/files, registering the file in the given drive target (a scope
-// plus optional folder). Reuses the same presign pattern as AssignmentWorkArea
-// and ProjectImageBanner. Returns the file input ref so a Menu item can click it.
-type UploadScope =
-  | { kind: "Lab" }
-  | { kind: "Member" }
-  | { kind: "Project"; projectId: string };
-
-type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
-
-function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // Upload a single file: presign → PUT S3 → register in the target drive.
-  async function uploadOne(file: File): Promise<void> {
-    const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
-    const presignRes = await fetch("/api/upload/presign", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key,
-        contentType: file.type || "application/octet-stream",
-        contentLength: file.size,
-      }),
-    });
-    if (!presignRes.ok) {
-      const body = await presignRes.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Failed to get upload URL");
-    }
-    const { url, fields, key: s3Key } = await presignRes.json() as {
-      url: string;
-      fields: Record<string, string>;
-      key: string;
-    };
-
-    const formData = new FormData();
-    for (const [name, value] of Object.entries(fields)) formData.append(name, value);
-    formData.append("file", file);
-    const uploadRes = await fetch(url, { method: "POST", body: formData });
-    if (!uploadRes.ok) throw new Error("Upload to storage failed");
-
-    const registerRes = await fetch("/api/drive/files", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        s3Key,
-        title: file.name,
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        scope: target.scope,
-        ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
-      }),
-    });
-    if (!registerRes.ok) {
-      const body = await registerRes.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Failed to register file");
-    }
-  }
-
-  // Upload one or many files (drag-drop can drop several). Sequential so an
-  // early failure surfaces without racing the rest.
-  async function uploadFiles(files: File[]): Promise<void> {
-    if (files.length === 0) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      for (const file of files) await uploadOne(file);
-      onComplete();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files ? Array.from(e.target.files) : [];
-    // Reset the input so the same file can be re-selected after an error.
-    e.target.value = "";
-    await uploadFiles(files);
-  }
-
-  return { inputRef, uploading, uploadError, handleFileChange, uploadFiles };
-}
+// The upload flow (presign → PUT S3 → POST /api/drive/files) lives in the shared
+// hook so the project-embedded Drive uploads through the exact same path.
 
 // ── Browse scope section ───────────────────────────────────────────────────────
 
