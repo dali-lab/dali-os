@@ -12,10 +12,20 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // Compile the heaviest route trees once before the parallel workers run so
+    // they don't race the Vite dev server's on-demand compiler on the 2-vCPU CI
+    // runner (see e2e/warmup.setup.ts). This is a hard dependency of the test
+    // projects: everything below runs against a warm server.
+    {
+      name: 'setup',
+      testMatch: /warmup\.setup\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: /reviewer\.spec/,
+      testIgnore: [/reviewer\.spec/, /warmup\.setup/],
+      dependencies: ['setup'],
     },
     {
       name: 'chromium-reviewer',
