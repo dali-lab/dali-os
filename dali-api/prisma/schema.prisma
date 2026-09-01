@@ -1755,7 +1755,6 @@ model ScheduledMeeting {
   organizerId      String
   organizer        User    @relation(fields: [organizerId], references: [id])
   title            String
-  descriptionDocId String?
   durationMinutes  Int
 
   scopeType ScopeType
@@ -1802,12 +1801,11 @@ model ScheduledMeeting {
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
   // the check-in route, scoped to a time window around selectedAt — meant for
-  // events too large to check off manually (e.g. an all-lab Group event).
-  // checkInToken is a routing convenience embedded in the QR/link, not a
-  // bearer credential — the check-in route always authenticates the caller's
-  // own session, never the token, to prevent checking in on someone's behalf.
+  // events too large to check off manually (e.g. an all-lab Group event). The
+  // check-in route always authenticates the caller's own session and routes by
+  // meeting id — there is no bearer token, to prevent checking in on someone's
+  // behalf.
   attendanceMode AttendanceMode @default(Roster)
-  checkInToken   String?        @unique
 
   // Optional Core marker, set at invite time by a Core member. Independent of
   // scope: it pulls a meeting onto the Core hub's week calendar without
