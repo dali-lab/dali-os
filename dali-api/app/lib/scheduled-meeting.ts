@@ -3,7 +3,6 @@
 // tool. Handles scope resolution, optional Google Calendar push, and
 // participant notification fan-out.
 
-import { randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
@@ -94,10 +93,9 @@ export type CreateScheduledMeetingInput = {
   meetingTypeLabel?: string | null;
   projectId?: string | null;
   // Roster (default): organizer/Core check attendees off by hand (needs a
-  // meeting note for the checklist UI). SelfCheckIn: a checkInToken is
-  // generated and attendees mark themselves present via the check-in route —
-  // works with or without a meeting note (QR lives on the note when present,
-  // otherwise on /calendar/check-in/:id).
+  // meeting note for the checklist UI). SelfCheckIn: attendees mark themselves
+  // present via the check-in route — works with or without a meeting note (QR
+  // lives on the note when present, otherwise on /calendar/check-in/:id).
   attendanceMode?: AttendanceMode;
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
   // for checking the setter is Core; this layer just persists the flag.
@@ -116,7 +114,6 @@ export type CreateScheduledMeetingResult =
       notifiedCount: number;
       gcalError: string | null;
       notePageId: string | null;
-      checkInToken: string | null;
     }
   | { ok: false; error: string };
 
@@ -151,7 +148,6 @@ export async function createScheduledMeeting(
   }
 
   const attendanceMode = input.attendanceMode ?? "Roster";
-  const checkInToken = attendanceMode === "SelfCheckIn" ? randomBytes(24).toString("base64url") : null;
 
   const meeting = await prisma.scheduledMeeting.create({
     data: {
@@ -170,7 +166,6 @@ export async function createScheduledMeeting(
       meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
       projectId: input.meetingType ? (input.projectId ?? null) : null,
       attendanceMode,
-      checkInToken,
       isCoreMeeting: input.isCoreMeeting ?? false,
     },
   });
@@ -344,7 +339,6 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
     notePageId,
-    checkInToken,
   };
 }
 
