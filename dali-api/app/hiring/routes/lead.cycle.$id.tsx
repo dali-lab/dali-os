@@ -26,6 +26,7 @@ import {
 import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
@@ -615,6 +616,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.applicationCycle.update({
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
+    });
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-anonymize-review") {
+    // Blind review toggle. Unchecked checkboxes are omitted from the form body,
+    // so absence means "off".
+    const anonymizeReview = formData.get("anonymizeReview") === "on";
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      data: { anonymizeReview },
     });
     return cycleRedirect(request, params.id!);
   }
@@ -1790,6 +1802,9 @@ export default function HiringLeadCycleDetails() {
             rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
           />
+
+          {/* Blind review */}
+          <BlindReviewToggle anonymizeReview={cycle?.anonymizeReview ?? true} />
 
           {/* Confidentiality Agreement */}
           <ConfidentialityAgreementPicker
@@ -3823,6 +3838,34 @@ function ExtensionSection({
         </Modal>
       )}
     </>
+  );
+}
+
+function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">Blind Review</h3>
+      <p className="text-xs text-muted-foreground">
+        Hide applicant names and other identifying details from reviewers during
+        the reading stage and initial deliberations, to reduce bias. Reviewers see
+        a stable pseudonym (&ldquo;Applicant 7&rdquo;); identities reappear once an
+        applicant is invited to interview. Cycle-management views always show real
+        names.
+      </p>
+      <Form method="post" preventScrollReset>
+        <input type="hidden" name="intent" value="set-anonymize-review" />
+        <Toggle
+          name="anonymizeReview"
+          defaultChecked={anonymizeReview}
+          onChange={(e) => e.currentTarget.form?.requestSubmit()}
+          label={
+            anonymizeReview
+              ? "On — reviewers see “Applicant N”"
+              : "Off — reviewers see real names"
+          }
+        />
+      </Form>
+    </div>
   );
 }
 
