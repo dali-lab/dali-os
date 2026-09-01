@@ -8,6 +8,7 @@ import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { Section } from '~/hiring/components/Section'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
+import { anonLabelMapForCycle, releasedDaIds, blindUser } from '~/hiring/lib/anonymization.server'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/hiring/lib/delibs'
@@ -133,8 +134,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // Fetch active delibs sessions for the reviewer's domains (live mirror view).
-  // Only load when signed — the session cards show applicant names.
-  // Initial sessions are blinded; Final sessions show real names.
+  // Only load when signed. Applicant identity on these cards is blinded for
+  // Standard cycles until a decision is released — Initial delibs show
+  // "Applicant N", Final delibs (released) show real names (blinding pass below).
   if (confidentialityRequired) {
     return {
       activeCycle: { id: active.id, name: active.name, cycleType: active.cycleType as string },
@@ -225,6 +227,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const delibsApplications = Array.from(hydratedDaIds).map(id => daIdToSummary.get(id));
+
+  // Blind review: on Standard cycles with anonymizeReview on, replace applicant
+  // identity with a stable "Applicant N" pseudonym on the reviewer's assigned
+  // apps and the Initial-delibs mirror, until a decision is Released for that
+  // applicant. Final-delibs apps (released) keep their real names.
+  if (active.cycleType === "Standard" && active.anonymizeReview) {
+    const labelMap = await anonLabelMapForCycle(active.id)
+    const daIds = [
+      ...myReviews.map((r: any) => r.domainApplication.id),
+      ...Array.from(hydratedDaIds),
+    ]
+    const released = await releasedDaIds(daIds)
+    const blind = (da: any) => {
+      if (!da || released.has(da.id)) return
+      const label = labelMap.get(da.application.id)
+      if (label) da.application.user = blindUser(da.application.user, label)
+    }
+    for (const r of myReviews) blind(r.domainApplication)
+    for (const da of daIdToSummary.values()) blind(da)
+  }
 
   return {
       activeCycle: { id: active.id, name: active.name, cycleType: active.cycleType as string },
