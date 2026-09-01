@@ -124,7 +124,6 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
-        checkInToken: result.checkInToken,
       },
       { status: 201 },
     ),
