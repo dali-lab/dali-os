@@ -6,6 +6,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -165,6 +166,7 @@ export default function AnnouncementsPage() {
     | null
   >(null);
   const revalidator = useRevalidator();
+  const dialog = useDialog();
 
   // Auto-dismiss the success confirmation after a few seconds; errors stay
   // until the next send attempt.
@@ -217,6 +219,26 @@ export default function AnnouncementsPage() {
   const canSend = title.trim().length > 0 && !sending && hasAudience;
 
   async function send() {
+    // Build a summary of who will receive this and which channels fire.
+    const recipientDesc = allMembers
+      ? `${members.length} lab member${members.length === 1 ? "" : "s"} (whole lab)`
+      : [
+          pickedGroups.size > 0 && `${pickedGroups.size} group${pickedGroups.size === 1 ? "" : "s"}`,
+          pickedUsers.size > 0 && `${pickedUsers.size} ${pickedUsers.size === 1 ? "person" : "people"}`,
+        ]
+          .filter(Boolean)
+          .join(" + ");
+    const channels = ["in-app", "email", ccDartmouth && "Dartmouth email", "Slack DM"]
+      .filter(Boolean)
+      .join(", ");
+    const action = scheduling ? "Schedule" : "Send";
+    const confirmed = await dialog.confirm({
+      title: `${action} announcement to ${recipientDesc}?`,
+      description: `Channels: ${channels}. This is irreversible — recipients will be notified immediately${scheduling ? " at the scheduled time" : ""}.`,
+      confirmLabel: action,
+    });
+    if (!confirmed) return;
+
     setResult(null);
     setSending(true);
     try {

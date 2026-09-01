@@ -1377,6 +1377,21 @@ export default function HiringLeadCycleDetails() {
 
   async function removeReviewer(reviewerId: string) {
     if (!cycleId) return
+    const reviewer = reviewers.find(r => r.id === reviewerId)
+    const name = reviewer
+      ? (reviewer.user?.firstName && reviewer.user?.lastName
+          ? `${reviewer.user.firstName} ${reviewer.user.lastName}`
+          : reviewer.user?.daliEmail ?? 'this reviewer')
+      : 'this reviewer'
+    if (
+      !(await dialog.confirm({
+        title: `Remove ${name} as a reviewer?`,
+        description: 'They will no longer be assignable to applicants in this domain. Any reviews already submitted will be deleted.',
+        confirmLabel: 'Remove reviewer',
+        tone: 'destructive',
+      }))
+    )
+      return
     const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
       method: 'DELETE',
       credentials: 'include',
@@ -1405,6 +1420,21 @@ export default function HiringLeadCycleDetails() {
 
   async function removeInterviewer(interviewerId: string) {
     if (!cycleId) return
+    const interviewer = (interviewers as any[]).find((i: any) => i.id === interviewerId)
+    const name = interviewer
+      ? (interviewer.user?.firstName && interviewer.user?.lastName
+          ? `${interviewer.user.firstName} ${interviewer.user.lastName}`
+          : interviewer.user?.daliEmail ?? 'this interviewer')
+      : 'this interviewer'
+    if (
+      !(await dialog.confirm({
+        title: `Remove ${name} as an interviewer?`,
+        description: 'Their availability blocks for this cycle will also be removed.',
+        confirmLabel: 'Remove interviewer',
+        tone: 'destructive',
+      }))
+    )
+      return
     const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'DELETE',
       credentials: 'include',
@@ -1636,7 +1666,19 @@ export default function HiringLeadCycleDetails() {
                           ? () => setShowCompleteConfirm(true)
                           : cycleStatus === 'Draft'
                             ? () => setShowOpenConfirm(true)
-                            : () => advanceStatus()
+                            : async () => {
+                                if (
+                                  !(await dialog.confirm({
+                                    title: 'Close applications?',
+                                    description:
+                                      "This stops accepting new applications and moves the cycle to Under Review. Applicants who haven't submitted won't be able to submit.",
+                                    confirmLabel: 'Close Applications',
+                                    tone: 'destructive',
+                                  }))
+                                )
+                                  return
+                                advanceStatus()
+                              }
                       }
                       disabled={statusUpdating || !draftChecklistMet}
                       className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
@@ -1965,7 +2007,16 @@ export default function HiringLeadCycleDetails() {
         // to render, so disable it with a tooltip pointing at Setup.
         const reminderTemplateBound = (loaderData?.currentNotificationEmails ?? [])
           .some((b: any) => b.notificationType === 'InterviewInviteReminder')
-        async function resendInvite(daId: string) {
+        async function resendInvite(daId: string, firstName?: string) {
+          if (
+            !(await dialog.confirm({
+              title: `Resend interview invite to ${firstName ?? 'this applicant'}?`,
+              description: 'Re-emails the applicant the scheduling link using the bound reminder template.',
+              confirmLabel: 'Resend',
+              tone: 'destructive',
+            }))
+          )
+            return
           setResendingInviteId(daId)
           try {
             const res = await fetch(`/api/hiring/domain-applications/${daId}/resend-invite`, {
@@ -2083,7 +2134,7 @@ export default function HiringLeadCycleDetails() {
                           <span>
                             <button
                               type="button"
-                              onClick={() => resendInvite(p.domainApplication.id)}
+                              onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
                               disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
                               className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -2139,6 +2190,15 @@ export default function HiringLeadCycleDetails() {
                             <Select
                               value={interview.location}
                               onChange={async (newLocation) => {
+                                if (
+                                  !(await dialog.confirm({
+                                    title: 'Change interview location?',
+                                    description: 'Emails the applicant and both interviewers a location-change notice.',
+                                    confirmLabel: 'Change Location',
+                                    tone: 'destructive',
+                                  }))
+                                )
+                                  return
                                 const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
                                   method: 'PATCH',
                                   credentials: 'include',
@@ -2192,6 +2252,15 @@ export default function HiringLeadCycleDetails() {
                                     value=""
                                     onChange={async (value) => {
                                       if (!value) return
+                                      if (
+                                        !(await dialog.confirm({
+                                          title: 'Reassign interviewer?',
+                                          description: `Emails the removed interviewer and the replacement interviewer about the change.`,
+                                          confirmLabel: 'Reassign',
+                                          tone: 'destructive',
+                                        }))
+                                      )
+                                        return
                                       await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
                                         method: 'POST', credentials: 'include',
                                         headers: { 'Content-Type': 'application/json' },
@@ -2266,7 +2335,7 @@ export default function HiringLeadCycleDetails() {
                       <span>
                         <button
                           type="button"
-                          onClick={() => resendInvite(p.domainApplication.id)}
+                          onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
                           disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -2321,6 +2390,15 @@ export default function HiringLeadCycleDetails() {
                         <Select
                           value={interview.location}
                           onChange={async (newLocation) => {
+                            if (
+                              !(await dialog.confirm({
+                                title: 'Change interview location?',
+                                description: 'Emails the applicant and both interviewers a location-change notice.',
+                                confirmLabel: 'Change Location',
+                                tone: 'destructive',
+                              }))
+                            )
+                              return
                             const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
                               method: 'PATCH', credentials: 'include',
                               headers: { 'Content-Type': 'application/json' },
@@ -2373,6 +2451,15 @@ export default function HiringLeadCycleDetails() {
                                     value=""
                                     onChange={async (value) => {
                                       if (!value) return
+                                      if (
+                                        !(await dialog.confirm({
+                                          title: 'Reassign interviewer?',
+                                          description: `Emails the removed interviewer and the replacement interviewer about the change.`,
+                                          confirmLabel: 'Reassign',
+                                          tone: 'destructive',
+                                        }))
+                                      )
+                                        return
                                       await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
                                         method: 'POST', credentials: 'include',
                                         headers: { 'Content-Type': 'application/json' },
@@ -3015,13 +3102,8 @@ export default function HiringLeadCycleDetails() {
                       <Tooltip content={!hasBinding ? `An email template must be bound to this decision type before it can be released to the applicant.` : null} variant="rich">
                         <span>
                           <button
-                            onClick={async () => {
-                              setReleasing(d.id)
-                              await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                              setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                              setReleasing(null)
-                            }}
-                            disabled={releasing === d.id || !hasBinding}
+                            onClick={() => confirmReleaseOne(d)}
+                            disabled={releasing === d.id || releasingAll || !hasBinding}
                             className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                           >
                             <Mail className="w-3.5 h-3.5" aria-hidden />

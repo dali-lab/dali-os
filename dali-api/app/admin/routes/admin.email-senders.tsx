@@ -7,6 +7,7 @@
 // SenderDailyUsage count so operators can see and adjust egress limits.
 
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.email-senders";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -208,6 +209,7 @@ function DailyCapRow({
 export default function EmailSendersAdmin() {
   const { senders } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const [params] = useSearchParams();
   const justAuthorized = params.get("gmail_authorized") === "1";
   const gmailError = params.get("gmail_error");
@@ -274,12 +276,23 @@ export default function EmailSendersAdmin() {
                 </a>
                 {s.integrationId && (
                   <button
-                    onClick={() =>
+                    onClick={async () => {
+                      const fallback = s.fallbackEmail ?? (s.purpose !== "Hiring" ? "the Hiring sender" : null);
+                      const fallbackNote = fallback
+                        ? ` Outbound email for ${s.label} will silently fall back to ${fallback}.`
+                        : " No fallback is configured — outbound email for this purpose will stop until reconnected.";
+                      const ok = await dialog.confirm({
+                        title: `Disable ${s.label} sender (${s.sendAsEmail})?`,
+                        description: `This soft-disables the send-as identity.${fallbackNote}`,
+                        tone: "destructive",
+                        confirmLabel: "Disable",
+                      });
+                      if (!ok) return;
                       fetcher.submit(
                         { intent: "disable", id: s.integrationId! },
                         { method: "post" },
-                      )
-                    }
+                      );
+                    }}
                     className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
                   >
                     Disable

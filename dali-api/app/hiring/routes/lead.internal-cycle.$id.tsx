@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/lead.internal-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
@@ -1207,6 +1208,7 @@ function DecisionsSection({
   initialDecisions: any[];
   currentDecisionEmails: any[];
 }) {
+  const dialog = useDialog();
   const [decisions, setDecisions] = useState<any[]>(initialDecisions);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1253,6 +1255,17 @@ function DecisionsSection({
   }
 
   async function releaseOne(id: string) {
+    const d = decisions.find((x) => x.id === id);
+    const firstName = d?.domainApplication?.application?.user?.firstName ?? "this applicant";
+    if (
+      !(await dialog.confirm({
+        title: `Release this decision to ${firstName}?`,
+        description: "This emails the applicant their decision using the bound template. It can't be undone.",
+        confirmLabel: "Release",
+        tone: "destructive",
+      }))
+    )
+      return;
     setBusyId(id);
     setError(null);
     try {
@@ -1299,6 +1312,16 @@ function DecisionsSection({
 
   async function releaseAllFinals() {
     if (releasableFinals.length === 0) return;
+    const count = releasableFinals.length;
+    if (
+      !(await dialog.confirm({
+        title: `Release ${count} decision${count === 1 ? "" : "s"}?`,
+        description: `This emails ${count === 1 ? "this applicant" : `all ${count} applicants`} their decision right now, using the bound templates. It can't be undone.`,
+        confirmLabel: `Release ${count}`,
+        tone: "destructive",
+      }))
+    )
+      return;
     setBulkBusy(true);
     setError(null);
     try {

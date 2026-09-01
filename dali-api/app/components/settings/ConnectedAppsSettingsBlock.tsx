@@ -1,10 +1,13 @@
 import { Form } from "react-router";
 import { Link } from "react-router";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Tooltip } from "~/components/ui/floating";
 import type { GrantRowDTO } from "~/lib/settings-page.server";
 
 const CONNECTED_APPS_ACTION = "/settings/connected-apps";
 
 export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }) {
+  const confirmSubmit = useConfirmSubmit();
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
@@ -40,14 +43,25 @@ export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }
                     ) : null}
                   </p>
                 </div>
-                <Form method="post" action={CONNECTED_APPS_ACTION}>
+                <Form
+                  method="post"
+                  action={CONNECTED_APPS_ACTION}
+                  onSubmit={confirmSubmit({
+                    title: `Revoke access for ${g.clientName}?`,
+                    description: `${g.clientName} will immediately lose access to your DALI OS account. You can re-authorize it at any time.`,
+                    confirmLabel: "Revoke",
+                    tone: "destructive",
+                  })}
+                >
                   <input type="hidden" name="grantId" value={g.id} />
-                  <button
-                    type="submit"
-                    className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
-                  >
-                    Revoke
-                  </button>
+                  <Tooltip content={`Revoke ${g.clientName}'s access to your account`}>
+                    <button
+                      type="submit"
+                      className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                    >
+                      Revoke
+                    </button>
+                  </Tooltip>
                 </Form>
               </div>
             </li>

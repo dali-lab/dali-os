@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { Link, useSearchParams, useRevalidator } from "react-router";
 import { TermFilter } from "~/components/TermFilter";
 import type { TermOption } from "~/lib/terms.shared";
@@ -936,6 +937,7 @@ function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termC
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
   const { os } = useOsChrome();
+  const dialog = useDialog();
   const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -948,6 +950,13 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
 
   async function run() {
     if (!channel.trim()) return;
+    const name = channel.trim();
+    const confirmed = await dialog.confirm({
+      title: `Create #${name}?`,
+      description: `This creates #${name} on Slack and invites all Core members, Admins, and everyone staffed on a project this term. This cannot be undone from here.`,
+      confirmLabel: "Create + invite",
+    });
+    if (!confirmed) return;
     setRunning(true);
     setResult(null);
     try {
@@ -1011,15 +1020,17 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
               : "rounded-md focus:ring-accent-coral/30",
           )}
         />
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={running || !channel.trim()}
-          onClick={run}
-          className="whitespace-nowrap"
-        >
-          {running ? "Creating…" : "Create + invite"}
-        </Button>
+        <Tooltip content="Creates the Slack channel and invites all Core, Admins, and everyone staffed this term">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running || !channel.trim()}
+            onClick={run}
+            className="whitespace-nowrap"
+          >
+            {running ? "Creating…" : "Create + invite"}
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

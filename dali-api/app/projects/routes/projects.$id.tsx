@@ -4406,6 +4406,7 @@ function ProjectDriveTab({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const dialog = useDialog();
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -4431,6 +4432,15 @@ function ProjectDriveTab({
   // endpoint DocumentsBlock used, then revalidates so the badge updates.
   const togglePagePartnerVisible = useCallback(async (item: DriveItem, next: boolean) => {
     if (item.type !== "doc" && item.type !== "file") return;
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this item. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     const endpoint =
       item.type === "file"
         ? `/api/files/${item.id}/partner-visible`
@@ -4450,7 +4460,7 @@ function ProjectDriveTab({
     } catch {
       // Silently fail — the user can retry. The badge state is loader-authoritative.
     }
-  }, [revalidator]);
+  }, [dialog, revalidator]);
 
   const onNavigate = useCallback(
     (_scopeId: string | null, folderId: string | null) => {
@@ -4500,7 +4510,7 @@ function ProjectDriveTab({
   const getScopeActions = useCallback(
     (_scopeId: string): RowActions => ({
       onRename: async (item) => {
-        const newTitle = window.prompt("Rename", item.title || "") ?? "";
+        const newTitle = await dialog.prompt({ title: "Rename", label: "New name", defaultValue: item.title || "" }) ?? "";
         if (!newTitle || newTitle === item.title) return;
         const isFile = item.type === "file";
         try {
@@ -4534,7 +4544,7 @@ function ProjectDriveTab({
         void item;
       },
       onDelete: async (item) => {
-        if (!window.confirm(`Delete "${item.title || "this item"}"? This cannot be undone.`)) return;
+        if (!(await dialog.confirm({ title: `Delete "${item.title || "this item"}"?`, description: "This cannot be undone.", confirmLabel: "Delete", tone: "destructive" }))) return;
         const isFile = item.type === "file";
         try {
           // Files: DELETE /api/files/:id
@@ -4640,6 +4650,15 @@ function DocumentsBlock({
   // Documents list. Persisted via its own API route; the badge state comes
   // back through the loader.
   async function togglePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this document. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -4912,6 +4931,15 @@ function DocumentsBlock({
   }
 
   async function toggleFilePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this file. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {
