@@ -106,18 +106,19 @@ const STORY_GAP = 12;
 const TASK_H = 24;
 const TASK_GAP = 6;
 
-// How much room the group's own label eats before its children can start.
+// How much room the group's own header eats before its children can start.
 //
-// The label is a filled pill seated *inside* the box, so the pad has to cover
-// the pill's offset, its height, and a gap under it, or the first child is
-// drawn straight through it.
+// Colour lives in a full-width header strip (the name row), not the whole
+// rectangle — the rest of the box is an outline so nested bars sit on the
+// grid. The pad covers that strip plus a gap under it, or the first child
+// is drawn through the name.
 //
-// The numbers are the rendered pill, not an estimate: `top-1.5` (6px) plus a
-// fixed `leading-4` line box (16px) plus the label's vertical padding, plus
-// the gap under it. The labels below pin that leading precisely so this stays
-// exact rather than riding on a font's default.
-const EPIC_TOP_PAD = 6 + (16 + 8) + 10; // top-1.5 + leading-4/py-1 + gap
-const STORY_TOP_PAD = 6 + (16 + 8) + 8; // top-1.5 + leading-4/py-1 + gap
+// The numbers are the rendered header, not an estimate: a fixed `leading-4`
+// line box (16px) plus the label's vertical padding, plus a 6px inset so the
+// name isn't flush to the border, plus the gap under the strip.
+const BAR_HEADER_H = 6 + (16 + 8); // inset + leading-4/py-1
+const EPIC_TOP_PAD = BAR_HEADER_H + 10;
+const STORY_TOP_PAD = BAR_HEADER_H + 8;
 const EPIC_MIN_H = EPIC_TOP_PAD + EPIC_BOTTOM_PAD;
 const STORY_MIN_H = STORY_TOP_PAD + STORY_BOTTOM_PAD;
 
@@ -162,10 +163,10 @@ export const LEVEL_COLOR: Record<Level, string> = {
   task: "#E0930B",
 };
 
-// The plates for the same three levels. A bar is coloured by filling it and
-// printing ink on top rather than by outlining it and tinting the label, so
-// each level needs a fill/ink pair, not one hue — epic purple, story teal,
-// task maroon, as far apart as LEVEL_COLOR's three.
+// The plates for the same three levels. Epic and story bars are outlined
+// boxes whose header strip (the name) carries the fill; task bars are still
+// a solid plate. Each level needs a fill/ink pair, not one hue — epic
+// purple, story teal, task maroon, as far apart as LEVEL_COLOR's three.
 //
 // Not a second copy of those colours: the badge and the bar label are styled
 // from `--os-*-fill` in app.css and light mode restates the variables once, so
@@ -1258,10 +1259,6 @@ export function EpicsTimeline({
                           top: b.top,
                           height: b.height,
                           border: `1px solid ${OS_LEVEL.epic.edge}`,
-                          // Fill the bar with its solid level colour, not a
-                          // translucent wash, so the container reads as one
-                          // solid band; nested story/task bars paint on top.
-                          background: OS_LEVEL.epic.fill,
                           ...dragStyle(
                             "epic",
                             b.epic.id,
@@ -1303,17 +1300,17 @@ export function EpicsTimeline({
                           onEpicClick ? () => onEpicClick(b.epic.id) : undefined,
                         )}
                       >
-                        {/* The design seats the label as a filled pill inside
-                            the group's top-left rather than notching it into
-                            the border, so it needs no bg-card to punch a hole.
-                            The pill sticks to the visible left edge as a wide
-                            bar scrolls under it (like the sprint band label
-                            below), so an epic that runs off the left still shows
-                            its name instead of reading as unnamed. The strip is
-                            the bar's reserved top band (EPIC_TOP_PAD), so a
-                            stuck label never rides over a story bar. */}
-                        <span className="pointer-events-none absolute inset-x-1.5 top-1.5 block">
-                          <span className="os-bar-label os-bar-label--epic pointer-events-auto sticky left-1.5 inline-block max-w-full truncate rounded-md px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
+                        {/* Colour only the name header, not the whole box —
+                            nested story bars sit on the grid inside an outline.
+                            The name sticks to the visible left edge as a wide
+                            bar scrolls under it, so an epic that runs off the
+                            left still shows its name. Height is BAR_HEADER_H,
+                            the reserved top of EPIC_TOP_PAD. */}
+                        <span
+                          className="os-bar-label os-bar-label--epic absolute inset-x-0 top-0 flex items-center rounded-t-lg"
+                          style={{ height: BAR_HEADER_H }}
+                        >
+                          <span className="sticky left-1.5 inline-block max-w-full truncate px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
                             {b.epic.title}
                           </span>
                         </span>
@@ -1327,20 +1324,17 @@ export function EpicsTimeline({
                       key={b.story.id}
                       kind="story"
                       className="absolute rounded-lg z-10"
-                      style={{
-                        ...barX("story", b.left, b.width),
-                        top: b.top,
-                        height: b.height,
-                        border: `1px solid ${OS_LEVEL.story.edge}`,
-                        // Solid fill, like the epic — the story's own hue
-                        // still reads as its own band over the epic it nests in.
-                        background: OS_LEVEL.story.fill,
-                        ...dragStyle(
-                          "story",
-                          b.story.id,
-                          barX("story", b.left, b.width).width,
-                        ),
-                      }}
+                        style={{
+                          ...barX("story", b.left, b.width),
+                          top: b.top,
+                          height: b.height,
+                          border: `1px solid ${OS_LEVEL.story.edge}`,
+                          ...dragStyle(
+                            "story",
+                            b.story.id,
+                            barX("story", b.left, b.width).width,
+                          ),
+                        }}
                       draggable={editMode && Boolean(onReschedule)}
                       onDragStart={beginDrag("story", b.story.id)}
                       onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
@@ -1362,11 +1356,14 @@ export function EpicsTimeline({
                           : undefined,
                       )}
                     >
-                      {/* Same sticky-to-the-visible-edge label as the epic bar
-                          above — a wide story that scrolls off the left keeps
+                      {/* Same header-only fill and sticky name as the epic
+                          bar — a wide story that scrolls off the left keeps
                           its name in view rather than reading as unnamed. */}
-                      <span className="pointer-events-none absolute inset-x-1.5 top-1.5 block">
-                        <span className="os-bar-label os-bar-label--story pointer-events-auto sticky left-1.5 inline-flex max-w-full items-center rounded-md px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
+                      <span
+                        className="os-bar-label os-bar-label--story absolute inset-x-0 top-0 flex items-center rounded-t-lg"
+                        style={{ height: BAR_HEADER_H }}
+                      >
+                        <span className="sticky left-1.5 inline-flex max-w-full items-center px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
                           {b.story.incomplete && (
                             <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
                           )}

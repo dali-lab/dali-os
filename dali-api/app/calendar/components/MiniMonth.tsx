@@ -56,9 +56,9 @@ export function MiniMonth({
     });
 
   return (
-    <div className="w-64 select-none p-2">
+    <div className="w-full min-w-0 select-none p-2">
       <div className="mb-1 flex items-center justify-between px-1">
-        <span className="text-sm font-semibold text-foreground">{monthLabel}</span>
+        <span className="min-w-0 truncate text-sm font-semibold text-foreground">{monthLabel}</span>
         <div className="flex items-center gap-0.5">
           <button
             type="button"

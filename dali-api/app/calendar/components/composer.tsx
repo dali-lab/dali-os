@@ -15,7 +15,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
-import { WorkingHoursCard, GeneralCalendarPrompt } from "~/calendar/components/settings-cards";
+import { WorkingHoursCard } from "~/calendar/components/settings-cards";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
@@ -28,7 +28,6 @@ import {
 } from "~/calendar/components/RepeatField";
 import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
-import { EVENT_DURATION_OPTIONS } from "~/calendar/lib/calendar-defaults";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary } from "~/calendar/lib/dartmouth-periods";
 import { destinationValue, classScheduleSummary } from "~/calendar/lib/class-format";
@@ -81,13 +80,6 @@ export function eventDestinations(data: LoaderData): { value: string; label: str
     }
   }
   return out;
-}
-
-function fmtDuration(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h && m) return `${h}h ${m}m`;
-  return h ? `${h}h` : `${m}m`;
 }
 
 const padTwo = (n: number) => String(n).padStart(2, "0");
@@ -232,7 +224,7 @@ export function CalendarSearchBar({
       anchor={anchor}
       onClose={onClose}
       ariaLabel="Search events"
-      className="flex max-h-[70vh] w-[26rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-brand-3"
+      className="flex max-h-[70vh] w-[26rem] flex-col overflow-hidden rounded-xl cal-surface"
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -317,132 +309,9 @@ export function WorkingHoursPopover({
       anchor={anchor}
       onClose={onClose}
       ariaLabel="Working hours"
-      className="w-[25rem] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
+      className="w-[25rem] max-h-[80vh] overflow-y-auto rounded-xl cal-surface p-4"
     >
       <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
-    </AnchoredPopover>
-  );
-}
-
-// ── EventDefaultsPopover ───────────────────────────────────────────────────
-
-export function EventDefaultsPopover({
-  data,
-  anchor,
-  onClose,
-}: {
-  data: LoaderData;
-  anchor: DOMRect;
-  onClose: () => void;
-}) {
-  const revalidator = useRevalidator();
-  const bufferFetcher = useFetcher();
-  const dests = eventDestinations(data);
-  const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
-  const chip = (on: boolean) =>
-    cn(
-      "rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
-      on ? "bg-accent-coral text-white" : "border border-border bg-background text-foreground hover:bg-muted",
-    );
-  const bufferOptions = [
-    { label: "None", value: 0 },
-    { label: "5m", value: 5 },
-    { label: "10m", value: 10 },
-    { label: "15m", value: 15 },
-    { label: "30m", value: 30 },
-  ];
-  const pendingBuffer = bufferFetcher.formData?.get("defaultEventBufferMin");
-  const selectedBuffer = pendingBuffer != null ? Number(pendingBuffer) : data.defaultEventBufferMin;
-
-  // Default calendar + duration persist in cookies (like the composer's
-  // last-used destination); revalidate so the change takes effect immediately.
-  const writeCookie = (name: string, value: string) => {
-    try {
-      document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000`;
-    } catch {
-      /* ignore */
-    }
-    revalidator.revalidate();
-  };
-
-  const currentDest =
-    data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
-      ? data.defaultEventDest
-      : dests[0]?.value ?? "";
-
-  return (
-    <AnchoredPopover
-      anchor={anchor}
-      onClose={onClose}
-      ariaLabel="New event defaults"
-      className="w-80 max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3"
-    >
-      <h2 className="mb-3 font-heading text-sm font-semibold text-foreground">New event defaults</h2>
-      <div className="flex flex-col gap-4">
-        {data.generalCalendar === "missing" && data.calendarLinks.length > 0 && (
-          <GeneralCalendarPrompt links={data.calendarLinks} />
-        )}
-
-        {data.crudEnabled && dests.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Default calendar
-            </label>
-            <Select
-              value={currentDest}
-              onChange={(v) => writeCookie("dali_event_dest", v)}
-              options={dests}
-              buttonClassName={cn(fieldCls, "w-full inline-flex items-center justify-between gap-1 text-left hover:bg-muted/40")}
-            />
-            <p className="text-[11px] text-muted-foreground">Where a new event is created unless you change it.</p>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Default duration
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {EVENT_DURATION_OPTIONS.map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={data.defaultEventDurationMin === m}
-                onClick={() => writeCookie("dali_event_duration", String(m))}
-                className={chip(data.defaultEventDurationMin === m)}
-              >
-                {fmtDuration(m)}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-muted-foreground">Length of a quick-created or single-click event.</p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Event buffer
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {bufferOptions.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                aria-pressed={selectedBuffer === o.value}
-                onClick={() =>
-                  bufferFetcher.submit(
-                    { intent: "set-event-buffer", defaultEventBufferMin: String(o.value) },
-                    { method: "post" },
-                  )
-                }
-                className={chip(selectedBuffer === o.value)}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-muted-foreground">Reserved padding drawn around each event.</p>
-        </div>
-      </div>
     </AnchoredPopover>
   );
 }
@@ -555,14 +424,6 @@ export function EventComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startIso, endIso, allDay]);
 
-  const rememberDest = () => {
-    try {
-      document.cookie = `dali_event_dest=${encodeURIComponent(destination)}; path=/; max-age=31536000`;
-    } catch {
-      /* ignore */
-    }
-  };
-
   const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
 
   return (
@@ -571,7 +432,7 @@ export function EventComposer({
       onClose={onClose}
       draggable
       ariaLabel={editing ? "Edit event" : "New event"}
-      className="w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-card shadow-brand-3"
+      className="w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl cal-surface"
     >
         {/* Header — doubles as the drag handle (grab anywhere but the close X).
             Sticky + opaque so it stays grabbable if the form scrolls. */}
@@ -598,7 +459,7 @@ export function EventComposer({
             Connect a Google Calendar you can write to first (Settings → Calendar).
           </p>
         ) : (
-          <fetcher.Form method="post" onSubmit={rememberDest} className="flex flex-col gap-3 px-4 py-4">
+          <fetcher.Form method="post" className="flex flex-col gap-3 px-4 py-4">
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
             <input type="hidden" name="destination" value={destination} />
@@ -619,7 +480,7 @@ export function EventComposer({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Add title"
-              className="rounded-md border border-border bg-background px-3 py-2 text-base font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground focus:border-accent-coral focus:outline-none"
+              className="rounded-md border border-border bg-background px-3 py-2 text-base font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground focus:border-os-accent focus:outline-none"
               autoFocus
             />
 
@@ -710,7 +571,7 @@ export function EventComposer({
                         onClick={() => setScope(s)}
                         className={cn(
                           "rounded px-2 py-1",
-                          scope === s ? "bg-accent-coral text-white" : "text-foreground hover:bg-muted",
+                          scope === s ? "bg-os-accent text-os-bg" : "text-foreground hover:bg-muted",
                         )}
                       >
                         {s === "this" ? "This event" : s === "following" ? "This & following" : "All events"}
@@ -745,7 +606,7 @@ export function EventComposer({
               <button
                 type="submit"
                 disabled={!canSubmit || submitting || (editing && !ev?.writable)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
               >
                 {editing ? "Save" : "Create event"}
               </button>
@@ -819,9 +680,9 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 
   const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
       <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
-      <div role="dialog" aria-modal="true" aria-label="Manage calendars" className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-brand-3">
+      <div role="dialog" aria-modal="true" aria-label="Manage calendars" className="relative z-10 w-full max-w-md rounded-xl cal-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold text-foreground">Manage calendars</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -914,7 +775,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
               <button
                 type="submit"
                 disabled={newName.trim() === "" || newLink === "" || fetcher.state !== "idle"}
-                className="w-fit rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50"
+                className="w-fit rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
               >
                 Create calendar
               </button>
@@ -930,7 +791,9 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 // "My classes this term" — add Dartmouth classes (period picker or custom time)
 // to the calendar, synced to a linked Google calendar or kept as a DALI layer.
 
-export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
+// The classes editor itself. Rendered inline by the Availability tab, and
+// wrapped by ClassesManagerModal for the places that still open it as a dialog.
+export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const removeFetcher = useFetcher();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -946,12 +809,6 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
     return first ? destinationValue(first) : "";
   });
   const [selectedTermId, setSelectedTermId] = useState(data.classTerm?.id ?? "");
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   function resetForm() {
     setEditingId(null);
@@ -1003,28 +860,7 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-10">
-      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close classes" onClick={onClose} tabIndex={-1} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Classes this term"
-        className="relative z-10 w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-brand-3"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold text-foreground">
-            Classes{data.classTerm ? ` · ${data.classTerm.code}` : ""}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+    <>
         {!data.classTerm ? (
           <p className="text-sm text-muted-foreground">There's no active term to add classes to yet.</p>
         ) : (
@@ -1198,7 +1034,7 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
                 <button
                   type="submit"
                   disabled={!canSubmit || submitting}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
                 >
                   {editingId ? "Save class" : "Add class"}
                 </button>
@@ -1215,6 +1051,40 @@ export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClo
             </fetcher.Form>
           </div>
         )}
+    </>
+  );
+}
+
+export function ClassesManagerModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
+      <button type="button" className="fixed inset-0 cursor-default" aria-label="Close classes" onClick={onClose} tabIndex={-1} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Classes this term"
+        className="relative z-10 w-full max-w-lg rounded-xl cal-surface p-5"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">
+            Classes{data.classTerm ? ` · ${data.classTerm.code}` : ""}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <ClassesManagerBody data={data} />
       </div>
     </div>
   );

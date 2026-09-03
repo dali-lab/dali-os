@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "~/lib/cn";
 
@@ -15,6 +15,7 @@ export function AnchoredPopover({
   ariaLabel,
   className,
   draggable = false,
+  excludeRef,
   children,
 }: {
   anchor?: DOMRect | null;
@@ -24,6 +25,8 @@ export function AnchoredPopover({
   // When true, mousedown on a [data-drag-handle] region (minus its buttons)
   // moves the card freely, overriding the anchored position until it closes.
   draggable?: boolean;
+  /** Clicks on this node (e.g. the trigger) are not treated as outside. */
+  excludeRef?: RefObject<HTMLElement | null>;
   children: React.ReactNode;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -62,14 +65,14 @@ export function AnchoredPopover({
       if (e.key === "Escape") onClose();
     };
     const onDocMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (cardRef.current?.contains(target)) return;
+      const path = e.composedPath();
+      if (cardRef.current && path.includes(cardRef.current)) return;
+      if (excludeRef?.current && path.includes(excludeRef.current)) return;
       // The card's own dropdowns render into a portal at <body>, so they're not
       // inside cardRef — a click there isn't an outside click. Covers the Select
       // / RepeatField floating layers and the DateField / TimeField calendar
       // popovers (both role="dialog").
-      const el = target instanceof Element ? target : (target.parentElement as Element | null);
+      const el = path.find((n): n is Element => n instanceof Element);
       if (el?.closest("[data-floating-ui-portal],[data-calendar-popover],[role='dialog']")) return;
       onClose();
     };
@@ -79,7 +82,7 @@ export function AnchoredPopover({
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDocMouseDown, true);
     };
-  }, [onClose]);
+  }, [onClose, excludeRef]);
 
   // A fresh anchor means a fresh open — drop any leftover drag position.
   useLayoutEffect(() => setDragPos(null), [anchor]);

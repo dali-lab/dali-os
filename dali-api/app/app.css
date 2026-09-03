@@ -1162,6 +1162,41 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   box-shadow: 0 24px 64px var(--color-os-shadow);
 }
 
+/* The calendar's floating surfaces — its dialogs, anchored event / time-entry
+   cards, and dropdown panels. They used `border-border` + `--shadow-3`, and in
+   the light theme both of those are near-white (a 90%-lightness hairline over a
+   198,202,204 shadow), so a card floating over a white page read as a pale halo
+   around its edge rather than a plane lifted off the page. Separation here is
+   elevation instead: a tight contact shadow under a wide ambient one, both
+   tinted with the brand navy so they darken the page rather than glow on it.
+   Dark mode can't lean on a cast shadow over an already-dark page, so it lifts
+   the surface a step as well — but that lift is mixed *out of `--color-card`
+   itself*, never a literal. The card token is a different hue in each shell
+   (navy under the brand theme, the neutral #2b2b36 plane under `.os-shell`), so
+   a hardcoded blue-black read as a foreign colour sitting on the app. */
+.cal-surface {
+  border: none;
+  background: var(--color-card);
+  box-shadow:
+    0 1px 2px rgba(8, 35, 48, 0.12),
+    0 8px 16px -6px rgba(8, 35, 48, 0.16),
+    0 24px 48px -12px rgba(8, 35, 48, 0.24);
+}
+
+:where(.dark) .cal-surface {
+  /* The lift is a translucent white plate composited over the card colour, not
+     a second colour value: it raises lightness while keeping whatever hue the
+     active shell put in `--color-card`. `color-mix` would read better here but
+     Lightning CSS compiles a flat `#fff` fallback for it, which turns every
+     dialog white wherever `color-mix` is unsupported. */
+  background-color: var(--color-card);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.055));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 12px 28px -8px rgba(0, 0, 0, 0.6),
+    0 32px 64px -16px rgba(0, 0, 0, 0.7);
+}
+
 .os-type-badge {
   display: inline-flex;
   align-items: center;
@@ -1438,8 +1473,9 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    cursor. The story and task values are the design's own; the epic pair
    applies the same lift to our purple.
 
-   Applied to the label pill for an epic or a story, and to the whole bar for
-   a task — at that level the bar is the label. */
+   Applied to the name header of an epic or a story (the rest of the box is
+   an outline), and to the whole bar for a task — at that level the bar is
+   the label. */
 .os-bar-label {
   transition:
     background-color 0.15s ease,

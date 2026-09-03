@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { AlignLeft, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -28,6 +28,9 @@ export type CreateEventModalProps = {
   data: LoaderData;
   startLocal?: string;
   endLocal?: string;
+  /** Guests to open with already invited — the "Meet with" flow passes one
+   *  person so the availability grid is useful the moment the modal opens. */
+  initialUserIds?: string[];
   onClose: () => void;
 };
 
@@ -90,12 +93,31 @@ function extractDate(local: string): string {
   return local.split("T")[0] ?? "";
 }
 
+/** One line of the create form, Google-style: a leading glyph in the gutter and
+ *  the control itself carrying its own meaning, instead of a shouted label
+ *  stacked above every field. */
+function FieldRow({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-4">
+      <Icon className="mt-2.5 h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function CreateEventModal({
   data,
   startLocal: initStart,
   endLocal: initEnd,
+  initialUserIds,
   onClose,
 }: CreateEventModalProps) {
   // ── Destination (writable Google calendars) ──────────────────────────────
@@ -104,7 +126,10 @@ export function CreateEventModal({
     data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
       ? data.defaultEventDest
       : dests[0]?.value ?? "";
-  const hasWritableDest = dests.length > 0;
+  // Dev keeps the full form even with nothing linked, so the create UI is
+  // workable against a local database that has no calendar links. Vite folds
+  // this to `dests.length > 0` in a production build.
+  const hasWritableDest = dests.length > 0 || import.meta.env.DEV;
 
   // ── Core form state ──────────────────────────────────────────────────────
   const [title, setTitle] = useState("");
@@ -129,7 +154,7 @@ export function CreateEventModal({
   const [workNote, setWorkNote] = useState("");
 
   // ── Participants / type detection ────────────────────────────────────────
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialUserIds ?? []);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
 
   const usersById = new Map(data.users.map((u) => [u.id, u]));
@@ -322,8 +347,16 @@ export function CreateEventModal({
   }
 
   const fieldClass =
-    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
-  const labelClass = "block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1";
+    "w-full px-3.5 py-2.5 text-sm border border-border rounded-[10px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
+  const labelClass = "block text-[11px] font-bold text-muted-foreground uppercase tracking-[0.08em] mb-2";
+  // The minimal dress: the title carries the modal's heading weight on a bare
+  // underline, and the icon rows use borderless controls that only show their
+  // frame on hover/focus — so the form reads as a list of lines, not a stack
+  // of boxes.
+  const titleClass =
+    "w-full border-0 border-b border-border bg-transparent px-0 pb-2 text-2xl font-medium text-foreground placeholder:text-muted-foreground/70 focus:border-os-accent focus:outline-none focus:ring-0";
+  const quietFieldClass =
+    "w-full rounded-[10px] border border-transparent bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground hover:border-border focus:border-os-accent focus:bg-background focus:outline-none";
 
   // ── Availability caption ─────────────────────────────────────────────────
   // Show the caption when there are no guests (grid has no availability to show)
@@ -376,7 +409,7 @@ export function CreateEventModal({
                       className={cn(
                         "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
                         active
-                          ? "bg-accent-coral text-white border-accent-coral"
+                          ? "bg-os-accent text-os-bg border-os-accent"
                           : "border-border bg-background text-foreground hover:bg-muted",
                       )}
                     >
@@ -407,19 +440,19 @@ export function CreateEventModal({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
       onClick={handleOverlayClick}
     >
       <div
         className={cn(
-          "relative z-10 flex w-full flex-row overflow-hidden rounded-xl border border-border bg-card shadow-brand-3 max-h-[90vh]",
-          hasGuests ? "max-w-4xl" : "max-w-lg",
+          "relative z-10 flex w-full flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
+          hasGuests ? "max-w-6xl" : "max-w-lg",
         )}
       >
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-[42%] shrink-0 flex-col gap-3 border-r border-border bg-muted/20 p-4">
+        <div className="flex w-[52%] shrink-0 flex-col gap-3 border-r border-border bg-muted/20 p-5">
           {/* Week nav */}
           <div className="flex items-center gap-2">
             <button
@@ -467,35 +500,26 @@ export function CreateEventModal({
             />
           </div>
 
-          {/* Caption */}
-          <div className="text-center">
-            <p className="text-xs font-medium text-muted-foreground">Availability for this time</p>
-            {availCaption && (
-              <p className="mt-0.5 text-xs text-muted-foreground/70">{availCaption}</p>
-            )}
-          </div>
+          {availCaption && (
+            <p className="text-center text-xs text-muted-foreground">{availCaption}</p>
+          )}
         </div>
         )}
 
         {/* ── Right panel: form ──────────────────────────────────────────── */}
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+        <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-                  type === "Meeting"
-                    ? "border-accent-teal/30 bg-accent-teal/10 text-accent-teal"
-                    : "border-border bg-muted text-muted-foreground",
-                )}
-              >
-                {type}
-              </span>
-              <h2 className="font-heading text-base font-semibold text-foreground">
-                Create {type === "Meeting" ? "meeting" : "event"}
-              </h2>
-            </div>
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                type === "Meeting"
+                  ? "bg-accent-teal/10 text-accent-teal"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {type}
+            </span>
             <button
               type="button"
               onClick={onClose}
@@ -515,7 +539,7 @@ export function CreateEventModal({
             </div>
           ) : type === "Event" ? (
             /* ── Event form ──────────────────────────────────────────────── */
-            <eventFetcher.Form method="post" className="flex flex-col gap-4">
+            <eventFetcher.Form method="post" className="flex flex-col gap-5">
               <input type="hidden" name="intent" value="event-create" />
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="startIso" value={startIso} />
@@ -533,30 +557,20 @@ export function CreateEventModal({
                 </>
               )}
 
-              {/* Title */}
-              <div>
-                <label htmlFor="cem-title" className={labelClass}>
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="cem-title"
-                  name="title"
-                  type="text"
-                  required
-                  placeholder="e.g. Deserto sync"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className={fieldClass}
-                />
-              </div>
+              {/* Title — the one field that carries the modal's heading weight */}
+              <input
+                id="cem-title"
+                name="title"
+                type="text"
+                required
+                placeholder="Add title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={titleClass}
+              />
 
               {/* Guests */}
-              <div>
-                <label className={labelClass}>
-                  <span className="inline-flex items-center gap-1">
-                    <UsersRound className="h-3 w-3" /> Guests
-                  </span>
-                </label>
+              <FieldRow icon={UsersRound}>
                 <ParticipantPicker
                   users={data.users}
                   groups={data.groups}
@@ -568,17 +582,12 @@ export function CreateEventModal({
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
                 />
-              </div>
+              </FieldRow>
 
               {/* Date & Time — all-day toggle + date/time inputs */}
-              <div>
-                <label className={labelClass}>
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> When
-                  </span>
-                </label>
+              <FieldRow icon={Clock}>
                 {/* All-day toggle */}
-                <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                <label className="mb-3 flex items-center gap-2 text-sm text-foreground">
                   <Checkbox checked={allDay} onChange={() => setAllDay((v) => !v)} /> All day
                 </label>
                 {allDay ? (
@@ -602,26 +611,26 @@ export function CreateEventModal({
                   </div>
                 ) : (
                   /* Timed: single date + start/end times */
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <DateField
                       mode="date"
                       value={date}
                       onChange={(v) => setDate(v)}
                       ariaLabel="Date"
-                      className="min-w-[130px]"
+                      className="min-w-[150px]"
                     />
                     <TimeComboField
                       value={startTime}
                       onChange={(v) => setStartTime(v)}
                       aria-label="Start time"
-                      className="w-[110px]"
+                      className="w-[120px]"
                     />
                     <span className="text-xs text-muted-foreground">–</span>
                     <TimeComboField
                       value={endTime}
                       onChange={(v) => setEndTime(v)}
                       aria-label="End time"
-                      className="w-[110px]"
+                      className="w-[120px]"
                     />
                   </div>
                 )}
@@ -630,11 +639,10 @@ export function CreateEventModal({
                     {allDay ? "End date must not be before start date." : "End must be after start."}
                   </p>
                 )}
-              </div>
+              </FieldRow>
 
               {/* Destination calendar — always shown (single-dest falls through as hidden) */}
-              <div>
-                <label className={labelClass}>Calendar</label>
+              <FieldRow icon={CalendarDays}>
                 {dests.length > 1 ? (
                   <Select
                     value={destination}
@@ -649,59 +657,42 @@ export function CreateEventModal({
                     Connect a Google Calendar… (Settings → Calendar)
                   </p>
                 )}
-              </div>
+              </FieldRow>
 
-              {/* Location */}
-              <div>
-                <label htmlFor="cem-location" className={labelClass}>
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> Location
-                  </span>
-                </label>
+              <FieldRow icon={MapPin}>
                 <input
                   id="cem-location"
                   name="location"
                   type="text"
-                  placeholder="Video call, room, or address"
+                  placeholder="Add location"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className={fieldClass}
+                  className={quietFieldClass}
                 />
-              </div>
+              </FieldRow>
 
-              {/* Description */}
-              <div>
-                <label htmlFor="cem-description" className={labelClass}>
-                  <span className="inline-flex items-center gap-1">
-                    <AlignLeft className="h-3 w-3" /> Description
-                  </span>
-                </label>
+              <FieldRow icon={AlignLeft}>
                 <textarea
                   id="cem-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Add description"
                   rows={2}
-                  className={cn(fieldClass, "resize-y")}
+                  className={cn(quietFieldClass, "resize-y")}
                 />
-              </div>
+              </FieldRow>
 
               {/* Repeat / recurrence — hidden for all-day (Google doesn't support RRULE on all-day events via this flow) */}
               {!allDay && (
-                <div>
-                  <label className={labelClass}>
-                    <span className="inline-flex items-center gap-1">
-                      <Repeat className="h-3 w-3" /> Repeat
-                    </span>
-                  </label>
+                <FieldRow icon={Repeat}>
                   <RepeatField
                     value={repeat}
                     onChange={setRepeat}
                     anchorLocal={repeatAnchorLocal}
                     labelClassName="sr-only"
-                    fieldClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
+                    fieldClassName={`${quietFieldClass} inline-flex items-center justify-between gap-1`}
                   />
-                </div>
+                </FieldRow>
               )}
 
               {/* Timesheet */}
@@ -713,19 +704,26 @@ export function CreateEventModal({
               )}
 
               {/* Submit */}
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
                   disabled={!canSubmitEvent || eventFetcher.state !== "idle"}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-4 py-2 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-os-accent px-6 py-2 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {eventFetcher.state !== "idle" ? "Creating…" : "Create event"}
+                  {eventFetcher.state !== "idle" ? "Saving…" : "Save"}
                 </button>
               </div>
             </eventFetcher.Form>
           ) : (
             /* ── Meeting form ────────────────────────────────────────────── */
-            <form onSubmit={submitMeeting} className="flex flex-col gap-4">
+            <form onSubmit={submitMeeting} className="flex flex-col gap-5">
               {/* Title */}
               <div>
                 <label htmlFor="cem-mtg-title" className={labelClass}>
@@ -743,12 +741,7 @@ export function CreateEventModal({
               </div>
 
               {/* Guests */}
-              <div>
-                <label className={labelClass}>
-                  <span className="inline-flex items-center gap-1">
-                    <UsersRound className="h-3 w-3" /> Guests
-                  </span>
-                </label>
+              <FieldRow icon={UsersRound}>
                 <ParticipantPicker
                   users={data.users}
                   groups={data.groups}
@@ -760,7 +753,7 @@ export function CreateEventModal({
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
                 />
-              </div>
+              </FieldRow>
 
               {/* Date & Time */}
               <div>
@@ -949,7 +942,7 @@ export function CreateEventModal({
                 <button
                   type="submit"
                   disabled={!canSubmitMeeting}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-4 py-2 text-sm font-semibold text-white hover:bg-accent-coral-light disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? "Creating…" : "Create meeting"}
                 </button>
