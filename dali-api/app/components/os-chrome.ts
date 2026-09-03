@@ -55,6 +55,20 @@ export function useOsChrome() {
     pageTitle: os
       ? "font-heading text-4xl font-medium text-foreground"
       : "font-heading text-2xl font-bold text-foreground",
+    /** A page section that is not itself a card. The os design draws a section
+     *  as a title on the page ground with its content on a surface below it
+     *  (`.pd-section`), rather than boxing the whole thing — so a section that
+     *  holds a card no longer shows two nested borders. Off the flag it stays
+     *  the bordered card the brand shell has today. */
+    sectionShell: os
+      ? "flex flex-col gap-3"
+      : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3",
+    /** That section's title. A content page titles its sections at 19px, which
+     *  is a different job from the uppercase eyebrow `heading` a settings panel
+     *  wears — the two are not interchangeable. */
+    sectionTitle: os
+      ? "font-heading text-[19px] font-semibold text-foreground"
+      : "inline-flex items-center gap-2 font-heading font-semibold text-foreground",
     /** A panel's heading. The os design labels its panels with an eyebrow. */
     heading: os
       ? "inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-os-grey"
