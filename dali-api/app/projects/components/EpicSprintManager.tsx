@@ -264,9 +264,12 @@ export function EpicSprintManager({
   function run(fn: () => Promise<void>) {
     setBusy(true);
     setError(null);
-    fn()
+    return fn()
       .then(() => revalidator.revalidate())
-      .catch((e) => setError(e instanceof Error ? e.message : "Something went wrong"))
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Something went wrong");
+        throw e;
+      })
       .finally(() => setBusy(false));
   }
 
@@ -284,7 +287,7 @@ export function EpicSprintManager({
     id: string,
     deltaDays: number,
     edge: "move" | "start" | "end" = "move",
-  ) => {
+  ): Promise<void> | void => {
     const shift = (iso: string | null | undefined): string | undefined => {
       if (!iso) return undefined;
       const d = new Date(iso);
@@ -316,7 +319,7 @@ export function EpicSprintManager({
     if (!startsAt || !endsAt) return;
     if (edge !== "move" && new Date(startsAt) >= new Date(endsAt)) return;
 
-    run(async () => {
+    return run(async () => {
       if (kind === "epic") await api(`/api/epics/${id}`, "POST", { startsAt, endsAt });
       else if (kind === "story") await api(`/api/stories/${id}`, "POST", { startsAt, endsAt });
       else await api(`/api/tasks/${id}`, "POST", { startsAt, dueAt: endsAt });

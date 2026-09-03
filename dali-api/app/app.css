@@ -1242,6 +1242,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
    without every input naming it. */
 .os-shell .os-form input[type="text"],
 .os-shell .os-form input[type="date"],
+.os-shell .os-form input[type="email"],
 .os-shell .os-form input[type="url"],
 .os-shell .os-form input[type="number"],
 .os-shell .os-form textarea {

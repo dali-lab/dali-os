@@ -16,6 +16,7 @@
 import { useState, type ReactNode } from "react";
 import { Check, Loader2, Pencil, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
 
 export function EditableSection({
   title,
@@ -24,7 +25,7 @@ export function EditableSection({
   canEdit,
   children,
   onSave,
-  className = "bg-card border border-border rounded-lg p-4 flex flex-col gap-3",
+  className,
 }: {
   title: string;
   /** Optional icon rendered before the title. Use a Lucide icon node sized
@@ -46,8 +47,12 @@ export function EditableSection({
    *  existing form; this just closes the section. If `onSave` returns a
    *  promise the button shows a pending state until it resolves. */
   onSave: () => void | Promise<void>;
+  /** Overrides the section's own dress. Left unset, the section wears the
+   *  shell's default — a bordered card on the brand shell, a bare title over
+   *  its content under dali.os. */
   className?: string;
 }) {
+  const { os, sectionShell, sectionTitle } = useOsChrome();
   const [editing, setEditing] = useState(false);
   // Bumped on Cancel so child inputs (which read defaultValue) remount and
   // pick up the original values again instead of keeping the user's typing.
@@ -70,17 +75,21 @@ export function EditableSection({
   }
 
   return (
-    <section className={className}>
+    <section className={className ?? sectionShell}>
       <div className="flex items-start justify-between gap-2">
         <div>
+          {/* The os design titles a section in plain text — the glyph belongs
+              to its eyebrow-labelled settings panels, not here. */}
           <h2
             className={
-              icon
-                ? "inline-flex items-center gap-2 font-heading font-semibold text-foreground"
-                : "text-sm font-semibold text-foreground"
+              os
+                ? sectionTitle
+                : icon
+                  ? "inline-flex items-center gap-2 font-heading font-semibold text-foreground"
+                  : "text-sm font-semibold text-foreground"
             }
           >
-            {icon}
+            {!os && icon}
             {title}
           </h2>
           {description && (
@@ -93,27 +102,39 @@ export function EditableSection({
           <div className="flex items-center gap-1.5 shrink-0">
             {editing ? (
               <>
-                <Tooltip content="Cancel">
+                {/* The os design labels its buttons — a bare glyph pair reads
+                    as toolbar chrome next to a 19px section title. */}
+                <Tooltip content="Cancel" disabled={os}>
                   <button
                     type="button"
                     onClick={cancel}
                     disabled={busy}
                     aria-label="Cancel"
-                    className="inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-60"
+                    className={
+                      os
+                        ? "inline-flex items-center rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground disabled:opacity-60"
+                        : "inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-60"
+                    }
                   >
-                    <X className="w-3.5 h-3.5" />
+                    {os ? "Cancel" : <X className="w-3.5 h-3.5" />}
                   </button>
                 </Tooltip>
-                <Tooltip content="Save changes">
+                <Tooltip content="Save changes" disabled={os}>
                   <button
                     type="button"
                     onClick={() => void save()}
                     disabled={busy}
                     aria-label="Save changes"
-                    className="inline-flex items-center justify-center p-1.5 rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+                    className={
+                      os
+                        ? "inline-flex items-center gap-1.5 rounded-full bg-os-accent px-4 py-1.5 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover disabled:opacity-60"
+                        : "inline-flex items-center justify-center p-1.5 rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+                    }
                   >
                     {busy ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : os ? (
+                      "Save"
                     ) : (
                       <Check className="w-3.5 h-3.5" />
                     )}
@@ -121,14 +142,19 @@ export function EditableSection({
                 </Tooltip>
               </>
             ) : (
-              <Tooltip content={`Edit ${title}`}>
+              <Tooltip content={`Edit ${title}`} disabled={os}>
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
                   aria-label={`Edit ${title}`}
-                  className="inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                  className={
+                    os
+                      ? "inline-flex items-center gap-1.5 rounded-full border border-os-container px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
+                      : "inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                  }
                 >
                   <Pencil className="w-3.5 h-3.5" />
+                  {os && "Edit"}
                 </button>
               </Tooltip>
             )}
