@@ -2600,6 +2600,17 @@ model Project {
   // until a lead sets it.
   deploymentUrl String?
 
+  // Deployment targets, read live by the project's Deployment page. Both are
+  // identifiers, not URLs, and are set on the project detail page:
+  //   flyAppName    — the Fly app whose machines to list (`fly apps list`).
+  //   neonProjectId — the Neon project whose branches to list; the opaque id
+  //                   from the Neon console URL, not the display name.
+  // Deliberately NOT derived from deploymentUrl: a custom domain hides the
+  // app name, and nothing in that URL identifies a database at all. Null on
+  // either side means that panel shows an empty state instead of querying.
+  flyAppName    String?
+  neonProjectId String?
+
   // GitHub team slug for this project's org team, persistent across terms.
   // Set on the project detail page. When present, the staffing "Set up GitHub
   // teams" finalize automation get-or-creates a team with this slug under
