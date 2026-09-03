@@ -7,8 +7,8 @@ import { test, expect } from './fixtures';
 // unreliable in headless Playwright, and the persistence they exercise is
 // covered at the logic layer by unit tests (app/lib/calendar-schemas +
 // the calendar action handlers). The stable, still-meaningful UI assertion is
-// that the calendar surfaces the Google-account connect entry — the panel it
-// lives in is rendered inline (not an AnchoredPopover), so it's reliable.
+// that the calendar surfaces the Google-account connect entry — the calendars
+// panel is a plain modal (not an AnchoredPopover), so it's reliable.
 test.describe('calendar settings', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
@@ -16,8 +16,9 @@ test.describe('calendar settings', () => {
 
   test('Add Google Account link is present and points at OAuth start', async ({ page }) => {
     await page.goto('/calendar?embed=1');
-    // Working hours + linked accounts live behind the "Calendars" button.
-    await page.getByRole('button', { name: 'Calendars', exact: true }).click();
+    // Linked accounts live in the calendars panel, opened from the gear beside
+    // "My calendars" in the sidebar rail.
+    await page.getByRole('button', { name: 'Manage calendars' }).click();
     const link = page.getByRole('link', { name: /Add Google account/i });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', '/oauth/calendar/google/start');
