@@ -352,17 +352,15 @@ export default function ProjectsListPage() {
   return (
     <div className="flex flex-col gap-4">
       <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
-      <header className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1
-            className={cn(
-              "font-heading text-foreground",
-              os ? "text-[40px] font-medium" : "text-2xl font-bold",
-            )}
-          >
-            Projects
-          </h1>
-        </div>
+      <header className="flex items-center justify-between gap-3">
+        <h1
+          className={cn(
+            "min-w-0 font-heading text-foreground",
+            os ? "text-[40px] font-medium" : "text-2xl font-bold",
+          )}
+        >
+          Projects
+        </h1>
         {canEdit && !creating && (
           <button
             type="button"
@@ -370,7 +368,10 @@ export default function ProjectsListPage() {
               setNewIconEmoji(null);
               setCreating(true);
             }}
-            className={os ? "os-add-btn" : buttonClasses("primary", "sm")}
+            className={cn(
+              "shrink-0",
+              os ? "os-add-btn" : buttonClasses("primary", "sm"),
+            )}
           >
             {os ? (
               <>

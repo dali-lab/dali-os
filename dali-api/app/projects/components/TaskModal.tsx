@@ -278,15 +278,19 @@ export function TaskModal({
   function diffPatch(current: TaskCardModel): Patch {
     const patch: Patch = {};
     if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
-    const nextDescription = description.trim() ? description : null;
-    if (nextDescription !== current.description) patch.description = nextDescription;
+    const nextDescription = description.trim() ? description.trim() : null;
+    const currentDescription = (current.description ?? "").trim() || null;
+    if (nextDescription !== currentDescription) patch.description = nextDescription;
     if (status !== current.status) patch.status = status;
-    const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
-    if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
-    // Start is a plain UTC-midnight day, matching epic/sprint/story dates —
-    // the deadline keeps its end-of-day semantics.
-    const nextStartIso = startDate ? `${startDate}T00:00:00.000Z` : null;
-    if (nextStartIso !== current.startsAt) patch.startsAt = nextStartIso;
+    // Compare the date the picker shows, not a rebuilt ISO. Reconstructing
+    // end-of-day / UTC-midnight from a local YYYY-MM-DD does not round-trip
+    // the stored timestamp, so an untouched deadline looked dirty.
+    const currentDueDate = current.dueAt ? dateInputValue(current.dueAt) : "";
+    if (dueDate !== currentDueDate) patch.dueAt = dueDate ? endOfDayIso(dueDate) : null;
+    const currentStartDate = current.startsAt ? dateInputValue(current.startsAt) : "";
+    if (startDate !== currentStartDate) {
+      patch.startsAt = startDate ? `${startDate}T00:00:00.000Z` : null;
+    }
     const nextDomain =
       domainId === ""
         ? null
@@ -301,7 +305,8 @@ export function TaskModal({
     const nextStoryId = storyId === "" ? null : storyId;
     if (nextStoryId !== current.storyId) patch.storyId = nextStoryId;
     const nextChecklist = normalizeChecklist(checklist);
-    if (JSON.stringify(nextChecklist) !== JSON.stringify(current.checklist ?? [])) {
+    const currentChecklist = normalizeChecklist(current.checklist ?? []);
+    if (JSON.stringify(nextChecklist) !== JSON.stringify(currentChecklist)) {
       patch.checklist = nextChecklist.length > 0 ? nextChecklist : null;
     }
     const sortedNext = [...assigneeIds].sort();
@@ -645,10 +650,7 @@ export function TaskModal({
       containerClassName={cn(
         "w-full my-8 max-h-[85vh] flex flex-col",
         os
-          ? // .modal-card: 560px, one column. The wide two-pane layout below is
-            // the classic modal; the design puts the checklist under the task
-            // rather than beside it.
-            "max-w-[560px] os-modal-card os-form !p-0"
+          ? "max-w-[560px] os-modal-card os-form !p-0"
           : "max-w-4xl bg-card rounded-2xl shadow-brand-2",
       )}
     >
@@ -726,12 +728,8 @@ export function TaskModal({
         </div>
       </div>
 
-      {/* Two columns once there's room: the task itself on the left —
-          description first, then its properties, artifacts and comment
-          thread — with the checklist parked on the right so ticking
-          subtasks off doesn't mean scrolling past every property. Each
-          side scrolls independently past lg, so a long comment thread
-          doesn't push the description out of view. */}
+      {/* Description, then checklist, then properties / comments. One column
+          so the subtasks sit with the task body instead of a side rail. */}
       <div
         className={cn(
           "flex-1 min-h-0 overflow-y-auto",
@@ -739,11 +737,11 @@ export function TaskModal({
             ? // No column gap: a .os-field-group carries its own 20px bottom
               // margin, and a gap here would space the paired fields twice.
               "px-6 pb-6 pt-6"
-            : "lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 p-5 sm:p-6",
+            : "flex flex-col gap-4 p-5 sm:p-6",
           readOnly && "os-form-readonly",
         )}
       >
-        <div className={cn("min-h-0 lg:overflow-y-auto pr-1", !os && "flex flex-col gap-4")}>
+        <div className={cn("min-h-0", !os && "flex flex-col gap-4")}>
         {os && isCreate && (
           <div className="os-field-group">
             <label htmlFor="task-title-field" className="os-field-label">
@@ -785,6 +783,73 @@ export function TaskModal({
             </p>
           )}
         </Field>
+
+        {!isCreate && (
+          <ModalSection
+            os={os}
+            bordered={false}
+            className="mb-4 gap-1.5 text-xs"
+            title={
+              <>
+                Checklist
+                {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
+              </>
+            }
+          >
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Checkbox
+                  checked={item.done}
+                  disabled={!canManage}
+                  onChange={() => void toggleChecklistItem(i)}
+                  aria-label={item.text}
+                />
+                <span
+                  className={`flex-1 text-sm ${
+                    item.done ? "line-through text-muted-foreground" : "text-foreground"
+                  }`}
+                >
+                  {item.text}
+                </span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => removeChecklistItem(i)}
+                    aria-label={`Remove "${item.text}"`}
+                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
+              <input
+                type="text"
+                value={newItemText}
+                maxLength={CHECKLIST_MAX_TEXT}
+                onChange={(e) => setNewItemText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addChecklistItem();
+                  }
+                }}
+                placeholder={
+                  checklist.length === 0
+                    ? "What are the requirements for this task?"
+                    : "Add checklist item and press Enter"
+                }
+                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            )}
+            {!canManage && checklist.length === 0 && (
+              <p className="px-2 py-1.5 text-sm font-mono text-muted-foreground">
+                What are the requirements for this task?
+              </p>
+            )}
+          </ModalSection>
+        )}
 
         {/* The task's properties. The design pairs the fields that answer one
             question — the two ends of a span, domain with assignees — so the
@@ -1212,77 +1277,15 @@ export function TaskModal({
           </ModalSection>
         )}
         </div>
-
-        <div className={cn("min-h-0 lg:overflow-y-auto pr-1", !os && "flex flex-col gap-4")}>
-        {!isCreate && (
-          <ModalSection
-            os={os}
-            // Top of the classic modal's right column, so it takes no rule of
-            // its own there; under os the columns stack and it needs one.
-            bordered={false}
-            className="gap-1.5 text-xs"
-            title={
-              <>
-                Checklist
-                {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
-              </>
-            }
-          >
-            {checklist.map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Checkbox
-                  checked={item.done}
-                  disabled={!canManage}
-                  onChange={() => void toggleChecklistItem(i)}
-                  aria-label={item.text}
-                />
-                <span
-                  className={`flex-1 text-sm ${
-                    item.done ? "line-through text-muted-foreground" : "text-foreground"
-                  }`}
-                >
-                  {item.text}
-                </span>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => removeChecklistItem(i)}
-                    aria-label={`Remove "${item.text}"`}
-                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
-                  >
-                    <X className="w-3.5 h-3.5" aria-hidden />
-                  </button>
-                )}
-              </div>
-            ))}
-            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
-              <input
-                type="text"
-                value={newItemText}
-                maxLength={CHECKLIST_MAX_TEXT}
-                onChange={(e) => setNewItemText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addChecklistItem();
-                  }
-                }}
-                placeholder="Add checklist item and press Enter"
-                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            )}
-          </ModalSection>
-        )}
-        </div>
       </div>
 
       <div className="flex-shrink-0 border-t border-border px-5 sm:px-6 py-4 flex flex-col gap-2">
         {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
 
         <div className="flex items-center gap-2">
-          {!isCreate && canManage && onDelete &&
-            (confirmingDelete ? (
-              <div className="mr-auto flex items-center gap-2 text-sm">
+          {!isCreate && canManage && onDelete ? (
+            confirmingDelete ? (
+              <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">
                   Delete this task?
                   {task?.githubIssueNumber != null && " Its GitHub issue stays open."}
@@ -1306,50 +1309,54 @@ export function TaskModal({
               <button
                 type="button"
                 onClick={() => setConfirmingDelete(true)}
-                className="mr-auto text-sm font-medium text-destructive hover:underline"
+                className="text-sm font-medium text-destructive hover:underline"
               >
                 Delete
               </button>
-            ))}
-          <div className={cn("ml-auto flex gap-2", readOnly && "hidden")}>
-            <button
-              type="button"
-              onClick={guardedClose}
-              className={buttonClasses("secondary", "sm")}
-            >
-              Cancel
-            </button>
-            {canManage &&
-              (isCreate ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void handleCreate()}
-                  disabled={!title.trim() || saving}
-                >
-                  {saving ? "Creating…" : "Create task"}
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setEditing(false);
-                    void handleSave();
-                  }}
-                  disabled={saving}
-                >
-                  {saving ? "Saving…" : "Save"}
-                </Button>
-              ))}
+            )
+          ) : (
+            <span />
+          )}
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            {!isCreate && task && (
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
+              </span>
+            )}
+            <div className={cn("flex gap-2", readOnly && "hidden")}>
+              <button
+                type="button"
+                onClick={guardedClose}
+                className={buttonClasses("secondary", "sm")}
+              >
+                Cancel
+              </button>
+              {canManage &&
+                (isCreate ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void handleCreate()}
+                    disabled={!title.trim() || saving}
+                  >
+                    {saving ? "Creating…" : "Create task"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setEditing(false);
+                      void handleSave();
+                    }}
+                    disabled={saving}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                ))}
+            </div>
           </div>
         </div>
-
-        {!isCreate && task && (
-          <div className="text-[11px] text-muted-foreground text-right">
-            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
-          </div>
-        )}
       </div>
     </Modal>
   );
