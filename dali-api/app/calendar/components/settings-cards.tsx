@@ -110,7 +110,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
   return (
     <div
       className={cn(
-        "bg-accent-coral/10 border border-accent-coral/30 px-3 py-2.5 mb-2 flex flex-col gap-2",
+        "bg-os-accent/10 border border-os-accent/30 px-3 py-2.5 mb-2 flex flex-col gap-2",
         os ? "rounded-os-item" : "rounded-md",
       )}
     >
@@ -139,7 +139,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
           disabled={busy}
           onClick={() => (accounts.length === 1 ? subscribe(accounts[0].id) : setPicking(true))}
           className={cn(
-            "self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-accent-coral text-white hover:bg-accent-coral-light transition-colors disabled:opacity-60",
+            "self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-os-accent text-os-bg hover:bg-os-accent-hover transition-colors disabled:opacity-60",
             os ? "rounded-full" : "rounded-md",
           )}
         >
@@ -267,7 +267,7 @@ function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }
       <div className="flex items-center gap-2 min-w-0">
         <span
           className="w-2 h-2 rounded-full flex-shrink-0"
-          style={{ backgroundColor: cal.color ?? "var(--accent-coral)" }}
+          style={{ backgroundColor: cal.color ?? "var(--os-accent)" }}
         />
         <span className="text-sm text-foreground truncate">{cal.summary}</span>
         {cal.primary && (
@@ -279,7 +279,7 @@ function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }
       <span
         className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors flex-shrink-0 ${
           enabled
-            ? "bg-accent-coral border-accent-coral text-white"
+            ? "bg-os-accent border-os-accent text-os-bg"
             : "border-border bg-background"
         }`}
       >
@@ -300,11 +300,15 @@ function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }
 export function WorkingHoursCard({
   workingHours,
   hasPersisted,
+  hint,
 }: {
   workingHours: WhDay[];
   hasPersisted: boolean;
+  /** One line under the heading. The card already titles itself, so callers
+   *  add context here rather than stacking a second heading above it. */
+  hint?: string;
 }) {
-  const { os, card, cardPad, heading, headingIcon, iconBtn } = useOsChrome();
+  const { os, card, cardPad, iconBtn } = useOsChrome();
   const resetFetcher = useFetcher();
   const toggleFetcher = useFetcher();
 
@@ -343,10 +347,16 @@ export function WorkingHoursCard({
   return (
     <section>
       <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
-        <h2 className={heading}>
-          <Clock className={headingIcon} />
-          Working Hours
-        </h2>
+        {/* Matches the Availability tab's other section headers: a muted glyph
+            in the gutter and a sentence-case semibold title, rather than the
+            eyebrow + accent-icon pair the older settings cards use. */}
+        <div className="flex min-w-0 items-start gap-2.5">
+          <Clock className="mt-0.5 h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-foreground">Working hours</h2>
+            {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           {enabled && (
             <>
@@ -490,7 +500,7 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
         type="button"
         onClick={toggleEnabled}
         className={`mt-1.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-          enabled ? "bg-accent-coral border-accent-coral text-white" : "border-border bg-background"
+          enabled ? "bg-os-accent border-os-accent text-os-bg" : "border-border bg-background"
         }`}
         aria-label={`${DAY_LABELS[day.dayOfWeek]} enabled`}
       >
@@ -594,7 +604,7 @@ function TimeField({
         className={cn(
           "w-[88px] pl-2 pr-6 py-1 text-xs border border-border focus:outline-none",
           compactField,
-          !os && "focus:ring-2 focus:ring-accent-coral/30",
+          !os && "focus:ring-2 focus:ring-os-accent/30",
         )}
       />
       <Clock className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
@@ -636,7 +646,7 @@ function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => 
       type="button"
       onClick={onClick}
       className={`p-1.5 rounded-md transition-colors ${
-        active ? "bg-accent-coral/20 text-accent-coral" : "text-muted-foreground hover:bg-muted"
+        active ? "bg-os-accent/20 text-os-accent" : "text-muted-foreground hover:bg-muted"
       }`}
     >
       {icon}
@@ -689,7 +699,7 @@ export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
                     // fill, as the People directory's Active/Alumni switch does.
                     os
                     ? "bg-os-container text-foreground"
-                    : "bg-accent-coral text-white"
+                    : "bg-os-accent text-os-bg"
                   : os
                     ? "bg-os-well text-os-grey hover:text-foreground"
                     : "bg-background text-foreground border border-border hover:bg-muted",

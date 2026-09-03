@@ -20,7 +20,7 @@
 // writing payroll-adjacent data unsupervised.
 
 import { prisma } from "~/lib/db";
-import { resolveRoleRef, currentTerm } from "~/lib/roles";
+import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
 import { validateTimeEntryRange } from "~/lib/calendar-schemas";
 import type { AssignmentType } from "~/generated/prisma/client";
 
@@ -137,7 +137,7 @@ export async function runListMyRoles(
     ...cores.map((r) => ({
       assignmentType: "Core" as const,
       roleRefId: r.id,
-      label: r.leadTitle ? `Core — ${r.leadTitle}` : "Core",
+      label: coreRoleLabel(r.leadTitle),
       termCode: r.term.code,
       projectId: null,
     })),

@@ -4,6 +4,9 @@ vi.mock("~/lib/db");
 vi.mock("~/lib/roles", () => ({
   resolveRoleRef: vi.fn(),
   currentTerm: vi.fn(),
+  // Pure label helper — keep the real behaviour so the labels this file
+  // asserts stay tied to the one definition in ~/lib/roles.
+  coreRoleLabel: (leadTitle: string | null) => leadTitle || "Core",
 }));
 
 import { prisma } from "~/lib/db";
@@ -272,7 +275,7 @@ describe("list_my_roles", () => {
         {
           assignmentType: "Core",
           roleRefId: "ca-1",
-          label: "Core — Education Lead",
+          label: "Education Lead",
           termCode: "26X",
           projectId: null,
         },

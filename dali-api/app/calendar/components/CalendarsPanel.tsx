@@ -6,12 +6,16 @@
 // toggles.  It owns:
 //
 //   • Connected Google accounts (connect / disconnect)
-//   • Per-calendar row: Show on grid + Counts toward availability + color swatch
-//     + rename/delete (Google-owned only)
-//   • Working hours (opens WorkingHoursPopover)
-//   • Classes (opens ClassesManagerModal)
-//   • Mirror my timesheet to Google (new opt-in toggle, off by default)
-//   • Layer visibility controls (same as the old CalendarLayerList)
+//   • Per-calendar row: Main + Show on grid + Counts toward availability
+//     + color swatch + rename/delete (Google-owned only)
+//
+// Layer visibility is NOT here any more: every layer is a row in the Events
+// page's left rail (each linked calendar, plus the Timesheet pseudo-calendar),
+// so this panel is purely about connecting and configuring accounts.
+//
+// Working hours and Classes used to open from here too. They now live inline on
+// the calendar's Availability tab, so the quick-links were removed rather than
+// leaving two ways to edit the same thing.
 //
 // Mount point in calendar.tsx: replace the existing CalendarLayerList +
 // its wrapper dropdown with a slide-in drawer or a wider panel that renders
@@ -25,28 +29,24 @@
 // The server handler must look for intent === "set-timesheet-sync" and
 // persist the boolean on UserAvailabilitySettings (or a new per-user col).
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
-import { useFetcher } from "react-router";
+import { useFetcher, useRevalidator } from "react-router";
 import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  Clock,
-  GraduationCap,
   Pencil,
   Plus,
   SlidersHorizontal,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
 import { Toggle } from "~/components/ui/Toggle";
+import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import {
-  CalendarManagerModal,
-  ClassesManagerModal,
-  WorkingHoursPopover,
-} from "~/calendar/components/composer";
+import { CalendarManagerModal } from "~/calendar/components/composer";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
 import type { LayerVisibility } from "~/calendar/lib/layers";
 import { perCalendarLegend, type CalendarLegendGroup } from "~/calendar/lib/layers";
@@ -66,6 +66,9 @@ export type CalendarsPanelProps = {
   showAvailabilityToggle?: boolean;
   // Called when the panel itself is closed (the integration agent wires this).
   onClose?: () => void;
+  // Rendered in the page flow (the Availability tab) rather than as a floating
+  // dropdown: drop the fixed width, the raised surface and the viewport cap.
+  inline?: boolean;
   // Passed through to the classes / working-hours sub-modals so they can
   // open from inside the panel.
   classesEnabled?: boolean;
@@ -88,17 +91,28 @@ export function CalendarsPanel({
   toggleHiddenCal,
   showAvailabilityToggle = true,
   onClose,
+  inline = false,
   classesEnabled,
   timesheetSyncEnabled = false,
   roleBuckets = [],
   excludedRoleKeys,
   toggleRoleKey,
 }: CalendarsPanelProps) {
-  // Sub-modal state
+  const { panel, panelPad } = useOsChrome();
   const [calMgrOpen, setCalMgrOpen] = useState(false);
-  const [classesOpen, setClassesOpen] = useState(false);
-  const [hoursAnchor, setHoursAnchor] = useState<DOMRect | null>(null);
-  const hoursButtonRef = useRef<HTMLButtonElement>(null);
+
+  const revalidator = useRevalidator();
+  // The main calendar rides the same `dali_event_dest` cookie the create modal
+  // already reads for its destination — marking one here is the explicit way to
+  // set what that modal defaults to.
+  const setMain = (dest: string) => {
+    try {
+      document.cookie = `dali_event_dest=${encodeURIComponent(dest)}; path=/; max-age=31536000`;
+    } catch {
+      /* ignore */
+    }
+    revalidator.revalidate();
+  };
 
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google");
   const calendars = perCalendarLegend(data);
@@ -121,7 +135,14 @@ export function CalendarsPanel({
       )}
 
       {/* ── Panel shell ──────────────────────────────────────────────── */}
-      <div className="relative z-50 flex w-[22rem] flex-col gap-5 overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-brand-3 max-h-[85vh]">
+      <div
+        className={cn(
+          "flex flex-col gap-5",
+          inline
+            ? cn(panel, panelPad)
+            : "relative z-50 w-[22rem] overflow-y-auto rounded-xl cal-surface p-4 max-h-[85vh]",
+        )}
+      >
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
@@ -177,6 +198,8 @@ export function CalendarsPanel({
               hiddenCals={hiddenCals}
               toggleHiddenCal={toggleHiddenCal}
               showAvailabilityToggle={showAvailabilityToggle}
+              defaultEventDest={data.defaultEventDest}
+              setMain={setMain}
             />
           ))}
 
@@ -191,71 +214,6 @@ export function CalendarsPanel({
           )}
         </section>
 
-        {/* ── Section 2: Layer visibility ─────────────────────────────── */}
-        <section className="flex flex-col gap-1.5">
-          <div className={sectionHead}>
-            Layers
-          </div>
-          <LayerToggles
-            layers={layers}
-            toggleLayer={toggleLayer}
-            classesEnabled={classesEnabled ?? data.classesEnabled}
-            roleBuckets={roleBuckets}
-            excludedRoleKeys={excludedRoleKeys}
-            toggleRoleKey={toggleRoleKey}
-          />
-        </section>
-
-        {/* ── Section 3: Working hours ────────────────────────────────── */}
-        <section className="flex flex-col gap-1.5">
-          <div className={sectionHead}>
-            <Clock className="h-3.5 w-3.5" /> Working hours
-          </div>
-          <button
-            ref={hoursButtonRef}
-            type="button"
-            onClick={(e) => setHoursAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))}
-            className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-          >
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Edit working hours
-          </button>
-        </section>
-
-        {/* ── Section 4: Classes ─────────────────────────────────────── */}
-        {data.classesEnabled && (
-          <section className="flex flex-col gap-1.5">
-            <div className={sectionHead}>
-              <GraduationCap className="h-3.5 w-3.5" /> Classes
-              {data.classTerm && (
-                <span className="ml-1 normal-case tracking-normal font-normal text-muted-foreground">
-                  {data.classTerm.code}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setClassesOpen(true)}
-              className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-            >
-              <GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />
-              {data.memberClasses.length > 0
-                ? `Manage classes (${data.memberClasses.length})`
-                : "Add your classes"}
-            </button>
-          </section>
-        )}
-
-        {/* ── Section 5: Timesheet mirror ─────────────────────────────── */}
-        <section className="flex flex-col gap-2">
-          <div className={sectionHead}>
-            Timesheet
-          </div>
-          <TimesheetSyncToggle
-            data={data}
-            enabled={timesheetSyncEnabled}
-            googleLinks={googleLinks}
-          />
-        </section>
       </div>
 
       {/* ── Sub-modals ────────────────────────────────────────────────── */}
@@ -267,18 +225,6 @@ export function CalendarsPanel({
           <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />,
           document.body,
         )}
-      {classesOpen &&
-        createPortal(
-          <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />,
-          document.body,
-        )}
-      {hoursAnchor && (
-        <WorkingHoursPopover
-          data={data}
-          anchor={hoursAnchor}
-          onClose={() => setHoursAnchor(null)}
-        />
-      )}
     </>
   );
 }
@@ -292,12 +238,16 @@ function AccountSection({
   hiddenCals,
   toggleHiddenCal,
   showAvailabilityToggle,
+  defaultEventDest,
+  setMain,
 }: {
   link: CalendarLinkDTO;
   calendars: CalendarLegendGroup[];
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   showAvailabilityToggle: boolean;
+  defaultEventDest: string | null;
+  setMain: (dest: string) => void;
 }) {
   const removeFetcher = useFetcher();
   const [open, setOpen] = useState(true); // expanded by default in the panel
@@ -354,6 +304,9 @@ function AccountSection({
                 <span className="flex-1 truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Calendar
                 </span>
+                <span className="w-12 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Main
+                </span>
                 <span className="w-[4.5rem] text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Show
                 </span>
@@ -371,6 +324,8 @@ function AccountSection({
                   hiddenCals={hiddenCals}
                   toggleHiddenCal={toggleHiddenCal}
                   showAvailabilityToggle={showAvailabilityToggle}
+                  isMain={defaultEventDest === `${link.id}:${cal.id}`}
+                  setMain={setMain}
                 />
               ))}
             </>
@@ -392,17 +347,24 @@ function SubCalendarPanelRow({
   hiddenCals,
   toggleHiddenCal,
   showAvailabilityToggle,
+  isMain,
+  setMain,
 }: {
   linkId: string;
   cal: SubCalendarDTO;
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   showAvailabilityToggle: boolean;
+  isMain: boolean;
+  setMain: (dest: string) => void;
 }) {
   const availFetcher = useFetcher();
   const pendingEnabled = availFetcher.formData?.get("enabled");
   const availEnabled = pendingEnabled != null ? pendingEnabled === "true" : cal.enabled;
   const gridVisible = !hiddenCals.has(cal.id);
+  // Only a calendar you can write to can be the main one — a read-only
+  // subscription has nowhere to put a new event.
+  const canBeMain = cal.writable !== false;
 
   return (
     <div className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50">
@@ -425,6 +387,36 @@ function SubCalendarPanelRow({
         )}
       </span>
 
+      {/* Main calendar — where an event created in dali.os is written. Radio,
+          not a toggle: exactly one calendar holds it, so picking another moves
+          it rather than clearing it. */}
+      <div className="flex w-12 justify-center">
+        {canBeMain ? (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={isMain}
+            aria-label={
+              isMain ? `${cal.summary} is your main calendar` : `Make ${cal.summary} your main calendar`
+            }
+            title={
+              isMain
+                ? "New events are created here"
+                : "Make this the calendar new events are created on"
+            }
+            onClick={() => setMain(`${linkId}:${cal.id}`)}
+            className={cn(
+              "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              isMain ? "text-os-accent" : "text-muted-foreground/40 hover:text-muted-foreground",
+            )}
+          >
+            <Star className={cn("h-4 w-4", isMain && "fill-current")} />
+          </button>
+        ) : (
+          <span className="text-[10px] text-muted-foreground/50">—</span>
+        )}
+      </div>
+
       {/* Show on grid toggle (localStorage, client-side) */}
       <div className="flex w-[4.5rem] justify-center">
         <button
@@ -434,8 +426,8 @@ function SubCalendarPanelRow({
           aria-label={`${gridVisible ? "Hide" : "Show"} ${cal.summary} on grid`}
           onClick={() => toggleHiddenCal(cal.id)}
           className={cn(
-            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40",
-            gridVisible ? "bg-accent-teal" : "bg-border",
+            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+            gridVisible ? "bg-accent-teal" : "bg-muted-foreground/30 ring-1 ring-inset ring-black/10",
           )}
         >
           <span
@@ -467,8 +459,8 @@ function SubCalendarPanelRow({
               )
             }
             className={cn(
-              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40",
-              availEnabled ? "bg-accent-coral" : "bg-border",
+              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              availEnabled ? "bg-os-accent" : "bg-muted-foreground/30 ring-1 ring-inset ring-black/10",
             )}
           >
             <span
