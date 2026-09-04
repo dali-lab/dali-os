@@ -250,6 +250,13 @@ export function CreateEventModal({
     prevEventState.current = eventFetcher.state;
   }, [eventFetcher.state, eventFetcher.data, onClose]);
 
+  // Hours hang off one concrete, timed occurrence: a repeating event has no
+  // single occurrence to attach them to and an all-day event has no range to
+  // measure. The server rejects both, so don't offer the toggle for them.
+  // Meetings are always single and timed, so this only gates the Event form.
+  const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
+  const eventLoggingWork = isWork && eventCanLogWork;
+
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
     title.trim() !== "" &&
@@ -258,7 +265,7 @@ export function CreateEventModal({
     endIso !== "" &&
     startEndValid &&
     startIso < endIso &&
-    (!isWork || (roleKey !== "" && workNote.trim() !== ""));
+    (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
     title.trim() !== "" &&
@@ -548,7 +555,7 @@ export function CreateEventModal({
               <input type="hidden" name="timeZone" value={data.timezone} />
               <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat, repeatAnchorLocal) ?? ""} />
               <input type="hidden" name="description" value={description} />
-              {isWork && roleKey && (
+              {eventLoggingWork && roleKey && (
                 <>
                   <input type="hidden" name="isWork" value="1" />
                   <input type="hidden" name="assignmentType" value={roleKey.split("::")[0] ?? ""} />
@@ -695,8 +702,9 @@ export function CreateEventModal({
                 </FieldRow>
               )}
 
-              {/* Timesheet */}
-              {timesheetSection}
+              {/* Timesheet — hidden for all-day and repeating events, which
+                  have nothing for hours to attach to. */}
+              {eventCanLogWork && timesheetSection}
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (

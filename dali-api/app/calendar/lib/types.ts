@@ -114,6 +114,10 @@ export type TimeEntryDTO = {
   id: string;
   source: "Meeting" | "Manual";
   scheduledMeetingId: string | null;
+  /** The calendar event these hours were logged against ("count this as work"),
+   *  when there is one. The grid draws that event's block with a role accent
+   *  instead of drawing this entry as a second, overlapping block. */
+  sourceEventId: string | null;
   manualBlockId: string | null;
   meetingNotePageId: string | null;
   assignmentType: RoleInstance["assignmentType"] | null;
