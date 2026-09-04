@@ -11,6 +11,12 @@ import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 import {
+  useMeetingNote,
+  meetingNoteValid,
+  meetingNotePayload,
+  MeetingNoteFields,
+} from "~/calendar/components/MeetingNoteFields";
+import {
   toDatetimeLocal, durationMinutesBetween, HOURS, HOUR_PX, SNAP_HOURS,
   availabilityTint, dayHourToLocal, shiftWeekParam,
 } from "~/calendar/lib/event-block";
@@ -226,11 +232,9 @@ export function CreateScheduledMeetingForm({
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
     googleLinks[0]?.id ?? "",
   );
-  // Meeting notes are opt-in — type/label/project only appear when this is on.
-  const [createNote, setCreateNote] = useState(false);
-  const [meetingType, setMeetingType] = useState<"Team" | "Partner" | "Other">("Other");
-  const [meetingTypeLabel, setMeetingTypeLabel] = useState("");
-  const [projectId, setProjectId] = useState("");
+  // Meeting notes are opt-in — the About / type / location fields only appear
+  // once enabled. See MeetingNoteFields for the derive-type-from-project model.
+  const note = useMeetingNote();
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -254,23 +258,22 @@ export function CreateScheduledMeetingForm({
   // rather than a manual toggle — so it lands on the Core calendar automatically.
   const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
 
-  // Prefill the Project picker when exactly one selected group is a
-  // system-managed project group (see GroupOption.projectId) — still fully
-  // overridable by the sender.
+  // Prefill "About" when exactly one selected group is a system-managed project
+  // group (see GroupOption.projectId) — a default the sender can still change. It
+  // fills even while the note is off, so the project is already chosen if they
+  // turn it on; it never enables the note itself.
   useEffect(() => {
-    if (!createNote || selectedGroupIds.length !== 1) return;
-    const g = groupsById.get(selectedGroupIds[0]!);
-    if (g?.projectId && !projectId) setProjectId(g.projectId);
+    if (selectedGroupIds.length !== 1) return;
+    note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, createNote]);
+  }, [selectedGroupIds]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
     !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
-  const meetingTypeValid =
-    !createNote || meetingType !== "Other" || meetingTypeLabel.trim().length > 0;
+  const meetingTypeValid = meetingNoteValid(note.state);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -294,11 +297,7 @@ export function CreateScheduledMeetingForm({
       if (organizerCalendarLinkId) {
         payload.organizerCalendarLinkId = organizerCalendarLinkId;
       }
-      if (createNote) {
-        payload.meetingType = meetingType;
-        if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
-        if (projectId) payload.projectId = projectId;
-      }
+      Object.assign(payload, meetingNotePayload(note.state));
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
       }
@@ -342,10 +341,7 @@ export function CreateScheduledMeetingForm({
         onEndLocalChange("");
         onChangeSelectedUserIds([]);
         onChangeSelectedGroupIds([]);
-        setCreateNote(false);
-        setMeetingType("Other");
-        setMeetingTypeLabel("");
-        setProjectId("");
+        note.reset();
         setSelfCheckIn(false);
       }
     } catch (err) {
@@ -475,61 +471,18 @@ export function CreateScheduledMeetingForm({
 
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
             <Checkbox
-              checked={createNote}
-              onChange={(e) => setCreateNote(e.target.checked)}
+              checked={note.state.enabled}
+              onChange={(e) => note.setEnabled(e.target.checked)}
               label="Create meeting note"
             />
 
-            {createNote && (
-              <div className="pl-6 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="meeting-type" className={labelClass}>
-                      Meeting type
-                    </label>
-                    <Select
-                      value={meetingType}
-                      onChange={(v) => setMeetingType(v as typeof meetingType)}
-                      options={[
-                        { value: "Team", label: "Team meeting" },
-                        { value: "Partner", label: "Partner meeting" },
-                        { value: "Other", label: "Other" },
-                      ]}
-                      buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-                    />
-                  </div>
-                  {meetingType === "Other" && (
-                    <div>
-                      <label htmlFor="meeting-type-label" className={labelClass}>
-                        Meeting type name
-                      </label>
-                      <input
-                        id="meeting-type-label"
-                        type="text"
-                        value={meetingTypeLabel}
-                        onChange={(e) => setMeetingTypeLabel(e.target.value)}
-                        placeholder="e.g. Partner hub meeting"
-                        required
-                        className={fieldClass}
-                      />
-                    </div>
-                  )}
-                  <div className={meetingType === "Other" ? "sm:col-span-2" : ""}>
-                    <label htmlFor="meeting-project" className={labelClass}>
-                      Project <span className="text-muted-foreground font-normal">(optional)</span>
-                    </label>
-                    <Select
-                      value={projectId}
-                      onChange={(v) => setProjectId(v)}
-                      options={[
-                        { value: "", label: "No project — Lab documents" },
-                        ...myProjects.map((p) => ({ value: p.id, label: p.name })),
-                      ]}
-                      buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-                    />
-                  </div>
-                </div>
-              </div>
+            {note.state.enabled && (
+              <MeetingNoteFields
+                note={note}
+                myProjects={myProjects}
+                fieldClass={fieldClass}
+                labelClass={labelClass}
+              />
             )}
           </div>
 

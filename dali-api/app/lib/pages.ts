@@ -46,9 +46,13 @@ export async function createLabMeetingPage(input: {
   title: string;
   createdById: string;
   meetingNoteId?: string;
+  // Optional Lab folder to nest under (null = Lab top level). Lets a General
+  // meeting file its note at a chosen Lab location instead of the root.
+  parentPageId?: string | null;
 }): Promise<{ id: string }> {
+  const parentPageId = input.parentPageId ?? null;
   const last = await prisma.page.findFirst({
-    where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+    where: { workspaceType: "Lab", workspaceId: null, parentPageId },
     orderBy: { position: "desc" },
     select: { position: true },
   });
@@ -61,6 +65,7 @@ export async function createLabMeetingPage(input: {
       title: input.title,
       kind: "FreeForm",
       position,
+      parentPageId,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
       // Lab docs default to the communal shelf: everyone in the lab can edit.
