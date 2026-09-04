@@ -171,10 +171,14 @@ test.describe('project hub share toggle (member)', () => {
   // anchor on its text and take the next actions trigger in document order —
   // that's this row's menu. (The shared Menu puts its aria-label on the popup
   // panel, not the trigger, so we key off the trigger's data-testid.)
+  // Scope to the Drive row, not a bare text match: the DriveBrowser action
+  // strip now echoes the selected item's title, so `getByText(title)` alone
+  // resolves to two elements (the row + the strip) and trips strict mode.
   const docMenu = (page: import('@playwright/test').Page, title: string) =>
     page
-      .getByText(title, { exact: true })
-      .locator('xpath=following::button[starts-with(@data-testid, "drive-item-actions-")][1]');
+      .locator('[data-testid^="drive-item-"]')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .locator('[data-testid^="drive-item-actions-"]');
 
   test('project details shows the Partners section; drive shows share states', async ({ page }) => {
     // Partners live on Project details; the project's files (and their
@@ -207,7 +211,9 @@ test.describe('project hub share toggle (member)', () => {
     await docMenu(page, 'Internal Retro Notes').click();
     await page.getByRole('menuitem', { name: 'Share with partner' }).click();
     await expect(
-      page.getByText('Internal Retro Notes', { exact: true }),
+      page
+        .locator('[data-testid^="drive-item-"]')
+        .filter({ has: page.getByText('Internal Retro Notes', { exact: true }) }),
     ).toBeVisible();
     await docMenu(page, 'Internal Retro Notes').click();
     await expect(
