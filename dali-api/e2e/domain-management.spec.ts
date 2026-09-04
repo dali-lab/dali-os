@@ -16,20 +16,35 @@ test.describe('admin domain management', () => {
   });
 
   test('admin can create a new domain and then delete it', async ({ page }) => {
+    // First hit to this iframe route can cold-compile its client bundle, so
+    // hydration (which wires the form's onChange) may lag well past the default.
+    test.slow();
     const name = `E2E Domain ${Date.now()}`;
 
     await page.goto(DOMAINS_URL);
     const frame = domainsFrame(page);
     await expect(frame.getByRole('heading', { name: 'Domains' })).toBeVisible();
 
-    await frame.getByLabel('New domain name').fill(name);
-    await frame.getByRole('button', { name: 'Add domain' }).click();
+    // The form renders inside the workspace iframe; a fill can land before React
+    // has wired the input's onChange (so `name` state stays empty and the submit
+    // button stays disabled). Re-fill until the button enables, then submit.
+    const addBtn = frame.getByRole('button', { name: 'Add domain' });
+    await expect(async () => {
+      await frame.getByLabel('New domain name').fill(name);
+      await expect(addBtn).toBeEnabled({ timeout: 2000 });
+    }).toPass({ timeout: 45_000 });
+    await addBtn.click();
 
     const row = frame.getByRole('listitem').filter({ hasText: name });
     await expect(row).toBeVisible();
     await expect(row.getByText('Unused')).toBeVisible();
 
     await row.getByRole('button', { name: 'Delete' }).click();
+    // Deleting a domain now goes through a confirm dialog (action guardrails).
+    await frame
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete domain', exact: true })
+      .click();
     await expect(row).toHaveCount(0);
   });
 
