@@ -7,10 +7,16 @@ vi.mock("~/lib/db");
 vi.mock("~/hiring/lib/confidentiality", () => ({
   getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "none" }),
 }));
+// Page-body search is raw SQL against tsvector/pg_trgm, which the Prisma mock
+// can't stand in for — its own behavior is covered in doc-search.test.ts.
+vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { searchPageContent } from "~/lib/doc-search.server";
 import { runSearch } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
+
+const mockPageContent = searchPageContent as unknown as ReturnType<typeof vi.fn>;
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -41,6 +47,7 @@ beforeEach(() => {
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
   mockPrisma.project.findMany.mockResolvedValue([]);
+  mockPageContent.mockResolvedValue([]);
   mockPrisma.task.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
 });
@@ -151,5 +158,87 @@ describe("runSearch — project files", () => {
       subtitle: "Atlas",
       url: "/documents/file/f1",
     });
+  });
+});
+
+
+describe("runSearch — documents", () => {
+  const hit = (id: string, title: string, snippet = "…matched sentence…") => ({
+    pageId: id,
+    title,
+    iconEmoji: null,
+    snippet,
+    fuzzy: false,
+  });
+
+  it("surfaces a page whose body matches even though its title does not", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    mockPageContent.mockResolvedValue([hit("pg1", "Week 3 notes", "the query engine rollout")]);
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+
+    expect(results).toContainEqual({
+      type: "document",
+      id: "pg1",
+      title: "Week 3 notes",
+      // The matched sentence explains a result the title doesn't account for.
+      subtitle: "the query engine rollout",
+      url: "/documents/pg1",
+      iconEmoji: null,
+    });
+  });
+
+  it("ranks title matches above body matches", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      { id: "pg-title", title: "Query runbook", iconEmoji: null },
+    ]);
+    mockPageContent.mockResolvedValue([hit("pg-body", "Unrelated title")]);
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+    const docs = results.filter((r) => r.type === "document");
+
+    expect(docs.map((d) => d.id)).toEqual(["pg-title", "pg-body"]);
+  });
+
+  it("does not list a page twice when its title and body both match", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      { id: "pg1", title: "Query runbook", iconEmoji: null },
+    ]);
+    mockPageContent.mockResolvedValue([hit("pg1", "Query runbook")]);
+
+    const docs = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
+      (r) => r.type === "document",
+    );
+
+    expect(docs).toHaveLength(1);
+    // The title match wins, so the subtitle stays the plain type label.
+    expect(docs[0].subtitle).toBe("Document");
+  });
+
+  it("caps the category even when both sources are full", async () => {
+    mockPrisma.page.findMany.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => ({ id: `t${i}`, title: `Query ${i}`, iconEmoji: null })),
+    );
+    mockPageContent.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => hit(`b${i}`, `Body ${i}`)),
+    );
+
+    const docs = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
+      (r) => r.type === "document",
+    );
+
+    expect(docs).toHaveLength(5);
+    expect(docs.every((d) => d.id.startsWith("t"))).toBe(true);
+  });
+
+  it("falls back to the type label when a hit has no snippet", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    mockPageContent.mockResolvedValue([hit("pg1", "Notes", "")]);
+
+    const docs = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
+      (r) => r.type === "document",
+    );
+
+    expect(docs[0].subtitle).toBe("Document");
   });
 });

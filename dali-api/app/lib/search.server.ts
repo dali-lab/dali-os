@@ -9,10 +9,12 @@ import {
   buildUrl,
   computeHiringVisibility,
   MIN_QUERY_LENGTH,
+  PER_CATEGORY_CAP,
   rankResults,
   type SearchResult,
   type SearchResultType,
 } from "~/lib/search";
+import { searchPageContent } from "~/lib/doc-search.server";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
 // that feed the pure ranking in lib/search.ts. Each category is a small helper
@@ -239,18 +241,44 @@ async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]>
 
 async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
   // Any authenticated member may already open any live page by URL (only
-  // editing is gated), so title search matches that existing view surface.
-  const rows = await prisma.page.findMany({
-    where: { archivedAt: null, title: like },
-    select: { id: true, title: true, iconEmoji: true },
-    take: RAW_TAKE,
-  });
-  return simpleResults(
+  // editing is gated), so both passes match that existing view surface.
+  //
+  // Titles and bodies are searched separately and merged rather than scored
+  // together: a title match is what someone means the overwhelming majority of
+  // the time, so it keeps its place at the top of the category and body
+  // matches fill whatever room is left. That leaves existing results exactly
+  // where they were and only adds documents search used to miss entirely.
+  const [rows, contentHits] = await Promise.all([
+    prisma.page.findMany({
+      where: { archivedAt: null, title: like },
+      select: { id: true, title: true, iconEmoji: true },
+      take: RAW_TAKE,
+    }),
+    searchPageContent(q, PER_CATEGORY_CAP),
+  ]);
+
+  const titleResults = simpleResults(
     "document",
     "Document",
     rows.map((r) => ({ id: r.id, label: r.title, iconEmoji: r.iconEmoji })),
     q,
   );
+
+  const seen = new Set(titleResults.map((r) => r.id));
+  const contentResults = contentHits
+    .filter((hit) => !seen.has(hit.pageId))
+    .map((hit) => ({
+      type: "document" as const,
+      id: hit.pageId,
+      title: hit.title,
+      // The matched sentence says why this document came back when its title
+      // gave nothing away. Falls back to the type label for an empty snippet.
+      subtitle: hit.snippet || "Document",
+      url: buildUrl.document(hit.pageId),
+      iconEmoji: hit.iconEmoji,
+    }));
+
+  return [...titleResults, ...contentResults].slice(0, PER_CATEGORY_CAP);
 }
 
 async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {

@@ -87,6 +87,7 @@ import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";
 import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";
 import { runOutboundDrain } from "~/lib/outbound.server";
+import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -310,6 +311,23 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runSlackIdentitySync,
+  },
+  {
+    name: "doc-search-index",
+    description:
+      "Backfills and repairs the document content search index: re-indexes page bodies whose CollabDocument is newer than the row search matches against (pages predating the index, edits made while it was unreachable). Pages are indexed on save too — this is the safety net.",
+    intervalMinutes: 30,
+    settings: [
+      {
+        key: "batchSize",
+        label: "Pages per run",
+        unit: "",
+        min: 10,
+        max: 2000,
+        default: 200,
+      },
+    ],
+    handler: runDocSearchIndex,
   },
   {
     name: "signing-issuance",

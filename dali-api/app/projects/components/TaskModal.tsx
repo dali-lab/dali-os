@@ -128,6 +128,10 @@ export function TaskModal({
   const [dueDate, setDueDate] = useState<string>(
     task?.dueAt ? dateInputValue(task.dueAt) : "",
   );
+  // Backlog is the one column that holds undated work; anywhere else a new
+  // task is scheduled work, so it has to land on the timeline with a deadline.
+  const deadlineRequired = isCreate && status !== "Backlog";
+  const missingDeadline = deadlineRequired && !dueDate;
   // Timeline start. Paired with the deadline it gives the task a span on the
   // planning timeline; left blank the bar inherits its story's span.
   const [startDate, setStartDate] = useState<string>(
@@ -423,6 +427,10 @@ export function TaskModal({
   async function handleCreate() {
     const trimmed = title.trim();
     if (!trimmed || !onCreate) return;
+    if (missingDeadline) {
+      setSaveError("Give the task a deadline, or create it in Backlog.");
+      return;
+    }
     setSaving(true);
     try {
       await onCreate({
@@ -814,8 +822,10 @@ export function TaskModal({
           {/* Plain Markdown on Task.description, the same shape as the
               project's own Description block. Descriptions written back when
               this was a collab doc were already mirrored to this column as
-              plaintext, so they still read fine here. */}
-          {canManage ? (
+              plaintext, so they still read fine here. In record (read-only)
+              mode render as text — a textarea under `.os-form-readonly` has
+              pointer-events: none, so you couldn't select or copy it. */}
+          {canManage && !readOnly ? (
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -824,7 +834,7 @@ export function TaskModal({
               className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           ) : description ? (
-            <div className="px-2 py-1.5">
+            <div className={cn("px-2 py-1.5 text-sm", readOnly && "os-selectable")}>
               <Markdown>{description}</Markdown>
             </div>
           ) : (
@@ -927,7 +937,15 @@ export function TaskModal({
               ariaLabel="Start date"
             />
           </PropRow>
-          <PropRow label="Deadline">
+          <PropRow
+            label="Deadline"
+            required={deadlineRequired}
+            hint={
+              deadlineRequired && !dueDate
+                ? "Required unless the task starts in Backlog."
+                : undefined
+            }
+          >
             <DateField
               mode="date"
               value={dueDate}
@@ -1387,7 +1405,7 @@ export function TaskModal({
                     variant="primary"
                     size="sm"
                     onClick={() => void handleCreate()}
-                    disabled={!title.trim() || saving}
+                    disabled={!title.trim() || missingDeadline || saving}
                   >
                     {saving ? "Creating…" : "Create task"}
                   </Button>
@@ -1490,19 +1508,28 @@ function ModalSection({
 function PropRow({
   label,
   hint,
+  required = false,
   children,
   align = "center",
 }: {
   label: string;
   hint?: string;
+  // Marks the field as one create mode won't submit without.
+  required?: boolean;
   children: React.ReactNode;
   align?: "center" | "start";
 }) {
   const os = useFeatureFlag("os-redesign");
+  const caption = (
+    <>
+      {label}
+      {required && <span className="os-required-mark">*</span>}
+    </>
+  );
   if (os) {
     return (
       <div className="os-field-group min-w-0">
-        <span className="os-field-label">{label}</span>
+        <span className="os-field-label">{caption}</span>
         <div className="min-w-0">{children}</div>
         {hint && <span className="os-field-hint">{hint}</span>}
       </div>
@@ -1519,7 +1546,7 @@ function PropRow({
           align === "start" ? "pt-1.5" : ""
         }`}
       >
-        {label}
+        {caption}
       </span>
       <div className="flex-1 min-w-0">
         {children}

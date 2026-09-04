@@ -5,6 +5,7 @@ import { INTERNAL_CYCLES } from "~/hiring/lib/internal-cycles.server";
 import { INTERNAL_CYCLE_TYPES, type InternalCycleType } from "~/hiring/lib/internal-cycles";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
+import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
@@ -145,51 +146,11 @@ const TASK_WHERE = (
   readAt: null,
   // A meeting-invite notification drops off Tasks the moment its meeting is
   // Cancelled — no fan-out delete needed. Notifications not tied to a meeting
-  // (the common case) pass via the `null` branch.
-  AND: [
-    {
-      OR: [
-        { scheduledMeetingId: null },
-        { scheduledMeeting: { status: { not: "Cancelled" } } },
-      ],
-    },
-    // "Starting soon" reminders stamp dueAt to the occurrence start. Once that
-    // time has passed the ping is stale — drop it from live Tasks. Pre-fix
-    // reminders with null dueAt fall back to the meeting's selectedAt so
-    // already-started one-offs clear without a manual dismiss.
-    {
-      OR: [
-        { kind: { not: "MeetingReminder" } },
-        { dueAt: { gt: now } },
-        {
-          AND: [
-            { dueAt: null },
-            {
-              OR: [
-                { scheduledMeeting: { selectedAt: { gt: now } } },
-                { scheduledMeeting: { selectedAt: null } },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    // An un-RSVP'd invite to a meeting that has already happened is no longer
-    // something anyone can act on, so it dismisses itself rather than sitting
-    // in Tasks forever waiting for an answer the meeting no longer needs. Only
-    // one-offs: a recurring series' selectedAt is its *first* occurrence, and
-    // future ones are still worth answering. A meeting still in Searching has
-    // no time yet (selectedAt null) and stays open.
-    {
-      OR: [
-        { kind: { not: "MeetingInvite" } },
-        { scheduledMeetingId: null },
-        { scheduledMeeting: { recurrenceRule: { not: null } } },
-        { scheduledMeeting: { selectedAt: null } },
-        { scheduledMeeting: { selectedAt: { gt: now } } },
-      ],
-    },
-  ],
+  // (the common case) pass via the `null` branch. The staleness hides (a
+  // reminder whose occurrence has started, an un-RSVP'd invite to a meeting
+  // that already happened) are shared with the inbox path so the sidebar count
+  // and the desktop dock badge can't disagree — see liveMeetingPingClauses.
+  AND: [NOT_CANCELLED_MEETING, ...liveMeetingPingClauses(now)],
   // A notification linked to an InterviewAssignment is only a task while
   // that assignment is still Active on a still-Scheduled interview. As
   // soon as the assignment moves to Declined/Replaced or the interview

@@ -1628,6 +1628,12 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 .os-shell .os-form-readonly .os-live {
   pointer-events: auto;
 }
+/* Plain values that should still be selectable/copyable in record mode
+   (description prose, etc.) without turning the surrounding fields live. */
+.os-shell .os-form-readonly .os-selectable {
+  pointer-events: auto;
+  user-select: text;
+}
 .os-shell .os-form-readonly .os-live input[type="text"],
 .os-shell .os-form-readonly .os-live textarea {
   background: var(--color-os-well) !important;
