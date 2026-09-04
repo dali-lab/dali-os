@@ -200,6 +200,15 @@ function kindLabel(item: DriveItem): string {
   }
 }
 
+// Quick Look only has something to show for uploaded images and PDFs. Docs,
+// forms, folders and the managed kinds have no inline representation — they open
+// in their editor — so the preview affordance is hidden for them rather than
+// offering a button that just says "no preview."
+function isPreviewable(item: DriveItem): boolean {
+  if (item.type !== "file") return false;
+  return /\.(png|jpe?g|gif|webp|svg|bmp|avif|pdf)$/.test((item.title || "").toLowerCase());
+}
+
 function formatSize(bytes?: number | null): string {
   if (bytes == null) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -646,9 +655,6 @@ export function DriveBrowser({
   // cursor the way an inserted top bar did. Toggled from the toolbar, persisted,
   // and auto-opened the first time a selection is made (see below).
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // A user who closes the rail shouldn't have it spring back on their next
-  // click; auto-open only fires once per "fresh" selection, tracked here.
-  const detailsAutoOpenedRef = useRef(false);
   // Item queued for the spacebar Quick Look overlay (null = closed).
   const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
   const [uploadOver, setUploadOver] = useState(false);
@@ -678,7 +684,6 @@ export function DriveBrowser({
       // default stays "columns"
       if (window.localStorage.getItem("dali_drive_details") === "1") {
         setDetailsOpen(true);
-        detailsAutoOpenedRef.current = true;
       }
     } catch {
       /* ignore */
@@ -688,7 +693,6 @@ export function DriveBrowser({
   function toggleDetails() {
     setDetailsOpen((prev) => {
       const next = !prev;
-      detailsAutoOpenedRef.current = next;
       try {
         window.localStorage.setItem("dali_drive_details", next ? "1" : "0");
       } catch {
@@ -882,12 +886,14 @@ export function DriveBrowser({
       e.preventDefault();
       goUp();
     } else if (e.key === " " && activeId) {
-      // Space → Quick Look preview of the focused item (no app launch).
-      e.preventDefault();
+      // Space → Quick Look, but only for items that actually preview.
       const item = searching
         ? hits.find((h) => h.item.id === activeId)?.item
         : listing.find((i) => i.id === activeId);
-      if (item) setPreviewItem(item);
+      if (item && isPreviewable(item)) {
+        e.preventDefault();
+        setPreviewItem(item);
+      }
     } else if ((e.key === "Delete" || e.key === "#") && activeId) {
       e.preventDefault();
       if (searching) {
@@ -1185,12 +1191,15 @@ export function DriveBrowser({
       setSelected(new Set(rows.map((r) => r.id)));
       return;
     }
-    // Space → Quick Look preview of the highlighted leaf (no app launch). Must
-    // come before type-ahead, which would otherwise swallow the space key.
+    // Space → Quick Look of the highlighted leaf, but only for items that
+    // actually preview. Must come before type-ahead, which would otherwise
+    // swallow the space key.
     if (e.key === " ") {
-      e.preventDefault();
       const item = highlightedItemAt(focusLevel);
-      if (item && item.type !== "folder") setPreviewItem(item);
+      if (item && isPreviewable(item)) {
+        e.preventDefault();
+        setPreviewItem(item);
+      }
       return;
     }
     if (e.key === "F2") {
@@ -1333,16 +1342,9 @@ export function DriveBrowser({
         ].join(" / ")
       : "";
 
-  // First selection in a session reveals the rail so the user discovers it;
-  // once opened (or restored, or explicitly dismissed) the ref is set and the
-  // rail never springs back on its own.
-  const detailItemId = detailItem?.id ?? null;
-  useEffect(() => {
-    if (detailItemId && !detailsAutoOpenedRef.current) {
-      detailsAutoOpenedRef.current = true;
-      setDetailsOpen(true);
-    }
-  }, [detailItemId]);
+  // The details rail only opens on an explicit Info-button toggle (and restores
+  // that choice from localStorage) — selecting a file never springs it open on
+  // its own, so a click never reflows the body out from under the cursor.
 
   function closeDetails() {
     setDetailsOpen(false);
@@ -1956,7 +1958,7 @@ function DriveActionStrip({
             Clear
           </button>
         </>
-      ) : item && actions ? (
+      ) : item && actions && !detailsOpen ? (
         <>
           <span className="flex items-center gap-1.5 min-w-0 flex-1">
             {itemIcon(item)}
@@ -2097,7 +2099,7 @@ function DriveDetailsPane({
             {item.type !== "folder" && (
               <PaneAction icon={FolderOpen} label="Open" onClick={() => onOpenItem(item)} />
             )}
-            {item.type !== "folder" && (
+            {isPreviewable(item) && (
               <PaneAction icon={Search} label="Preview" onClick={() => onPreview(item)} />
             )}
             {canFavorite && (
