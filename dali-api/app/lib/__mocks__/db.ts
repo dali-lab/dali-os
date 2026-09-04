@@ -332,7 +332,14 @@ export const prisma = {
   },
   collabDocument: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  pageSearchIndex: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   docComment: {
@@ -711,4 +718,6 @@ export const prisma = {
   },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),
+  $executeRaw: vi.fn().mockResolvedValue(0),
+  $executeRawUnsafe: vi.fn().mockResolvedValue(0),
 };

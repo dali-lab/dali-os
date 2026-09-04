@@ -1036,6 +1036,39 @@ model CollabDocumentVersion {
   @@index([name, createdAt(sort: Desc)])
 }
 
+// Lightweight full-text index of page bodies, so site-wide search matches what
+// a document SAYS and not just what it is called. One row per indexed Page.
+//
+// Kept current from two directions: the collab store hook (app/collab/
+// persistence.ts) re-indexes a page on every save, and the `doc-search-index`
+// job sweeps for rows that are missing or older than their CollabDocument (a
+// page edited while the app was down, or one that predates this table).
+//
+// `tsv` is the stemmed, stopword-stripped lexeme vector that powers the exact
+// pass and its ts_rank ordering; `content` carries a trigram index so a
+// misspelled query still finds the document. Deliberately NOT a generated
+// column — the same raw upsert writes both, which keeps this schema and the
+// database in agreement for `prisma migrate diff`. See lib/doc-search.server.ts.
+model PageSearchIndex {
+  pageId String @id
+  // Flattened body text (one line per block), truncated to INDEX_MAX_CHARS.
+  content String
+  // to_tsvector('english', content) — written by indexPageBody, never by Prisma.
+  tsv     Unsupported("tsvector")?
+
+  // CollabDocument.updatedAt as of the last index write. The sweep job compares
+  // it against the live value to find stale rows without decoding any state.
+  sourceUpdatedAt DateTime
+  indexedAt       DateTime @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  // The exact pass (tsv @@ tsquery) and the typo-tolerant fallback
+  // (query <% content) each need their own GIN index to stay off a seq scan.
+  @@index([tsv], type: Gin)
+  @@index([content(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
 // ─── Documents: tags, files, comments ────────────────────────────────────────
 
 // Lab-wide, curated tag list applied to documents (Pages) and uploaded files.
@@ -4207,8 +4240,16 @@ model Page {
   incomingLinks PageLink[] @relation("PageLinkTarget")
   outgoingLinks PageLink[] @relation("PageLinkSource")
 
+  // Full-text search index of this page's body. Absent until the page has been
+  // saved once (or picked up by the doc-search-index sweep).
+  searchIndex PageSearchIndex?
+
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+  // Trigram index behind the typo-tolerant title match in doc-search.server.ts
+  // (`query <% "title"`). Ordinary exact/substring title search still uses the
+  // plain ILIKE path.
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 // Directed page→page reference maintained by the collab store hook whenever a
