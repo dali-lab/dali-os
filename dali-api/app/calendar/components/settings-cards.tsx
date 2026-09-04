@@ -1,5 +1,5 @@
 import { useFetcher } from "react-router";
-import { useState, useId } from "react";
+import { useEffect, useState, useId } from "react";
 import {
   CalendarDays,
   Clock,
@@ -312,20 +312,40 @@ export function WorkingHoursCard({
   const resetFetcher = useFetcher();
   const toggleFetcher = useFetcher();
 
-  // "On" once the user has saved any working-hours state. While a master-toggle
-  // submit is in flight, reflect the in-flight intent optimistically.
+  // Stick the intended on/off until the loader agrees. Relying on formData alone
+  // twitches the editor shut the moment the fetcher goes idle and before
+  // revalidation lands the new hasPersisted — which also reads as "won't open".
+  const [optimisticEnabled, setOptimisticEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (optimisticEnabled === null) return;
+    if (hasPersisted === optimisticEnabled) setOptimisticEnabled(null);
+  }, [hasPersisted, optimisticEnabled]);
+  useEffect(() => {
+    if (toggleFetcher.state !== "idle" || optimisticEnabled === null) return;
+    const err =
+      toggleFetcher.data &&
+      typeof toggleFetcher.data === "object" &&
+      "error" in toggleFetcher.data
+        ? (toggleFetcher.data as { error?: unknown }).error
+        : null;
+    if (err) setOptimisticEnabled(null);
+  }, [toggleFetcher.state, toggleFetcher.data, optimisticEnabled]);
+
   const pendingToggleIntent =
     typeof toggleFetcher.formData?.get("intent") === "string"
       ? (toggleFetcher.formData.get("intent") as string)
       : null;
   const enabled =
-    pendingToggleIntent === "seed-working-hours"
+    optimisticEnabled ??
+    (pendingToggleIntent === "seed-working-hours"
       ? true
       : pendingToggleIntent === "reset-working-hours"
         ? false
-        : hasPersisted;
+        : hasPersisted);
+  const toggleBusy = toggleFetcher.state !== "idle" || resetFetcher.state !== "idle";
 
   const turnOn = () => {
+    setOptimisticEnabled(true);
     // Persist the full Mon–Fri 9–5 default in one shot so the editor opens with
     // sensible values and every day has a real row.
     const days = defaultWorkingHours().map((d) => ({
@@ -341,8 +361,10 @@ export function WorkingHoursCard({
       { method: "post" },
     );
   };
-  const turnOff = () =>
+  const turnOff = () => {
+    setOptimisticEnabled(false);
     toggleFetcher.submit({ intent: "reset-working-hours" }, { method: "post" });
+  };
 
   return (
     <section>
@@ -384,6 +406,7 @@ export function WorkingHoursCard({
                   <button
                     type="submit"
                     aria-label="Reset working hours to defaults"
+                    disabled={toggleBusy}
                     className={iconBtn}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -395,6 +418,7 @@ export function WorkingHoursCard({
           {/* Master on/off switch */}
           <Toggle
             checked={enabled}
+            disabled={toggleBusy}
             aria-label="Working hours enabled"
             onChange={() => (enabled ? turnOff() : turnOn())}
           />
@@ -419,9 +443,9 @@ type LocalSegment = { startMinute: number; endMinute: number; location: "InPerso
 
 function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
   const fetcher = useFetcher();
-  // Optimistic state: while a submit is pending, render the in-flight values
-  // rather than the loader values so edits feel instant. We submit the whole
-  // week (seed-working-hours), so pull this day's slice back out of `days`.
+  // Stick the last submitted segments until the loader catches up — formData
+  // alone clears a frame early and the day checkbox / hours twitch back.
+  const [optimisticSegments, setOptimisticSegments] = useState<LocalSegment[] | null>(null);
   const pending = fetcher.formData;
   const pendingSegments: LocalSegment[] | null = (() => {
     if (!pending) return null;
@@ -437,20 +461,40 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
       return null;
     }
   })();
+  const loaderSegments: LocalSegment[] = day.segments.map((s) => ({
+    startMinute: s.startMinute,
+    endMinute: s.endMinute,
+    location: s.location,
+  }));
+  const loaderKey = JSON.stringify(loaderSegments);
+
+  useEffect(() => {
+    if (optimisticSegments === null) return;
+    if (loaderKey === JSON.stringify(optimisticSegments)) {
+      setOptimisticSegments(null);
+    }
+  }, [loaderKey, optimisticSegments]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || optimisticSegments === null) return;
+    const err =
+      fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data
+        ? (fetcher.data as { error?: unknown }).error
+        : null;
+    if (err) setOptimisticSegments(null);
+  }, [fetcher.state, fetcher.data, optimisticSegments]);
+
   const segments: LocalSegment[] =
-    pendingSegments ??
-    day.segments.map((s) => ({
-      startMinute: s.startMinute,
-      endMinute: s.endMinute,
-      location: s.location,
-    }));
+    pendingSegments ?? optimisticSegments ?? loaderSegments;
 
   const enabled = segments.length > 0;
+  const busy = fetcher.state !== "idle";
 
   // Persist the whole week every time so a day that currently has no DB row
   // (e.g. an unsaved default) isn't dropped by the loader's "unlisted ⇒ empty"
   // rule. `next` replaces this day's segments; other days carry through as-is.
   const submitSegments = (next: LocalSegment[]) => {
+    setOptimisticSegments(next);
     const days = allDays.map((d) =>
       d.dayOfWeek === day.dayOfWeek
         ? { dayOfWeek: d.dayOfWeek, segments: next }
@@ -470,6 +514,7 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
   };
 
   const toggleEnabled = () => {
+    if (busy) return;
     if (enabled) submitSegments([]);
     else
       submitSegments([
@@ -478,15 +523,18 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
   };
 
   const updateSegment = (idx: number, patch: Partial<LocalSegment>) => {
+    if (busy) return;
     const next = segments.map((s, i) => (i === idx ? { ...s, ...patch } : s));
     submitSegments(next);
   };
 
   const removeSegment = (idx: number) => {
+    if (busy) return;
     submitSegments(segments.filter((_, i) => i !== idx));
   };
 
   const addSegment = () => {
+    if (busy) return;
     // Default new segment to start where the last one ends (or 9am if empty).
     const last = segments[segments.length - 1];
     const start = last ? Math.min(last.endMinute, 1380) : DEFAULT_WORK_START_MIN;
@@ -583,9 +631,11 @@ function TimeField({
 }: { valueMin: number; onCommit: (min: number) => void } & React.AriaAttributes) {
   const { os, compactField } = useOsChrome();
   const [text, setText] = useState(formatTime(valueMin));
-  // Keep text in sync if the canonical value changes externally (e.g. after submit).
-  // Using a key on the parent would be cleaner, but a defaultValue + onBlur commit
-  // is enough for this UI.
+  // Keep the typed text in sync when the canonical minute changes (toggle on,
+  // reset to defaults, another day edit revalidating the week).
+  useEffect(() => {
+    setText(formatTime(valueMin));
+  }, [valueMin]);
   return (
     <div className="relative">
       <input
