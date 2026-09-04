@@ -28,9 +28,14 @@ export function Toggle({ label, description, className, disabled, ...props }: To
           className="peer sr-only"
           {...props}
         />
+        {/* The off track used `bg-border`, which is the same value the cards and
+            wells around it draw their edges from — inside a muted container the
+            switch vanished and read as a stray white dot. A mid-grey derived
+            from the foreground keeps a visible track on every ground, in both
+            themes, and the inset hairline gives it an edge of its own. */}
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full bg-border transition-colors peer-checked:bg-accent-coral peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
+          className="absolute inset-0 rounded-full bg-muted-foreground/30 ring-1 ring-inset ring-black/10 transition-colors peer-checked:bg-accent-coral peer-checked:ring-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
         />
         <span
           aria-hidden="true"

@@ -1,9 +1,9 @@
 import { useFetcher, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, X } from "lucide-react";
 import type { RoleInstance } from "~/lib/roles";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
+import { PAY_PERIOD_DAYS, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import { Tooltip } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
@@ -18,6 +18,7 @@ import {
 import {
   WeekGrid, useRefreshOnFocus,
 } from "~/calendar/components/WeekGrid";
+import { timeEntryRange } from "~/calendar/lib/layers";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 import { FIELD_BASE, roleOptionKey, parseRoleOptionKey, RoleSelectField, RoleFilterRow } from "~/calendar/components/role-fields";
 import { WeekToolbar } from "~/calendar/components/scheduling";
@@ -56,7 +57,7 @@ export function TimesheetSummaryRail({
 }
 
 export function TimesheetView({ data }: { data: LoaderData }) {
-  const { os, card, panelPad, heading, compactField, fieldLabel } = useOsChrome();
+  const { compactField } = useOsChrome();
   const addFetcher = useFetcher<{ error?: string } | null>();
   const adding = addFetcher.state !== "idle";
   const [date, setDate] = useState(() => todayDateInputValue(data.timezone));
@@ -101,144 +102,364 @@ export function TimesheetView({ data }: { data: LoaderData }) {
   const serverError = addFetcher.data?.error ?? null;
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
-      <section className={cn(card, panelPad)}>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className={heading}>Timesheet</h2>
-          {/* Adding an outside job is how someone with no current DALI
-              assignment gets a role to log against, so it stays reachable even
-              when the form below is showing the no-roles message. */}
-          <CustomHiresManager
-            hires={data.myRoles
-              .filter((r) => r.assignmentType === "Custom")
-              .map((r) => ({ id: r.roleRefId, label: r.label }))}
-          />
-        </div>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-4">
+      {/* No card and no heading around the add row — the rail's own rounded
+          border is the only frame it needs, and the tab already says where
+          you are. Adding an outside job is how someone with no current DALI
+          assignment gets a role to log against, so it stays reachable even
+          when the form below shows the no-roles message. */}
+      <div className="flex justify-end">
+        <CustomHiresManager
+          hires={data.myRoles
+            .filter((r) => r.assignmentType === "Custom")
+            .map((r) => ({ id: r.roleRefId, label: r.label }))}
+        />
+      </div>
+      <div>
         {!hasRoles ? (
           <p className="text-xs text-red-600">{NO_ROLES_MESSAGE}</p>
         ) : (
-          <addFetcher.Form
-            method="post"
-            onSubmit={(e) => {
-              if (!canSubmit) {
-                e.preventDefault();
-                return;
-              }
-              // Defer so the fetcher can read current field values first.
-              queueMicrotask(() => resetAddForm());
-            }}
-            className="grid grid-cols-1 items-end gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(8rem,1fr)_7rem_7rem_minmax(9rem,1.2fr)_minmax(12rem,1.8fr)_auto]"
-          >
-            <input type="hidden" name="intent" value="add-time-entry" />
-            {/* Hours is derived from the range, never typed — the server
-                re-derives and rejects any mismatch. */}
-            <input type="hidden" name="hours" value={hours > 0 ? String(hours) : ""} />
-            <input type="hidden" name="startTime" value={startIso ?? ""} />
-            <input type="hidden" name="endTime" value={endIso ?? ""} />
-            <label className={fieldLabel}>
-              Date
+          <>
+            {/* One rounded rail of borderless fields — placeholders carry the
+                meaning, so the row reads as a single control rather than five
+                labelled boxes. */}
+            <addFetcher.Form
+              method="post"
+              onSubmit={(e) => {
+                if (!canSubmit) {
+                  e.preventDefault();
+                  return;
+                }
+                queueMicrotask(() => resetAddForm());
+              }}
+              className="flex flex-wrap items-center gap-2 rounded-2xl border border-border p-2"
+            >
+              <input type="hidden" name="intent" value="add-time-entry" />
+              {/* Hours is derived from the range, never typed — the server
+                  re-derives and rejects any mismatch. */}
+              <input type="hidden" name="hours" value={hours > 0 ? String(hours) : ""} />
+              <input type="hidden" name="startTime" value={startIso ?? ""} />
+              <input type="hidden" name="endTime" value={endIso ?? ""} />
+
               <DateField
                 mode="date"
                 name="date"
                 required
                 value={date}
-                onChange={(value) => setDate(value)}
-                className="w-full"
+                onChange={setDate}
                 ariaLabel="Date"
+                className="w-[10rem]"
               />
-            </label>
-            <label className={fieldLabel}>
-              Start
               <DateField
                 mode="time"
                 required
                 value={startTime}
-                onChange={(value) => setStartTime(value)}
-                className="w-full"
+                onChange={setStartTime}
                 ariaLabel="Start time"
+                className="w-[8rem]"
               />
-            </label>
-            <label className={fieldLabel}>
-              End
               <DateField
                 mode="time"
                 required
                 value={endTime}
-                onChange={(value) => setEndTime(value)}
-                className="w-full"
+                onChange={setEndTime}
                 ariaLabel="End time"
+                className="w-[8rem]"
               />
-            </label>
-            <RoleSelectField
-              id="add-time-entry-role"
-              myRoles={data.myRoles}
-              value={roleKey}
-              onChange={setRoleKey}
-            />
-            <label className={cn(fieldLabel, "sm:col-span-2 xl:col-span-1")}>
-              Note
-              <textarea
+              <Select
+                value={roleKey}
+                onChange={setRoleKey}
+                options={[
+                  { value: "", label: "Role" },
+                  ...data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
+                ]}
+                buttonClassName={cn(FIELD_BASE, compactField, "w-[10rem] justify-between border-border")}
+              />
+              <input
+                type="text"
                 name="note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                rows={1}
-                placeholder="What did you work on?"
-                // Starts level with the rest of the row; drag to grow for a
-                // longer note. A textarea is top-aligned rather than centred
-                // like an input, hence the explicit vertical padding.
-                className={cn(FIELD_BASE, compactField, "border-border py-2 min-h-9 resize-y")}
+                placeholder="e.g. Heads-down: Deserto bug fixes"
+                className={cn(FIELD_BASE, compactField, "min-w-[12rem] flex-1 border-border")}
               />
-            </label>
-            <div className="flex items-center gap-1.5 sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-start">
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className={cn(
-                  "h-9 px-3 text-xs font-semibold disabled:opacity-50",
-                  os
-                    ? "rounded-full bg-os-accent text-os-bg hover:bg-os-accent-hover"
-                    : "rounded-md bg-accent-coral text-white hover:bg-accent-coral/90",
-                )}
+                className="ml-auto shrink-0 rounded-full bg-os-accent px-5 py-2 text-sm font-semibold text-os-bg transition-colors hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Add
+                Add entry
               </button>
-              <Tooltip content="Reset">
-                <button
-                  type="button"
-                  onClick={resetAddForm}
-                  aria-label="Reset"
-                  className={cn(
-                    "inline-flex h-9 w-9 items-center justify-center text-xs font-semibold transition-colors",
-                    os
-                      ? "rounded-os-item text-os-grey hover:bg-os-container hover:text-foreground"
-                      : "rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <RotateCcw className="w-3 h-3" aria-hidden />
-                </button>
-              </Tooltip>
-            </div>
-          </addFetcher.Form>
-        )}
+            </addFetcher.Form>
 
-        {hasRoles && (
-          <p
-            className={`mt-2 text-xs ${rangeError ? "text-red-600" : "text-muted-foreground"}`}
-            role={rangeError ? "alert" : undefined}
-          >
-            {rangeError ?? `${hours.toFixed(2)} hrs`}
-          </p>
+            {(rangeError || serverError) && (
+              <p className="mt-2 text-xs text-red-600" role="alert">
+                {serverError ?? rangeError}
+              </p>
+            )}
+          </>
         )}
-        {serverError && (
-          <p className="mt-1 text-xs text-red-600" role="alert">
-            {serverError}
-          </p>
-        )}
-      </section>
+      </div>
 
-      <TimesheetWeekGrid data={data} />
+      <TimesheetEntries data={data} />
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Pay-period entry list. The navigator steps by pay period (biweekly)  */
+/* rather than by week, and the total is the period's, because that is  */
+/* the unit hours are actually submitted and paid in.                   */
+/* ------------------------------------------------------------------ */
+
+function TimesheetEntries({ data }: { data: LoaderData }) {
+  const [offset, setOffset] = useState(0);
+  const [roleFilter, setRoleFilter] = useState("");
+
+  const basePeriod = payPeriodFor(new Date(data.weekStartIso));
+  const period = payPeriodFor(
+    new Date(basePeriod.start.getTime() + offset * PAY_PERIOD_DAYS * 86_400_000),
+  );
+
+  const inPeriod = data.timeEntries.filter((t) => {
+    const day = timeEntryDayUtc(t, data.timezone).getTime();
+    return day >= period.start.getTime() && day <= period.end.getTime();
+  });
+  const rows = (roleFilter ? inPeriod.filter((t) => timeEntryRoleKey(t) === roleFilter) : inPeriod)
+    .slice()
+    .sort((a, b) => {
+      const byDay =
+        timeEntryDayUtc(a, data.timezone).getTime() - timeEntryDayUtc(b, data.timezone).getTime();
+      return byDay !== 0 ? byDay : (a.startTime ?? "").localeCompare(b.startTime ?? "");
+    });
+  const total = rows.reduce((sum, t) => sum + t.hours, 0);
+
+  const navBtn =
+    "inline-flex h-8 w-8 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted hover:text-foreground";
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className={navBtn} onClick={() => setOffset((o) => o - 1)} aria-label="Previous pay period">
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setOffset(0)}
+          className="rounded-full border border-border px-4 py-1.5 text-sm font-semibold text-foreground hover:bg-muted"
+        >
+          Today
+        </button>
+        <button type="button" className={navBtn} onClick={() => setOffset((o) => o + 1)} aria-label="Next pay period">
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <h2 className="font-heading text-lg font-medium text-foreground">
+          Pay period {formatPayPeriod(period, data.timezone)}
+        </h2>
+
+        <div className="ml-auto flex items-center gap-2">
+          <Select
+            value={roleFilter}
+            onChange={setRoleFilter}
+            options={[
+              { value: "", label: "All roles" },
+              ...data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
+            ]}
+            buttonClassName="inline-flex items-center justify-between gap-1 rounded-full border border-border px-4 py-1.5 text-sm text-foreground hover:bg-muted"
+          />
+          <span className="rounded-full border border-border px-4 py-1.5 text-sm font-bold text-os-accent">
+            {total.toFixed(1)} hrs logged
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[46rem] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+              <th className="px-3 py-2 font-bold">Date</th>
+              <th className="px-3 py-2 font-bold">Description</th>
+              <th className="px-3 py-2 font-bold">Time</th>
+              <th className="px-3 py-2 font-bold">Duration</th>
+              <th className="px-3 py-2 font-bold">Role</th>
+              <th className="w-10 px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Nothing logged this pay period yet.
+                </td>
+              </tr>
+            ) : (
+              rows.map((t) => <EntryRow key={t.id} entry={t} data={data} />)
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** One editable row. Every field writes through `update-time-entry` when it
+ *  commits — blur for the text, change for the pickers — so there is no
+ *  separate edit mode to enter and leave. */
+function EntryRow({ entry, data }: { entry: TimeEntryDTO; data: LoaderData }) {
+  const revalidator = useRevalidator();
+  const removeFetcher = useFetcher();
+  const { startIso, endIso } = timeEntryRange(entry, data.timezone);
+
+  const [date, setDate] = useState(startIso.slice(0, 10));
+  const [start, setStart] = useState(hhmm(startIso, data.timezone));
+  const [end, setEnd] = useState(hhmm(endIso, data.timezone));
+  const [note, setNote] = useState(entry.note ?? "");
+  const [roleKey, setRoleKey] = useState(timeEntryRoleKey(entry));
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed when the loader brings this entry back changed.
+  useEffect(() => {
+    setDate(startIso.slice(0, 10));
+    setStart(hhmm(startIso, data.timezone));
+    setEnd(hhmm(endIso, data.timezone));
+    setNote(entry.note ?? "");
+    setRoleKey(timeEntryRoleKey(entry));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id, startIso, endIso, entry.note]);
+
+  const hoursFor = (d: string, s: string, e: string) => {
+    const a = d && s ? localDayTimeToIso(d, s, data.timezone) : null;
+    const b = d && e ? localDayTimeToIso(d, e, data.timezone) : null;
+    if (!a || !b) return { a, b, hours: 0 };
+    return {
+      a,
+      b,
+      hours: Math.round(((new Date(b).getTime() - new Date(a).getTime()) / 3_600_000) * 100) / 100,
+    };
+  };
+  const { hours } = hoursFor(date, start, end);
+
+  async function commit(next: Partial<{ date: string; start: string; end: string; note: string; roleKey: string }> = {}) {
+    const d = next.date ?? date;
+    const s = next.start ?? start;
+    const e = next.end ?? end;
+    const n = next.note ?? note;
+    const key = next.roleKey ?? roleKey;
+    const { a, b, hours: h } = hoursFor(d, s, e);
+    if (!a || !b || h <= 0 || h > 24 || !key) return;
+    setSaving(true);
+    try {
+      const role = parseRoleOptionKey(key);
+      const body = new FormData();
+      body.set("intent", "update-time-entry");
+      body.set("id", entry.id);
+      body.set("startTime", a);
+      body.set("endTime", b);
+      body.set("date", d);
+      body.set("hours", String(h));
+      body.set("assignmentType", role?.assignmentType ?? "");
+      body.set("roleRefId", role?.roleRefId ?? "");
+      body.set("note", n.trim());
+      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+      if (res.ok) revalidator.revalidate();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cellInput =
+    "w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground hover:border-border focus:border-os-accent focus:bg-background focus:outline-none";
+
+  return (
+    <tr className={cn("border-t border-border", saving && "opacity-60")}>
+      <td className="px-3 py-1.5 align-middle">
+        <DateField
+          mode="date"
+          value={date}
+          onChange={(v) => {
+            setDate(v);
+            void commit({ date: v });
+          }}
+          ariaLabel="Date"
+          className="w-[9rem]"
+        />
+      </td>
+      <td className="px-3 py-1.5 align-middle">
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={() => commit()}
+          placeholder="What did you work on?"
+          className={cellInput}
+        />
+      </td>
+      <td className="whitespace-nowrap px-3 py-1.5 align-middle">
+        <div className="flex items-center gap-1">
+          <DateField
+            mode="time"
+            value={start}
+            onChange={(v) => {
+              setStart(v);
+              void commit({ start: v });
+            }}
+            ariaLabel="Start"
+            className="w-[6.5rem]"
+          />
+          <span className="text-muted-foreground">–</span>
+          <DateField
+            mode="time"
+            value={end}
+            onChange={(v) => {
+              setEnd(v);
+              void commit({ end: v });
+            }}
+            ariaLabel="End"
+            className="w-[6.5rem]"
+          />
+        </div>
+      </td>
+      <td className="whitespace-nowrap px-3 py-1.5 align-middle font-medium text-foreground">
+        {hours.toFixed(1)} hrs
+      </td>
+      <td className="px-3 py-1.5 align-middle">
+        <Select
+          value={roleKey}
+          onChange={(v) => {
+            setRoleKey(v);
+            void commit({ roleKey: v });
+          }}
+          options={data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+          buttonClassName={cn(cellInput, "inline-flex items-center justify-between gap-1")}
+        />
+      </td>
+      <td className="px-3 py-1.5 align-middle">
+        <button
+          type="button"
+          aria-label="Delete entry"
+          onClick={() =>
+            removeFetcher.submit({ intent: "delete-time-entry", id: entry.id }, { method: "post" })
+          }
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+/** "HH:mm" for a time input, in the viewer's timezone. */
+function hhmm(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(iso));
+  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const m = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${h === "24" ? "00" : h}:${m}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -514,7 +735,7 @@ function TimesheetDragPopover({
   myRoles: RoleInstance[];
   onClose: () => void;
 }) {
-  const { popover, formClass, fieldLabel, formTrigger } = useOsChrome();
+  const { formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -577,7 +798,7 @@ function TimesheetDragPopover({
 
   return (
     <div
-      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
+      className="cal-surface w-80 max-h-[26rem] overflow-y-auto rounded-lg"
       role="dialog"
       aria-modal="false"
       aria-label="New timesheet entry"
@@ -674,7 +895,7 @@ function TimesheetDragPopover({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
+            className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
           >
             {submitting ? "Adding…" : "Add entry"}
           </button>
@@ -700,7 +921,7 @@ export function TimesheetEditPopover({
   myRoles: RoleInstance[];
   onClose: () => void;
 }) {
-  const { popover, formClass, fieldLabel, formTrigger } = useOsChrome();
+  const { formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -792,7 +1013,7 @@ export function TimesheetEditPopover({
 
   return (
     <div
-      className={cn("w-80 max-h-[26rem] overflow-y-auto", popover)}
+      className="cal-surface w-80 max-h-[26rem] overflow-y-auto rounded-lg"
       role="dialog"
       aria-modal="false"
       aria-label="Edit timesheet entry"
@@ -900,7 +1121,7 @@ export function TimesheetEditPopover({
             <button
               type="submit"
               disabled={!canSubmit}
-              className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
             >
               {submitting ? "Saving…" : "Save"}
             </button>

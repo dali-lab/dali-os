@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
+import { liveMeetingPingClauses, NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { runListMyNotifications } from "~/mcp/tools/list-my-notifications";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 import { LIST_MY_NOTIFICATIONS_TOOL } from "~/mcp/tools/list-my-notifications";
@@ -14,8 +15,17 @@ const mockPrisma = prisma as unknown as {
   };
 };
 
+// Frozen so the `now` baked into the staleness clauses is reproducible.
+const NOW = new Date("2026-09-04T12:00:00.000Z");
+
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("list_my_notifications", () => {
@@ -59,10 +69,17 @@ describe("list_my_notifications", () => {
       where: {
         recipientUserId: "user-1",
         readAt: null,
-        // Cancelled-meeting invites are hidden everywhere, including the MCP feed.
-        OR: [
-          { scheduledMeetingId: null },
-          { scheduledMeeting: { status: { not: "Cancelled" } } },
+        AND: [
+          // Cancelled-meeting invites are hidden everywhere, including the MCP
+          // feed — as are stale meeting pings (a reminder whose occurrence has
+          // started, an un-RSVP'd invite to a meeting that already happened).
+          NOT_CANCELLED_MEETING,
+          {
+            OR: [
+              { readAt: { not: null } },
+              { AND: liveMeetingPingClauses(NOW) },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: "desc" },

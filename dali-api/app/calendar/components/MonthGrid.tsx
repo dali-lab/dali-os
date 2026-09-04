@@ -26,7 +26,7 @@ function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void })
       style={style}
       title={block.label}
       className={cn(
-        "block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] leading-tight",
+        "block w-full truncate rounded-[3px] px-1.5 py-0.5 text-left text-[11px] leading-tight",
         block.bgColor ? "" : block.className,
       )}
     >

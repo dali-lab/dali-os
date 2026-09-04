@@ -16,6 +16,59 @@ export const NOT_CANCELLED_MEETING: Prisma.NotificationWhereInput = {
   ],
 };
 
+// "Starting soon" reminders stamp dueAt to the occurrence start. Once that
+// time has passed the ping is stale — hide it from live surfaces. Pre-stamp
+// reminders with null dueAt fall back to the meeting's selectedAt so
+// already-started one-offs clear without a manual dismiss.
+const notExpiredMeetingReminder = (now: Date): Prisma.NotificationWhereInput => ({
+  OR: [
+    { kind: { not: "MeetingReminder" } },
+    { dueAt: { gt: now } },
+    {
+      AND: [
+        { dueAt: null },
+        {
+          OR: [
+            { scheduledMeeting: { selectedAt: { gt: now } } },
+            { scheduledMeeting: { selectedAt: null } },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+// An un-RSVP'd invite to a meeting that has already happened is no longer
+// something anyone can act on, so it hides itself rather than sitting in the
+// feed forever waiting for an answer the meeting no longer needs. Only
+// one-offs: a recurring series' selectedAt is its *first* occurrence, and
+// future ones are still worth answering. A meeting still in Searching has no
+// time yet (selectedAt null) and stays open.
+const notPastMeetingInvite = (now: Date): Prisma.NotificationWhereInput => ({
+  OR: [
+    { kind: { not: "MeetingInvite" } },
+    { scheduledMeetingId: null },
+    { scheduledMeeting: { recurrenceRule: { not: null } } },
+    { scheduledMeeting: { selectedAt: null } },
+    { scheduledMeeting: { selectedAt: { gt: now } } },
+  ],
+});
+
+/**
+ * Staleness hides for meeting-backed notifications that are still awaiting
+ * action, as AND clauses. Both read paths build on this — the tasks path
+ * (listOpenTasks/countOpenTasks, which drives the web bell's `taskCount`) and
+ * the inbox path (listMyNotifications, which drives the desktop app's feed and
+ * dock badge) — so the two counts can't disagree.
+ *
+ * Only meaningful for unread rows: a row the user has already read is plain
+ * history. History (listNotificationHistory) applies none of these and
+ * annotates the rows via resolveNotificationState instead.
+ */
+export function liveMeetingPingClauses(now: Date): Prisma.NotificationWhereInput[] {
+  return [notExpiredMeetingReminder(now), notPastMeetingInvite(now)];
+}
+
 export interface ListNotificationsOptions {
   /** Hard cap on rows returned. */
   limit?: number;
@@ -38,10 +91,18 @@ export async function listMyNotifications(
   opts: ListNotificationsOptions = {},
 ): Promise<NotificationListResult> {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 50));
+  const now = new Date();
+  const live = liveMeetingPingClauses(now);
   const where: Prisma.NotificationWhereInput = {
     recipientUserId: userId,
     ...(opts.onlyUnread ? { readAt: null } : {}),
-    ...NOT_CANCELLED_MEETING,
+    AND: [
+      NOT_CANCELLED_MEETING,
+      // Staleness only hides rows still awaiting action. A read row stays in
+      // the feed as history — the desktop app reads `readAt` off these rows to
+      // retire the banners it already delivered.
+      { OR: [{ readAt: { not: null } }, { AND: live }] },
+    ],
   };
 
   const [items, unreadCount] = await Promise.all([
@@ -51,7 +112,11 @@ export async function listMyNotifications(
       take: limit,
     }),
     prisma.notification.count({
-      where: { recipientUserId: userId, readAt: null, ...NOT_CANCELLED_MEETING },
+      where: {
+        recipientUserId: userId,
+        readAt: null,
+        AND: [NOT_CANCELLED_MEETING, ...live],
+      },
     }),
   ]);
 

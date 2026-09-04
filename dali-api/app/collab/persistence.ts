@@ -3,6 +3,7 @@ import { yDocToProsemirrorJSON } from "y-prosemirror";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
 import { prisma } from "~/lib/db";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { indexPageBody } from "~/lib/doc-search.server";
 import { isPresenceRoom } from "./roomName";
 import { isStructuredRoom, seedRegistryDoc, syncRegistryDocBack } from "./sources";
 import {
@@ -289,10 +290,11 @@ export async function storeDocument(
   const plainText = structured ? getStructuredPlainText(doc) : getPlainText(doc);
 
   // Upsert the Y.Doc binary state
-  await prisma.collabDocument.upsert({
+  const row = await prisma.collabDocument.upsert({
     where: { name },
     create: { name, state },
     update: { state },
+    select: { updatedAt: true },
   });
 
   // Sync plain text back to source field
@@ -326,6 +328,25 @@ export async function storeDocument(
         where: { id },
         data: { interviewPrepNote: plainText },
       });
+    }
+  }
+
+  if (entity === "doc") {
+    if (field === "body") {
+      // Page bodies have no source column to sync back to — the Y.Doc IS the
+      // document. What they get instead is a row in the search index, so the
+      // command palette can match on what the page says. `id` is the Page id
+      // (DocumentEditor always opens pageDocName(pageId); a seeded page's
+      // contentDocId override is reached by the doc-search-index sweep).
+      //
+      // Never allowed to fail the save: an unreachable index costs a stale
+      // search result, and the sweep job re-indexes whatever is missed here,
+      // whereas throwing would lose someone's edit.
+      try {
+        await indexPageBody(id, plainText, row.updatedAt);
+      } catch (err) {
+        console.error(`[doc-search] indexing failed for page ${id}`, err);
+      }
     }
   }
 

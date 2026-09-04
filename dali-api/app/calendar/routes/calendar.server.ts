@@ -50,6 +50,7 @@ import {
   generalCalendarState,
 } from "~/lib/general-calendar";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   WhSegment,
   WhDay,
@@ -110,56 +111,40 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
   ];
 }
 
-// Window for the visible week grid. We compute Sunday→following Sunday in the
-// user's timezone (the grid renders Sun..Sat columns). When `anchor` is provided
-// it picks the Sunday of that date's week; otherwise it uses "now".
-function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date } {
-  const ref = anchor ?? new Date();
-  const ymd = getZonedYMD(ref, timezone);
-  const refUtcMidnight = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
-  const dow = refUtcMidnight.getUTCDay();
-  const sundayUtc = new Date(refUtcMidnight.getTime() - dow * 86_400_000);
-  const start = zonedDayStartUtc(
-    sundayUtc.getUTCFullYear(),
-    sundayUtc.getUTCMonth() + 1,
-    sundayUtc.getUTCDate(),
-    timezone,
-  );
-  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
-  const end = zonedDayStartUtc(
-    nextSundayUtc.getUTCFullYear(),
-    nextSundayUtc.getUTCMonth() + 1,
-    nextSundayUtc.getUTCDate(),
-    timezone,
-  );
-  return { start, end };
-}
+/**
+ * Short-lived cache for the external-event read, keyed by who is asking and
+ * which window. Switching month / week / day re-runs the loader, and the fetch
+ * underneath costs one Google `events.list` per linked sub-calendar — so
+ * without this, every toggle paid a full set of round-trips. The window is the
+ * month-grid-wide `fetchWindow`, identical across the three views at one
+ * anchor, so a switch is a cache hit.
+ *
+ * Deliberately tiny and in-process: a stale read is at most TTL old, a
+ * write through the calendar action revalidates and re-reads within the same
+ * process, and nothing here needs to survive a deploy.
+ */
+const EXTERNAL_CACHE_TTL_MS = 30_000;
+const EXTERNAL_CACHE_MAX = 200;
+const externalCache = new Map<string, { at: number; value: unknown }>();
 
-function parseView(v: string | null): CalendarView {
-  return v === "day" || v === "month" || v === "agenda" ? v : "week";
-}
-
-// Window for the unified screen's active view. Day = the anchor's calendar day;
-// Week = weekWindow (Sun..Sun); Month = the Sunday on/before the 1st .. the
-// Sunday after the last day (the 5–6 week month grid). Boundaries snap through
-// zonedDayStartUtc so they stay DST-correct in the user's timezone, matching
-// weekWindow.
-function viewWindow(timezone: string, view: CalendarView, anchor?: Date): { start: Date; end: Date } {
-  if (view === "week") return weekWindow(timezone, anchor);
-  const ymd = getZonedYMD(anchor ?? new Date(), timezone);
-  const snap = (utcMidnight: Date) =>
-    zonedDayStartUtc(utcMidnight.getUTCFullYear(), utcMidnight.getUTCMonth() + 1, utcMidnight.getUTCDate(), timezone);
-  if (view === "day") {
-    const start = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
-    const end = snap(new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day) + 86_400_000));
-    return { start, end };
+async function cachedExternalRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+  const hit = externalCache.get(key);
+  if (hit && Date.now() - hit.at < EXTERNAL_CACHE_TTL_MS) return hit.value as T;
+  const value = await read();
+  // Bound the map: drop the oldest insertion when it grows past the cap.
+  if (externalCache.size >= EXTERNAL_CACHE_MAX) {
+    const oldest = externalCache.keys().next().value;
+    if (oldest !== undefined) externalCache.delete(oldest);
   }
-  // month
-  const firstUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, 1));
-  const gridStartUtc = new Date(firstUtc.getTime() - firstUtc.getUTCDay() * 86_400_000);
-  const lastUtc = new Date(Date.UTC(ymd.year, ymd.month, 0)); // day 0 of next month = this month's last day
-  const gridEndUtc = new Date(lastUtc.getTime() + (7 - lastUtc.getUTCDay()) * 86_400_000); // Sunday after the last day
-  return { start: snap(gridStartUtc), end: snap(gridEndUtc) };
+  externalCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/** Drop a user's cached reads after they write, so the change shows at once. */
+export function invalidateExternalCache(userId: string): void {
+  for (const key of externalCache.keys()) {
+    if (key.startsWith(`${userId}:`)) externalCache.delete(key);
+  }
 }
 
 /** Read a single cookie value from the request's Cookie header. */
@@ -771,6 +756,10 @@ export async function loadCalendarData(request: Request) {
   // week view, wider in month view, one day in day view. Drives the event +
   // meeting fetch so month view has a month of data.
   const { start: rangeStart, end: rangeEnd } = viewWindow(timezone, view, anchor);
+  // Fetch wide, display narrow. Blocks outside the visible days are dropped by
+  // placeBlock, so over-fetching is free on the client and saves a round-trip
+  // on every view switch.
+  const { start: fetchStart, end: fetchEnd } = fetchWindow(timezone, anchor);
 
   // Rolling lower bound for time entries: keep ~8 weeks back from the visible
   // week so the timesheet prefill form has ample recent entries to copy from,
@@ -840,10 +829,14 @@ export async function loadCalendarData(request: Request) {
   const crudEnabled = await isFeatureEnabled("calendar-unified", userId, roles, request);
 
   let ingestionError: string | null = null;
+  const externalCacheKey = `${userId}:${crudEnabled ? "crud" : "busy"}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
   const [externalRaw, calendarLinks] = await Promise.all([
-    (crudEnabled
-      ? fetchCalendarEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
-      : fetchBusyEvents(userId, rangeStart, rangeEnd, prefetchedCalendarLists, prefetchedTokens)
+    cachedExternalRead<CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>>>(
+      externalCacheKey,
+      () =>
+        crudEnabled
+          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens)
+          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens),
     ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
       return [];
@@ -1010,6 +1003,9 @@ export async function submitCalendarAction(request: Request) {
     return forbidden(request);
 
   const userId = auth.user.sub;
+  // Any write here can change what the next read should return, so drop this
+  // user's cached external reads rather than letting the TTL hide the change.
+  invalidateExternalCache(userId);
   const form = await request.formData();
   const raw = Object.fromEntries(form.entries());
 
