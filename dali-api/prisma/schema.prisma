@@ -1930,6 +1930,14 @@ model TimeEntry {
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
   googleTimesheetEventId String?
   googleTimesheetLinkId  String?
+  // The calendar event this entry was logged against — "count this as work" on
+  // an event in the composer. Soft pointers, no FK, same pattern as the mirror
+  // pair above. When set, the event and its hours are ONE thing: the grid draws
+  // the event block with a role accent instead of an overlapping logged block,
+  // and the entry is not mirrored to the DALI Timesheet calendar (it already
+  // lives on a real one). Null for entries logged straight onto the timesheet.
+  sourceEventId          String?
+  sourceCalendarLinkId   String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
@@ -1938,6 +1946,9 @@ model TimeEntry {
   project     Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
+  // One work log per event per user — lets the composer upsert on re-save
+  // instead of stacking a second entry every time the event is edited.
+  @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
 }

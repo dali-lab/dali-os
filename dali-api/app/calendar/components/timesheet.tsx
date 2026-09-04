@@ -724,7 +724,7 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   );
 }
 
-function TimesheetDragPopover({
+export function TimesheetDragPopover({
   startLocal,
   endLocal,
   myRoles,

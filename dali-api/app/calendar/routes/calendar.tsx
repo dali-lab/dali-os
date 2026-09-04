@@ -71,6 +71,7 @@ import {
 import {
   buildGridDays,
   buildExternalLayer,
+  buildLoggedSourceIndex,
   buildAllDayItems,
   buildLoggedTimeLayer,
   mergeLayers,
@@ -92,7 +93,7 @@ import {
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetView, TimesheetEditPopover } from "~/calendar/components/timesheet";
+import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover } from "~/calendar/components/timesheet";
 import { AvailabilityView } from "~/calendar/components/AvailabilityView";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 
@@ -127,12 +128,20 @@ export async function action({ request }: Route.ActionArgs) { return submitCalen
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
+  formMethod,
   defaultShouldRevalidate,
 }: {
   currentUrl: URL;
   nextUrl: URL;
+  formMethod?: string;
   defaultShouldRevalidate: boolean;
 }) {
+  // A mutation leaves the URL untouched (every action on this screen posts to
+  // the current location), so the search-param comparison below would read it
+  // as "nothing changed" and skip the loader — leaving the just-created event
+  // or time entry off the grid until the next window focus. Anything that
+  // isn't a plain GET defers to the default, which is to revalidate.
+  if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   const cur = new URLSearchParams(currentUrl.search);
   const next = new URLSearchParams(nextUrl.search);
@@ -361,17 +370,15 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  // The grid editor slot: click-to-edit on an existing logged-time block.
-  // Creating goes through the unified create modal, never this slot.
-  type CalendarEditor = {
-    entry: TimeEntryDTO;
-    dayIdx: number;
-    startHour: number;
-    endHour: number;
-    startLocal: string;
-    endLocal: string;
-  };
-  const [editor, setEditor] = useState<CalendarEditor | null>(null);
+  // The grid's timesheet slot. In timesheet mode the grid logs hours directly:
+  // clicking a logged block edits it, and dragging out an empty slot creates an
+  // entry with no event behind it. With the timesheet layer off, dragging opens
+  // the event modal instead and this slot is only ever the editor.
+  type TimesheetSelection = { dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string } & (
+    | { mode: "edit"; entry: TimeEntryDTO }
+    | { mode: "create" }
+  );
+  const [timesheetSel, setTimesheetSel] = useState<TimesheetSelection | null>(null);
 
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
@@ -436,6 +443,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // into a field. Modifier chords are left for the browser/OS.
   const anyModalOpen =
     Boolean(composer) ||
+    Boolean(timesheetSel) ||
     classesOpen ||
     calMgrOpen ||
     createModalOpen ||
@@ -480,6 +488,12 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }
     : data;
 
+  // Hours logged against something the event layer already draws — a meeting,
+  // or an event marked as work. Those annotate their source block with a role
+  // accent rather than drawing a second block on top of it, so there's one
+  // block, and one click target, per thing.
+  const loggedSources = buildLoggedSourceIndex(data, excludedRoleKeys, roleColors);
+
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external)
     layerMaps.push(
@@ -491,6 +505,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         data.crudEnabled ? moveEvent : undefined,
         data.crudEnabled ? duplicateEvent : undefined,
         data.crudEnabled ? deleteEvent : undefined,
+        layers.logged ? loggedSources.byEvent : undefined,
       ),
     );
   // All-day events (crud read) render in the grid's all-day band.
@@ -512,18 +527,23 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        // Suppress the duplicate block for meeting-sourced entries *while the
-        // event layer is drawing them* — otherwise the logged block lands on
-        // top of the meeting's own block and swallows the click, leaving no way
-        // to open the event and edit its details. With the event layer off
-        // there is nothing underneath, so the logged block is still needed.
+        // Suppress the duplicate block for entries the event layer is already
+        // drawing (meetings, and events marked as work) — otherwise the logged
+        // block lands on top of the event's own block and swallows the click,
+        // leaving no way to open the event and edit its details. Those blocks
+        // carry a role accent instead. With the event layer off there is
+        // nothing underneath, so the logged block is still needed.
         roleColors,
-        suppressSourced: { meetings: layers.external },
+        // Events only carry an eventId (and so can wear an accent) on the crud
+        // read; without the flag the busy read has nothing to annotate, so the
+        // entry has to keep drawing its own block or the hours vanish.
+        suppressSourced: { meetings: layers.external, events: layers.external && data.crudEnabled },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
           if (!day) return;
-          setEditor({
+          setTimesheetSel({
+            mode: "edit",
             entry: t,
             dayIdx,
             startHour,
@@ -598,10 +618,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
-  // Open the create modal at a sensible default slot (today if it's in range,
-  // 9am for the user's default duration) — the New-button path when there's no
-  // drag to seed the times.
-  const openQuickCreate = () => {
+  // In timesheet mode the grid logs hours, so the create paths land on the
+  // timesheet popover instead of the event modal — an entry with no event
+  // behind it, which is the whole point of logging straight onto the grid.
+  // The popover anchors to a slot, so it needs a view that draws one; month and
+  // agenda keep the event modal.
+  const timesheetCreateMode = layers.logged && (view === "week" || view === "day");
+
+  // A sensible default slot for the Add button, which has no drag to seed it:
+  // today if it's in range, else the first visible day, 9am for the user's
+  // default duration.
+  const defaultSlot = () => {
     const nowKey = new Intl.DateTimeFormat("en-CA", {
       timeZone: data.timezone,
       year: "numeric",
@@ -609,10 +636,29 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       day: "2-digit",
     }).format(new Date());
     const found = days.findIndex((d) => ymdUtc(d.dateUtc) === nowKey);
-    const day = days[found >= 0 ? found : 0];
-    if (!day) return;
+    const dayIdx = found >= 0 ? found : 0;
+    const day = days[dayIdx];
+    if (!day) return null;
     const endHour = 9 + data.defaultEventDurationMin / 60;
-    openCreateModal(dayHourToLocal(day.dateUtc, 9), dayHourToLocal(day.dateUtc, endHour));
+    return {
+      dayIdx,
+      startHour: 9,
+      endHour,
+      startLocal: dayHourToLocal(day.dateUtc, 9),
+      endLocal: dayHourToLocal(day.dateUtc, endHour),
+    };
+  };
+
+  // Every create path funnels through here: grid drag, and the Add button
+  // (which passes no slot and falls back to the default one).
+  const startCreate = (slot?: { dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string }) => {
+    if (!timesheetCreateMode) {
+      openCreateModal(slot?.startLocal, slot?.endLocal);
+      return;
+    }
+    const resolved = slot ?? defaultSlot();
+    if (!resolved) return;
+    setTimesheetSel({ mode: "create", ...resolved });
   };
 
   const navBtn =
@@ -686,8 +732,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 Availability
               </button>
 
-              <button type="button" onClick={() => openCreateModal()} className={addEventBtn}>
-                <Plus className="h-4 w-4 stroke-[3]" /> Add event
+              <button type="button" onClick={() => startCreate()} className={addEventBtn}>
+                <Plus className="h-4 w-4 stroke-[3]" />
+                {timesheetCreateMode ? "Log hours" : "Add event"}
               </button>
             </>
           )}
@@ -755,36 +802,48 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   onDayPointerSelect={(dayIdx, startHour, endHour) => {
                     const day = days[dayIdx];
                     if (!day) return;
-                    openCreateModal(
-                      dayHourToLocal(day.dateUtc, startHour),
-                      dayHourToLocal(day.dateUtc, endHour),
-                    );
+                    startCreate({
+                      dayIdx,
+                      startHour,
+                      endHour,
+                      startLocal: dayHourToLocal(day.dateUtc, startHour),
+                      endLocal: dayHourToLocal(day.dateUtc, endHour),
+                    });
                   }}
                   selection={
-                    editor
-                      ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour }
+                    timesheetSel
+                      ? { dayIdx: timesheetSel.dayIdx, startHour: timesheetSel.startHour, endHour: timesheetSel.endHour }
                       : createSel
                   }
                   selectionPopover={
-                    editor
-                      ? () => (
-                          <TimesheetEditPopover
-                            entry={editor.entry}
-                            startLocal={editor.startLocal}
-                            endLocal={editor.endLocal}
-                            myRoles={data.myRoles}
-                            onClose={() => setEditor(null)}
-                          />
-                        )
+                    timesheetSel
+                      ? () =>
+                          timesheetSel.mode === "create" ? (
+                            <TimesheetDragPopover
+                              startLocal={timesheetSel.startLocal}
+                              endLocal={timesheetSel.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setTimesheetSel(null)}
+                            />
+                          ) : (
+                            <TimesheetEditPopover
+                              entry={timesheetSel.entry}
+                              startLocal={timesheetSel.startLocal}
+                              endLocal={timesheetSel.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setTimesheetSel(null)}
+                            />
+                          )
                       : undefined
                   }
-                  onSelectionDismiss={() => setEditor(null)}
-                  // Only the timesheet editor's selection resizes; the crud create
-                  // preview (createSel) is a static hint driven by the composer.
+                  onSelectionDismiss={() => setTimesheetSel(null)}
+                  // Only the timesheet selection resizes — both its popovers
+                  // follow startLocal/endLocal live. The crud create preview
+                  // (createSel) is a static hint driven by the composer.
                   onSelectionResize={
-                    editor
+                    timesheetSel
                       ? (startHour, endHour) =>
-                          setEditor((prev) => {
+                          setTimesheetSel((prev) => {
                             if (!prev) return prev;
                             const day = days[prev.dayIdx];
                             if (!day) return prev;

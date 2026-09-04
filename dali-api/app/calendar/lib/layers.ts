@@ -108,6 +108,11 @@ export function buildExternalLayer(
   onMoveResize?: (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => void,
   onDuplicate?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
   onDelete?: (e: ExternalEventDTO) => void,
+  /** Role accents keyed by eventId, from buildLoggedSourceIndex().byEvent — an
+   *  event marked as work wears its role colour and hours here rather than
+   *  being shadowed by a duplicate logged-time block. Pass only when the
+   *  logged layer is on; omitted, events draw plain. */
+  loggedAccents?: Map<string, LoggedAccent>,
 ): Record<number, EventBlock[]> {
   // calendarId → human label ("Account · Primary"), for the detail popover's
   // source line.
@@ -141,6 +146,7 @@ export function buildExternalLayer(
         links: e.links,
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
+        loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
         // Delete affordances in the detail popover and can be dragged.
         onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
@@ -185,24 +191,32 @@ export function buildAllDayItems(
  *  a duplicate logged-time block. */
 export type LoggedAccent = { color: string; hours: number };
 
-/** Logged work grouped by the on-grid event it came from (a meeting), so a
- *  meeting that's *also* logged can show a role accent instead of a second
- *  overlapping block. Honours `excludedRoleKeys` — a filtered-out role
- *  annotates nothing. Colour follows the first bucket seen; hours sum. */
+/** Logged work grouped by the on-grid thing it came from — a meeting, or the
+ *  calendar event it was logged against — so something that is *also* logged
+ *  shows a role accent on its own block instead of a second overlapping one.
+ *  Honours `excludedRoleKeys`: a filtered-out role annotates nothing. Colour
+ *  follows the first bucket seen; hours sum.
+ *
+ *  `roleColors` are the user's per-role overrides, so the accent stripe is the
+ *  same colour the role wears everywhere else on the grid. */
 export function buildLoggedSourceIndex(
   data: LoaderData,
   excludedRoleKeys?: Set<string>,
-): { byMeeting: Map<string, LoggedAccent> } {
+  roleColors?: Record<string, string>,
+): { byMeeting: Map<string, LoggedAccent>; byEvent: Map<string, LoggedAccent> } {
   const byMeeting = new Map<string, LoggedAccent>();
+  const byEvent = new Map<string, LoggedAccent>();
   for (const t of data.timeEntries) {
     const roleKey = timeEntryRoleKey(t);
     if (excludedRoleKeys?.has(roleKey)) continue;
-    if (!t.scheduledMeetingId) continue;
-    const id = t.scheduledMeetingId;
-    const prev = byMeeting.get(id);
-    byMeeting.set(id, { color: prev?.color ?? roleColor(roleKey).dot, hours: (prev?.hours ?? 0) + t.hours });
+    const into = t.scheduledMeetingId ? byMeeting : t.sourceEventId ? byEvent : null;
+    const id = t.scheduledMeetingId ?? t.sourceEventId;
+    if (!into || !id) continue;
+    const prev = into.get(id);
+    const color = prev?.color ?? roleColors?.[roleKey] ?? roleColor(roleKey).dot;
+    into.set(id, { color, hours: (prev?.hours ?? 0) + t.hours });
   }
-  return { byMeeting };
+  return { byMeeting, byEvent };
 }
 
 /** A time entry resolved to a concrete ISO range: its real times when set,
@@ -222,11 +236,12 @@ export function buildLoggedTimeLayer(
   opts: {
     excludedRoleKeys?: Set<string>;
     onEntryClick?: (t: TimeEntryDTO, startIso: string, endIso: string) => void;
-    /** Skip meeting-sourced entries when the meetings layer is visible — the
-     *  meeting block carries a `loggedAccent` instead — so a logged meeting
-     *  doesn't draw a duplicate overlapping block. Standalone (Manual) entries,
-     *  and ones whose source layer is hidden, still draw. */
-    suppressSourced?: { meetings: boolean };
+    /** Skip entries whose source is already drawn by another layer — the
+     *  source block carries a `loggedAccent` instead — so a logged meeting or a
+     *  work-marked event doesn't draw a duplicate overlapping block on top of
+     *  itself, swallowing the click that would open it. Standalone entries, and
+     *  ones whose source layer is hidden, still draw their own block. */
+    suppressSourced?: { meetings: boolean; events: boolean };
     /** Per-role colour overrides, keyed like `timeEntryRoleKey` ("Type:id").
      *  A hex here wins over the hashed palette so a role reads the same colour
      *  everywhere the user assigned it. */
@@ -238,6 +253,7 @@ export function buildLoggedTimeLayer(
     const roleKey = timeEntryRoleKey(t);
     if (opts.excludedRoleKeys?.has(roleKey)) continue;
     if (opts.suppressSourced?.meetings && t.scheduledMeetingId) continue;
+    if (opts.suppressSourced?.events && t.sourceEventId) continue;
     const { startIso, endIso } = timeEntryRange(t, data.timezone);
     const color = roleColor(roleKey);
     const custom = opts.roleColors?.[roleKey];
