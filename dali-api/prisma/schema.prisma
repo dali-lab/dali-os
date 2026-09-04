@@ -4558,6 +4558,69 @@ model FeatureFlag {
   createdAt DateTime @default(now())
 }
 
+// ─── Infrastructure Dashboard ────────────────────────────────────────────────
+
+// A lab project's cloud accounts (the lab uses one Fly org + one Neon org PER
+// project). The Infrastructure admin console (Admin → System → Infrastructure)
+// sweeps each registered project and renders its Fly + Neon inventory/usage.
+// Fly org-scoped tokens are AES-256-GCM encrypted at rest
+// (app/lib/infra/crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon
+// personal key is an env secret (NEON_API_KEY), not stored here. Admin-managed
+// in-app — no redeploy to onboard a project.
+model InfraProject {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Stable key used to tag snapshots/usage rows and in action routes.
+  key   String @unique
+  label String
+
+  flyOrgSlug String? // Fly org slug this project's apps live in
+  neonOrgId  String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
+
+  // Fly org-scoped tokens, encrypted at rest. The read-only token drives the
+  // sweep; the write token gates actions. Null → that capability is
+  // unconfigured for this project (its surfaces render read-only / disabled).
+  flyReadTokenEnc  String?
+  flyWriteTokenEnc String?
+
+  // Off keeps a project registered but out of the sweep and hidden from the fleet.
+  enabled Boolean @default(true)
+}
+
+// One row per (project, provider) sweep — the latest wins for the current-state
+// render; older rows are a raw audit trail. Payload is the normalized inventory
+// (apps/machines/volumes for Fly; projects/branches/endpoints for Neon). Never
+// contains tokens or connection secrets.
+model InfraSnapshot {
+  id         String   @id @default(cuid())
+  fetchedAt  DateTime @default(now())
+  projectKey String
+  provider   String // "fly" | "neon"
+  payload    Json
+
+  @@index([projectKey, provider, fetchedAt])
+}
+
+// Usage time-series for trend sparklines. No dollar values — raw provider
+// metrics only (Neon consumption + Fly Prometheus). This table is our long-term
+// record, since Fly's Prometheus retention is only ~15 days.
+model InfraUsageSample {
+  id         String   @id @default(cuid())
+  projectKey String
+  provider   String // "fly" | "neon"
+  scopeType  String // "fly-app" | "neon-project" | "neon-endpoint"
+  scopeId    String
+  scopeName  String
+  metric     String // e.g. "compute_unit_seconds", "egress_bytes", "storage_bytes"
+  value      Float
+  at         DateTime
+
+  @@unique([provider, scopeType, scopeId, metric, at])
+  @@index([projectKey, metric, at])
+}
+
 // A composed announcement waiting for its send time. Payload + audience
 // mirror the /api/notifications/send schema; the scheduled-announcements job
 // fires due rows through the same shared fan-out (app/lib/announcements.server).

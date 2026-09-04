@@ -132,6 +132,19 @@ export const AUDIT_ACTIONS = [
   "education.form-binding.set",
   // Drive unified tree (Wave 3): placement move for files and forms.
   "drive.item.move",
+  // Infrastructure dashboard (Fly.io + Neon admin console). Destructive and
+  // provisioning actions carry their specifics in metadata (kind, resource ids,
+  // before/after) — never tokens or connection secrets.
+  "infra.project.save",
+  "infra.project.delete",
+  "infra.refresh",
+  "infra.fly.action",
+  "infra.fly.destroy",
+  "infra.neon.endpoint",
+  "infra.neon.quota",
+  "infra.neon.project.create",
+  "infra.neon.destroy",
+  "infra.reap",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

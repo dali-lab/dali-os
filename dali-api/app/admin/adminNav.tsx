@@ -6,6 +6,7 @@ import {
   Mail,
   Receipt,
   SendHorizonal,
+  Server,
   Sparkles,
 } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
@@ -98,6 +99,14 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         to: "/admin/jobs",
         icon: Clock,
         description: "Background job status and controls — digests, reminders, scheduled sends.",
+      },
+      {
+        key: "infrastructure",
+        label: "Infrastructure",
+        to: "/admin/infrastructure",
+        icon: Server,
+        description:
+          "Fly.io + Neon fleet across all lab projects — inventory, usage, scaling, limits, provisioning, and cleanup.",
       },
       {
         key: "feature-flags",
