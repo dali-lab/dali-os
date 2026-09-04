@@ -4,6 +4,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -94,6 +95,7 @@ export function ShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const dialog = useDialog();
 
   async function post(body: Record<string, string>): Promise<any> {
     const form = new FormData();
@@ -386,7 +388,33 @@ export function ShareDialog({
               disabled={busy || !ctx}
               ariaLabel="General access audience"
               buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
-              onChange={(linkAccess) => {
+              onChange={async (linkAccess) => {
+                // Only confirm when moving to a broader audience; downgrades to
+                // Restricted need no confirmation.
+                if (linkAccess === "Public") {
+                  const ok = await dialog.confirm({
+                    title: "Make this document public?",
+                    description:
+                      "Anyone on the internet will be able to read it — no account required. They won't be able to edit or comment.",
+                    confirmLabel: "Make public",
+                    tone: "destructive",
+                  });
+                  if (!ok) return;
+                } else if (
+                  linkAccess === "LabMembers" &&
+                  (ctx?.workspaceType === "Member" || ctx?.workspaceType === "Project")
+                ) {
+                  const label = isLab ? "Everyone in the lab" : "Anyone in the lab";
+                  const ok = await dialog.confirm({
+                    title: `Share with ${label}?`,
+                    description: isLab
+                      ? "Every lab member will be able to open this document."
+                      : "Any lab member with the link will be able to view this document.",
+                    confirmLabel: "Share",
+                    tone: "destructive",
+                  });
+                  if (!ok) return;
+                }
                 // Public can only be view-only (no identity to attribute writes).
                 // "Everyone in the lab" defaults to edit — the historical lab-wide
                 // default — but stays adjustable via the role dropdown.

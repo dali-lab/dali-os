@@ -805,6 +805,8 @@ function GroupCard({
               method="post"
               onSubmit={confirmSubmit({
                 title: `Delete group "${group.name}"?`,
+                description:
+                  "Any document shares and scheduling audiences that reference this group will stop working. This can't be undone.",
                 confirmLabel: "Delete",
                 tone: "destructive",
               })}
@@ -966,13 +968,15 @@ function ExpandedMemberCard({
           <input type="hidden" name="intent" value="remove-member" />
           <input type="hidden" name="groupId" value={groupId} />
           <input type="hidden" name="userId" value={member.id} />
-          <button
-            type="submit"
-            aria-label={`Remove ${fullName} from group`}
-            className="text-muted-foreground hover:text-red-600 p-0.5"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          <Tooltip content={`Remove ${fullName} from group`}>
+            <button
+              type="submit"
+              aria-label={`Remove ${fullName} from group`}
+              className="text-muted-foreground hover:text-red-600 p-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </Tooltip>
         </fetcher.Form>
       )}
     </div>

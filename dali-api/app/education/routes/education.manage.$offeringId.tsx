@@ -1466,7 +1466,16 @@ export default function ManageOffering() {
                     </button>
                   ))}
                 {(appCounts["Submitted"] ?? 0) > 0 && (
-                  <Form method="post" className="ml-auto">
+                  <Form
+                    method="post"
+                    className="ml-auto"
+                    onSubmit={confirmSubmit({
+                      title: `Approve all ${appCounts["Submitted"]} pending applicants?`,
+                      description:
+                        "Approves up to capacity and emails each approved applicant. Applicants beyond the seat limit are waitlisted instead.",
+                      confirmLabel: "Approve all",
+                    })}
+                  >
                     <input type="hidden" name="intent" value="approve-all-pending" />
                     <Button type="submit" size="sm">
                       Approve all {appCounts["Submitted"]} pending

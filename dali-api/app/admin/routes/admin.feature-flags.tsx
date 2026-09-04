@@ -7,6 +7,7 @@
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.feature-flags";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -65,6 +66,7 @@ type Member = { id: string; name: string; email: string | null };
 function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] }) {
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const busy = saveFetcher.state !== "idle";
 
   const [enabled, setEnabled] = useState(flag.enabled);
@@ -104,7 +106,20 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
     );
   }
 
-  function save() {
+  async function save() {
+    // Confirm when the save would newly turn "everyone" on — this makes the
+    // flag active for every user, which can be a large-scale change.
+    const everyoneNewlyOn = everyone && !flag.everyone;
+    if (everyoneNewlyOn) {
+      const memberCount = members.length;
+      const countLabel = memberCount > 0 ? ` (${memberCount} users)` : "";
+      const ok = await dialog.confirm({
+        title: `Enable ${flag.label} for everyone${countLabel}?`,
+        description: `This turns on "${flag.key}" for all users regardless of role or individual targeting.`,
+        confirmLabel: "Enable for everyone",
+      });
+      if (!ok) return;
+    }
     saveFetcher.submit(
       { enabled, everyone, roles, userIds, note: flag.note, variant },
       {
@@ -286,7 +301,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
         <button
           type="button"
           disabled={busy || !dirty}
-          onClick={save}
+          onClick={() => void save()}
           className={buttonClasses("primary", "sm")}
         >
           {busy ? "Saving…" : "Save"}

@@ -51,6 +51,7 @@ import {
 } from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
 import { ChevronRight, FileText, LayoutGrid, Plus, SlidersHorizontal } from "lucide-react";
+import { useDialog } from "~/components/ui/dialog";
 
 // areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
 // switcher itself under either shell — a full-width underline row above the
@@ -1105,6 +1106,10 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
 // then POSTs, and onRevert on failure — no loader refetch. The optimistic state
 // lives in the parent, so the board uses only the POST/rollback half of the
 // shared flow rather than `useOptimisticBoardMove`'s local state.
+// Statuses that silently skip the email pipeline — dropping a card here should
+// warn that no email is sent. Mirrors SILENT_DECISION_STATUSES in the detail route.
+const BOARD_DECISION_STATUSES = new Set<Status>(["Accepted", "Rejected", "Promoted"]);
+
 function ApplicationsBoard({
   rows,
   canEdit,
@@ -1117,6 +1122,7 @@ function ApplicationsBoard({
   onRevert: (id: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const dialog = useDialog();
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -1139,26 +1145,42 @@ function ApplicationsBoard({
     const toStatus = overId as Status;
     if (toStatus === fromStatus) return;
 
-    onMove(id, toStatus);
-    setError(null);
-
-    void (async () => {
-      try {
-        const res = await fetch(`/api/partner-applications/${id}/status`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: toStatus }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? `Request failed: ${res.status}`);
+    const doMove = () => {
+      onMove(id, toStatus);
+      setError(null);
+      void (async () => {
+        try {
+          const res = await fetch(`/api/partner-applications/${id}/status`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: toStatus }),
+          });
+          if (!res.ok) {
+            const b = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(b.error ?? `Request failed: ${res.status}`);
+          }
+        } catch (err) {
+          onRevert(id);
+          setError(err instanceof Error ? err.message : "Failed to move");
         }
-      } catch (err) {
-        onRevert(id);
-        setError(err instanceof Error ? err.message : "Failed to move");
-      }
-    })();
+      })();
+    };
+
+    if (BOARD_DECISION_STATUSES.has(toStatus)) {
+      void (async () => {
+        const ok = await dialog.confirm({
+          title: `Move to "${STATUS_LABEL[toStatus]}"?`,
+          description:
+            "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
+          confirmLabel: "Move anyway",
+        });
+        if (ok) doMove();
+      })();
+      return;
+    }
+
+    doMove();
   }
 
   const columns: KanbanColumn<ApplicationRow>[] = STATUSES.map((status) => ({

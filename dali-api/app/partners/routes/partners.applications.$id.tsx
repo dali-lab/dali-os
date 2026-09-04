@@ -1210,7 +1210,15 @@ function TriageBar({
 
       {/* Inline forms for actions that need extra input */}
       {showing === "offer-meeting" && (
-        <Form method="post" className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border">
+        <Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Send meeting invite?",
+            description: "This emails the partner a meeting invitation.",
+            confirmLabel: "Send invite",
+          })}
+          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
+        >
           <input type="hidden" name="intent" value="offer-meeting" />
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground font-medium">Meeting time *</span>
@@ -1242,7 +1250,15 @@ function TriageBar({
       )}
 
       {showing === "send-application" && (
-        <Form method="post" className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border">
+        <Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Send application link to partner?",
+            description: "This emails the partner your next-steps message with a link to apply.",
+            confirmLabel: "Send email",
+          })}
+          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
+        >
           <input type="hidden" name="intent" value="send-application" />
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground font-medium">Next steps message</span>
@@ -1265,7 +1281,15 @@ function TriageBar({
       )}
 
       {showing === "learn-more" && (
-        <Form method="post" className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border">
+        <Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Send more-info request to partner?",
+            description: "This emails the partner asking for the information you describe.",
+            confirmLabel: "Send request",
+          })}
+          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
+        >
           <input type="hidden" name="intent" value="learn-more" />
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground font-medium">What do we need from them? *</span>
@@ -1289,7 +1313,16 @@ function TriageBar({
       )}
 
       {showing === "reject" && (
-        <Form method="post" className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border">
+        <Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Reject this partner application?",
+            description: "This emails the partner a rejection notice.",
+            confirmLabel: "Reject",
+            tone: "destructive",
+          })}
+          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
+        >
           <input type="hidden" name="intent" value="reject" />
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground font-medium">Reason (shown to partner, optional)</span>
@@ -1502,6 +1535,9 @@ function MeetingsSection({
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [debriefOpenId, setDebriefOpenId] = useState<string | null>(null);
+  const [notifyPartner, setNotifyPartner] = useState(false);
+  const dialog = useDialog();
+  const submitForm = useSubmit();
 
   const memberById = new Map(coreMembers.map((m) => [m.userId, m.name]));
 
@@ -1523,7 +1559,20 @@ function MeetingsSection({
       {showAdd && (
         <Form
           method="post"
-          onSubmit={() => setShowAdd(false)}
+          onSubmit={async (e) => {
+            if (notifyPartner) {
+              e.preventDefault();
+              const ok = await dialog.confirm({
+                title: "Email a meeting invite to the partner?",
+                description: "This sends a meeting invitation to the partner's contact email.",
+                confirmLabel: "Send invite",
+              });
+              if (!ok) return;
+              submitForm(e.currentTarget, { method: "post" });
+            }
+            setShowAdd(false);
+            setNotifyPartner(false);
+          }}
           className="flex flex-col gap-3 mb-4 p-3 bg-muted/30 rounded-md border border-border"
         >
           <input type="hidden" name="intent" value="meeting-create" />
@@ -1565,6 +1614,8 @@ function MeetingsSection({
             name="notifyPartner"
             label="Email partner a meeting invite"
             className="text-xs"
+            checked={notifyPartner}
+            onChange={(e) => setNotifyPartner(e.target.checked)}
           />
           <div className="flex gap-2">
             <button type="submit" className={buttonClasses("primary", "sm")}>
@@ -1685,6 +1736,10 @@ function MeetingsSection({
 
 // ─── Existing components (unchanged below) ────────────────────────────────────
 
+// Decision statuses that silently skip the email pipeline — selecting any of
+// these via the dropdown should warn that no email is sent.
+const SILENT_DECISION_STATUSES = new Set<Status>(["Accepted", "Rejected", "Promoted"]);
+
 function Header({
   application,
   canEdit,
@@ -1694,6 +1749,24 @@ function Header({
 }) {
   const [editing, setEditing] = useState(false);
   const submit = useSubmit();
+  const dialog = useDialog();
+
+  const handleStatusChange = async (value: string) => {
+    const toStatus = value as Status;
+    if (SILENT_DECISION_STATUSES.has(toStatus)) {
+      const ok = await dialog.confirm({
+        title: `Move to "${STATUS_LABEL[toStatus]}"?`,
+        description:
+          "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
+        confirmLabel: "Move anyway",
+      });
+      if (!ok) return;
+    }
+    const fd = new FormData();
+    fd.set("intent", "status");
+    fd.set("status", value);
+    submit(fd, { method: "post" });
+  };
 
   return (
     <header className="flex flex-col gap-2">
@@ -1747,12 +1820,7 @@ function Header({
             name="status"
             defaultValue={application.status}
             ariaLabel="Application status"
-            onChange={(value) => {
-              const fd = new FormData();
-              fd.set("intent", "status");
-              fd.set("status", value);
-              submit(fd, { method: "post" });
-            }}
+            onChange={handleStatusChange}
             options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
             buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />

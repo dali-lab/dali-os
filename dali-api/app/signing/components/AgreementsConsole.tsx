@@ -228,6 +228,15 @@ export function AgreementsConsole() {
                         <Pill>{CADENCE_SHORT[a.cadence] ?? a.cadence}</Pill>
                         <Pill>{SCOPE_SHORT[a.gateScope] ?? a.gateScope}</Pill>
                         {a.draftPending && <Pill tone="amber">Draft pending</Pill>}
+                        {/* Signal that this agreement is already in force for the
+                            current scope — so it doesn't look like it still needs
+                            sending (the "26F" problem). Only shown when the
+                            agreement is enforced (App-gated) and has a current
+                            binding, meaning needsActivation is false but bindings
+                            exist. */}
+                        {!a.needsActivation && a.bindings.some((b) => b.isCurrent) && (
+                          <Pill tone="green">Active — issued</Pill>
+                        )}
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-accent-coral transition-colors shrink-0" />
@@ -242,11 +251,15 @@ export function AgreementsConsole() {
   );
 }
 
-function Pill({ children, tone }: { children: ReactNode; tone?: "amber" }) {
+function Pill({ children, tone }: { children: ReactNode; tone?: "amber" | "green" }) {
   return (
     <span
       className={`rounded px-1.5 py-0.5 ${
-        tone === "amber" ? "bg-amber-100 text-amber-800" : "bg-muted text-muted-foreground"
+        tone === "amber"
+          ? "bg-amber-100 text-amber-800"
+          : tone === "green"
+            ? "bg-green-100 text-green-800"
+            : "bg-muted text-muted-foreground"
       }`}
     >
       {children}

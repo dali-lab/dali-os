@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
@@ -180,6 +181,7 @@ export function TaskBoard({
   // adopted whenever it changes and no save is in flight, so teammate edits,
   // GitHub webhook updates, and sprint rollovers appear without a manual
   // reload; our own mutations trigger a revalidation below to close the loop.
+  const dialog = useDialog();
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
@@ -266,6 +268,15 @@ export function TaskBoard({
   // (the weekly job still uses the idle-day threshold lab-wide).
   const runArchive = useCallback(async () => {
     if (archiving) return;
+    const archivable = tasks.filter((t) => t.status === "Done" || t.status === "Cancelled");
+    const count = archivable.length;
+    const confirmed = await dialog.confirm({
+      title: "Archive Done & Cancelled tasks?",
+      description: `This will immediately archive ${count} task${count === 1 ? "" : "s"} (Done and Cancelled). Archived tasks are hidden from the board but not deleted.`,
+      confirmLabel: "Archive",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
     setArchiving(true);
     setError(null);
     try {
@@ -280,7 +291,7 @@ export function TaskBoard({
     } finally {
       setArchiving(false);
     }
-  }, [archiving, projectId, refresh, setError]);
+  }, [archiving, dialog, projectId, refresh, setError, tasks]);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
   // and other external links can deep-link straight to a task. The sprint
@@ -993,7 +1004,10 @@ export function TaskBoard({
                 onSelect={() => void runArchive()}
                 disabled={archiving}
               >
-                {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                <span className="flex items-center gap-1.5">
+                  {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                  <InfoTip content="Immediately hides all Done and Cancelled tasks from the board. Archived tasks are not deleted." />
+                </span>
               </MenuItem>
               <MenuItem
                 icon={<Archive className="h-4 w-4" aria-hidden />}

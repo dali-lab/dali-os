@@ -2393,11 +2393,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   }
 
   function requestRemoveReview(review: any) {
-    if (getReviewStatus(review) === "submitted") {
-      setPendingRemoveReview(review);
-    } else {
-      performRemoveReview(review.id);
-    }
+    setPendingRemoveReview(review);
   }
 
   const cellClass = editable && adding
@@ -2522,7 +2518,11 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       )}
       <ConfirmDialog
         open={!!pendingRemoveReview}
-        title="Remove this reviewer's submitted review?"
+        title={
+          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
+            ? "Remove this reviewer's submitted review?"
+            : "Remove this reviewer's in-progress review?"
+        }
         body={
           <p>
             <strong>
@@ -2532,10 +2532,16 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                 return m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : (m.daliEmail ?? "This reviewer");
               })()}
             </strong>{" "}
-            has already submitted their review. Removing them will permanently delete their scores and feedback.
+            {pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
+              ? "has already submitted their review. Removing them will permanently delete their scores and feedback."
+              : "has a review in progress. Discards their in-progress review."}
           </p>
         }
-        confirmLabel="Remove and delete review"
+        confirmLabel={
+          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
+            ? "Remove and delete review"
+            : "Discard review"
+        }
         destructive
         onCancel={() => setPendingRemoveReview(null)}
         onConfirm={() => {
