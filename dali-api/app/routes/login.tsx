@@ -195,12 +195,9 @@ export default function Login() {
               DALI OS
             </span>
           </div>
-          <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
+          <h1 className="font-heading text-3xl font-bold text-dark-blue mb-5">
             Continue to DALI OS
           </h1>
-          <p className="text-muted-foreground mb-10">
-            Choose who you are — we'll take you to the right sign-in.
-          </p>
 
           {error && (
             <p className="mb-6 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">

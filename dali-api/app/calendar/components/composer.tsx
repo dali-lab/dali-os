@@ -908,7 +908,7 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
             )}
 
             {/* Add / edit form */}
-            <fetcher.Form method="post" className="flex flex-col gap-3 rounded-lg border border-border p-3">
+            <fetcher.Form method="post" className="flex flex-col gap-3 rounded-lg p-3">
               <input type="hidden" name="intent" value={editingId ? "class-update" : "class-add"} />
               {editingId && <input type="hidden" name="classId" value={editingId} />}
               <input type="hidden" name="periodCode" value={isPeriod ? mode : ""} />
@@ -918,10 +918,6 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
               <input type="hidden" name="customEnd" value={customEnd} />
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="termId" value={selectedTermId} />
-
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {editingId ? "Edit class" : "Add a class"}
-              </div>
 
               {data.classTerms.length > 1 && (
                 <label className="flex flex-col gap-1 text-sm">

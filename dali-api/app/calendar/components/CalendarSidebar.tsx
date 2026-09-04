@@ -65,7 +65,9 @@ function AccountGroup({
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  // Folded by default: with several linked accounts the rail is otherwise a
+  // wall of sub-calendars, and the checkboxes are a rarely-touched control.
+  const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   const subs = link.subCalendars ?? [];
 

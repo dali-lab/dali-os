@@ -45,6 +45,9 @@ export type TimelineTaskRow = {
   assignees?: {
     user: { id: string; firstName: string | null; lastName: string | null };
   }[];
+  // Card-style counts for the timeline hover (same facts as the board thumbnail).
+  commentCount?: number;
+  fileCount?: number;
 };
 
 /**
@@ -146,6 +149,8 @@ export function buildTimelineEpics({
                   id: a.user.id,
                   name: fullName(a.user),
                 })),
+                commentCount: t.commentCount ?? 0,
+                fileCount: t.fileCount ?? 0,
               };
             })
           : [],
