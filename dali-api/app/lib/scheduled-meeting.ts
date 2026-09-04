@@ -92,6 +92,15 @@ export type CreateScheduledMeetingInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
+  // General ("Other") meetings only: where to file the note page. Authorized and
+  // resolved by resolveNoteDestination — an unauthorized/invalid location (or an
+  // omitted one) falls back to the Lab root. Ignored for Team/Partner, which file
+  // into the project's meeting-notes folder.
+  noteLocation?: {
+    workspaceType: "Lab" | "Project";
+    workspaceId: string | null;
+    parentPageId: string | null;
+  } | null;
   // Roster (default): organizer/Core check attendees off by hand (needs a
   // meeting note for the checklist UI). SelfCheckIn: attendees mark themselves
   // present via the check-in route — works with or without a meeting note (QR
@@ -117,9 +126,64 @@ export type CreateScheduledMeetingResult =
     }
   | { ok: false; error: string };
 
+// Authorize + resolve a General meeting's chosen note location. Mirrors the
+// /api/move-destinations eligibility (Lab-wide, plus any project the organizer
+// can edit) so a note can only land where the organizer may write. Anything
+// unauthorized or malformed quietly falls back to the Lab root.
+async function resolveNoteDestination(
+  organizerId: string,
+  loc: CreateScheduledMeetingInput["noteLocation"],
+): Promise<{ workspaceType: "Lab" | "Project"; workspaceId: string | null; parentPageId: string | null }> {
+  const labRoot = { workspaceType: "Lab" as const, workspaceId: null, parentPageId: null };
+  if (!loc) return labRoot;
+
+  if (loc.workspaceType === "Project") {
+    if (!loc.workspaceId) return labRoot;
+    const core = await isCore(organizerId);
+    const proj = await prisma.project.findFirst({
+      where: { id: loc.workspaceId, ...(core ? {} : { assignments: { some: { userId: organizerId } } }) },
+      select: { id: true },
+    });
+    if (!proj) return labRoot;
+  }
+
+  // Validate the parent folder (if any) is a live Folder in the target workspace;
+  // otherwise drop to that workspace's top level rather than misfiling the note.
+  let parentPageId: string | null = null;
+  if (loc.parentPageId) {
+    const folder = await prisma.page.findUnique({
+      where: { id: loc.parentPageId },
+      select: { kind: true, archivedAt: true, workspaceType: true, workspaceId: true },
+    });
+    const wsMatch =
+      !!folder &&
+      folder.workspaceType === loc.workspaceType &&
+      (loc.workspaceType === "Lab" ? folder.workspaceId === null : folder.workspaceId === loc.workspaceId);
+    if (folder && folder.kind === "Folder" && !folder.archivedAt && wsMatch) {
+      parentPageId = loc.parentPageId;
+    }
+  }
+
+  return {
+    workspaceType: loc.workspaceType,
+    workspaceId: loc.workspaceType === "Project" ? loc.workspaceId : null,
+    parentPageId,
+  };
+}
+
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
+  // Hard constraint (defense in depth alongside the route schema): a meeting is
+  // either a project meeting (Team/Partner + project) or a General one (Other,
+  // no project). No "Team without a team", no "Other pinned to a project".
+  if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
+    return { ok: false, error: "A project is required for Team and Partner meetings" };
+  }
+  if (input.meetingType === "Other" && input.projectId) {
+    return { ok: false, error: "General meetings cannot be attached to a project" };
+  }
+
   let participantUserIds: string[] = [];
   let scopeId: string | null = null;
   if (input.scope.type === "Group") {
@@ -243,8 +307,6 @@ export async function createScheduledMeeting(
   if (input.meetingType) {
     const noteDate = startDate ?? new Date();
     const dateLabel = formatDateShort(noteDate);
-    // "Other" notes carry their custom label via the meeting itself, so they
-    // stay titled with just the date.
     let title = dateLabel;
 
     if (input.projectId) {
@@ -278,12 +340,29 @@ export async function createScheduledMeeting(
       });
       notePageId = page.id;
     } else {
-      const page = await createLabMeetingPage({
-        title,
-        createdById: input.organizerId,
-        meetingNoteId: meeting.id,
-      });
-      notePageId = page.id;
+      // General meeting: file the note at the organizer's chosen Drive location
+      // (default/fallback: Lab root). Include the label in the title so the note
+      // stays identifiable wherever it lands.
+      if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+      const dest = await resolveNoteDestination(input.organizerId, input.noteLocation);
+      if (dest.workspaceType === "Project" && dest.workspaceId) {
+        const page = await createProjectPage({
+          projectId: dest.workspaceId,
+          title,
+          createdById: input.organizerId,
+          meetingNoteId: meeting.id,
+          parentPageId: dest.parentPageId,
+        });
+        notePageId = page.id;
+      } else {
+        const page = await createLabMeetingPage({
+          title,
+          createdById: input.organizerId,
+          meetingNoteId: meeting.id,
+          parentPageId: dest.parentPageId,
+        });
+        notePageId = page.id;
+      }
     }
   }
 

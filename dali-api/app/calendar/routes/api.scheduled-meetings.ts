@@ -18,10 +18,20 @@ const Base = {
   organizerCalendarLinkId: z.string().min(1).optional(),
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
-  // Project-less meetingType meetings get a Lab-workspace note page instead of
-  // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
-  // Invites still come only from the meeting's participant scope.
+  // A meeting is either a project meeting (Team/Partner, projectId required) or a
+  // General one ("Other", no project). The constraint is enforced by the refines
+  // below — see createScheduledMeeting in ~/lib/scheduled-meeting.
   projectId: z.string().min(1).optional(),
+  // General ("Other") meetings may file their note at any Drive location the
+  // organizer can write to (default: Lab root when omitted). Authorized + resolved
+  // server-side in createScheduledMeeting; the client feeds it /api/move-destinations.
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().min(1).nullable(),
+      parentPageId: z.string().min(1).nullable(),
+    })
+    .optional(),
   // SelfCheckIn is independent of meeting notes — attendance rows fan out
   // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
@@ -46,7 +56,32 @@ const CreateSchema = z
   .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
     message: "meetingTypeLabel is required when meetingType is Other",
     path: ["meetingTypeLabel"],
-  });
+  })
+  // Team/Partner are project meetings — they must name a project.
+  .refine((v) => (v.meetingType === "Team" || v.meetingType === "Partner" ? !!v.projectId : true), {
+    message: "A project is required for Team and Partner meetings",
+    path: ["projectId"],
+  })
+  // "Other" is a General meeting — it must not be attached to a project.
+  .refine((v) => (v.meetingType === "Other" ? !v.projectId : true), {
+    message: "General meetings cannot be attached to a project",
+    path: ["projectId"],
+  })
+  // A custom note location only makes sense for General meetings (project meetings
+  // file into the project's own meeting-notes folder).
+  .refine((v) => (v.noteLocation ? v.meetingType === "Other" : true), {
+    message: "noteLocation is only allowed for General meetings",
+    path: ["noteLocation"],
+  })
+  // Lab locations carry no workspaceId; Project locations require one.
+  .refine(
+    (v) =>
+      !v.noteLocation ||
+      (v.noteLocation.workspaceType === "Project"
+        ? !!v.noteLocation.workspaceId
+        : v.noteLocation.workspaceId === null),
+    { message: "noteLocation workspaceId must be set for Project and null for Lab", path: ["noteLocation"] },
+  );
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -106,6 +141,7 @@ export async function action({ request }: Route.ActionArgs) {
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
+    noteLocation: body.noteLocation,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: body.isCoreMeeting,
     addMeet,
