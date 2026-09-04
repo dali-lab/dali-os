@@ -395,7 +395,7 @@ export function CreateEventModal({
           {data.myRoles.length > 0 && (
             <div>
               <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                Role — which role you're hired for this time counts toward
+                Role
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {data.myRoles.map((r) => {

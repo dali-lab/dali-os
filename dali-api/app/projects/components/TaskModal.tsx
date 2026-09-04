@@ -83,6 +83,7 @@ export function TaskModal({
   defaultEpicId,
   defaultStatus,
   onArtifactsChanged,
+  onCommentCountChange,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
@@ -104,6 +105,9 @@ export function TaskModal({
   // Edit mode: lets the board revalidate so the card's artifact chip catches
   // up after a link/unlink/upload (artifacts bypass the onPatch path).
   onArtifactsChanged?: () => void;
+  // Edit mode: bumps the card's comment chip immediately after a post
+  // (revalidation via onArtifactsChanged follows).
+  onCommentCountChange?: (count: number) => void;
 }) {
   const dialog = useDialog();
   const isCreate = !task;
@@ -341,8 +345,8 @@ export function TaskModal({
     );
   }
 
-  // Close guard for X / backdrop / Escape / Cancel: unsaved edits need an
-  // explicit confirm before they're thrown away.
+  // Close guard for X / backdrop / Escape: unsaved edits need an explicit
+  // confirm before they're thrown away. Footer Cancel uses cancelEdit instead.
   async function guardedClose() {
     if (
       isDirty() &&
@@ -356,11 +360,48 @@ export function TaskModal({
     onClose();
   }
 
+  function resetFromTask(current: TaskCardModel) {
+    setTitle(current.title);
+    setDescription(current.description ?? "");
+    setStatus(current.status);
+    setAssigneeIds(current.assignees.map((a) => a.id));
+    setDueDate(current.dueAt ? dateInputValue(current.dueAt) : "");
+    setStartDate(current.startsAt ? dateInputValue(current.startsAt) : "");
+    setStoryId(current.storyId ?? "");
+    setDomainId(current.domain?.id ?? "");
+    setSprintId(current.sprintId ?? "");
+    setEpicId(current.epicId ?? "");
+    setChecklist(current.checklist ?? []);
+    setNewItemText("");
+    setSaveError(null);
+    setCommentDraft("");
+  }
+
+  // Footer Cancel in edit mode: leave the form and return to the record view.
+  // Create mode still dismisses the modal (there's no record to fall back to).
+  async function cancelEdit() {
+    if (isCreate || !editing) {
+      await guardedClose();
+      return;
+    }
+    if (
+      isDirty() &&
+      !(await dialog.confirm({
+        title: "Discard unsaved changes?",
+        confirmLabel: "Discard",
+        tone: "destructive",
+      }))
+    )
+      return;
+    if (task) resetFromTask(task);
+    setEditing(false);
+  }
+
   async function handleSave() {
     if (!task || !onPatch) return;
     const patch = diffPatch(task);
     if (Object.keys(patch).length === 0) {
-      onClose();
+      // Nothing changed — stay on the record view (caller already left edit).
       return;
     }
     setSaving(true);
@@ -371,6 +412,8 @@ export function TaskModal({
         onClose();
         return;
       }
+      // Stay in edit mode so the user can fix and retry.
+      setEditing(true);
       setSaveError(res.error ?? "Couldn't save changes.");
     } finally {
       setSaving(false);
@@ -455,7 +498,14 @@ export function TaskModal({
         throw new Error(j.error ?? `Request failed: ${res.status}`);
       }
       const saved = (await res.json()) as CommentModel;
-      setComments((cur) => (cur ?? []).map((c) => (c.id === temp.id ? saved : c)));
+      let nextCount = 0;
+      setComments((cur) => {
+        const next = (cur ?? []).map((c) => (c.id === temp.id ? saved : c));
+        nextCount = next.length;
+        return next;
+      });
+      onCommentCountChange?.(nextCount);
+      onArtifactsChanged?.();
     } catch (err) {
       // Roll the optimistic row back and restore the draft so nothing is lost.
       setComments((cur) => (cur ?? []).filter((c) => c.id !== temp.id));
@@ -1326,7 +1376,7 @@ export function TaskModal({
             <div className={cn("flex gap-2", readOnly && "hidden")}>
               <button
                 type="button"
-                onClick={guardedClose}
+                onClick={() => void cancelEdit()}
                 className={buttonClasses("secondary", "sm")}
               >
                 Cancel

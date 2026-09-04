@@ -1007,6 +1007,7 @@ function NewMenu({
   onTemplate: () => void;
   currentFolderId: string | null;
 }) {
+  const os = useFeatureFlag("os-redesign");
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
@@ -1072,7 +1073,10 @@ function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+          className={cn(
+            "shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover",
+            os ? "rounded-full px-5 py-2.5 text-sm" : "rounded-md px-3 py-1.5 text-sm",
+          )}
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />

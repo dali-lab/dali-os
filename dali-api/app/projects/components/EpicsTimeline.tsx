@@ -36,6 +36,8 @@ export type TimelineTask = {
   startsAt: string;
   endsAt: string;
   assignees: { id: string; name: string }[];
+  commentCount: number;
+  fileCount: number;
 };
 
 export type TimelineStory = {
@@ -1528,6 +1530,22 @@ export function EpicsTimeline({
                           label: "Dates",
                           value: rangeLabel(b.task.startsAt, b.task.endsAt),
                         },
+                        ...(b.task.commentCount > 0
+                          ? [
+                              {
+                                label: "Comments",
+                                value: String(b.task.commentCount),
+                              },
+                            ]
+                          : []),
+                        ...(b.task.fileCount > 0
+                          ? [
+                              {
+                                label: "Files",
+                                value: String(b.task.fileCount),
+                              },
+                            ]
+                          : []),
                       ]}
                       assignees={b.task.assignees}
                       onClick={guardClick(

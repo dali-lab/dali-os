@@ -685,7 +685,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const epics: TimelineEpic[] = buildTimelineEpics({
     epics: project.epics,
     sprints: project.sprints,
-    tasks: project.tasks,
+    tasks: project.tasks.map((t) => ({
+      id: t.id,
+      storyId: t.storyId,
+      startsAt: t.startsAt,
+      dueAt: t.dueAt,
+      title: t.title,
+      status: t.status,
+      assignees: t.assignees,
+      commentCount: t._count.comments,
+      fileCount: t.files.length,
+    })),
   });
 
   const editableEpics: EditableEpic[] = project.epics.map((e) => ({

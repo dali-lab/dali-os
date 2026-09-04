@@ -117,6 +117,11 @@ export async function action({ request }: Route.ActionArgs) { return submitCalen
  * new to load. Skipping the revalidation is what makes the toggle repaint
  * immediately instead of waiting on a Google round-trip.
  *
+ * `doc` / `comment` are the page-guide's URL state (PageDocProvider writes them
+ * on open/close). Closing the guide is a same-page navigation, so without this
+ * the loader would re-run — you'd land back on the calendar watching it refetch
+ * Google.
+ *
  * Anything else — a different anchor, a new week — still revalidates.
  */
 export function shouldRevalidate({
@@ -131,8 +136,10 @@ export function shouldRevalidate({
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   const cur = new URLSearchParams(currentUrl.search);
   const next = new URLSearchParams(nextUrl.search);
-  cur.delete("view");
-  next.delete("view");
+  for (const key of ["view", "doc", "comment"]) {
+    cur.delete(key);
+    next.delete(key);
+  }
   cur.sort();
   next.sort();
   return cur.toString() === next.toString() ? false : defaultShouldRevalidate;

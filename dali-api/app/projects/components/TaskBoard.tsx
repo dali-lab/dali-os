@@ -1050,6 +1050,13 @@ export function TaskBoard({
           onPatch={(patch) => patchTask(openTask.id, patch)}
           onDelete={() => deleteTask(openTask.id)}
           onArtifactsChanged={refresh}
+          onCommentCountChange={(count) => {
+            setItems((cur) =>
+              cur.map((t) =>
+                t.id === openTask.id ? { ...t, commentCount: count } : t,
+              ),
+            );
+          }}
         />
       )}
 
