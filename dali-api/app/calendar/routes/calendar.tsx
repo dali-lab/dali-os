@@ -9,19 +9,16 @@ import {
   Trash2,
   CalendarDays,
   CalendarPlus,
-  Settings,
-  SlidersHorizontal,
   Search,
+  X,
 } from "lucide-react";
 import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
-import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
 import {
   EventComposer,
   CalendarSearchBar,
   WorkingHoursPopover,
-  EventDefaultsPopover,
   CalendarManagerModal,
   ClassesManagerModal,
   type ComposerState,
@@ -76,7 +73,6 @@ import {
   buildExternalLayer,
   buildAllDayItems,
   buildLoggedTimeLayer,
-  buildLoggedSourceIndex,
   mergeLayers,
   perCalendarLegend,
   type CalendarLegendGroup,
@@ -87,16 +83,18 @@ import {
   type LayerVisibility,
   type GridDay,
 } from "~/calendar/lib/layers";
+import { parseAnchor, parseView, viewWindow } from "~/calendar/lib/view-window";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import { MiniMonth } from "~/calendar/components/MiniMonth";
 import {
   GeneralCalendarPrompt,
 } from "~/calendar/components/settings-cards";
-import { MeetingComposer, type AddingMode, ParticipantPicker, ParticipantAvailabilityRoster, SelectedSlotBlock, SlotAttendeePopover, userLabel } from "~/calendar/components/scheduling";
+import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
 import { TimesheetSummaryRail, TimesheetView, TimesheetEditPopover } from "~/calendar/components/timesheet";
+import { AvailabilityView } from "~/calendar/components/AvailabilityView";
+import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -112,6 +110,40 @@ export async function loader({ request }: Route.LoaderArgs) { return loadCalenda
 
 export async function action({ request }: Route.ActionArgs) { return submitCalendarAction(request); }
 
+/**
+ * Month / week / day are now computed on the client from the URL (see
+ * `viewWindow` use below), and the loader already fetches a window wider than
+ * any single view, so when `view` is the only thing that moved there is nothing
+ * new to load. Skipping the revalidation is what makes the toggle repaint
+ * immediately instead of waiting on a Google round-trip.
+ *
+ * `doc` / `comment` are the page-guide's URL state (PageDocProvider writes them
+ * on open/close). Closing the guide is a same-page navigation, so without this
+ * the loader would re-run — you'd land back on the calendar watching it refetch
+ * Google.
+ *
+ * Anything else — a different anchor, a new week — still revalidates.
+ */
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  defaultShouldRevalidate,
+}: {
+  currentUrl: URL;
+  nextUrl: URL;
+  defaultShouldRevalidate: boolean;
+}) {
+  if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
+  const cur = new URLSearchParams(currentUrl.search);
+  const next = new URLSearchParams(nextUrl.search);
+  for (const key of ["view", "doc", "comment"]) {
+    cur.delete(key);
+    next.delete(key);
+  }
+  cur.sort();
+  next.sort();
+  return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
+}
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
@@ -125,8 +157,8 @@ export default function CalendarPage() {
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
+const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
-
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -145,16 +177,37 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   useRefreshOnFocus(refresh);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [mode, setMode] = useState<"browse" | "meeting" | "timesheet">(() => {
-    const t = searchParams.get("tab");
-    if (t === "schedule") return "meeting";
-    if (t === "timesheet") return "timesheet";
-    return "browse";
+  // One screen now. Availability is a modal and the timesheet is a way of
+  // viewing the same grid, so the only other "mode" left is the legacy
+  // meeting-scheduling deep link.
+  const [mode, setMode] = useState<"browse" | "meeting">(() =>
+    searchParams.get("tab") === "schedule" ? "meeting" : "browse",
+  );
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+
+  // Per-role colours for logged time, persisted like the hidden-calendar set.
+  const [roleColors, setRoleColors] = useState<Record<string, string>>(() => {
+    try {
+      const stored = window.localStorage.getItem(CALENDAR_ROLE_COLORS_KEY);
+      if (stored) return JSON.parse(stored) as Record<string, string>;
+    } catch {
+      /* ignore */
+    }
+    return {};
   });
+  const setRoleColor = (roleKey: string, hex: string) =>
+    setRoleColors((prev) => {
+      const next = { ...prev, [roleKey]: hex };
+      try {
+        window.localStorage.setItem(CALENDAR_ROLE_COLORS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
 
   const [layers, setLayers] = useState<LayerVisibility>(() => {
     const base: LayerVisibility = { ...DEFAULT_LAYER_VISIBILITY };
-    if (searchParams.get("tab") === "timesheet") base.logged = true;
     if (typeof window === "undefined") return base;
     try {
       const stored = window.localStorage.getItem(CALENDAR_LAYERS_KEY);
@@ -210,15 +263,21 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalSlot, setCreateModalSlot] = useState<{ startLocal: string; endLocal: string } | null>(null);
+  // Guests the modal opens with — the sidebar's "Meet with" seeds one person.
+  const [createModalUsers, setCreateModalUsers] = useState<string[]>([]);
+  // Every create path (grid drag, New button) lands here. Passing no slot opens
+  // the modal on its own defaults.
+  const openCreateModal = (startLocal?: string, endLocal?: string, userIds: string[] = []) => {
+    setCreateModalSlot(startLocal && endLocal ? { startLocal, endLocal } : null);
+    setCreateModalUsers(userIds);
+    setCreateModalOpen(true);
+  };
   const [calendarsOpen, setCalendarsOpen] = useState(false);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
-  // Anchored popovers that replaced the old settings modal: working-hours edit
-  // (from the layer row), new-event defaults (from the toolbar gear), and the
-  // mini-month navigator (from the range label). Null anchor = closed.
+  // Anchored popover that replaced the old settings modal: working-hours edit
+  // (from the layer row). Null anchor = closed.
   const [hoursAnchor, setHoursAnchor] = useState<DOMRect | null>(null);
-  const [defaultsAnchor, setDefaultsAnchor] = useState<DOMRect | null>(null);
-  const [miniMonthAnchor, setMiniMonthAnchor] = useState<DOMRect | null>(null);
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
@@ -302,29 +361,32 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  // One grid editor slot, shared by drag-to-create (a new block/entry) and
-  // click-to-edit (an existing logged-time block). The active layer/action
-  // decides which the drag means; a logged block click always edits.
-  type CalendarEditor =
-    | { kind: "create"; dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string }
-    | {
-        kind: "edit";
-        entry: TimeEntryDTO;
-        dayIdx: number;
-        startHour: number;
-        endHour: number;
-        startLocal: string;
-        endLocal: string;
-      };
+  // The grid editor slot: click-to-edit on an existing logged-time block.
+  // Creating goes through the unified create modal, never this slot.
+  type CalendarEditor = {
+    entry: TimeEntryDTO;
+    dayIdx: number;
+    startHour: number;
+    endHour: number;
+    startLocal: string;
+    endLocal: string;
+  };
   const [editor, setEditor] = useState<CalendarEditor | null>(null);
 
-  const view = data.view;
-  const rangeStart = new Date(data.rangeStartIso);
+  // Derived on the client, not read off the loader. The window maths is shared
+  // with the server (lib/view-window.ts), so switching month / week / day
+  // repaints from data already in hand instead of waiting for a round-trip that
+  // goes out to Google.
+  const view = parseView(searchParams.get("view"));
+  const anchorParam = parseAnchor(searchParams.get("anchor") ?? searchParams.get("weekStart"));
+  const { start: rangeStart, end: rangeEnd } = viewWindow(data.timezone, view, anchorParam);
+  const rangeStartIso = rangeStart.toISOString();
+  const rangeEndIso = rangeEnd.toISOString();
   const dayCount = Math.max(
     1,
-    Math.round((new Date(data.rangeEndIso).getTime() - rangeStart.getTime()) / 86_400_000),
+    Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86_400_000),
   );
-  const days = buildGridDays(data.rangeStartIso, dayCount);
+  const days = buildGridDays(rangeStartIso, dayCount);
   // The date the view is centered on (prev/next math + the month label). For
   // month view rangeStart is the Sunday before the 1st, so +14d lands mid-month.
   // Agenda shares the month window, so its focus/label track the month too.
@@ -341,12 +403,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       },
       { preventScrollReset: true },
     );
-  const changeView = (v: CalendarView) =>
-    setParams((p) => {
-      p.set("view", v);
-      p.set("anchor", ymdUtc(focusDate));
-      p.delete("weekStart");
-    });
+  // Touches `view` and nothing else. An absent anchor already means "today",
+  // which every view resolves correctly on its own — and leaving the rest of
+  // the query identical is what lets shouldRevalidate skip the loader.
+  const changeView = (v: CalendarView) => setParams((p) => p.set("view", v));
   const navigate = (delta: number) => {
     const d = new Date(focusDate);
     if (view === "day") d.setUTCDate(d.getUTCDate() + delta);
@@ -380,9 +440,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     calMgrOpen ||
     createModalOpen ||
     Boolean(searchAnchor) ||
-    Boolean(hoursAnchor) ||
-    Boolean(defaultsAnchor) ||
-    Boolean(miniMonthAnchor);
+    Boolean(hoursAnchor);
   useEffect(() => {
     if (mode !== "browse" || anyModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -405,14 +463,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     return () => window.removeEventListener("keydown", onKey);
     // changeView/goToday/navigate close over view + focusDate (derived from
     // rangeStartIso); re-bind when the visible range or view changes.
-  }, [mode, anyModalOpen, view, data.rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // When the logged layer is on, an event that's also logged (a meeting or a
-  // work-block) shows a role accent on its own block rather than a second
-  // overlapping logged block. Index the sourced entries so the meeting/block
-  // layers can annotate, and the logged layer can skip them (only where that
-  // source layer is actually visible — a hidden meeting still needs its block).
-  const loggedIndex = layers.logged ? buildLoggedSourceIndex(data, excludedRoleKeys) : null;
+  }, [mode, anyModalOpen, view, rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live time overrides so a block draws at its pending position instead of the
   // stored one: the composer's edit-in-progress (draftEdit) and a just-dropped
@@ -461,13 +512,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        suppressSourced: { meetings: false },
+        // Suppress the duplicate block for meeting-sourced entries *while the
+        // event layer is drawing them* — otherwise the logged block lands on
+        // top of the meeting's own block and swallows the click, leaving no way
+        // to open the event and edit its details. With the event layer off
+        // there is nothing underneath, so the logged block is still needed.
+        roleColors,
+        suppressSourced: { meetings: layers.external },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
           if (!day) return;
           setEditor({
-            kind: "edit",
             entry: t,
             dayIdx,
             startHour,
@@ -520,12 +576,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const periodEntries = data.timeEntries.filter(
     (t) => payPeriodFor(timeEntryDayUtc(t, data.timezone)).index === weekPeriod.index,
   );
-  const rangeEndMs = new Date(data.rangeEndIso).getTime();
+  const rangeEndMs = rangeEnd.getTime();
   const drawnEntries = data.timeEntries.filter((t) => {
     const start = new Date(timeEntryRange(t, data.timezone).startIso).getTime();
     return start >= rangeStart.getTime() && start < rangeEndMs;
   });
   const roleBuckets = computeRoleBuckets(data, periodEntries, drawnEntries);
+  // Pay-period hours per role, for the sidebar's role list.
+  const roleHours = Object.fromEntries(roleBuckets.map((b) => [b.key, b.hours]));
 
   const df = (d: Date, opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, ...opts }).format(d);
@@ -540,15 +598,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     })}, ${df(last, { year: "numeric" })}`;
   }
 
-  // Open the unified create popover at a sensible default slot (today if it's in
-  // range, 9–10am) — the New-menu path when there's no drag. Month view has no
-  // time grid, so switch to week first.
+  // Open the create modal at a sensible default slot (today if it's in range,
+  // 9am for the user's default duration) — the New-button path when there's no
+  // drag to seed the times.
   const openQuickCreate = () => {
-    // Neither month nor agenda has a time grid to drop into — jump to week first.
-    if (view === "month" || view === "agenda") {
-      changeView("week");
-      return;
-    }
     const nowKey = new Intl.DateTimeFormat("en-CA", {
       timeZone: data.timezone,
       year: "numeric",
@@ -556,27 +609,35 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       day: "2-digit",
     }).format(new Date());
     const found = days.findIndex((d) => ymdUtc(d.dateUtc) === nowKey);
-    const idx = found >= 0 ? found : 0;
-    const day = days[idx];
+    const day = days[found >= 0 ? found : 0];
     if (!day) return;
     const endHour = 9 + data.defaultEventDurationMin / 60;
-    setEditor({
-      kind: "create",
-      dayIdx: idx,
-      startHour: 9,
-      endHour,
-      startLocal: dayHourToLocal(day.dateUtc, 9),
-      endLocal: dayHourToLocal(day.dateUtc, endHour),
-    });
+    openCreateModal(dayHourToLocal(day.dateUtc, 9), dayHourToLocal(day.dateUtc, endHour));
   };
 
   const navBtn =
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
   const iconToolBtn =
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
+  const availabilityPill =
+    "inline-flex items-center gap-2 rounded-full border border-os-green/35 bg-os-green/10 px-4 py-2 text-[13px] font-bold text-os-green transition-colors hover:bg-os-green/20";
+  // The mockup's Add event capsule. Theme tokens rather than its literals, so
+  // it inverts correctly in light mode.
+  // Light mode gets the dark pill by inverting the page; dark mode can't invert
+  // (that lands on white) — the mockup's pill is a shade *darker* than the page
+  // there, so dark overrides to a black plate with light ink.
+  const addEventBtn = cn(
+    "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-extrabold",
+    "bg-foreground text-background transition-[transform,background-color,opacity] hover:opacity-90 active:scale-[0.97]",
+    "dark:bg-black/40 dark:text-foreground dark:hover:bg-black/25 dark:hover:opacity-100",
+  );
 
   return (
     <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
+      {/* The date navigator belongs to the grid. Availability has no date at
+          all, and Timesheet brings its own pay-period navigator, so neither
+          wants this row above it. */}
+      {mode === "browse" && (
       <header className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
@@ -593,38 +654,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        {mode === "browse" ? (
-          <button
-            type="button"
-            onClick={(e) =>
-              setMiniMonthAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))
-            }
-            aria-label="Jump to date"
-            aria-expanded={Boolean(miniMonthAnchor)}
-            className="rounded-md font-heading text-xl font-semibold text-foreground hover:text-accent-coral"
-          >
-            {rangeLabel}
-          </button>
-        ) : (
-          <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
-        )}
+        <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
 
         <div className="ml-auto flex items-center gap-2">
           {mode === "browse" && (
             <>
-              <Tooltip content="Search events">
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    setSearchAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))
-                  }
-                  aria-label="Search events"
-                  aria-expanded={Boolean(searchAnchor)}
-                  className={cn(iconToolBtn, "w-8 justify-center px-0")}
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-              </Tooltip>
 
               <div className="inline-flex rounded-lg bg-muted p-0.5">
                 {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
@@ -642,81 +676,50 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 ))}
               </div>
 
-              <Tooltip content="Event defaults">
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    setDefaultsAnchor((cur) => (cur ? null : e.currentTarget.getBoundingClientRect()))
-                  }
-                  aria-label="Event defaults"
-                  aria-expanded={Boolean(defaultsAnchor)}
-                  className={cn(iconToolBtn, "w-8 justify-center px-0")}
-                >
-                  <Settings className="h-4 w-4" />
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                onClick={() => setAvailabilityOpen(true)}
+                className={availabilityPill}
+                title="Classes and working hours"
+              >
+                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
+                Availability
+              </button>
 
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setCalendarsOpen((o) => !o)}
-                  aria-expanded={calendarsOpen}
-                  className={iconToolBtn}
-                >
-                  <SlidersHorizontal className="h-4 w-4" /> Calendars <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-                {calendarsOpen && (
-                  <div className="absolute right-0 z-50 mt-1">
-                    <CalendarsPanel
-                      data={data}
-                      layers={layers}
-                      toggleLayer={toggleLayer}
-                      hiddenCals={hiddenCals}
-                      toggleHiddenCal={toggleHiddenCal}
-                      classesEnabled={data.classesEnabled}
-                      timesheetSyncEnabled={data.timesheetGoogleSync}
-                      roleBuckets={layers.logged ? roleBuckets : []}
-                      excludedRoleKeys={excludedRoleKeys}
-                      toggleRoleKey={toggleRoleKey}
-                      onClose={() => setCalendarsOpen(false)}
-                    />
-                  </div>
-                )}
-              </div>
+              <button type="button" onClick={() => openCreateModal()} className={addEventBtn}>
+                <Plus className="h-4 w-4 stroke-[3]" /> Add event
+              </button>
             </>
           )}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                if (data.crudEnabled) {
-                  setCreateModalSlot(null);
-                  setCreateModalOpen(true);
-                } else {
-                  openQuickCreate();
-                }
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral-light"
-            >
-              <Plus className="h-4 w-4" /> New
-            </button>
-          </div>
         </div>
       </header>
+      )}
 
       {mode === "meeting" ? (
         <section className="flex flex-col gap-3">
           <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
           <MeetingComposer data={data} />
         </section>
-      ) : mode === "timesheet" ? (
-        <section className="flex flex-col gap-3">
-          <BackToCalendarBar label="Timesheet" onBack={() => setMode("browse")} />
-          <TimesheetView data={data} />
-        </section>
       ) : (
-        <div className="flex flex-col lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
-          <section className={cn(panel, "flex flex-col p-3 lg:flex-1 lg:min-h-0")}>
+        <div className="flex gap-5 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
+          <CalendarSidebar
+            data={data}
+            focusDate={focusDate}
+            onPickDate={goToDay}
+            hiddenCals={hiddenCals}
+            toggleHiddenCal={toggleHiddenCal}
+            layers={layers}
+            onToggleTimesheet={() => toggleLayer("logged")}
+            myRoles={data.myRoles}
+            roleColors={roleColors}
+            roleHours={roleHours}
+            setRoleColor={setRoleColor}
+            onManage={() => setCalendarsOpen(true)}
+            onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
+          />
+          {/* No card around the grid — the hour rules and day rules are the
+              only structure it needs, the way Google's week view reads. */}
+          <section className="flex min-w-0 flex-1 flex-col lg:min-h-0">
               {view === "agenda" ? (
                 <AgendaView
                   days={days}
@@ -749,18 +752,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   }
                   eventsByDay={eventsByDay}
                   allDayByDay={allDayByDay}
-                  onDayPointerSelect={(dayIdx, startHour, endHour, anchorRect) => {
+                  onDayPointerSelect={(dayIdx, startHour, endHour) => {
                     const day = days[dayIdx];
                     if (!day) return;
-                    const startLocal = dayHourToLocal(day.dateUtc, startHour);
-                    const endLocal = dayHourToLocal(day.dateUtc, endHour);
-                    // With Google CRUD on, dragging opens the unified create modal.
-                    if (data.crudEnabled) {
-                      setCreateModalSlot({ startLocal, endLocal });
-                      setCreateModalOpen(true);
-                      return;
-                    }
-                    setEditor({ kind: "create", dayIdx, startHour, endHour, startLocal, endLocal });
+                    openCreateModal(
+                      dayHourToLocal(day.dateUtc, startHour),
+                      dayHourToLocal(day.dateUtc, endHour),
+                    );
                   }}
                   selection={
                     editor
@@ -768,7 +766,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                       : createSel
                   }
                   selectionPopover={
-                    editor?.kind === "edit"
+                    editor
                       ? () => (
                           <TimesheetEditPopover
                             entry={editor.entry}
@@ -803,41 +801,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 />
               )}
           </section>
-          {layers.logged && (
-            <TimesheetSummaryRail
-              roleBuckets={roleBuckets}
-              periodLabel={formatPayPeriod(weekPeriod, data.timezone)}
-            />
-          )}
         </div>
       )}
       {hoursAnchor && (
         <WorkingHoursPopover data={data} anchor={hoursAnchor} onClose={() => setHoursAnchor(null)} />
-      )}
-      {defaultsAnchor && (
-        <EventDefaultsPopover data={data} anchor={defaultsAnchor} onClose={() => setDefaultsAnchor(null)} />
-      )}
-      {miniMonthAnchor && (
-        <AnchoredPopover
-          anchor={miniMonthAnchor}
-          onClose={() => setMiniMonthAnchor(null)}
-          ariaLabel="Jump to date"
-          className="rounded-xl border border-border bg-card shadow-brand-3"
-        >
-          <MiniMonth
-            focusDate={focusDate}
-            timezone={data.timezone}
-            onPick={(dateUtc) => {
-              setMiniMonthAnchor(null);
-              // Keep the current view; just move the anchor to the picked day.
-              setParams((p) => {
-                p.set("view", view);
-                p.set("anchor", ymdUtc(dateUtc));
-                p.delete("weekStart");
-              });
-            }}
-          />
-        </AnchoredPopover>
       )}
       {classesOpen && data.classesEnabled && (
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
@@ -851,8 +818,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {searchAnchor && (
         <CalendarSearchBar
           anchor={searchAnchor}
-          rangeStartIso={data.rangeStartIso}
-          rangeEndIso={data.rangeEndIso}
+          rangeStartIso={rangeStartIso}
+          rangeEndIso={rangeEndIso}
           timezone={data.timezone}
           onClose={() => setSearchAnchor(null)}
           onSelect={(hit) => {
@@ -865,14 +832,58 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           }}
         />
       )}
+      {calendarsOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
+            <CalendarsPanel
+              data={data}
+              layers={layers}
+              toggleLayer={toggleLayer}
+              hiddenCals={hiddenCals}
+              toggleHiddenCal={toggleHiddenCal}
+              roleBuckets={layers.logged ? roleBuckets : []}
+              excludedRoleKeys={excludedRoleKeys}
+              toggleRoleKey={toggleRoleKey}
+              onClose={() => setCalendarsOpen(false)}
+            />
+          </div>,
+          document.body,
+        )}
+      {availabilityOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setAvailabilityOpen(false);
+            }}
+          >
+            <div className="w-full max-w-3xl rounded-xl cal-surface p-6">
+              <div className="mb-5 flex items-center justify-between">
+                <h2 className="font-heading text-lg font-semibold text-foreground">Availability</h2>
+                <button
+                  type="button"
+                  onClick={() => setAvailabilityOpen(false)}
+                  aria-label="Close"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <AvailabilityView data={data} />
+            </div>
+          </div>,
+          document.body,
+        )}
       {createModalOpen && (
         <CreateEventModal
           data={data}
           startLocal={createModalSlot?.startLocal}
           endLocal={createModalSlot?.endLocal}
+          initialUserIds={createModalUsers}
           onClose={() => {
             setCreateModalOpen(false);
             setCreateModalSlot(null);
+            setCreateModalUsers([]);
           }}
         />
       )}

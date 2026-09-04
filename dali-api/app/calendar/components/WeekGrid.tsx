@@ -210,14 +210,12 @@ export function CalendarEventDetailPopover({
         // every click inside it.
         onClick={(ev) => ev.stopPropagation()}
         onMouseDown={(ev) => ev.stopPropagation()}
-        className="fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md shadow-lg p-3 text-xs"
+        className="cal-surface fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md p-3 text-xs"
         style={{
           left,
           top,
           visibility: measured ? "visible" : "hidden",
-          backgroundColor: "var(--color-card)",
           color: "var(--color-foreground)",
-          border: "1px solid var(--color-border)",
         }}
       >
         <div className="flex items-start gap-2">
@@ -293,6 +291,12 @@ export function CalendarEventDetailPopover({
   );
 }
 
+/** Actions in the event detail popover. A bare outline reads as text rather
+ *  than a control on the popover's raised dark surface, so these carry a filled
+ *  ground of their own in both themes. */
+const popoverActionBtn =
+  "inline-flex items-center gap-1 rounded-md border border-border bg-muted/70 px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted";
+
 // Per-meeting toggles in the event detail popover: log the meeting on your own
 // timesheet, and (Core only) flag it as a Core meeting. Both write through the
 // calendar route action, so a success revalidates the loader and the Timesheet
@@ -311,7 +315,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
     : meeting.isCoreMeeting;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
+    <div className="mt-2 flex flex-col gap-2 rounded-md bg-muted/40 px-2.5 py-2 text-[11px]">
       <Checkbox
         checked={onTimesheet}
         disabled={timesheetFetcher.state !== "idle"}
@@ -781,14 +785,14 @@ export function WeekGridEvent({
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Link
                     to={`/calendar/meeting/${e.meeting.meetingId}`}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                    className={popoverActionBtn}
                   >
                     <Users className="h-3 w-3 text-muted-foreground" /> Details &amp; attendance
                   </Link>
                   {e.meeting.notePageId && (
                     <Link
                       to={`/documents/${e.meeting.notePageId}`}
-                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                      className={popoverActionBtn}
                     >
                       <FileText className="h-3 w-3 text-muted-foreground" /> Note
                     </Link>
@@ -1022,17 +1026,18 @@ export function WeekGrid({
     return clientX < firstLeft ? 0 : lastIdx; // clamp to the nearest edge column
   }, []);
 
-  // In fill-and-scroll mode the grid scrolls internally: keep the day-header row
-  // and hour axis pinned, and open scrolled to the working-day start (once, so a
-  // later user scroll isn't yanked back). Assigning scrollTop in the ref callback
-  // runs on the client before paint — no midnight-then-jump flash, no SSR effect.
-  const headerStickyCls = fillAndScroll ? "lg:sticky lg:top-0 lg:z-40" : "";
+  // In fill-and-scroll mode the grid scrolls internally: the day-header row and
+  // the all-day band render outside this scroller (so they stay put on their
+  // own), and it opens scrolled to the working-day start (once, so a later user
+  // scroll isn't yanked back). Assigning scrollTop in the ref callback runs on
+  // the client before paint — no midnight-then-jump flash, no SSR effect.
   const didInitScroll = useRef(false);
   const scrollElRef = useRef<HTMLDivElement | null>(null);
 
-  // Width of the scrollable grid's vertical scrollbar, measured live. The
-  // all-day band is a sibling above the scroll container, so its columns only
-  // line up with the grid's if it reserves the same width the scrollbar eats.
+  // Width of the scrollable grid's vertical scrollbar, measured live. The header
+  // row and the all-day band are siblings above the scroll container, so their
+  // columns only line up with the grid's if they reserve the same width the
+  // scrollbar eats.
   // CSS scrollbar-gutter alone isn't enough: Blink (web) honors it, but WebKit
   // (the desktop app's WKWebView) doesn't reserve a gutter on an overflow:hidden
   // band, so on desktop the band drifted full-width past the grid. Measuring the
@@ -1207,13 +1212,60 @@ export function WeekGrid({
     allDayByDay != null &&
     Object.values(allDayByDay).some((blocks) => blocks.length > 0);
 
-  // In fillAndScroll mode the weekday header is sticky at top-0 (height h-9 or
-  // h-16). The all-day band must be sticky immediately below it so it doesn't
-  // scroll away with the hour grid.
-  const headerHeight = showProviderRow ? "lg:top-16" : "lg:top-9";
-
   return (
     <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    {/* Weekday header. Its own row above the grid (and above the all-day band,
+        which is what puts the band under the dates the way Google's week view
+        reads). Sitting outside the scroll container is also what keeps it in
+        view in fillAndScroll mode — no sticky needed. Same scrollbar-width
+        reservation as the band so its columns line up with the grid's. */}
+    <div
+      className="flex border-x border-t border-border rounded-t-md bg-card select-none"
+      style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
+    >
+      {/* Left gutter — matches the hour-axis width */}
+      <div
+        className={`w-14 shrink-0 border-r border-b border-border flex items-center justify-center ${showProviderRow ? "h-20" : "h-12"}`}
+      >
+        {timezone && (
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">
+            {tzAbbrev(timezone)}
+          </span>
+        )}
+      </div>
+      {days.map((d, idx) => {
+        const isToday = idx === todayIdx;
+        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
+        return (
+          <div
+            key={idx}
+            className={`flex-1 min-w-0 flex flex-col items-center justify-center border-r last:border-r-0 border-b ${
+              showProviderRow ? "h-20" : "h-12"
+            } ${
+              periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
+            } ${isToday ? "bg-accent-coral/10" : periodEnd ? "bg-accent-teal/10" : ""}`}
+          >
+            <div className={`mb-0.5 text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
+            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
+            {periodEnd && !showProviderRow && (
+              <Tooltip content="Last day of this pay period" placement="bottom">
+                <span
+                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
+                >
+                  Pay ends
+                </span>
+              </Tooltip>
+            )}
+            {showProviderRow && (
+              <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
+                <Building2 className="w-2.5 h-2.5" />
+                <Wifi className="w-2.5 h-2.5" />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
     {hasAllDay && (
       <div
         // Reserve the same width the scrollable grid below loses to its vertical
@@ -1221,9 +1273,7 @@ export function WeekGrid({
         // Measured live (scrollbarWidth) rather than via CSS scrollbar-gutter,
         // which the desktop WKWebView doesn't honor on this band — see the
         // measureScrollbar note above.
-        className={`flex border-x border-b border-border bg-card select-none ${
-          fillAndScroll ? `lg:sticky ${headerHeight} lg:z-30` : ""
-        }`}
+        className="flex border-x border-b border-border bg-card select-none"
         style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
       >
         {/* Left gutter — matches the hour-axis width */}
@@ -1277,7 +1327,7 @@ export function WeekGrid({
     )}
     <div
       ref={scrollRef}
-      className={`flex border border-border ${hasAllDay ? "border-t-0 rounded-b-md" : "rounded-md"} overflow-hidden select-none ${
+      className={`flex border-x border-b border-border rounded-b-md overflow-hidden select-none ${
         // items-start: size the hour-axis + day columns to their full 24h
         // content height and scroll, instead of stretching (align-items:stretch)
         // them to the shorter viewport. Stretch clipped each column's box to the
@@ -1291,15 +1341,6 @@ export function WeekGrid({
     >
       {/* Hour axis */}
       <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
-        <div
-          className={`shrink-0 bg-card border-b border-border flex items-center justify-center ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
-        >
-          {timezone && (
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">
-              {tzAbbrev(timezone)}
-            </span>
-          )}
-        </div>
         {HOURS.map((h) => (
           <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
             {formatHour(h)}
@@ -1320,36 +1361,6 @@ export function WeekGrid({
             periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
           }`}
         >
-          <div className={`shrink-0 flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls} ${
-            // Sticky headers need an opaque fill so scrolled rows don't bleed
-            // through the faint today/period tint; today stays marked by its
-            // coral date circle + now-line.
-            fillAndScroll
-              ? "bg-card"
-              : isToday
-                ? "bg-accent-coral/10"
-                : periodEnd
-                  ? "bg-accent-teal/10"
-                  : ""
-          }`}>
-            <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
-            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
-            {periodEnd && !showProviderRow && (
-              <Tooltip content="Last day of this pay period" placement="bottom">
-                <span
-                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
-                >
-                  Pay ends
-                </span>
-              </Tooltip>
-            )}
-            {showProviderRow && (
-              <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
-                <Building2 className="w-2.5 h-2.5" />
-                <Wifi className="w-2.5 h-2.5" />
-              </div>
-            )}
-          </div>
           <div
             ref={(el) => {
               columnRefs.current[idx] = el;

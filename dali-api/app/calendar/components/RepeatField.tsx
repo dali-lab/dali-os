@@ -94,7 +94,7 @@ const DAY_NAMES = [
 // its row without needing per-row alignment.
 const RAIL_LABEL = "text-xs font-medium text-muted-foreground leading-8";
 const PANEL_INPUT =
-  "h-8 w-14 rounded-md border border-border bg-background px-2 text-sm text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
+  "h-8 w-14 rounded-md border border-border bg-background px-2 text-sm text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-os-accent/40";
 const HINT = "text-xs text-muted-foreground";
 
 const clampInt = (n: number, lo: number, hi: number) =>
@@ -272,7 +272,7 @@ export function RepeatField({
                           className={cn(
                             "flex aspect-square min-w-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors",
                             on
-                              ? "bg-accent-coral text-white"
+                              ? "bg-os-accent text-os-bg"
                               : "border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         >

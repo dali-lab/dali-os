@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Shield, UsersRound, X } from "lucide-react";
 import { Tooltip, InfoTip, Select } from "~/components/ui/floating";
@@ -360,7 +359,7 @@ export function CreateScheduledMeetingForm({
     title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
 
   const fieldClass =
-    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
+    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
   const labelClass = "block text-sm font-medium text-foreground mb-1";
 
   return (
@@ -666,8 +665,9 @@ export function ParticipantPicker({
   resolvedCount: number;
 }) {
   const { fieldRadius } = useOsChrome();
-  const [adding, setAdding] = useState<AddingMode>(null);
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const availableUsers = users.filter((u) => !selectedUserIds.includes(u.id));
   const availableGroups = groups.filter((g) => !selectedGroupIds.includes(g.id));
@@ -680,158 +680,134 @@ export function ParticipantPicker({
       (u.daliEmail ?? "").toLowerCase().includes(q)
     );
   });
-  const filteredGroups = availableGroups.filter((g) => {
-    if (!query) return true;
-    return g.name.toLowerCase().includes(query.toLowerCase());
-  });
+  const filteredGroups = availableGroups.filter((g) =>
+    query ? g.name.toLowerCase().includes(query.toLowerCase()) : true,
+  );
 
-  function closePicker() {
-    setAdding(null);
-    setQuery("");
-  }
+  // Close on an outside click. The menu sits inside the wrapper, so anything
+  // landing outside it is a dismissal.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const chip =
+    "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="block text-sm font-medium text-foreground inline-flex items-center gap-1">
-          Participants
-          <InfoTip content="Add individuals or groups to invite them to the meeting." />
-        </label>
-        <span className="text-xs text-muted-foreground">
-          {resolvedCount} unique user{resolvedCount === 1 ? "" : "s"}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
+    <div ref={wrapRef} className="relative">
+      {/* One always-present field: chips and the caret share it, so adding a
+          guest is just typing rather than first choosing "user" or "group". */}
+      <div
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) e.preventDefault();
+          setOpen(true);
+          wrapRef.current?.querySelector("input")?.focus();
+        }}
+        className={cn(
+          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background p-1.5 text-sm transition-colors focus-within:border-os-accent",
+          fieldRadius,
+        )}
+      >
         {selectedGroupIds.map((gid) => {
           const g = groupsById.get(gid);
           if (!g) return null;
           return (
-            <Tooltip key={`g:${gid}`} content={`${g.memberIds.length} member${g.memberIds.length === 1 ? "" : "s"}`}>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                <UsersRound className="w-3 h-3" />
-                {g.name}
-                <button
-                  type="button"
-                  onClick={() => onChangeGroups(selectedGroupIds.filter((x) => x !== gid))}
-                  aria-label={`Remove ${g.name}`}
-                  className="hover:text-blue-600"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            </Tooltip>
+            <span key={`g:${gid}`} className={cn(chip, "bg-os-accent/15 text-os-accent")}>
+              <UsersRound className="h-3 w-3" />
+              {g.name}
+              <button
+                type="button"
+                onClick={() => onChangeGroups(selectedGroupIds.filter((x) => x !== gid))}
+                aria-label={`Remove ${g.name}`}
+                className="opacity-60 hover:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
           );
         })}
         {selectedUserIds.map((uid) => {
           const u = usersById.get(uid);
           if (!u) return null;
           return (
-            <span
-              key={`u:${uid}`}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
-            >
+            <span key={`u:${uid}`} className={chip}>
               {userLabel(u)}
               <button
                 type="button"
                 onClick={() => onChangeUsers(selectedUserIds.filter((x) => x !== uid))}
                 aria-label={`Remove ${userLabel(u)}`}
-                className="hover:text-purple-600"
+                className="opacity-60 hover:opacity-100"
               >
-                <X className="w-3 h-3" />
+                <X className="h-3 w-3" />
               </button>
             </span>
           );
         })}
-
-        {adding === null && (
-          <>
-            <button
-              type="button"
-              onClick={() => setAdding("user")}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80"
-            >
-              <Plus className="w-3 h-3" /> Add user
-            </button>
-            <button
-              type="button"
-              onClick={() => setAdding("group")}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80"
-            >
-              <Plus className="w-3 h-3" /> Add user group
-            </button>
-          </>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={
+            selectedUserIds.length + selectedGroupIds.length === 0 ? "Add guests or a group" : ""
+          }
+          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        {resolvedCount > 0 && (
+          <span className="ml-auto shrink-0 pr-1 text-[11px] text-muted-foreground">
+            {resolvedCount} {resolvedCount === 1 ? "person" : "people"}
+          </span>
         )}
       </div>
 
-      {adding !== null && (
-        <div className={cn("mt-2 border border-border bg-background p-2 space-y-2", fieldRadius)}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-foreground">
-              {adding === "user" ? "Pick a user" : "Pick a user group"}
-            </span>
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-60 overflow-y-auto rounded-lg cal-surface p-1">
+          {filteredGroups.length === 0 && filteredUsers.length === 0 && (
+            <p className="px-2 py-2 text-xs text-muted-foreground">No matches.</p>
+          )}
+          {filteredGroups.slice(0, 20).map((g) => (
             <button
+              key={g.id}
               type="button"
-              onClick={closePicker}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                onChangeGroups([...selectedGroupIds, g.id]);
+                setQuery("");
+              }}
+              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
             >
-              Cancel
+              <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {g.name}
+              </span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
+              </span>
             </button>
-          </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={adding === "user" ? "Search by name or email…" : "Search by group name…"}
-            className="w-full px-2 py-1 text-sm border border-border rounded bg-background text-foreground"
-            autoFocus
-          />
-          <div className="max-h-48 overflow-y-auto">
-            {adding === "user" ? (
-              filteredUsers.length === 0 ? (
-                <p className="px-2 py-2 text-xs text-muted-foreground">No users match.</p>
-              ) : (
-                filteredUsers.slice(0, 50).map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => {
-                      onChangeUsers([...selectedUserIds, u.id]);
-                      closePicker();
-                    }}
-                    className="w-full text-left px-2 py-1 text-sm hover:bg-muted/50 rounded"
-                  >
-                    {userLabel(u)}
-                  </button>
-                ))
-              )
-            ) : filteredGroups.length === 0 ? (
-              <p className="px-2 py-2 text-xs text-muted-foreground">
-                No groups match.{" "}
-                <a href="/members/groups" className="underline">
-                  Create one
-                </a>
-                .
-              </p>
-            ) : (
-              filteredGroups.slice(0, 50).map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => {
-                    onChangeGroups([...selectedGroupIds, g.id]);
-                    closePicker();
-                  }}
-                  className="w-full text-left px-2 py-1 text-sm hover:bg-muted/50 rounded flex justify-between items-center"
-                >
-                  <span>{g.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
+          ))}
+          {filteredGroups.length > 0 && filteredUsers.length > 0 && (
+            <div className="my-1 h-px bg-border" />
+          )}
+          {filteredUsers.slice(0, 40).map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => {
+                onChangeUsers([...selectedUserIds, u.id]);
+                setQuery("");
+              }}
+              className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
+            >
+              {userLabel(u)}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -888,8 +864,8 @@ export function ScheduleWeekGrid({
   const [data, setData] = useState<GroupAvailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // When set (via the participant roster below the toolbar), the grid overlays
-  // just this one participant's free intervals so you can read one person's
+  // When set (via the participant list under the grid), the grid overlays just
+  // this one participant's free intervals so you can read one person's
   // availability at a glance instead of the aggregate gradient.
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null);
   // Bumped to force the fetch effect to re-run without changing inputs (manual
@@ -1213,7 +1189,7 @@ export function ScheduleWeekGrid({
   );
 
   return (
-    <section className={cn(panel, "p-4 flex flex-col")}>
+    <section className={cn(panel, "p-4 flex flex-col", compact && "min-h-0")}>
       <WeekToolbar
         monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
@@ -1239,28 +1215,29 @@ export function ScheduleWeekGrid({
           {!hideAvailability && error && (
             <div className="px-4 py-2 text-xs text-red-700">{error}</div>
           )}
-          {!hideAvailability && !showingSelfOnly && data && participantIds.length > 0 && (
-            <div className="flex items-center gap-1 px-2 pt-1">
-              <span className="text-xs text-muted-foreground">Hover a name to see their free times.</span>
-              <InfoTip content="The grid shades each slot by how many participants are free at that time. The darker the green, the more people are available. Hover a name below to highlight just their free intervals. Free/busy is fetched from each person's working-hours settings and linked Google Calendar." />
-            </div>
-          )}
-          {!hideAvailability && !showingSelfOnly && data && participantIds.length > 0 && (
-            <ParticipantAvailabilityRoster
-              participantIds={participantIds}
-              users={users}
-              hoveredUserId={hoveredUserId}
-              onHover={setHoveredUserId}
-            />
-          )}
           {compact ? (
             // Full-size grid in a scroll container (legible text), pre-scrolled
             // to the user's day hours; scroll for early-morning / late slots.
-            <div ref={compactScrollRef} className="w-full overflow-y-auto" style={{ maxHeight: "26rem" }}>
+            <div
+              ref={compactScrollRef}
+              className="w-full min-h-0 flex-1 overflow-y-auto"
+              style={{ maxHeight: "26rem" }}
+            >
               {weekGrid}
             </div>
           ) : (
             weekGrid
+          )}
+          {!hideAvailability && !showingSelfOnly && data && participantIds.length > 0 && (
+            <ParticipantAvailabilityList
+              participantIds={participantIds}
+              users={users}
+              availableIds={
+                selectedSlot ? new Set(selectedSlot.available.map((u) => u.id)) : null
+              }
+              hoveredUserId={hoveredUserId}
+              onHover={setHoveredUserId}
+            />
           )}
         </>
       )}
@@ -1268,48 +1245,96 @@ export function ScheduleWeekGrid({
   );
 }
 
-// Roster of the picked participants. Hovering a name asks the grid to overlay
-// just that person's free intervals (see hoveredUserId in ScheduleWeekGrid).
-export function ParticipantAvailabilityRoster({
+// Per-person availability for the picked slot, listed under the grid. The wide
+// panel has room to state the whole answer, so this replaces both the invitee
+// roster that used to sit above the grid and the hover popover on the selected
+// block. Once a slot is picked the names split into Available / Busy groups;
+// before that it's one flat roster. Hovering a name overlays just that one
+// person's free intervals on the grid.
+export function ParticipantAvailabilityList({
   participantIds,
   users,
+  availableIds,
   hoveredUserId,
   onHover,
 }: {
   participantIds: string[];
   users: UserOption[];
+  /** Ids free for the whole selected slot, or null when no slot is picked. */
+  availableIds: Set<string> | null;
   hoveredUserId: string | null;
   onHover: (userId: string | null) => void;
 }) {
   const usersById = new Map(users.map((u) => [u.id, u]));
+  const entries = participantIds.map(
+    (uid) =>
+      usersById.get(uid) ?? { id: uid, firstName: uid, lastName: "", daliEmail: null },
+  );
+  const available = availableIds ? entries.filter((u) => availableIds.has(u.id)) : [];
+  const busy = availableIds ? entries.filter((u) => !availableIds.has(u.id)) : [];
+
+  const chip = (user: UserOption, free: boolean | null) => {
+    const active = hoveredUserId === user.id;
+    return (
+      <button
+        key={user.id}
+        type="button"
+        onMouseEnter={() => onHover(user.id)}
+        onMouseLeave={() => onHover(null)}
+        onFocus={() => onHover(user.id)}
+        onBlur={() => onHover(null)}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
+          active
+            ? "bg-accent-green text-[hsl(203_38%_18%)]"
+            : "bg-muted text-muted-foreground hover:bg-muted/70",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full",
+            free === null
+              ? "bg-muted-foreground/40"
+              : free
+                ? "bg-green-600 dark:bg-green-400"
+                : "bg-red-600 dark:bg-red-400",
+          )}
+        />
+        {userLabel(user)}
+      </button>
+    );
+  };
+
+  const group = (label: string, members: UserOption[], free: boolean) =>
+    members.length === 0 ? null : (
+      <div>
+        <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label} · {members.length}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {members.map((u) => chip(u, free))}
+        </div>
+      </div>
+    );
+
   return (
-    <div className="px-2 pb-4 flex flex-wrap items-center gap-1.5">
-      {participantIds.map((uid) => {
-        const u = usersById.get(uid) ?? {
-          id: uid,
-          firstName: uid,
-          lastName: "",
-          daliEmail: null,
-        };
-        const active = hoveredUserId === uid;
-        return (
-          <button
-            key={uid}
-            type="button"
-            onMouseEnter={() => onHover(uid)}
-            onMouseLeave={() => onHover(null)}
-            onFocus={() => onHover(uid)}
-            onBlur={() => onHover(null)}
-            className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
-              active
-                ? "bg-accent-green text-[hsl(203_38%_18%)]"
-                : "bg-muted text-muted-foreground hover:bg-muted/70"
-            }`}
-          >
-            {userLabel(u)}
-          </button>
-        );
-      })}
+    <div className="mt-3 border-t border-border px-2 pt-3">
+      {availableIds ? (
+        <div className="flex flex-col gap-2.5">
+          {group("Available", available, true)}
+          {group("Busy", busy, false)}
+        </div>
+      ) : (
+        <>
+          <div className="mb-2 text-xs font-medium text-muted-foreground">
+            Pick a time to see who&apos;s free
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {entries.map((u) => chip(u, null))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1325,158 +1350,17 @@ export function SelectedSlotBlock({
   available: UserOption[];
   unavailable: UserOption[];
 }) {
-  const [open, setOpen] = useState(false);
-  // Anchor the popover to the block's real on-screen rect (state, not a plain
-  // ref, so the portal re-renders the moment the node attaches).
-  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const total = available.length + unavailable.length;
   const top = (startHour - HOURS[0]) * HOUR_PX;
   const height = duration * HOUR_PX;
   return (
     <div
-      ref={setAnchorEl}
-      className="absolute left-0 right-0 z-30 cursor-help border-2 border-accent-coral bg-accent-coral/10 rounded-sm"
+      className="absolute left-0 right-0 z-30 border-2 border-os-accent bg-os-accent/10 rounded-sm"
       style={{ top, height }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
     >
-      <div className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm bg-accent-coral text-white">
+      <div className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm bg-os-accent text-os-bg">
         {available.length}/{total}
       </div>
-      {open && (
-        <SlotAttendeePopover
-          anchorEl={anchorEl}
-          available={available}
-          unavailable={unavailable}
-        />
-      )}
     </div>
-  );
-}
-
-// The attendee breakdown for a selected slot. Rendered in a <body> portal so
-// the grid's overflow-hidden / column edges can't clip it, and positioned
-// `fixed` against the slot block's screen rect — preferring the right side but
-// flipping left and clamping vertically to stay fully on-screen. Anchoring off
-// the measured rect (in a layout effect) keeps it from jumping when the
-// availability data refetches under it.
-export function SlotAttendeePopover({
-  anchorEl,
-  available,
-  unavailable,
-}: {
-  anchorEl: HTMLElement | null;
-  available: UserOption[];
-  unavailable: UserOption[];
-}) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const total = available.length + unavailable.length;
-
-  useLayoutEffect(() => {
-    if (!anchorEl) return;
-    const place = () => {
-      const card = cardRef.current;
-      if (!card) return;
-      const a = anchorEl.getBoundingClientRect();
-      const cw = card.offsetWidth;
-      const ch = card.offsetHeight;
-      const gap = 8;
-      const margin = 8;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      // Prefer the right of the block; flip left if it would overflow.
-      let left = a.right + gap;
-      if (left + cw + margin > vw) left = a.left - gap - cw;
-      left = Math.max(margin, Math.min(left, vw - cw - margin));
-      // Top-align with the block when the card fits below, else lift it so the
-      // bottom stays on-screen.
-      let top = a.top + ch + margin <= vh ? a.top : vh - ch - margin;
-      top = Math.max(margin, top);
-      setPos((prev) =>
-        prev && prev.left === left && prev.top === top ? prev : { left, top },
-      );
-    };
-    place();
-    const ro = new ResizeObserver(place);
-    if (cardRef.current) ro.observe(cardRef.current);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [anchorEl]);
-
-  if (typeof document === "undefined") return null;
-
-  // First paint (before the layout effect measures): estimate a spot beside the
-  // anchor so it renders next to the block, not at (0,0). Hidden via opacity
-  // until measured to avoid a one-frame flash at the estimate, then clamped.
-  const measured = pos != null;
-  let left = pos?.left ?? 0;
-  let top = pos?.top ?? 0;
-  if (!measured) {
-    const a = anchorEl?.getBoundingClientRect();
-    if (a) {
-      const CARD_W = 224; // matches w-56
-      const gap = 8;
-      const margin = 8;
-      left =
-        a.right + gap + CARD_W + margin > window.innerWidth
-          ? a.left - gap - CARD_W
-          : a.right + gap;
-      left = Math.max(margin, left);
-      top = Math.max(margin, a.top);
-    }
-  }
-
-  return createPortal(
-    <div
-      ref={cardRef}
-      className="fixed z-50 w-56 rounded-md shadow-lg p-2 text-xs"
-      style={{
-        left,
-        top,
-        visibility: measured ? "visible" : "hidden",
-        backgroundColor: "var(--color-card)",
-        color: "var(--color-foreground)",
-        border: "1px solid var(--color-border)",
-      }}
-    >
-      <div className="font-semibold mb-1 text-foreground">
-        {available.length} of {total} can attend
-      </div>
-      {available.length > 0 && (
-        <div className="mb-1.5">
-          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-            Available
-          </div>
-          <ul className="space-y-0.5">
-            {available.map((u) => (
-              <li key={u.id} className="text-green-700 dark:text-green-400">
-                {userLabel(u)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {unavailable.length > 0 && (
-        <div>
-          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-            Busy
-          </div>
-          <ul className="space-y-0.5">
-            {unavailable.map((u) => (
-              <li key={u.id} className="text-red-700 dark:text-red-400">
-                {userLabel(u)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>,
-    document.body,
   );
 }

@@ -14,6 +14,7 @@ import {
 import { Select, Menu, Popover } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -689,7 +690,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const epics: TimelineEpic[] = buildTimelineEpics({
     epics: project.epics,
     sprints: project.sprints,
-    tasks: project.tasks,
+    tasks: project.tasks.map((t) => ({
+      id: t.id,
+      storyId: t.storyId,
+      startsAt: t.startsAt,
+      dueAt: t.dueAt,
+      title: t.title,
+      status: t.status,
+      assignees: t.assignees,
+      commentCount: t._count.comments,
+      fileCount: t.files.length,
+    })),
   });
 
   const editableEpics: EditableEpic[] = project.epics.map((e) => ({
@@ -1991,8 +2002,15 @@ function ProjectHeader({
   const [name, setName] = useState(project.name);
   const [status, setStatus] = useState<(typeof STATUSES)[number]>(project.status);
   const [termIds, setTermIds] = useState<string[]>(() => plannedTerms.map((t) => t.id));
+  // What the roles cluster is showing: the declared set, or — when a project
+  // has none — the one implied by its bids and assignments, which is what read
+  // mode prints (muted). Seeding the editor from the declared list alone made
+  // a project whose roles are plainly on screen read "No roles yet" the moment
+  // you clicked Edit, and saving from there would have kept it that way.
+  const shownDomains =
+    project.domains.length > 0 ? project.domains : project.derivedDomains;
   const [domainIds, setDomainIds] = useState<string[]>(() =>
-    project.domains.map((d) => d.id),
+    shownDomains.map((d) => d.id),
   );
 
   // Every field re-seeds from the loader on open, so a cancelled edit leaves
@@ -2002,7 +2020,7 @@ function ProjectHeader({
     setName(project.name);
     setStatus(project.status);
     setTermIds(plannedTerms.map((t) => t.id));
-    setDomainIds(project.domains.map((d) => d.id));
+    setDomainIds(shownDomains.map((d) => d.id));
     setEditing(true);
   }
 
@@ -2032,7 +2050,16 @@ function ProjectHeader({
   const termOptions = [...allTermOptions]
     .reverse()
     .map((t) => ({ id: t.id, label: t.code }));
-  const domainOptions = allDomainOptions.map((d) => ({ id: d.id, label: d.name }));
+  // The catalog list, plus any role already on the project that isn't in it —
+  // a domain deactivated since it was declared is off the option list, and
+  // building the chip row by filtering options would drop it from the editor
+  // without ever showing that it is still set.
+  const domainOptions = [
+    ...allDomainOptions.map((d) => ({ id: d.id, label: d.name })),
+    ...shownDomains
+      .filter((d) => !allDomainOptions.some((o) => o.id === d.id))
+      .map((d) => ({ id: d.id, label: d.name })),
+  ];
 
   // The design's right-hand clusters: TERMS as chips, ROLES as tinted chips.
   // Same two facts the subtitle above states in prose — the "N of M terms"
@@ -2085,9 +2112,13 @@ function ProjectHeader({
         ) : project.domains.length === 0 && project.derivedDomains.length === 0 ? (
           <span className="text-[13px] text-os-muted">No roles yet</span>
         ) : (
+          // A role is a role: the set derived from bids and assignments (a
+          // project staffed before anyone declared its domains) wears the same
+          // colours as a declared one. Muting it left every chip in the hero
+          // grey until someone opened the editor and saved — a distinction
+          // this header was not otherwise making.
           <DomainChips
             items={project.domains.length > 0 ? project.domains : project.derivedDomains}
-            muted={project.domains.length === 0}
             os
           />
         )}
@@ -2238,44 +2269,41 @@ function ProjectHeader({
         frameClassName={os ? "h-[275px] rounded-os-card" : undefined}
       />
       <div className="min-w-0 flex-1">
-        <div
-          className={cn(
-            "gap-3",
-            os
-              ? "flex flex-wrap items-center justify-between gap-y-4"
-              : "flex items-start justify-between",
-          )}
-        >
-          <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">{titleCluster}</div>
+        {/* The edit control is its own column at the far right, outside the
+            row that wraps: while it rode along with the tag clusters it got
+            pushed onto a line of its own under Roles as soon as they filled
+            the row, and opening the editor re-flowed the clusters with it. */}
+        <div className={cn("flex items-start justify-between", os ? "gap-4" : "gap-3")}>
+          <div
+            className={cn(
+              "min-w-0 flex-1",
+              os && "flex flex-wrap items-center justify-between gap-x-6 gap-y-4",
+            )}
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">{titleCluster}</div>
 
-          {/* Domains sit on their own row under the title. Sharing the title's
-              wrapped flex row meant they trailed off the end of the name and
-              broke to an arbitrary place as it grew. */}
-          {!editing &&
-            !os &&
-            (project.domains.length > 0 ? (
-              <div className="mt-1.5">
-                <DomainChips items={project.domains} />
-              </div>
-            ) : project.derivedDomains.length > 0 ? (
-              <div className="mt-1.5">
-                <DomainChips items={project.derivedDomains} muted />
-              </div>
-            ) : null)}
-          </div>
-
-          {/* os: title left, then the clusters and controls together on the
-              right (the design's hero-meta row). Default: controls alone on
-              the right, as today. */}
-          {os ? (
-            <div className="flex flex-wrap items-center gap-4">
-              {osTagGroup}
-              {editControls}
+              {/* Domains sit on their own row under the title. Sharing the
+                  title's wrapped flex row meant they trailed off the end of the
+                  name and broke to an arbitrary place as it grew. */}
+              {!editing &&
+                !os &&
+                (project.domains.length > 0 ? (
+                  <div className="mt-1.5">
+                    <DomainChips items={project.domains} />
+                  </div>
+                ) : project.derivedDomains.length > 0 ? (
+                  <div className="mt-1.5">
+                    <DomainChips items={project.derivedDomains} muted />
+                  </div>
+                ) : null)}
             </div>
-          ) : (
-            editControls
-          )}
+
+            {/* os: the design's hero-meta row — title left, the term and role
+                clusters right, both inside the wrapping column. */}
+            {os && osTagGroup}
+          </div>
+          {editControls}
         </div>
         {!os && subtitle}
       </div>
@@ -2304,6 +2332,7 @@ function DescriptionSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const { os, panel } = useOsChrome();
 
   return (
     <EditableSection
@@ -2314,23 +2343,37 @@ function DescriptionSegment({
     >
       {({ editing }) =>
         editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
+          // Edits on the same card the description reads on, in the design's
+          // field dress — not a differently-shaped form dropped in its place.
+          <Form
+            method="post"
+            ref={formRef}
+            className={cn("flex flex-col gap-1.5", os && cn(panel, "os-form p-5"))}
+          >
             <input type="hidden" name="intent" value="description" />
             <textarea
               name="description"
               rows={6}
               defaultValue={description ?? ""}
               placeholder="Add a short description… (Markdown supported)"
-              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className={
+                os
+                  ? "w-full resize-y"
+                  : "px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              }
               autoFocus
             />
           </Form>
-        ) : description ? (
-          <Markdown>{description}</Markdown>
         ) : (
-          <p className="text-sm text-muted-foreground italic">
-            No description.
-          </p>
+          <div className={os ? cn(panel, "p-5") : undefined}>
+            {description ? (
+              <Markdown>{description}</Markdown>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                No description.
+              </p>
+            )}
+          </div>
         )
       }
     </EditableSection>
@@ -2650,7 +2693,7 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-os-container py-3 last:border-0">
-      <span className="flex items-center gap-2.5 text-sm text-os-muted">
+      <span className="flex items-center gap-2.5 text-sm text-os-grey">
         {icon}
         {label}
       </span>
@@ -2672,10 +2715,10 @@ function DetailsReadOs({
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
   const dash = <span className="text-os-muted">—</span>;
-  const ic = "h-[17px] w-[17px] text-os-muted";
+  const ic = "h-[17px] w-[17px] text-os-grey";
 
   return (
-    <div className="rounded-2xl border border-os-container bg-os-card px-4">
+    <div className="rounded-os-card bg-os-card px-5">
       <DetailRow icon={<Mail className={ic} />} label="Calendar email">
         {project.calendarEmail ? (
           <a
@@ -2752,7 +2795,7 @@ function DetailsReadOs({
           type="button"
           onClick={() => setShowMore((v) => !v)}
           aria-expanded={showMore}
-          className="flex w-full items-center gap-1.5 py-2.5 text-sm text-os-muted transition-colors hover:text-foreground"
+          className="flex w-full items-center gap-1.5 py-2.5 text-sm text-os-grey transition-colors hover:text-foreground"
         >
           {showMore ? (
             <ChevronDown className="h-4 w-4" />
@@ -2792,6 +2835,154 @@ function DetailsReadOs({
   );
 }
 
+/* The same row, with a field where the value was. Stacks on a narrow screen so
+   an input never has to share a line with its own label. */
+function DetailEditRow({
+  icon,
+  label,
+  hint,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-2.5 text-sm text-os-grey">
+          {icon}
+          {label}
+        </span>
+        {hint && <span className="pl-[27px] text-xs text-os-muted">{hint}</span>}
+      </span>
+      <div className="w-full sm:max-w-[24rem]">{children}</div>
+    </div>
+  );
+}
+
+/* Project details in edit mode: the read view's own card and rows, with each
+   value swapped for its field. Every field the `details` intent writes is
+   rendered — that write replaces the whole set, so a field left out of the
+   form would be cleared rather than kept. That is also why nothing here hides
+   behind a disclosure the way the read view's "Additional details" does. */
+function DetailsEditOs({
+  project,
+  canEditFinance,
+}: {
+  project: LoaderData["project"];
+  canEditFinance: boolean;
+}) {
+  const ic = "h-[17px] w-[17px] text-os-grey";
+  const field = "w-full";
+
+  return (
+    <div className="rounded-os-card bg-os-card px-5">
+      <DetailEditRow icon={<Mail className={ic} />} label="Calendar email">
+        <input
+          name="calendarEmail"
+          type="email"
+          defaultValue={project.calendarEmail ?? ""}
+          placeholder="projectname@dali.dartmouth.edu"
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Github className={ic} />} label="GitHub team">
+        <input
+          name="githubTeamSlug"
+          type="text"
+          defaultValue={project.githubTeamSlug ?? ""}
+          placeholder="project-team-name"
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Slack className={ic} />} label="Slack channel">
+        <input
+          name="slackChannelName"
+          type="text"
+          defaultValue={project.slackChannelName ?? ""}
+          placeholder="project-name"
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<Layers className={ic} />}
+        label="Repositories"
+        hint="One URL per line"
+      >
+        <textarea
+          name="repoUrls"
+          rows={3}
+          defaultValue={project.repoUrls.join("\n")}
+          placeholder="https://github.com/dali-lab/…"
+          className={cn(field, "resize-y font-mono")}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Globe className={ic} />} label="Deployment">
+        <input
+          name="deploymentUrl"
+          type="url"
+          defaultValue={project.deploymentUrl ?? ""}
+          placeholder="https://projectname.fly.dev"
+          className={cn(field, "font-mono")}
+        />
+      </DetailEditRow>
+
+      {/* Provisioned by the staffing "Create team email group" automation —
+          shown for context, not lead-editable. */}
+      <DetailEditRow icon={<Users className={ic} />} label="Team email group">
+        <p className="text-sm text-foreground sm:text-right">
+          {project.teamGroupEmail ?? (
+            <span className="text-os-muted">Not created yet — run staffing finalize.</span>
+          )}
+        </p>
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<CalendarDays className={ic} />}
+        label="Terms required"
+        hint="The planned span, not the terms staffed so far"
+      >
+        <input
+          name="termCount"
+          type="number"
+          min={1}
+          defaultValue={project.termCount}
+          className={field}
+        />
+      </DetailEditRow>
+
+      {canEditFinance && (
+        <>
+          <DetailEditRow icon={<Info className={ic} />} label="Payroll type">
+            <input
+              name="chartStringType"
+              type="text"
+              defaultValue={project.chartStringType ?? ""}
+              placeholder="e.g. Grant, Department"
+              className={field}
+            />
+          </DetailEditRow>
+          <DetailEditRow icon={<Info className={ic} />} label="Full chart string">
+            <input
+              name="chartString"
+              type="text"
+              defaultValue={project.chartString ?? ""}
+              placeholder="full GL chart string"
+              className={cn(field, "font-mono")}
+            />
+          </DetailEditRow>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DetailsSegment({
   project,
   canEdit,
@@ -2813,8 +3004,15 @@ function DetailsSegment({
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
       {({ editing }) =>
-        os && !editing ? (
-          <DetailsReadOs project={project} canEditFinance={canEditFinance} />
+        os ? (
+          editing ? (
+            <Form method="post" ref={formRef} className="os-form w-full">
+              <input type="hidden" name="intent" value="details" />
+              <DetailsEditOs project={project} canEditFinance={canEditFinance} />
+            </Form>
+          ) : (
+            <DetailsReadOs project={project} canEditFinance={canEditFinance} />
+          )
         ) : (
         <Form method="post" ref={formRef} className="flex flex-col gap-4 w-full">
           <input type="hidden" name="intent" value="details" />
@@ -3141,36 +3339,69 @@ function DomainScopesSegment({
   );
 }
 
-// The design gives each role its own tinted chip. Domains are DB rows with
-// free-text names, so the four named in the design are matched by name and
-// anything else lands on one of them by a stable hash of the name — a new
-// domain gets a colour without anyone editing a table, and keeps it.
-const OS_ROLE_CHIPS = [
-  "bg-[#3d3a26] text-[#e8dd9a]", // data
-  "bg-[#1f3a37] text-[#8fd6cb]", // fullstack
-  "bg-[#31284a] text-[#c3aef2]", // product
-  "bg-[#3f2530] text-[#f2a8bd]", // ui/ux
-] as const;
+// The design gives each role its own tinted chip. The four hues it drew were
+// matched by name against a handful of short keys and everything else fell to
+// a hash across those same four — so with the real catalog (17 domains, whose
+// labels are "Fullstack Dev", "UI/UX Design", "Product Management"…) every
+// lookup missed and three unrelated domains routinely came out the same
+// colour. Each catalog domain now names its own hue, so a role reads
+// identically on the header, the team cards, and anywhere else it appears.
+const OS_ROLE_CHIPS = {
+  amber: "bg-[#3d3a26] text-[#e8dd9a]",
+  teal: "bg-[#1f3a37] text-[#8fd6cb]",
+  violet: "bg-[#31284a] text-[#c3aef2]",
+  pink: "bg-[#3f2530] text-[#f2a8bd]",
+  blue: "bg-[#1e3348] text-[#a2d2fd]",
+  green: "bg-[#263a29] text-[#a6dda6]",
+  orange: "bg-[#43301f] text-[#f0b98a]",
+  magenta: "bg-[#3d2440] text-[#e2a6ee]",
+  slate: "bg-[#2b3340] text-[#aec4de]",
+  cyan: "bg-[#193a3f] text-[#8fd4e0]",
+  red: "bg-[#3f2424] text-[#f0a5a5]",
+  lime: "bg-[#333d1f] text-[#cfe08a]",
+  indigo: "bg-[#2a2c4d] text-[#b0b4f0]",
+  sand: "bg-[#3a3128] text-[#ddc3a3]",
+} as const;
 
-const OS_ROLE_BY_NAME: Record<string, number> = {
-  data: 0,
-  fullstack: 1,
-  full_stack: 1,
-  dev: 1,
-  product: 2,
-  pm: 2,
-  design: 3,
-  uiux: 3,
-  ux: 3,
-};
+// Matched as a prefix of the domain's normalised name, so a domain's catalog
+// label, its legacy name and its code all land on one hue — the header reads
+// `displayName` ("Fullstack Dev") while a team card reads `name`
+// ("Fullstack"), and the two have to agree. Longest first: "production" would
+// otherwise be swallowed by "product".
+const OS_ROLE_STEMS: [string, keyof typeof OS_ROLE_CHIPS][] = [
+  ["threedmodeling", "green"],
+  ["3dmodeling", "green"],
+  ["videography", "cyan"],
+  ["photography", "red"],
+  ["digitalarts", "sand"],
+  ["engineering", "slate"],
+  ["production", "lime"],
+  ["fullstack", "teal"],
+  ["animation", "orange"],
+  ["graphics", "magenta"],
+  ["product", "violet"],
+  ["writing", "indigo"],
+  ["design", "pink"],
+  ["arvr", "blue"],
+  ["uiux", "pink"],
+  ["data", "amber"],
+  ["dev", "teal"],
+  ["pm", "violet"],
+  ["ux", "pink"],
+];
+
+// An unlisted domain still gets a stable colour without anyone editing the
+// table above — off the whole ring now, not off four slots.
+const OS_ROLE_CHIP_RING = Object.values(OS_ROLE_CHIPS);
 
 function osRoleChipClass(name: string): string {
-  const key = name.toLowerCase().replace(/[^a-z]/g, "");
-  const named = OS_ROLE_BY_NAME[key];
-  if (named !== undefined) return OS_ROLE_CHIPS[named];
+  const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [stem, hue] of OS_ROLE_STEMS) {
+    if (key.startsWith(stem)) return OS_ROLE_CHIPS[hue];
+  }
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 997;
-  return OS_ROLE_CHIPS[hash % OS_ROLE_CHIPS.length];
+  return OS_ROLE_CHIP_RING[hash % OS_ROLE_CHIP_RING.length];
 }
 
 function DomainChips({
@@ -3239,6 +3470,98 @@ function StatusBadge({
   );
 }
 
+/* One term's roster. Split out of TeamSection because the current term renders
+   at the top level and the older ones render inside the "Previous teams"
+   folder — same markup, two places. */
+function TeamTermGroup({
+  team,
+  canEdit,
+  currentTermCode,
+  os,
+}: {
+  team: LoaderData["teams"][number];
+  canEdit: boolean;
+  currentTermCode: string | null;
+  os: boolean;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-1.5">
+        {team.code}
+        {/* "Current" only when this group's term IS the current term —
+            the newest group may be a past term on a wrapped project. */}
+        {currentTermCode !== null && team.code === currentTermCode && (
+          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
+            Current
+          </span>
+        )}
+      </div>
+      {os ? (
+        // The design's member cards: avatar, name, and the role as plain text.
+        // The level itself is not shown — P1/P2/P3 is an internal ladder, and
+        // the only part of it this page needs to say is who mentors each
+        // domain, which is the domain's P3.
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {team.members.map((m) => (
+            <div
+              key={m.assignmentId}
+              className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
+            >
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-foreground">
+                  {m.name}
+                </div>
+                <div className="truncate text-[12px] text-os-muted">
+                  {m.domain}
+                </div>
+              </div>
+              {m.level === "P3" &&
+                (canEdit ? (
+                  <Link
+                    to={`/members/${m.userId}#project-assignments`}
+                    title={`Change ${m.name}'s level on their profile`}
+                    className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
+                  >
+                    Mentor
+                  </Link>
+                ) : (
+                  <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
+                    Mentor
+                  </span>
+                ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {team.members.map((m) => (
+            <span
+              key={m.assignmentId}
+              className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
+            >
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
+              {m.name}
+              <span className="text-muted-foreground">· {m.domain}</span>
+              {canEdit ? (
+                <Link
+                  to={`/members/${m.userId}#project-assignments`}
+                  title={`Change ${m.name}'s level on their profile`}
+                  className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
+                >
+                  {m.level}
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">{m.level}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TeamSection({
   teams,
   canEdit,
@@ -3248,109 +3571,70 @@ function TeamSection({
   canEdit: boolean;
   currentTermCode: string | null;
 }) {
-  const [showAll, setShowAll] = useState(false);
-  const os = useFeatureFlag("os-redesign");
-  // teams is pre-sorted newest term first by the loader.
-  const visible = showAll ? teams : teams.slice(0, 1);
+  const [showPrevious, setShowPrevious] = useState(false);
+  const { os, sectionTitle } = useOsChrome();
+  // teams is pre-sorted newest term first by the loader, so the head is the
+  // roster the page is about and the tail is history.
+  const [currentTeam, ...previousTeams] = teams;
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Users className="w-4 h-4" /> Team
-        </h2>
-        {teams.length > 1 && (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="text-xs font-medium text-accent-coral hover:underline"
-          >
-            {showAll ? "Show less" : `Show all (${teams.length} terms)`}
-          </button>
-        )}
-      </div>
+      <h2
+        className={
+          os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
+        }
+      >
+        {!os && <Users className="w-4 h-4" />} Team
+      </h2>
       {teams.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No team assignments yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {visible.map((team) => (
-            <div key={team.code}>
-              <div className="text-xs font-medium text-muted-foreground mb-1.5">
-                {team.code}
-                {/* "Current" only when this group's term IS the current term —
-                    the newest group may be a past term on a wrapped project. */}
-                {currentTermCode !== null && team.code === currentTermCode && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
-                    Current
-                  </span>
+          <TeamTermGroup
+            team={currentTeam}
+            canEdit={canEdit}
+            currentTermCode={currentTermCode}
+            os={os}
+          />
+
+          {/* Past terms live in a folder rather than in the roster: a project
+              that has run for eight terms otherwise buries this term's team
+              under seven that have moved on. */}
+          {previousTeams.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPrevious((v) => !v)}
+                aria-expanded={showPrevious}
+                className={
+                  os
+                    ? "flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
+                    : "flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                {showPrevious ? (
+                  <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 flex-shrink-0" />
                 )}
-              </div>
-              {os ? (
-                // The design's member cards: avatar, name, a coloured role
-                // pill, and the level (P1/P2/P3) as a badge on the right.
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {team.members.map((m) => (
-                    <div
-                      key={m.assignmentId}
-                      className="flex items-center gap-3 rounded-xl border border-os-container bg-os-card p-3"
-                    >
-                      <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-foreground">
-                          {m.name}
-                        </div>
-                        <span
-                          className={cn(
-                            "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                            osRoleChipClass(m.domain),
-                          )}
-                        >
-                          {m.domain}
-                        </span>
-                      </div>
-                      {canEdit ? (
-                        <Link
-                          to={`/members/${m.userId}#project-assignments`}
-                          title={`Change ${m.name}'s level on their profile`}
-                          className="flex-shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-semibold text-os-grey transition-colors hover:text-foreground"
-                        >
-                          {m.level}
-                        </Link>
-                      ) : (
-                        <span className="flex-shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-semibold text-os-grey">
-                          {m.level}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {team.members.map((m) => (
-                    <span
-                      key={m.assignmentId}
-                      className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
-                    >
-                      <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
-                      {m.name}
-                      <span className="text-muted-foreground">· {m.domain}</span>
-                      {canEdit ? (
-                        <Link
-                          to={`/members/${m.userId}#project-assignments`}
-                          title={`Change ${m.name}'s level on their profile`}
-                          className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
-                        >
-                          {m.level}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">{m.level}</span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              )}
+                <Folder className="h-4 w-4 flex-shrink-0" />
+                Previous teams
+                <span className="ml-auto text-xs font-semibold text-os-muted">
+                  {previousTeams.length}
+                </span>
+              </button>
+              {showPrevious &&
+                previousTeams.map((team) => (
+                  <TeamTermGroup
+                    key={team.code}
+                    team={team}
+                    canEdit={canEdit}
+                    currentTermCode={currentTermCode}
+                    os={os}
+                  />
+                ))}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -3434,6 +3718,42 @@ function MeetingsSection({
   );
 }
 
+/* One domain's challenge for a term. Folded by default: a project declares up
+   to eight domains and their scopes run to paragraphs, so leaving every one of
+   them open buried the sections under it. The domain name is the affordance. */
+function ChallengeDomain({
+  domainName,
+  scope,
+}: {
+  domainName: string;
+  scope: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 text-left text-[15px] font-semibold text-foreground transition-colors hover:text-accent-coral"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        )}
+        {domainName}
+      </button>
+      {open && (
+        <p className="mt-1 whitespace-pre-wrap pl-[22px] text-sm text-foreground">
+          {scope}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function OverviewTab({
   planning,
   project,
@@ -3485,6 +3805,9 @@ function OverviewTab({
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
+  // Under dali.os a section is a title over its content, not a box around it —
+  // so the cards these sections hold stop showing a second border inside a first.
+  const { os, sectionShell, sectionTitle, panel } = useOsChrome();
 
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
@@ -3523,9 +3846,9 @@ function OverviewTab({
       {/* Challenge for the current term, per declared domain (read-only). */}
       {currentTerm &&
         (currentChallenges.length > 0 || futureChallengeGroups.length > 0) && (
-          <section className="bg-card border border-border rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">
+          <section className={sectionShell}>
+            <div className="flex items-center justify-between">
+              <h3 className={os ? sectionTitle : "text-sm font-semibold text-foreground"}>
                 Challenge{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   · {currentTerm.code}
@@ -3543,44 +3866,42 @@ function OverviewTab({
                 </button>
               )}
             </div>
-            {currentChallenges.length > 0 ? (
-              <div className="space-y-3">
-                {currentChallenges.map((c) => (
-                  <div key={c.domainId}>
-                    <div className="text-xs font-medium text-muted-foreground">
-                      {c.domainName}
+            {/* The body takes the surface under os; the section around it is
+                only a title, so this is the one card here. */}
+            <div className={os ? cn(panel, "p-4") : undefined}>
+              {currentChallenges.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {currentChallenges.map((c) => (
+                    <ChallengeDomain
+                      key={c.domainId}
+                      domainName={c.domainName}
+                      scope={c.scope}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  No challenge for {currentTerm.code} yet.
+                </p>
+              )}
+              {showFutureChallenges &&
+                futureChallengeGroups.map((g) => (
+                  <div key={g.termId} className="mt-4 pt-3 border-t border-border">
+                    <div className="text-xs font-semibold text-muted-foreground mb-2">
+                      {g.termCode}
                     </div>
-                    <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
-                      {c.scope}
-                    </p>
+                    <div className="flex flex-col gap-2">
+                      {g.cells.map((c) => (
+                        <ChallengeDomain
+                          key={c.domainId}
+                          domainName={c.domainName}
+                          scope={c.scope}
+                        />
+                      ))}
+                    </div>
                   </div>
                 ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                No challenge for {currentTerm.code} yet.
-              </p>
-            )}
-            {showFutureChallenges &&
-              futureChallengeGroups.map((g) => (
-                <div key={g.termId} className="mt-4 pt-3 border-t border-border">
-                  <div className="text-xs font-semibold text-muted-foreground mb-2">
-                    {g.termCode}
-                  </div>
-                  <div className="space-y-3">
-                    {g.cells.map((c) => (
-                      <div key={c.domainId}>
-                        <div className="text-xs font-medium text-muted-foreground">
-                          {c.domainName}
-                        </div>
-                        <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
-                          {c.scope}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+            </div>
           </section>
         )}
 
@@ -3602,7 +3923,7 @@ function OverviewTab({
       />
 
       {/* Team — read-only summary, separate from the editable details. */}
-      <section className="bg-card border border-border rounded-lg p-4">
+      <section className={sectionShell}>
         <TeamSection
           teams={teams}
           canEdit={canEditAssignmentLevel}
@@ -3633,11 +3954,15 @@ function OverviewTab({
       {/* Recent project-scoped audit activity — editors only (the loader
           returns an empty list otherwise). Read-only. */}
       {canEdit && recentActivity.length > 0 && (
-        <section className="bg-card border border-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-            <History className="w-4 h-4" /> Recent activity
+        <section className={sectionShell}>
+          <h2
+            className={
+              os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
+            }
+          >
+            {!os && <History className="w-4 h-4" />} Recent activity
           </h2>
-          <ul className="flex flex-col gap-2">
+          <ul className={cn("flex flex-col gap-2", os && cn(panel, "p-4"))}>
             {recentActivity.map((a) => (
               <li key={a.id} className="text-xs text-muted-foreground">
                 <span className="text-foreground font-medium">{a.actorName}</span>{" "}
@@ -3891,7 +4216,7 @@ function PartnerContactMenu({
         aria-expanded={open}
         aria-label={`Actions for ${name}`}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center rounded-md p-1.5 text-os-muted transition-colors hover:bg-os-container hover:text-foreground"
+        className="inline-flex items-center justify-center rounded-md p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
@@ -3902,12 +4227,12 @@ function PartnerContactMenu({
         >
           {email && (
             <a role="menuitem" href={`mailto:${email}`} className={itemClass} onClick={() => setOpen(false)}>
-              <Mail className="h-4 w-4 text-os-muted" /> Email
+              <Mail className="h-4 w-4 text-os-grey" /> Email
             </a>
           )}
           {canManage && (
             <Link role="menuitem" to={`/partners/${orgId}`} className={itemClass} onClick={() => setOpen(false)}>
-              <ExternalLink className="h-4 w-4 text-os-muted" /> View organization
+              <ExternalLink className="h-4 w-4 text-os-grey" /> View organization
             </Link>
           )}
           {!email && !canManage && (
@@ -3941,9 +4266,12 @@ function PartnersContactsOs({
     );
 
   return (
-    <>
+    // The design's partner directory: one surface, a row per contact. The
+    // section around it carries no border of its own, so this is where the
+    // list gets its ground.
+    <div className="rounded-os-card bg-os-card px-5">
       {contacts.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No partner contacts yet.</p>
+        <p className="py-4 text-sm text-os-muted italic">No partner contacts yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-os-container">
           {contacts.map((c) => (
@@ -3951,7 +4279,7 @@ function PartnersContactsOs({
               <Avatar name={c.name} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-foreground">{c.name}</div>
-                <div className="truncate text-xs text-os-muted">
+                <div className="truncate text-xs text-os-grey">
                   {c.displayRole ?? "Partner contact"}
                 </div>
               </div>
@@ -3967,12 +4295,12 @@ function PartnersContactsOs({
       )}
 
       {canManage && partners.length > 0 && (
-        <div className="mt-3 border-t border-os-container pt-2">
+        <div className="border-t border-os-container pt-1 pb-1">
           <button
             type="button"
             onClick={() => setShowOrgs((v) => !v)}
             aria-expanded={showOrgs}
-            className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium text-os-muted transition-colors hover:text-foreground"
+            className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium text-os-grey transition-colors hover:text-foreground"
           >
             {showOrgs ? (
               <ChevronDown className="h-3.5 w-3.5" />
@@ -4052,7 +4380,7 @@ function PartnersContactsOs({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -4068,13 +4396,17 @@ function PartnersSection({
   const confirmSubmit = useConfirmSubmit();
   const [linking, setLinking] = useState(false);
   const tz = useUserTimeZone();
-  const os = useFeatureFlag("os-redesign");
+  const { os, sectionShell, sectionTitle } = useOsChrome();
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Handshake className="w-4 h-4" /> Partners
+    <section className={sectionShell}>
+      <div className="flex items-center justify-between">
+        <h2
+          className={
+            os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
+          }
+        >
+          {!os && <Handshake className="w-4 h-4" />} Partners
         </h2>
         {canManage && linkablePartnerOrgs.length > 0 && (
           <button
@@ -4088,7 +4420,7 @@ function PartnersSection({
       </div>
 
       {linking && canManage && (
-        <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3 mb-3">
+        <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3">
           <input type="hidden" name="intent" value="partner-link" />
           <Select
             name="partnerOrgId"

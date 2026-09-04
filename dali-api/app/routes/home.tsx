@@ -45,6 +45,7 @@ import {
   zonedDayStartUtc,
 } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
+import { cn } from "~/lib/cn";
 import type { Route } from "./+types/home";
 import {
   WeekCalendarPanel,
@@ -299,9 +300,22 @@ function HomeOS() {
   const { user, greeting, notifications, tasks, pages } = useLoaderData<typeof loader>();
   const fullName =
     [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
+  // Greeting + search (and any shortcuts) should sit in the middle of the pane
+  // when there's nothing in the attention stack — otherwise the front door
+  // reads as stuck under the top gutter.
+  const quiet = !hasAttentionContent(tasks, notifications);
 
   return (
-    <div className="mx-auto flex w-full max-w-[750px] flex-col gap-12 pt-6">
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-[750px] flex-col gap-12",
+        quiet
+          ? // Cancel the shell's asymmetric top gutter so centering is against
+            // the iframe viewport, not the padded content box.
+            "-mt-8 min-h-dvh justify-center py-12 lg:-mt-[60px]"
+          : "pt-6",
+      )}
+    >
       <div className="flex flex-col items-center gap-8">
         <h1 className="text-center text-3xl font-medium text-foreground">
           {greeting}, {fullName}.
@@ -1065,6 +1079,21 @@ function formatDeadline(iso: string): string {
   });
 }
 
+function hasAttentionContent(
+  tasks: Task[],
+  notifications: HomeNotification[],
+): boolean {
+  // Same visibility rules as AttentionBanner: open tasks, plus notifications
+  // that aren't a duplicate of a task or a finished (read, non-invite) item.
+  if (tasks.length > 0) return true;
+  const taskIds = new Set(tasks.map((t) => t.id));
+  return notifications.some((n) => {
+    if (taskIds.has(n.id)) return false;
+    if (n.readAt && n.kind !== "MeetingInvite") return false;
+    return true;
+  });
+}
+
 function AttentionBanner({
   tasks,
   notifications,
@@ -1092,7 +1121,7 @@ function AttentionBanner({
   // Nothing to surface once duplicates and finished (read, non-invite)
   // notifications are filtered out — render nothing rather than an empty
   // banner with a bare header.
-  if (tasks.length === 0 && extraNotifications.length === 0) return null;
+  if (!hasAttentionContent(tasks, notifications)) return null;
 
   // "Needs attention" = open tasks + unread non-task notifications. Read
   // notifications still render below (so RSVP stays reachable) but don't

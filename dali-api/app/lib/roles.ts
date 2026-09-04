@@ -124,6 +124,25 @@ export function instructorRoleLabel(type: OfferingType, title: string): string {
   return `${title} (${type} Instructor)`;
 }
 
+/**
+ * How a project assignment reads to a person, rather than as a level code.
+ * The ladder (schema.prisma `ProjectLevel`) is P1 Learner / P2 Doer / P3 Mentor,
+ * so P3 mentors and P1–P2 do the building — "DALI OS Developer Mentor" instead
+ * of "DALI OS (P3)".
+ */
+export function projectRoleLabel(projectName: string, level: string): string {
+  return `${projectName} ${level === "P3" ? "Developer Mentor" : "Developer"}`;
+}
+
+/**
+ * A Core post reads by its own title — "Education Lead", not "Core — Education
+ * Lead". The prefix restated the assignment type the picker already groups by.
+ * Untitled Core assignments keep the bare "Core".
+ */
+export function coreRoleLabel(leadTitle: string | null): string {
+  return leadTitle || "Core";
+}
+
 // ─── Concrete role instances (Timesheet / calendar role attribution) ────────
 
 export interface RoleInstance {
@@ -196,7 +215,7 @@ export async function getUserRoleInstances(
     roles.push({
       assignmentType: "Project",
       roleRefId: pa.id,
-      label: `${pa.project.name} (${pa.level})`,
+      label: projectRoleLabel(pa.project.name, pa.level),
       projectId: pa.projectId,
     });
   }
@@ -204,7 +223,7 @@ export async function getUserRoleInstances(
     roles.push({
       assignmentType: "Core",
       roleRefId: ca.id,
-      label: ca.leadTitle ? `Core — ${ca.leadTitle}` : "Core",
+      label: coreRoleLabel(ca.leadTitle),
     });
   }
   for (const ia of instructorAssignments) {
@@ -313,14 +332,14 @@ export async function getRoleLabel(
         where: { id: roleRefId },
         select: { level: true, project: { select: { name: true } } },
       });
-      return row ? `${row.project.name} (${row.level})` : null;
+      return row ? projectRoleLabel(row.project.name, row.level) : null;
     }
     case "Core": {
       const row = await prisma.coreAssignment.findUnique({
         where: { id: roleRefId },
         select: { leadTitle: true },
       });
-      return row ? (row.leadTitle ? `Core — ${row.leadTitle}` : "Core") : null;
+      return row ? coreRoleLabel(row.leadTitle) : null;
     }
     case "Instructor": {
       const row = await prisma.instructorAssignment.findUnique({

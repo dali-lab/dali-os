@@ -227,6 +227,10 @@ export function buildLoggedTimeLayer(
      *  doesn't draw a duplicate overlapping block. Standalone (Manual) entries,
      *  and ones whose source layer is hidden, still draw. */
     suppressSourced?: { meetings: boolean };
+    /** Per-role colour overrides, keyed like `timeEntryRoleKey` ("Type:id").
+     *  A hex here wins over the hashed palette so a role reads the same colour
+     *  everywhere the user assigned it. */
+    roleColors?: Record<string, string>;
   } = {},
 ): Record<number, EventBlock[]> {
   const into: Record<number, EventBlock[]> = {};
@@ -236,6 +240,7 @@ export function buildLoggedTimeLayer(
     if (opts.suppressSourced?.meetings && t.scheduledMeetingId) continue;
     const { startIso, endIso } = timeEntryRange(t, data.timezone);
     const color = roleColor(roleKey);
+    const custom = opts.roleColors?.[roleKey];
     placeBlock(
       days,
       data.timezone,
@@ -243,8 +248,9 @@ export function buildLoggedTimeLayer(
       endIso,
       {
         label: t.source === "Meeting" ? t.note || "Meeting" : t.note || "Time entry",
-        className: color.className,
-        borderClassName: color.borderClassName,
+        className: custom ? "" : color.className,
+        bgColor: custom,
+        borderClassName: custom ? undefined : color.borderClassName,
         onClick: opts.onEntryClick ? () => opts.onEntryClick!(t, startIso, endIso) : undefined,
       },
       into,
