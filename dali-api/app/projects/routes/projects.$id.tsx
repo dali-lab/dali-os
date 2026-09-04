@@ -80,6 +80,11 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
+import { DestinationPicker } from "~/components/drive/DestinationPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import { useToast } from "~/components/ui/toast";
+import { filterPillClass } from "~/components/ui/floating/styles";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -4727,6 +4732,39 @@ function DocRow({
 //   • All DriveBrowser capabilities: list/grid/columns, DnD, context menus,
 //     multi-select, bulk, tags, search, rename, move, delete, favorites.
 
+// Project drives hold docs, folders and files. Folders are always shown (the
+// browser never filters them out), so the filter only needs the leaf kinds.
+type ProjectDriveTypeFilter = "all" | "doc" | "file";
+const PROJECT_TYPE_FILTERS: { value: ProjectDriveTypeFilter; label: string; icon?: ReactNode }[] = [
+  { value: "all", label: "All types" },
+  { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
+  { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
+];
+
+// Ids of a folder plus everything under it — a folder can't be moved into its
+// own subtree, so these are disabled in the move picker.
+function folderSubtree(items: DriveItem[], rootId: string): Set<string> {
+  const childrenOf = new Map<string, string[]>();
+  for (const it of items) {
+    if (!it.parentFolderId) continue;
+    const arr = childrenOf.get(it.parentFolderId) ?? [];
+    arr.push(it.id);
+    childrenOf.set(it.parentFolderId, arr);
+  }
+  const out = new Set<string>([rootId]);
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const c of childrenOf.get(cur) ?? []) {
+      if (!out.has(c)) {
+        out.add(c);
+        stack.push(c);
+      }
+    }
+  }
+  return out;
+}
+
 function ProjectDriveTab({
   projectId,
   projectDriveScope,
@@ -4740,9 +4778,42 @@ function ProjectDriveTab({
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
+  const dialog = useDialog();
+  const toast = useToast();
+  const os = useFeatureFlag("os-redesign");
   const [search, setSearch] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");
   const scopeId = projectDriveScope.id;
+  const revalidate = useCallback(() => revalidator.revalidate(), [revalidator]);
+
+  // Upload into the current project folder via the shared presign→register flow
+  // (identical path to the main Drive hub — see useDriveFileUpload).
+  const uploadTarget = useMemo(
+    () => ({ scope: { kind: "Project" as const, projectId }, folderPageId: currentFolderId }),
+    [projectId, currentFolderId],
+  );
+  const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
+    uploadTarget,
+    revalidate,
+  );
+
+  // Move-destination picker (single project scope). pickMoveDestination opens it
+  // and resolves with the chosen Destination (or null on cancel).
+  const [movePicker, setMovePicker] = useState<{
+    heading: string;
+    drives: PickerDrive[];
+    folders: PickerFolder[];
+    disabledFolderIds?: Set<string>;
+    disabledDest?: Destination;
+    initial?: Destination;
+  } | null>(null);
+  const movePickerResolve = useRef<((d: Destination | null) => void) | null>(null);
+  const resolveMovePicker = useCallback((d: Destination | null) => {
+    setMovePicker(null);
+    movePickerResolve.current?.(d);
+    movePickerResolve.current = null;
+  }, []);
 
   // Sync doc-title changes made in the split-pane editor back to this listing.
   // DocumentsBlock used the same mechanism (postMessage from the editor shell).
@@ -4829,79 +4900,284 @@ function ProjectDriveTab({
     [revalidator],
   );
 
+  // Open the destination picker over this project's folders and resolve with the
+  // chosen destination (or null on cancel).
+  const pickMoveDestination = useCallback(
+    (item: DriveItem, heading: string): Promise<Destination | null> => {
+      const rootId = projectDriveScope.rootFolderId ?? null;
+      const drives: PickerDrive[] = [
+        { id: scopeId, label: projectDriveScope.label, iconEmoji: projectDriveScope.iconEmoji },
+      ];
+      const folders: PickerFolder[] = projectDriveScope.items
+        .filter((f) => f.type === "folder")
+        .map((f) => ({
+          id: f.id,
+          driveId: scopeId,
+          parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
+          title: f.title,
+          iconEmoji: f.iconEmoji,
+        }));
+      const banned = item.type === "folder" ? folderSubtree(projectDriveScope.items, item.id) : undefined;
+      const currentFolder = (item.parentFolderId ?? null) === rootId ? null : (item.parentFolderId ?? null);
+      const currentDest: Destination = { driveId: scopeId, folderId: currentFolder };
+      return new Promise<Destination | null>((resolve) => {
+        movePickerResolve.current = resolve;
+        setMovePicker({
+          heading,
+          drives,
+          folders,
+          disabledFolderIds: banned,
+          disabledDest: currentDest,
+          initial: currentDest,
+        });
+      });
+    },
+    [scopeId, projectDriveScope, resolveMovePicker],
+  );
+
   const getScopeActions = useCallback(
     (_scopeId: string): RowActions => ({
       onRename: async (item) => {
-        const newTitle = window.prompt("Rename", item.title || "") ?? "";
-        if (!newTitle || newTitle === item.title) return;
+        const next = await dialog.prompt({
+          title: "Rename",
+          label: "Name",
+          defaultValue: item.title || "",
+          confirmLabel: "Save",
+          validate: (v) => (v.trim() ? null : "Enter a name"),
+        });
+        if (next === null) return;
+        const title = next.trim();
+        if (title === item.title) return;
         const isFile = item.type === "file";
-        try {
-          let res: Response;
-          if (isFile) {
-            // Files: POST /api/files/:id with { intent: "rename", title }
-            res = await fetch(`/api/files/${item.id}`, {
+        const res = isFile
+          ? await fetch(`/api/files/${item.id}`, {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ intent: "rename", title: newTitle }),
-            });
-          } else {
-            // Docs/folders: POST /api/documents/:id with { title }
-            res = await fetch(`/api/documents/${item.id}`, {
+              body: JSON.stringify({ intent: "rename", title }),
+            })
+          : await fetch(`/api/documents/${item.id}`, {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: newTitle }),
+              body: JSON.stringify({ title }),
             });
-          }
-          if (!res.ok) return;
-          revalidator.revalidate();
-        } catch {
-          // Silently fail.
-        }
+        if (res.ok) revalidate();
+        else toast.error("Couldn't rename");
       },
       onRequestMove: async (item) => {
-        // Move within the project scope is the same as onMove with null dest —
-        // handled inline by DnD. A "Move to…" dialog is deferred; for now no-op.
-        void item;
+        const dest = await pickMoveDestination(item, `Move "${item.title || "Untitled"}"`);
+        if (dest) await onMove(scopeId, item, dest.folderId);
       },
       onDelete: async (item) => {
-        if (!window.confirm(`Delete "${item.title || "this item"}"? This cannot be undone.`)) return;
+        const ok = await dialog.confirm({
+          title: `Delete "${item.title || "this item"}"?`,
+          description: item.type === "folder" ? "The folder must be empty first." : "This moves it to the trash.",
+          tone: "destructive",
+          confirmLabel: "Delete",
+        });
+        if (!ok) return;
         const isFile = item.type === "file";
-        try {
-          // Files: DELETE /api/files/:id
-          // Docs/folders: DELETE /api/documents/:id (soft-archives; guards system folders)
-          const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
-          const res = await fetch(endpoint, {
-            method: "DELETE",
-            credentials: "include",
-          });
-          if (!res.ok) return;
-          revalidator.revalidate();
-        } catch {
-          // Silently fail.
-        }
+        const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
+        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+        if (res.ok) revalidate();
+        else toast.error("Couldn't delete");
       },
     }),
-    [revalidator],
+    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId],
   );
 
+  // Toggle the viewer's personal favorite on a doc/folder.
+  const onToggleFavorite = useCallback(
+    async (item: DriveItem) => {
+      if (item.type !== "doc" && item.type !== "folder") return;
+      await fetch(`/api/pages/${item.id}/favorite`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorited: !item.favorited }),
+      });
+      revalidate();
+    },
+    [revalidate],
+  );
+
+  // Create a doc/folder into the current project folder (or the project root).
+  const createPage = useCallback(
+    async (kind: "FreeForm" | "Folder", title: string): Promise<string | null> => {
+      const res = await fetch(`/api/projects/${projectId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind, ...(currentFolderId ? { parentPageId: currentFolderId } : {}) }),
+      });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
+    },
+    [projectId, currentFolderId],
+  );
+
+  const createDoc = useCallback(async () => {
+    const name = await dialog.prompt({
+      title: "New document",
+      label: "Name",
+      defaultValue: "Untitled",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("FreeForm", name.trim());
+    if (id) navigate(`/documents/${id}`);
+    else toast.error("Couldn't create the document");
+  }, [dialog, createPage, navigate, toast]);
+
+  const createFolder = useCallback(async () => {
+    const name = await dialog.prompt({
+      title: "New folder",
+      label: "Folder name",
+      defaultValue: "New folder",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("Folder", name.trim());
+    if (id) {
+      toast.success("Folder created");
+      revalidate();
+    } else {
+      toast.error("Couldn't create the folder");
+    }
+  }, [dialog, createPage, revalidate, toast]);
+
+  const onBulkDelete = useCallback(
+    async (items: DriveItem[]) => {
+      if (items.length === 0) return;
+      const ok = await dialog.confirm({
+        title: `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
+        description: "Folders must be empty first.",
+        tone: "destructive",
+        confirmLabel: "Delete",
+      });
+      if (!ok) return;
+      let fail = 0;
+      for (const it of items) {
+        const endpoint = it.type === "file" ? `/api/files/${it.id}` : `/api/documents/${it.id}`;
+        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+        if (!res.ok) fail++;
+      }
+      revalidate();
+      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
+      else toast.success(`Deleted ${items.length}`);
+    },
+    [dialog, toast, revalidate],
+  );
+
+  const onBulkMove = useCallback(
+    async (items: DriveItem[]) => {
+      const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
+      if (movable.length === 0) return;
+      const dest = await pickMoveDestination(
+        movable[0],
+        `Move ${movable.length} item${movable.length === 1 ? "" : "s"}`,
+      );
+      if (!dest) return;
+      for (const it of movable) await onMove(scopeId, it, dest.folderId);
+      revalidate();
+    },
+    [pickMoveDestination, onMove, scopeId, revalidate],
+  );
+
+  const filterControl = (
+    <div data-testid="drive-filter">
+      <Select<ProjectDriveTypeFilter>
+        value={typeFilter}
+        onChange={setTypeFilter}
+        ariaLabel="Filter by type"
+        align="right"
+        options={PROJECT_TYPE_FILTERS.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
+        buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+      />
+    </div>
+  );
+
+  const newMenu = canEdit ? (
+    <Menu
+      align="right"
+      ariaLabel="New in this project"
+      trigger={
+        <button
+          type="button"
+          data-testid={`drive-new-menu-${scopeId}`}
+          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+        >
+          <Plus className="w-4 h-4" /> New
+          <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+        </button>
+      }
+    >
+      <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDoc()}>
+        <span data-testid={`drive-new-doc-${scopeId}`}>New document</span>
+      </Menu.Item>
+      <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
+        <span data-testid={`drive-new-folder-${scopeId}`}>New folder</span>
+      </Menu.Item>
+      <Menu.Separator />
+      <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={() => inputRef.current?.click()}>
+        <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload file"}</span>
+      </Menu.Item>
+    </Menu>
+  ) : undefined;
+
   return (
-    <DriveBrowser
-      scopes={[projectDriveScope]}
-      currentScopeId={scopeId}
-      currentFolderId={currentFolderId}
-      typeFilter="all"
-      search={search}
-      onSearchChange={setSearch}
-      onNavigate={onNavigate}
-      onOpenItem={onOpenItem}
-      onMove={onMove}
-      getScopeActions={getScopeActions}
-      embeddedScopeId={scopeId}
-      onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
-      hasActivePartner={hasActivePartner}
-    />
+    <>
+      {uploadError && (
+        <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive">
+          {uploadError}
+        </div>
+      )}
+      <DriveBrowser
+        scopes={[projectDriveScope]}
+        currentScopeId={scopeId}
+        currentFolderId={currentFolderId}
+        typeFilter={typeFilter}
+        search={search}
+        onSearchChange={setSearch}
+        onNavigate={onNavigate}
+        onOpenItem={onOpenItem}
+        onMove={onMove}
+        getScopeActions={getScopeActions}
+        onToggleFavorite={onToggleFavorite}
+        onBulkDelete={canEdit ? onBulkDelete : undefined}
+        onBulkMove={canEdit ? onBulkMove : undefined}
+        onUploadFiles={canEdit ? uploadFiles : undefined}
+        filterControl={filterControl}
+        newMenu={newMenu}
+        embeddedScopeId={scopeId}
+        onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
+        hasActivePartner={hasActivePartner}
+      />
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={handleFileChange}
+        data-testid={`drive-upload-input-${scopeId}`}
+      />
+      {movePicker && (
+        <DestinationPicker
+          open
+          heading={movePicker.heading}
+          drives={movePicker.drives}
+          folders={movePicker.folders}
+          disabledFolderIds={movePicker.disabledFolderIds}
+          disabledDest={movePicker.disabledDest}
+          initial={movePicker.initial}
+          onClose={() => resolveMovePicker(null)}
+          onConfirm={(dest) => resolveMovePicker(dest)}
+        />
+      )}
+    </>
   );
 }
 

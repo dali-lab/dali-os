@@ -20,6 +20,12 @@ import {
 } from "~/calendar/components/RepeatField";
 import { eventDestinations, addDaysToDate } from "~/calendar/components/composer";
 import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
+import {
+  useMeetingNote,
+  meetingNoteValid,
+  meetingNotePayload,
+  MeetingNoteFields,
+} from "~/calendar/components/MeetingNoteFields";
 import type { LoaderData } from "~/calendar/lib/types";
 
 // ── Props ──────────────────────────────────────────────────────────────────
@@ -173,10 +179,16 @@ export function CreateEventModal({
   const type = hasGuests ? "Meeting" : "Event";
 
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
-  const [createNote, setCreateNote] = useState(false);
-  const [meetingType, setMeetingType] = useState<"Team" | "Partner" | "Other">("Other");
-  const [meetingTypeLabel, setMeetingTypeLabel] = useState("");
-  const [projectId, setProjectId] = useState("");
+  // Derive-type-from-project model; see MeetingNoteFields.
+  const note = useMeetingNote();
+
+  // Prefill "About" when exactly one invited group is a project group — a default
+  // the sender can still change; it never enables the note on its own.
+  useEffect(() => {
+    if (selectedGroupIds.length !== 1) return;
+    note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGroupIds]);
 
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
@@ -264,6 +276,7 @@ export function CreateEventModal({
     title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
+    meetingNoteValid(note.state) &&
     (!isWork || (roleKey !== "" && workNote.trim() !== "")) &&
     !submitting;
 
@@ -283,11 +296,7 @@ export function CreateEventModal({
       }
       if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
       if (canAddMeet && addMeet) payload.addMeet = true;
-      if (createNote) {
-        payload.meetingType = meetingType;
-        if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
-        if (projectId) payload.projectId = projectId;
-      }
+      Object.assign(payload, meetingNotePayload(note.state));
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -863,54 +872,19 @@ export function CreateEventModal({
               {/* Meeting notes toggle */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
-                  checked={createNote}
-                  onChange={(e) => setCreateNote(e.target.checked)}
+                  checked={note.state.enabled}
+                  onChange={(e) => note.setEnabled(e.target.checked)}
                   label="Create meeting notes"
                   description="Starts a shared notes doc linked to this meeting."
                 />
-                {createNote && (
-                  <div className="mt-3 space-y-3 pt-1">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className={labelClass}>Meeting type</label>
-                        <Select
-                          value={meetingType}
-                          onChange={(v) => setMeetingType(v as typeof meetingType)}
-                          options={[
-                            { value: "Team", label: "Team meeting" },
-                            { value: "Partner", label: "Partner meeting" },
-                            { value: "Other", label: "Other" },
-                          ]}
-                          buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
-                        />
-                      </div>
-                      {meetingType === "Other" && (
-                        <div>
-                          <label className={labelClass}>Meeting type name</label>
-                          <input
-                            type="text"
-                            value={meetingTypeLabel}
-                            onChange={(e) => setMeetingTypeLabel(e.target.value)}
-                            placeholder="e.g. Partner hub meeting"
-                            className={fieldClass}
-                          />
-                        </div>
-                      )}
-                      <div className={meetingType === "Other" ? "sm:col-span-2" : ""}>
-                        <label className={labelClass}>
-                          Project <span className="text-muted-foreground font-normal">(optional)</span>
-                        </label>
-                        <Select
-                          value={projectId}
-                          onChange={(v) => setProjectId(v)}
-                          options={[
-                            { value: "", label: "No project — Lab documents" },
-                            ...data.myProjects.map((p) => ({ value: p.id, label: p.name })),
-                          ]}
-                          buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
-                        />
-                      </div>
-                    </div>
+                {note.state.enabled && (
+                  <div className="mt-3 pt-1">
+                    <MeetingNoteFields
+                      note={note}
+                      myProjects={data.myProjects}
+                      fieldClass={fieldClass}
+                      labelClass={labelClass}
+                    />
                   </div>
                 )}
               </div>
