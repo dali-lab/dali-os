@@ -1,6 +1,9 @@
 // Neon API adapter (https://console.neon.tech/api/v2). One shared personal key
-// (NEON_API_KEY) spans all orgs; org_id is passed per call from the registry.
-// Auth: `Authorization: Bearer <NEON_API_KEY>`. Writes return operations[] that
+// (INFRA_NEON_API_KEY) spans all orgs; org_id is passed per call from the registry.
+// Deliberately its OWN env var, distinct from CI's NEON_API_KEY (a GitHub Actions
+// secret): the dashboard is a long-running app holding a broad org-wide admin key,
+// so it rotates and audits separately from preview-deploy tooling.
+// Auth: `Authorization: Bearer <INFRA_NEON_API_KEY>`. Writes return operations[] that
 // callers may poll to completion (see pollOperations). This module never logs
 // connection strings or role passwords the API returns.
 
@@ -15,12 +18,12 @@ import type {
 const NEON_API = "https://console.neon.tech/api/v2";
 
 export function neonConfigured(): boolean {
-  return Boolean(process.env.NEON_API_KEY);
+  return Boolean(process.env.INFRA_NEON_API_KEY);
 }
 
 function neonKey(): string {
-  const k = process.env.NEON_API_KEY;
-  if (!k) throw new Error("NEON_API_KEY is not set");
+  const k = process.env.INFRA_NEON_API_KEY;
+  if (!k) throw new Error("INFRA_NEON_API_KEY is not set");
   return k;
 }
 

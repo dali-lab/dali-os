@@ -88,14 +88,14 @@ console, not a single-org view. Two provider facts shape the model:
   writes — mitigated by our Admin gate + confirm + audit, key server-only.
 
 So configuration is a **registry of projects**, each:
-`{ label, flyOrgSlug, flyReadToken, flyWriteToken, neonOrgId }` + one shared `NEON_API_KEY`.
+`{ label, flyOrgSlug, flyReadToken, flyWriteToken, neonOrgId }` + one shared `INFRA_NEON_API_KEY`.
 Because orgs are registered explicitly we never enumerate orgs → **Fly GraphQL stays fully
 unused.** Header `Authorization: Bearer <token>` for both.
 
 **Storage of the registry — DECIDED: DB-backed, Admin-managed.** `InfraProject` rows (§6); Admin
 adds/edits/removes a project + pastes its Fly tokens in the dashboard, no redeploy to onboard.
 Fly tokens are **encrypted at rest** via `app/lib/infra/crypto.server.ts` (AES-256-GCM, key from
-`INFRA_SECRET_KEY` env). Only the shared `NEON_API_KEY` (Neon personal key) stays an env secret.
+`INFRA_SECRET_KEY` env). Only the shared `INFRA_NEON_API_KEY` (Neon personal key) stays an env secret.
 Tokens are decrypted server-side only, never returned to the client (write-only fields in the
 registry UI — show "set / not set", never the value).
 
@@ -280,5 +280,8 @@ tool — no automatic deletion, ever.
 
 - **Registry storage:** DB-backed, Admin-managed (`InfraProject`), Fly tokens AES-256-GCM
   encrypted at rest via `INFRA_SECRET_KEY`. Registry admin surface lives in the Infrastructure tab.
-- **Neon auth:** one shared **personal** API key (`NEON_API_KEY`) spanning all orgs, `org_id` per
-  call from the registry. (Not one org key per project.)
+- **Neon auth:** one shared **personal** API key (`INFRA_NEON_API_KEY`) spanning all orgs, `org_id` per
+  call from the registry. (Not one org key per project.) Its own env var — **distinct from CI's
+  `NEON_API_KEY`** (a GitHub Actions secret): the dashboard holds a broad org-wide admin key on a
+  long-running app, so it rotates/audits separately from preview-deploy tooling. Mint it from an
+  account that's a member of every lab Neon org (else it can't enumerate cross-org).

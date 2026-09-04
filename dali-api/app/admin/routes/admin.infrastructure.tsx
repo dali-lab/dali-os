@@ -232,7 +232,7 @@ function ConfigWarnings({ data }: { data: Data }) {
   if (!data.cryptoConfigured)
     warnings.push("INFRA_SECRET_KEY is not set — Fly tokens can't be stored, so Fly actions are unavailable.");
   if (!data.neonConfigured)
-    warnings.push("NEON_API_KEY is not set — Neon inventory, usage, and actions are unavailable.");
+    warnings.push("INFRA_NEON_API_KEY is not set — Neon inventory, usage, and actions are unavailable.");
   if (data.projects.length === 0)
     warnings.push("No projects registered yet. Add one under Projects to start sweeping.");
   if (warnings.length === 0) return null;
