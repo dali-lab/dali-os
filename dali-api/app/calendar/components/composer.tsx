@@ -20,6 +20,8 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
+import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
 import {
   NO_REPEAT,
   RepeatField,
@@ -358,6 +360,30 @@ export function EventComposer({
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // ── Count this as work ──────────────────────────────────────────────────
+  // An event's hours are part of the event, not a separate thing to manage in
+  // a separate modal: this section IS the timesheet entry, and the grid shows
+  // it as a role accent on the event's own block. Editing prefills from the
+  // linked entry; unticking deletes it server-side and leaves the event.
+  // A Duplicate seed deliberately doesn't carry the log — the copy is a new
+  // event and hasn't been worked yet.
+  const linkedEntry =
+    (editing && ev?.eventId && data.timeEntries.find((t) => t.sourceEventId === ev.eventId)) || null;
+  const [isWork, setIsWork] = useState(Boolean(linkedEntry));
+  const [roleKey, setRoleKey] = useState(() => {
+    if (linkedEntry?.assignmentType && linkedEntry.roleRefId) {
+      return roleOptionKey({ assignmentType: linkedEntry.assignmentType, roleRefId: linkedEntry.roleRefId });
+    }
+    return data.myRoles.length === 1 ? roleOptionKey(data.myRoles[0]!) : "";
+  });
+  const [workNote, setWorkNote] = useState(linkedEntry?.note ?? "");
+  // Hours hang off one concrete, timed occurrence: a repeating event has no
+  // single occurrence to attach them to, and an all-day event has no range to
+  // measure. The server enforces the same rule.
+  const canLogWork = data.myRoles.length > 0 && !isRecurring && !allDay;
+  const loggingWork = canLogWork && isWork;
+  const role = parseRoleOptionKey(roleKey);
+
   // Timed inputs are split into one date + start/end times (custom DateField /
   // TimeField), seeded as wall-clock in the user's timezone (the grid's) so the
   // composer and the on-grid block agree even when the browser timezone differs.
@@ -414,7 +440,10 @@ export function EventComposer({
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
-    startIso < endIso;
+    startIso < endIso &&
+    // Logged hours are payroll data — they need a role to attribute to and a
+    // note saying what the time went on, same as every other way of logging.
+    (!loggingWork || (Boolean(role) && workNote.trim() !== ""));
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
   // Report the draft times to the grid so the live preview (a tentative block
@@ -473,6 +502,19 @@ export function EventComposer({
               <input type="hidden" name="recurringEventId" value={ev.recurringEventId} />
             )}
             {isRecurring && ev?.startIso && <input type="hidden" name="originalStartIso" value={ev.startIso} />}
+            {loggingWork && role && (
+              <>
+                <input type="hidden" name="isWork" value="1" />
+                <input type="hidden" name="assignmentType" value={role.assignmentType} />
+                <input type="hidden" name="roleRefId" value={role.roleRefId} />
+                <input type="hidden" name="workNote" value={workNote.trim()} />
+              </>
+            )}
+            {/* Deleting hours is explicit: only sent when this composer was
+                actually showing a log and the user turned it off. Silence means
+                "leave the log alone", so a save can't drop payroll data the
+                form never knew about. */}
+            {linkedEntry && !loggingWork && <input type="hidden" name="clearWork" value="1" />}
 
             {/* Title */}
             <input
@@ -593,6 +635,50 @@ export function EventComposer({
                   />
                 </div>
               </div>
+            ) : null}
+
+            {/* Timesheet — the event and its hours are one thing, saved together */}
+            {canLogWork ? (
+              <div className="rounded-md border border-border bg-muted/20 p-2.5">
+                <Toggle
+                  checked={isWork}
+                  onChange={(e) => setIsWork(e.target.checked)}
+                  label="Count this as work"
+                  description={
+                    linkedEntry
+                      ? "These hours are on your timesheet. Unticking removes them; the event stays."
+                      : "Logs these hours to your timesheet against the role you pick."
+                  }
+                />
+                {isWork && (
+                  <div className="mt-2.5 flex flex-col gap-2">
+                    <Select
+                      value={roleKey}
+                      onChange={setRoleKey}
+                      options={[
+                        { value: "", label: "Pick a role…" },
+                        ...data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
+                      ]}
+                      buttonClassName={cn(fieldCls, "inline-flex w-full items-center justify-between gap-1")}
+                    />
+                    <textarea
+                      value={workNote}
+                      onChange={(e) => setWorkNote(e.target.value)}
+                      placeholder="What did you work on?"
+                      rows={2}
+                      className={cn(fieldCls, "resize-y")}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : linkedEntry ? (
+              // Editing pushed the event into a shape hours can't hang off (made
+              // it all-day, say). Say so rather than silently dropping the log
+              // the save is about to clear.
+              <p className="text-xs text-amber-600">
+                Saving will remove the {linkedEntry.hours}h logged against this event — hours need a
+                single event with a start and end time.
+              </p>
             ) : null}
 
             {(fetcher.data?.error || deleteFetcher.data?.error) && (

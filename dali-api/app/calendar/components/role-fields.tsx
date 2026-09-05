@@ -58,7 +58,7 @@ export function RoleFilterRow({
 
 // Encodes a RoleInstance into a single <select> option value (assignmentType
 // and roleRefId travel together — see calendar-schemas.ts's assignmentType).
-export function roleOptionKey(role: RoleInstance): string {
+export function roleOptionKey(role: Pick<RoleInstance, "assignmentType" | "roleRefId">): string {
   return `${role.assignmentType}:${role.roleRefId}`;
 }
 

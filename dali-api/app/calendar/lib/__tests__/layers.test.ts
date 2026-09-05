@@ -169,34 +169,84 @@ describe("logged-time de-duplication", () => {
           assignmentType: null, roleRefId: null, projectId: null, date: "2026-08-18", hours: 1, note: "Email",
           startTime: "2026-08-18T16:00:00.000Z", endTime: "2026-08-18T17:00:00.000Z",
         },
+        // The work half of a calendar event ("count this as work"): same shape
+        // as a meeting-sourced row, keyed on the event instead.
+        {
+          id: "t-e", source: "Manual", scheduledMeetingId: null, sourceEventId: "e1", manualBlockId: null,
+          meetingNotePageId: null, assignmentType: null, roleRefId: null, projectId: null,
+          date: "2026-08-18", hours: 2, note: "Studio",
+          startTime: "2026-08-18T13:00:00.000Z", endTime: "2026-08-18T15:00:00.000Z",
+        },
       ] as LoaderData["timeEntries"],
     });
   }
 
-  it("indexes sourced logged hours by meeting", () => {
+  it("indexes sourced logged hours by meeting and by event", () => {
     const idx = buildLoggedSourceIndex(loggedFixture());
     expect(idx.byMeeting.get("m1")?.hours).toBe(0.5);
+    expect(idx.byEvent.get("e1")?.hours).toBe(2);
+    // A standalone entry belongs to neither index — it draws its own block.
+    expect(idx.byMeeting.size).toBe(1);
+    expect(idx.byEvent.size).toBe(1);
+  });
+
+  it("sums repeat logs against one event and takes the role's colour override", () => {
+    const data = loggedFixture();
+    data.timeEntries = [
+      ...data.timeEntries,
+      {
+        ...data.timeEntries[2]!, id: "t-e2", hours: 1.5,
+        startTime: "2026-08-18T18:00:00.000Z", endTime: "2026-08-18T19:30:00.000Z",
+      },
+    ];
+    const idx = buildLoggedSourceIndex(data, undefined, { unassigned: "#abcdef" });
+    expect(idx.byEvent.get("e1")?.hours).toBe(3.5);
+    expect(idx.byEvent.get("e1")?.color).toBe("#abcdef");
   });
 
   it("indexes nothing for a role that's filtered out", () => {
     const idx = buildLoggedSourceIndex(loggedFixture(), new Set(["unassigned"]));
     expect(idx.byMeeting.size).toBe(0);
+    expect(idx.byEvent.size).toBe(0);
   });
 
-  it("suppresses Meeting-sourced entries whose source layer is visible, keeps standalone", () => {
+  it("suppresses sourced entries whose source layer is visible, keeps standalone", () => {
     const logged = buildLoggedTimeLayer(loggedFixture(), days, {
-      suppressSourced: { meetings: true },
+      suppressSourced: { meetings: true, events: true },
     });
     expect((logged[2] ?? []).map((b) => b.label)).toEqual(["Email"]);
   });
 
   it("keeps a sourced entry when its source layer is hidden", () => {
     const logged = buildLoggedTimeLayer(loggedFixture(), days, {
-      suppressSourced: { meetings: false },
+      suppressSourced: { meetings: false, events: false },
     });
     const labels = (logged[2] ?? []).map((b) => b.label);
     expect(labels).toContain("Meeting"); // meeting hidden → its logged block still draws
+    expect(labels).toContain("Studio"); // ditto the work-marked event's entry
     expect(labels).toContain("Email");
+  });
+
+  it("accents a work-marked event's own block instead of drawing a second one", () => {
+    const data = loggedFixture();
+    data.externalEvents = [
+      { startIso: "2026-08-18T13:00:00.000Z", endIso: "2026-08-18T15:00:00.000Z", title: "Studio", color: null, calendarId: "c1", eventId: "e1", writable: true },
+      { startIso: "2026-08-18T20:00:00.000Z", endIso: "2026-08-18T21:00:00.000Z", title: "Plain", color: null, calendarId: "c1", eventId: "e2", writable: true },
+    ] as LoaderData["externalEvents"];
+    const idx = buildLoggedSourceIndex(data);
+    const external = buildExternalLayer(data, days, undefined, undefined, undefined, undefined, undefined, idx.byEvent);
+    const blocks = external[2] ?? [];
+    expect(blocks.find((b) => b.label === "Studio")?.loggedAccent?.hours).toBe(2);
+    expect(blocks.find((b) => b.label === "Plain")?.loggedAccent).toBeUndefined();
+  });
+
+  it("draws events plain when the logged layer is off (no accents passed)", () => {
+    const data = loggedFixture();
+    data.externalEvents = [
+      { startIso: "2026-08-18T13:00:00.000Z", endIso: "2026-08-18T15:00:00.000Z", title: "Studio", color: null, calendarId: "c1", eventId: "e1", writable: true },
+    ] as LoaderData["externalEvents"];
+    const external = buildExternalLayer(data, days);
+    expect((external[2] ?? [])[0]?.loggedAccent).toBeUndefined();
   });
 });
 
