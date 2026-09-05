@@ -123,6 +123,12 @@ export const FEATURE_FLAGS = [
     description:
       "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
+  {
+    key: "infra-dashboard",
+    label: "Infrastructure dashboard",
+    description:
+      "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

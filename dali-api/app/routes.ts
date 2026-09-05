@@ -79,6 +79,7 @@ export default [
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -372,6 +373,9 @@ export default [
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
+  route("api/infra/action", "admin/routes/api.infra.action.ts"),
+  route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
+  route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No

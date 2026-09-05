@@ -88,6 +88,7 @@ import { runSigningIssuance } from "~/jobs/signing-issuance.server";
 import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";
 import { runOutboundDrain } from "~/lib/outbound.server";
 import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
+import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -380,6 +381,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runSlackIdentitySync,
+  },
+  {
+    name: "infra-snapshot",
+    description:
+      "Sweeps every enabled Infrastructure-dashboard project's Fly.io + Neon accounts and caches inventory + usage to Postgres, so the dashboard renders instantly and keeps long-term usage trends. No-op when no projects are registered.",
+    intervalMinutes: 60,
+    handler: runInfraSnapshot,
   },
 ];
 
