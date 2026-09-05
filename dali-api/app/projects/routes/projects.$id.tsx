@@ -31,6 +31,11 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
+import { loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
+import { listProjectInfraRequests } from "~/lib/infra/requests.server";
+import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -1104,7 +1109,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // Per-project infrastructure (Fly + Neon): config presence + cached inventory
+  // + the project's change requests. View is open to anyone who can see the
+  // project; config/requests are gated in the section by canEdit (core||staffed).
+  const [projectInfra, infraConfigRow, infraRequests] = await Promise.all([
+    loadProjectInfra(params.id),
+    prisma.project.findUnique({
+      where: { id: params.id },
+      select: {
+        flyOrgSlug: true,
+        neonOrgId: true,
+        infraEnabled: true,
+        flyReadTokenEnc: true,
+        flyWriteTokenEnc: true,
+      },
+    }),
+    canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+  ]);
+  const infra = {
+    config: {
+      flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
+      neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      infraEnabled: infraConfigRow?.infraEnabled ?? true,
+      hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
+      hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
+    },
+    view: projectInfra,
+    requests: infraRequests,
+  };
+
   return {
+    infra,
     project: {
       id: project.id,
       name: project.name,
@@ -1291,6 +1326,34 @@ export async function action({ request, params }: Route.ActionArgs) {
   const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
+  }
+
+  // Cloud infra config (Fly org slug / Neon org id / encrypted Fly tokens /
+  // sweep toggle). Same core||staffed gate as the top of this action; tokens are
+  // write-only (blank leaves them unchanged).
+  if (intent === "infra-config") {
+    const data = buildInfraConfigUpdate({
+      flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
+      neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
+      infraEnabled: form.get("infraEnabled") != null,
+      flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
+      flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
+    });
+    await prisma.project.update({ where: { id: params.id }, data });
+    await logAuditEvent({
+      action: "infra.config",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: {
+        flyOrgSlug: data.flyOrgSlug ?? null,
+        neonOrgId: data.neonOrgId ?? null,
+        infraEnabled: data.infraEnabled ?? null,
+        setFlyReadToken: !!data.flyReadTokenEnc,
+        setFlyWriteToken: !!data.flyWriteTokenEnc,
+      },
+      request,
+    });
+    return { ok: true };
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -1542,8 +1605,12 @@ export default function ProjectDetail() {
     presencePhotoUrl,
     presenceSubtitle,
     projectDriveScope,
+    infra,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
+  // The action's success returns vary by intent (some redirect, infra-config
+  // returns { ok }), so narrow to the error-bearing shape for the page banner.
+  const actionError = actionData && "error" in actionData ? actionData.error : undefined;
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
@@ -1747,9 +1814,9 @@ export default function ProjectDetail() {
       {/* Page-level action errors — above the tab content so a failed save
           (e.g. the header form) is visible from any tab. The settings modal
           keeps its own inline copy. */}
-      {actionData?.error && (
+      {actionError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionData.error}
+          {actionError}
         </div>
       )}
 
@@ -1777,6 +1844,7 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
+          infra={infra}
         />
       )}
 
@@ -1802,7 +1870,7 @@ export default function ProjectDetail() {
             allTermOptions={allTermOptions}
             domainScopeGrid={domainScopeGrid}
             canEdit={canEditScope}
-            actionError={actionData?.error}
+            actionError={actionError}
           />
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
@@ -3775,6 +3843,7 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
+  infra,
 }: {
   // The epics & sprints timeline, rendered at the top of the body. Passed in
   // as an element so Overview doesn't have to re-declare all of Planning's
@@ -3802,6 +3871,7 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
+  infra: LoaderData["infra"];
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
@@ -3921,6 +3991,18 @@ function OverviewTab({
         canEdit={canEdit}
         canEditFinance={canEditFinance}
       />
+
+      {/* Cloud infrastructure (Fly + Neon): read-only inventory/usage for any
+          member; config + change-requests for staffed (core||isProjectMember). */}
+      <section className={sectionShell}>
+        <ProjectInfraSection
+          projectId={project.id}
+          canEdit={canEdit}
+          config={infra.config}
+          view={infra.view}
+          requests={infra.requests}
+        />
+      </section>
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className={sectionShell}>

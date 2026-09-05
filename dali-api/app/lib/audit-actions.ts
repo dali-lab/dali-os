@@ -145,6 +145,9 @@ export const AUDIT_ACTIONS = [
   "infra.neon.project.create",
   "infra.neon.destroy",
   "infra.reap",
+  "infra.config",
+  "infra.request.create",
+  "infra.request.resolve",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

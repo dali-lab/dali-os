@@ -3,6 +3,9 @@
 // and destructive actions are Admin. The protected-resource allowlist
 // (guard.server.ts) hard-blocks the platform's own infra regardless of role.
 // Every action is audited with non-secret metadata.
+//
+// `projectId` = the DALI Project (carries the infra config/tokens); for Neon
+// actions the target Neon project is a separate `neonProjectId`.
 
 import type { Route } from "./+types/api.infra.action";
 import { z } from "zod";
@@ -10,7 +13,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
-import { getInfraProjectCreds } from "~/lib/infra/registry.server";
+import { getProjectInfraCreds } from "~/lib/infra/project-infra.server";
 import {
   assertFlyAppMutable,
   assertNeonProjectMutable,
@@ -22,14 +25,14 @@ import * as neon from "~/lib/infra/neon.server";
 const Body = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("fly.machine"),
-    projectKey: z.string(),
+    projectId: z.string(),
     app: z.string(),
     machineId: z.string(),
     kind: z.enum(["start", "stop", "restart", "suspend"]),
   }),
   z.object({
     intent: z.literal("fly.scale"),
-    projectKey: z.string(),
+    projectId: z.string(),
     app: z.string(),
     machineId: z.string(),
     cpuKind: z.enum(["shared", "performance"]),
@@ -38,7 +41,7 @@ const Body = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("fly.destroy"),
-    projectKey: z.string(),
+    projectId: z.string(),
     target: z.enum(["machine", "volume", "app"]),
     app: z.string(),
     machineId: z.string().optional(),
@@ -46,15 +49,15 @@ const Body = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("neon.endpoint"),
-    projectKey: z.string(),
     projectId: z.string(),
+    neonProjectId: z.string(),
     endpointId: z.string(),
     kind: z.enum(["suspend", "restart", "start"]),
   }),
   z.object({
     intent: z.literal("neon.autoscale"),
-    projectKey: z.string(),
     projectId: z.string(),
+    neonProjectId: z.string(),
     endpointId: z.string(),
     minCu: z.number().min(0.25).max(64).optional(),
     maxCu: z.number().min(0.25).max(64).optional(),
@@ -62,8 +65,8 @@ const Body = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("neon.quota"),
-    projectKey: z.string(),
     projectId: z.string(),
+    neonProjectId: z.string(),
     quota: z
       .object({
         active_time_seconds: z.number().int().min(0).optional(),
@@ -76,26 +79,26 @@ const Body = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("neon.project.create"),
-    projectKey: z.string(),
+    projectId: z.string(),
     name: z.string().min(1).max(128),
   }),
   z.object({
     intent: z.literal("neon.project.delete"),
-    projectKey: z.string(),
     projectId: z.string(),
+    neonProjectId: z.string(),
   }),
   z.object({
     intent: z.literal("neon.branch.delete"),
-    projectKey: z.string(),
     projectId: z.string(),
+    neonProjectId: z.string(),
     branchId: z.string(),
   }),
   z.object({
     intent: z.literal("reap"),
-    projectKey: z.string(),
+    projectId: z.string(),
     kind: z.enum(["fly-app", "neon-branch", "neon-endpoint"]),
     app: z.string().optional(),
-    projectId: z.string().optional(),
+    neonProjectId: z.string().optional(),
     branchId: z.string().optional(),
     endpointId: z.string().optional(),
   }),
@@ -124,7 +127,7 @@ export async function action({ request }: Route.ActionArgs) {
     return forbidden(request);
   }
 
-  const creds = await getInfraProjectCreds(parsed.projectKey);
+  const creds = await getProjectInfraCreds(parsed.projectId);
   if (!creds) return Response.json({ error: "Unknown project" }, { status: 404 });
 
   const flyWrite = creds.flyWriteToken;
@@ -145,7 +148,7 @@ export async function action({ request }: Route.ActionArgs) {
         if (tok instanceof Response) return tok;
         await fly.machineAction(tok, parsed.app, parsed.machineId, parsed.kind);
         await audit(auth.user.sub, "infra.fly.action", parsed.machineId, request, {
-          projectKey: parsed.projectKey,
+          projectId: parsed.projectId,
           app: parsed.app,
           kind: parsed.kind,
         });
@@ -160,7 +163,7 @@ export async function action({ request }: Route.ActionArgs) {
           memory_mb: parsed.memoryMb,
         });
         await audit(auth.user.sub, "infra.fly.action", parsed.machineId, request, {
-          projectKey: parsed.projectKey,
+          projectId: parsed.projectId,
           app: parsed.app,
           kind: "scale",
           cpuKind: parsed.cpuKind,
@@ -182,19 +185,21 @@ export async function action({ request }: Route.ActionArgs) {
           if (!parsed.volumeId) return badReq("volumeId required");
           await fly.destroyVolume(tok, parsed.app, parsed.volumeId);
         }
-        await audit(auth.user.sub, "infra.fly.destroy", parsed.machineId ?? parsed.volumeId ?? parsed.app, request, {
-          projectKey: parsed.projectKey,
-          app: parsed.app,
-          target: parsed.target,
-        });
+        await audit(
+          auth.user.sub,
+          "infra.fly.destroy",
+          parsed.machineId ?? parsed.volumeId ?? parsed.app,
+          request,
+          { projectId: parsed.projectId, app: parsed.app, target: parsed.target },
+        );
         return Response.json({ ok: true });
       }
       case "neon.endpoint": {
-        const ops = await neon.endpointAction(parsed.projectId, parsed.endpointId, parsed.kind);
-        await neon.pollOperations(parsed.projectId, ops).catch(() => {});
+        const ops = await neon.endpointAction(parsed.neonProjectId, parsed.endpointId, parsed.kind);
+        await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         await audit(auth.user.sub, "infra.neon.endpoint", parsed.endpointId, request, {
-          projectKey: parsed.projectKey,
           projectId: parsed.projectId,
+          neonProjectId: parsed.neonProjectId,
           kind: parsed.kind,
         });
         return Response.json({ ok: true });
@@ -210,21 +215,21 @@ export async function action({ request }: Route.ActionArgs) {
         if (parsed.suspendTimeoutSeconds !== undefined)
           patch.suspend_timeout_seconds = parsed.suspendTimeoutSeconds;
         if (Object.keys(patch).length === 0) return badReq("Nothing to update");
-        const ops = await neon.updateEndpoint(parsed.projectId, parsed.endpointId, patch);
-        await neon.pollOperations(parsed.projectId, ops).catch(() => {});
+        const ops = await neon.updateEndpoint(parsed.neonProjectId, parsed.endpointId, patch);
+        await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         await audit(auth.user.sub, "infra.neon.endpoint", parsed.endpointId, request, {
-          projectKey: parsed.projectKey,
           projectId: parsed.projectId,
+          neonProjectId: parsed.neonProjectId,
           kind: "autoscale",
           ...patch,
         });
         return Response.json({ ok: true });
       }
       case "neon.quota": {
-        assertNeonProjectMutable(parsed.projectId);
-        await neon.setProjectQuota(parsed.projectId, parsed.quota);
-        await audit(auth.user.sub, "infra.neon.quota", parsed.projectId, request, {
-          projectKey: parsed.projectKey,
+        assertNeonProjectMutable(parsed.neonProjectId);
+        await neon.setProjectQuota(parsed.neonProjectId, parsed.quota);
+        await audit(auth.user.sub, "infra.neon.quota", parsed.neonProjectId, request, {
+          projectId: parsed.projectId,
           ...parsed.quota,
         });
         return Response.json({ ok: true });
@@ -234,28 +239,28 @@ export async function action({ request }: Route.ActionArgs) {
         const { projectId, operations } = await neon.createProject(creds.neonOrgId, parsed.name);
         if (projectId) await neon.pollOperations(projectId, operations).catch(() => {});
         await audit(auth.user.sub, "infra.neon.project.create", projectId, request, {
-          projectKey: parsed.projectKey,
+          projectId: parsed.projectId,
           name: parsed.name,
         });
-        return Response.json({ ok: true, projectId });
+        return Response.json({ ok: true, neonProjectId: projectId });
       }
       case "neon.project.delete": {
-        assertNeonProjectMutable(parsed.projectId);
-        await neon.deleteProject(parsed.projectId);
-        await audit(auth.user.sub, "infra.neon.destroy", parsed.projectId, request, {
-          projectKey: parsed.projectKey,
+        assertNeonProjectMutable(parsed.neonProjectId);
+        await neon.deleteProject(parsed.neonProjectId);
+        await audit(auth.user.sub, "infra.neon.destroy", parsed.neonProjectId, request, {
+          projectId: parsed.projectId,
           kind: "project",
         });
         return Response.json({ ok: true });
       }
       case "neon.branch.delete": {
-        assertNeonProjectMutable(parsed.projectId);
-        const ops = await neon.deleteBranch(parsed.projectId, parsed.branchId);
-        await neon.pollOperations(parsed.projectId, ops).catch(() => {});
+        assertNeonProjectMutable(parsed.neonProjectId);
+        const ops = await neon.deleteBranch(parsed.neonProjectId, parsed.branchId);
+        await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         await audit(auth.user.sub, "infra.neon.destroy", parsed.branchId, request, {
-          projectKey: parsed.projectKey,
-          kind: "branch",
           projectId: parsed.projectId,
+          kind: "branch",
+          neonProjectId: parsed.neonProjectId,
         });
         return Response.json({ ok: true });
       }
@@ -267,20 +272,24 @@ export async function action({ request }: Route.ActionArgs) {
           assertFlyAppMutable(parsed.app);
           await fly.destroyApp(tok, parsed.app);
         } else if (parsed.kind === "neon-branch") {
-          if (!parsed.projectId || !parsed.branchId) return badReq("projectId + branchId required");
-          assertNeonProjectMutable(parsed.projectId);
-          const ops = await neon.deleteBranch(parsed.projectId, parsed.branchId);
-          await neon.pollOperations(parsed.projectId, ops).catch(() => {});
+          if (!parsed.neonProjectId || !parsed.branchId)
+            return badReq("neonProjectId + branchId required");
+          assertNeonProjectMutable(parsed.neonProjectId);
+          const ops = await neon.deleteBranch(parsed.neonProjectId, parsed.branchId);
+          await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         } else {
-          if (!parsed.projectId || !parsed.endpointId)
-            return badReq("projectId + endpointId required");
-          assertNeonProjectMutable(parsed.projectId);
-          await neon.endpointAction(parsed.projectId, parsed.endpointId, "suspend");
+          if (!parsed.neonProjectId || !parsed.endpointId)
+            return badReq("neonProjectId + endpointId required");
+          assertNeonProjectMutable(parsed.neonProjectId);
+          await neon.endpointAction(parsed.neonProjectId, parsed.endpointId, "suspend");
         }
-        await audit(auth.user.sub, "infra.reap", parsed.app ?? parsed.branchId ?? parsed.endpointId, request, {
-          projectKey: parsed.projectKey,
-          kind: parsed.kind,
-        });
+        await audit(
+          auth.user.sub,
+          "infra.reap",
+          parsed.app ?? parsed.branchId ?? parsed.endpointId,
+          request,
+          { projectId: parsed.projectId, kind: parsed.kind },
+        );
         return Response.json({ ok: true });
       }
     }

@@ -375,6 +375,7 @@ export default [
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("api/infra/action", "admin/routes/api.infra.action.ts"),
   route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
+  route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No

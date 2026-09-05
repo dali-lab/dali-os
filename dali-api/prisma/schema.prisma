@@ -2668,6 +2668,17 @@ model Project {
   chartStringType String?
   chartString     String?
 
+  // ─── Cloud infrastructure (Fly.io + Neon) ───
+  // The lab runs one Fly org + one Neon org per project. These power the
+  // per-project Infrastructure section (view for any member) and the lab-wide
+  // Infrastructure console (Core/Admin actions). Fly tokens are AES-256-GCM
+  // encrypted at rest (app/lib/infra/crypto.server.ts). Null = not configured.
+  flyOrgSlug       String?
+  neonOrgId        String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
+  flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
+  flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
+  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
   // Deliberately NOT a hub/search filter — the hub still lists them.
@@ -4571,65 +4582,78 @@ model FeatureFlag {
 
 // ─── Infrastructure Dashboard ────────────────────────────────────────────────
 
-// A lab project's cloud accounts (the lab uses one Fly org + one Neon org PER
-// project). The Infrastructure admin console (Admin → System → Infrastructure)
-// sweeps each registered project and renders its Fly + Neon inventory/usage.
-// Fly org-scoped tokens are AES-256-GCM encrypted at rest
-// (app/lib/infra/crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon
-// personal key is an env secret (NEON_API_KEY), not stored here. Admin-managed
-// in-app — no redeploy to onboard a project.
-model InfraProject {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Stable key used to tag snapshots/usage rows and in action routes.
-  key   String @unique
-  label String
-
-  flyOrgSlug String? // Fly org slug this project's apps live in
-  neonOrgId  String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
-
-  // Fly org-scoped tokens, encrypted at rest. The read-only token drives the
-  // sweep; the write token gates actions. Null → that capability is
-  // unconfigured for this project (its surfaces render read-only / disabled).
-  flyReadTokenEnc  String?
-  flyWriteTokenEnc String?
-
-  // Off keeps a project registered but out of the sweep and hidden from the fleet.
-  enabled Boolean @default(true)
-}
+// Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
+// / flyWriteTokenEnc / infraEnabled) — the lab runs one Fly org + one Neon org
+// per project. Fly tokens are AES-256-GCM encrypted at rest (app/lib/infra/
+// crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon personal key is
+// an env secret (INFRA_NEON_API_KEY). The tables below cache swept inventory /
+// usage and hold members' change requests, keyed by Project id (plain string,
+// AuditLog-style — no FK, so a project delete won't cascade; the sweep prunes).
 
 // One row per (project, provider) sweep — the latest wins for the current-state
 // render; older rows are a raw audit trail. Payload is the normalized inventory
 // (apps/machines/volumes for Fly; projects/branches/endpoints for Neon). Never
 // contains tokens or connection secrets.
 model InfraSnapshot {
-  id         String   @id @default(cuid())
-  fetchedAt  DateTime @default(now())
-  projectKey String
-  provider   String // "fly" | "neon"
-  payload    Json
+  id        String   @id @default(cuid())
+  fetchedAt DateTime @default(now())
+  projectId String
+  provider  String // "fly" | "neon"
+  payload   Json
 
-  @@index([projectKey, provider, fetchedAt])
+  @@index([projectId, provider, fetchedAt])
 }
 
 // Usage time-series for trend sparklines. No dollar values — raw provider
 // metrics only (Neon consumption + Fly Prometheus). This table is our long-term
 // record, since Fly's Prometheus retention is only ~15 days.
 model InfraUsageSample {
-  id         String   @id @default(cuid())
-  projectKey String
-  provider   String // "fly" | "neon"
-  scopeType  String // "fly-app" | "neon-project" | "neon-endpoint"
-  scopeId    String
-  scopeName  String
-  metric     String // e.g. "compute_unit_seconds", "egress_bytes", "storage_bytes"
-  value      Float
-  at         DateTime
+  id        String   @id @default(cuid())
+  projectId String
+  provider  String // "fly" | "neon"
+  scopeType String // "fly-app" | "neon-project" | "neon-endpoint"
+  scopeId   String
+  scopeName String
+  metric    String // e.g. "compute_unit_seconds", "egress_bytes", "storage_bytes"
+  value     Float
+  at        DateTime
 
   @@unique([provider, scopeType, scopeId, metric, at])
-  @@index([projectKey, metric, at])
+  @@index([projectId, metric, at])
+}
+
+// A member-submitted request to change a project's infra: staffed members (and
+// Core) ASK; Core/Admin fulfill from the fleet console. v1 is fulfilled
+// manually — Core performs the change via the console actions, then marks it
+// resolved. userIds are free-form (AuditLog-style), not FKs.
+enum InfraRequestKind {
+  provision_database
+  scale_compute
+  adjust_limits
+  other
+}
+
+enum InfraRequestStatus {
+  Pending
+  Fulfilled
+  Rejected
+}
+
+model InfraRequest {
+  id                String             @id @default(cuid())
+  createdAt         DateTime           @default(now())
+  resolvedAt        DateTime?
+  projectId         String
+  requestedByUserId String
+  kind              InfraRequestKind
+  details           String
+  targetHint        String?
+  status            InfraRequestStatus @default(Pending)
+  resolutionNote    String?
+  resolvedByUserId  String?
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 // A composed announcement waiting for its send time. Payload + audience

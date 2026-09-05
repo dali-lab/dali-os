@@ -7,7 +7,7 @@
 import type { JobContext, JobResult } from "~/jobs/registry";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
-import { listEnabledInfraProjectCreds } from "~/lib/infra/registry.server";
+import { listEnabledInfraProjectCreds } from "~/lib/infra/project-infra.server";
 import { getFlyEgressByApp, getFlyInventory } from "~/lib/infra/fly.server";
 import { getConsumption, getNeonInventory, neonConfigured } from "~/lib/infra/neon.server";
 
@@ -30,22 +30,22 @@ function monthWindow(now: Date): { from: string; to: string } {
 // Latest-wins: write the new snapshot, then drop older ones for the same
 // (project, provider) so the render always reads exactly one current row.
 async function writeSnapshot(
-  projectKey: string,
+  projectId: string,
   provider: "fly" | "neon",
   payload: unknown,
 ): Promise<void> {
   const snap = await prisma.infraSnapshot.create({
-    data: { projectKey, provider, payload: payload as Prisma.InputJsonValue },
+    data: { projectId, provider, payload: payload as Prisma.InputJsonValue },
   });
   await prisma.infraSnapshot.deleteMany({
-    where: { projectKey, provider, id: { not: snap.id } },
+    where: { projectId, provider, id: { not: snap.id } },
   });
 }
 
 // Upsert one usage sample. Neon monthly rows share an `at` (period start) across
 // a month, so month-to-date growth updates the value; Fly egress rows carry the
 // sweep time and accumulate as a per-run time series.
-async function upsertUsage(projectKey: string, r: UsageRow): Promise<void> {
+async function upsertUsage(projectId: string, r: UsageRow): Promise<void> {
   await prisma.infraUsageSample.upsert({
     where: {
       provider_scopeType_scopeId_metric_at: {
@@ -56,7 +56,7 @@ async function upsertUsage(projectKey: string, r: UsageRow): Promise<void> {
         at: r.at,
       },
     },
-    create: { projectKey, ...r },
+    create: { projectId, ...r },
     update: { value: r.value, scopeName: r.scopeName },
   });
 }
@@ -74,12 +74,12 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
     if (p.flyOrgSlug && p.flyReadToken) {
       try {
         const inv = await getFlyInventory(p.flyReadToken, p.flyOrgSlug);
-        await writeSnapshot(p.key, "fly", inv);
+        await writeSnapshot(p.projectId, "fly", inv);
         providersSwept++;
         try {
           const egress = await getFlyEgressByApp(p.flyReadToken, p.flyOrgSlug);
           for (const e of egress) {
-            await upsertUsage(p.key, {
+            await upsertUsage(p.projectId, {
               provider: "fly",
               scopeType: "fly-app",
               scopeId: e.appName,
@@ -96,7 +96,7 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
       } catch (err) {
         console.error(
           "infra-snapshot fly sweep failed",
-          p.key,
+          p.projectId,
           err instanceof Error ? err.message : err,
         );
       }
@@ -106,13 +106,13 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
     if (p.neonOrgId && neonConfigured()) {
       try {
         const inv = await getNeonInventory(p.neonOrgId);
-        await writeSnapshot(p.key, "neon", inv);
+        await writeSnapshot(p.projectId, "neon", inv);
         providersSwept++;
         try {
           const consumption = await getConsumption(p.neonOrgId, from, to);
           const nameById = new Map(inv.projects.map((pr) => [pr.id, pr.name]));
           for (const c of consumption) {
-            await upsertUsage(p.key, {
+            await upsertUsage(p.projectId, {
               provider: "neon",
               scopeType: "neon-project",
               scopeId: c.projectId,
@@ -129,7 +129,7 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
       } catch (err) {
         console.error(
           "infra-snapshot neon sweep failed",
-          p.key,
+          p.projectId,
           err instanceof Error ? err.message : err,
         );
       }

@@ -1,7 +1,33 @@
 # Infrastructure Dashboard — Spec
 
-Status: **BUILT** 2026-09-04 (branch `feat/infra-dashboard`, flag `infra-dashboard` OFF).
-Shaped spec-first; this doc is the source of truth for the design.
+Status: **BUILT** 2026-09-04, **REDESIGNED** 2026-09-05 (branch `feat/infra-dashboard`, flag
+`infra-dashboard` OFF). This doc's original body describes the v1 registry model; the redesign
+below supersedes it where they differ.
+
+> ## Revision 2026-09-05 (supersedes the registry sections below)
+>
+> Three changes after review:
+> 1. **Config lives on `Project`, not a separate `InfraProject` registry.** Fly/Neon config
+>    (`flyOrgSlug`, `neonOrgId`, `flyReadTokenEnc`, `flyWriteTokenEnc`, `infraEnabled`) are columns
+>    on `Project`, next to its existing `repoUrls`/`deploymentUrl`/`slackChannelId`. No registry
+>    table, no linking step. `InfraSnapshot`/`InfraUsageSample` key on `projectId`; new
+>    `InfraRequest` model. Migration `20260905000000_project_infra` (the earlier InfraProject
+>    migration was dropped — unmerged, never applied to a shared env).
+> 2. **Two surfaces.** (a) The **Core/Admin lab-wide fleet console** (`/admin/infrastructure`) keeps
+>    Overview + Cleanup and gains a **Requests** queue; **all direct actions live here** (safe=Core,
+>    destructive/provision=Admin). (b) A **per-project read-only Infrastructure section** in the
+>    project hub's Overview/Details tab — **not a standalone tab**. Any lab member who can see the
+>    project **views** inventory/usage; **staffed members** (`core || isProjectMember`) **edit the
+>    config** (in the Details area) and **submit change requests**. No inline actions in the hub.
+> 3. **Requests feature.** Staffed members submit an `InfraRequest` (kind + details); Core/Admin
+>    fulfill or reject from the console (v1 = manual: Core performs the change via the console, then
+>    marks it resolved). Realizes the original "modifications people could ask for." In-app
+>    notifications on requests are deferred (Core sees a console badge count).
+>
+> Unchanged: usage-only/no-dollars, the protected-resource allowlist, the Fly/Neon adapters
+> (REST-only, no GraphQL), AES-256-GCM token encryption (`INFRA_SECRET_KEY`), the shared
+> `INFRA_NEON_API_KEY`, the Neon quota foot-gun handling, and the deferrals (Fly horizontal count;
+> Fly MPG provisioning CLI-only → provision-DB is Neon-only).
 
 A Core-only admin area that pulls Fly.io + Neon inventory and usage into one place and
 lets admins take interactive infrastructure actions (scale, set limits, provision a DB,

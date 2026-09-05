@@ -1,12 +1,13 @@
-// Admin → System → Infrastructure. A cross-project Fly.io + Neon console:
-// per-project inventory + usage (no dollars — usage only, links out for
-// billing), plus scale / limit / provision / cleanup actions. Reads and safe
-// reversible actions are Core; provisioning, quotas, and destructive actions are
-// Admin. The page renders from cached snapshots (the infra-snapshot job sweeps);
-// "Refresh" re-runs the sweep. Behind the `infra-dashboard` flag.
+// Admin → System → Infrastructure. The lab-wide Fly.io + Neon fleet console
+// (Core/Admin): per-project inventory + usage (no dollars — usage only, links
+// out for billing), plus scale / limit / provision / cleanup actions and the
+// member change-request queue. Renders from cached snapshots (the infra-snapshot
+// job sweeps); "Refresh" re-runs the sweep. Per-project config lives on the
+// Project row and is edited in each project's hub. Behind the `infra-dashboard`
+// flag.
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RefreshCw, Server, Database, AlertTriangle, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
 import type { Route } from "./+types/admin.infrastructure";
 import { adminHandle } from "~/admin/adminNav";
@@ -15,12 +16,14 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadFleet, buildCleanup } from "~/lib/infra/dashboard.server";
-import type { ProjectFleet, CleanupCandidate, UsageSeries } from "~/lib/infra/dashboard.server";
+import type { ProjectFleet, CleanupCandidate } from "~/lib/infra/dashboard.server";
 import type { FlyApp, FlyMachine, NeonProject, NeonEndpoint } from "~/lib/infra/types";
 import { infraCryptoConfigured } from "~/lib/infra/crypto.server";
 import { neonConfigured } from "~/lib/infra/neon.server";
+import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { useDialog } from "~/components/ui/dialog";
 import { buttonClasses } from "~/components/ui/Button";
+import { fmtBytes, fmtHours, timeAgo, StateBadge, UsageStrip } from "~/components/infra/format";
 
 export const handle = adminHandle("infrastructure");
 
@@ -37,6 +40,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const { projects, lastSweep, protectedFly, protectedNeon } = await loadFleet();
   const cleanup = buildCleanup(projects);
+  const requests = await listPendingInfraRequests();
 
   return {
     isAdmin: roles.isAdmin,
@@ -47,85 +51,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     protectedNeon,
     projects,
     cleanup,
+    requests,
   };
 }
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
-
-function fmtBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0";
-  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function fmtHours(seconds: number): string {
-  const h = seconds / 3600;
-  if (h >= 1) return `${h.toFixed(1)}h`;
-  return `${Math.round(seconds / 60)}m`;
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return "never";
-  const ms = Date.now() - Date.parse(iso);
-  if (Number.isNaN(ms)) return "—";
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function metricLabel(metric: string): string {
-  switch (metric) {
-    case "compute_unit_seconds":
-      return "Compute (CU·h)";
-    case "root_branch_bytes_month":
-      return "Root storage";
-    case "child_branch_bytes_month":
-      return "Branch storage";
-    case "public_network_transfer_bytes":
-      return "Egress";
-    case "egress_bytes":
-      return "Fly egress (24h)";
-    default:
-      return metric;
-  }
-}
-
-function metricValue(metric: string, value: number): string {
-  if (metric === "compute_unit_seconds") return `${(value / 3600).toFixed(1)} CU·h`;
-  return fmtBytes(value);
-}
-
-function Sparkline({ points }: { points: { at: string; value: number }[] }) {
-  if (points.length < 2) return <span className="text-[11px] text-zinc-400">—</span>;
-  const vals = points.map((p) => p.value);
-  const max = Math.max(...vals, 1);
-  const min = Math.min(...vals, 0);
-  const range = max - min || 1;
-  const w = 80;
-  const h = 20;
-  const step = w / (points.length - 1);
-  const d = points
-    .map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(h - ((p.value - min) / range) * h).toFixed(1)}`)
-    .join(" ");
-  return (
-    <svg width={w} height={h} className="text-accent-coral">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth={1.5} />
-    </svg>
-  );
-}
+type Data = Route.ComponentProps["loaderData"];
 
 // ── Action plumbing ───────────────────────────────────────────────────────────
 
-type ActionResult = { ok?: boolean; error?: string; projectId?: string };
+type ActionResult = { ok?: boolean; error?: string };
 
 type InfraApi = {
   post: (body: Record<string, unknown>, endpoint?: string) => void;
@@ -136,6 +70,7 @@ type InfraApi = {
 function useInfra(): InfraApi {
   const fetcher = useFetcher<ActionResult>();
   const revalidator = useRevalidator();
+  // Revalidate on success so state reflects the change without a reload.
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,12 +92,12 @@ function useInfra(): InfraApi {
 export default function AdminInfrastructure() {
   const data = useLoaderData<typeof loader>();
   const infra = useInfra();
-  const [tab, setTab] = useState<"overview" | "registry" | "cleanup">("overview");
+  const [tab, setTab] = useState<"overview" | "cleanup" | "requests">("overview");
 
-  const tabs: { key: typeof tab; label: string; adminOnly?: boolean }[] = [
+  const tabs: { key: typeof tab; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "cleanup", label: `Cleanup${data.cleanup.length ? ` (${data.cleanup.length})` : ""}` },
-    { key: "registry", label: "Projects", adminOnly: true },
+    { key: "requests", label: `Requests${data.requests.length ? ` (${data.requests.length})` : ""}` },
   ];
 
   return (
@@ -171,9 +106,9 @@ export default function AdminInfrastructure() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Infrastructure</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Fly.io + Neon across every lab project, in one place. Figures are usage, not
-            dollars — neither provider exposes spend via API; use the billing links for cost.
-            Data is cached; Refresh re-sweeps.
+            Fly.io + Neon across every lab project. Figures are usage, not dollars — neither
+            provider exposes spend via API; use the billing links for cost. Per-project config is
+            set in each project's workspace. Data is cached; Refresh re-sweeps.
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-500">
@@ -200,32 +135,28 @@ export default function AdminInfrastructure() {
       <ConfigWarnings data={data} />
 
       <div className="flex gap-1 border-b border-zinc-200">
-        {tabs
-          .filter((t) => !t.adminOnly || data.isAdmin)
-          .map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-                tab === t.key
-                  ? "border-accent-coral text-foreground"
-                  : "border-transparent text-zinc-500 hover:text-zinc-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              tab === t.key
+                ? "border-accent-coral text-foreground"
+                : "border-transparent text-zinc-500 hover:text-zinc-800"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {tab === "overview" && <Overview data={data} infra={infra} />}
       {tab === "cleanup" && <Cleanup data={data} infra={infra} />}
-      {tab === "registry" && data.isAdmin && <Registry data={data} infra={infra} />}
+      {tab === "requests" && <Requests data={data} infra={infra} />}
     </div>
   );
 }
-
-type Data = Route.ComponentProps["loaderData"];
 
 function ConfigWarnings({ data }: { data: Data }) {
   const warnings: string[] = [];
@@ -234,7 +165,7 @@ function ConfigWarnings({ data }: { data: Data }) {
   if (!data.neonConfigured)
     warnings.push("INFRA_NEON_API_KEY is not set — Neon inventory, usage, and actions are unavailable.");
   if (data.projects.length === 0)
-    warnings.push("No projects registered yet. Add one under Projects to start sweeping.");
+    warnings.push("No projects have infra configured yet — set a project's Fly/Neon config in its workspace.");
   if (warnings.length === 0) return null;
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -251,12 +182,12 @@ function ConfigWarnings({ data }: { data: Data }) {
 
 function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
   if (data.projects.length === 0) {
-    return <p className="py-8 text-center text-sm text-zinc-500">No projects registered.</p>;
+    return <p className="py-8 text-center text-sm text-zinc-500">No projects configured.</p>;
   }
   return (
     <div className="flex flex-col gap-3">
       {data.projects.map((p) => (
-        <ProjectCard key={p.key} project={p} data={data} infra={infra} />
+        <ProjectCard key={p.projectId} project={p} data={data} infra={infra} />
       ))}
     </div>
   );
@@ -272,7 +203,7 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
   const neonActive = neonComputes.filter((e) => e.currentState === "active").length;
 
   return (
-    <div className={`rounded-lg border bg-white ${p.enabled ? "border-zinc-200" : "border-zinc-200 opacity-60"}`}>
+    <div className={`rounded-lg border bg-white ${p.infraEnabled ? "border-zinc-200" : "border-zinc-200 opacity-60"}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -280,9 +211,8 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
       >
         <div className="flex items-center gap-2">
           {open ? <ChevronDown className="h-4 w-4 text-zinc-400" /> : <ChevronRight className="h-4 w-4 text-zinc-400" />}
-          <span className="font-medium text-zinc-900">{p.label}</span>
-          <span className="font-mono text-xs text-zinc-400">{p.key}</span>
-          {!p.enabled && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">disabled</span>}
+          <span className="font-medium text-zinc-900">{p.name}</span>
+          {!p.infraEnabled && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">sweep off</span>}
         </div>
         <div className="flex items-center gap-4 text-xs text-zinc-600">
           <span className="inline-flex items-center gap-1">
@@ -301,22 +231,12 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
           <UsageStrip usage={p.usage} />
           <div className="mt-2 flex flex-wrap gap-3 text-xs">
             {p.flyOrgSlug && (
-              <a
-                href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-accent-coral hover:underline"
-              >
+              <a href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-coral hover:underline">
                 Fly billing <ExternalLink className="h-3 w-3" />
               </a>
             )}
             {p.neonOrgId && (
-              <a
-                href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-accent-coral hover:underline"
-              >
+              <a href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-coral hover:underline">
                 Neon billing <ExternalLink className="h-3 w-3" />
               </a>
             )}
@@ -325,30 +245,6 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
           <NeonSection project={p} data={data} infra={infra} />
         </div>
       )}
-    </div>
-  );
-}
-
-function UsageStrip({ usage }: { usage: UsageSeries[] }) {
-  if (usage.length === 0) {
-    return <p className="text-xs text-zinc-400">No usage samples yet (needs a completed sweep on a paid Neon plan / Prometheus access).</p>;
-  }
-  return (
-    <div className="flex flex-wrap gap-4">
-      {usage.map((u) => {
-        const latest = u.points[u.points.length - 1];
-        return (
-          <div key={u.metric} className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-wide text-zinc-400">{metricLabel(u.metric)}</span>
-            <div className="flex items-center gap-2">
-              <Sparkline points={u.points} />
-              <span className="text-xs font-medium text-zinc-700">
-                {latest ? metricValue(u.metric, latest.value) : "—"}
-              </span>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -376,9 +272,8 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
   const canWrite = p.hasFlyWriteToken;
 
   async function machine(app: FlyApp, m: FlyMachine, kind: "start" | "stop" | "restart" | "suspend") {
-    if (!(await dialog.confirm({ title: `${kind} ${m.name || m.id}?`, confirmLabel: kind })))
-      return;
-    infra.post({ intent: "fly.machine", projectKey: p.key, app: app.name, machineId: m.id, kind });
+    if (!(await dialog.confirm({ title: `${kind} ${m.name || m.id}?`, confirmLabel: kind }))) return;
+    infra.post({ intent: "fly.machine", projectId: p.projectId, app: app.name, machineId: m.id, kind });
   }
 
   async function scale(app: FlyApp, m: FlyMachine) {
@@ -389,15 +284,7 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
     });
     if (!choice) return;
     const [cpuKind, cpus, memoryMb] = choice.split("|");
-    infra.post({
-      intent: "fly.scale",
-      projectKey: p.key,
-      app: app.name,
-      machineId: m.id,
-      cpuKind,
-      cpus: Number(cpus),
-      memoryMb: Number(memoryMb),
-    });
+    infra.post({ intent: "fly.scale", projectId: p.projectId, app: app.name, machineId: m.id, cpuKind, cpus: Number(cpus), memoryMb: Number(memoryMb) });
   }
 
   async function destroy(app: FlyApp, target: "machine" | "app", m?: FlyMachine) {
@@ -410,13 +297,7 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
       validate: (v) => (v.trim() === name ? null : "Names don't match"),
     });
     if (typed === null) return;
-    infra.post({
-      intent: "fly.destroy",
-      projectKey: p.key,
-      target,
-      app: app.name,
-      ...(m ? { machineId: m.id } : {}),
-    });
+    infra.post({ intent: "fly.destroy", projectId: p.projectId, target, app: app.name, ...(m ? { machineId: m.id } : {}) });
   }
 
   return (
@@ -449,13 +330,9 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
                     {app.machines.map((m) => (
                       <tr key={m.id} className="border-t border-zinc-50">
                         <td className="px-3 py-1.5 font-mono text-zinc-700">{m.name || m.id}</td>
-                        <td className="px-3 py-1.5 text-zinc-600">
-                          {m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}
-                        </td>
+                        <td className="px-3 py-1.5 text-zinc-600">{m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}</td>
                         <td className="px-3 py-1.5 text-zinc-600">{m.region}</td>
-                        <td className="px-3 py-1.5">
-                          <StateBadge state={m.state} />
-                        </td>
+                        <td className="px-3 py-1.5"><StateBadge state={m.state} /></td>
                         <td className="px-3 py-1.5 text-right">
                           {canWrite ? (
                             <div className="inline-flex flex-wrap justify-end gap-1">
@@ -505,16 +382,14 @@ function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data:
       validate: (v) => (v.trim().length >= 1 ? null : "Name required"),
     });
     if (name === null) return;
-    infra.post({ intent: "neon.project.create", projectKey: p.key, name: name.trim() });
+    infra.post({ intent: "neon.project.create", projectId: p.projectId, name: name.trim() });
   }
 
   return (
     <div className="mt-4">
       <div className="mb-1.5 flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Neon</h3>
-        {data.isAdmin && (
-          <MiniBtn disabled={infra.busy} onClick={createProject}>+ New project</MiniBtn>
-        )}
+        {data.isAdmin && <MiniBtn disabled={infra.busy} onClick={createProject}>+ New project</MiniBtn>}
       </div>
       {projects.length === 0 ? (
         <p className="text-xs text-zinc-400">No projects (or not swept yet).</p>
@@ -529,24 +404,14 @@ function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data:
   );
 }
 
-function NeonProjectCard({
-  project: p,
-  np,
-  data,
-  infra,
-}: {
-  project: ProjectFleet;
-  np: NeonProject;
-  data: Data;
-  infra: InfraApi;
-}) {
+function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFleet; np: NeonProject; data: Data; infra: InfraApi }) {
   const dialog = useDialog();
   const [showQuota, setShowQuota] = useState(false);
   const isProtected = data.protectedNeon.includes(np.id);
 
   async function endpoint(e: NeonEndpoint, kind: "suspend" | "restart" | "start") {
     if (!(await dialog.confirm({ title: `${kind} compute ${e.id}?`, confirmLabel: kind }))) return;
-    infra.post({ intent: "neon.endpoint", projectKey: p.key, projectId: np.id, endpointId: e.id, kind });
+    infra.post({ intent: "neon.endpoint", projectId: p.projectId, neonProjectId: np.id, endpointId: e.id, kind });
   }
 
   async function deleteBranch(branchId: string, name: string) {
@@ -558,7 +423,7 @@ function NeonProjectCard({
       validate: (v) => (v.trim() === name ? null : "Names don't match"),
     });
     if (typed === null) return;
-    infra.post({ intent: "neon.branch.delete", projectKey: p.key, projectId: np.id, branchId });
+    infra.post({ intent: "neon.branch.delete", projectId: p.projectId, neonProjectId: np.id, branchId });
   }
 
   async function deleteProject() {
@@ -570,7 +435,7 @@ function NeonProjectCard({
       validate: (v) => (v.trim() === np.name ? null : "Names don't match"),
     });
     if (typed === null) return;
-    infra.post({ intent: "neon.project.delete", projectKey: p.key, projectId: np.id });
+    infra.post({ intent: "neon.project.delete", projectId: p.projectId, neonProjectId: np.id });
   }
 
   return (
@@ -583,7 +448,6 @@ function NeonProjectCard({
         </span>
       </div>
 
-      {/* Endpoints */}
       <table className="w-full text-left text-xs">
         <thead className="text-zinc-400">
           <tr>
@@ -601,14 +465,11 @@ function NeonProjectCard({
         </tbody>
       </table>
 
-      {/* Quota + branch controls */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-3 py-1.5">
         <QuotaSummary np={np} />
         <div className="flex gap-1">
           {data.isAdmin && !isProtected && (
-            <MiniBtn disabled={infra.busy} onClick={() => setShowQuota((v) => !v)}>
-              {showQuota ? "Hide limits" : "Set limits"}
-            </MiniBtn>
+            <MiniBtn disabled={infra.busy} onClick={() => setShowQuota((v) => !v)}>{showQuota ? "Hide limits" : "Set limits"}</MiniBtn>
           )}
           {data.isAdmin && !isProtected && (
             <MiniBtn danger disabled={infra.busy} onClick={deleteProject}>Delete project</MiniBtn>
@@ -620,28 +481,18 @@ function NeonProjectCard({
         <QuotaEditor project={p} np={np} infra={infra} onClose={() => setShowQuota(false)} />
       )}
 
-      {/* Non-default branches */}
       {np.branches.filter((b) => !b.default).length > 0 && (
         <div className="border-t border-zinc-100 px-3 py-1.5">
           <p className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Branches</p>
           <div className="flex flex-wrap gap-1.5">
-            {np.branches
-              .filter((b) => !b.default)
-              .map((b) => (
-                <span key={b.id} className="inline-flex items-center gap-1 rounded bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-600">
-                  {b.name}
-                  {data.isAdmin && !isProtected && (
-                    <button
-                      type="button"
-                      disabled={infra.busy}
-                      onClick={() => deleteBranch(b.id, b.name)}
-                      className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                    >
-                      ×
-                    </button>
-                  )}
-                </span>
-              ))}
+            {np.branches.filter((b) => !b.default).map((b) => (
+              <span key={b.id} className="inline-flex items-center gap-1 rounded bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-600">
+                {b.name}
+                {data.isAdmin && !isProtected && (
+                  <button type="button" disabled={infra.busy} onClick={() => deleteBranch(b.id, b.name)} className="text-red-500 hover:text-red-700 disabled:opacity-50">×</button>
+                )}
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -649,19 +500,7 @@ function NeonProjectCard({
   );
 }
 
-function EndpointRow({
-  project: p,
-  np,
-  e,
-  infra,
-  endpointAction,
-}: {
-  project: ProjectFleet;
-  np: NeonProject;
-  e: NeonEndpoint;
-  infra: InfraApi;
-  endpointAction: (e: NeonEndpoint, kind: "suspend" | "restart" | "start") => void;
-}) {
+function EndpointRow({ project: p, np, e, infra, endpointAction }: { project: ProjectFleet; np: NeonProject; e: NeonEndpoint; infra: InfraApi; endpointAction: (e: NeonEndpoint, kind: "suspend" | "restart" | "start") => void }) {
   const [minCu, setMinCu] = useState(String(e.autoscalingMinCu ?? ""));
   const [maxCu, setMaxCu] = useState(String(e.autoscalingMaxCu ?? ""));
   const [timeout, setTimeoutS] = useState(String(e.suspendTimeoutSeconds ?? ""));
@@ -673,8 +512,8 @@ function EndpointRow({
   function saveAutoscale() {
     infra.post({
       intent: "neon.autoscale",
-      projectKey: p.key,
-      projectId: np.id,
+      projectId: p.projectId,
+      neonProjectId: np.id,
       endpointId: e.id,
       ...(minCu ? { minCu: Number(minCu) } : {}),
       ...(maxCu ? { maxCu: Number(maxCu) } : {}),
@@ -684,31 +523,14 @@ function EndpointRow({
 
   return (
     <tr className="border-t border-zinc-50">
-      <td className="px-3 py-1.5 font-mono text-zinc-700">
-        {e.id}
-        <span className="ml-1 text-[10px] text-zinc-400">{e.type}</span>
-      </td>
-      <td className="px-3 py-1.5">
-        <span className="inline-flex items-center gap-1 text-zinc-600">
-          <NumInput value={minCu} onChange={setMinCu} />–<NumInput value={maxCu} onChange={setMaxCu} /> CU
-        </span>
-      </td>
-      <td className="px-3 py-1.5">
-        <span className="inline-flex items-center gap-1 text-zinc-600">
-          <NumInput value={timeout} onChange={setTimeoutS} width="w-16" /> s
-        </span>
-      </td>
-      <td className="px-3 py-1.5">
-        <StateBadge state={e.currentState} />
-      </td>
+      <td className="px-3 py-1.5 font-mono text-zinc-700">{e.id}<span className="ml-1 text-[10px] text-zinc-400">{e.type}</span></td>
+      <td className="px-3 py-1.5"><span className="inline-flex items-center gap-1 text-zinc-600"><NumInput value={minCu} onChange={setMinCu} />–<NumInput value={maxCu} onChange={setMaxCu} /> CU</span></td>
+      <td className="px-3 py-1.5"><span className="inline-flex items-center gap-1 text-zinc-600"><NumInput value={timeout} onChange={setTimeoutS} width="w-16" /> s</span></td>
+      <td className="px-3 py-1.5"><StateBadge state={e.currentState} /></td>
       <td className="px-3 py-1.5 text-right">
         <div className="inline-flex flex-wrap justify-end gap-1">
-          {dirty && (
-            <MiniBtn disabled={infra.busy} onClick={saveAutoscale}>Save</MiniBtn>
-          )}
-          <MiniBtn disabled={infra.busy} onClick={() => endpointAction(e, e.currentState === "idle" ? "start" : "suspend")}>
-            {e.currentState === "idle" ? "Start" : "Suspend"}
-          </MiniBtn>
+          {dirty && <MiniBtn disabled={infra.busy} onClick={saveAutoscale}>Save</MiniBtn>}
+          <MiniBtn disabled={infra.busy} onClick={() => endpointAction(e, e.currentState === "idle" ? "start" : "suspend")}>{e.currentState === "idle" ? "Start" : "Suspend"}</MiniBtn>
           <MiniBtn disabled={infra.busy} onClick={() => endpointAction(e, "restart")}>Restart</MiniBtn>
         </div>
       </td>
@@ -724,24 +546,10 @@ function QuotaSummary({ np }: { np: NeonProject }) {
   if (q.writtenDataBytes) parts.push(`written ${fmtBytes(q.writtenDataBytes)}`);
   if (q.dataTransferBytes) parts.push(`egress ${fmtBytes(q.dataTransferBytes)}`);
   if (q.logicalSizeBytes) parts.push(`size ${fmtBytes(q.logicalSizeBytes)}`);
-  return (
-    <span className="text-[11px] text-zinc-500">
-      Limits: {parts.length ? parts.join(" · ") : "none (unlimited)"}
-    </span>
-  );
+  return <span className="text-[11px] text-zinc-500">Limits: {parts.length ? parts.join(" · ") : "none (unlimited)"}</span>;
 }
 
-function QuotaEditor({
-  project: p,
-  np,
-  infra,
-  onClose,
-}: {
-  project: ProjectFleet;
-  np: NeonProject;
-  infra: InfraApi;
-  onClose: () => void;
-}) {
+function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet; np: NeonProject; infra: InfraApi; onClose: () => void }) {
   const dialog = useDialog();
   const [computeHours, setComputeHours] = useState(np.quota.computeTimeSeconds ? String(np.quota.computeTimeSeconds / 3600) : "");
   const [transferGb, setTransferGb] = useState(np.quota.dataTransferBytes ? String(np.quota.dataTransferBytes / 1e9) : "");
@@ -761,25 +569,16 @@ function QuotaEditor({
     if (transferGb !== "") quota.data_transfer_bytes = Math.round(Number(transferGb) * 1e9);
     if (sizeGb !== "") quota.logical_size_bytes = Math.round(Number(sizeGb) * 1e9);
     if (Object.keys(quota).length === 0) return;
-    infra.post({ intent: "neon.quota", projectKey: p.key, projectId: np.id, quota });
+    infra.post({ intent: "neon.quota", projectId: p.projectId, neonProjectId: np.id, quota });
     onClose();
   }
 
   return (
     <div className="border-t border-zinc-100 bg-amber-50/40 px-3 py-2">
       <div className="flex flex-wrap items-end gap-3 text-xs">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-zinc-500">Compute (h/mo)</span>
-          <NumInput value={computeHours} onChange={setComputeHours} width="w-20" />
-        </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-zinc-500">Egress (GB/mo)</span>
-          <NumInput value={transferGb} onChange={setTransferGb} width="w-20" />
-        </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-zinc-500">Branch size (GB)</span>
-          <NumInput value={sizeGb} onChange={setSizeGb} width="w-20" />
-        </label>
+        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Compute (h/mo)</span><NumInput value={computeHours} onChange={setComputeHours} width="w-20" /></label>
+        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Egress (GB/mo)</span><NumInput value={transferGb} onChange={setTransferGb} width="w-20" /></label>
+        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Branch size (GB)</span><NumInput value={sizeGb} onChange={setSizeGb} width="w-20" /></label>
         <MiniBtn disabled={infra.busy} onClick={save}>Save limits</MiniBtn>
         <span className="text-[11px] text-zinc-400">0 or blank = unlimited</span>
       </div>
@@ -807,16 +606,10 @@ function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
     });
     if (typed === null) return;
     const [a, b] = c.resourceId.split(":");
-    const body: Record<string, unknown> = { intent: "reap", projectKey: c.projectKey, kind: c.kind };
+    const body: Record<string, unknown> = { intent: "reap", projectId: c.projectId, kind: c.kind };
     if (c.kind === "fly-app") body.app = c.resourceId;
-    if (c.kind === "neon-branch") {
-      body.projectId = a;
-      body.branchId = b;
-    }
-    if (c.kind === "neon-endpoint") {
-      body.projectId = a;
-      body.endpointId = b;
-    }
+    if (c.kind === "neon-branch") { body.neonProjectId = a; body.branchId = b; }
+    if (c.kind === "neon-endpoint") { body.neonProjectId = a; body.endpointId = b; }
     infra.post(body);
   }
 
@@ -835,8 +628,8 @@ function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
         </thead>
         <tbody>
           {items.map((c) => (
-            <tr key={`${c.projectKey}:${c.kind}:${c.resourceId}`} className="border-b border-zinc-100 last:border-0">
-              <td className="px-3 py-2 text-zinc-600">{c.projectLabel}</td>
+            <tr key={`${c.projectId}:${c.kind}:${c.resourceId}`} className="border-b border-zinc-100 last:border-0">
+              <td className="px-3 py-2 text-zinc-600">{c.projectName}</td>
               <td className="px-3 py-2">
                 <span className="font-mono text-xs text-zinc-800">{c.name}</span>
                 <span className="ml-1 text-[11px] text-zinc-400">{c.kind}</span>
@@ -860,249 +653,67 @@ function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
   );
 }
 
-// ── Registry (Admin) ──────────────────────────────────────────────────────────
+// ── Requests ──────────────────────────────────────────────────────────────────
 
-function Registry({ data, infra }: { data: Data; infra: InfraApi }) {
+function Requests({ data, infra }: { data: Data; infra: InfraApi }) {
   const dialog = useDialog();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const items = data.requests;
+  if (items.length === 0) {
+    return <p className="py-8 text-center text-sm text-zinc-500">No pending requests.</p>;
+  }
 
-  async function remove(key: string) {
-    if (!(await dialog.confirm({ title: `Remove project "${key}"?`, tone: "destructive", description: "Removes it from the registry (its cloud resources are untouched)." })))
-      return;
-    infra.post({ intent: "delete", key }, "/api/infra/registry");
+  async function resolve(id: string, status: "Fulfilled" | "Rejected") {
+    const note = await dialog.prompt({
+      title: status === "Fulfilled" ? "Mark fulfilled" : "Reject request",
+      label: "Note (optional)",
+      confirmLabel: status === "Fulfilled" ? "Fulfilled" : "Reject",
+    });
+    if (note === null) return;
+    infra.post({ intent: "resolve", requestId: id, status, note }, "/api/infra/request");
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          One Fly org + Neon org per project. Fly tokens are encrypted at rest; token fields are
-          write-only (blank leaves them unchanged).
-        </p>
-        <button type="button" className={buttonClasses("primary", "sm")} onClick={() => setAdding(true)}>
-          + Add project
-        </button>
-      </div>
-
-      {adding && (
-        <ProjectForm data={data} infra={infra} onDone={() => setAdding(false)} />
-      )}
-
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">Project</th>
-              <th className="px-3 py-2">Fly org</th>
-              <th className="px-3 py-2">Neon org</th>
-              <th className="px-3 py-2 text-center">Tokens</th>
-              <th className="px-3 py-2 text-center">Enabled</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {data.projects.map((p) => (
-              <Fragment key={p.key}>
-                <tr className="border-b border-zinc-100">
-                  <td className="px-3 py-2">
-                    <span className="font-medium text-zinc-800">{p.label}</span>
-                    <span className="ml-1 font-mono text-xs text-zinc-400">{p.key}</span>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-zinc-600">{p.flyOrgSlug ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-zinc-600">{p.neonOrgId ?? "—"}</td>
-                  <td className="px-3 py-2 text-center text-[11px] text-zinc-500">
-                    {p.hasFlyReadToken ? "read" : "—"} / {p.hasFlyWriteToken ? "write" : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-center">{p.enabled ? "✓" : "—"}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex gap-1">
-                      <MiniBtn disabled={infra.busy} onClick={() => setEditing(editing === p.key ? null : p.key)}>Edit</MiniBtn>
-                      <MiniBtn danger disabled={infra.busy} onClick={() => remove(p.key)}>Remove</MiniBtn>
-                    </div>
-                  </td>
-                </tr>
-                {editing === p.key && (
-                  <tr>
-                    <td colSpan={6} className="bg-zinc-50 px-3 py-2">
-                      <ProjectForm data={data} infra={infra} existing={p} onDone={() => setEditing(null)} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-            {data.projects.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-zinc-500">No projects registered.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function ProjectForm({
-  data,
-  infra,
-  existing,
-  onDone,
-}: {
-  data: Data;
-  infra: InfraApi;
-  existing?: ProjectFleet;
-  onDone: () => void;
-}) {
-  const [key, setKey] = useState(existing?.key ?? "");
-  const [label, setLabel] = useState(existing?.label ?? "");
-  const [flyOrgSlug, setFlyOrgSlug] = useState(existing?.flyOrgSlug ?? "");
-  const [neonOrgId, setNeonOrgId] = useState(existing?.neonOrgId ?? "");
-  const [enabled, setEnabled] = useState(existing?.enabled ?? true);
-  const [flyReadToken, setFlyReadToken] = useState("");
-  const [flyWriteToken, setFlyWriteToken] = useState("");
-
-  function submit() {
-    infra.post(
-      {
-        intent: "save",
-        key,
-        label,
-        flyOrgSlug: flyOrgSlug || null,
-        neonOrgId: neonOrgId || null,
-        enabled,
-        ...(flyReadToken ? { flyReadToken } : {}),
-        ...(flyWriteToken ? { flyWriteToken } : {}),
-      },
-      "/api/infra/registry",
-    );
-    onDone();
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 text-xs">
-      <div className="flex flex-wrap gap-3">
-        <Field label="Key (slug)">
-          <TextInput value={key} onChange={setKey} disabled={!!existing} placeholder="acme-app" />
-        </Field>
-        <Field label="Label">
-          <TextInput value={label} onChange={setLabel} placeholder="Acme App" />
-        </Field>
-        <Field label="Fly org slug">
-          <TextInput value={flyOrgSlug} onChange={setFlyOrgSlug} placeholder="acme-org" />
-        </Field>
-        <Field label="Neon org id">
-          <TextInput value={neonOrgId} onChange={setNeonOrgId} placeholder="org-acme-1234" />
-        </Field>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <Field label="Fly read token (write-only)">
-          <TextInput value={flyReadToken} onChange={setFlyReadToken} type="password" placeholder={existing?.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} disabled={!data.cryptoConfigured} />
-        </Field>
-        <Field label="Fly write token (write-only)">
-          <TextInput value={flyWriteToken} onChange={setFlyWriteToken} type="password" placeholder={existing?.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} disabled={!data.cryptoConfigured} />
-        </Field>
-        <label className="flex items-center gap-1.5 self-end text-zinc-600">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Enabled
-        </label>
-      </div>
-      <div className="flex gap-2">
-        <button type="button" disabled={infra.busy || !key || !label} className={buttonClasses("primary", "sm")} onClick={submit}>
-          Save
-        </button>
-        <button type="button" className={buttonClasses("ghost", "sm")} onClick={onDone}>
-          Cancel
-        </button>
-      </div>
+    <div className="flex flex-col gap-2">
+      {items.map((r) => (
+        <div key={r.id} className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-zinc-900">{r.projectName}</span>
+                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600">{r.kind.replace(/_/g, " ")}</span>
+              </div>
+              <p className="mt-1 text-sm text-zinc-700">{r.details}</p>
+              {r.targetHint && <p className="mt-0.5 text-xs text-zinc-500">Target: {r.targetHint}</p>}
+              <p className="mt-1 text-[11px] text-zinc-400">by {r.requestedByName} · {timeAgo(r.createdAt)}</p>
+            </div>
+            <div className="flex shrink-0 gap-1">
+              <MiniBtn disabled={infra.busy} onClick={() => resolve(r.id, "Fulfilled")}>Fulfilled</MiniBtn>
+              <MiniBtn danger disabled={infra.busy} onClick={() => resolve(r.id, "Rejected")}>Reject</MiniBtn>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ── Small shared bits ─────────────────────────────────────────────────────────
 
-function MiniBtn({
-  children,
-  onClick,
-  disabled,
-  danger,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-}) {
+function MiniBtn({ children, onClick, disabled, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${
-        danger
-          ? "border-red-200 text-red-600 hover:bg-red-50"
-          : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
-      }`}
+      className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${danger ? "border-red-200 text-red-600 hover:bg-red-50" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"}`}
     >
       {children}
     </button>
   );
 }
 
-function StateBadge({ state }: { state: string }) {
-  const good = state === "started" || state === "active";
-  const idle = state === "idle" || state === "stopped" || state === "suspended";
-  return (
-    <span
-      className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-        good ? "bg-green-100 text-green-800" : idle ? "bg-zinc-200 text-zinc-600" : "bg-amber-100 text-amber-800"
-      }`}
-    >
-      {state}
-    </span>
-  );
-}
-
 function NumInput({ value, onChange, width = "w-12" }: { value: string; onChange: (v: string) => void; width?: string }) {
   return (
-    <input
-      type="number"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`${width} rounded border border-zinc-300 px-1 py-0.5 text-xs`}
-    />
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-zinc-500">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  disabled,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-      className="w-44 rounded border border-zinc-300 px-2 py-1 text-xs disabled:bg-zinc-100"
-    />
+    <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={`${width} rounded border border-zinc-300 px-1 py-0.5 text-xs`} />
   );
 }

@@ -1,36 +1,16 @@
-// Infrastructure project registry management + manual refresh. Save/delete a
-// project (Admin) — Fly tokens encrypted at rest; token fields are write-only
-// (blank = leave unchanged). Refresh (Core) re-runs the infra-snapshot sweep.
+// Manual refresh of the infra-snapshot sweep (Core). Project infra CONFIG now
+// lives on the Project row and is edited in the project hub's Details card, so
+// this route no longer manages a registry — it just re-runs the sweep on demand.
 
 import type { Route } from "./+types/api.infra.registry";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
-import { deleteInfraProject, saveInfraProject } from "~/lib/infra/registry.server";
-import { infraCryptoConfigured } from "~/lib/infra/crypto.server";
 import { runJob } from "~/jobs/runner.server";
 
-const Body = z.discriminatedUnion("intent", [
-  z.object({
-    intent: z.literal("save"),
-    key: z
-      .string()
-      .min(1)
-      .max(48)
-      .regex(/^[a-z0-9-]+$/, "lowercase letters, digits, and dashes only"),
-    label: z.string().min(1).max(120),
-    flyOrgSlug: z.string().max(120).nullable().optional(),
-    neonOrgId: z.string().max(120).nullable().optional(),
-    enabled: z.boolean(),
-    // Write-only. Blank/omitted = leave unchanged; a non-empty value replaces it.
-    flyReadToken: z.string().optional(),
-    flyWriteToken: z.string().optional(),
-  }),
-  z.object({ intent: z.literal("delete"), key: z.string() }),
-  z.object({ intent: z.literal("refresh") }),
-]);
+const Body = z.object({ intent: z.literal("refresh") });
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -40,66 +20,13 @@ export async function action({ request }: Route.ActionArgs) {
   const parsed = await parseJson(request, Body);
   if (parsed instanceof Response) return parsed;
 
-  // Refresh is the only Core-allowed intent; registry writes require Admin.
-  if (parsed.intent !== "refresh" && !(await isAdmin(auth.user.sub))) {
-    return forbidden(request);
-  }
-
-  if (parsed.intent === "refresh") {
-    const result = await runJob("infra-snapshot", { force: true });
-    await logAuditEvent({
-      action: "infra.refresh",
-      userId: auth.user.sub,
-      metadata: { ran: result.ran, error: result.error ?? null },
-      request,
-    });
-    if (!result.ran) return Response.json({ ok: false, error: result.error }, { status: 409 });
-    return Response.json({ ok: true });
-  }
-
-  if (parsed.intent === "delete") {
-    await deleteInfraProject(parsed.key);
-    await logAuditEvent({
-      action: "infra.project.delete",
-      userId: auth.user.sub,
-      targetId: parsed.key,
-      request,
-    });
-    return Response.json({ ok: true });
-  }
-
-  // save
-  const setsToken = Boolean(parsed.flyReadToken) || Boolean(parsed.flyWriteToken);
-  if (setsToken && !infraCryptoConfigured()) {
-    return Response.json(
-      { error: "INFRA_SECRET_KEY is not configured — cannot store Fly tokens." },
-      { status: 400 },
-    );
-  }
-  await saveInfraProject({
-    key: parsed.key,
-    label: parsed.label,
-    flyOrgSlug: parsed.flyOrgSlug ?? null,
-    neonOrgId: parsed.neonOrgId ?? null,
-    enabled: parsed.enabled,
-    // Only pass a token when a non-empty value was provided (else leave as-is).
-    ...(parsed.flyReadToken ? { flyReadToken: parsed.flyReadToken } : {}),
-    ...(parsed.flyWriteToken ? { flyWriteToken: parsed.flyWriteToken } : {}),
-  });
+  const result = await runJob("infra-snapshot", { force: true });
   await logAuditEvent({
-    action: "infra.project.save",
+    action: "infra.refresh",
     userId: auth.user.sub,
-    targetId: parsed.key,
-    // Never log token values — only whether they were set on this write.
-    metadata: {
-      label: parsed.label,
-      flyOrgSlug: parsed.flyOrgSlug ?? null,
-      neonOrgId: parsed.neonOrgId ?? null,
-      enabled: parsed.enabled,
-      setFlyReadToken: Boolean(parsed.flyReadToken),
-      setFlyWriteToken: Boolean(parsed.flyWriteToken),
-    },
+    metadata: { ran: result.ran, error: result.error ?? null },
     request,
   });
+  if (!result.ran) return Response.json({ ok: false, error: result.error }, { status: 409 });
   return Response.json({ ok: true });
 }
