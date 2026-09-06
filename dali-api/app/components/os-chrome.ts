@@ -111,5 +111,27 @@ export function useOsChrome() {
     iconBtn: os
       ? "rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
       : "p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors",
+    /** A control in a page's action row — the document top bar's favourite,
+     *  comments and Share buttons, and anything else that sits beside them.
+     *  Roomier than `iconBtn` because these are a page's primary affordances,
+     *  and its pressed state is the design's accent: the brand shell said
+     *  "on" in coral, which is the one colour the os palette doesn't use. */
+    actionBtn: (active = false) =>
+      os
+        ? cn(
+            "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors",
+            active
+              ? "bg-os-accent/15 text-os-accent"
+              : "text-os-grey hover:bg-os-container hover:text-foreground",
+          )
+        : cn(
+            "inline-flex items-center justify-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors",
+            active
+              ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+          ),
+    /** The glyph inside `actionBtn`. The design draws its controls at 16px;
+     *  the brand shell's row is tighter and keeps 14px. */
+    actionIcon: os ? "h-4 w-4" : "h-3.5 w-3.5",
   };
 }

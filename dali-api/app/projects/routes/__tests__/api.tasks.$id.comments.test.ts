@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/auth", () => ({ requireMemberSession: vi.fn() }));
+vi.mock("~/lib/auth", () => ({
+  requireMemberSession: vi.fn(),
+  requireProjectEditAccess: vi.fn(),
+}));
 vi.mock("~/lib/db");
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -11,13 +13,13 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
   notifyTaskComment: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { requireMemberSession } from "~/lib/auth";
+import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
 import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 import { loader, action } from "~/projects/routes/api.tasks.$id.comments";
 
 const TASK_ID = "task-1";
+const PROJECT_ID = "project-1";
 const CALLER = "user-1";
 
 const mockPrisma = prisma as unknown as {
@@ -49,12 +51,14 @@ beforeEach(() => {
     ok: true,
     auth: { user: { sub: CALLER } },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(false);
+  // Writing a comment is gated on the task's project, the same as every other
+  // task route — not on being one of the task's assignees.
+  vi.mocked(requireProjectEditAccess).mockResolvedValue({
+    ok: true,
+    auth: { user: { sub: CALLER } },
+  } as any);
   mockPrisma.task = {
-    findUnique: vi.fn().mockResolvedValue({
-      id: TASK_ID,
-      assignees: [{ userId: CALLER }],
-    }),
+    findUnique: vi.fn().mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID }),
     update: vi.fn().mockResolvedValue({}),
   };
   mockPrisma.taskComment = {
@@ -119,18 +123,23 @@ describe("POST /api/tasks/:id/comments", () => {
     expect(mockPrisma.taskComment.create).not.toHaveBeenCalled();
   });
 
-  it("forbids callers who are neither assignee nor Core", async () => {
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: TASK_ID,
-      assignees: [{ userId: "someone-else" }],
-    });
+  it("forbids callers without edit access to the task's project", async () => {
+    vi.mocked(requireProjectEditAccess).mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    } as any);
     const res = await post({ body: "hi" });
     expect(res.status).toBe(403);
     expect(mockPrisma.taskComment.create).not.toHaveBeenCalled();
     expect(notifyTaskComment).not.toHaveBeenCalled();
   });
 
-  it("lets an assignee comment and dispatches the task.comment event", async () => {
+  it("gates on the task's own project", async () => {
+    await post({ body: "hi" });
+    expect(requireProjectEditAccess).toHaveBeenCalledWith(expect.anything(), PROJECT_ID);
+  });
+
+  it("lets a project member comment and dispatches the task.comment event", async () => {
     const res = await post({ body: "  hello  " });
     expect(res.status).toBe(200);
     expect(mockPrisma.taskComment.create).toHaveBeenCalledWith(
@@ -151,15 +160,19 @@ describe("POST /api/tasks/:id/comments", () => {
     });
   });
 
-  it("lets a Core non-assignee comment", async () => {
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: TASK_ID,
-      assignees: [{ userId: "someone-else" }],
-    });
-    vi.mocked(isCore).mockResolvedValue(true);
-    const res = await post({ body: "core says hi" });
+  it("lets someone who is not one of the task's assignees comment", async () => {
+    const res = await post({ body: "not my task, still my project" });
     expect(res.status).toBe(200);
     expect(mockPrisma.taskComment.create).toHaveBeenCalled();
+  });
+
+  it("checks access before reading the body", async () => {
+    vi.mocked(requireProjectEditAccess).mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    } as any);
+    const res = await post({ body: "   " });
+    expect(res.status).toBe(403);
   });
 
   it("404s when the task does not exist", async () => {

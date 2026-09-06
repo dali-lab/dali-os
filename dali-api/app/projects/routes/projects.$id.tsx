@@ -82,6 +82,7 @@ import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -4871,33 +4872,21 @@ function ProjectDriveTab({
 
   const onMove = useCallback(
     async (_scopeId: string, item: DriveItem, destFolderId: string | null) => {
-      // Pages move via POST /api/pages/:id/move; files use the unified
-      // POST /api/drive/move endpoint introduced in Drive Wave 3.
-      const isFile = item.type === "file";
+      // Both endpoints (and what each calls its destination field) live in
+      // move-item.ts, shared with the Drive hub — this embed had its own copy
+      // and it drifted out of step with the pages endpoint's schema.
       try {
-        let res: Response;
-        if (isFile) {
-          res = await fetch("/api/drive/move", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ itemType: "file", itemId: item.id, destFolderPageId: destFolderId }),
-          });
-        } else {
-          res = await fetch(`/api/pages/${item.id}/move`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folderId: destFolderId }),
-          });
+        const res = await moveDriveItem(item, destFolderId);
+        if (!res.ok) {
+          toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+          return;
         }
-        if (!res.ok) return;
         revalidator.revalidate();
       } catch {
-        // Silently fail.
+        toast.error("Couldn't move");
       }
     },
-    [revalidator],
+    [revalidator, toast],
   );
 
   // Open the destination picker over this project's folders and resolve with the
