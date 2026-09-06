@@ -122,6 +122,10 @@ export type CourseHitDTO = {
   building: string | null;
   room: string | null;
   instructor: string | null;
+  crosslist: string | null;
+  distributive: string | null;
+  enrollLimit: number | null;
+  enrollCurrent: number | null;
 };
 
 /** A destination the add-class form can target. `local` renders in DALI only;

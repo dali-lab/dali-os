@@ -18,6 +18,7 @@ import {
   createClass,
   updateClass,
   removeClass,
+  refreshClass,
   parseDestination,
   toMemberClassDTO,
   buildClassDestinations,
@@ -201,6 +202,13 @@ async function handleClassAction(
       const classId = get("classId");
       if (!classId) return Response.json({ error: "Missing class id" }, { status: 400 });
       await removeClass(userId, classId);
+      return null;
+    }
+
+    if (intent === "class-refresh") {
+      const classId = get("classId");
+      if (!classId) return Response.json({ error: "Missing class id" }, { status: 400 });
+      await refreshClass(userId, classId);
       return null;
     }
 

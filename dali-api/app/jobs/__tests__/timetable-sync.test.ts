@@ -3,16 +3,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 vi.mock("~/lib/dartmouth-timetable.server", () => ({ fetchTermCatalog: vi.fn() }));
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { fetchTermCatalog } from "~/lib/dartmouth-timetable.server";
+import { notify } from "~/lib/notify.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const mockTx = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
 const mockCurrentTerm = currentTerm as unknown as ReturnType<typeof vi.fn>;
 const mockFetch = fetchTermCatalog as unknown as ReturnType<typeof vi.fn>;
+const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
 
 const ctx = (over: Partial<{ maxTermsPerRun: number; requestSpacingMs: number }> = {}) => ({
   now: new Date("2026-09-05T12:00:00Z"),
@@ -46,6 +49,8 @@ beforeEach(() => {
   mockCurrentTerm.mockResolvedValue({ id: "t-fall", code: "26F", sortKey: 20264 });
   mockPrisma.term.findMany.mockResolvedValue([{ id: "t-fall", code: "26F" }]);
   mockPrisma.courseOffering.groupBy.mockResolvedValue([]);
+  mockPrisma.courseOffering.findMany.mockResolvedValue([]); // no prior sections → no change alerts
+  mockPrisma.memberClass.findMany.mockResolvedValue([]);
   mockTx.mockResolvedValue([]);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -127,5 +132,40 @@ describe("runTimetableSync", () => {
     mockCurrentTerm.mockResolvedValue(null);
     expect(await runTimetableSync(ctx())).toEqual({ items: 0, note: "no current term" });
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("alerts a member when their saved section's room/time changed", async () => {
+    mockFetch.mockResolvedValue([course({ crn: "91932", periodCode: "2A", room: "007" })]);
+    // prior sync had this section at period 2, room 008
+    mockPrisma.courseOffering.findMany.mockResolvedValue([
+      { crn: "91932", periodCode: "2", building: "Engineering & CS Center", room: "008" },
+    ]);
+    mockPrisma.memberClass.findMany.mockResolvedValue([
+      { id: "mc1", userId: "u1", title: "COSC 52 — Full-Stack Web Development", offeringCrn: "91932" },
+    ]);
+
+    const result = await runTimetableSync(ctx());
+
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    const arg = mockNotify.mock.calls[0][0];
+    expect(arg.eventType).toBe("class.schedule_changed");
+    expect(arg.recipients).toEqual([{ userId: "u1" }]);
+    expect(arg.message.dedupKey).toBe("class-change:mc1:2A:Engineering & CS Center 007");
+    expect(result.note).toContain("1 change alert");
+  });
+
+  it("does not alert when the section is unchanged", async () => {
+    mockFetch.mockResolvedValue([
+      course({ crn: "91932", periodCode: "2", building: "Engineering & CS Center", room: "008" }),
+    ]);
+    mockPrisma.courseOffering.findMany.mockResolvedValue([
+      { crn: "91932", periodCode: "2", building: "Engineering & CS Center", room: "008" },
+    ]);
+    mockPrisma.memberClass.findMany.mockResolvedValue([
+      { id: "mc1", userId: "u1", title: "COSC 52", offeringCrn: "91932" },
+    ]);
+
+    await runTimetableSync(ctx());
+    expect(mockNotify).not.toHaveBeenCalled();
   });
 });

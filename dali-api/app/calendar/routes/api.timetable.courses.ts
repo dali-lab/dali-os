@@ -48,6 +48,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       building: true,
       room: true,
       instructor: true,
+      crosslist: true,
+      distributive: true,
+      enrollLimit: true,
+      enrollCurrent: true,
     },
   });
 

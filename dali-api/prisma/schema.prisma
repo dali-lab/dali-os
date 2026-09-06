@@ -2270,6 +2270,9 @@ model CourseOffering {
   room       String?
   instructor String?
   crosslist  String?
+  distributive String? // "TAS", "QDS"… (distributive/world-culture code)
+  enrollLimit  Int? // seat cap, null when unlimited/unknown
+  enrollCurrent Int? // current enrollment, for an open/closed badge
   // Lowercased "subject number title" for one case-insensitive contains match.
   searchText String
   syncedAt   DateTime @default(now())

@@ -14,6 +14,8 @@ import {
   RefreshCw,
   UsersRound,
   BookOpen,
+  Plus,
+  Check,
 } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
@@ -32,7 +34,7 @@ import {
 import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
-import { DARTMOUTH_PERIODS, getPeriod, periodSummary } from "~/calendar/lib/dartmouth-periods";
+import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
   destinationValue,
   classScheduleSummary,
@@ -982,6 +984,14 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
 
   const courseHits = courseFetcher.data?.courses ?? [];
   const courseSearching = courseFetcher.state !== "idle";
+  const quickAddFetcher = useFetcher();
+  const refreshFetcher = useFetcher();
+  // CRNs already added this term, so results can show "Added" and skip re-adding.
+  const addedCrns = new Set(
+    data.memberClasses
+      .filter((c) => c.termId === selectedTermId && c.offeringCrn)
+      .map((c) => c.offeringCrn),
+  );
 
   // Selecting a section fills the (still-editable) title / period / location and
   // records the section it came from. A known period code preselects the "When"
@@ -1002,6 +1012,29 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
     setShowCourseResults(false);
   }
 
+  // Add a section straight from the results with the current destination — no
+  // review step — for quickly stacking a term's classes. Known-period sections
+  // only; ARR/labs need manual handling, so those fall back to row-click autofill.
+  function quickAdd(c: CourseHitDTO) {
+    if (!destination || !(c.periodCode && getPeriod(c.periodCode)) || addedCrns.has(c.crn)) return;
+    quickAddFetcher.submit(
+      {
+        intent: "class-add",
+        title: formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }),
+        periodCode: c.periodCode,
+        includeXHour: "",
+        destination,
+        termId: selectedTermId,
+        location: formatCourseLocation({ building: c.building, room: c.room }),
+        offeringCrn: c.crn,
+        courseSubject: c.subject,
+        courseNumber: c.number,
+        courseSection: c.section,
+      },
+      { method: "post" },
+    );
+  }
+
   const isPeriod = mode !== "" && mode !== "custom";
   const period = isPeriod ? getPeriod(mode) : undefined;
   const submitting = fetcher.state !== "idle";
@@ -1015,6 +1048,29 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
     ...DARTMOUTH_PERIODS.map((p) => ({ value: p.code, label: periodSummary(p) })),
     { value: "custom", label: "Custom day & time…" },
   ];
+
+  // Client-side overlap warning: does the class being composed clash with another
+  // class already added this term? (Shares a weekday and an intersecting time.)
+  const hhmm = (s: string) => {
+    const [h, m] = s.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const prospectiveMeetings: { days: number[]; startMin: number; endMin: number }[] = isPeriod
+    ? periodMeetings(mode, includeXHour)
+    : mode === "custom" && customDays.length > 0 && customStart !== "" && customEnd !== ""
+      ? [{ days: customDays, startMin: hhmm(customStart), endMin: hhmm(customEnd) }]
+      : [];
+  const overlapClass = data.memberClasses.find(
+    (c) =>
+      c.termId === selectedTermId &&
+      c.id !== editingId &&
+      c.meetings.some((m) =>
+        prospectiveMeetings.some(
+          (p) =>
+            p.days.some((d) => m.days.includes(d)) && p.startMin < m.endMin && m.startMin < p.endMin,
+        ),
+      ),
+  );
 
   return (
     <>
@@ -1040,6 +1096,23 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                         {classScheduleSummary(c.meetings)} · {c.destinationLabel}
                       </div>
                     </div>
+                    {c.offeringCrn && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          refreshFetcher.submit(
+                            { intent: "class-refresh", classId: c.id },
+                            { method: "post" },
+                          )
+                        }
+                        disabled={refreshFetcher.state !== "idle"}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        aria-label={`Update ${c.title} from the timetable`}
+                        title="Update time & location from the timetable"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => startEdit(c)}
@@ -1113,25 +1186,61 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                 {showCourseResults && trimmedCourseQuery.length >= 2 && (
                   <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
                     {courseHits.length > 0 ? (
-                      courseHits.map((c) => (
-                        <button
-                          key={c.crn}
-                          type="button"
-                          onClick={() => pickCourse(c)}
-                          className="flex w-full items-start gap-2.5 px-2.5 py-1.5 text-left hover:bg-muted"
-                        >
-                          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-foreground">
-                              {c.subject} {c.number} — {c.title}
-                            </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              Section {c.section} · {c.periodCode || c.periodText || "no set time"}
-                              {c.instructor ? ` · ${c.instructor}` : ""}
-                            </span>
-                          </span>
-                        </button>
-                      ))
+                      courseHits.map((c) => {
+                        const known = Boolean(c.periodCode && getPeriod(c.periodCode));
+                        const added = addedCrns.has(c.crn);
+                        const seats =
+                          c.enrollLimit != null && c.enrollCurrent != null
+                            ? { open: c.enrollCurrent < c.enrollLimit, label: `${c.enrollCurrent}/${c.enrollLimit}` }
+                            : null;
+                        return (
+                          <div key={c.crn} className="flex items-stretch hover:bg-muted">
+                            <button
+                              type="button"
+                              onClick={() => pickCourse(c)}
+                              className="flex min-w-0 flex-1 items-start gap-2.5 px-2.5 py-1.5 text-left"
+                            >
+                              <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium text-foreground">
+                                  {c.subject} {c.number} — {c.title}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  Section {c.section} · {c.periodCode || c.periodText || "no set time"}
+                                  {c.distributive ? ` · ${c.distributive}` : ""}
+                                  {c.instructor ? ` · ${c.instructor}` : ""}
+                                  {c.crosslist ? ` · also ${c.crosslist}` : ""}
+                                  {seats && (
+                                    <>
+                                      {" · "}
+                                      <span className={seats.open ? "text-emerald-600" : "text-red-600"}>
+                                        {seats.open ? `${seats.label} seats` : "full"}
+                                      </span>
+                                    </>
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                            {added ? (
+                              <span className="flex shrink-0 items-center gap-1 px-2.5 text-xs text-muted-foreground">
+                                <Check className="h-3.5 w-3.5" /> Added
+                              </span>
+                            ) : (
+                              known && (
+                                <button
+                                  type="button"
+                                  onClick={() => quickAdd(c)}
+                                  disabled={!destination || quickAddFetcher.state !== "idle"}
+                                  className="flex shrink-0 items-center gap-1 px-2.5 text-xs font-medium text-os-accent hover:bg-muted disabled:opacity-50"
+                                  title="Add this class now"
+                                >
+                                  <Plus className="h-3.5 w-3.5" /> Add
+                                </button>
+                              )
+                            )}
+                          </div>
+                        );
+                      })
                     ) : (
                       <p className="px-2.5 py-2 text-xs text-muted-foreground">
                         {courseSearching
@@ -1240,6 +1349,12 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                     buttonClassName="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left inline-flex items-center justify-between gap-1 hover:bg-muted/40"
                   />
                 </label>
+              )}
+
+              {overlapClass && (
+                <p className="text-xs text-amber-600">
+                  Heads up — this overlaps {overlapClass.title} ({classScheduleSummary(overlapClass.meetings)}).
+                </p>
               )}
 
               {fetcher.data?.error && <p className="text-xs text-red-600">{fetcher.data.error}</p>}
