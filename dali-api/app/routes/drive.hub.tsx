@@ -33,6 +33,7 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
@@ -534,10 +535,6 @@ function folderAndDescendants(items: DriveItem[], folderId: string): Set<string>
   return out;
 }
 
-async function errorFrom(res: Response): Promise<string | undefined> {
-  return (await res.json().catch(() => ({})) as { error?: string }).error;
-}
-
 type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
@@ -739,7 +736,7 @@ function makeScopeActions({
       toast.success("Renamed");
       revalidate();
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't rename");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't rename");
     }
   }
 
@@ -811,7 +808,7 @@ function makeScopeActions({
       }
       revalidate();
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't delete");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't delete");
     }
   }
 
@@ -855,20 +852,10 @@ function makeScopeActions({
           }),
         });
       } else {
-        res = await fetch(`/api/pages/${item.id}/move`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parentPageId: target }),
-        });
+        res = await moveDriveItem(item, target);
       }
     } else {
-      res = await fetch("/api/drive/move", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: target }),
-      });
+      res = await moveDriveItem(item, target);
     }
     if (res.ok) {
       // Undo: move the item back to its previous folder.
@@ -889,7 +876,7 @@ function makeScopeActions({
         { duration: 6000 },
       );
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't move");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
     }
     revalidate();
   }
@@ -1303,7 +1290,7 @@ export default function DriveHub() {
           { duration: 6000 },
         );
       } else {
-        toast.error((await errorFrom(res)) ?? "Couldn't move");
+        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
       }
       revalidator.revalidate();
     },
