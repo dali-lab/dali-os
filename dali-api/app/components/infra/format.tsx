@@ -57,7 +57,7 @@ export function metricValue(metric: string, value: number): string {
 }
 
 export function Sparkline({ points }: { points: { at: string; value: number }[] }) {
-  if (points.length < 2) return <span className="text-[11px] text-zinc-400">—</span>;
+  if (points.length < 2) return <span className="text-[11px] text-muted-foreground">—</span>;
   const vals = points.map((p) => p.value);
   const max = Math.max(...vals, 1);
   const min = Math.min(...vals, 0);
@@ -87,7 +87,7 @@ export function StateBadge({ state }: { state: string }) {
         good
           ? "bg-green-100 text-green-800"
           : idle
-            ? "bg-zinc-200 text-zinc-600"
+            ? "bg-muted text-muted-foreground"
             : "bg-amber-100 text-amber-800"
       }`}
     >
@@ -99,7 +99,7 @@ export function StateBadge({ state }: { state: string }) {
 export function UsageStrip({ usage }: { usage: UsageSeries[] }) {
   if (usage.length === 0) {
     return (
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-muted-foreground">
         No usage samples yet (needs a completed sweep on a paid Neon plan / Prometheus access).
       </p>
     );
@@ -110,12 +110,12 @@ export function UsageStrip({ usage }: { usage: UsageSeries[] }) {
         const latest = u.points[u.points.length - 1];
         return (
           <div key={u.metric} className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-wide text-zinc-400">
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
               {metricLabel(u.metric)}
             </span>
             <div className="flex items-center gap-2">
               <Sparkline points={u.points} />
-              <span className="text-xs font-medium text-zinc-700">
+              <span className="text-xs font-medium text-foreground">
                 {latest ? metricValue(u.metric, latest.value) : "—"}
               </span>
             </div>

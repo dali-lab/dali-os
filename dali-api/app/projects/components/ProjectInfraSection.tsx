@@ -2,7 +2,8 @@
 // for anyone who can view the project; config editing + change-requests for
 // staffed members (core||isProjectMember, passed as canEdit). No infra actions
 // here — those live in the Core/Admin fleet console; staffed members ask via a
-// request that Core fulfills.
+// request that Core fulfills. Dresses itself from the same os-chrome the rest of
+// the project hub uses, so it reads as a native section under both shells.
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useFetcher } from "react-router";
@@ -11,6 +12,10 @@ import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 import type { ProjectInfraRequest } from "~/lib/infra/requests.server";
 import { ProjectInfraView } from "~/components/infra/ProjectInfraView";
 import { buttonClasses } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { Select } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { timeAgo } from "~/components/infra/format";
 
 type Config = {
@@ -28,6 +33,14 @@ const KINDS: { value: string; label: string }[] = [
   { value: "other", label: "Something else" },
 ];
 
+// The off-os field dress; under os the enclosing `.os-form` styles inputs, so
+// this stays empty there (matching the project-details edit form).
+function fieldClass(os: boolean) {
+  return os
+    ? ""
+    : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
+}
+
 export function ProjectInfraSection({
   projectId,
   canEdit,
@@ -41,6 +54,7 @@ export function ProjectInfraSection({
   view: ProjectFleet | null;
   requests: ProjectInfraRequest[];
 }) {
+  const { os, sectionTitle } = useOsChrome();
   const configured = Boolean(config.flyOrgSlug || config.neonOrgId);
   const [showConfig, setShowConfig] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
@@ -48,9 +62,8 @@ export function ProjectInfraSection({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Server className="h-4 w-4 text-muted-foreground" />
-          Infrastructure
+        <h2 className={os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"}>
+          {!os && <Server className="h-4 w-4" />} Infrastructure
         </h2>
         {canEdit && (
           <div className="flex gap-2">
@@ -90,6 +103,8 @@ export function ProjectInfraSection({
 }
 
 function ConfigEditor({ config, onDone }: { config: Config; onDone: () => void }) {
+  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
+  const field = fieldClass(os);
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) onDone();
@@ -97,45 +112,44 @@ function ConfigEditor({ config, onDone }: { config: Config; onDone: () => void }
   }, [fetcher.state]);
 
   return (
-    <fetcher.Form method="post" className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-xs">
+    <fetcher.Form method="post" className={cn(card, cardPad, formClass, "flex flex-col gap-3")}>
       <input type="hidden" name="intent" value="infra-config" />
       <div className="flex flex-wrap gap-3">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Fly org slug</span>
-          <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className="w-44 rounded border border-border px-2 py-1" />
+        <label className={cn(fieldLabel, "w-44")}>
+          <span>Fly org slug</span>
+          <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className={cn("w-full", field)} />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Neon org id</span>
-          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className="w-44 rounded border border-border px-2 py-1" />
+        <label className={cn(fieldLabel, "w-44")}>
+          <span>Neon org id</span>
+          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className={cn("w-full", field)} />
         </label>
-        <label className="flex items-center gap-1.5 self-end text-muted-foreground">
-          <input type="checkbox" name="infraEnabled" defaultChecked={config.infraEnabled} />
-          Sweep enabled
-        </label>
+        <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" className="self-end pb-1.5" />
       </div>
       <div className="flex flex-wrap gap-3">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Fly read token (write-only)</span>
-          <input name="flyReadToken" type="password" placeholder={config.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-56 rounded border border-border px-2 py-1" />
+        <label className={cn(fieldLabel, "w-56")}>
+          <span>Fly read token (write-only)</span>
+          <input name="flyReadToken" type="password" placeholder={config.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} className={cn("w-full", field)} />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Fly write token (write-only)</span>
-          <input name="flyWriteToken" type="password" placeholder={config.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-56 rounded border border-border px-2 py-1" />
+        <label className={cn(fieldLabel, "w-56")}>
+          <span>Fly write token (write-only)</span>
+          <input name="flyWriteToken" type="password" placeholder={config.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} className={cn("w-full", field)} />
         </label>
       </div>
-      {fetcher.data?.error && <p className="text-destructive">{fetcher.data.error}</p>}
-      <div className="flex items-center gap-2">
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
         <button type="submit" disabled={fetcher.state !== "idle"} className={buttonClasses("primary", "sm")}>
           {fetcher.state !== "idle" ? "Saving…" : "Save config"}
         </button>
         <button type="button" className={buttonClasses("ghost", "sm")} onClick={onDone}>Cancel</button>
-        <span className="text-muted-foreground">Tokens are encrypted at rest; the Neon key is shared across projects.</span>
+        <span className="text-xs text-muted-foreground">Tokens are encrypted at rest; the Neon key is shared across projects.</span>
       </div>
     </fetcher.Form>
   );
 }
 
 function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
+  const field = fieldClass(os);
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) onDone();
@@ -158,40 +172,42 @@ function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => v
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-xs">
+    <form onSubmit={submit} className={cn(card, cardPad, formClass, "flex flex-col gap-3")}>
       <div className="flex flex-wrap gap-3">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Request</span>
-          <select name="kind" className="w-52 rounded border border-border px-2 py-1">
-            {KINDS.map((k) => (
-              <option key={k.value} value={k.value}>{k.label}</option>
-            ))}
-          </select>
+        <label className={cn(fieldLabel, "w-52")}>
+          <span>Request</span>
+          <Select
+            name="kind"
+            defaultValue="provision_database"
+            options={KINDS}
+            buttonClassName={os ? undefined : "w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"}
+          />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">Which resource? (optional)</span>
-          <input name="targetHint" placeholder="e.g. the worker app" className="w-52 rounded border border-border px-2 py-1" />
+        <label className={cn(fieldLabel, "w-52")}>
+          <span>Which resource? (optional)</span>
+          <input name="targetHint" placeholder="e.g. the worker app" className={cn("w-full", field)} />
         </label>
       </div>
-      <label className="flex flex-col gap-0.5">
-        <span className="text-muted-foreground">Details</span>
-        <textarea name="details" required rows={2} placeholder="What do you need, and why?" className="w-full rounded border border-border px-2 py-1" />
+      <label className={cn(fieldLabel, "w-full")}>
+        <span>Details</span>
+        <textarea name="details" required rows={2} placeholder="What do you need, and why?" className={cn("w-full", field)} />
       </label>
-      {fetcher.data?.error && <p className="text-destructive">{fetcher.data.error}</p>}
-      <div className="flex items-center gap-2">
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
         <button type="submit" disabled={fetcher.state !== "idle"} className={buttonClasses("primary", "sm")}>
           {fetcher.state !== "idle" ? "Sending…" : "Send request"}
         </button>
         <button type="button" className={buttonClasses("ghost", "sm")} onClick={onDone}>Cancel</button>
-        <span className="text-muted-foreground">Core reviews requests in the Infrastructure console.</span>
+        <span className="text-xs text-muted-foreground">Core reviews requests in the Infrastructure console.</span>
       </div>
     </form>
   );
 }
 
 function RequestHistory({ requests }: { requests: ProjectInfraRequest[] }) {
+  const { card } = useOsChrome();
   return (
-    <div className="rounded-lg border border-border">
+    <div className={cn(card, "overflow-hidden")}>
       <p className="border-b border-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         Requests
       </p>

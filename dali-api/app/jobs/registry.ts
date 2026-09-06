@@ -389,6 +389,8 @@ export const JOBS: JobDefinition[] = [
       "Sweeps every enabled Infrastructure-dashboard project's Fly.io + Neon accounts and caches inventory + usage to Postgres, so the dashboard renders instantly and keeps long-term usage trends. No-op when no projects are registered.",
     intervalMinutes: 60,
     handler: runInfraSnapshot,
+  },
+  {
     name: "timetable-sync",
     description:
       "Pre-syncs the Dartmouth public timetable into CourseOffering so the class composer can autofill title / period / location. One request per term fetches that term's whole catalog; each current/upcoming term is replaced atomically (adds, drops cancelled sections). Off by default — turn on with the classes feature.",
