@@ -900,6 +900,9 @@ export function EpicsTimeline({
     bounds && today >= bounds.min && today <= bounds.max
       ? ((today - bounds.min) / DAY) * PX_PER_DAY
       : null;
+  // Through the middle of today's column so the body line and the header
+  // circle are one mark, not a hairline sitting on yesterday's edge.
+  const todayCenter = todayLeft != null ? todayLeft + PX_PER_DAY / 2 : null;
 
   // Only epics overlapping the visible day range are laid out, and they stack
   // from the top in start order — so scrolling sideways keeps the visible work
@@ -1209,17 +1212,14 @@ export function EpicsTimeline({
                   ))}
                 </div>
 
-                {/* Today. It used to be a hairline in the background layer,
-                    which put it under every bar and under the header — on a
-                    busy month you could not find the date you were standing on.
-                    It draws above the bars now (below the header, so the header
-                    still wins) and starts under the header rather than behind
-                    them. */}
-                {todayLeft != null && (
+                {/* Today in the body: the same accent as the header circle,
+                    through the middle of the day so it isn't a second mark
+                    hanging off yesterday. Below the sticky header. */}
+                {todayCenter != null && (
                   <div
-                    className="pointer-events-none absolute z-[25] w-0.5 -ml-px bg-os-accent/80"
+                    className="pointer-events-none absolute z-[25] w-0.5 -translate-x-1/2 bg-os-accent/80"
                     style={{
-                      left: todayLeft,
+                      left: todayCenter,
                       top: HEADER_ROWS * HEADER_ROW_H,
                       bottom: 0,
                     }}
@@ -1310,18 +1310,6 @@ export function EpicsTimeline({
                       </div>
                     ))}
                   </div>
-
-                  {/* Rides in the sticky header so the label stays put while
-                      the body scrolls, and hangs off its bottom edge onto the
-                      line below. */}
-                  {todayLeft != null && (
-                    <div
-                      className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-full bg-os-accent px-2 py-[3px] text-[10px] font-bold uppercase leading-none tracking-wide text-os-bg"
-                      style={{ left: todayLeft, top: HEADER_ROWS * HEADER_ROW_H - 8 }}
-                    >
-                      Today
-                    </div>
-                  )}
                 </div>
 
                 {/* Dependency arrows between story bars. z-20 lifts them above

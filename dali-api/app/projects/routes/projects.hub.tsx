@@ -666,8 +666,10 @@ function ProjectsCards({ rows, os = false }: { rows: ProjectRow[]; os?: boolean 
     return (
       // auto-fill rather than fixed columns: the design's cards hold their
       // 280px minimum and the row simply fits fewer of them as the pane
-      // narrows, which is what a split-screen workspace tab needs.
-      <div className="grid max-w-[1080px] grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
+      // narrows, which is what a split-screen workspace tab needs. No width
+      // cap on the grid — one left the cards short of the pane's right edge on
+      // a wide window, with the filter row above still running full width.
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
         {rows.map((p) => (
           <OsProjectCard key={p.id} project={p} />
         ))}
