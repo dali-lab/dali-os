@@ -56,42 +56,78 @@ export type OracleCourse = {
   status: string;
 };
 
-/** Fetch + parse the full catalog for a Dartmouth term code ("202609"). */
-export async function fetchTermCatalog(
-  termCode: string,
+async function postDisplayCourses(
+  params: [string, string][],
   signal?: AbortSignal,
 ): Promise<OracleCourse[]> {
-  const body = new URLSearchParams([
-    ["distribradio", "alldistribs"],
-    ["subjectradio", "allsubjects"],
-    ["depts", "no_value"],
-    ["periods", "no_value"],
-    ["distribs", "no_value"],
-    ["distribs_i", "no_value"],
-    ["distribs_wc", "no_value"],
-    ["distribs_lang", "no_value"],
-    ["deliveryradio", "alldelivery"],
-    ["deliverymodes", "no_value"],
-    ["searchtype", "Subject Area(s)"],
-    ["termradio", "selectterms"],
-    ["terms", "no_value"],
-    ["terms", termCode],
-    ["hoursradio", "allhours"],
-    ["sortorder", "dept"],
-    ...HIDDEN_DEFAULTS,
-  ]);
-
   const res = await fetch(`${BASE_URL}/timetable.display_courses`, {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       "user-agent": "DALI-OS timetable-sync (dalios@dali.dartmouth.edu)",
     },
-    body,
+    body: new URLSearchParams([...params, ...HIDDEN_DEFAULTS]),
     signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Dartmouth timetable returned ${res.status}`);
   return parseCourses(await res.text());
+}
+
+/** Fetch + parse the full catalog for a Dartmouth term code ("202609"). One
+ *  ~2 MB request; used by the scheduled term sync. */
+export async function fetchTermCatalog(termCode: string, signal?: AbortSignal): Promise<OracleCourse[]> {
+  return postDisplayCourses(
+    [
+      ["distribradio", "alldistribs"],
+      ["subjectradio", "allsubjects"],
+      ["depts", "no_value"],
+      ["periods", "no_value"],
+      ["distribs", "no_value"],
+      ["distribs_i", "no_value"],
+      ["distribs_wc", "no_value"],
+      ["distribs_lang", "no_value"],
+      ["deliveryradio", "alldelivery"],
+      ["deliverymodes", "no_value"],
+      ["searchtype", "Subject Area(s)"],
+      ["termradio", "selectterms"],
+      ["terms", "no_value"],
+      ["terms", termCode],
+      ["hoursradio", "allhours"],
+      ["sortorder", "dept"],
+    ],
+    signal,
+  );
+}
+
+/** Fetch + parse a single subject for a term — a much smaller request than the
+ *  whole catalog, for on-demand live refreshes (e.g. current seat counts). */
+export async function fetchSubjectCatalog(
+  termCode: string,
+  subject: string,
+  signal?: AbortSignal,
+): Promise<OracleCourse[]> {
+  return postDisplayCourses(
+    [
+      ["distribradio", "alldistribs"],
+      ["subjectradio", "selectsubjects"],
+      ["depts", "no_value"],
+      ["depts", subject],
+      ["periods", "no_value"],
+      ["distribs", "no_value"],
+      ["distribs_i", "no_value"],
+      ["distribs_wc", "no_value"],
+      ["distribs_lang", "no_value"],
+      ["deliveryradio", "alldelivery"],
+      ["deliverymodes", "no_value"],
+      ["searchtype", "Subject Area(s)"],
+      ["termradio", "selectterms"],
+      ["terms", "no_value"],
+      ["terms", termCode],
+      ["hoursradio", "allhours"],
+      ["sortorder", "dept"],
+    ],
+    signal,
+  );
 }
 
 type CellPart = { plain: string; link: string };
@@ -154,6 +190,13 @@ export function parseCourses(html: string): OracleCourse[] {
   }
   if (cur.length >= MIN_ROW_CELLS) rows.push(cur);
 
+  // Two layouts share columns 0–4 (term, crn, subject, number, section) but the
+  // all-subjects response inserts a status-flag column at index 5, shifting title
+  // and everything after it by one. The single-subject response has no such flag.
+  // Detect which and offset accordingly, so one parser serves both endpoints.
+  const wide = rows.filter((r) => r.length >= 22).length > rows.length / 2;
+  const off = wide ? 1 : 0;
+
   const out: OracleCourse[] = [];
   for (const r of rows) {
     const plain = (i: number) => (i < r.length ? r[i].plain : "");
@@ -170,18 +213,18 @@ export function parseCourses(html: string): OracleCourse[] {
       subject: linked(2),
       number: normalizeCourseNumber(plain(3)),
       section: plain(4),
-      title: linked(6),
-      crosslist: plain(8),
-      periodCode: linked(9),
-      periodText: linked(10),
-      room: plain(11),
-      building: plain(12),
-      instructor: plain(13),
-      worldCulture: plain(14),
-      distributive: plain(15),
-      enrollLimit: int(17),
-      enrollCurrent: int(18),
-      status: plain(19),
+      title: linked(5 + off),
+      crosslist: plain(7 + off),
+      periodCode: linked(8 + off),
+      periodText: linked(9 + off),
+      room: plain(10 + off),
+      building: plain(11 + off),
+      instructor: plain(12 + off),
+      worldCulture: plain(13 + off),
+      distributive: plain(14 + off),
+      enrollLimit: int(16 + off),
+      enrollCurrent: int(17 + off),
+      status: plain(18 + off),
     });
   }
   return out;
