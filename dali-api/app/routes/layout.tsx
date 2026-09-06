@@ -289,6 +289,13 @@ export default function AppLayoutRoute() {
   const hasDoc = matches.some(
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   )
+  // A page that declares `fitViewport` fills the shell's main column rather
+  // than growing with its content, so a page short enough to fit can centre
+  // itself against the window instead of forcing a scrollbar with a
+  // viewport-height box stacked under the shell's own chrome and gutters.
+  const fitViewport = matches.some(
+    (m) => (m as { handle?: { fitViewport?: boolean } }).handle?.fitViewport,
+  )
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
   // On tabless desktop a page with no subnav row gets the standalone
@@ -442,6 +449,7 @@ export default function AppLayoutRoute() {
     <div
       className={cn(
         'w-full',
+        fitViewport && 'flex flex-1 flex-col',
         osRedesign
           ? // The dali.os view gutter: 64px sides, 60px top on a page that
             // starts with its own title. Roomier than the default shell's,
@@ -481,6 +489,7 @@ export default function AppLayoutRoute() {
           <div
             className={cn(
               'min-h-dvh overflow-x-hidden',
+              fitViewport && 'flex flex-col',
               osRedesign ? 'os-shell bg-os-bg text-foreground' : 'bg-page',
             )}
           >
@@ -491,7 +500,9 @@ export default function AppLayoutRoute() {
     )
   }
 
-  const tablessChild = tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined
+  const tablessChild = tabless ? (
+    <div className={cn('flex-1 overflow-x-hidden', fitViewport && 'flex flex-col')}>{pageContent}</div>
+  ) : undefined
 
   return (
     <FeatureFlagsProvider flags={flags}>
