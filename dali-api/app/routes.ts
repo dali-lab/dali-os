@@ -410,6 +410,7 @@ export default [
   route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
+  route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
 

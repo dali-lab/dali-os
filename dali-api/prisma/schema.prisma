@@ -2232,6 +2232,14 @@ model MemberClass {
   linkId         String?
   calendarId     String?
   googleEventIds String[]
+  // Provenance for a class autofilled from the Dartmouth timetable: the picked
+  // section's CRN + subject/number/section. Denormalized (no FK into the
+  // disposable CourseOffering cache) so it survives cache pruning; null for a
+  // manually-entered class. Groundwork for future room/time-change detection.
+  offeringCrn    String?
+  subject        String?
+  courseNumber   String?
+  section        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -2239,6 +2247,43 @@ model MemberClass {
   term Term @relation(fields: [termId], references: [id])
 
   @@index([userId, termId])
+}
+
+// Pre-synced Dartmouth timetable sections — one row per (term, CRN) — backing
+// the course-autofill typeahead in the class composer. Populated by the
+// `timetable-sync` job from the public Oracle registrar timetable; NOT tied to
+// MemberClass (autofill only — a saved class stores its own resolved values).
+// Rows are a disposable cache: the sync replaces a term's set on each run, so a
+// wiped table self-heals. Only current + upcoming terms are ever synced.
+model CourseOffering {
+  id         String   @id @default(cuid())
+  termId     String
+  oracleTerm String // "202609" as fetched, for debugging
+  crn        String
+  subject    String // "COSC"
+  number     String // "52" (Dartmouth's zero-padding stripped)
+  section    String // "01"
+  title      String
+  periodCode String? // "10","2A"… plugs into getPeriod(); null/"ARR" when unscheduled
+  periodText String? // human "MWF 10:10-11:15" — shown as a hint when the code is unknown
+  building   String?
+  room       String?
+  instructor String?
+  crosslist  String?
+  distributive String? // "TAS", "QDS"… (distributive/world-culture code)
+  enrollLimit  Int? // seat cap, null when unlimited/unknown
+  enrollCurrent Int? // current enrollment, for an open/closed badge
+  // Lowercased "subject number title" for one case-insensitive contains match.
+  searchText String
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, crn])
+  @@index([termId, subject, number])
+  @@index([termId, searchText])
 }
 
 // ═══ V0 Phase 1 ═════════════════════════════════════════════════════════════
@@ -2287,6 +2332,7 @@ model Term {
   timelineWeeks         TimelineWeek[]
   timelineDomains       TimelineDomain[]
   memberClasses         MemberClass[]
+  courseOfferings       CourseOffering[]
 
   @@index([sortKey])
 }
