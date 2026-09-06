@@ -281,7 +281,10 @@ export function CalendarSidebar({
   const links = data.calendarLinks.filter((l) => l.enabled);
 
   return (
-    <aside className="hidden w-60 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto lg:flex">
+    // pr-4 on top of the row's gap: the rail scrolls, so its own right edge is
+    // where a scrollbar lands, and the mini-month's cells ran up against the
+    // grid without it.
+    <aside className="hidden w-64 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
       <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
 
       <MeetWith users={data.users} onPick={onMeetWith} />
