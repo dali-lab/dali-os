@@ -22,6 +22,8 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { FindReplaceBar } from "./doc/find";
@@ -151,6 +153,11 @@ export function DocumentEditor({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const liveEditorRef = useRef<any>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
+  // The top bar's controls draw from the shared page chrome. Without this the
+  // document was the last surface still wearing the brand shell's dress — 6px
+  // corners, 14px glyphs and a coral "on" state — beside os pages that had all
+  // moved to the design's roomier pills and its accent.
+  const { actionBtn, actionIcon, popover } = useOsChrome();
   // "Aa" page-typography menu (Notion's Style section): per-page font /
   // small-text / full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
@@ -548,17 +555,13 @@ export function DocumentEditor({
               onClick={() => setTypoOpen((o) => !o)}
               aria-expanded={typoOpen}
               aria-label="Page typography"
-              className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
-                typoOpen
-                  ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              className={cn(actionBtn(typoOpen), "font-semibold")}
             >
               Aa
             </button>
           </Tooltip>
           {typoOpen && (
-            <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-border bg-card p-2 shadow-brand-2 text-sm">
+            <div className={cn("absolute right-0 z-30 mt-1 w-56 p-2 text-sm", popover)}>
               <div className="grid grid-cols-3 gap-1">
                 {(
                   [
@@ -572,11 +575,12 @@ export function DocumentEditor({
                     type="button"
                     onClick={() => void saveTypography({ ...typo, font: f.key })}
                     aria-pressed={typo.font === f.key}
-                    className={`rounded-md border px-1 py-1.5 text-center transition-colors ${
+                    className={cn(
+                      "rounded-md border px-1 py-1.5 text-center transition-colors",
                       typo.font === f.key
-                        ? "border-accent-coral/40 bg-accent-coral/10"
-                        : "border-border hover:bg-muted"
-                    }`}
+                        ? "border-os-accent/40 bg-os-accent/10"
+                        : "border-border hover:bg-muted",
+                    )}
                   >
                     <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
                       Ag
@@ -624,13 +628,9 @@ export function DocumentEditor({
             onClick={() => setCommentsOpen((o) => !o)}
             aria-pressed={commentsOpen}
             aria-label={commentsOpen ? "Hide comments" : "Show comments"}
-            className={`inline-flex items-center rounded-md border px-2 py-1 transition-colors ${
-              commentsOpen
-                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
+            className={actionBtn(commentsOpen)}
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <MessageSquare className={actionIcon} />
           </button>
         </Tooltip>
       )}
@@ -643,13 +643,9 @@ export function DocumentEditor({
           onClick={() => void toggleFavorite()}
           aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={favorited}
-          className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors ${
-            favorited
-              ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-          }`}
+          className={actionBtn(favorited)}
         >
-          <Star className={`h-3.5 w-3.5 ${favorited ? "fill-current" : ""}`} />
+          <Star className={cn(actionIcon, favorited && "fill-current")} />
         </button>
       </Tooltip>
 
@@ -661,9 +657,9 @@ export function DocumentEditor({
             type="button"
             onClick={() => setAccessOpen(true)}
             aria-label="Share"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={actionBtn()}
           >
-            <Users className="h-3.5 w-3.5" />
+            <Users className={actionIcon} />
             Share
           </button>
         </Tooltip>
@@ -677,12 +673,12 @@ export function DocumentEditor({
           aria-haspopup="true"
           aria-expanded={moreMenuOpen}
           aria-label="More options"
-          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={actionBtn(moreMenuOpen)}
         >
-          <MoreHorizontal className="h-3.5 w-3.5" />
+          <MoreHorizontal className={actionIcon} />
         </button>
         {moreMenuOpen && (
-          <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+          <div className={cn("absolute right-0 z-30 mt-1 w-52 p-1 text-sm", popover)}>
             <button
               type="button"
               onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
@@ -1123,7 +1119,7 @@ function TypographyToggle({
       <span>{label}</span>
       <span
         className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-accent-coral" : "bg-muted-foreground/30"
+          checked ? "bg-os-accent" : "bg-muted-foreground/30"
         }`}
       >
         <span
