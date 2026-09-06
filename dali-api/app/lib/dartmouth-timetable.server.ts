@@ -99,18 +99,26 @@ type CellPart = { plain: string; link: string };
 function decodeEntities(s: string): string {
   return s
     .replace(/&nbsp;?/gi, " ") // Oracle emits bare "&nbsp" for empty cells
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, "&") // decoded LAST so "&amp;lt;" → "&lt;", not "<"
     .replace(/ /g, " ");
 }
 
+// Tags are removed in a loop until the string stops changing, so a crafted value
+// like "<scr<script>ipt>" can't reassemble a tag after a single pass. (The result
+// is rendered by React, which escapes it, but sanitizing here keeps the stored
+// value clean regardless.)
 function stripTags(s: string): string {
-  return decodeEntities(s.replace(/<[^>]+>/g, ""))
-    .replace(/\s+/g, " ")
-    .trim();
+  let out = s;
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(/<[^>]*>/g, "");
+  } while (out !== prev);
+  return decodeEntities(out).replace(/\s+/g, " ").trim();
 }
 
 function cellParts(cellHtml: string): CellPart {
