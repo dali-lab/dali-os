@@ -283,6 +283,10 @@ type MyProjectTask = {
   priority: "Low" | "Normal" | "High" | "Urgent";
 };
 
+// Home's quiet state centres itself in the shell's main column, which only
+// works if that column hands the page a height instead of sizing to it.
+export const handle = { fitViewport: true };
+
 export default function Home() {
   const data = useLoaderData<typeof loader>();
   if (data.osRedesign) return <HomeOS />;
@@ -310,9 +314,11 @@ function HomeOS() {
       className={cn(
         "mx-auto flex w-full max-w-[750px] flex-col gap-12",
         quiet
-          ? // Cancel the shell's asymmetric top gutter so centering is against
-            // the iframe viewport, not the padded content box.
-            "-mt-8 min-h-dvh justify-center py-12 lg:-mt-[60px]"
+          ? // Fill the column the shell sized to the window (see the route's
+            // `fitViewport` handle) rather than claiming a viewport height of
+            // its own — that stacked under the top bar and the shell's bottom
+            // gutter, so the front door always scrolled by ~100px.
+            "flex-1 justify-center py-12"
           : "pt-6",
       )}
     >

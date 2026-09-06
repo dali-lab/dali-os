@@ -46,8 +46,23 @@ export function buildGridDays(startIso: string, count: number): GridDay[] {
   });
 }
 
-/** Place one block into its day column, timezone-correct. Silently drops blocks
- *  that fall outside the visible `days`. Mirrors the legacy grids' `placeBlock`. */
+/** The real UTC instants bounding one grid column, in `timezone`. The next
+ *  day's midnight (not start + 24h) so DST days keep their true length. */
+function dayBoundsUtc(day: GridDay, timezone: string): { startMs: number; endMs: number } {
+  const d = day.dateUtc;
+  const next = new Date(d.getTime() + 86_400_000);
+  return {
+    startMs: zonedDayStartUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), timezone).getTime(),
+    endMs: zonedDayStartUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), timezone).getTime(),
+  };
+}
+
+/** Place one block into its day column(s), timezone-correct. A range that runs
+ *  past midnight is cut at the day boundary and continued in the next visible
+ *  column — otherwise an overnight event draws as one block that overflows the
+ *  bottom of the grid and stretches past the midnight line. Silently drops
+ *  blocks that fall outside the visible `days`. Mirrors the legacy grids'
+ *  `placeBlock`. */
 export function placeBlock(
   days: GridDay[],
   timezone: string,
@@ -56,21 +71,44 @@ export function placeBlock(
   block: Omit<EventBlock, "startHour" | "duration">,
   into: Record<number, EventBlock[]>,
 ): void {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const ymd = getZonedYMD(start, timezone);
-  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
-  const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
-  const duration = (end.getTime() - start.getTime()) / 3_600_000;
-  const dayIdx = days.findIndex(
-    (d) =>
-      d.dateUtc.getUTCFullYear() === ymd.year &&
-      d.dateUtc.getUTCMonth() + 1 === ymd.month &&
-      d.dateUtc.getUTCDate() === ymd.day,
-  );
-  if (dayIdx < 0) return;
-  if (!into[dayIdx]) into[dayIdx] = [];
-  into[dayIdx].push({ startHour, duration, ...block });
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  // A degenerate range (end <= start) still draws on the day it starts.
+  const rangeEnd = Math.max(end, start);
+
+  for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
+    const { startMs, endMs } = dayBoundsUtc(days[dayIdx], timezone);
+    const segStart = Math.max(start, startMs);
+    const segEnd = Math.min(rangeEnd, endMs);
+    if (segEnd < segStart) continue;
+    // Zero-length overlap is a real block only on the day the range starts on;
+    // elsewhere it just means the range touches this column's edge.
+    if (segEnd === segStart && !(start >= startMs && start < endMs)) continue;
+
+    const dayHours = (endMs - startMs) / 3_600_000;
+    const startHour = (segStart - startMs) / 3_600_000;
+    const duration = (segEnd - segStart) / 3_600_000;
+    const clipped = segStart > start || segEnd < end;
+
+    const placed: EventBlock = {
+      ...block,
+      startHour,
+      duration,
+      // The move/resize math maps block geometry straight back onto the event's
+      // real start/end, so a clipped segment can't be dragged.
+      ...(clipped ? { onMoveResize: undefined } : {}),
+    };
+    // Buffers hang outside the body, so they clip at the day edges too.
+    if (block.bufferBefore !== undefined) {
+      placed.bufferBefore = segStart > start ? 0 : Math.min(block.bufferBefore, startHour);
+    }
+    if (block.bufferAfter !== undefined) {
+      placed.bufferAfter = segEnd < end ? 0 : Math.min(block.bufferAfter, dayHours - startHour - duration);
+    }
+
+    if (!into[dayIdx]) into[dayIdx] = [];
+    into[dayIdx].push(placed);
+  }
 }
 
 /** Resolve an ISO range to grid coordinates ({dayIdx, startHour, endHour}) —

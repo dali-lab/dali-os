@@ -18,7 +18,7 @@ import {
 import {
   WeekGrid, useRefreshOnFocus,
 } from "~/calendar/components/WeekGrid";
-import { timeEntryRange } from "~/calendar/lib/layers";
+import { placeBlock as placeGridBlock, timeEntryRange } from "~/calendar/lib/layers";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 import { FIELD_BASE, roleOptionKey, parseRoleOptionKey, RoleSelectField, RoleFilterRow } from "~/calendar/components/role-fields";
 import { WeekToolbar } from "~/calendar/components/scheduling";
@@ -514,17 +514,14 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
     return { dayIdx, startHour, endHour };
   };
 
+  // Shared with the unified calendar's layers so an overnight shift is cut at
+  // midnight and continued on the next column instead of overflowing the grid.
   const placeBlock = (
     startIso: string,
     endIso: string,
     block: Omit<EventBlock, "startHour" | "duration">,
     into: Record<number, EventBlock[]>,
-  ) => {
-    const { dayIdx, startHour, endHour } = toGridRange(startIso, endIso);
-    if (dayIdx < 0) return;
-    if (!into[dayIdx]) into[dayIdx] = [];
-    into[dayIdx].push({ startHour, duration: endHour - startHour, ...block });
-  };
+  ) => placeGridBlock(days, data.timezone, startIso, endIso, block, into);
 
   const openEdit = (entry: TimeEntryDTO, startIso: string, endIso: string) => {
     const { dayIdx, startHour, endHour } = toGridRange(startIso, endIso);

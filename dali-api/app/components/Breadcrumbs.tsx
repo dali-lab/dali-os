@@ -359,23 +359,26 @@ export function Breadcrumbs() {
           aria-label="Breadcrumb"
           className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
         >
-          {crumbs.map((c, i) => (
-            <span key={i} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
-              {c.icon}
-              {c.siblings ? (
-                <CrumbSwitcher label={c.label} siblings={c.siblings} />
-              ) : c.to ? (
-                <Link to={c.to} className="hover:text-foreground transition-colors">
-                  {c.label}
-                </Link>
-              ) : (
-                <span className="text-foreground font-medium">{c.label}</span>
-              )}
-            </span>
-          ))}
+          {crumbs.map((c, i) => {
+            const leaf = i === crumbs.length - 1
+            return (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+                {c.icon}
+                {c.siblings ? (
+                  <CrumbSwitcher label={c.label} siblings={c.siblings} />
+                ) : c.to ? (
+                  <Link to={c.to} className="hover:text-foreground transition-colors">
+                    {c.label}
+                  </Link>
+                ) : (
+                  <span className="text-foreground font-medium">{c.label}</span>
+                )}
+                {favoriteRoute && leaf && <FavoriteRouteButton inline />}
+              </span>
+            )
+          })}
         </nav>
-        {favoriteRoute && <FavoriteRouteButton inline />}
       </div>
       {action}
     </div>
