@@ -507,6 +507,12 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  courseOffering: {
+    findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   adminMembership: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),

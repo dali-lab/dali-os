@@ -13,6 +13,7 @@ import {
   Search,
   RefreshCw,
   UsersRound,
+  BookOpen,
 } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
@@ -32,12 +33,18 @@ import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary } from "~/calendar/lib/dartmouth-periods";
-import { destinationValue, classScheduleSummary } from "~/calendar/lib/class-format";
+import {
+  destinationValue,
+  classScheduleSummary,
+  formatCourseTitle,
+  formatCourseLocation,
+} from "~/calendar/lib/class-format";
 import type { CalendarSearchHit } from "~/calendar/lib/search";
 import type {
   LoaderData,
   ExternalEventDTO,
   MemberClassDTO,
+  CourseHitDTO,
 } from "~/calendar/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -896,6 +903,19 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
   });
   const [selectedTermId, setSelectedTermId] = useState(data.classTerm?.id ?? "");
 
+  // Course autofill (Dartmouth timetable). The typeahead writes into the fields
+  // below; picked* is the section provenance persisted with the class.
+  const courseFetcher = useFetcher<{ courses: CourseHitDTO[] }>();
+  const [courseQuery, setCourseQuery] = useState("");
+  const [showCourseResults, setShowCourseResults] = useState(false);
+  const [picked, setPicked] = useState<{
+    crn: string;
+    subject: string;
+    number: string;
+    section: string;
+  } | null>(null);
+  const [unknownPeriodHint, setUnknownPeriodHint] = useState("");
+
   function resetForm() {
     setEditingId(null);
     setTitle("");
@@ -905,6 +925,10 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
     setCustomStart("");
     setCustomEnd("");
     setLocation("");
+    setCourseQuery("");
+    setShowCourseResults(false);
+    setPicked(null);
+    setUnknownPeriodHint("");
   }
 
   // Clear the form after a successful add/edit (settled, no error).
@@ -919,6 +943,19 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
     setTitle(c.title);
     setLocation(c.location ?? "");
     setDestination(currentDestinationValue(c));
+    setCourseQuery("");
+    setShowCourseResults(false);
+    setUnknownPeriodHint("");
+    setPicked(
+      c.offeringCrn
+        ? {
+            crn: c.offeringCrn,
+            subject: c.subject ?? "",
+            number: c.courseNumber ?? "",
+            section: c.section ?? "",
+          }
+        : null,
+    );
     if (c.periodCode) {
       setMode(c.periodCode);
       setIncludeXHour(c.meetings.some((m) => m.kind === "xhour"));
@@ -929,6 +966,40 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
       setCustomStart(main ? minToHHMM(main.startMin) : "");
       setCustomEnd(main ? minToHHMM(main.endMin) : "");
     }
+  }
+
+  // Debounced typeahead against the pre-synced timetable, scoped to the chosen term.
+  const trimmedCourseQuery = courseQuery.trim();
+  useEffect(() => {
+    if (!selectedTermId || trimmedCourseQuery.length < 2) return;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ termId: selectedTermId, q: trimmedCourseQuery });
+      courseFetcher.load(`/api/timetable/courses?${params.toString()}`);
+    }, 220);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimmedCourseQuery, selectedTermId]);
+
+  const courseHits = courseFetcher.data?.courses ?? [];
+  const courseSearching = courseFetcher.state !== "idle";
+
+  // Selecting a section fills the (still-editable) title / period / location and
+  // records the section it came from. A known period code preselects the "When"
+  // dropdown; an unknown one (ARR, labs) leaves it manual with a hint.
+  function pickCourse(c: CourseHitDTO) {
+    setTitle(formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }));
+    setLocation(formatCourseLocation({ building: c.building, room: c.room }));
+    setPicked({ crn: c.crn, subject: c.subject, number: c.number, section: c.section });
+    if (c.periodCode && getPeriod(c.periodCode)) {
+      setMode(c.periodCode);
+      setIncludeXHour(false);
+      setUnknownPeriodHint("");
+    } else {
+      setMode("");
+      setUnknownPeriodHint(c.periodText || c.periodCode || "");
+    }
+    setCourseQuery("");
+    setShowCourseResults(false);
   }
 
   const isPeriod = mode !== "" && mode !== "custom";
@@ -1004,6 +1075,10 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
               <input type="hidden" name="customEnd" value={customEnd} />
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="termId" value={selectedTermId} />
+              <input type="hidden" name="offeringCrn" value={picked?.crn ?? ""} />
+              <input type="hidden" name="courseSubject" value={picked?.subject ?? ""} />
+              <input type="hidden" name="courseNumber" value={picked?.number ?? ""} />
+              <input type="hidden" name="courseSection" value={picked?.section ?? ""} />
 
               {data.classTerms.length > 1 && (
                 <label className="flex flex-col gap-1 text-sm">
@@ -1017,6 +1092,56 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                   />
                 </label>
               )}
+
+              {/* Course autofill — search the synced Dartmouth timetable. Selecting a
+                  section fills the fields below; manual entry stays fully available. */}
+              <div className="relative flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Find your course (optional)</span>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={courseQuery}
+                    onChange={(e) => {
+                      setCourseQuery(e.target.value);
+                      setShowCourseResults(true);
+                    }}
+                    onFocus={() => setShowCourseResults(true)}
+                    placeholder="Search the timetable, e.g. COSC 52"
+                    className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2.5 text-foreground"
+                  />
+                </div>
+                {showCourseResults && trimmedCourseQuery.length >= 2 && (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                    {courseHits.length > 0 ? (
+                      courseHits.map((c) => (
+                        <button
+                          key={c.crn}
+                          type="button"
+                          onClick={() => pickCourse(c)}
+                          className="flex w-full items-start gap-2.5 px-2.5 py-1.5 text-left hover:bg-muted"
+                        >
+                          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-foreground">
+                              {c.subject} {c.number} — {c.title}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              Section {c.section} · {c.periodCode || c.periodText || "no set time"}
+                              {c.instructor ? ` · ${c.instructor}` : ""}
+                            </span>
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-2.5 py-2 text-xs text-muted-foreground">
+                        {courseSearching
+                          ? "Searching…"
+                          : "No matches — type the class in manually below."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-muted-foreground">Class</span>
@@ -1039,6 +1164,13 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                   buttonClassName="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left inline-flex items-center justify-between gap-1 hover:bg-muted/40"
                 />
               </label>
+
+              {unknownPeriodHint && mode === "" && (
+                <p className="text-xs text-amber-600">
+                  Dartmouth lists this as “{unknownPeriodHint}” — pick a matching period above, or
+                  choose a custom day &amp; time.
+                </p>
+              )}
 
               {isPeriod && period && (
                 <>

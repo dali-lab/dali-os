@@ -234,7 +234,26 @@ async function handleClassAction(
       }
     }
 
-    const params = { userId, termId, title, location, periodCode, includeXHour, customMeetings, destination };
+    // Timetable-autofill provenance (all blank for a manually-entered class).
+    const offeringCrn = get("offeringCrn").trim() || null;
+    const courseSubject = get("courseSubject").trim() || null;
+    const courseNumber = get("courseNumber").trim() || null;
+    const courseSection = get("courseSection").trim() || null;
+
+    const params = {
+      userId,
+      termId,
+      title,
+      location,
+      periodCode,
+      includeXHour,
+      customMeetings,
+      destination,
+      offeringCrn,
+      subject: courseSubject,
+      courseNumber,
+      section: courseSection,
+    };
     if (intent === "class-add") {
       await createClass(params);
     } else if (intent === "class-update") {

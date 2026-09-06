@@ -40,7 +40,23 @@ type ClassWrite = {
   /** Required when periodCode is null (a custom day/time class). */
   customMeetings?: PeriodMeeting[];
   destination: ClassDestination;
+  // Provenance when autofilled from the Dartmouth timetable; all null for a
+  // manually-entered class. Denormalized onto the row (no FK into the cache).
+  offeringCrn?: string | null;
+  subject?: string | null;
+  courseNumber?: string | null;
+  section?: string | null;
 };
+
+/** The section-reference columns, shared by create and update writes. */
+function sectionRef(input: ClassWrite) {
+  return {
+    offeringCrn: input.offeringCrn ?? null,
+    subject: input.subject ?? null,
+    courseNumber: input.courseNumber ?? null,
+    section: input.section ?? null,
+  };
+}
 
 function meetingsFor(input: ClassWrite): PeriodMeeting[] {
   const meetings = input.periodCode
@@ -164,6 +180,7 @@ export async function createClass(input: ClassWrite): Promise<void> {
       periodCode: input.periodCode,
       meetings: meetings as unknown as object,
       location: input.location,
+      ...sectionRef(input),
       ...mat,
     },
   });
@@ -185,6 +202,7 @@ export async function updateClass(classId: string, input: ClassWrite): Promise<v
       periodCode: input.periodCode,
       meetings: meetings as unknown as object,
       location: input.location,
+      ...sectionRef(input),
       ...mat,
     },
   });
@@ -219,6 +237,10 @@ export function toMemberClassDTO(
     linkId: string | null;
     calendarId: string | null;
     termId: string;
+    offeringCrn: string | null;
+    subject: string | null;
+    courseNumber: string | null;
+    section: string | null;
   },
   links: CalendarLinkDTO[],
 ): MemberClassDTO {
@@ -233,6 +255,10 @@ export function toMemberClassDTO(
     calendarId: row.calendarId,
     destinationLabel: calendarLabel(row, links),
     termId: row.termId,
+    offeringCrn: row.offeringCrn,
+    subject: row.subject,
+    courseNumber: row.courseNumber,
+    section: row.section,
   };
 }
 

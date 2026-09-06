@@ -100,6 +100,28 @@ export type MemberClassDTO = {
   destinationLabel: string;
   /** The term this class belongs to (used for multi-term filtering in the modal). */
   termId: string;
+  // Timetable section this class was autofilled from (provenance; null for a
+  // manually-entered class). Lets the manager re-populate the picked section on edit.
+  offeringCrn: string | null;
+  subject: string | null;
+  courseNumber: string | null;
+  section: string | null;
+};
+
+/** One course-section hit from the timetable-autofill typeahead
+ *  (GET /api/timetable/courses). Carries everything the composer needs to
+ *  autofill the class and record which section was picked. */
+export type CourseHitDTO = {
+  crn: string;
+  subject: string;
+  number: string;
+  section: string;
+  title: string;
+  periodCode: string | null;
+  periodText: string | null;
+  building: string | null;
+  room: string | null;
+  instructor: string | null;
 };
 
 /** A destination the add-class form can target. `local` renders in DALI only;
