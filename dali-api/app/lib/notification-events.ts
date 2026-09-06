@@ -87,6 +87,13 @@ export const EVENT_TYPES = {
     description: "When a meeting you were invited to is cancelled.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "class.schedule_changed": {
+    kind: "General",
+    area: "Meetings",
+    label: "Class schedule changes",
+    description: "When a class you added has a new time or room on the Dartmouth timetable.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "task.due_reminder": {
     kind: "General",
     area: "Tasks",
