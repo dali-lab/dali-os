@@ -82,10 +82,19 @@ export function MonthGrid({
           const shown = blocks.slice(0, MAX_CHIPS);
           const overflow = blocks.length - shown.length;
           return (
-            <button
-              type="button"
+            // A div, not a button: the chips inside are buttons of their own,
+            // and a nested button is invalid HTML — the browser hoists it out,
+            // which showed up as a hydration mismatch on any month with events.
+            <div
+              role="button"
+              tabIndex={0}
               key={idx}
               onClick={() => onSelectDay(day.dateUtc)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                onSelectDay(day.dateUtc);
+              }}
               className={cn(
                 "flex min-h-0 flex-col gap-0.5 border-b border-r border-border p-1 text-left align-top transition-colors hover:bg-muted",
                 idx % 7 === 0 && "border-l",
@@ -110,7 +119,7 @@ export function MonthGrid({
                   <span className="px-1.5 text-[11px] font-medium text-muted-foreground">+{overflow} more</span>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

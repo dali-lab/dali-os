@@ -69,7 +69,6 @@ import {
   type AllDayBlock,
 } from "~/calendar/components/WeekGrid";
 import {
-  buildGridDays,
   buildExternalLayer,
   buildLoggedSourceIndex,
   buildAllDayItems,
@@ -82,9 +81,8 @@ import {
   toGridRange,
   DEFAULT_LAYER_VISIBILITY,
   type LayerVisibility,
-  type GridDay,
 } from "~/calendar/lib/layers";
-import { parseAnchor, parseView, viewWindow } from "~/calendar/lib/view-window";
+import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import {
@@ -168,12 +166,6 @@ const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-function ymdUtc(d: Date) {
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-}
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
@@ -184,7 +176,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // One screen now. Availability is a modal and the timesheet is a way of
   // viewing the same grid, so the only other "mode" left is the legacy
@@ -383,60 +375,22 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
   // repaints from data already in hand instead of waiting for a round-trip that
-  // goes out to Google.
-  const view = parseView(searchParams.get("view"));
-  const anchorParam = parseAnchor(searchParams.get("anchor") ?? searchParams.get("weekStart"));
-  const { start: rangeStart, end: rangeEnd } = viewWindow(data.timezone, view, anchorParam);
+  // goes out to Google. Shared with the Core hub, which draws the same grids.
+  const {
+    view,
+    rangeStart,
+    rangeEnd,
+    days,
+    focusDate,
+    anchorMonth,
+    rangeLabel,
+    changeView,
+    navigate,
+    goToday,
+    goToDay,
+  } = useCalendarView(data.timezone);
   const rangeStartIso = rangeStart.toISOString();
   const rangeEndIso = rangeEnd.toISOString();
-  const dayCount = Math.max(
-    1,
-    Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86_400_000),
-  );
-  const days = buildGridDays(rangeStartIso, dayCount);
-  // The date the view is centered on (prev/next math + the month label). For
-  // month view rangeStart is the Sunday before the 1st, so +14d lands mid-month.
-  // Agenda shares the month window, so its focus/label track the month too.
-  const focusDate =
-    view === "month" || view === "agenda" ? new Date(rangeStart.getTime() + 14 * 86_400_000) : rangeStart;
-  const anchorMonth = { year: focusDate.getUTCFullYear(), month: focusDate.getUTCMonth() + 1 };
-
-  const setParams = (mut: (p: URLSearchParams) => void) =>
-    setSearchParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        mut(p);
-        return p;
-      },
-      { preventScrollReset: true },
-    );
-  // Touches `view` and nothing else. An absent anchor already means "today",
-  // which every view resolves correctly on its own — and leaving the rest of
-  // the query identical is what lets shouldRevalidate skip the loader.
-  const changeView = (v: CalendarView) => setParams((p) => p.set("view", v));
-  const navigate = (delta: number) => {
-    const d = new Date(focusDate);
-    if (view === "day") d.setUTCDate(d.getUTCDate() + delta);
-    else if (view === "week") d.setUTCDate(d.getUTCDate() + delta * 7);
-    else d.setUTCMonth(d.getUTCMonth() + delta);
-    setParams((p) => {
-      p.set("view", view);
-      p.set("anchor", ymdUtc(d));
-      p.delete("weekStart");
-    });
-  };
-  const goToday = () =>
-    setParams((p) => {
-      p.set("view", view);
-      p.delete("anchor");
-      p.delete("weekStart");
-    });
-  const goToDay = (dateUtc: Date) =>
-    setParams((p) => {
-      p.set("view", "day");
-      p.set("anchor", ymdUtc(dateUtc));
-      p.delete("weekStart");
-    });
 
   // Keyboard nav (Google-Calendar style): D/W/M switch view, T jumps to today,
   // ←/→ page. Only in browse mode, never while a dialog is open or while typing
@@ -604,19 +558,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const roleBuckets = computeRoleBuckets(data, periodEntries, drawnEntries);
   // Pay-period hours per role, for the sidebar's role list.
   const roleHours = Object.fromEntries(roleBuckets.map((b) => [b.key, b.hours]));
-
-  const df = (d: Date, opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, ...opts }).format(d);
-  let rangeLabel: string;
-  if (view === "day") rangeLabel = df(focusDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  else if (view === "month" || view === "agenda") rangeLabel = df(focusDate, { month: "long", year: "numeric" });
-  else {
-    const last = days[days.length - 1].dateUtc;
-    rangeLabel = `${df(rangeStart, { month: "short", day: "numeric" })} – ${df(last, {
-      month: "short",
-      day: "numeric",
-    })}, ${df(last, { year: "numeric" })}`;
-  }
 
   // In timesheet mode the grid logs hours, so the create paths land on the
   // timesheet popover instead of the event modal — an entry with no event
