@@ -986,12 +986,38 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const courseSearching = courseFetcher.state !== "idle";
   const quickAddFetcher = useFetcher();
   const refreshFetcher = useFetcher();
+  const refreshSearchFetcher = useFetcher<{ refreshed: number }>();
+  const refreshingSearch = refreshSearchFetcher.state !== "idle";
   // CRNs already added this term, so results can show "Added" and skip re-adding.
   const addedCrns = new Set(
     data.memberClasses
       .filter((c) => c.termId === selectedTermId && c.offeringCrn)
       .map((c) => c.offeringCrn),
   );
+
+  // Live-refresh the subjects currently in view (fresh seats/period from Dartmouth),
+  // then re-run the search so the dropdown shows the updated cache.
+  const lastRefresh = useRef(refreshSearchFetcher.data);
+  useEffect(() => {
+    if (refreshSearchFetcher.data && refreshSearchFetcher.data !== lastRefresh.current) {
+      lastRefresh.current = refreshSearchFetcher.data;
+      if (selectedTermId && trimmedCourseQuery.length >= 2) {
+        courseFetcher.load(
+          `/api/timetable/courses?${new URLSearchParams({ termId: selectedTermId, q: trimmedCourseQuery })}`,
+        );
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSearchFetcher.data]);
+
+  function refreshSearchResults() {
+    const subjects = [...new Set(courseHits.map((h) => h.subject))].join(",");
+    if (!subjects || !selectedTermId) return;
+    refreshSearchFetcher.submit(
+      { termId: selectedTermId, subjects },
+      { method: "post", action: "/api/timetable/courses" },
+    );
+  }
 
   // Selecting a section fills the (still-editable) title / period / location and
   // records the section it came from. A known period code preselects the "When"
@@ -1185,6 +1211,21 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                 </div>
                 {showCourseResults && trimmedCourseQuery.length >= 2 && (
                   <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                    {courseHits.length > 0 && (
+                      <div className="sticky top-0 flex items-center justify-between border-b border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                        <span>Seats from last sync</span>
+                        <button
+                          type="button"
+                          onClick={refreshSearchResults}
+                          disabled={refreshingSearch}
+                          className="inline-flex items-center gap-1 rounded hover:text-foreground disabled:opacity-50"
+                          title="Fetch current seats & times from Dartmouth"
+                        >
+                          <RefreshCw className={cn("h-3 w-3", refreshingSearch && "animate-spin")} />
+                          {refreshingSearch ? "Refreshing…" : "Refresh"}
+                        </button>
+                      </div>
+                    )}
                     {courseHits.length > 0 ? (
                       courseHits.map((c) => {
                         const known = Boolean(c.periodCode && getPeriod(c.periodCode));
