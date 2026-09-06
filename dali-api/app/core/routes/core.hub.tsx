@@ -400,7 +400,7 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
       {/* Column-reverse below lg so the grid stays first on a narrow window and
           the rail's lists fall under it — the Events page can simply hide its
           rail there, but Core's carries content that has nowhere else to go. */}
-      <div className="flex flex-col-reverse gap-5 lg:h-[max(calc(100vh-12rem),56rem)] lg:min-h-0 lg:flex-row">
+      <div className="flex flex-col-reverse gap-5 lg:h-[calc(100dvh-12rem)] lg:min-h-[24rem] lg:flex-row">
         <aside className="flex w-full min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden lg:w-60 lg:overflow-y-auto">
           <MiniMonth focusDate={focusDate} timezone={timeZone} onPick={goToDay} />
 
