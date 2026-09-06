@@ -61,4 +61,49 @@ describe("parseCourses", () => {
     expect(parseCourses("")).toEqual([]);
     expect(parseCourses("<html><body>no table here</body></html>")).toEqual([]);
   });
+
+  it("parses the 21-column single-subject layout (no status-flag column)", () => {
+    // Same section as the fixture but in the per-subject response shape, where the
+    // flag column at index 5 is absent, so title/period/etc. shift left by one.
+    const cells = [
+      "202609", // 0 term
+      "91932", // 1 crn
+      '<a href="x">COSC</a>', // 2 subject
+      "052", // 3 number
+      "01", // 4 section
+      '<a href="c">Full-Stack Web Development</a>', // 5 title (no flag column before it)
+      "", // 6 icon
+      "&nbsp", // 7 crosslist
+      '<a href="p">2</a>', // 8 periodCode
+      '<a href="p">MWF 2:10-3:15, Th 1:20-2:10</a>', // 9 periodText
+      "008", // 10 room
+      "Engineering &amp; CS Center", // 11 building
+      "Tim Tregubov", // 12 instructor
+      "&nbsp", // 13 worldCulture
+      "TAS", // 14 distributive
+      "&nbsp", // 15 langReq
+      "20", // 16 enrollLimit
+      "18", // 17 enrollCurrent
+      "&nbsp", // 18 status
+      "NR Eligible", // 19
+      "&nbsp", // 20
+    ]
+      .map((c) => `<td>${c}</td>`)
+      .join("");
+    const html = `<html><body><div class="data-table"><table><tr>${cells}</tr></table></div></body></html>`;
+
+    const [c] = parseCourses(html);
+    expect(c).toMatchObject({
+      subject: "COSC",
+      number: "52",
+      title: "Full-Stack Web Development",
+      periodCode: "2",
+      periodText: "MWF 2:10-3:15, Th 1:20-2:10",
+      room: "008",
+      building: "Engineering & CS Center",
+      distributive: "TAS",
+      enrollLimit: 20,
+      enrollCurrent: 18,
+    });
+  });
 });
