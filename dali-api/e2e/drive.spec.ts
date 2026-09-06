@@ -383,6 +383,29 @@ test.describe('Drive hub', () => {
     await page.getByTestId('drive-view-list').click();
     await expect(page.getByTestId('drive-sort-name')).toBeVisible();
   });
+
+  // ── Test M: the action strip is always mounted + the details rail toggles ────
+  // Both are anti-layout-shift: the strip never mounts/unmounts on selection, and
+  // the details rail is a horizontal side-peek rather than a top bar that pushes
+  // the list down.
+  test('(M) Action strip is always present and the details rail toggles', async ({ page }) => {
+    await page.goto('/drive?scope=lab&embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // The action strip is mounted at rest (nothing selected) — no bulk bar yet.
+    await expect(page.getByTestId('drive-action-strip')).toBeVisible();
+    await expect(page.getByTestId('drive-bulk-bar')).toHaveCount(0);
+
+    // The details rail is closed by default; the toolbar toggle opens it.
+    await expect(page.getByTestId('drive-details-pane')).toHaveCount(0);
+    await page.getByTestId('drive-details-toggle').click();
+    await expect(page.getByTestId('drive-details-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('drive-details-pane')).toBeVisible();
+
+    // Closing the rail from its own control hides it again.
+    await page.getByTestId('drive-details-close').click();
+    await expect(page.getByTestId('drive-details-pane')).toHaveCount(0);
+  });
 });
 
 // ── Drag helper (adapted from kanban-drag.spec.ts) ────────────────────────────

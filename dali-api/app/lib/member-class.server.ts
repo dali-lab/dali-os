@@ -13,8 +13,12 @@ import {
   subscribeCalendarForLink,
 } from "~/lib/google-calendar";
 import { classRRule, DARTMOUTH_TZ, firstOccurrenceRange, resolveClassMeetings } from "~/calendar/lib/class-schedule";
-import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
-import { parseDestination as parseDestinationValue, type ClassDestination } from "~/calendar/lib/class-format";
+import { getPeriod, type PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
+import {
+  parseDestination as parseDestinationValue,
+  formatCourseLocation,
+  type ClassDestination,
+} from "~/calendar/lib/class-format";
 import type { CalendarLinkDTO, ClassDestinationDTO, ClassMeetingDTO, MemberClassDTO } from "~/calendar/lib/types";
 
 const DEDICATED_CALENDAR_NAME = "Classes";
@@ -40,7 +44,23 @@ type ClassWrite = {
   /** Required when periodCode is null (a custom day/time class). */
   customMeetings?: PeriodMeeting[];
   destination: ClassDestination;
+  // Provenance when autofilled from the Dartmouth timetable; all null for a
+  // manually-entered class. Denormalized onto the row (no FK into the cache).
+  offeringCrn?: string | null;
+  subject?: string | null;
+  courseNumber?: string | null;
+  section?: string | null;
 };
+
+/** The section-reference columns, shared by create and update writes. */
+function sectionRef(input: ClassWrite) {
+  return {
+    offeringCrn: input.offeringCrn ?? null,
+    subject: input.subject ?? null,
+    courseNumber: input.courseNumber ?? null,
+    section: input.section ?? null,
+  };
+}
 
 function meetingsFor(input: ClassWrite): PeriodMeeting[] {
   const meetings = input.periodCode
@@ -164,6 +184,7 @@ export async function createClass(input: ClassWrite): Promise<void> {
       periodCode: input.periodCode,
       meetings: meetings as unknown as object,
       location: input.location,
+      ...sectionRef(input),
       ...mat,
     },
   });
@@ -185,6 +206,7 @@ export async function updateClass(classId: string, input: ClassWrite): Promise<v
       periodCode: input.periodCode,
       meetings: meetings as unknown as object,
       location: input.location,
+      ...sectionRef(input),
       ...mat,
     },
   });
@@ -195,6 +217,49 @@ export async function removeClass(userId: string, classId: string): Promise<void
   if (!row) throw new MemberClassError("Class not found");
   await tearDownGoogle(row);
   await prisma.memberClass.delete({ where: { id: classId } });
+}
+
+// Re-pull a timetable-sourced class's current period + location from the synced
+// CourseOffering cache and re-apply them (title/destination kept). Backs the
+// per-class "refresh" button and the one-click "apply" on a change alert.
+export async function refreshClass(userId: string, classId: string): Promise<void> {
+  const row = await prisma.memberClass.findFirst({ where: { id: classId, userId } });
+  if (!row) throw new MemberClassError("Class not found");
+  if (!row.offeringCrn) throw new MemberClassError("This class wasn't added from the timetable.");
+
+  const offering = await prisma.courseOffering.findUnique({
+    where: { termId_crn: { termId: row.termId, crn: row.offeringCrn } },
+  });
+  if (!offering) throw new MemberClassError("This section is no longer in the timetable.");
+
+  const meetings = (row.meetings as unknown as PeriodMeeting[]) ?? [];
+  const includeXHour = meetings.some((m) => m.kind === "xhour");
+  // Reconstruct the destination from the stored pointers; google-calendar with the
+  // saved calendarId re-creates events on the same calendar (dedicated/primary alike).
+  const destination: ClassDestination =
+    row.storage === "Google" && row.linkId
+      ? { kind: "google-calendar", linkId: row.linkId, calendarId: row.calendarId ?? "primary" }
+      : { kind: "local" };
+
+  // Use the fresh period only if it's a code we can expand; otherwise keep the
+  // class's current schedule and just refresh the location.
+  const freshPeriod = offering.periodCode && getPeriod(offering.periodCode) ? offering.periodCode : null;
+  const keepCustom = !freshPeriod && !row.periodCode ? meetings : undefined;
+
+  await updateClass(classId, {
+    userId,
+    termId: row.termId,
+    title: row.title,
+    location: formatCourseLocation({ building: offering.building, room: offering.room }) || null,
+    periodCode: freshPeriod ?? row.periodCode,
+    includeXHour,
+    customMeetings: keepCustom,
+    destination,
+    offeringCrn: row.offeringCrn,
+    subject: offering.subject,
+    courseNumber: offering.number,
+    section: offering.section,
+  });
 }
 
 // ── DTO + destination builders (used by the calendar loader) ─────────────────
@@ -219,6 +284,10 @@ export function toMemberClassDTO(
     linkId: string | null;
     calendarId: string | null;
     termId: string;
+    offeringCrn: string | null;
+    subject: string | null;
+    courseNumber: string | null;
+    section: string | null;
   },
   links: CalendarLinkDTO[],
 ): MemberClassDTO {
@@ -233,6 +302,10 @@ export function toMemberClassDTO(
     calendarId: row.calendarId,
     destinationLabel: calendarLabel(row, links),
     termId: row.termId,
+    offeringCrn: row.offeringCrn,
+    subject: row.subject,
+    courseNumber: row.courseNumber,
+    section: row.section,
   };
 }
 

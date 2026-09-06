@@ -40,6 +40,28 @@ export function parseDestination(raw: string): ClassDestination | null {
   return null;
 }
 
+// ── Course autofill (Dartmouth timetable) ───────────────────────────────────
+
+/** Strip Dartmouth's zero-padding from a course number ("052" → "52",
+ *  "001" → "1") while leaving decimals/suffixes intact ("32.16"). Idempotent. */
+export function normalizeCourseNumber(n: string): string {
+  return n.trim().replace(/^0+(?=\d)/, "");
+}
+
+/** Autofill title from a picked timetable section, e.g.
+ *  "COSC 52 — Full-Stack Web Development". Uses the em dash to match the
+ *  manual-entry placeholder. */
+export function formatCourseTitle(c: { subject: string; number: string; title: string }): string {
+  const head = [c.subject.trim(), normalizeCourseNumber(c.number)].filter(Boolean).join(" ");
+  return [head, c.title.trim()].filter(Boolean).join(" — ");
+}
+
+/** Autofill location from building + room, e.g. "Kemeny Hall 008". Empty string
+ *  when neither is known (member fills it in). */
+export function formatCourseLocation(c: { building?: string | null; room?: string | null }): string {
+  return [c.building, c.room].map((s) => (s ?? "").trim()).filter(Boolean).join(" ");
+}
+
 /** "MWF 10:10 AM–11:15 AM · Th x-hr" summary for a class in the manager list. */
 export function classScheduleSummary(meetings: ClassMeetingDTO[]): string {
   return meetings
