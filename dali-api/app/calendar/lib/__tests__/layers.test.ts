@@ -58,6 +58,58 @@ describe("buildExternalLayer", () => {
     expect(layer[0][1]).toMatchObject({ label: "Plain", className: EVENT_CORAL });
   });
 
+  it("cuts an overnight event at midnight and continues it on the next day", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-16T22:00:00.000Z", endIso: "2026-08-17T02:00:00.000Z", title: "Overnight", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildExternalLayer(data, days);
+    // Sunday stops at the midnight line instead of stretching 2h past it.
+    expect(layer[0]).toHaveLength(1);
+    expect(layer[0][0]).toMatchObject({ label: "Overnight", startHour: 22, duration: 2 });
+    expect(layer[1]).toHaveLength(1);
+    expect(layer[1][0]).toMatchObject({ label: "Overnight", startHour: 0, duration: 2 });
+  });
+
+  it("draws a multi-day event on every visible day it covers, full height in between", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-16T23:00:00.000Z", endIso: "2026-08-18T01:00:00.000Z", title: "Conference", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildExternalLayer(data, days);
+    expect(layer[0][0]).toMatchObject({ startHour: 23, duration: 1 });
+    expect(layer[1][0]).toMatchObject({ startHour: 0, duration: 24 });
+    expect(layer[2][0]).toMatchObject({ startHour: 0, duration: 1 });
+    expect(layer[3]).toBeUndefined();
+  });
+
+  it("places the spillover of an event that started before the visible window", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-15T23:00:00.000Z", endIso: "2026-08-16T01:00:00.000Z", title: "Late Saturday", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildExternalLayer(data, days);
+    expect(layer[0][0]).toMatchObject({ startHour: 0, duration: 1 });
+  });
+
+  it("does not spill onto the next day for an event ending exactly at midnight", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-16T22:00:00.000Z", endIso: "2026-08-17T00:00:00.000Z", title: "Until midnight", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildExternalLayer(data, days);
+    expect(layer[0]).toHaveLength(1);
+    expect(layer[1]).toBeUndefined();
+  });
+
   it("hides events from calendars in hiddenCalendarIds", () => {
     const days = buildGridDays(WEEK, 7);
     const data = fixture({

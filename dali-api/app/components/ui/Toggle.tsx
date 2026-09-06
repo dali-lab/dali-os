@@ -9,9 +9,12 @@ export interface ToggleProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
   label?: ReactNode;
   description?: ReactNode;
   className?: string;
+  /** Replaces (not extends) the label's default type, for surfaces with their
+   *  own label scale — e.g. the Customize panel's rows. */
+  labelClassName?: string;
 }
 
-export function Toggle({ label, description, className, disabled, ...props }: ToggleProps) {
+export function Toggle({ label, description, className, labelClassName, disabled, ...props }: ToggleProps) {
   return (
     <label
       className={cn(
@@ -44,7 +47,7 @@ export function Toggle({ label, description, className, disabled, ...props }: To
       </span>
       {(label || description) && (
         <span className="flex min-w-0 flex-col">
-          {label && <span className="text-sm text-foreground">{label}</span>}
+          {label && <span className={labelClassName ?? "text-sm text-foreground"}>{label}</span>}
           {description && <span className="text-xs text-muted-foreground">{description}</span>}
         </span>
       )}

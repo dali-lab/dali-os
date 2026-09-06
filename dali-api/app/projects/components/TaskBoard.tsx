@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
-import { Toggle } from "~/components/ui/Toggle";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
   Archive,
   Bell,
   CalendarDays,
   CheckSquare,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Link2,
@@ -24,10 +24,12 @@ import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import {
   FilterCountBadge,
+  FilterField,
   FilterGroup,
   FilterPill,
   FilterResetButton,
   FilterSectionLabel,
+  FilterToggleRow,
   customizeButtonClass,
   filterPanelClass,
 } from "~/components/ui/filter-panel";
@@ -879,34 +881,45 @@ export function TaskBoard({
                 </div>
 
                 {termFilterEnabled && (
-                  <div className="flex flex-col gap-1.5">
-                    <span className={cn("text-xs inline-flex items-center gap-1", os ? "text-os-grey" : "text-muted-foreground")}>
-                      Term
+                  <FilterGroup
+                    label="Term"
+                    os={os}
+                    hint={
                       <InfoTip
                         content="Term code format: last two digits of the year + S (spring), F (fall), or X (summer). E.g. 26F = Fall 2026."
                         placement="right"
                       />
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {termFilterOrder(
-                        options.terms.map((t) => ({
-                          id: t.id,
-                          code: t.code,
-                          isCurrent: t.id === options.currentTermId,
-                        })),
-                      ).map((opt) => (
-                        <FilterPill
-                          key={opt.value}
-                          os={os}
-                          selected={effectiveTerm === opt.value}
-                          onClick={() => setTermFilter(opt.value)}
-                        >
-                          {opt.label}
-                        </FilterPill>
-                      ))}
-                    </div>
-                  </div>
+                    }
+                  >
+                    {termFilterOrder(
+                      options.terms.map((t) => ({
+                        id: t.id,
+                        code: t.code,
+                        isCurrent: t.id === options.currentTermId,
+                      })),
+                    ).map((opt) => (
+                      <FilterPill
+                        key={opt.value}
+                        os={os}
+                        selected={effectiveTerm === opt.value}
+                        onClick={() => setTermFilter(opt.value)}
+                      >
+                        {opt.label}
+                      </FilterPill>
+                    ))}
+                  </FilterGroup>
                 )}
+
+                {/* A slice, so it wears the same pills as Term rather than a
+                    switch — switches in this panel mean Layout. */}
+                <FilterGroup label="Assignee" os={os}>
+                  <FilterPill os={os} selected={!onlyMine} onClick={() => setParam("mine", null)}>
+                    Anyone
+                  </FilterPill>
+                  <FilterPill os={os} selected={onlyMine} onClick={() => setParam("mine", "1")}>
+                    Only me
+                  </FilterPill>
+                </FilterGroup>
 
                 {showEpicFilter && (
                   <FilterCombobox
@@ -933,12 +946,6 @@ export function TaskBoard({
                     onChange={(next) => setParam("sprint", next)}
                   />
                 )}
-
-                <Toggle
-                  label="Only my tasks"
-                  checked={onlyMine}
-                  onChange={(e) => setParam("mine", e.target.checked ? "1" : null)}
-                />
               </section>
 
               <section
@@ -948,8 +955,9 @@ export function TaskBoard({
                 )}
               >
                 <FilterSectionLabel os={os}>Layout</FilterSectionLabel>
-                <Toggle
+                <FilterToggleRow
                   label="Hide empty Backlog / Cancelled"
+                  os={os}
                   checked={hideEmptyCols}
                   onChange={toggleHideEmpty}
                 />
@@ -1147,9 +1155,12 @@ function FilterCombobox({
     close();
   };
 
+  // A set filter wears the pills' selected dress, so a slice that's on reads
+  // the same whether it was picked from a pill row or typed into a field.
+  const active = value !== null;
+
   return (
     <div
-      className="flex flex-col gap-1.5"
       // Blur is scoped to the whole control, not the input: closing on the
       // input's own blur meant a press anywhere in the list — its padding, the
       // gap between rows, the scrollbar — tore the list down mid-click, which
@@ -1158,55 +1169,97 @@ function FilterCombobox({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) close();
       }}
     >
-      <span className={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}>
-        {label}
-      </span>
-      <div>
-        <input
-          type="text"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={id}
-          aria-autocomplete="list"
-          aria-label={ariaLabel}
-          aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
-          value={open ? query : selectedLabel}
-          placeholder={placeholder}
-          // Opened by an actual press, not by focus: the panel moves focus to
-          // its first control when it opens, and opening on focus meant the
-          // list unfurled on its own the moment you hit Customize.
-          onMouseDown={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              if (!open) return setOpen(true);
-              setActiveIndex((i) => {
-                const n = matches.length;
-                if (n === 0) return 0;
-                return e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
-              });
-            } else if (e.key === "Enter") {
-              if (!open || !matches[activeIndex]) return;
-              e.preventDefault();
-              commit(matches[activeIndex].value);
-            } else if (e.key === "Escape" && open) {
-              // Close the list, not the whole Customize panel behind it.
-              e.preventDefault();
-              e.stopPropagation();
-              close();
-            }
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          className={cn(
-            "w-full rounded-full border px-3 py-1.5 text-xs transition-colors focus:outline-none",
-            os
-              ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
-              : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+      <FilterField label={label} os={os}>
+        <div className="relative">
+          <input
+            type="text"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={id}
+            aria-autocomplete="list"
+            aria-label={ariaLabel}
+            aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
+            value={open ? query : selectedLabel}
+            placeholder={placeholder}
+            // Opened by an actual press, not by focus: the panel moves focus to
+            // its first control when it opens, and opening on focus meant the
+            // list unfurled on its own the moment you hit Customize.
+            onMouseDown={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                if (!open) return setOpen(true);
+                setActiveIndex((i) => {
+                  const n = matches.length;
+                  if (n === 0) return 0;
+                  return e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+                });
+              } else if (e.key === "Enter") {
+                if (!open || !matches[activeIndex]) return;
+                e.preventDefault();
+                commit(matches[activeIndex].value);
+              } else if (e.key === "Escape" && open) {
+                // Close the list, not the whole Customize panel behind it.
+                e.preventDefault();
+                e.stopPropagation();
+                close();
+              }
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            className={cn(
+              "w-full rounded-full border py-1.5 pl-3 pr-8 text-xs transition-colors focus:outline-none",
+              os
+                ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
+                : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+              !open &&
+                active &&
+                (os
+                  ? "border-os-accent bg-os-accent/15 text-os-accent"
+                  : "border-accent-coral bg-accent-coral/10 text-accent-coral"),
+            )}
+          />
+          {/* Without an end affordance the field reads as a text input someone
+              pre-filled with "All epics" — nothing said it opens a list. A set
+              filter swaps it for a clear, so getting back to "all" doesn't mean
+              opening the list to hunt for that row. */}
+          {active && !open ? (
+            <button
+              type="button"
+              aria-label={`Clear ${label.toLowerCase()} filter`}
+              onClick={() => commit(null)}
+              className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors",
+                os ? "text-os-accent hover:bg-os-accent/20" : "text-accent-coral hover:bg-accent-coral/20",
+              )}
+            >
+              <X className="h-3 w-3" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden
+              // Keep focus on the input, so the control's blur-close doesn't
+              // fire between this press and the list rendering.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen((v) => !v);
+              }}
+              className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2",
+                os ? "text-os-muted" : "text-muted-foreground",
+              )}
+            >
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+                aria-hidden
+              />
+            </button>
           )}
-        />
+        </div>
         {open && (
           <ul
             id={id}
@@ -1215,7 +1268,7 @@ function FilterCombobox({
             // and re-focus between mousedown and click is exactly the flicker.
             onMouseDown={(e) => e.preventDefault()}
             className={cn(
-              "mt-1 max-h-40 w-full overflow-y-auto rounded-lg border p-1",
+              "max-h-40 w-full overflow-y-auto rounded-lg border p-1",
               os ? "border-os-container bg-os-well" : "border-border bg-background",
             )}
           >
@@ -1250,7 +1303,7 @@ function FilterCombobox({
             ))}
           </ul>
         )}
-      </div>
+      </FilterField>
     </div>
   );
 }
