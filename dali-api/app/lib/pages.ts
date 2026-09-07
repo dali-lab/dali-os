@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
+import { ensureProcessFolder } from "~/lib/bindings.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -597,42 +598,21 @@ async function deleteCoreLegacyRubricsIfEmpty(): Promise<void> {
   await prisma.page.delete({ where: { id: folder.id } });
 }
 
-/** Idempotently ensure the managed "Forms" folder inside an EducationOffering's
- *  workspace (systemKey education:<offeringId>:forms-folder) and return its id.
- *  This is the home for the offering's application form, so it lives WITH its
- *  offering (under the Education space) rather than a shared lab folder. The
- *  offering workspace is represented as workspaceType=EducationOffering pages. */
+/** Idempotently ensure the "Forms" folder inside an EducationOffering's
+ *  workspace and return its id. Home for the offering's application form, so it
+ *  lives WITH its offering (under the Education space). Backed by a
+ *  ProcessFolderBinding (EducationOffering / <offeringId> / "forms") — a normal,
+ *  editable folder, swappable from the offering settings. */
 export async function ensureOfferingFormsFolder(
   offeringId: string,
   createdById: string,
 ): Promise<string> {
-  const systemKey = `education:${offeringId}:forms-folder`;
-  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-  if (existing) return existing.id;
-  try {
-    const last = await prisma.page.findFirst({
-      where: { workspaceType: "EducationOffering", workspaceId: offeringId, parentPageId: null },
-      orderBy: { position: "desc" },
-      select: { position: true },
-    });
-    const created = await prisma.page.create({
-      data: {
-        workspaceType: "EducationOffering",
-        workspaceId: offeringId,
-        title: "Forms",
-        kind: "Folder",
-        position: last ? last.position + 1 : 0,
-        createdById,
-        systemKey,
-      },
-      select: { id: true },
-    });
-    return created.id;
-  } catch {
-    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-    if (retry) return retry.id;
-    throw new Error(`Failed to ensure offering forms folder ${systemKey}`);
-  }
+  return ensureProcessFolder({
+    processType: "EducationOffering",
+    processId: offeringId,
+    purpose: "forms",
+    createdById,
+  });
 }
 
 /** Re-home EducationOffering application forms into each offering's own
@@ -723,52 +703,26 @@ export async function ensureHiringTemplatesFolder(createdById: string): Promise<
 
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
-const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {
-  Team: "Team meeting notes",
-  Partner: "Partner meeting notes",
-};
-
 // Idempotently ensures a project's default "Team meeting notes" / "Partner
-// meeting notes" folder exists, creating it (top-level, Folder-kind,
-// systemKey-marked so api.documents.$id.ts refuses to delete it) on first
-// call. Safe to call repeatedly — cheap enough to call from the Documents
-// block loader so existing projects backfill their folders on first view
-// rather than needing a separate migration script (same pattern as
-// ensureProjectGroup in ~/lib/groups.ts).
+// meeting notes" folder exists, returning it. Backed by a ProcessFolderBinding
+// (Project / <projectId> / "meeting-notes-{team,partner}") — an ordinary,
+// editable folder swappable from the project settings, not a systemKey root.
+// Safe to call repeatedly (idempotent via the binding's unique key); cheap
+// enough to call from the Documents block loader so existing projects backfill
+// on first view.
 export async function ensureMeetingNotesFolder(
   projectId: string,
   kind: MeetingNotesFolderKind,
   createdById: string,
 ): Promise<{ id: string }> {
-  const systemKey = `project:${projectId}:${kind.toLowerCase()}-meeting-notes`;
-  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-  if (existing) return existing;
-
-  try {
-    const last = await prisma.page.findFirst({
-      where: { workspaceType: "Project", workspaceId: projectId, parentPageId: null },
-      orderBy: { position: "desc" },
-      select: { position: true },
-    });
-    const position = last ? last.position + 1 : 0;
-    return await prisma.page.create({
-      data: {
-        workspaceType: "Project",
-        workspaceId: projectId,
-        title: MEETING_NOTES_FOLDER_TITLE[kind],
-        kind: "Folder",
-        position,
-        createdById,
-        systemKey,
-      },
-      select: { id: true },
-    });
-  } catch {
-    // Unique-constraint race: another request created it concurrently.
-    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-    if (retry) return retry;
-    throw new Error(`Failed to ensure meeting notes folder for project ${projectId}`);
-  }
+  const purpose = kind === "Team" ? "meeting-notes-team" : "meeting-notes-partner";
+  const id = await ensureProcessFolder({
+    processType: "Project",
+    processId: projectId,
+    purpose,
+    createdById,
+  });
+  return { id };
 }
 
 // The page behind a project's public write-up — the body dali.website renders
@@ -777,18 +731,27 @@ export async function ensureMeetingNotesFolder(
 // empty document), and marked publicVisible so the public API picks it up
 // without a second step.
 //
-// It's an ordinary project page, so it also appears in the Documents block
-// and can be edited from there. The systemKey both makes this ensure-create
-// idempotent and stops api.documents.$id.ts deleting it out from under the
-// public site.
+// It's an ordinary project page, so it also appears in the Documents block and
+// can be edited from there. The link is recorded on Project.publicWriteupPageId
+// (single-artifact FK, same pattern as overviewPageId) — no systemKey — with
+// onDelete SetNull so deleting the page just clears the link.
 export async function ensurePublicWriteupPage(
   projectId: string,
   createdById: string,
 ): Promise<{ id: string }> {
-  // A team may already have nominated some other page via the Documents
-  // globe toggle. Respect that rather than creating a second public page —
-  // the public API takes the lowest-position publicVisible page, so creating
-  // one here could silently outrank the page they chose.
+  // Reuse the recorded write-up page if it still exists and isn't archived.
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { publicWriteupPage: { select: { id: true, archivedAt: true } } },
+  });
+  if (project?.publicWriteupPage && project.publicWriteupPage.archivedAt == null) {
+    return { id: project.publicWriteupPage.id };
+  }
+
+  // A team may already have nominated some other page via the Documents globe
+  // toggle. Respect that rather than creating a second public page — the public
+  // API takes the lowest-position publicVisible page, so creating one here could
+  // silently outrank the page they chose. Record it as the write-up page too.
   const existingPublic = await prisma.page.findFirst({
     where: {
       workspaceType: "Project",
@@ -799,46 +762,34 @@ export async function ensurePublicWriteupPage(
     orderBy: { position: "asc" },
     select: { id: true },
   });
-  if (existingPublic) return existingPublic;
+  if (existingPublic) {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { publicWriteupPageId: existingPublic.id },
+    });
+    return existingPublic;
+  }
 
-  const systemKey = `project:${projectId}:public-writeup`;
-  // Un-archive rather than duplicate: the systemKey is unique, so a
-  // previously archived write-up would otherwise block creation forever.
-  const existing = await prisma.page.findUnique({
-    where: { systemKey },
+  const last = await prisma.page.findFirst({
+    where: { workspaceType: "Project", workspaceId: projectId, parentPageId: null },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  const page = await prisma.page.create({
+    data: {
+      workspaceType: "Project",
+      workspaceId: projectId,
+      title: "Public write-up",
+      kind: "FreeForm",
+      position: last ? last.position + 1 : 0,
+      createdById,
+      publicVisible: true,
+    },
     select: { id: true },
   });
-  if (existing) {
-    await prisma.page.update({
-      where: { id: existing.id },
-      data: { publicVisible: true, archivedAt: null },
-    });
-    return existing;
-  }
-
-  try {
-    const last = await prisma.page.findFirst({
-      where: { workspaceType: "Project", workspaceId: projectId, parentPageId: null },
-      orderBy: { position: "desc" },
-      select: { position: true },
-    });
-    return await prisma.page.create({
-      data: {
-        workspaceType: "Project",
-        workspaceId: projectId,
-        title: "Public write-up",
-        kind: "FreeForm",
-        position: last ? last.position + 1 : 0,
-        createdById,
-        systemKey,
-        publicVisible: true,
-      },
-      select: { id: true },
-    });
-  } catch {
-    // Unique-constraint race: another request created it concurrently.
-    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-    if (retry) return retry;
-    throw new Error(`Failed to ensure public write-up page for project ${projectId}`);
-  }
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { publicWriteupPageId: page.id },
+  });
+  return page;
 }
