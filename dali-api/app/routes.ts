@@ -644,4 +644,7 @@ export default [
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
   route("api/ai/doc", "routes/api.ai.doc.ts"),
+  // AI project TL;DR — cached work-status summary for the Progress-tab status
+  // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
+  route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
 ] satisfies RouteConfig;

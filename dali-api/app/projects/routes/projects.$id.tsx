@@ -74,6 +74,15 @@ import {
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
+import {
+  computeProjectStatus,
+  factsFingerprint,
+  type ProjectWorkStatus,
+  type SprintPhase,
+} from "../lib/project-status";
+import { ProjectStatusBar } from "../components/ProjectStatusBar";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isAiEnabled } from "~/lib/ai.server";
 import { groupFilesByEpic } from "../lib/file-groups";
 import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -277,6 +286,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       name: true,
       description: true,
       status: true,
+      aiTldr: true,
+      aiTldrGeneratedAt: true,
+      aiTldrInputHash: true,
       calendarEmail: true,
       teamGroupEmail: true,
       imageUrl: true,
@@ -1119,6 +1131,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // ── Progress-tab status bar: deterministic work-status facts + the cached
+  // AI summary's freshness. Facts come from the same task/sprint rows the board
+  // already loaded, so the bar costs no extra query. aiTldrStale compares the
+  // current facts fingerprint against the one the cached summary was written
+  // from; the client regenerates when it differs (see ProjectStatusBar).
+  const statusFacts = computeProjectStatus(
+    {
+      projectStatus: project.status as ProjectWorkStatus,
+      tasks: project.tasks.map((t) => ({
+        id: t.id,
+        status: t.status as TaskStatus,
+        dueAt: t.dueAt,
+        sprintId: t.sprintId,
+        activityAt: t.activityAt,
+      })),
+      sprints: project.sprints.map((s) => ({
+        id: s.id,
+        name: s.name,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+        status: s.status as SprintPhase,
+      })),
+    },
+    new Date(),
+  );
+  const aiLineEnabled =
+    isAiEnabled() &&
+    (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request));
+  const aiTldrStale =
+    !project.aiTldrInputHash ||
+    project.aiTldrInputHash !== factsFingerprint(statusFacts);
+
   return {
     project: {
       id: project.id,
@@ -1181,6 +1225,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tasks,
     boardOptions,
     taskCountsByEpic,
+    statusFacts,
+    aiTldr: project.aiTldr,
+    aiTldrGeneratedAt: project.aiTldrGeneratedAt
+      ? project.aiTldrGeneratedAt.toISOString()
+      : null,
+    aiTldrStale,
+    aiLineEnabled,
     canEdit,
     canEditScope,
     canEditAssignmentLevel: core,
@@ -1539,6 +1590,10 @@ export default function ProjectDetail() {
     tasks,
     boardOptions,
     taskCountsByEpic,
+    statusFacts,
+    aiTldr,
+    aiTldrStale,
+    aiLineEnabled,
     allDomainOptions,
     plannedTerms,
     allTermOptions,
@@ -1565,6 +1620,7 @@ export default function ProjectDetail() {
   // The dali.os dress for this page: the taller hero, the terms/roles clusters
   // beside the title, and the filled tab plates. Same tabs, same permissions.
   const os = useFeatureFlag("os-redesign");
+  const showStatusBar = useFeatureFlag("project-status-bar");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -1845,6 +1901,15 @@ export default function ProjectDetail() {
           // surfaces sharing one tab, and at the page rhythm the board's
           // toolbar read as another row of the timeline card.
           <div className="flex flex-col gap-10">
+            {showStatusBar && (
+              <ProjectStatusBar
+                facts={statusFacts}
+                projectId={project.id}
+                aiTldr={aiTldr}
+                aiTldrStale={aiTldrStale}
+                aiLineEnabled={aiLineEnabled}
+              />
+            )}
             {planningNode}
             {board}
           </div>
