@@ -286,6 +286,10 @@ export type EventBlock = {
   bufferBefore?: number;
   /** Hours of buffer below the event body. */
   bufferAfter?: number;
+  /** An all-day event folded into the month/agenda EventBlock map (those views
+   *  have no all-day band). Renders as a full-width chip / an "All day" row
+   *  rather than a time-positioned block. */
+  allDay?: boolean;
   location?: string;
   description?: string;
   organizerName?: string;

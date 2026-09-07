@@ -1,8 +1,9 @@
 // Agenda (list) view — the month's events as a chronological, day-grouped list
-// instead of a time grid. Shares the merged EventBlocks the week/month grids use
-// (timed events; all-day events live in a separate band and are omitted here).
-// A row opens its event through the block's own handler (composer / timesheet
-// editor), falling back to drilling into the day.
+// instead of a time grid. Shares the merged EventBlocks the week/month grids use.
+// All-day events (which the week/day grid shows in a separate band) are folded
+// into the same map here and render as "All day" rows, sorted to the top of the
+// day. A row opens its event through the block's own handler (composer /
+// timesheet editor), falling back to drilling into the day.
 
 import { cn } from "~/lib/cn";
 import type { GridDay } from "~/calendar/lib/layers";
@@ -32,7 +33,7 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
       className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted"
     >
       <span className="w-24 shrink-0 text-xs tabular-nums text-muted-foreground">
-        {fmtHour(block.startHour)}
+        {block.allDay ? "All day" : fmtHour(block.startHour)}
       </span>
       <span
         className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
@@ -45,9 +46,11 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
           <span className="block truncate text-xs text-muted-foreground">{block.location}</span>
         )}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {fmtHour(block.startHour + block.duration)}
-      </span>
+      {!block.allDay && (
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {fmtHour(block.startHour + block.duration)}
+        </span>
+      )}
     </button>
   );
 }

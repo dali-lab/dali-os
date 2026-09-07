@@ -3,6 +3,7 @@ import {
   buildGridDays,
   buildExternalLayer,
   buildAllDayItems,
+  buildAllDayLayer,
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
@@ -320,6 +321,23 @@ describe("buildAllDayItems (Google CRUD)", () => {
     expect(band[0]).toBeUndefined(); // Sun — before it starts
   });
 
+  it("keeps a single-day all-day event on one column when columns are local-midnight anchored", () => {
+    // The real app snaps grid columns to the viewer's *local* midnight, so in
+    // EDT (UTC-4) each day's dateUtc sits at 04:00Z — while Google stores an
+    // all-day event at UTC midnight. Labor Day (Sep 7) must land on Mon only,
+    // not bleed onto Sun Sep 6.
+    const days = buildGridDays("2026-09-06T04:00:00.000Z", 7); // Sun 9/6 … Sat 9/12, EDT midnights
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-09-07T00:00:00.000Z", endIso: "2026-09-08T00:00:00.000Z", title: "Labor Day", color: null, allDay: true },
+      ] as LoaderData["externalEvents"],
+    });
+    const band = buildAllDayItems(data, days);
+    expect(band[0]).toBeUndefined(); // Sun 9/6 — event has not started
+    expect(band[1]?.map((e) => e.title)).toEqual(["Labor Day"]); // Mon 9/7 only
+    expect(band[2]).toBeUndefined(); // Tue 9/8 — end is exclusive
+  });
+
   it("respects hidden calendars", () => {
     const days = buildGridDays(WEEK, 7);
     const data = fixture({
@@ -328,6 +346,37 @@ describe("buildAllDayItems (Google CRUD)", () => {
       ] as LoaderData["externalEvents"],
     });
     expect(Object.keys(buildAllDayItems(data, days, new Set(["c1"])))).toHaveLength(0);
+  });
+});
+
+describe("buildAllDayLayer (month/agenda)", () => {
+  it("emits full-day EventBlocks that sort first and reuse the civil-date bucketing", () => {
+    const days = buildGridDays(WEEK, 7); // Sun 8/16 … Sat 8/22
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-17T00:00:00.000Z", endIso: "2026-08-19T00:00:00.000Z", title: "Trip", color: "#123", allDay: true, calendarId: "c1", eventId: "e1", writable: true },
+        // Timed events are the band's concern elsewhere — skipped here too.
+        { startIso: "2026-08-17T14:00:00.000Z", endIso: "2026-08-17T15:00:00.000Z", title: "Timed", color: null },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildAllDayLayer(data, days);
+    expect(layer[1]?.map((b) => b.label)).toEqual(["Trip"]); // Mon
+    expect(layer[2]?.map((b) => b.label)).toEqual(["Trip"]); // Tue
+    expect(layer[3]).toBeUndefined(); // Wed — end exclusive
+    expect(layer[1][0]).toMatchObject({ allDay: true, startHour: 0, duration: 24, bgColor: "#123" });
+  });
+
+  it("does not bleed a single-day all-day event across columns anchored at local midnight", () => {
+    const days = buildGridDays("2026-09-06T04:00:00.000Z", 7); // EDT midnights
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-09-07T00:00:00.000Z", endIso: "2026-09-08T00:00:00.000Z", title: "Labor Day", color: null, allDay: true },
+      ] as LoaderData["externalEvents"],
+    });
+    const layer = buildAllDayLayer(data, days);
+    expect(layer[0]).toBeUndefined(); // Sun 9/6
+    expect(layer[1]?.map((b) => b.label)).toEqual(["Labor Day"]); // Mon 9/7 only
+    expect(layer[2]).toBeUndefined(); // Tue 9/8
   });
 });
 
