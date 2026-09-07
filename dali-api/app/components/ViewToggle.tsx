@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { LayoutGrid, List } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export type ListView = "list" | "card";
 
@@ -33,21 +32,17 @@ export function ViewToggle({
   value: ListView;
   onChange: (next: ListView) => void;
 }) {
-  // In the dali.os shell the toolbar is a row of pills, so the switch is a
-  // pill too. Same two buttons either way — only the corners and fill change.
-  const os = useFeatureFlag("os-redesign");
   return (
     <div
       className={cn(
         "inline-flex items-center border border-border overflow-hidden",
-        os ? "rounded-full bg-card" : "rounded-md",
+        "rounded-full bg-card",
       )}
     >
       <ToggleButton
         active={value === "list"}
         onClick={() => onChange("list")}
         label="List view"
-        os={os}
       >
         <List className="w-3.5 h-3.5" />
       </ToggleButton>
@@ -55,7 +50,6 @@ export function ViewToggle({
         active={value === "card"}
         onClick={() => onChange("card")}
         label="Card view"
-        os={os}
       >
         <LayoutGrid className="w-3.5 h-3.5" />
       </ToggleButton>
@@ -67,13 +61,11 @@ function ToggleButton({
   active,
   onClick,
   label,
-  os = false,
   children,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
-  os?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -85,11 +77,9 @@ function ToggleButton({
       title={label}
       className={cn(
         "transition-colors",
-        os ? "px-3.5 py-2.5" : "px-2 py-1.5",
+        "px-3.5 py-2.5",
         active
-          ? os
-            ? "bg-os-container text-foreground"
-            : "bg-accent-coral/15 text-accent-coral"
+          ? "bg-os-container text-foreground"
           : "text-muted-foreground hover:bg-muted",
       )}
     >

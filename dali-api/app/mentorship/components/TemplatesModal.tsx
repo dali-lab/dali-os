@@ -127,7 +127,6 @@ export function TemplatesModal({
       labelledBy={TITLE_ID}
       disableEscape={busy}
       containerClassName={modalCardClass(
-        os,
         "max-w-3xl h-[80vh] max-h-[calc(100vh-3rem)] flex flex-col overflow-hidden !p-0",
       )}
     >

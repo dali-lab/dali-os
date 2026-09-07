@@ -84,20 +84,6 @@ export const FEATURE_FLAGS = [
     defaultVariant: "search",
   },
   {
-    key: "sidebar-redesign",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "New left navigation",
-    description:
-      "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
-  },
-  {
-    key: "os-redesign",
-    label: "dali.os design",
-    description:
-      "The dark dali.os shell: sidebar with an area switcher, a top bar carrying favorites and the task bell, the recents home, and the card-grid project hub. Takes precedence over the other shell flags on the pages it covers — everything it doesn't cover keeps whatever the new left navigation gives it.",
-  },
-  {
     key: "wallet-checkin",
     label: "Wallet check-in",
     description:

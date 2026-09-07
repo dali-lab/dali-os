@@ -26,7 +26,6 @@ import {
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
 import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 
 // Borderless control for the Details property panel — the row supplies the
@@ -111,7 +110,7 @@ export function TaskModal({
 }) {
   const dialog = useDialog();
   const isCreate = !task;
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   // The design opens a detail modal as a record — labels over plain values,
   // no footer — and the pencil turns it into a form. Creating is always a
   // form; there is no record yet to read.
@@ -1441,7 +1440,7 @@ function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   return (
     <label className={cn(os ? "os-field-group" : "flex flex-col gap-1 text-xs")}>
       <span
@@ -1519,7 +1518,7 @@ function PropRow({
   children: React.ReactNode;
   align?: "center" | "start";
 }) {
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   const caption = (
     <>
       {label}

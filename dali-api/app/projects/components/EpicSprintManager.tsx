@@ -11,7 +11,6 @@ import { DateField } from "~/components/ui/DateField";
 import { useDialog } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   EpicsTimeline,
   LEVEL_COLOR,
@@ -207,7 +206,7 @@ export function EpicSprintManager({
 
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // "All" shows every epic; otherwise only epics matching the selected
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   // The design's toolbar under the timeline: an Edit toggle that turns the
   // bars into things you can drag, and an Add menu.
   const [editMode, setEditMode] = useState(false);
@@ -1111,7 +1110,7 @@ function EpicForm({
   }) => void;
   onCancel: () => void;
 }) {
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<EditableEpic["status"]>("Open");
   const [targetTermId, setTargetTermId] = useState("");
@@ -1368,7 +1367,7 @@ function StoryForm({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(
     initial?.acceptanceCriteria ?? "",
   );
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   const [category, setCategory] = useState(initial?.category ?? "");
   const [priority, setPriority] = useState<StoryPriority | "">(initial?.priority ?? "");
   const [startsAt, setStartsAt] = useState(

@@ -36,7 +36,6 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 import { Globe, Plus } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { filterPillClass } from "~/components/ui/floating/styles";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   matchesShowcaseFilter,
   SHOWCASE_FILTER_ALL,
@@ -325,14 +324,11 @@ export default function ProjectsListPage() {
   // In the URL (like ?term=) rather than component state, so "show me every
   // project still needing a write-up" is a link someone can share.
   const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
-  // The dali.os hub is this same page in the design's dress — the title scales
-  // up, the toolbar controls become pills, and the card view takes the cover-led
-  // layout. Every control keeps its behaviour; nothing here is flag-only.
-  const os = useFeatureFlag("os-redesign");
   // Only consulted with the flag off — the os hub has one view. Left on the
   // shared "dali:view:projects" key so a member's list/card choice survives
   // being shown the design and taken back off it.
   const [view, setView] = useViewPreference("dali:view:projects", "list");
+  const os = true;
 
   const filtered = useMemo(() => {
     let base = rows;
@@ -356,7 +352,7 @@ export default function ProjectsListPage() {
         <h1
           className={cn(
             "min-w-0 font-heading text-foreground",
-            os ? "text-[40px] font-medium" : "text-2xl font-bold",
+            "text-[40px] font-medium",
           )}
         >
           Projects
@@ -370,17 +366,13 @@ export default function ProjectsListPage() {
             }}
             className={cn(
               "shrink-0",
-              os ? "os-add-btn" : buttonClasses("primary", "sm"),
+              "os-add-btn",
             )}
           >
-            {os ? (
-              <>
-                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-                New project
-              </>
-            ) : (
-              "+ New project"
-            )}
+            <>
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              New project
+            </>
           </button>
         )}
       </header>
@@ -492,13 +484,13 @@ export default function ProjectsListPage() {
                 setNewIconEmoji(null);
                 setCreating(false);
               }}
-              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
+              className="os-btn-ghost"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+              className="os-btn-primary"
             >
               Create
             </button>
@@ -506,7 +498,7 @@ export default function ProjectsListPage() {
         </Form>
       )}
 
-      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
+      <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
         <input
           type="search"
           value={query}
@@ -535,7 +527,7 @@ export default function ProjectsListPage() {
             }}
             ariaLabel="Filter by status on dali.website"
             options={SHOWCASE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-            buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+            buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
           />
         </label>
         {/* The design has one view of this page, the card grid — so the

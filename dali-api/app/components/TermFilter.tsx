@@ -2,7 +2,6 @@ import { useSearchParams } from "react-router";
 import { termFilterOrder, type TermOption } from "~/lib/terms.shared";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 
 // Term dropdown shared by every term-scoped surface — list filters (Projects
@@ -35,7 +34,6 @@ export function TermFilter({
   replace?: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const os = useFeatureFlag("os-redesign");
 
   const options: SelectOption<string>[] = termFilterOrder(terms, {
     includeAll,
@@ -47,7 +45,7 @@ export function TermFilter({
       value={selected}
       options={options}
       ariaLabel="Filter by term"
-      buttonClassName={buttonClassName ?? cn(filterPillClass(os), "w-full sm:w-40")}
+      buttonClassName={buttonClassName ?? cn(filterPillClass(), "w-full sm:w-40")}
       onChange={(value) => {
         const next = new URLSearchParams(searchParams);
         next.set("term", value);

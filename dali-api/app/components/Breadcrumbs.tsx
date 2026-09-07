@@ -239,23 +239,7 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  const redesign = useFeatureFlag('sidebar-redesign')
-
-  // Wayfinding contract with AreaPillNav: exactly one row per page. Landing
-  // pages carry a pill row (the active pill marks the location, the Hub pill
-  // carries the way back up) and flag it via handle.areaPills, which
-  // suppresses the trail here. Detail pages have no pills, so breadcrumbs
-  // are their trail back.
-  //
-  // Under the sidebar redesign AreaPillNav renders nothing, so there is no
-  // pill row to defer to and the trail has to come back — otherwise the
-  // layout's header row is left holding the Guide button and nothing else,
-  // which reads as a button stranded above the page.
-  if (!redesign && matches.some((m) => (m as { handle?: Handle }).handle?.areaPills)) {
-    return null
-  }
-
-  // The same contract without the flag, for a row that renders either way.
+  // A page can suppress the trail entirely via handle.hideBreadcrumbs.
   if (matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)) {
     return null
   }
