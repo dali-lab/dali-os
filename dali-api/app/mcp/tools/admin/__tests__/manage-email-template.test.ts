@@ -18,6 +18,10 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
+vi.mock("~/lib/bindings.server", () => ({
+  ensureProcessFolder: vi.fn().mockResolvedValue("email-templates-folder"),
+  CORE_PROCESS_ID: "core",
+}));
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -86,7 +90,7 @@ describe("manage_email_template", () => {
       });
       expect(out).toMatchObject({ id: "tmpl-new", name: "New Template" });
       expect(mockPrisma.emailTemplate.create).toHaveBeenCalledWith({
-        data: { name: "New Template" },
+        data: { name: "New Template", folderPageId: "email-templates-folder" },
       });
     });
 

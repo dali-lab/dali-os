@@ -4,7 +4,7 @@
 
 import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
+import { prisma } from "~/lib/db";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import type { RoleFlags } from "~/lib/nav-areas";
@@ -140,14 +140,11 @@ export async function loadDriveScopes({
   };
   const spaces = visibleDriveSpaces(roleFlags);
 
-  // Provision Core/Hiring roots only for spaces that are actually visible to
-  // this viewer (same as legacy — avoids unnecessary idempotent creates).
+  // The Core space is a virtual filter over Core-group-scoped folders (no
+  // system root any more). Only build it when the viewer can see it.
   const needsCore = spaces.some((s) => s.key === "core");
-  const needsHiring = spaces.some((s) => s.key === "hiring");
 
-  const [coreRoot, hiringRoot, favIds, linkedProcessMap] = await Promise.all([
-    needsCore ? ensureCoreDriveRoot(userSub) : Promise.resolve(null),
-    needsHiring ? ensureHiringDriveRoot(userSub) : Promise.resolve(null),
+  const [favIds, linkedProcessMap] = await Promise.all([
     favoritePageIds(userSub),
     // Signal ②: build process linkages once for the whole load (no per-row queries).
     buildLinkedProcessMap(),
@@ -160,10 +157,6 @@ export async function loadDriveScopes({
   );
   const educationIds = educationWorkspaces.map((w) => w.key);
   const educationNames = new Map(educationWorkspaces.map((w) => [w.key, w.label]));
-
-  // Hiring-team widening (preserved from legacy): non-Core hiring members may
-  // see hiring forms placed inside the Hiring drive.
-  const labCanViewForms = canViewForms || hasHiringAccess;
 
   // Phase 1: load pages + files for every scope WITHOUT forms.
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
@@ -200,7 +193,7 @@ export async function loadDriveScopes({
   );
 
   // Phase 2: load all forms in ONE query across all visible folder ids.
-  const needForms = labCanViewForms || canViewForms;
+  const needForms = canViewForms || isCore;
   let allForms: DriveItem[] = [];
   // Safety-net: forms whose folder was archived/deleted are dropped by the scoped
   // loadForms query above; surface them at the General root so none are lost.
@@ -223,34 +216,40 @@ export async function loadDriveScopes({
   let coreItems: DriveItem[] = [];
   let labVisibleItems = labItems;
   let coreFolderIds = new Set<string>();
-  if (coreRoot) {
-    const inCore = subtreeIds(labItems, coreRoot.id);
-    labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
-    coreItems = liftRootChildren(
-      labItems.filter((it) => it.id !== coreRoot.id && inCore.has(it.id)),
-      coreRoot.id,
-    );
-    coreFolderIds = new Set([
-      coreRoot.id,
-      ...coreItems.filter((i) => i.type === "folder").map((i) => i.id),
-    ]);
-  }
-
-  // Carve out the Hiring subtree from the post-Core lab items (same logic).
-  let hiringItems: DriveItem[] = [];
-  let hiringFolderIds = new Set<string>();
-  if (hiringRoot) {
-    const inHiring = subtreeIds(labVisibleItems, hiringRoot.id);
-    const remaining = labVisibleItems.filter((it) => !inHiring.has(it.id));
-    hiringItems = liftRootChildren(
-      labVisibleItems.filter((it) => it.id !== hiringRoot.id && inHiring.has(it.id)),
-      hiringRoot.id,
-    );
-    labVisibleItems = remaining;
-    hiringFolderIds = new Set([
-      hiringRoot.id,
-      ...hiringItems.filter((i) => i.type === "folder").map((i) => i.id),
-    ]);
+  if (needsCore) {
+    // Core folders are ordinary Lab folders shared with the Core group
+    // (scopeKind=Group). Only Core members can see them (getPageAccess), so for a
+    // non-Core viewer they're already absent from labItems — nothing leaks. Carve
+    // each Core-scoped folder's subtree out of the Lab load into the Core space.
+    const coreGroup = await prisma.groupDefinition.findUnique({
+      where: { systemKey: "core" },
+      select: { id: true },
+    });
+    const coreRootIds = coreGroup
+      ? (
+          await prisma.page.findMany({
+            where: {
+              workspaceType: "Lab",
+              workspaceId: null,
+              scopeKind: "Group",
+              scopeGroupId: coreGroup.id,
+              archivedAt: null,
+            },
+            select: { id: true },
+          })
+        ).map((p) => p.id)
+      : [];
+    const inCore = new Set<string>();
+    for (const rootId of coreRootIds) {
+      if (!labItems.some((it) => it.id === rootId)) continue;
+      inCore.add(rootId);
+      for (const id of subtreeIds(labItems, rootId)) inCore.add(id);
+    }
+    if (inCore.size > 0) {
+      coreItems = labItems.filter((it) => inCore.has(it.id));
+      labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
+      coreFolderIds = new Set(coreItems.filter((i) => i.type === "folder").map((i) => i.id));
+    }
   }
 
   // Strip managed artifacts from the Lab scope (same as legacy).
@@ -285,15 +284,9 @@ export async function loadDriveScopes({
     });
   }
 
-  // Forms filed directly at the Core/Hiring root need the same root-lift as the
-  // folders/docs above — otherwise they orphan under the excluded root and never
-  // render at the scope root (the reason Core-filed forms showed in search but
-  // not in the Drive listing).
-  const coreForms = liftRootChildren(pickScopeForms(coreFolderIds, false, isCore), coreRoot?.id);
-  const hiringForms = liftRootChildren(
-    pickScopeForms(hiringFolderIds, false, labCanViewForms),
-    hiringRoot?.id,
-  );
+  // Core forms live inside Core-scoped folders and carry a real parentFolderId
+  // (in coreFolderIds), so no root-lift is needed.
+  const coreForms = pickScopeForms(coreFolderIds, false, isCore);
   // Lab forms use the un-widened canViewForms gate (same as legacy).
   const labForms = pickScopeForms(labFolderIds, true, canViewForms);
   const projectForms = projectItemArrays.map((_, i) =>
@@ -306,7 +299,6 @@ export async function loadDriveScopes({
 
   // Compose final item lists.
   const finalCoreItems = [...coreItems, ...coreForms];
-  const finalHiringItems = [...hiringItems, ...hiringForms];
   const filteredLab = [...labVisibleItems, ...labForms, ...orphanForms];
   const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
@@ -338,30 +330,18 @@ export async function loadDriveScopes({
         });
         break;
 
-      case "lab-scoped-root":
-        if (space.key === "core" && coreRoot) {
+      case "virtual-filter":
+        // The Core space is a view over Core-group-scoped folders (no system
+        // root). Its top-level items are the Core-scoped folders themselves.
+        if (space.key === "core") {
           result.push({
             id: "core",
             label: "Core",
             iconEmoji: null,
             items: tagFavorites(finalCoreItems, favIds),
-            rootFolderId: coreRoot.id,
-            // ① Core root is a system-managed scoped root; its destructive actions are hidden.
-            systemManaged: true,
-            // ③ Only Core members can see this space.
+            systemManaged: false,
+            // Only Core members can see this space.
             scopeAudience: "Core only",
-          });
-        } else if (space.key === "hiring" && hiringRoot) {
-          result.push({
-            id: "hiring",
-            label: "Hiring",
-            iconEmoji: null,
-            items: tagFavorites(finalHiringItems, favIds),
-            rootFolderId: hiringRoot.id,
-            // ① Hiring root is a system-managed scoped root.
-            systemManaged: true,
-            // ③ Visible to the hiring team (Core + domain leads + reviewers).
-            scopeAudience: "Hiring team",
           });
         }
         break;
