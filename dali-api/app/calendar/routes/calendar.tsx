@@ -54,7 +54,7 @@ import type {
 } from "~/calendar/lib/types";
 import {
   EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
-  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  HOURS, HOUR_PX, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED,
   toDatetimeLocal, dayHourToLocal,
   ROLE_COLOR_PALETTE, roleColor,
@@ -699,7 +699,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           <MeetingComposer data={data} />
         </section>
       ) : (
-        <div className="flex gap-5 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
+        <div
+          // Exactly the window height, with no 56rem floor: a floor taller than
+          // a short window pushed the grid past the fold, so the page scrolled
+          // and the day header — which stays put by sitting outside the grid's
+          // own scroller — went with it. Now the hours scroll inside the grid on
+          // every window and the dates never leave.
+          className="flex gap-5 lg:h-[calc(100dvh-9rem)] lg:min-h-[24rem]"
+        >
           <CalendarSidebar
             data={data}
             focusDate={focusDate}
