@@ -16,7 +16,6 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   Users,
   Plus,
@@ -259,7 +258,6 @@ export default function AdminConsoleGroups() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
-  const os = useFeatureFlag("os-redesign");
 
   const q = query.trim().toLowerCase();
   const visibleGroups = groups.filter((g: GroupRow) => {
@@ -284,11 +282,10 @@ export default function AdminConsoleGroups() {
           own, so the decorative Users glyph goes with the smaller heading. */}
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          {!os && <Users className="w-6 h-6 text-foreground/80" />}
           <h1
             className={cn(
               "font-heading text-foreground",
-              os ? "text-4xl font-medium" : "text-2xl font-bold",
+              "text-4xl font-medium",
             )}
           >
             User Groups
@@ -296,9 +293,7 @@ export default function AdminConsoleGroups() {
           <span
             className={cn(
               "rounded-full font-medium",
-              os
-                ? "bg-os-container px-3 py-1 text-xs text-foreground"
-                : "bg-muted px-2.5 py-0.5 text-xs text-muted-foreground",
+              "bg-os-container px-3 py-1 text-xs text-foreground",
             )}
           >
             {activeCount}
@@ -307,15 +302,11 @@ export default function AdminConsoleGroups() {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className={
-            os
-              ? "os-add-btn"
-              : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors"
-          }
+          className="os-add-btn"
         >
           <Plus
-            className={os ? "h-[17px] w-[17px]" : "w-4 h-4"}
-            strokeWidth={os ? 3 : undefined}
+            className="h-[17px] w-[17px]"
+            strokeWidth={3}
             aria-hidden
           />
           New group
@@ -323,8 +314,8 @@ export default function AdminConsoleGroups() {
       </header>
 
       {groups.length > 0 && (
-        <div className={cn("flex flex-wrap items-center gap-2", os && "gap-4 pt-2 pb-2")}>
-          <StatusTabs status={status} onChange={setStatus} os={os} />
+        <div className={cn("flex flex-wrap items-center gap-2", "gap-4 pt-2 pb-2")}>
+          <StatusTabs status={status} onChange={setStatus} />
           <input
             type="search"
             value={query}
@@ -332,9 +323,7 @@ export default function AdminConsoleGroups() {
             placeholder="Search groups by name"
             className={cn(
               "flex-1 min-w-[12rem] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-              os
-                ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
-                : "max-w-sm px-3 py-2 rounded-md bg-background",
+              "max-w-[420px] px-5 py-2.5 rounded-full bg-card",
             )}
           />
           <span className="text-xs text-muted-foreground ml-auto">
@@ -349,7 +338,7 @@ export default function AdminConsoleGroups() {
           <div
             className={cn(
               "text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border",
-              os ? "rounded-os-card" : "rounded-lg",
+              "rounded-os-card",
             )}
           >
             No groups yet. Click "New group" to create one.
@@ -359,7 +348,7 @@ export default function AdminConsoleGroups() {
           <div
             className={cn(
               "text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border",
-              os ? "rounded-os-card" : "rounded-lg",
+              "rounded-os-card",
             )}
           >
             {q
@@ -391,11 +380,9 @@ export default function AdminConsoleGroups() {
 function StatusTabs({
   status,
   onChange,
-  os,
 }: {
   status: StatusFilter;
   onChange: (s: StatusFilter) => void;
-  os: boolean;
 }) {
   const tabs: { value: StatusFilter; label: string }[] = [
     { value: "active", label: "Active" },
@@ -406,7 +393,7 @@ function StatusTabs({
     <div
       className={cn(
         "inline-flex border border-border",
-        os ? "rounded-full bg-os-card p-1" : "rounded-md bg-background p-0.5",
+        "rounded-full bg-os-card p-1",
       )}
     >
       {tabs.map((t) => (
@@ -416,11 +403,9 @@ function StatusTabs({
           onClick={() => onChange(t.value)}
           className={cn(
             "text-sm transition-colors",
-            os ? "rounded-full px-4 py-1.5" : "rounded px-3 py-1",
+            "rounded-full px-4 py-1.5",
             status === t.value
-              ? os
-                ? "bg-os-container font-medium text-foreground"
-                : "bg-accent-coral text-white"
+              ? "bg-os-container font-medium text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
           aria-pressed={status === t.value}
@@ -442,7 +427,6 @@ function CreateGroupForm({
   onDone: () => void;
 }) {
   const fetcher = useFetcher();
-  const os = useFeatureFlag("os-redesign");
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -501,7 +485,7 @@ function CreateGroupForm({
             placeholder="e.g. Active this term"
             className={cn(
               "w-full px-3 py-2 text-sm border border-border bg-background text-foreground",
-              os ? "rounded-os-item" : "rounded-md",
+              "rounded-os-item",
             )}
             required
           />
@@ -568,9 +552,7 @@ function CreateGroupForm({
                     key={id}
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-                      os
-                        ? "bg-os-accent/15 text-os-accent"
-                        : "bg-purple-100 text-purple-800",
+                      "bg-os-accent/15 text-os-accent",
                     )}
                   >
                     {memberLabel(m)}
@@ -578,7 +560,7 @@ function CreateGroupForm({
                       type="button"
                       onClick={() => setSelected(selected.filter((s) => s !== id))}
                       aria-label={`Remove ${memberLabel(m)}`}
-                      className={os ? "hover:text-foreground" : "hover:text-purple-600"}
+                      className="hover:text-foreground"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -594,13 +576,13 @@ function CreateGroupForm({
             placeholder="Search by name or email…"
             className={cn(
               "w-full px-3 py-2 text-sm border border-border bg-background text-foreground",
-              os ? "rounded-os-item" : "rounded-md",
+              "rounded-os-item",
             )}
           />
           <div
             className={cn(
               "mt-2 max-h-48 overflow-y-auto border border-border bg-background",
-              os ? "rounded-os-item" : "rounded-md",
+              "rounded-os-item",
             )}
           >
             {filtered.slice(0, 50).map((m) => {
@@ -618,7 +600,7 @@ function CreateGroupForm({
                 >
                   <span>{memberLabel(m)}</span>
                   {isSel && (
-                    <span className={cn("text-xs", os ? "text-os-accent" : "text-purple-700")}>
+                    <span className={cn("text-xs", "text-os-accent")}>
                       Selected
                     </span>
                   )}
@@ -643,11 +625,7 @@ function CreateGroupForm({
           <button
             type="button"
             onClick={onDone}
-            className={
-              os
-                ? "os-btn-ghost"
-                : "px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-muted/50"
-            }
+            className="os-btn-ghost"
           >
             Cancel
           </button>
@@ -656,9 +634,7 @@ function CreateGroupForm({
             disabled={!canSubmit}
             className={cn(
               "disabled:opacity-60",
-              os
-                ? "os-btn-primary"
-                : "px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors",
+              "os-btn-primary",
             )}
           >
             Create group
@@ -685,7 +661,6 @@ function GroupCard({
 }) {
   const fetcher = useFetcher();
   const confirmSubmit = useConfirmSubmit();
-  const os = useFeatureFlag("os-redesign");
   const [expanded, setExpanded] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
   const [query, setQuery] = useState("");
@@ -707,7 +682,7 @@ function GroupCard({
     <div
       className={cn(
         "bg-card border border-border transition-colors",
-        os ? "rounded-os-card" : "rounded-lg",
+        "rounded-os-card",
         group.archived && "opacity-75",
       )}
     >
@@ -727,7 +702,7 @@ function GroupCard({
           onClick={() => setExpanded((v) => !v)}
           className="flex-1 min-w-0 flex items-center gap-2 flex-wrap text-left"
         >
-          <span className={cn("font-medium text-foreground", os && "text-base")}>
+          <span className={cn("font-medium text-foreground", "text-base")}>
             {group.name}
           </span>
           {isSystem && (
@@ -738,9 +713,7 @@ function GroupCard({
               <span
                 className={cn(
                   "font-medium uppercase tracking-wide",
-                  os
-                    ? "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent"
-                    : "rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700",
+                  "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent",
                 )}
               >
                 Auto
@@ -751,9 +724,7 @@ function GroupCard({
             <span
               className={cn(
                 "font-medium uppercase tracking-wide",
-                os
-                  ? "rounded-full border border-os-amber/35 px-2.5 py-0.5 text-xs text-os-amber"
-                  : "rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700",
+                "rounded-full border border-os-amber/35 px-2.5 py-0.5 text-xs text-os-amber",
               )}
             >
               Archived
@@ -763,15 +734,13 @@ function GroupCard({
             <span
               className={cn(
                 "font-medium",
-                os
-                  ? "rounded-full bg-os-container px-3 py-1 text-xs text-foreground"
-                  : "rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
+                "rounded-full bg-os-container px-3 py-1 text-xs text-foreground",
               )}
             >
               {group.boundTermCodes.join(", ")}
             </span>
           )}
-          <span className={cn("font-normal text-muted-foreground", os ? "text-sm" : "text-xs")}>
+          <span className={cn("font-normal text-muted-foreground", "text-sm")}>
             {group.memberIds.length} member{group.memberIds.length === 1 ? "" : "s"}
           </span>
         </button>
@@ -837,7 +806,7 @@ function GroupCard({
                     key={uid}
                     className={cn(
                       "border border-border p-2 bg-background text-xs text-muted-foreground",
-                      os ? "rounded-os-item" : "rounded-md",
+                      "rounded-os-item",
                     )}
                   >
                     Unknown member
@@ -861,7 +830,7 @@ function GroupCard({
               onClick={() => setAddingMember(true)}
               className={cn(
                 "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80",
-                os ? "rounded-full" : "rounded-md",
+                "rounded-full",
               )}
             >
               <Plus className="w-3 h-3" /> Add member
@@ -872,7 +841,7 @@ function GroupCard({
             <div
               className={cn(
                 "border border-border bg-background p-2 space-y-2",
-                os ? "rounded-os-item" : "rounded-md",
+                "rounded-os-item",
               )}
             >
               <input
@@ -934,13 +903,12 @@ function ExpandedMemberCard({
   groupId: string;
 }) {
   const fetcher = useFetcher();
-  const os = useFeatureFlag("os-redesign");
   const fullName = `${member.firstName} ${member.lastName}`.trim();
   return (
     <div
       className={cn(
         "relative border border-border p-2 bg-background flex items-start gap-2 hover:bg-muted/10 transition-colors",
-        os ? "rounded-os-item" : "rounded-md",
+        "rounded-os-item",
       )}
     >
       <Link to={`/members/${member.id}`} className="flex items-start gap-2 min-w-0 flex-1">

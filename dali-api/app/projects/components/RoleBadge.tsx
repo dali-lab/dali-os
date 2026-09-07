@@ -1,5 +1,4 @@
 import { GraduationCap, Sprout } from "lucide-react";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
@@ -14,7 +13,6 @@ export function RoleBadge({
   isMentor: boolean;
   onToggle: () => void;
 }) {
-  const os = useFeatureFlag("os-redesign");
   return (
     <Tooltip
       variant="rich"
@@ -34,12 +32,8 @@ export function RoleBadge({
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors",
         isMentor
-          ? os
-            ? "border-transparent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
-            : "border-accent-coral/40 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
-          : os
-            ? "border-transparent bg-os-container text-os-grey hover:text-foreground"
-            : "border-border bg-muted text-muted-foreground hover:text-foreground",
+          ? "border-transparent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
+          : "border-transparent bg-os-container text-os-grey hover:text-foreground",
       )}
     >
       {isMentor ? (

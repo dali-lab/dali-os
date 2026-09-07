@@ -17,7 +17,6 @@ import {
 } from "@floating-ui/react";
 import { Check, ChevronDown } from "lucide-react";
 import { usePanelClass, useSelectTriggerClass } from "./os-styles";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // The app's single-select value picker, built on @floating-ui/react. Replaces
 // native <select> (which can't be styled/portaled) and the old hand-rolled
@@ -70,7 +69,6 @@ export function Select<T extends string = string>({
   align?: "left" | "right";
   buttonClassName?: string;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const panelClass = usePanelClass();
   const triggerClass = useSelectTriggerClass();
   const isControlled = value !== undefined;
@@ -124,7 +122,7 @@ export function Select<T extends string = string>({
             // than its labels, so the floor only made the panel overhang it.
             // Either way this is a minimum, not a width: a long option still
             // grows the panel, up to the max-w-[18rem] on the list.
-            minWidth: `${os ? rects.reference.width : Math.max(rects.reference.width, 200)}px`,
+            minWidth: `${rects.reference.width}px`,
             maxHeight: `${Math.min(availableHeight, 320)}px`,
           });
         },
@@ -235,19 +233,11 @@ export function Select<T extends string = string>({
                       ref={(node) => {
                         listRef.current[i] = node;
                       }}
-                      className={`flex w-full items-start gap-2 text-left text-sm transition-colors disabled:opacity-50 ${
-                        os ? "rounded-lg px-3 py-2" : "rounded px-2 py-1.5"
-                      } ${
-                        os
-                          ? // The design's own row fill, not a translucent wash
-                            // of it — 50% muted over the card reads as a muddy
-                            // tint rather than a selected row.
-                            isActive
-                            ? "bg-os-container"
-                            : "hover:bg-os-container"
-                          : isActive
-                            ? "bg-muted/60"
-                            : "hover:bg-muted/50"
+                      className={`flex w-full items-start gap-2 text-left text-sm transition-colors disabled:opacity-50 rounded-lg px-3 py-2 ${
+                        // The design's own row fill, not a translucent wash
+                        // of it — 50% muted over the card reads as a muddy
+                        // tint rather than a selected row.
+                        isActive ? "bg-os-container" : "hover:bg-os-container"
                       }`}
                       {...getItemProps({
                         onClick: () => {
@@ -257,11 +247,7 @@ export function Select<T extends string = string>({
                     >
                       <Check
                         className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
-                          isSelected
-                            ? os
-                              ? "text-os-accent"
-                              : "text-accent-coral"
-                            : "opacity-0"
+                          isSelected ? "text-os-accent" : "opacity-0"
                         }`}
                       />
                       <span className="flex min-w-0 flex-col">

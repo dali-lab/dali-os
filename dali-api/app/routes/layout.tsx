@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
-import { Layout } from '~/components/Layout'
-import { LayoutClassic } from '~/components/LayoutClassic'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
@@ -270,14 +268,10 @@ export default function AppLayoutRoute() {
   // Two subnav signals: `areaSubnav` (always renders a row, e.g. calendar) and
   // `areaPills` (the flag-gated in-page pill row). The pill row only exists when
   // the sidebar redesign is OFF, so its flush top spacing is only reserved then.
-  const redesign = flags['sidebar-redesign'] ?? false
-  // The dali.os shell supersedes both other shells wherever it's on: it owns
-  // the page wash and gutters too, so the page wrapper below branches on it.
-  const osRedesign = flags['os-redesign'] ?? false
-  // Portals escape the shell div; mirror the class to <html> so they keep the
-  // palette. In the tab-mode iframe this is the only place that runs it.
-  useOsShellRoot(osRedesign)
-  const hasAreaSubnav = hasSubnavRow(matches, redesign || osRedesign)
+  // Mirror the os-shell class to <html> so portals that escape the shell div
+  // keep the palette. In the tab-mode iframe this is the only place that runs it.
+  useOsShellRoot(true)
+  const hasAreaSubnav = hasSubnavRow(matches, true)
   // Pages that land directly on their own title, with no subnav in between,
   // ask for a wider gap under the trail (see adminHandle).
   const roomyBreadcrumb = matches.some(
@@ -304,7 +298,7 @@ export default function AppLayoutRoute() {
   // Mirrors Layout's `!ownsSubnavRow && <TablessHistoryNav />`; the redesign
   // check matters because LayoutClassic renders no such bar to move it into.
   const showTablessHistoryNav = useShowTablessHistoryNav()
-  const guideOnHistoryRow = redesign && showTablessHistoryNav && !hasAreaSubnav
+  const guideOnHistoryRow = showTablessHistoryNav && !hasAreaSubnav
 
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
@@ -450,15 +444,12 @@ export default function AppLayoutRoute() {
       className={cn(
         'w-full',
         fitViewport && 'flex flex-1 flex-col',
-        osRedesign
-          ? // The dali.os view gutter: 64px sides, 60px top on a page that
-            // starts with its own title. Roomier than the default shell's,
-            // because the rail no longer carries favourites or tasks.
-            // No flush case here: under os a page's own sub-nav is a segmented
-            // pill sized to its content, not a bar bleeding to the window
-            // edges, so it wants the same gutter every other page gets.
-            cn('px-5 pb-12 sm:px-10 lg:px-16', 'pt-8 lg:pt-[60px]')
-          : cn('px-3 pb-6 sm:px-6 sm:pb-8 lg:px-10', hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12'),
+        // The dali.os view gutter: 64px sides, 60px top on a page that starts
+        // with its own title. A page's own sub-nav is a segmented pill sized to
+        // its content, not a bar bleeding to the window edges, so it wants the
+        // same gutter every other page gets.
+        'px-5 pb-12 sm:px-10 lg:px-16',
+        'pt-8 lg:pt-[60px]',
       )}
     >
       {!hideBreadcrumbRow && (
@@ -490,7 +481,7 @@ export default function AppLayoutRoute() {
             className={cn(
               'min-h-dvh overflow-x-hidden',
               fitViewport && 'flex flex-col',
-              osRedesign ? 'os-shell bg-os-bg text-foreground' : 'bg-page',
+              'os-shell bg-os-bg text-foreground',
             )}
           >
             {pageContent}
@@ -509,19 +500,9 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        {osRedesign ? (
-          <LayoutOS user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} focusMode={focus}>
-            {tablessChild}
-          </LayoutOS>
-        ) : redesign ? (
-          <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} recents={recents} focusMode={focus}>
-            {tablessChild}
-          </Layout>
-        ) : (
-          <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} isInstructor={isInstructor} focusMode={focus}>
-            {tablessChild}
-          </LayoutClassic>
-        )}
+        <LayoutOS user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} focusMode={focus}>
+          {tablessChild}
+        </LayoutOS>
       </PageDocProvider>
       {/* Warms the sidebar's Favorites/Recent destinations once the shell is
           idle. Mounted here, not in Layout, so it runs under both shells and

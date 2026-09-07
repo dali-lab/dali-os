@@ -34,7 +34,7 @@ import { getHomeEducationSummary } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled, resolveHomeSurface } from "~/lib/feature-flags.server";
+import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
@@ -84,9 +84,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const surface = await resolveHomeSurface(auth.user.sub, roles, request);
   if (surface === "calendar") return redirect("/calendar");
   const redesign = surface === "search";
-  // The dali.os home is the search-first home in the design's dress, so it
-  // wins over both other surfaces wherever the shell it belongs to is on.
-  const osRedesign = await isFeatureEnabled("os-redesign", auth.user.sub, roles, request);
 
   // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
   // both to build the day columns and to window the calendar fetch. The shell
@@ -235,7 +232,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     redesign,
-    osRedesign,
     greeting,
     user: auth.user,
     notifications,
@@ -288,9 +284,7 @@ type MyProjectTask = {
 export const handle = { fitViewport: true };
 
 export default function Home() {
-  const data = useLoaderData<typeof loader>();
-  if (data.osRedesign) return <HomeOS />;
-  return data.redesign ? <HomeRedesign /> : <HomeClassic />;
+  return <HomeOS />;
 }
 
 /* ------------------------------------------------------------------ */

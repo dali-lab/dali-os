@@ -1452,7 +1452,7 @@ function ArchivedTasksModal({
       onClose={onClose}
       labelledBy="archived-tasks-title"
       containerClassName={cn(
-        modalCardClass(os, "max-w-xl max-h-[80vh]"),
+        modalCardClass("max-w-xl max-h-[80vh]"),
         "flex flex-col",
       )}
     >

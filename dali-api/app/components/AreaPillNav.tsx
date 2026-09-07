@@ -132,9 +132,9 @@ export function AreaPillNav({
   // The dali.os shell carries the same sidebar sub-tabs under its own flag, so
   // it suppresses the row for the same reason — otherwise a user on os without
   // the left-nav flag gets both copies of the same navigation.
-  const redesign = useFeatureFlag("sidebar-redesign");
-  const osRedesign = useFeatureFlag("os-redesign");
-  if (redesign || osRedesign) return null;
+  // The dali.os shell carries area sub-navigation in the sidebar + top bar, so
+  // the in-page pill row no longer renders.
+  return null;
 
   // A lone tab is pure noise — the page is already the only destination.
   // Still render the row if the history arrows need somewhere to live,
@@ -227,56 +227,14 @@ export function UnderlineTabButtons({
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
   const showHistoryNav = useShowTablessHistoryNav();
-  const osRedesign = useFeatureFlag("os-redesign");
-
-  if (osRedesign) {
-    return (
-      // No Guide button here: the os top bar already carries it, so the inline
-      // copy would be the second one on screen. The history arrows stay —
-      // hasSubnavRow still counts this page as owning a row, so the shell's
-      // standalone arrow bar is standing down for it.
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        {showHistoryNav && <TablessHistoryNavInline />}
-        {heading}
-        <SegmentedTabButtons items={items} label={label} className="ml-auto" />
-      </div>
-    );
-  }
-
-  const bar = (
-    <div className={underlineTabBarClass} role="tablist" aria-label={label}>
-      {showHistoryNav && (
-        <span className={tabBarLeadingClass}>
-          <TablessHistoryNavInline />
-        </span>
-      )}
-      <span className={underlineTabListClass}>
-        {items.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            role="tab"
-            aria-selected={item.active ?? false}
-            onClick={item.onClick}
-            className={underlineTabItemClass(!!item.active)}
-          >
-            <SubtabLabel label={item.label} icon={item.icon} />
-          </button>
-        ))}
-      </span>
-      {hasDoc && (
-        <span className={tabBarActionsClass}>
-          <PageDocButton />
-        </span>
-      )}
-    </div>
-  );
-
-  if (!heading) return bar;
+  // No Guide button here: the os top bar already carries it. The history arrows
+  // stay — hasSubnavRow still counts this page as owning a row, so the shell's
+  // standalone arrow bar stands down for it.
   return (
-    <>
+    <div className="mb-6 flex flex-wrap items-center gap-3">
+      {showHistoryNav && <TablessHistoryNavInline />}
       {heading}
-      {bar}
-    </>
+      <SegmentedTabButtons items={items} label={label} className="ml-auto" />
+    </div>
   );
 }

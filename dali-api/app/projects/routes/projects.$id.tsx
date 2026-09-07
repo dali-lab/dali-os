@@ -11,8 +11,8 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select, Menu } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Globe, Handshake, History, Pin, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
+import { Select, Menu, Popover } from "~/components/ui/floating";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
@@ -1621,7 +1621,7 @@ export default function ProjectDetail() {
   const partnerNames = project.partners.map((p) => p.org.name);
   // The dali.os dress for this page: the taller hero, the terms/roles clusters
   // beside the title, and the filled tab plates. Same tabs, same permissions.
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   const showStatusBar = useFeatureFlag("project-status-bar");
   const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
@@ -2930,7 +2930,7 @@ function DetailsSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
 
   return (
     <EditableSection
@@ -4706,7 +4706,7 @@ function ProjectDriveTab({
   const navigate = useNavigate();
   const dialog = useDialog();
   const toast = useToast();
-  const os = useFeatureFlag("os-redesign");
+  const os = true;
   const [search, setSearch] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");
@@ -5009,7 +5009,7 @@ function ProjectDriveTab({
         ariaLabel="Filter by type"
         align="right"
         options={PROJECT_TYPE_FILTERS.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
-        buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+        buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
       />
     </div>
   );
