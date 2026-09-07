@@ -54,7 +54,7 @@ import type {
 } from "~/calendar/lib/types";
 import {
   EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
-  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  HOURS, HOUR_PX, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED,
   toDatetimeLocal, dayHourToLocal,
   ROLE_COLOR_PALETTE, roleColor,
@@ -784,11 +784,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <div
           ref={setGridBox}
           // Sized to reach the bottom of the window (see useFillToBottom), with
-          // a viewport-fraction fallback for the first paint. The old
-          // `max(100vh - 9rem, 56rem)` under-counted the chrome above it and
-          // floored at 896px, so on a short window the grid ran past the fold
-          // and the *page* scrolled — taking the day header, which stays put
-          // only by sitting outside the grid's own scroller, with it.
+          // a viewport fraction covering the first paint. Both earlier versions
+          // of this line guessed the chrome above the box — `max(100vh - 9rem,
+          // 56rem)` and then `100dvh - 9rem` — and 9rem is short of what the
+          // shell's top bar, history row, page gutter and this page's own
+          // toolbar actually come to, so the box ran past the fold and the
+          // *page* scrolled, taking the day header (which stays put only by
+          // sitting outside the grid's own scroller) with it.
           className="flex gap-5 lg:h-[calc(100dvh-13rem)] lg:min-h-[22rem]"
           style={gridHeight != null ? { height: gridHeight } : undefined}
         >

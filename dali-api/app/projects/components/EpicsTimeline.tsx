@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronRight } from "lucide-react";
 import {
   DAY,
   dayOffset,
@@ -1171,12 +1171,17 @@ export function EpicsTimeline({
       >
         {/* Scrolls in both axes. Giving the box a vertical scrollport is also
             what finally makes the header's `sticky top-0` bite — until now its
-            nearest scrollport was the page, so it never pinned. */}
+            nearest scrollport was the page, so it never pinned.
+
+            Snapping is `proximity` and x-only: scrolling back toward today
+            lands it in the middle of the box instead of stopping wherever the
+            flick ended, while a scroll that means to be somewhere else
+            (reading a month three sprints out) is left alone. */}
         <div
           ref={scrollerRef}
           data-timeline-scroller
           className="overflow-auto"
-          style={{ maxHeight: MAX_BODY_H }}
+          style={{ maxHeight: MAX_BODY_H, scrollSnapType: "x proximity" }}
           onScroll={handleScroll}
         >
           <div
@@ -1222,6 +1227,9 @@ export function EpicsTimeline({
                       left: todayCenter,
                       top: HEADER_ROWS * HEADER_ROW_H,
                       bottom: 0,
+                      // The line is the grid's snap point, so "back to today"
+                      // settles with today centred in the scroll box.
+                      scrollSnapAlign: "center",
                     }}
                     aria-hidden
                   />
@@ -1309,6 +1317,18 @@ export function EpicsTimeline({
                         </span>
                       </div>
                     ))}
+                    {/* The body line stops under the header, so the band used
+                        to cut today in half. Repeating the mark inside the
+                        sprint row — after the bands, so it paints over them —
+                        carries it through the header the day circle already
+                        marks. */}
+                    {todayCenter != null && (
+                      <div
+                        className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-os-accent"
+                        style={{ left: todayCenter }}
+                        aria-hidden
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -1579,26 +1599,107 @@ export function EpicsTimeline({
       </div>
 
       {unscheduled.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          Unscheduled:{" "}
-          {unscheduled.map((e, i) => (
-            <span key={e.id}>
-              {i > 0 && ", "}
+        <UnscheduledEpics
+          epics={unscheduled}
+          taskCounts={taskCounts}
+          onEpicClick={onEpicClick}
+        />
+      )}
+    </div>
+  );
+}
+
+/* An epic with no dates can't be a bar, and a comma-separated run of names
+   under the grid gave it nothing but a title — you couldn't see what state it
+   was in or how much work already hung off it without opening each one. Same
+   rows the grid would have drawn, listed instead of placed. */
+function UnscheduledEpics({
+  epics,
+  taskCounts,
+  onEpicClick,
+}: {
+  epics: TimelineEpic[];
+  taskCounts?: Record<string, { done: number; total: number }>;
+  onEpicClick?: (epicId: string) => void;
+}) {
+  // Folded on arrival: this is a backlog, not the view — the timeline above it
+  // is what the tab is for, and an open list of undated epics pushed the grid
+  // up the page. The count stays on the header so it reads without opening.
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          "flex w-full flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-os-hover",
+          open && "border-b border-border",
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 flex-shrink-0 text-os-grey transition-transform",
+            open && "rotate-90",
+          )}
+          aria-hidden
+        />
+        <span
+          className="h-2 w-2 flex-shrink-0 rounded-full"
+          style={{ background: OS_LEVEL.epic.edge }}
+          aria-hidden
+        />
+        <h3 className="text-sm font-semibold text-foreground">Unscheduled</h3>
+        <span className="rounded-full bg-os-well px-2 py-0.5 text-[11px] font-semibold tabular-nums text-os-grey">
+          {epics.length}
+        </span>
+        <p className="ml-auto text-xs text-os-muted">
+          Give one a start and end date and it lands on the grid.
+        </p>
+      </button>
+      {/* Capped so a backlog of undated epics can't push the board off the
+          page — the list scrolls inside the card, like the grid above it. */}
+      <ul hidden={!open} className="max-h-56 divide-y divide-border overflow-y-auto">
+        {epics.map((e) => {
+          const counts = taskCounts?.[e.id];
+          const meta = [
+            e.stories.length > 0 &&
+              `${e.stories.length} ${e.stories.length === 1 ? "story" : "stories"}`,
+            counts && counts.total > 0 && `${counts.done}/${counts.total} tasks done`,
+          ].filter(Boolean) as string[];
+          const row = (
+            <>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                {e.title}
+              </span>
+              {meta.length > 0 && (
+                <span className="hidden flex-shrink-0 text-xs text-os-grey sm:inline">
+                  {meta.join(" · ")}
+                </span>
+              )}
+              <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
+                {EPIC_STATUS_LABEL[e.status]}
+              </span>
+            </>
+          );
+          return (
+            <li key={e.id}>
               {onEpicClick ? (
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
                   onClick={() => onEpicClick(e.id)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-os-hover"
                 >
-                  {e.title}
+                  {row}
                 </button>
               ) : (
-                e.title
+                <div className="flex w-full items-center gap-3 px-4 py-2.5">{row}</div>
               )}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

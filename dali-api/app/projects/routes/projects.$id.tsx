@@ -1831,7 +1831,10 @@ export default function ProjectDetail() {
             above, the work under it — rather than two tabs you flip between to
             answer one question. */}
         {tab === "progress" && (
-          <div className="flex flex-col gap-6">
+          // Wider than the page's own gap-6: the timeline and the board are two
+          // surfaces sharing one tab, and at the page rhythm the board's
+          // toolbar read as another row of the timeline card.
+          <div className="flex flex-col gap-10">
             {planningNode}
             {board}
           </div>
