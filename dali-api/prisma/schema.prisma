@@ -2663,6 +2663,16 @@ model Project {
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
 
+  // AI "TL;DR" of the project's work status, shown under the Progress-tab
+  // status bar. Cached here (shared across viewers) and regenerated only when
+  // the underlying work changes — aiTldrInputHash fingerprints the facts the
+  // last summary was written from, so a stale hash (or age past the TTL) marks
+  // it for refresh. All null until first generated; gated by the
+  // `project-tldr-ai` flag + a configured AI provider.
+  aiTldr            String?
+  aiTldrGeneratedAt DateTime?
+  aiTldrInputHash   String?
+
   // Auto-created on Project creation: a top-level FreeForm Page in the
   // Project workspace. The workspace's Overview tab renders this page's
   // contentDoc with a structured project header above. Nullable to allow

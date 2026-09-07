@@ -336,17 +336,6 @@ function HomeOS() {
   );
 }
 
-/* Where a shortcut lives, as the design's small-caps caption under the title.
-   FavoritePage carries no breadcrumb, but its workspace is the same answer at
-   the altitude a caption wants. */
-const OS_WORKSPACE_CAPTION: Record<string, string> = {
-  Project: "Projects",
-  Lab: "Lab",
-  EducationOffering: "Education",
-  Member: "My space",
-  Route: "Navigation",
-};
-
 function RecentGrid({
   pages,
 }: {
@@ -381,7 +370,7 @@ function RecentGrid({
           leading cards out of reach once the row overflows). no-scrollbar hides
           the always-on bar (the row still scrolls by wheel/trackpad/drag). */}
       <div className="overflow-x-auto no-scrollbar">
-        <div className="mx-auto flex w-max gap-5">
+        <div className="mx-auto flex w-max gap-3">
           {shortcuts.map((p) => (
             <RecentCard key={p.id} page={p} onChanged={onChanged} />
           ))}
@@ -397,18 +386,15 @@ function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => 
     // Fixed width + no shrink: in a single scrolling row the cards must hold
     // their size rather than divide the container, so the row scrolls instead
     // of squeezing every card thinner as more are added.
-    <div className="group relative w-40 flex-shrink-0">
+    <div className="group relative w-32 flex-shrink-0">
       <a
         href={page.href}
-        className="flex h-full flex-col items-center gap-3 rounded-os-card bg-os-card p-4 text-center transition-colors hover:bg-os-card-hover"
+        className="flex h-full flex-col items-center gap-2 rounded-os-card bg-os-card p-3 text-center transition-colors hover:bg-os-card-hover"
       >
         <span className="flex items-center justify-center">
           <FavoriteIcon page={page} size="lg" />
         </span>
-        <span className="w-full truncate text-base text-foreground">{page.title || "Untitled"}</span>
-        <span className="w-full truncate text-xs font-semibold tracking-wide text-os-grey uppercase">
-          {OS_WORKSPACE_CAPTION[page.workspaceType] ?? page.workspaceType}
-        </span>
+        <span className="w-full truncate text-sm text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without
           hunting for it — while a favorite always shows its filled one. */}

@@ -30,9 +30,11 @@ export function availabilityTint(frac: number): string {
 // midnight). Every downstream bound derives from HOURS[0] / last+1.
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const HOUR_PX = 54;
-// When the grid scrolls internally, open it here (7 AM) instead of pinned to
-// midnight; the rest of the 24h day stays reachable by scrolling up/down.
-export const INITIAL_SCROLL_HOUR = 7;
+// When the grid scrolls internally it opens centred on this hour rather than
+// pinned to a start hour: on a short window only a slice of the day is visible,
+// and midday in the middle of it keeps morning and evening equally close. The
+// rest of the 24h day stays reachable by scrolling up/down.
+export const INITIAL_SCROLL_CENTER_HOUR = 12;
 // Grid is snapped/subdivided into 10-minute cells.
 export const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
 export const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour

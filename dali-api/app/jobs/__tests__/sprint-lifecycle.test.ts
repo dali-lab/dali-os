@@ -5,9 +5,17 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
   postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
 }));
+vi.mock("~/lib/notify.server", () => ({
+  notify: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }),
+}));
+vi.mock("~/projects/lib/project-members.server", () => ({
+  currentProjectParticipantIds: vi.fn().mockResolvedValue(new Set(["u1", "u2"])),
+}));
 
 import { prisma } from "~/lib/db";
 import { postMessage } from "~/slack/lib/slack-client";
+import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 
 const mockPrisma = prisma as unknown as Record<
@@ -15,6 +23,9 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockPost = postMessage as unknown as ReturnType<typeof vi.fn>;
+const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
+const mockParticipants =
+  currentProjectParticipantIds as unknown as ReturnType<typeof vi.fn>;
 
 const NOW = new Date("2026-07-15T12:00:00Z");
 
@@ -52,6 +63,8 @@ beforeEach(() => {
     { status: "Cancelled" },
   ]);
   mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+  mockParticipants.mockResolvedValue(new Set(["u1", "u2"]));
+  mockNotify.mockResolvedValue({ inApp: 2, emailed: 0, slackDmed: 0 });
 });
 
 afterEach(() => {
@@ -81,6 +94,52 @@ describe("sprint-lifecycle", () => {
     expect(text).toContain("1 of 3 tasks done");
     expect(text).toContain("moved to the backlog");
     expect(result.items).toBe(1);
+  });
+
+  it("notifies the project's current members with a wrap-up summary", async () => {
+    const result = await runSprintLifecycle({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: {},
+    });
+
+    expect(mockParticipants).toHaveBeenCalledWith("p1");
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    const arg = mockNotify.mock.calls[0][0];
+    expect(arg.eventType).toBe("project.sprint_closed");
+    expect(arg.message.title).toContain('Sprint "Sprint 3" wrapped up');
+    expect(arg.message.body).toContain("1 of 3 tasks done");
+    expect(arg.message.body).toContain("moved to the backlog");
+    expect(arg.message.link).toBe("/projects/p1?tab=board");
+    expect(arg.message.dedupKey).toBe("sprint-closed:s1");
+    expect(arg.recipients.map((r: { userId: string }) => r.userId).sort()).toEqual([
+      "u1",
+      "u2",
+    ]);
+    expect(result.items).toBe(1);
+  });
+
+  it("skips the member wrap-up when nobody is currently on the project", async () => {
+    mockParticipants.mockResolvedValue(new Set());
+
+    await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("still counts the close-out when the member wrap-up throws", async () => {
+    mockNotify.mockRejectedValueOnce(new Error("boom"));
+
+    const result = await runSprintLifecycle({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: {},
+    });
+
+    // The close + rollover persisted; a notify hiccup is best-effort and never
+    // marks the close-out failed.
+    expect(result.items).toBe(1);
+    expect(result.note).toBeUndefined();
   });
 
   it("rolls unfinished tasks into the next Planned sprint when one exists", async () => {

@@ -10,7 +10,7 @@ import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd } from "~/lib/pay-period";
 import type { EventBlock, EventAttendeeDTO, EventLinkDTO, WhDay } from "~/calendar/lib/types";
 import {
-  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  HOURS, HOUR_PX, INITIAL_SCROLL_CENTER_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
   formatHour, formatHourMinute, readableTextColor, computeEventLanes,
 } from "~/calendar/lib/event-block";
@@ -1056,7 +1056,12 @@ export function WeekGrid({
     (el: HTMLDivElement | null) => {
       scrollElRef.current = el;
       if (fillAndScroll && el && !didInitScroll.current) {
-        el.scrollTop = INITIAL_SCROLL_HOUR * HOUR_PX;
+        // Centre midday in whatever height the grid actually got, rather than
+        // parking a fixed hour at the top: on a short window that put the whole
+        // afternoon below the fold. Reading clientHeight here forces layout, so
+        // it's the real scrollport height; clamped, so a tall window that fits
+        // the full day still opens at midnight.
+        el.scrollTop = Math.max(0, INITIAL_SCROLL_CENTER_HOUR * HOUR_PX - el.clientHeight / 2);
         didInitScroll.current = true;
       }
       if (el) measureScrollbar();

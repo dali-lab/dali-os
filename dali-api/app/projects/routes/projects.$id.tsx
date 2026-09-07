@@ -11,8 +11,8 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select, Menu, Popover } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
+import { Select, Menu } from "~/components/ui/floating";
+import { CalendarDays, CalendarPlus, CalendarX, Globe, Handshake, History, Pin, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
@@ -75,6 +75,15 @@ import {
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
+import {
+  computeProjectStatus,
+  factsFingerprint,
+  type ProjectWorkStatus,
+  type SprintPhase,
+} from "../lib/project-status";
+import { ProjectStatusBar } from "../components/ProjectStatusBar";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isAiEnabled } from "~/lib/ai.server";
 import { groupFilesByEpic } from "../lib/file-groups";
 import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -151,6 +160,20 @@ function closeOpenedDocumentTabs() {
 
 const STATUSES = ["Active", "Paused", "Archived"] as const;
 type ProjectStatus = (typeof STATUSES)[number];
+
+// The status plate's colours, shared by the read-only StatusBadge and the
+// hero's editable status dropdown so a project's status reads the same whether
+// or not you can change it.
+const STATUS_PILL_CLASSIC: Record<ProjectStatus, string> = {
+  Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
+  Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
+  Archived: "bg-muted/50 text-muted-foreground border-border",
+};
+const STATUS_PILL_OS: Record<ProjectStatus, string> = {
+  Active: "bg-os-bg/85 text-os-green border-os-green/35",
+  Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
+  Archived: "bg-os-bg/85 text-os-grey border-os-grey/35",
+};
 
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
@@ -264,6 +287,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       name: true,
       description: true,
       status: true,
+      aiTldr: true,
+      aiTldrGeneratedAt: true,
+      aiTldrInputHash: true,
       calendarEmail: true,
       teamGroupEmail: true,
       imageUrl: true,
@@ -991,6 +1017,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         status: s.status,
         epicId: s.epicId,
         termId: sprintTermId.get(s.id) ?? null,
+        startsAt: s.startsAt,
       })),
     epics: boardEpics,
     stories: project.epics.flatMap((e) =>
@@ -1106,6 +1133,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // ── Progress-tab status bar: deterministic work-status facts + the cached
+  // AI summary's freshness. Facts come from the same task/sprint rows the board
+  // already loaded, so the bar costs no extra query. aiTldrStale compares the
+  // current facts fingerprint against the one the cached summary was written
+  // from; the client regenerates when it differs (see ProjectStatusBar).
+  const statusFacts = computeProjectStatus(
+    {
+      projectStatus: project.status as ProjectWorkStatus,
+      tasks: project.tasks.map((t) => ({
+        id: t.id,
+        status: t.status as TaskStatus,
+        dueAt: t.dueAt,
+        sprintId: t.sprintId,
+        activityAt: t.activityAt,
+      })),
+      sprints: project.sprints.map((s) => ({
+        id: s.id,
+        name: s.name,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+        status: s.status as SprintPhase,
+      })),
+    },
+    new Date(),
+  );
+  const aiLineEnabled =
+    isAiEnabled() &&
+    (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request));
+  const aiTldrStale =
+    !project.aiTldrInputHash ||
+    project.aiTldrInputHash !== factsFingerprint(statusFacts);
+
   return {
     project: {
       id: project.id,
@@ -1168,6 +1227,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tasks,
     boardOptions,
     taskCountsByEpic,
+    statusFacts,
+    aiTldr: project.aiTldr,
+    aiTldrGeneratedAt: project.aiTldrGeneratedAt
+      ? project.aiTldrGeneratedAt.toISOString()
+      : null,
+    aiTldrStale,
+    aiLineEnabled,
     canEdit,
     canEditScope,
     canEditAssignmentLevel: core,
@@ -1526,6 +1592,10 @@ export default function ProjectDetail() {
     tasks,
     boardOptions,
     taskCountsByEpic,
+    statusFacts,
+    aiTldr,
+    aiTldrStale,
+    aiLineEnabled,
     allDomainOptions,
     plannedTerms,
     allTermOptions,
@@ -1552,6 +1622,8 @@ export default function ProjectDetail() {
   // The dali.os dress for this page: the taller hero, the terms/roles clusters
   // beside the title, and the filled tab plates. Same tabs, same permissions.
   const os = useFeatureFlag("os-redesign");
+  const showStatusBar = useFeatureFlag("project-status-bar");
+  const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -1666,6 +1738,9 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
+      // Sprint-view flag: promotes Sprint to a top-level board filter and opens
+      // the board on the current sprint. Off → the epic-nested sprint sub-filter.
+      sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={os ? peopleOptions : []}
@@ -1687,11 +1762,7 @@ export default function ProjectDetail() {
         project={project}
         partnerNames={partnerNames}
         canEdit={canEdit}
-        canEditScope={canEditScope}
         os={os}
-        plannedTerms={plannedTerms}
-        allTermOptions={allTermOptions}
-        allDomainOptions={allDomainOptions}
       />
 
       {/* Tab bar. Each section now owns its own edit button — there's no
@@ -1833,7 +1904,19 @@ export default function ProjectDetail() {
             above, the work under it — rather than two tabs you flip between to
             answer one question. */}
         {tab === "progress" && (
-          <div className="flex flex-col gap-6">
+          // Wider than the page's own gap-6: the timeline and the board are two
+          // surfaces sharing one tab, and at the page rhythm the board's
+          // toolbar read as another row of the timeline card.
+          <div className="flex flex-col gap-10">
+            {showStatusBar && (
+              <ProjectStatusBar
+                facts={statusFacts}
+                projectId={project.id}
+                aiTldr={aiTldr}
+                aiTldrStale={aiTldrStale}
+                aiLineEnabled={aiLineEnabled}
+              />
+            )}
             {planningNode}
             {board}
           </div>
@@ -1886,145 +1969,55 @@ export default function ProjectDetail() {
 // component only ever renders with the data branch, so narrow it out here.
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
-/* Chips that edit where they read: the selected set keeps the same shape it
-   has outside edit mode, each chip growing an ×, and a + opens the full option
-   list. Terms and roles share it so the hero's meta row keeps its height and
-   its reading order whether or not the editor is open. */
-function HeroChipPicker({
-  label,
-  options,
-  selected,
-  onChange,
-  chipClass,
-  emptyLabel,
-}: {
-  label: string;
-  /** Popover order and chip order both — one list, so nothing reorders on open. */
-  options: { id: string; label: string }[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-  chipClass: (label: string) => string;
-  emptyLabel: string;
-}) {
-  const chosen = options.filter((o) => selected.includes(o.id));
-  function toggle(id: string) {
-    onChange(
-      selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id],
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {chosen.length === 0 && (
-        <span className="text-[13px] text-os-muted">{emptyLabel}</span>
-      )}
-      {chosen.map((o) => (
-        <span
-          key={o.id}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full py-[5px] pl-3 pr-1.5 text-[13px] font-semibold",
-            chipClass(o.label),
-          )}
-        >
-          {o.label}
-          <button
-            type="button"
-            onClick={() => toggle(o.id)}
-            aria-label={`Remove ${o.label}`}
-            className="flex h-4 w-4 items-center justify-center rounded-full opacity-60 transition-opacity hover:opacity-100"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </span>
-      ))}
-      <Popover
-        ariaLabel={`Choose ${label.toLowerCase()}`}
-        trigger={
-          <button
-            type="button"
-            aria-label={`Add ${label.toLowerCase()}`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-os-container-hi text-os-grey transition-colors hover:border-os-grey hover:text-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        }
-      >
-        <div className="flex max-w-[20rem] flex-wrap gap-1.5 p-2">
-          {options.map((o) => {
-            const on = selected.includes(o.id);
-            return (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => toggle(o.id)}
-                aria-pressed={on}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[13px] font-semibold transition-colors",
-                  on
-                    ? chipClass(o.label)
-                    : "bg-os-container/50 text-os-grey hover:text-foreground",
-                )}
-              >
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-      </Popover>
-    </div>
-  );
-}
-
 function ProjectHeader({
   project,
   partnerNames,
   canEdit,
-  canEditScope = false,
   os = false,
-  plannedTerms = [],
-  allTermOptions = [],
-  allDomainOptions = [],
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
-  // Terms and roles are Core-only even for a staffed member who can rename the
-  // project, so the hero editor shows them read-only without it.
-  canEditScope?: boolean;
   os?: boolean;
-  // The os hero edits terms and roles where they're printed, so it needs the
-  // same option lists the Project details segments use. Defaulted empty so the
-  // classic header, which doesn't offer that, needn't pass them.
-  plannedTerms?: { id: string; code: string }[];
-  allTermOptions?: { id: string; code: string }[];
-  allDomainOptions?: { id: string; name: string }[];
 }) {
   const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [iconEmoji, setIconEmoji] = useState(project.iconEmoji);
-  const [name, setName] = useState(project.name);
-  const [status, setStatus] = useState<(typeof STATUSES)[number]>(project.status);
-  const [termIds, setTermIds] = useState<string[]>(() => plannedTerms.map((t) => t.id));
-  // What the roles cluster is showing: the declared set, or — when a project
-  // has none — the one implied by its bids and assignments, which is what read
-  // mode prints (muted). Seeding the editor from the declared list alone made
-  // a project whose roles are plainly on screen read "No roles yet" the moment
-  // you clicked Edit, and saving from there would have kept it that way.
-  const shownDomains =
-    project.domains.length > 0 ? project.domains : project.derivedDomains;
-  const [domainIds, setDomainIds] = useState<string[]>(() =>
-    shownDomains.map((d) => d.id),
-  );
+  // Name, status and icon each save the moment you change them — the hero has
+  // no edit mode and no pencil (which used to collide with the taskboard's
+  // Edit-task pencil). Only the name needs a transient draft while you type;
+  // status and icon read/write project state directly, so the fields never
+  // drift from the loader. Terms and roles are read-only here now — they live
+  // in Project settings (the gear), the one place that edits project scope.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project.name);
 
-  // Every field re-seeds from the loader on open, so a cancelled edit leaves
-  // nothing behind and a saved one picks up the revalidated values.
-  function openEditor() {
-    setIconEmoji(project.iconEmoji);
-    setName(project.name);
-    setStatus(project.status);
-    setTermIds(plannedTerms.map((t) => t.id));
-    setDomainIds(shownDomains.map((d) => d.id));
-    setEditing(true);
+  function startRename() {
+    setNameDraft(project.name);
+    setEditingName(true);
+  }
+  function commitName() {
+    const trimmed = nameDraft.trim();
+    setEditingName(false);
+    if (!trimmed || trimmed === project.name) return;
+    saveHeader({ name: trimmed });
+  }
+  // One write path for all three fields: post the current project values with
+  // the one field being changed overridden, so a status flip doesn't blank the
+  // name and vice versa. iconEmoji goes through "in patch" because null (no
+  // icon) is a real value the ?? fallback would swallow.
+  function saveHeader(patch: {
+    name?: string;
+    status?: ProjectStatus;
+    iconEmoji?: string | null;
+  }) {
+    submit(
+      {
+        intent: "header",
+        name: patch.name ?? project.name,
+        status: patch.status ?? project.status,
+        iconEmoji: ("iconEmoji" in patch ? patch.iconEmoji : project.iconEmoji) ?? "",
+      },
+      { method: "post" },
+    );
   }
 
   // Actual terms vs the expected span: when they differ, show "N of M" so a
@@ -2048,40 +2041,15 @@ function ProjectHeader({
     </p>
   );
 
-  // Chronological, matching the order the read-mode chips print in, so opening
-  // the editor doesn't shuffle them.
-  const termOptions = [...allTermOptions]
-    .reverse()
-    .map((t) => ({ id: t.id, label: t.code }));
-  // The catalog list, plus any role already on the project that isn't in it —
-  // a domain deactivated since it was declared is off the option list, and
-  // building the chip row by filtering options would drop it from the editor
-  // without ever showing that it is still set.
-  const domainOptions = [
-    ...allDomainOptions.map((d) => ({ id: d.id, label: d.name })),
-    ...shownDomains
-      .filter((d) => !allDomainOptions.some((o) => o.id === d.id))
-      .map((d) => ({ id: d.id, label: d.name })),
-  ];
-
   // The design's right-hand clusters: TERMS as chips, ROLES as tinted chips.
   // Same two facts the subtitle above states in prose — the "N of M terms"
   // count rides the end of the term row so a partially-scheduled project still
-  // reads as one. In edit mode the chips stay put and become selectable, rather
-  // than the row vanishing behind a name field.
+  // reads as one. Read-only in the hero: terms and roles are project scope, so
+  // Core edits them in Project settings (the gear), not from the title row.
   const osTagGroup = (
     <div className="flex flex-wrap items-center gap-6">
       <HeroClusterLabel label="Terms">
-        {editing && canEditScope ? (
-          <HeroChipPicker
-            label="Terms"
-            options={termOptions}
-            selected={termIds}
-            onChange={setTermIds}
-            chipClass={() => "bg-os-container text-foreground"}
-            emptyLabel="No terms yet"
-          />
-        ) : project.terms.length === 0 ? (
+        {project.terms.length === 0 ? (
           <span className="text-[13px] text-os-muted">No terms yet</span>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
@@ -2095,31 +2063,16 @@ function ProjectHeader({
             ))}
           </div>
         )}
-        <span className="text-xs text-os-grey">
-          {editing && canEditScope
-            ? `${termIds.length} of ${project.termCount} expected`
-            : termCountLabel}
-        </span>
+        <span className="text-xs text-os-grey">{termCountLabel}</span>
       </HeroClusterLabel>
 
       <HeroClusterLabel label="Roles">
-        {editing && canEditScope ? (
-          <HeroChipPicker
-            label="Roles"
-            options={domainOptions}
-            selected={domainIds}
-            onChange={setDomainIds}
-            chipClass={osRoleChipClass}
-            emptyLabel="No roles yet"
-          />
-        ) : project.domains.length === 0 && project.derivedDomains.length === 0 ? (
+        {project.domains.length === 0 && project.derivedDomains.length === 0 ? (
           <span className="text-[13px] text-os-muted">No roles yet</span>
         ) : (
           // A role is a role: the set derived from bids and assignments (a
           // project staffed before anyone declared its domains) wears the same
-          // colours as a declared one. Muting it left every chip in the hero
-          // grey until someone opened the editor and saved — a distinction
-          // this header was not otherwise making.
+          // colours as a declared one.
           <DomainChips
             items={project.domains.length > 0 ? project.domains : project.derivedDomains}
             os
@@ -2129,136 +2082,117 @@ function ProjectHeader({
     </div>
   );
 
-  // Hoisted so both header layouts place the same controls: the default puts
-  // them alone on the right, the os layout groups them with the tag clusters.
-  const editControls = (
+  // Classic keeps a header Schedule-meeting button; under os this folds into
+  // the Progress toolbar's New ▸ Meeting. There is no header edit button any
+  // more — name, status and icon edit in place, and project scope lives behind
+  // the settings gear.
+  const editControls = os ? null : (
     <div className="flex items-center gap-1.5 shrink-0">
-      {/* Classic keeps a header Schedule-meeting button; under os this folds
-          into the Progress toolbar's New ▸ Meeting. */}
-      {!editing && !os && (
-        <Link
-          to={`/calendar?tab=schedule&project=${project.id}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-        >
-          <CalendarPlus className="w-4 h-4" />
-          Schedule meeting
-        </Link>
-      )}
-      {canEdit &&
-        (editing ? (
-          <>
-            <Tooltip content="Cancel">
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                aria-label="Cancel"
-                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-            <Tooltip content="Save">
-              <button
-                type="button"
-                onClick={() => {
-                  if (formRef.current) submit(formRef.current);
-                  setEditing(false);
-                }}
-                aria-label="Save"
-                className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-              >
-                <Check className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          </>
-        ) : (
-          <Tooltip content="Edit">
-            <button
-              type="button"
-              onClick={openEditor}
-              aria-label={
-                os && canEditScope
-                  ? "Edit project name, status, terms and roles"
-                  : "Edit project name and status"
-              }
-              className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        ))}
+      <Link
+        to={`/calendar?tab=schedule&project=${project.id}`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+      >
+        <CalendarPlus className="w-4 h-4" />
+        Schedule meeting
+      </Link>
     </div>
   );
 
-  // One form for the whole hero: name, status and icon always, plus the term
-  // and role sets when the viewer may change them. The marker fields tell the
-  // action those sets rode along at all — without them (classic header, or a
-  // staffed non-Core member) it leaves them untouched rather than clearing
-  // them, since both are full-replacement writes.
-  const titleCluster = editing ? (
-    <Form
-      method="post"
-      ref={formRef}
-      className="flex items-center gap-2 flex-wrap"
-    >
-      <input type="hidden" name="intent" value="header" />
-      <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
-      <input type="hidden" name="status" value={status} />
-      {os && canEditScope && (
-        <>
-          <input type="hidden" name="hasTerms" value="1" />
-          <input type="hidden" name="hasDomains" value="1" />
-          {termIds.map((id) => (
-            <input key={id} type="hidden" name="termId" value={id} />
-          ))}
-          {domainIds.map((id) => (
-            <input key={id} type="hidden" name="domainId" value={id} />
-          ))}
-        </>
-      )}
-      <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
-      <input
-        name="name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        aria-label="Project name"
-        autoFocus
-        // Sized to the name it holds so the title doesn't jump to a box of some
-        // other width the moment you click the pencil.
-        style={os ? { width: `${Math.max(name.length, 8) + 1}ch` } : undefined}
-        className={cn(
-          "font-heading text-foreground bg-transparent max-w-full focus:outline-none",
-          os
-            ? "text-[32px] font-medium border-b border-os-container-hi focus:border-os-accent"
-            : "text-xl font-bold px-2 py-1 border border-border rounded-md bg-background focus:ring-2 focus:ring-accent-coral/30",
-        )}
-      />
-      <Select
-        value={status}
-        onChange={(v) => setStatus(v as (typeof STATUSES)[number])}
-        ariaLabel="Project status"
-        options={STATUSES.map((s) => ({ value: s, label: s }))}
-        buttonClassName={
-          os
-            ? "rounded-full border border-os-container-hi px-3 py-[5px] text-xs font-semibold text-os-grey inline-flex items-center gap-1 transition-colors hover:text-foreground"
-            : "text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-        }
-      />
-    </Form>
-  ) : (
+  // Name, status and icon edit in place — no edit mode, no form wrapper. Each
+  // control saves on its own (rename on blur/Enter, status and icon on change),
+  // so the hero never swaps into a differently-shaped editor. A viewer who
+  // can't edit gets the same three elements, read-only.
+  const nameClasses = cn(
+    "font-heading text-foreground",
+    os ? "text-[32px] font-medium" : "text-2xl font-bold",
+  );
+  const titleCluster = (
     <>
-      {/* Real project icon at the title's own size — the design
-          prints the emoji inline with the heading. */}
-      <ProjectIcon iconEmoji={project.iconEmoji} size={os ? "inherit" : "lg"} />
-      <h1
-        className={cn(
-          "font-heading text-foreground",
-          os ? "text-[32px] font-medium" : "text-2xl font-bold",
-        )}
-      >
-        {project.name}
-      </h1>
-      <StatusBadge status={project.status} os={os} />
+      {/* Real project icon at the title's own size — the design prints the
+          emoji inline with the heading. The picker renders the same glyph and
+          opens on click, so read and edit look identical until you click. */}
+      {canEdit ? (
+        <ProjectIconPicker
+          iconEmoji={project.iconEmoji}
+          editing
+          onChange={(v) => saveHeader({ iconEmoji: v })}
+        />
+      ) : (
+        <ProjectIcon iconEmoji={project.iconEmoji} size={os ? "inherit" : "lg"} />
+      )}
+      {canEdit && editingName ? (
+        <input
+          name="name"
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitName();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditingName(false);
+            }
+          }}
+          aria-label="Project name"
+          autoFocus
+          // Sized to the name it holds so the title doesn't jump to a box of
+          // some other width the moment you click it.
+          style={os ? { width: `${Math.max(nameDraft.length, 8) + 1}ch` } : undefined}
+          className={cn(
+            nameClasses,
+            "bg-transparent max-w-full focus:outline-none",
+            os
+              ? "border-b border-os-container-hi focus:border-os-accent"
+              : "px-2 py-1 border border-border rounded-md bg-background focus:ring-2 focus:ring-accent-coral/30",
+          )}
+        />
+      ) : (
+        // Click-to-rename keeps the <h1> as the title element; when you can
+        // edit it also acts as a button that turns into the field above.
+        <h1
+          className={cn(
+            nameClasses,
+            canEdit &&
+              "cursor-text rounded-md -mx-1 px-1 transition-colors hover:bg-muted/40",
+          )}
+          role={canEdit ? "button" : undefined}
+          tabIndex={canEdit ? 0 : undefined}
+          title={canEdit ? "Rename project" : undefined}
+          onClick={canEdit ? startRename : undefined}
+          onKeyDown={
+            canEdit
+              ? (e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    startRename();
+                  }
+                }
+              : undefined
+          }
+        >
+          {project.name}
+        </h1>
+      )}
+      {canEdit ? (
+        <Select
+          value={project.status}
+          onChange={(v) => saveHeader({ status: v as ProjectStatus })}
+          ariaLabel="Project status"
+          options={STATUSES.map((s) => ({ value: s, label: s }))}
+          // The Select trigger adds its own flex layout; this just supplies the
+          // status plate's shape and colour so the dropdown reads as the badge.
+          buttonClassName={cn(
+            "rounded-full border transition-[filter] hover:brightness-95",
+            os
+              ? cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status])
+              : cn("px-2 py-0.5 text-[11px] font-medium", STATUS_PILL_CLASSIC[project.status]),
+          )}
+        />
+      ) : (
+        <StatusBadge status={project.status} os={os} />
+      )}
     </>
   );
 
@@ -2289,8 +2223,7 @@ function ProjectHeader({
               {/* Domains sit on their own row under the title. Sharing the
                   title's wrapped flex row meant they trailed off the end of the
                   name and broke to an arbitrary place as it grew. */}
-              {!editing &&
-                !os &&
+              {!os &&
                 (project.domains.length > 0 ? (
                   <div className="mt-1.5">
                     <DomainChips items={project.domains} />
@@ -3448,24 +3381,14 @@ function StatusBadge({
   status: (typeof STATUSES)[number];
   os?: boolean;
 }) {
-  const palette: Record<(typeof STATUSES)[number], string> = {
-    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
-    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
-    Archived: "bg-muted/50 text-muted-foreground border-border",
-  };
   // The design's status tag — the same plate the project cards wear over their
   // cover, so a project reads the same in the grid and on its own page.
-  const osPalette: Record<(typeof STATUSES)[number], string> = {
-    Active: "bg-os-bg/85 text-os-green border-os-green/35",
-    Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
-    Archived: "bg-os-bg/85 text-os-grey border-os-grey/35",
-  };
   return (
     <span
       className={
         os
-          ? `rounded-full border px-3 py-[5px] text-xs font-semibold ${osPalette[status]}`
-          : `text-[11px] px-2 py-0.5 rounded-full border font-medium ${palette[status]}`
+          ? `rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`
+          : `text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_PILL_CLASSIC[status]}`
       }
     >
       {status}

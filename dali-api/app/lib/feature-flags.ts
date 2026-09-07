@@ -128,6 +128,22 @@ export const FEATURE_FLAGS = [
     label: "Drive folder bindings",
     description:
       "Replaces the hidden systemKey Drive scaffolding with editable process→folder bindings. Each project / education offering / hiring cycle / Core governance area points at NORMAL Drive folders (renameable, movable, shareable) for its auto-filed items (meeting notes, forms, agreements, …), configured in that process's settings. Ships off; without it the legacy systemKey folders remain.",
+    key: "project-status-bar",
+    label: "Project status bar",
+    description:
+      "A compact work-status strip above the project timeline (Progress tab): task progress, the active sprint's deadline, and attention flags (overdue, unscheduled, in review, stale). Deterministic — no AI. Ships off.",
+  },
+  {
+    key: "project-tldr-ai",
+    label: "Project AI TL;DR",
+    description:
+      "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
+  },
+  {
+    key: "sprint-view",
+    label: "Sprint view",
+    description:
+      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 
