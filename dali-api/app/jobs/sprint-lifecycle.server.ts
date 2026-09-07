@@ -12,6 +12,8 @@
 import { prisma } from "~/lib/db";
 import { getAppEnv } from "~/lib/app-env";
 import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
+import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const BATCH = 20;
@@ -69,25 +71,50 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
         data: { sprintId: next?.id ?? null },
       });
 
+      const dest = next ? `moved to "${next.name}"` : "moved to the backlog";
+      const summary = [
+        `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`,
+        moved.count > 0
+          ? `${moved.count} unfinished task${moved.count === 1 ? "" : "s"} ${dest}.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
       if (
         sprint.project.slackChannelId &&
         slackConfigured() &&
         jobChannelPostAllowed()
       ) {
-        const dest = next ? `moved to "${next.name}"` : "moved to the backlog";
-        const text = [
-          `:checkered_flag: Sprint *${sprint.name}* is closed.`,
-          `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`,
-          moved.count > 0
-            ? `${moved.count} unfinished task${moved.count === 1 ? "" : "s"} ${dest}.`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" ");
+        const text = `:checkered_flag: Sprint *${sprint.name}* is closed. ${summary}`;
         await postMessage(sprint.project.slackChannelId, text).catch((err) =>
           console.error(`[jobs] sprint ${sprint.id}: slack post failed`, err),
         );
       }
+
+      // A one-time wrap-up to the project's current members (in-app + desktop
+      // banner, preference-gated). Best-effort and independent of the Slack
+      // channel post — a notify hiccup must not mark the close-out failed, and
+      // the rollover above has already persisted. dedupKey makes a re-fired
+      // close a no-op rather than a second ping.
+      try {
+        const memberIds = await currentProjectParticipantIds(sprint.projectId);
+        if (memberIds.size > 0) {
+          await notify({
+            eventType: "project.sprint_closed",
+            message: {
+              title: `Sprint "${sprint.name}" wrapped up`,
+              body: `${sprint.project.name} — ${summary}`,
+              link: `/projects/${sprint.projectId}?tab=board`,
+              dedupKey: `sprint-closed:${sprint.id}`,
+            },
+            recipients: [...memberIds].map((userId) => ({ userId })),
+          });
+        }
+      } catch (err) {
+        console.error(`[jobs] sprint ${sprint.id}: member notify failed`, err);
+      }
+
       closed++;
     } catch (err) {
       // The sprint is already Closed; losing its rollover beats blocking the
