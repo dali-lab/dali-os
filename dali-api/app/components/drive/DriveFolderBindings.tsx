@@ -68,8 +68,7 @@ export function DriveFolderBindings({
     <div className={className ?? "border-t border-border pt-5 mt-2"}>
       <h3 className="text-sm font-semibold text-gray-900">Drive folders</h3>
       <p className="mt-1 text-xs text-gray-500">
-        Where this {NOUN[processType]} auto-files things. Point each at any folder, or let DALI create
-        one. These are normal folders — rename, move, or share them like anything else in Drive.
+        Where this {NOUN[processType]}&rsquo;s items are auto-filed.
       </p>
 
       {data.state === "loading" && !data.data ? (
@@ -99,11 +98,12 @@ export function DriveFolderBindings({
                 )}
 
                 <div className="ml-auto flex items-center gap-1.5">
+                  {busy && <span className="text-xs text-gray-400">Saving…</span>}
                   {candidates.length > 0 && (
                     <Select
                       value=""
                       options={[
-                        { value: "", label: "Choose existing…" },
+                        { value: "", label: row.folderPageId ? "Change…" : "Choose existing…" },
                         ...candidates.map((c) => ({ value: c.id, label: c.title })),
                       ]}
                       onChange={(v) =>
@@ -111,16 +111,20 @@ export function DriveFolderBindings({
                       }
                     />
                   )}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => submit({ purpose: row.purpose, intent: "create" })}
-                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {row.folderPageId ? "Replace" : "Create"}
-                  </button>
-                  {row.folderPageId && (
+                  {/* Create a fresh folder only when nothing is bound — avoids the
+                      old "Replace" button silently spawning a new empty folder. */}
+                  {!row.folderPageId && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => submit({ purpose: row.purpose, intent: "create" })}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Create folder
+                    </button>
+                  )}
+                  {(row.folderPageId || row.missing) && (
                     <button
                       type="button"
                       disabled={busy}
