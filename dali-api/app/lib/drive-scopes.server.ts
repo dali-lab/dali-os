@@ -216,7 +216,7 @@ export async function loadDriveScopes({
   let coreItems: DriveItem[] = [];
   let labVisibleItems = labItems;
   let coreFolderIds = new Set<string>();
-  if (false && needsCore) {
+  if (needsCore) {
     // DIAGNOSTIC BISECT: Core carve-out disabled to isolate the e2e drag regression.
     // Core folders are ordinary Lab folders shared with the Core group
     // (scopeKind=Group). Only Core members can see them (getPageAccess), so for a

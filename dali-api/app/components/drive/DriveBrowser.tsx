@@ -362,9 +362,9 @@ function itemMenuItems(
   onToggleFavorite?: (item: DriveItem) => void,
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void,
 ): ReactNode {
-  // Folders are ordinary now (no systemKey scaffolding) — nothing is
-  // system-managed, so rename/move/delete are always allowed by this gate.
-  const isSystemManaged = false;
+  // Signal ①: system-managed folders (systemKey set) hide Delete/Rename entirely.
+  // The gate extends the existing type-based canMove gate at lines 258-260.
+  const isSystemManaged = item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
   const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
   // allowed); agreements and rubrics remain placement-locked. System-managed
@@ -1287,8 +1287,11 @@ export function DriveBrowser({
   }
   const detailActions = detailScopeId ? getInternalScopeActions(detailScopeId) : null;
 
-  // Folders are ordinary now — nothing is system-managed.
-  const detailIsSystemManaged = false;
+  // Signal ①: system-managed folders hide Delete/Rename.
+  const detailIsSystemManaged =
+    !!detailItem &&
+    detailItem.type === "folder" &&
+    !!(detailItem as { systemKey?: string | null }).systemKey;
   const canItemRename =
     !detailIsSystemManaged &&
     !!detailItem &&
