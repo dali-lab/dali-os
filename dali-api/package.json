@@ -57,7 +57,7 @@
     "isomorphic-dompurify": "^3.10.0",
     "lucide-react": "^0.544.0",
     "papaparse": "^5.5.4",
-    "passkit-generator": "^3.5.7",
+    "passkit-generator": "^3.5.8",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "playwright-core": "^1.62.1",
