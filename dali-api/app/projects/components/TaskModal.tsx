@@ -290,11 +290,13 @@ export function TaskModal({
     const currentDescription = (current.description ?? "").trim() || null;
     if (nextDescription !== currentDescription) patch.description = nextDescription;
     if (status !== current.status) patch.status = status;
-    // Compare the date the picker shows, not a rebuilt ISO. Reconstructing
-    // end-of-day / UTC-midnight from a local YYYY-MM-DD does not round-trip
-    // the stored timestamp, so an untouched deadline looked dirty.
+    // Compare the date the picker shows, not a rebuilt ISO — reconstructing
+    // the UTC-midnight timestamp from a YYYY-MM-DD round-trips the value, so an
+    // untouched deadline no longer looks dirty.
     const currentDueDate = current.dueAt ? dateInputValue(current.dueAt) : "";
-    if (dueDate !== currentDueDate) patch.dueAt = dueDate ? endOfDayIso(dueDate) : null;
+    if (dueDate !== currentDueDate) {
+      patch.dueAt = dueDate ? `${dueDate}T00:00:00.000Z` : null;
+    }
     const currentStartDate = current.startsAt ? dateInputValue(current.startsAt) : "";
     if (startDate !== currentStartDate) {
       patch.startsAt = startDate ? `${startDate}T00:00:00.000Z` : null;
@@ -437,7 +439,7 @@ export function TaskModal({
         title: trimmed,
         description: description.trim() ? description.trim() : null,
         status,
-        dueAt: dueDate ? endOfDayIso(dueDate) : null,
+        dueAt: dueDate ? `${dueDate}T00:00:00.000Z` : null,
         startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
@@ -1675,18 +1677,12 @@ function normalizeRepoForDisplay(input: string): string | null {
   return /^[^/\s]+\/[^/\s]+$/.test(s) ? s : null;
 }
 
+// Task startsAt/dueAt are date-only values stored as UTC midnight (see the
+// timeline's UTC-day convention in timeline-days.ts). Read the UTC calendar
+// date so the picker shows the same day the bar occupies — a local getDate()
+// would drift a day for viewers west of UTC.
 function dateInputValue(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function endOfDayIso(dateOnly: string): string {
-  const [y, m, d] = dateOnly.split("-").map(Number);
-  const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
-  return local.toISOString();
+  return new Date(iso).toISOString().slice(0, 10);
 }
 
 function formatCreatedAt(iso: string): string {
