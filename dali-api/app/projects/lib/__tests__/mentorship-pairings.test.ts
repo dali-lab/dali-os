@@ -4,14 +4,18 @@ import { derivePairings, findDomainsMissingMentors } from "../mentorship-pairing
 type Row = { userId: string; domainId: string; level: "P1" | "P2" | "P3" };
 type Pair = { menteeUserId: string; mentorUserId: string; domainId: string };
 
-function mkTx(assignments: Row[]) {
+function mkTx(assignments: Row[], manualPairs: Pair[] = []) {
   const created: Pair[] = [];
-  let deletedWhere: { projectId: string; termId: string } | null = null;
+  let deletedWhere:
+    | { projectId: string; termId: string; manual: boolean }
+    | null = null;
   const tx = {
     projectAssignment: {
       findMany: vi.fn().mockResolvedValue(assignments),
     },
     mentorshipPair: {
+      // Preserved (manual) pairs the derive step reads to avoid duplicating.
+      findMany: vi.fn().mockResolvedValue(manualPairs),
       deleteMany: vi.fn().mockImplementation(async ({ where }: any) => {
         deletedWhere = where;
         return { count: 1 };
@@ -43,7 +47,7 @@ describe("derivePairings", () => {
       { userId: "mentor-x", domainId: "d1", level: "P3" },
     ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
-    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1" });
+    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1", manual: false });
     expect(n).toBe(2);
     expect(created).toEqual([
       { menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" },
@@ -78,7 +82,7 @@ describe("derivePairings", () => {
       { userId: "moiz", domainId: "fullstack", level: "P3" },
     ]);
     const n = await derivePairings(tx as any, "evergreen", "26x");
-    expect(getDeletedWhere()).toEqual({ projectId: "evergreen", termId: "26x" });
+    expect(getDeletedWhere()).toEqual({ projectId: "evergreen", termId: "26x", manual: false });
     expect(n).toBe(0);
     expect(created).toEqual([]);
   });
@@ -103,7 +107,7 @@ describe("derivePairings", () => {
       { userId: "mentee-b", domainId: "d1", level: "P2" },
     ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
-    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1" });
+    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1", manual: false });
     expect(n).toBe(0);
     expect(created).toEqual([]);
   });
@@ -133,6 +137,49 @@ describe("derivePairings", () => {
     expect(n).toBe(1);
     expect(created).toEqual([
       { menteeUserId: "p3-demoted", mentorUserId: "mentor-x", domainId: "d1" },
+    ]);
+  });
+
+  it("only clears auto (manual:false) pairs — manual edits are preserved", async () => {
+    const { tx, getDeletedWhere } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentor-x", domainId: "d1", level: "P3" },
+    ]);
+    await derivePairings(tx as any, "proj1", "term1");
+    expect(getDeletedWhere()).toEqual({
+      projectId: "proj1",
+      termId: "term1",
+      manual: false,
+    });
+  });
+
+  it("skips an auto pair that duplicates an existing manual pair", async () => {
+    const { tx, created } = mkTx(
+      [
+        { userId: "mentee-a", domainId: "d1", level: "P1" },
+        { userId: "mentor-x", domainId: "d1", level: "P3" },
+      ],
+      [{ menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" }],
+    );
+    const n = await derivePairings(tx as any, "proj1", "term1");
+    expect(n).toBe(0);
+    expect(created).toEqual([]);
+  });
+
+  it("still derives non-duplicate auto pairs alongside a manual one", async () => {
+    const { tx, created } = mkTx(
+      [
+        { userId: "mentee-a", domainId: "d1", level: "P1" },
+        { userId: "mentor-x", domainId: "d1", level: "P3" },
+        { userId: "mentor-y", domainId: "d1", level: "P3" },
+      ],
+      // mentee-a↔mentor-x already exists as a manual pair; only the y link is new.
+      [{ menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" }],
+    );
+    const n = await derivePairings(tx as any, "proj1", "term1");
+    expect(n).toBe(1);
+    expect(created).toEqual([
+      { menteeUserId: "mentee-a", mentorUserId: "mentor-y", domainId: "d1" },
     ]);
   });
 });

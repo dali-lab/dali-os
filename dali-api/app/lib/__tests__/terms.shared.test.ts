@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { nextTermCode, dartmouthTermCode, daliTermCodeFromDartmouth } from "../terms.shared";
+import {
+  nextTermCode,
+  dartmouthTermCode,
+  daliTermCodeFromDartmouth,
+  interimLabel,
+} from "../terms.shared";
 
 describe("nextTermCode", () => {
   it("advances through the seasons W → S → X → F within a year", () => {
@@ -58,5 +63,14 @@ describe("daliTermCodeFromDartmouth", () => {
     expect(daliTermCodeFromDartmouth("202602")).toBe("");
     expect(daliTermCodeFromDartmouth("2026")).toBe("");
     expect(daliTermCodeFromDartmouth("")).toBe("");
+  });
+});
+
+describe("interimLabel", () => {
+  it("names the break by the term it leads into", () => {
+    expect(interimLabel("W")).toBe("Winterim");
+    expect(interimLabel("S")).toBe("spring break");
+    expect(interimLabel("X")).toBe("summer interim");
+    expect(interimLabel("F")).toBe("fall interim");
   });
 });

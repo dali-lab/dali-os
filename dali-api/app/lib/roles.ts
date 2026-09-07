@@ -651,6 +651,54 @@ async function computeCurrentTermStrict() {
   });
 }
 
+// A resolved Term row (whatever shape `findFirst` returns for the Term model).
+type TermRow = NonNullable<Awaited<ReturnType<typeof computeCurrentTermStrict>>>;
+
+/**
+ * Where "now" sits relative to the term calendar:
+ * - `in-term`  — inside some term's [startDate, endDate] window.
+ * - `break`    — between terms; `previous` just ended and/or `next` hasn't
+ *                started (either may be null at the very edges of history).
+ * - `no-terms` — the Term table is empty (v0 seed hasn't run).
+ *
+ * Unlike `currentTerm()` (which rolls forward to the next term so role-checks
+ * don't drop members to Alumni), this distinguishes a real break so surfaces
+ * like the mentorship hub can pause "you owe a note" nudges instead of
+ * reporting them against a term that hasn't begun.
+ */
+export type TermPhase =
+  | { state: "in-term"; term: TermRow }
+  | { state: "break"; previous: TermRow | null; next: TermRow | null }
+  | { state: "no-terms" };
+
+async function computeCurrentTermPhase(): Promise<TermPhase> {
+  const now = new Date();
+  const active = await prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
+  });
+  if (active) return { state: "in-term", term: active };
+  const [previous, next] = await Promise.all([
+    prisma.term.findFirst({
+      where: { endDate: { lt: now } },
+      orderBy: { sortKey: "desc" },
+    }),
+    prisma.term.findFirst({
+      where: { startDate: { gt: now } },
+      orderBy: { sortKey: "asc" },
+    }),
+  ]);
+  if (!previous && !next) return { state: "no-terms" };
+  return { state: "break", previous, next };
+}
+
+export async function currentTermPhase(request?: Request): Promise<TermPhase> {
+  if (!request) return computeCurrentTermPhase();
+  return cachedForRequest(request, "currentTermPhase", () =>
+    computeCurrentTermPhase(),
+  );
+}
+
 /**
  * Prisma `where` predicate for "current lab members" — Users with a DALIMember
  * row who are active in the current term. Use this in directory / picker

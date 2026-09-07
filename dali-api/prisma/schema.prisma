@@ -2493,6 +2493,10 @@ model MentorshipPair {
   projectId    String
   termId       String
   domainId     String
+  // True when a Core user hand-created/reassigned this pair (vs. auto-derived
+  // from the roster at staffing finalize). derivePairings only clears and
+  // rewrites manual:false rows, so manual edits survive a re-finalize.
+  manual       Boolean @default(false)
 
   mentee  User    @relation("MenteePairs", fields: [menteeUserId], references: [id])
   mentor  User    @relation("MentorPairs", fields: [mentorUserId], references: [id])
