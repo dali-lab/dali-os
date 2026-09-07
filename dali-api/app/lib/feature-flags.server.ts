@@ -31,7 +31,7 @@ const DEFS: readonly FeatureFlagDef[] = FEATURE_FLAGS;
 // override (an empty value turns the whole mechanism off). Only the *default*
 // moves: a FeatureFlag row, once an operator creates one in Admin → Feature
 // Flags, still wins here exactly as it does in production.
-const DEV_DEFAULT_ON: readonly FeatureFlagKey[] = ["os-redesign"];
+const DEV_DEFAULT_ON: readonly FeatureFlagKey[] = [];
 
 function devDefaultOn(key: string): boolean {
   if (process.env.NODE_ENV === "production") return false;
@@ -170,8 +170,8 @@ export async function resolveFlagVariant(
 }
 
 // Which home page this member lands on. "home-surface" decides when it targets
-// them; otherwise the home redesign travels with the new left navigation, so
-// members on that get the search-first home and everyone else keeps today's.
+// them; untargeted members fall through to the search-first home (the default
+// everyone lands on).
 export async function resolveHomeSurface(
   userId: string,
   roles: UserRoles,
@@ -179,7 +179,7 @@ export async function resolveHomeSurface(
 ): Promise<HomeSurface> {
   const chosen = await resolveFlagVariant("home-surface", userId, roles, request);
   if (isHomeSurface(chosen)) return chosen;
-  return (await isFeatureEnabled("sidebar-redesign", userId, roles, request)) ? "search" : "classic";
+  return "search";
 }
 
 export type AdminFlagView = {

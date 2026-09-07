@@ -131,6 +131,14 @@ export const EVENT_TYPES = {
     description: "When a linked GitHub issue closes or reopens one of your tasks.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "project.sprint_closed": {
+    kind: "General",
+    area: "Tasks",
+    label: "Sprint wrap-ups",
+    description:
+      "When a sprint on one of your projects ends — a summary of what got done and where unfinished tasks rolled to.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "collab.comment_reply": {
     kind: "General",
     area: "Documents",

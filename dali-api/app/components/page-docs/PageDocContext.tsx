@@ -136,12 +136,8 @@ export function PageDocButton({
   const matches = useMatches();
   const { docKey, open, setOpen } = usePageDoc();
   const shellOwnsGuide = useContext(ShellGuideContext);
-  // Pills only render when the sidebar redesign is off; when it's on AreaPillNav
-  // returns null, so the guide CTA belongs back on the breadcrumb row.
-  const redesign = useFeatureFlag("sidebar-redesign");
-  const hasAreaPills = !redesign && matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-  );
+  // The in-page pill row no longer renders under the dali.os shell.
+  const hasAreaPills = false;
   // `areaSubnav` routes (e.g. calendar) render their own subnav row that owns
   // the guide CTA, regardless of the redesign flag — so the layout's copy must
   // stand down there too, or the page shows two Guide buttons.
@@ -189,20 +185,12 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
   const { open, docKey, docTitle, setOpen, focusCommentId } = usePageDoc();
   const location = useLocation();
   const matches = useMatches();
-  const redesignOpen = useFeatureFlag("sidebar-redesign");
-  const osRedesign = useFeatureFlag("os-redesign");
 
   if (open && docKey) {
-    // On pages with their own sub-nav row the layout zeroes its top padding
-    // because that row supplies the spacing — but the open guide replaces the
-    // outlet, sub-nav included, so nothing is left to space it off the
-    // breadcrumb row. Ask the same predicate the layout asks (hasSubnavRow, in
-    // nav-areas) and put the padding back exactly when it was zeroed; reading
-    // `areaPills` alone missed `areaSubnav` pages and, under the sidebar
-    // redesign, every page — leaving the guide title flush against the top.
-    // Under os the layout never zeroes it (its sub-nav is an inline pill, not a
-    // flush bar), so there is nothing to put back.
-    const zeroedTopPadding = !osRedesign && hasSubnavRow(matches, redesignOpen);
+    // Under the os shell the layout never zeroes the outlet's top padding (its
+    // sub-nav is an inline pill, not a flush bar), so there is nothing to put
+    // back when the open guide replaces the outlet.
+    const zeroedTopPadding = false;
     return (
       <div className={zeroedTopPadding ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
         <Suspense

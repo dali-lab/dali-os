@@ -47,6 +47,11 @@ import {
   taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
+  activeSprintIds,
+  defaultSprintScope,
+  resolveSprintScope,
+  taskInSprintScope,
+  type SprintScope,
 } from "../lib/task-board";
 import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
 import { SearchInput } from "~/components/ui/SearchInput";
@@ -68,6 +73,10 @@ type Props = {
   // Bumped by an outside control (the timeline's Add ▸ Task) to open the
   // create form. A counter rather than a boolean so repeated adds each fire.
   createNonce?: number;
+  // `sprint-view` flag. On → Sprint is a top-level board filter (current / any
+  // past sprint / backlog) that opens the board on the current sprint and
+  // supersedes the term filter while set. Off → the epic-nested sprint sub-filter.
+  sprintFilterEnabled?: boolean;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
@@ -83,6 +92,14 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
+
+// How each sprint status reads in the sprint-view picker — "Upcoming" and
+// "Past" are friendlier than the raw Planned/Closed enum for a filter list.
+const SPRINT_WORD: Record<"Active" | "Planned" | "Closed", string> = {
+  Active: "Active",
+  Planned: "Upcoming",
+  Closed: "Past",
+};
 // Each status owns a hue. The column header wears it as a solid bar and the
 // card carries it on its left edge, so a card still reads as belonging to its
 // column once it's dragged out of one. Brand palette, not the reference's —
@@ -175,6 +192,7 @@ export function TaskBoard({
   currentUserId,
   currentUserName,
   createNonce = 0,
+  sprintFilterEnabled = false,
   filterPeopleIds = [],
   peopleOptions = [],
   onPeopleChange,
@@ -320,6 +338,22 @@ export function TaskBoard({
     return m;
   }, [options.sprints]);
 
+  // Sprint-view scope (flag-gated). The board opens on the current sprint when
+  // one is running (defaultScope), and picking any sprint or the backlog
+  // supersedes the term filter — a sprint already names its slice of time, so
+  // the term control hides while a sprint scope is active to avoid an empty
+  // term∩sprint intersection.
+  const activeIds = useMemo(() => activeSprintIds(options.sprints), [options.sprints]);
+  const defaultScope = useMemo(
+    () => defaultSprintScope(options.sprints),
+    [options.sprints],
+  );
+  const sprintScope: SprintScope = sprintFilterEnabled
+    ? resolveSprintScope(sprintFilter, options.sprints)
+    : "all";
+  const sprintScopeActive = sprintFilterEnabled && sprintScope !== "all";
+  const sprintDeviates = sprintFilterEnabled && sprintScope !== defaultScope;
+
   const setParam = useCallback(
     (key: string, value: string | null) => {
       setSearchParams(
@@ -335,6 +369,8 @@ export function TaskBoard({
     [setSearchParams],
   );
   // Picking an epic resets the sprint sub-filter (its sprints are epic-scoped).
+  // With sprint-view on, Sprint is a top-level scope independent of epic, so
+  // it's left untouched.
   const setEpicFilter = useCallback(
     (value: string | null) => {
       setSearchParams(
@@ -342,13 +378,13 @@ export function TaskBoard({
           const next = new URLSearchParams(prev);
           if (value) next.set("epic", value);
           else next.delete("epic");
-          next.delete("sprint");
+          if (!sprintFilterEnabled) next.delete("sprint");
           return next;
         },
         { replace: true, preventScrollReset: true },
       );
     },
-    [setSearchParams],
+    [setSearchParams, sprintFilterEnabled],
   );
   // Changing term drops the sprint sub-filter (a sprint from another term
   // would otherwise leave the board empty) — the epic filter stays put; its
@@ -404,8 +440,15 @@ export function TaskBoard({
     let ts = tasks;
     if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
     else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
-    if (sprintFilter) ts = ts.filter((t) => t.sprintId === sprintFilter);
-    if (effectiveTerm !== ALL_TERMS) {
+    if (sprintFilterEnabled) {
+      ts = ts.filter((t) => taskInSprintScope(t, sprintScope, activeIds));
+    } else if (sprintFilter) {
+      ts = ts.filter((t) => t.sprintId === sprintFilter);
+    }
+    // A concrete sprint scope already fixes the slice of time, so the term
+    // filter steps aside (its control is hidden too) — ANDing them would only
+    // ever empty the board.
+    if (!sprintScopeActive && effectiveTerm !== ALL_TERMS) {
       ts = ts.filter((t) =>
         // Backlog (no sprint) is term-less — always visible so it stays the
         // pool you plan the term from. A sprinted task shows only if its
@@ -428,6 +471,10 @@ export function TaskBoard({
     tasks,
     epicFilter,
     sprintFilter,
+    sprintFilterEnabled,
+    sprintScope,
+    sprintScopeActive,
+    activeIds,
     effectiveTerm,
     sprintTermById,
     onlyMine,
@@ -789,14 +836,14 @@ export function TaskBoard({
   const showEpicFilter = visibleEpics.length > 0;
 
   // What the Customize badge counts: every active slice bar the search box,
-  // which has its own visible field. The term filter counts only when it isn't
-  // sitting on its default (this term, or All when the project doesn't run it).
+  // which has its own visible field. The term and sprint filters count only
+  // when they aren't sitting on their default (this term / the current sprint).
   const defaultTerm = options.currentTermId ?? ALL_TERMS;
   const activeFilterCount =
     (epicFilter ? 1 : 0) +
-    (sprintFilter ? 1 : 0) +
+    (sprintFilterEnabled ? (sprintDeviates ? 1 : 0) : sprintFilter ? 1 : 0) +
     (onlyMine ? 1 : 0) +
-    (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
+    (termFilterEnabled && !sprintScopeActive && effectiveTerm !== defaultTerm ? 1 : 0);
 
   // Option lists for the two comboboxes. `null` is the "no filter" row in
   // both, and leads so it's the first thing an empty query offers.
@@ -815,6 +862,36 @@ export function TaskBoard({
     ],
     [epicSprints],
   );
+
+  // Sprints for the sprint-view picker, ordered so the one you most likely want
+  // sits near the top: Active first, then Upcoming (soonest ascending), then
+  // Past (newest first).
+  const orderedSprintsForPicker = useMemo(() => {
+    const rank = { Active: 0, Planned: 1, Closed: 2 } as const;
+    return [...options.sprints].sort((a, b) => {
+      if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+      const dir = a.status === "Planned" ? 1 : -1; // upcoming ascending; active/past newest-first
+      return dir * a.startsAt.localeCompare(b.startsAt);
+    });
+  }, [options.sprints]);
+
+  // The sprint-view combobox. Its default scope is the neutral (`null`) row, so
+  // sitting on the default reads as "no filter" and doesn't light the Customize
+  // badge — the same convention the term filter uses for the current term.
+  const sprintScopeOptions: ComboOption[] = useMemo(() => {
+    const opts: ComboOption[] = [
+      { value: null, label: defaultScope === "current" ? "Current sprint" : "All sprints" },
+    ];
+    if (defaultScope !== "all") opts.push({ value: "all", label: "All sprints" });
+    if (defaultScope !== "current" && activeIds.length > 0) {
+      opts.push({ value: "current", label: "Current sprint" });
+    }
+    opts.push({ value: "backlog", label: "Backlog (no sprint)" });
+    for (const s of orderedSprintsForPicker) {
+      opts.push({ value: s.id, label: `${s.name} · ${SPRINT_WORD[s.status]}` });
+    }
+    return opts;
+  }, [defaultScope, activeIds, orderedSprintsForPicker]);
 
   const resetFilters = useCallback(() => {
     setSearchParams(
@@ -881,7 +958,23 @@ export function TaskBoard({
                   )}
                 </div>
 
-                {termFilterEnabled && (
+                {/* Sprint-view: the board's primary time scope. Leads the panel
+                    and, while set, hides the Term filter (a sprint already names
+                    its slice of time). The default scope is the neutral row. */}
+                {sprintFilterEnabled && options.sprints.length > 0 && (
+                  <FilterCombobox
+                    id="taskboard-sprint-scope"
+                    label="Sprint"
+                    ariaLabel="Filter board by sprint"
+                    placeholder="Search sprints…"
+                    os={os}
+                    options={sprintScopeOptions}
+                    value={sprintScope === defaultScope ? null : sprintScope}
+                    onChange={(next) => setParam("sprint", next)}
+                  />
+                )}
+
+                {termFilterEnabled && !sprintScopeActive && (
                   <FilterGroup
                     label="Term"
                     os={os}
@@ -935,7 +1028,7 @@ export function TaskBoard({
                   />
                 )}
 
-                {epicSprints.length > 0 && (
+                {!sprintFilterEnabled && epicSprints.length > 0 && (
                   <FilterCombobox
                     id="taskboard-sprint-options"
                     label="Sprint"
@@ -1359,7 +1452,7 @@ function ArchivedTasksModal({
       onClose={onClose}
       labelledBy="archived-tasks-title"
       containerClassName={cn(
-        modalCardClass(os, "max-w-xl max-h-[80vh]"),
+        modalCardClass("max-w-xl max-h-[80vh]"),
         "flex flex-col",
       )}
     >

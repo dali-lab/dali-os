@@ -2,7 +2,6 @@ import { cn } from "~/lib/cn";
 import { initialsFromName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/floating";
 import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { formatLastActive } from "~/lib/presence";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg";
@@ -35,13 +34,12 @@ const DOT_SIZE: Partial<Record<AvatarSize, string>> = {
  *
  * The os shell deliberately leaves coral unmapped (it's the brand's, and the
  * primary button needs it), but a coral-tinted chip on every photoless person
- * reads as pink chrome the palette doesn't have. Under the flag these take the
- * same neutral tint the partner org placeholders already use. Exported so the
- * larger profile-page placeholders stay in step with the avatar.
+ * reads as pink chrome the palette doesn't have. These take the same neutral
+ * tint the partner org placeholders already use. Exported so the larger
+ * profile-page placeholders stay in step with the avatar.
  */
 export function useInitialsTint(): string {
-  const os = useFeatureFlag("os-redesign");
-  return os ? "bg-brand-tint text-dark-blue" : "bg-accent-coral/15 text-accent-coral";
+  return "bg-brand-tint text-dark-blue";
 }
 
 export function Avatar({ photoUrl, name, size = "md", className, userId }: AvatarProps) {

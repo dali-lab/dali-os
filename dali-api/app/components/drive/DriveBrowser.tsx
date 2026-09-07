@@ -81,7 +81,6 @@ import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 
 /* Drive's type scale. It was written a step below the rest of the app — rows at
@@ -89,7 +88,7 @@ import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
    different product next to the design, where a list row is text-base (the rail
    rows, the project cards). A context rather than a prop threaded through
    fourteen sub-components, and one place to change if the scale moves again. */
-const DriveScale = createContext(false);
+const DriveScale = createContext(true);
 
 function useDriveText() {
   const os = useContext(DriveScale);
@@ -753,7 +752,6 @@ export function DriveBrowser({
     setActiveId(null);
   }, [currentScopeId, currentFolderId, search]);
 
-  const os = useFeatureFlag("os-redesign");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const suppressClickRef = useRef(false);
 
@@ -1405,7 +1403,7 @@ export function DriveBrowser({
     !!leafActions?.onShare;
 
   return (
-    <DriveScale.Provider value={os}>
+    <DriveScale.Provider value={true}>
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={() => setSelected(new Set())}>
         {/* The trail gets its own line. Sharing the toolbar row, it was the one
@@ -1435,7 +1433,7 @@ export function DriveBrowser({
                 className={cn(
                   "shrink-0 inline-flex items-center justify-center border border-border text-muted-foreground transition-colors",
                   "hover:bg-muted/50 hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-                  os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
+                  "rounded-full bg-card px-3.5 py-2.5",
                 )}
               >
                 <CornerLeftUp className="w-4 h-4" />
@@ -1447,10 +1445,7 @@ export function DriveBrowser({
 
           <div className="relative w-full sm:w-56 shrink-0">
             <Search
-              className={cn(
-                "pointer-events-none absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground",
-                os ? "left-3.5" : "left-2.5",
-              )}
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground left-3.5"
             />
             <input
               type="search"
@@ -1460,10 +1455,7 @@ export function DriveBrowser({
               onKeyDown={(e) => e.stopPropagation()}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search Drive"
-              className={cn(
-                "w-full border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40",
-                os ? "rounded-full pl-9 pr-9 py-2.5" : "rounded-md pl-8 pr-8 py-1.5",
-              )}
+              className="w-full border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40 rounded-full pl-9 pr-9 py-2.5"
             />
             {search && (
               <button
@@ -1473,10 +1465,7 @@ export function DriveBrowser({
                   e.stopPropagation();
                   onSearchChange("");
                 }}
-                className={cn(
-                  "absolute top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground",
-                  os ? "right-3" : "right-2",
-                )}
+                className="absolute top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground right-3"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -1485,10 +1474,7 @@ export function DriveBrowser({
 
           {/* View toggle — columns / list / grid */}
           <div
-            className={cn(
-              "inline-flex border border-border overflow-hidden shrink-0",
-              os ? "rounded-full bg-card" : "rounded-md",
-            )}
+            className="inline-flex border border-border overflow-hidden shrink-0 rounded-full bg-card"
           >
             <Tooltip content="Column view">
               <button
@@ -1501,11 +1487,9 @@ export function DriveBrowser({
                   changeView("columns");
                 }}
                 className={cn(
-                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  "px-3.5 py-2.5",
                   viewMode === "columns"
-                    ? os
-                      ? "bg-os-container text-foreground"
-                      : "bg-accent-coral/10 text-accent-coral"
+                    ? "bg-os-container text-foreground"
                     : "text-muted-foreground hover:bg-muted/50",
                 )}
               >
@@ -1523,11 +1507,9 @@ export function DriveBrowser({
                   changeView("list");
                 }}
                 className={cn(
-                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  "px-3.5 py-2.5",
                   viewMode === "list"
-                    ? os
-                      ? "bg-os-container text-foreground"
-                      : "bg-accent-coral/10 text-accent-coral"
+                    ? "bg-os-container text-foreground"
                     : "text-muted-foreground hover:bg-muted/50",
                 )}
               >
@@ -1545,11 +1527,9 @@ export function DriveBrowser({
                   changeView("grid");
                 }}
                 className={cn(
-                  os ? "px-3.5 py-2.5" : "p-1.5",
+                  "px-3.5 py-2.5",
                   viewMode === "grid"
-                    ? os
-                      ? "bg-os-container text-foreground"
-                      : "bg-accent-coral/10 text-accent-coral"
+                    ? "bg-os-container text-foreground"
                     : "text-muted-foreground hover:bg-muted/50",
                 )}
               >
@@ -1574,11 +1554,9 @@ export function DriveBrowser({
                   }}
                   className={cn(
                     "inline-flex items-center justify-center border border-border shrink-0",
-                    os ? "rounded-full bg-card px-3.5 py-2.5" : "rounded-md p-1.5",
+                    "rounded-full bg-card px-3.5 py-2.5",
                     detailsOpen
-                      ? os
-                        ? "bg-os-container text-foreground"
-                        : "bg-accent-coral/10 text-accent-coral"
+                      ? "bg-os-container text-foreground"
                       : "text-muted-foreground hover:bg-muted/50",
                   )}
                 >
@@ -1600,7 +1578,7 @@ export function DriveBrowser({
             the bulk-action set. Its height never changes, so nothing below it
             ever moves. ── */}
         <DriveActionStrip
-          os={os}
+          os={true}
           showBulk={showBulk}
           selectedCount={selected.size}
           selectedItems={selectedItems}
@@ -1825,7 +1803,7 @@ export function DriveBrowser({
 
           {detailsOpen && !columnsActive && (
             <DriveDetailsPane
-              os={os}
+              os={true}
               item={detailItem}
               actions={detailActions}
               scopePathLabel={detailPathLabel}
@@ -1847,10 +1825,7 @@ export function DriveBrowser({
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
           <div
-            className={cn(
-              "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-lg",
-              os ? "text-base" : "text-sm",
-            )}
+            className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-lg text-base"
           >
             {itemIcon(activeDrag)}
             <span className="font-medium text-foreground">{activeDrag.title || "Untitled"}</span>

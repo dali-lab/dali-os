@@ -20,11 +20,14 @@ import { prisma } from "~/lib/db";
 import {
   computeProjectStatus,
   factsFingerprint,
+  buildTldrDetail,
   type ProjectStatusFacts,
   type ProjectWorkStatus,
   type SprintPhase,
+  type TldrTaskInput,
+  type TldrDetail,
 } from "~/projects/lib/project-status";
-import type { TaskStatus } from "~/projects/lib/task-board";
+import type { TaskStatus, Priority } from "~/projects/lib/task-board";
 
 // ── Contract ────────────────────────────────────────────────────────────────
 
@@ -51,9 +54,16 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // shows (see projects.$id.tsx).
 const TASK_TAKE = 1000;
 
-const SYSTEM_PROMPT = `You summarize a software project's work status in ONE or TWO short sentences for a busy project lead. \
-Lead with whatever needs attention — overdue, unscheduled, or stalled work — and be concrete with the numbers. \
-If nothing needs attention, say the project looks on track. \
+// The reader already sees the raw counts as chips directly above this text, so
+// the summary must NOT restate them — it earns its place only by interpreting:
+// what to focus on first, why, and the obvious next step. Naming specific tasks
+// is what makes it concrete rather than a paraphrase of the chips.
+const SYSTEM_PROMPT = `You are a project-health analyst for a software lab's project board. \
+The reader ALREADY sees the raw counts (done/total, overdue, unscheduled, in review, active sprint) as labels directly above your text. \
+Do NOT restate those numbers or list the categories back — that is wasted space. \
+Instead, in ONE or TWO sentences, give a judgment the counts don't: name the single most important thing to address and WHY, cite the specific task(s) involved when it sharpens the point, and suggest the obvious next step if there is one. \
+Weigh it like a lead would: overdue high-priority work and running with no sprint plan matter more than a large-but-moving backlog; a few stalled tasks can be the real story. \
+If the project is genuinely healthy, say so in one short sentence instead of inventing problems. \
 Plain text only: no preamble, no markdown, no bullet points, no headings.`;
 
 function secondsToUtcMidnight(): number {
@@ -62,23 +72,38 @@ function secondsToUtcMidnight(): number {
   return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
 }
 
-function factsToPrompt(name: string, f: ProjectStatusFacts): string {
-  const open = f.totalTasks - f.doneTasks;
+// Feeds the model specifics (named tasks, priority mix, team size, whether a
+// sprint is running) so it has real material to interpret — the counts alone
+// only let it paraphrase the chips.
+function factsToPrompt(name: string, f: ProjectStatusFacts, d: TldrDetail): string {
   const sprint = f.activeSprint
-    ? `${f.activeSprint.name} — ${
+    ? `${f.activeSprint.name}, ${
         f.activeSprint.daysRemaining >= 0
           ? `${f.activeSprint.daysRemaining} day(s) left`
           : `${-f.activeSprint.daysRemaining} day(s) overdue`
       }`
-    : "none active";
+    : "NONE running";
+  const overdue = d.overdue.length
+    ? d.overdue
+        .map((o) => `"${o.title}" [${o.priority}, ${o.daysOver}d overdue]`)
+        .join("; ")
+    : "none";
+  const stale = d.stale.length
+    ? d.stale.map((s) => `"${s.title}" [${s.daysStale}d untouched]`).join("; ")
+    : "none";
+  const inReview = d.inReview.length
+    ? d.inReview.map((t) => `"${t}"`).join("; ")
+    : "none";
   return [
     `Project "${name}" — status ${f.projectStatus}.`,
-    `Tasks: ${f.doneTasks} of ${f.totalTasks} done (${open} open).`,
-    `Overdue (past due, not done): ${f.overdue}.`,
-    `Unscheduled (in-motion tasks with no sprint): ${f.unscheduled}.`,
-    `In review: ${f.inReview}.`,
-    `Stalled (in progress, untouched 14+ days): ${f.stale}.`,
+    `Progress: ${f.doneTasks} of ${f.totalTasks} tasks done.`,
     `Active sprint: ${sprint}.`,
+    `Distinct assignees (rough team size): ${d.teamSize}.`,
+    `Open priority mix: ${d.urgentOpen} urgent, ${d.highOpen} high.`,
+    `Overdue tasks (${f.overdue}): ${overdue}.`,
+    `Unscheduled in-motion tasks with no sprint: ${f.unscheduled} (${d.unscheduledHighPriority} of them high/urgent).`,
+    `In review (${f.inReview}): ${inReview}.`,
+    `Stalled 14d+ (${f.stale}): ${stale}.`,
   ].join("\n");
 }
 
@@ -140,7 +165,16 @@ export async function action({ request }: Route.ActionArgs) {
       tasks: {
         where: { archivedAt: null },
         take: TASK_TAKE,
-        select: { status: true, dueAt: true, sprintId: true, activityAt: true },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          dueAt: true,
+          sprintId: true,
+          activityAt: true,
+          assignees: { select: { userId: true } },
+        },
       },
       sprints: {
         select: { id: true, name: true, startsAt: true, endsAt: true, status: true },
@@ -151,15 +185,21 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Project not found" }, { status: 404 });
   }
 
+  const now = new Date();
+  const tasks: TldrTaskInput[] = project.tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status as TaskStatus,
+    priority: t.priority as Priority,
+    dueAt: t.dueAt,
+    sprintId: t.sprintId,
+    activityAt: t.activityAt,
+    assigneeIds: t.assignees.map((a) => a.userId),
+  }));
   const facts = computeProjectStatus(
     {
       projectStatus: project.status as ProjectWorkStatus,
-      tasks: project.tasks.map((t) => ({
-        status: t.status as TaskStatus,
-        dueAt: t.dueAt,
-        sprintId: t.sprintId,
-        activityAt: t.activityAt,
-      })),
+      tasks,
       sprints: project.sprints.map((s) => ({
         id: s.id,
         name: s.name,
@@ -168,8 +208,9 @@ export async function action({ request }: Route.ActionArgs) {
         status: s.status as SprintPhase,
       })),
     },
-    new Date(),
+    now,
   );
+  const detail = buildTldrDetail(tasks, now);
 
   // Nothing to summarize — return null rather than spend a model call.
   if (!facts.hasWork) {
@@ -208,7 +249,7 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     const result = await generateShortText({
       system: SYSTEM_PROMPT,
-      prompt: factsToPrompt(project.name, facts),
+      prompt: factsToPrompt(project.name, facts, detail),
       maxTokens: 400,
     });
     if (!result) {

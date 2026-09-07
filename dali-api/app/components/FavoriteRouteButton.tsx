@@ -86,12 +86,9 @@ export function FavoriteRouteButton({
     };
   }, [href, known]);
 
-  // Pills only render when the sidebar redesign is off (AreaPillNav returns null
-  // when on), so "on a pill page" is only true in that mode.
-  const redesign = useFeatureFlag("sidebar-redesign");
-  const hasAreaPills = !redesign && matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-  );
+  // The in-page pill row no longer renders under the dali.os shell, so a page
+  // never suppresses this control for pills.
+  const hasAreaPills = false;
 
   async function toggle() {
     const next = !favorited;

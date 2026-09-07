@@ -40,7 +40,6 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { filterPillClass } from "~/components/ui/floating/styles";
 
@@ -908,7 +907,6 @@ function NewMenu({
   onTemplate: () => void;
   currentFolderId: string | null;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
@@ -974,10 +972,7 @@ function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className={cn(
-            "shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover",
-            os ? "rounded-full px-5 py-2.5 text-sm" : "rounded-md px-3 py-1.5 text-sm",
-          )}
+          className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover rounded-full px-5 py-2.5 text-sm"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -1028,7 +1023,6 @@ export default function DriveHub() {
     canViewForms,
     canManageAgreements,
   } = useLoaderData() as LoaderData;
-  const os = useFeatureFlag("os-redesign");
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -1555,7 +1549,7 @@ export default function DriveHub() {
   const selectedTags = allTags.filter((t) => selectedTagIds.has(t.id));
   const tagChips =
     selectedTags.length > 0 ? (
-      <div className={cn("flex items-center gap-2 flex-wrap", os && "pb-1")}>
+      <div className="flex items-center gap-2 flex-wrap pb-1">
         <TagIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {selectedTags.map((tag) => (
           <button
@@ -1565,10 +1559,8 @@ export default function DriveHub() {
             aria-label={`Remove ${tag.label} filter`}
             className={cn(
               "inline-flex items-center gap-1 rounded-full border font-medium transition-colors",
-              os ? "px-3.5 py-1.5 text-sm" : "px-2.5 py-0.5 text-xs",
-              os
-                ? "border-os-accent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
-                : "border-accent-coral bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20",
+              "px-3.5 py-1.5 text-sm",
+              "border-os-accent bg-os-accent/15 text-os-accent hover:bg-os-accent/25",
             )}
           >
             {tag.label}
@@ -1578,10 +1570,7 @@ export default function DriveHub() {
         <button
           type="button"
           onClick={clearTags}
-          className={cn(
-            "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground",
-            os ? "text-sm" : "text-xs",
-          )}
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm"
         >
           Clear
         </button>
@@ -1602,7 +1591,7 @@ export default function DriveHub() {
           ariaLabel="Filter by type"
           align="right"
           options={visibleFilters.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
-          buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+          buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
         />
       </div>
       {/* Scopes the term-aware spaces — Projects and Education. My Drive /
@@ -1622,7 +1611,7 @@ export default function DriveHub() {
             selectedIds={selectedTagIds}
             onToggle={toggleTag}
             onClear={clearTags}
-            os={os}
+            os={true}
           />
         </div>
       )}
@@ -1648,10 +1637,7 @@ export default function DriveHub() {
     <>
       <Link
         to="/drive/templates"
-        className={cn(
-          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
-          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
-        )}
+        className="shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors rounded-full bg-card px-5 py-2.5"
       >
         <LayoutTemplate className="w-3.5 h-3.5" />
         Templates
@@ -1660,10 +1646,7 @@ export default function DriveHub() {
         type="button"
         data-testid="drive-trash-button"
         onClick={() => setTrashOpen(true)}
-        className={cn(
-          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
-          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
-        )}
+        className="shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors rounded-full bg-card px-5 py-2.5"
       >
         <Trash2 className="w-3.5 h-3.5" />
         Trash
@@ -1677,19 +1660,17 @@ export default function DriveHub() {
     // a 64px/60px gutter on every page, so a second inset here started Drive's
     // content 16px in from where every other page's begins — visible as soon as
     // two tabs sit side by side.
-    <div className={cn("w-full flex flex-col", os ? "gap-4" : "gap-3 p-4")}>
+    <div className="w-full flex flex-col gap-4">
       {/* Drive used to treat its breadcrumb as the page title. That worked when
           no page had a title; under the design every hub opens with one, and a
           page that starts straight into a toolbar reads as a fragment of some
           other screen. The breadcrumb stays — it's navigation, and it carries
           the scope and folder the title can't. */}
-      {os && (
-        <header className="flex items-start justify-between gap-3 flex-wrap">
-          <h1 className="font-heading text-4xl font-medium text-foreground">
-            {isHiringLibrary ? "Library" : "Drive"}
-          </h1>
-        </header>
-      )}
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
+          {isHiringLibrary ? "Library" : "Drive"}
+        </h1>
+      </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
       <DriveBrowser

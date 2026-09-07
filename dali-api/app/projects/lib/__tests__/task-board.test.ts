@@ -6,9 +6,22 @@ import {
   nextPositionInColumn,
   resolveTermIdForDate,
   termIdsInRange,
+  activeSprintIds,
+  defaultSprintScope,
+  resolveSprintScope,
+  taskInSprintScope,
+  type BoardSprint,
   type TaskCardModel,
   type TermWindow,
 } from "../task-board";
+
+function sprint(
+  id: string,
+  status: BoardSprint["status"],
+  startsAt = "2026-07-01T00:00:00.000Z",
+): BoardSprint {
+  return { id, name: id, status, epicId: null, termId: null, startsAt };
+}
 
 function task(
   id: string,
@@ -229,5 +242,59 @@ describe("taskMatchesQuery", () => {
     const bare = searchable({ description: null, assignees: [], domain: null });
     expect(taskMatchesQuery(bare, "login")).toBe(true);
     expect(taskMatchesQuery(bare, "sophie")).toBe(false);
+  });
+});
+
+describe("sprint scope", () => {
+  const SPRINTS = [
+    sprint("s1", "Closed", "2026-06-01T00:00:00.000Z"),
+    sprint("s2", "Active", "2026-07-01T00:00:00.000Z"),
+    sprint("s3", "Planned", "2026-08-01T00:00:00.000Z"),
+  ];
+
+  it("collects the active sprint ids", () => {
+    expect(activeSprintIds(SPRINTS)).toEqual(["s2"]);
+    expect(activeSprintIds([sprint("a", "Closed"), sprint("b", "Planned")])).toEqual([]);
+  });
+
+  it("defaults to the current sprint when one is active, else all", () => {
+    expect(defaultSprintScope(SPRINTS)).toBe("current");
+    expect(defaultSprintScope([sprint("a", "Closed")])).toBe("all");
+    expect(defaultSprintScope([])).toBe("all");
+  });
+
+  it("resolves an explicit, still-valid param and falls back otherwise", () => {
+    expect(resolveSprintScope("all", SPRINTS)).toBe("all");
+    expect(resolveSprintScope("backlog", SPRINTS)).toBe("backlog");
+    expect(resolveSprintScope("current", SPRINTS)).toBe("current");
+    expect(resolveSprintScope("s1", SPRINTS)).toBe("s1");
+    // No param → default (current here).
+    expect(resolveSprintScope(null, SPRINTS)).toBe("current");
+    // Stale id → default.
+    expect(resolveSprintScope("gone", SPRINTS)).toBe("current");
+    // `current` with nothing active → default (all here).
+    const noActive = [sprint("a", "Closed")];
+    expect(resolveSprintScope("current", noActive)).toBe("all");
+    expect(resolveSprintScope(null, noActive)).toBe("all");
+  });
+
+  it("matches tasks against the selected scope", () => {
+    const active = ["s2"];
+    const inActive = { sprintId: "s2" };
+    const inClosed = { sprintId: "s1" };
+    const unsprinted = { sprintId: null };
+
+    expect(taskInSprintScope(inActive, "all", active)).toBe(true);
+    expect(taskInSprintScope(unsprinted, "all", active)).toBe(true);
+
+    expect(taskInSprintScope(inActive, "current", active)).toBe(true);
+    expect(taskInSprintScope(inClosed, "current", active)).toBe(false);
+    expect(taskInSprintScope(unsprinted, "current", active)).toBe(false);
+
+    expect(taskInSprintScope(unsprinted, "backlog", active)).toBe(true);
+    expect(taskInSprintScope(inActive, "backlog", active)).toBe(false);
+
+    expect(taskInSprintScope(inClosed, "s1", active)).toBe(true);
+    expect(taskInSprintScope(inActive, "s1", active)).toBe(false);
   });
 });

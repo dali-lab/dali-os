@@ -21,7 +21,6 @@ import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
 import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
-import { buttonClasses } from "~/components/ui/Button";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { TermFilter } from "~/components/TermFilter";
@@ -32,8 +31,6 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
-
 export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
@@ -294,10 +291,6 @@ export default function MembersList() {
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
-  // Same dress the dali.os projects hub wears: the title scales up, the
-  // toolbar controls become pills and the add control takes the design's
-  // plus button. Behaviour is untouched — this is chrome only.
-  const os = useFeatureFlag("os-redesign");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -322,7 +315,7 @@ export default function MembersList() {
           <h1
             className={cn(
               "font-heading text-foreground",
-              os ? "text-4xl font-medium" : "text-2xl font-bold",
+              "text-4xl font-medium",
             )}
           >
             People
@@ -332,16 +325,10 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={os ? "os-add-btn" : buttonClasses("primary", "sm")}
+            className="os-add-btn"
           >
-            {os ? (
-              <>
-                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-                New member
-              </>
-            ) : (
-              "+ New member"
-            )}
+            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            New member
           </button>
         )}
       </header>
@@ -385,13 +372,13 @@ export default function MembersList() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
+              className="os-btn-ghost"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+              className="os-btn-primary"
             >
               Create
             </button>
@@ -404,8 +391,8 @@ export default function MembersList() {
           control above the toolbar read as a second, competing tab bar, which is
           exactly what the design does away with. Leading the row keeps it first
           in reading order and first in the tab order. */}
-      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
-        <StatusTabs status={status} os={os} />
+      <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
+        <StatusTabs status={status} />
         <input
           type="search"
           value={query}
@@ -413,9 +400,7 @@ export default function MembersList() {
           placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
           className={cn(
             "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            os
-              ? "max-w-[420px] px-5 py-2.5 rounded-full bg-card"
-              : "max-w-sm px-3 py-2 rounded-md bg-background",
+            "max-w-[420px] px-5 py-2.5 rounded-full bg-card",
           )}
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
@@ -453,7 +438,7 @@ export default function MembersList() {
 // Active ↔ Alumni segmented tab. Drives the loader via `?status=`. Switching to
 // Alumni drops the `?term=` filter (term doesn't apply post-grad) and scopes the
 // list to members whose stored membershipStatus is Alumni.
-function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
+function StatusTabs({ status }: { status: MemberStatus }) {
   const [searchParams, setSearchParams] = useSearchParams();
   function set(next: MemberStatus) {
     const params = new URLSearchParams(searchParams);
@@ -473,7 +458,7 @@ function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
     <div
       className={cn(
         "inline-flex items-center border border-border p-1 w-fit",
-        os ? "rounded-full bg-os-card" : "rounded-md bg-muted/30",
+        "rounded-full bg-os-card",
       )}
     >
       {tabs.map((t) => (
@@ -484,11 +469,9 @@ function StatusTabs({ status, os }: { status: MemberStatus; os: boolean }) {
           aria-pressed={status === t.key}
           className={cn(
             "text-sm transition-colors",
-            os ? "rounded-full px-4 py-1.5" : "rounded-sm px-3 py-1",
+            "rounded-full px-4 py-1.5",
             status === t.key
-              ? os
-                ? "bg-os-container font-medium text-foreground"
-                : "bg-background font-medium text-foreground shadow-sm"
+              ? "bg-os-container font-medium text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -543,7 +526,6 @@ function DomainFilter({
   selected: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const os = useFeatureFlag("os-redesign");
   const options: SelectOption<string>[] = [
     { value: "", label: "All domains" },
     ...domains.map((d) => ({ value: d.id, label: d.displayName })),
@@ -553,7 +535,7 @@ function DomainFilter({
       value={selected}
       options={options}
       ariaLabel="Filter by domain"
-      buttonClassName={cn(filterPillClass(os), "w-full sm:w-44")}
+      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
       onChange={(value) => {
         const next = new URLSearchParams(searchParams);
         if (value) next.set("domain", value);
@@ -566,13 +548,12 @@ function DomainFilter({
 
 function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatus }) {
   const navigate = useNavigate();
-  const os = useFeatureFlag("os-redesign");
   // Alumni view swaps the Roles column for Class — roles are largely historical
   // for alumni, and class year is the more useful axis.
   const showClass = status === "alumni";
   return (
     <div className="overflow-x-auto">
-      <table className={cn("w-full min-w-[640px]", os ? "text-base" : "text-sm")}>
+      <table className={cn("w-full min-w-[640px]", "text-base")}>
         <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
           <tr>
             <th className="text-left font-medium px-4 py-2">Name</th>
@@ -618,7 +599,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                     <span
                       className={cn(
                         "inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0",
-                        os ? "text-xs" : "text-[10px]",
+                        "text-xs",
                       )}
                     >
                       Staff
@@ -635,7 +616,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                       : (m.gradProgram ?? "—")}
                   </span>
                 ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
-                  <span className={cn("text-muted-foreground", os ? "text-sm" : "text-xs")}>—</span>
+                  <span className={cn("text-muted-foreground", "text-sm")}>—</span>
                 ) : (
                   <RolePills
                     coreTitles={m.coreTitles}

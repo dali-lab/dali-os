@@ -84,20 +84,6 @@ export const FEATURE_FLAGS = [
     defaultVariant: "search",
   },
   {
-    key: "sidebar-redesign",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "New left navigation",
-    description:
-      "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
-  },
-  {
-    key: "os-redesign",
-    label: "dali.os design",
-    description:
-      "The dark dali.os shell: sidebar with an area switcher, a top bar carrying favorites and the task bell, the recents home, and the card-grid project hub. Takes precedence over the other shell flags on the pages it covers — everything it doesn't cover keeps whatever the new left navigation gives it.",
-  },
-  {
     key: "wallet-checkin",
     label: "Wallet check-in",
     description:
@@ -124,6 +110,12 @@ export const FEATURE_FLAGS = [
       "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
   {
+    key: "drive-folder-bindings",
+    label: "Drive folder bindings",
+    description:
+      "Replaces the hidden systemKey Drive scaffolding with editable process→folder bindings. Each project / education offering / hiring cycle / Core governance area points at NORMAL Drive folders (renameable, movable, shareable) for its auto-filed items (meeting notes, forms, agreements, …), configured in that process's settings. Ships off; without it the legacy systemKey folders remain.",
+  },
+  {
     key: "project-status-bar",
     label: "Project status bar",
     description:
@@ -140,6 +132,10 @@ export const FEATURE_FLAGS = [
     label: "Manage mentorship pairs",
     description:
       "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
+    key: "sprint-view",
+    label: "Sprint view",
+    description:
+      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 
