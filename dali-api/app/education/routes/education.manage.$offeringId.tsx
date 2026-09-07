@@ -75,6 +75,7 @@ import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
+import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { X } from "lucide-react";
 import { renderEmail } from "~/lib/email";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -874,6 +875,12 @@ export default function ManageOffering() {
               </Button>
             </div>
           </Form>
+
+          <DriveFolderBindings
+            processType="EducationOffering"
+            processId={offering.id}
+            className="bg-card border border-border rounded-lg p-5"
+          />
 
           <section className="bg-card border border-border rounded-lg p-5">
             <h2 className="text-sm font-semibold text-foreground mb-1">

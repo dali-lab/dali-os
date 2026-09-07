@@ -95,6 +95,7 @@ export const AUDIT_ACTIONS = [
   "note.delete",
   "lab-document.access",
   "page.general-access",
+  "page.folder-scope",
   "page.move-workspace",
   "page.pin",
   "project.showcase-status",

@@ -22,6 +22,8 @@ import type {
   WorkspaceType,
   LinkAccess,
   SharePermission,
+  PageKind,
+  ScopeKind,
 } from "~/generated/prisma/client";
 
 export class PageShareNotFoundError extends Error {
@@ -97,7 +99,19 @@ export async function canManageSharing(
 }
 
 export type PageShareManagerContext = {
-  page: { id: string; title: string; workspaceType: WorkspaceType; workspaceId: string | null };
+  page: {
+    id: string;
+    title: string;
+    kind: PageKind;
+    workspaceType: WorkspaceType;
+    workspaceId: string | null;
+  };
+  // Folder-level access (the "Folder access" section, only meaningful when the
+  // page is a Folder). scopeKind null = inherits from the nearest scoped
+  // ancestor / workspace default. scopeGroupId is set only when scopeKind=Group.
+  scopeKind: ScopeKind | null;
+  scopeGroupId: string | null;
+  scopePermission: SharePermission | null;
   // The document's owner, pinned atop the people list (like Google's owner row).
   // Member notes: the note owner. Everything else: the creator.
   owner: { id: string; name: string; isYou: boolean } | null;
@@ -119,6 +133,7 @@ export type PageShareManagerContext = {
 const MANAGE_SELECT = {
   id: true,
   title: true,
+  kind: true,
   workspaceType: true,
   workspaceId: true,
   createdById: true,
@@ -130,6 +145,9 @@ const MANAGE_SELECT = {
   studentEditable: true,
   linkAccess: true,
   linkPermission: true,
+  scopeKind: true,
+  scopeGroupId: true,
+  scopePermission: true,
 } as const;
 
 /**
@@ -189,11 +207,15 @@ export async function requirePageShareManager(
     page: {
       id: page.id,
       title: page.title,
+      kind: page.kind,
       workspaceType: page.workspaceType,
       workspaceId: page.workspaceId,
     },
     owner,
     hasActivePartner,
+    scopeKind: page.scopeKind,
+    scopeGroupId: page.scopeGroupId,
+    scopePermission: page.scopePermission,
     linkAccess: page.linkAccess,
     linkPermission: page.linkPermission,
     profileVisible: page.profileVisible,
@@ -236,6 +258,76 @@ export async function setGeneralAccess(
     metadata: { linkAccess, linkPermission },
   });
   return { linkAccess, linkPermission };
+}
+
+/**
+ * Set a Folder's governing scope — the "Folder access" control. This is the
+ * Google-Drive folder-sharing primitive: the scope is inherited by everything
+ * inside (getPageAccess walks to the nearest scoped ancestor). Caller MUST gate
+ * first (requirePageShareManager). Only Folders carry a scope. Passing
+ * scopeKind=null clears it (the folder inherits from its ancestor/workspace).
+ * Applying a Group/Private scope closes the lab-open link so access isn't
+ * silently widened (mirrors the old scoped-root behaviour, now editable).
+ */
+export async function setFolderScope(
+  pageId: string,
+  actorId: string,
+  input: {
+    scopeKind: ScopeKind | null;
+    scopeGroupId?: string | null;
+    scopePermission?: SharePermission | null;
+  },
+): Promise<{ scopeKind: ScopeKind | null; scopeGroupId: string | null; scopePermission: SharePermission | null }> {
+  const page = await prisma.page.findUnique({ where: { id: pageId }, select: { kind: true } });
+  if (!page) throw new PageShareNotFoundError();
+  if (page.kind !== "Folder") {
+    throw new GeneralAccessError("Only folders have folder access");
+  }
+
+  const scopeKind = input.scopeKind;
+  if (scopeKind == null) {
+    await prisma.page.update({
+      where: { id: pageId },
+      data: { scopeKind: null, scopeGroupId: null, scopePermission: null },
+    });
+    await logAuditEvent({ action: "page.folder-scope", userId: actorId, targetId: pageId, metadata: { scopeKind: null } });
+    return { scopeKind: null, scopeGroupId: null, scopePermission: null };
+  }
+
+  let scopeGroupId: string | null = null;
+  if (scopeKind === "Group") {
+    scopeGroupId = input.scopeGroupId ?? null;
+    if (!scopeGroupId) throw new GeneralAccessError("Pick a group to share with");
+    const group = await prisma.groupDefinition.findUnique({
+      where: { id: scopeGroupId },
+      select: { id: true },
+    });
+    if (!group) throw new GeneralAccessError("Unknown group");
+  }
+
+  // Never FullAccess (re-share is a named grant only, same as general access).
+  // Default the base grant per kind to match getPageAccess's scopeBase().
+  let scopePermission = input.scopePermission ?? (scopeKind === "Lab" ? "View" : "Edit");
+  if (scopePermission === "FullAccess") scopePermission = "Edit";
+
+  await prisma.page.update({
+    where: { id: pageId },
+    data: {
+      scopeKind,
+      scopeGroupId,
+      scopePermission,
+      ...(scopeKind === "Group" || scopeKind === "Private"
+        ? { linkAccess: "Restricted" as const, linkPermission: "View" as const }
+        : {}),
+    },
+  });
+  await logAuditEvent({
+    action: "page.folder-scope",
+    userId: actorId,
+    targetId: pageId,
+    metadata: { scopeKind, scopeGroupId, scopePermission },
+  });
+  return { scopeKind, scopeGroupId, scopePermission };
 }
 
 /**
