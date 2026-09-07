@@ -7,7 +7,7 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 
-type Automation = "assignments" | "slack" | "gmail" | "github";
+type Automation = "assignments" | "slack" | "gmail" | "github" | "vaultwarden";
 
 type StepResult = { status: "ok" | "skipped" | "error"; message: string };
 
@@ -47,6 +47,13 @@ const AUTOMATIONS: {
       "Get-or-create the project's -team Google Group and add the confirmed roster to it.",
     configured: true,
   },
+  {
+    id: "vaultwarden",
+    label: "Set up Vaultwarden group",
+    description:
+      "Get-or-create the project's Vaultwarden group, invite the roster (by DALI email), and grant it the project's secrets collection. Members still confirm once in the web vault.",
+    configured: true,
+  },
 ];
 
 export function FinalizeModal({
@@ -57,6 +64,7 @@ export function FinalizeModal({
   projectName,
   defaultSlackChannel,
   defaultGithubSlug,
+  defaultVaultwardenCollectionId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -64,9 +72,11 @@ export function FinalizeModal({
   projectId: string;
   projectName: string;
   // Pre-fill for the editable channel/team fields. Slack defaults to the
-  // project-name-derived channel; GitHub to the project's stored slug (or "").
+  // project-name-derived channel; GitHub to the project's stored slug (or "");
+  // Vaultwarden to the project's stored collection id (or "").
   defaultSlackChannel?: string;
   defaultGithubSlug?: string;
+  defaultVaultwardenCollectionId?: string;
 }) {
   const os = useFeatureFlag("os-redesign");
   const revalidator = useRevalidator();
@@ -80,11 +90,16 @@ export function FinalizeModal({
   // the project's stored channel name (else derived); GitHub to its stored slug.
   const initialSlack = defaultSlackChannel ?? "";
   const initialGithub = defaultGithubSlug ?? "";
+  const initialVaultCollection = defaultVaultwardenCollectionId ?? "";
   const [slackChannel, setSlackChannel] = useState(initialSlack);
   const [githubSlug, setGithubSlug] = useState(initialGithub);
+  const [vaultCollectionId, setVaultCollectionId] = useState(initialVaultCollection);
   const [savingFields, setSavingFields] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
-  const fieldsDirty = slackChannel !== initialSlack || githubSlug !== initialGithub;
+  const fieldsDirty =
+    slackChannel !== initialSlack ||
+    githubSlug !== initialGithub ||
+    vaultCollectionId !== initialVaultCollection;
 
   // Mentors designated via the board's role badge who aren't P3 yet — finalize
   // can promote them. Loaded when the modal opens; drives the promote notice +
@@ -135,6 +150,7 @@ export function FinalizeModal({
           saveFieldsOnly: true,
           slackChannel: slackChannel.trim(),
           githubTeamSlug: githubSlug.trim(),
+          vaultwardenCollectionId: vaultCollectionId.trim(),
         }),
       });
       if (!res.ok) {
@@ -155,6 +171,7 @@ export function FinalizeModal({
   function cancelFields() {
     setSlackChannel(initialSlack);
     setGithubSlug(initialGithub);
+    setVaultCollectionId(initialVaultCollection);
     setSavedNote(null);
     setError(null);
   }
@@ -195,6 +212,7 @@ export function FinalizeModal({
           automations: ids,
           slackChannel: slackChannel.trim() || undefined,
           githubTeamSlug: githubSlug.trim() || undefined,
+          vaultwardenCollectionId: vaultCollectionId.trim() || undefined,
           promoteMentors,
         }),
       });
@@ -340,6 +358,29 @@ export function FinalizeModal({
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       Shared with the project page. Save to sync; the team is get-or-created
                       when this automation runs.
+                    </p>
+                  </div>
+                )}
+                {a.id === "vaultwarden" && (
+                  <div className="mt-2">
+                    <label
+                      htmlFor="finalize-vault-collection"
+                      className="block text-[11px] font-medium text-foreground"
+                    >
+                      Collection ID
+                    </label>
+                    <input
+                      id="finalize-vault-collection"
+                      type="text"
+                      value={vaultCollectionId}
+                      disabled={running || savingFields}
+                      onChange={(e) => setVaultCollectionId(e.target.value)}
+                      placeholder="Vaultwarden collection id (optional)"
+                      className="mt-1 w-full px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground disabled:opacity-60"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      The group is granted access to this collection. Leave blank to only
+                      manage membership. The group itself is auto-created by project name.
                     </p>
                   </div>
                 )}

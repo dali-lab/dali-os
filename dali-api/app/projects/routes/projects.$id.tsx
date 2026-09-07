@@ -270,6 +270,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: true,
       deploymentUrl: true,
       githubTeamSlug: true,
+      vaultwardenGroupId: true,
+      vaultwardenCollectionId: true,
       slackChannelName: true,
       slackChannelId: true,
       chartStringType: true,
@@ -1119,6 +1121,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: project.repoUrls,
       deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
+      vaultwardenGroupId: project.vaultwardenGroupId,
+      vaultwardenCollectionId: project.vaultwardenCollectionId,
       slackChannelName: project.slackChannelName,
       slackChannelId: project.slackChannelId,
       chartStringType: project.chartStringType,
@@ -1448,6 +1452,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
   const slackChannelRaw = (form.get("slackChannelName") as string | null)?.trim() ?? "";
+  const vaultCollectionRaw = (form.get("vaultwardenCollectionId") as string | null)?.trim() ?? "";
 
   // Normalize to a GitHub-safe team slug: lowercase, non-alphanumerics → single
   // hyphens, trimmed. Empty clears the field (automation then skips).
@@ -1502,6 +1507,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       termCount,
       githubTeamSlug,
       slackChannelName,
+      // Vaultwarden collection id is an opaque operator-pasted identifier —
+      // stored verbatim (empty clears it). The group id is backfilled by the
+      // sync, not edited here.
+      vaultwardenCollectionId: vaultCollectionRaw === "" ? null : vaultCollectionRaw,
       ...chartStringFields,
     },
   });
@@ -3072,6 +3081,28 @@ function DetailsSegment({
               ) : (
                 <span className="px-2 py-1.5 text-sm text-foreground">
                   {project.githubTeamSlug ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Vaultwarden collection</span>
+              {editing ? (
+                <input
+                  name="vaultwardenCollectionId"
+                  type="text"
+                  defaultValue={project.vaultwardenCollectionId ?? ""}
+                  placeholder="collection id (optional)"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.vaultwardenCollectionId ?? "—"}
+                </span>
+              )}
+              {project.vaultwardenGroupId && (
+                <span className="px-2 text-[10px] text-muted-foreground">
+                  Group provisioned ({project.vaultwardenGroupId.slice(0, 8)}…)
                 </span>
               )}
             </label>
