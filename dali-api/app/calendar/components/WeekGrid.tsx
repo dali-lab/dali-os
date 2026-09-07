@@ -86,7 +86,7 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
       {attendees.length > GUESTS_COLLAPSED && (
         <button
           type="button"
-          onMouseDown={(ev) => ev.stopPropagation()}
+          onPointerDown={(ev) => ev.stopPropagation()}
           onClick={() => setExpanded((v) => !v)}
           className="mt-1 text-[11px] font-medium text-accent-coral hover:underline"
         >
@@ -197,7 +197,7 @@ export function CalendarEventDetailPopover({
       {onClose && (
         <div
           className="fixed inset-0 z-40"
-          onMouseDown={onClose}
+          onPointerDown={onClose}
           onClick={(ev) => ev.stopPropagation()}
         />
       )}
@@ -209,7 +209,7 @@ export function CalendarEventDetailPopover({
         // calendar block that opened it — which would toggle the card shut on
         // every click inside it.
         onClick={(ev) => ev.stopPropagation()}
-        onMouseDown={(ev) => ev.stopPropagation()}
+        onPointerDown={(ev) => ev.stopPropagation()}
         className="cal-surface fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md p-3 text-xs"
         style={{
           left,
@@ -265,7 +265,7 @@ export function CalendarEventDetailPopover({
                 href={l.href}
                 target="_blank"
                 rel="noreferrer noopener"
-                onMouseDown={(ev) => ev.stopPropagation()}
+                onPointerDown={(ev) => ev.stopPropagation()}
                 className="font-medium text-accent-coral hover:underline break-all"
               >
                 {l.label} →
@@ -465,23 +465,23 @@ export function WeekGridEvent({
   }, []);
 
   const attachWindowListeners = useCallback((
-    onMove: (ev: MouseEvent) => void,
-    onUp: (ev: MouseEvent) => void,
+    onMove: (ev: PointerEvent) => void,
+    onUp: (ev: PointerEvent) => void,
   ) => {
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     const cleanup = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
     cleanupRef.current = cleanup;
     return cleanup;
   }, []);
 
-  // Body mousedown: starts a move drag.
-  const onBodyMouseDown = useCallback((ev: React.MouseEvent<HTMLElement>) => {
+  // Body pointerdown: starts a move drag. Pointer events fire for both mouse and touch.
+  const onBodyMouseDown = useCallback((ev: React.PointerEvent<HTMLElement>) => {
     if (!e.onMoveResize) return;
-    if (ev.button !== 0) return;
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
     ev.stopPropagation();
     ev.preventDefault();
 
@@ -506,7 +506,7 @@ export function WeekGridEvent({
       colWidth: colEl.getBoundingClientRect().width,
     };
 
-    const onMove = (mev: MouseEvent) => {
+    const onMove = (mev: PointerEvent) => {
       const ds = dragRef.current;
       if (!ds || ds.kind !== "move") return;
       // Engage after crossing 4px in EITHER axis so a click doesn't snap the block.
@@ -532,7 +532,7 @@ export function WeekGridEvent({
       }
     };
 
-    const onUp = (uev: MouseEvent) => {
+    const onUp = (uev: PointerEvent) => {
       const ds = dragRef.current;
       cleanupRef.current?.();
       dragRef.current = null;
@@ -562,10 +562,10 @@ export function WeekGridEvent({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay]);
 
-  // Handle mousedown: starts a resize drag (top = start edge, bottom = end edge).
-  const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.MouseEvent<HTMLElement>) => {
+  // Handle pointerdown: starts a resize drag (top = start edge, bottom = end edge).
+  const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.PointerEvent<HTMLElement>) => {
     if (!e.onMoveResize) return;
-    if (ev.button !== 0) return;
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
     ev.stopPropagation();
     ev.preventDefault();
 
@@ -587,7 +587,7 @@ export function WeekGridEvent({
       colEl,
     };
 
-    const onMove = (mev: MouseEvent) => {
+    const onMove = (mev: PointerEvent) => {
       const ds = dragRef.current;
       if (!ds || (ds.kind !== "resize-top" && ds.kind !== "resize-bottom")) return;
       const h = hourFromColY(mev.clientY, ds.colEl);
@@ -649,13 +649,13 @@ export function WeekGridEvent({
           ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
           : {}),
       }}
-      // Always swallow mousedown, even with no onClick. The day column starts
-      // a drag-to-create on any mousedown that reaches it, and its mouseup
+      // Always swallow pointerdown, even with no onClick. The day column starts
+      // a drag-to-create on any pointerdown that reaches it, and its pointerup
       // commits a selection even with zero movement — so without this, clicking
       // an existing block opens a bogus "New entry" popover on top of it.
       // Previously this was gated on `e.onClick`, which is why only the
       // clickable (Manual) blocks were protected.
-      onMouseDown={movable ? onBodyMouseDown : (ev) => ev.stopPropagation()}
+      onPointerDown={movable ? onBodyMouseDown : (ev) => ev.stopPropagation()}
       onClick={
         movable
           ? (ev) => {
@@ -690,8 +690,8 @@ export function WeekGridEvent({
       {/* Top resize handle — only for movable blocks */}
       {movable && (
         <div
-          onMouseDown={onHandleMouseDown("top")}
-          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          onPointerDown={onHandleMouseDown("top")}
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 dnd-touch-handle"
           aria-label="Adjust start time"
         />
       )}
@@ -740,8 +740,8 @@ export function WeekGridEvent({
       {/* Bottom resize handle — only for movable blocks */}
       {movable && (
         <div
-          onMouseDown={onHandleMouseDown("bottom")}
-          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          onPointerDown={onHandleMouseDown("bottom")}
+          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 dnd-touch-handle"
           aria-label="Adjust end time"
         />
       )}
@@ -763,7 +763,7 @@ export function WeekGridEvent({
           }}
           footer={
             e.meeting ? (
-              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
+              <div className="mt-2 border-t border-border pt-2" onPointerDown={(ev) => ev.stopPropagation()}>
                 <div className="flex items-center gap-2">
                   <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
                     Your RSVP
@@ -803,7 +803,7 @@ export function WeekGridEvent({
             ) : e.onEdit || e.onDuplicate || e.onDelete ? (
               <div
                 className="mt-2 flex items-center gap-1 border-t border-border pt-2"
-                onMouseDown={(ev) => ev.stopPropagation()}
+                onPointerDown={(ev) => ev.stopPropagation()}
               >
                 {e.onEdit && (
                   <button
@@ -1086,9 +1086,9 @@ export function WeekGrid({
     return Math.max(MIN_HOUR, Math.min(MAX_HOUR, snapped));
   };
 
-  const onDayMouseDown = (dayIdx: number) => (e: React.MouseEvent<HTMLDivElement>) => {
+  const onDayMouseDown = (dayIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (!onDayPointerSelect) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     // While a selection's editor is open, freeze the grid: a new drag would
     // move the committed selection out from under the open form. (The popover
     // itself lives in a body portal, so its clicks never reach a column — this
@@ -1100,12 +1100,12 @@ export function WeekGrid({
     e.preventDefault();
   };
 
-  // Window-level mousemove + mouseup so the drag keeps tracking even when the
-  // cursor leaves the original column.
+  // Window-level pointermove + pointerup so the drag keeps tracking even when the
+  // pointer leaves the original column. Pointer events fire for both mouse and touch.
   useEffect(() => {
     if (!drag || !onDayPointerSelect) return;
     const col = columnRefs.current[drag.dayIdx];
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       setDrag((prev) =>
@@ -1127,11 +1127,11 @@ export function WeekGrid({
       onDayPointerSelect(drag.dayIdx, start, end, anchorRect);
       setDrag(null);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [drag, onDayPointerSelect, MAX_HOUR, clickDurationHours]);
 
@@ -1139,9 +1139,9 @@ export function WeekGrid({
   // moving edge follows the cursor (snapped, clamped, never crossing the fixed
   // edge); onSelectionResize streams the new range up so the popover form and
   // the block stay in sync live.
-  const startResize = (edge: "start" | "end") => (e: React.MouseEvent) => {
+  const startResize = (edge: "start" | "end") => (e: React.PointerEvent) => {
     if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     setResize({ edge, fixed: edge === "start" ? selection.endHour : selection.startHour });
@@ -1150,7 +1150,7 @@ export function WeekGrid({
   useEffect(() => {
     if (!resize || !selection || !onSelectionResize) return;
     const col = columnRefs.current[selection.dayIdx];
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       const h = hourFromY(e.clientY - rect.top);
@@ -1164,20 +1164,20 @@ export function WeekGrid({
       }
     };
     const onUp = () => setResize(null);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [resize, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
   // Moving the committed selection up/down as a whole. Duration is preserved:
   // the range slides, and is clamped so neither edge leaves the visible day
   // rather than being squashed at the boundary.
-  const startMove = (e: React.MouseEvent) => {
+  const startMove = (e: React.PointerEvent) => {
     if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const col = columnRefs.current[selection.dayIdx];
@@ -1193,7 +1193,7 @@ export function WeekGrid({
   useEffect(() => {
     if (!move || !selection || !onSelectionResize) return;
     const col = columnRefs.current[selection.dayIdx];
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       const pointerHour = hourFromY(e.clientY - rect.top);
@@ -1204,11 +1204,11 @@ export function WeekGrid({
       onSelectionResize(start, start + move.duration);
     };
     const onUp = () => setMove(null);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [move, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
@@ -1218,7 +1218,7 @@ export function WeekGrid({
     Object.values(allDayByDay).some((blocks) => blocks.length > 0);
 
   return (
-    <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    <div className={`relative min-w-[640px] ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
     {/* Weekday header. Its own row above the grid (and above the all-day band,
         which is what puts the band under the dates the way Google's week view
         reads). Sitting outside the scroll container is also what keeps it in
@@ -1370,9 +1370,9 @@ export function WeekGrid({
             ref={(el) => {
               columnRefs.current[idx] = el;
             }}
-            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair" : ""}`}
+            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair dnd-touch-handle" : ""}`}
             style={{ height: HOURS.length * HOUR_PX }}
-            onMouseDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
+            onPointerDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
           >
             {HOURS.map((_, i) => (
               <Fragment key={i}>
@@ -1473,7 +1473,7 @@ export function WeekGrid({
                   ref={setAnchorEl}
                   // Body drag moves the whole block; the edge handles below
                   // resize it (they stopPropagation so they win over this).
-                  onMouseDown={resizable ? startMove : undefined}
+                  onPointerDown={resizable ? startMove : undefined}
                   className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
                     resizable ? (move ? "cursor-grabbing" : "cursor-grab") : "pointer-events-none"
                   }`}
@@ -1491,16 +1491,16 @@ export function WeekGrid({
                     <>
                       {/* Top handle */}
                       <div
-                        onMouseDown={startResize("start")}
-                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        onPointerDown={startResize("start")}
+                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust start time"
                       >
                         <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
                       </div>
                       {/* Bottom handle */}
                       <div
-                        onMouseDown={startResize("end")}
-                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        onPointerDown={startResize("end")}
+                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust end time"
                       >
                         <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
@@ -1555,14 +1555,14 @@ export function SelectionPopoverPortal({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
-  // Dismiss on a genuine outside click. We can't use a full-viewport backdrop
+  // Dismiss on a genuine outside click/tap. We can't use a full-viewport backdrop
   // for this: the selection block (with its resize handles) lives in the grid
-  // *under* this portal, so a covering backdrop would swallow handle mousedowns
+  // *under* this portal, so a covering backdrop would swallow handle pointerdowns
   // and dismiss the selection the instant the user grabs a handle. Instead,
-  // listen at the document and ignore mousedowns that land inside the popover
+  // listen at the document and ignore pointerdowns that land inside the popover
   // card or the anchored selection block (so resizing it works).
   useEffect(() => {
-    const onDocMouseDown = (e: MouseEvent) => {
+    const onDocPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
@@ -1581,8 +1581,8 @@ export function SelectionPopoverPortal({
       onDismiss();
     };
     // Capture phase so we see the event even if something stops propagation.
-    document.addEventListener("mousedown", onDocMouseDown, true);
-    return () => document.removeEventListener("mousedown", onDocMouseDown, true);
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
   }, [anchorEl, onDismiss]);
 
   useLayoutEffect(() => {
@@ -1662,7 +1662,7 @@ export function SelectionPopoverPortal({
       data-calendar-popover
       className="fixed z-50"
       style={{ left, top }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {children}
     </div>,

@@ -182,7 +182,8 @@ function DomainSection({
           {rows.length} on the waitlist
         </span>
       </header>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[560px]">
         <thead className="text-xs uppercase tracking-wider text-muted-foreground/80">
           <tr className="text-left">
             <th className="px-5 py-2 w-16">Rank</th>
@@ -198,6 +199,7 @@ function DomainSection({
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

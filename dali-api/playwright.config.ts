@@ -15,13 +15,28 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: /reviewer\.spec/,
+      // Exclude both the reviewer spec (handled by chromium-reviewer) and the
+      // mobile-audit spec (handled by mobile-pixel7) from the desktop run.
+      testIgnore: /reviewer\.spec|mobile-audit\.spec/,
     },
     {
       name: 'chromium-reviewer',
       use: { ...devices['Desktop Chrome'] },
       testMatch: /reviewer\.spec/,
       dependencies: ['chromium'],
+    },
+    {
+      // Pixel 7 = Chromium-based + Android UA + hasTouch. The Android UA causes
+      // the server's tabless.ts to force the single-page shell, so routes render
+      // as plain outer-document pages — making the horizontal-overflow check
+      // meaningful. No new browser binary needed: CI already installs chromium.
+      name: 'mobile-pixel7',
+      use: {
+        ...devices['Pixel 7'],
+        // 375-wide is the strict audit width for the overflow check.
+        viewport: { width: 375, height: 812 },
+      },
+      testMatch: /mobile-audit\.spec\.ts$/,
     },
   ],
   webServer: {

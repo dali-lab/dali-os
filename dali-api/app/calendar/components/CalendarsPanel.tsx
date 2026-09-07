@@ -140,7 +140,7 @@ export function CalendarsPanel({
           "flex flex-col gap-5",
           inline
             ? cn(panel, panelPad)
-            : "relative z-50 w-[22rem] overflow-y-auto rounded-xl cal-surface p-4 max-h-[85vh]",
+            : "relative z-50 w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl cal-surface p-4 max-h-[85vh]",
         )}
       >
         {/* Header */}

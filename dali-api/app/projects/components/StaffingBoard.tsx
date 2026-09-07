@@ -588,7 +588,7 @@ export function StaffingBoard({
   // top + side borders off the scroll-clip edge so they stay visible.
   const shell = (tone: "muted" | "active" | "dim") =>
     cn(
-      "flex-shrink-0 w-64 border flex flex-col max-h-[calc(100vh-12rem)]",
+      "flex-shrink-0 w-full md:w-64 border flex flex-col max-h-[calc(100vh-12rem)]",
       // A column is a tall container, not a card: the design's 24px card
       // corner curves away from its own contents at this height, so it takes
       // the 12px item radius instead.

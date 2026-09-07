@@ -347,7 +347,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
       onClose={onClose}
       labelledBy="command-palette-title"
       initialFocusRef={inputRef}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh] overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pb-4 pt-[12vh] px-[max(1rem,env(safe-area-inset-left))] overflow-y-auto"
       containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-xl w-full overflow-hidden"
     >
       <h2 id="command-palette-title" className="sr-only">

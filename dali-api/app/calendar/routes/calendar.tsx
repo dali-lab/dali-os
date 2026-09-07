@@ -96,6 +96,7 @@ import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
 import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover } from "~/calendar/components/timesheet";
 import { AvailabilityView } from "~/calendar/components/AvailabilityView";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
+import { useIsMobile } from "~/hooks/useIsMobile";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -459,6 +460,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const rangeStartIso = rangeStart.toISOString();
   const rangeEndIso = rangeEnd.toISOString();
 
+  // On mobile, default to "day" view so the single-column layout is usable
+  // without horizontal scrolling through a compressed 7-day week grid.
+  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (isMobile && view === "week") changeView("day");
+  // Only run when isMobile first becomes true (post-mount). Don't chase every
+  // view change the user makes — they should be able to switch back to week.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
+
   // Keyboard nav (Google-Calendar style): D/W/M switch view, T jumps to today,
   // ←/→ page. Only in browse mode, never while a dialog is open or while typing
   // into a field. Modifier chords are left for the browser/OS.
@@ -810,8 +821,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />
           {/* No card around the grid — the hour rules and day rules are the
-              only structure it needs, the way Google's week view reads. */}
-          <section className="flex min-w-0 flex-1 flex-col lg:min-h-0">
+              only structure it needs, the way Google's week view reads.
+              overflow-x-auto lets the min-w-[640px] WeekGrid scroll rather
+              than compress on narrow viewports. */}
+          <section className="flex min-w-0 flex-1 flex-col lg:min-h-0 overflow-x-auto">
               {view === "agenda" ? (
                 <AgendaView
                   days={days}

@@ -1185,7 +1185,7 @@ export function EpicsTimeline({
           onScroll={handleScroll}
         >
           <div
-            className="relative bg-os-well"
+            className="relative bg-os-well min-w-[640px]"
             style={{ width: bounds ? bounds.width : "100%", height: gridHeight }}
           >
             {bounds && (
@@ -1400,7 +1400,6 @@ export function EpicsTimeline({
                             barX("epic", b.left, b.width).width,
                           ),
                         }}
-                        draggable={editMode && Boolean(onReschedule)}
                         onDragStart={beginDrag("epic", b.epic.id)}
                         onResizeStart={(edge) => beginDrag("epic", b.epic.id, edge)}
                         title={b.epic.title}
@@ -1470,7 +1469,6 @@ export function EpicsTimeline({
                             barX("story", b.left, b.width).width,
                           ),
                         }}
-                      draggable={editMode && Boolean(onReschedule)}
                       onDragStart={beginDrag("story", b.story.id)}
                       onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
                       title={b.story.title}
@@ -1528,7 +1526,6 @@ export function EpicsTimeline({
                           barX("task", b.left, b.width).width,
                         ),
                       }}
-                      draggable={editMode && Boolean(onReschedule)}
                       onDragStart={beginDrag("task", b.task.id)}
                       onResizeStart={(edge) => beginDrag("task", b.task.id, edge)}
                       title={b.task.title}

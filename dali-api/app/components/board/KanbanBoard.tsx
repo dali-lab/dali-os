@@ -2,7 +2,8 @@ import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCorners,
   pointerWithin,
   useDndContext,
@@ -137,7 +138,11 @@ export function KanbanBoard<TCard>({
   // starts and the click is suppressed. This replaces the bespoke
   // `wasDragging` click-suppression DelibsKanban used with native HTML5 drag.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: activationDistance } }),
+    // Mouse: distance-drag keeps desktop click vs drag disambiguation intact.
+    useSensor(MouseSensor, { activationConstraint: { distance: activationDistance } }),
+    // Touch: press-and-hold 200ms then allow 8px of tolerance so a gentle tap
+    // still fires onClick while a deliberate press starts the drag.
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -156,7 +161,9 @@ export function KanbanBoard<TCard>({
   }
 
   const containerClass =
-    layout === "grid" ? "grid gap-4" : "flex gap-3 overflow-x-auto pt-1 pb-3 px-0.5";
+    layout === "grid"
+      ? "grid gap-4"
+      : "flex flex-col gap-3 pt-1 pb-3 px-0.5 md:flex-row md:overflow-x-auto";
   const containerStyle: CSSProperties | undefined =
     layout === "grid"
       ? { gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }
@@ -253,7 +260,8 @@ function BoardColumn<TCard>({
     column.className ??
     // 12px, not the 24px card corner: a column runs the height of the
     // board, and the bigger radius reads as a bubble at that size.
-    "flex-shrink-0 w-64 border border-transparent rounded-os-item bg-os-card flex flex-col";
+    // w-full md:w-64 = stack single-column on mobile, fixed width at md+.
+    "flex-shrink-0 w-full md:w-64 border border-transparent rounded-os-item bg-os-card flex flex-col";
 
   // The dashed "it lands here" outline, spliced in at `dropIndex`. On an empty
   // column it stands in for the Empty label entirely, so a drop target that
@@ -440,7 +448,7 @@ function DraggableCardWrapper<TCard>({
     : {};
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className="dnd-touch-handle">
       {renderCard(card, { isDragging, dragHandleProps })}
     </div>
   );
@@ -477,7 +485,7 @@ function SortableCardWrapper<TCard>({
     : {};
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className="dnd-touch-handle">
       {renderCard(card, { isDragging, dragHandleProps })}
     </div>
   );
