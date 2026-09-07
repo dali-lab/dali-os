@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildGridDays,
+  workEventsOnly,
   buildExternalLayer,
   buildAllDayItems,
   buildAllDayLayer,
@@ -122,6 +123,47 @@ describe("buildExternalLayer", () => {
     const layer = buildExternalLayer(data, days, new Set(["cal-a"]));
     expect(layer[0]).toHaveLength(1);
     expect(layer[0][0].label).toBe("Class");
+  });
+});
+
+describe("workEventsOnly", () => {
+  const timesheetFixture = () =>
+    fixture({
+      externalEvents: [
+        { startIso: "2026-08-17T09:00:00.000Z", endIso: "2026-08-17T10:00:00.000Z", title: "Studio", eventId: "ev-work" },
+        { startIso: "2026-08-17T12:00:00.000Z", endIso: "2026-08-17T13:00:00.000Z", title: "Dentist", eventId: "ev-plain" },
+        { startIso: "2026-08-17T15:00:00.000Z", endIso: "2026-08-17T16:00:00.000Z", title: "Busy read, no id" },
+      ] as LoaderData["externalEvents"],
+      timeEntries: [
+        { id: "t1", sourceEventId: "ev-work", scheduledMeetingId: null, hours: 1, date: "2026-08-17T00:00:00.000Z" },
+      ] as LoaderData["timeEntries"],
+    });
+
+  it("keeps only the events hours were logged against", () => {
+    const data = timesheetFixture();
+    const { byEvent } = buildLoggedSourceIndex(data);
+    expect(workEventsOnly(data, byEvent).externalEvents.map((e) => e.title)).toEqual(["Studio"]);
+  });
+
+  it("drops every event when nothing is logged, and leaves the rest of the data alone", () => {
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-17T09:00:00.000Z", endIso: "2026-08-17T10:00:00.000Z", title: "Studio", eventId: "ev-work" },
+      ] as LoaderData["externalEvents"],
+    });
+    const narrowed = workEventsOnly(data, new Map());
+    expect(narrowed.externalEvents).toEqual([]);
+    expect(narrowed.timezone).toBe(data.timezone);
+    expect(data.externalEvents).toHaveLength(1); // input untouched
+  });
+
+  it("feeds the layer builders, so the grid draws work only", () => {
+    const data = timesheetFixture();
+    const days = buildGridDays(WEEK, 7);
+    const { byEvent } = buildLoggedSourceIndex(data);
+    const layer = buildExternalLayer(workEventsOnly(data, byEvent), days, undefined, undefined, undefined, undefined, undefined, byEvent);
+    expect(layer[1].map((b) => b.label)).toEqual(["Studio"]);
+    expect(layer[1][0].loggedAccent).toBeDefined();
   });
 });
 

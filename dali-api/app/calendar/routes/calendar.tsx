@@ -74,6 +74,7 @@ import {
   buildAllDayItems,
   buildAllDayLayer,
   buildLoggedTimeLayer,
+  workEventsOnly,
   mergeLayers,
   perCalendarLegend,
   type CalendarLegendGroup,
@@ -168,6 +169,70 @@ const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
 
+/* The grid box reaches from wherever it lands on screen to the bottom of the
+   window, so the hours scroll inside the grid and the page itself doesn't move
+   (the day header stays put only by sitting outside the grid's own scroller).
+
+   Measured rather than written as `100dvh - Nrem`: what sits above the box —
+   the shell's top bar, the history row, the page gutter, this page's own
+   toolbar — differs per shell, per flag and per window, and a fraction that
+   guesses low is exactly the bug (the box overshoots, the page scrolls, the
+   header leaves). Only above `lg`, where the grid scrolls internally at all;
+   narrower than that the page keeps scrolling as one piece. */
+const CAL_FILL_MIN_H = 352;
+const CAL_FILL_QUERY = "(min-width: 1024px)";
+
+function useFillToBottom() {
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!box) return;
+    const wide = window.matchMedia(CAL_FILL_QUERY);
+    let frame = 0;
+
+    const measure = () => {
+      if (!wide.matches) {
+        setHeight((prev) => (prev == null ? prev : null));
+        return;
+      }
+      const top = box.getBoundingClientRect().top + window.scrollY;
+      // Everything below the box in the document — the page's bottom gutter —
+      // so the box stops short of it instead of pushing the page past the fold.
+      const below = Math.max(
+        0,
+        document.documentElement.scrollHeight - (top + box.offsetHeight),
+      );
+      const next = Math.max(
+        CAL_FILL_MIN_H,
+        Math.round(window.innerHeight - top - below),
+      );
+      // Tolerance, because this runs from a ResizeObserver the height itself
+      // feeds: without it a 1px rounding difference re-triggers forever.
+      setHeight((prev) => (prev != null && Math.abs(prev - next) <= 1 ? prev : next));
+    };
+
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+
+    measure();
+    window.addEventListener("resize", schedule);
+    wide.addEventListener("change", schedule);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(document.body);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      wide.removeEventListener("change", schedule);
+      observer.disconnect();
+    };
+  }, [box]);
+
+  return [setBox, height] as const;
+}
+
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
 // UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
@@ -185,6 +250,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [mode, setMode] = useState<"browse" | "meeting">(() =>
     searchParams.get("tab") === "schedule" ? "meeting" : "browse",
   );
+  const [setGridBox, gridHeight] = useFillToBottom();
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
 
   // Per-role colours for logged time, persisted like the hidden-calendar set.
@@ -449,11 +515,20 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // block, and one click target, per thing.
   const loggedSources = buildLoggedSourceIndex(data, excludedRoleKeys, roleColors);
 
+  // "View timesheet" is a way of *looking* at the grid, not another overlay:
+  // it answers "what did I work on", so an ordinary calendar event — a class, a
+  // dentist appointment, a meeting nobody logged — has no place on it. What
+  // stays is the logged entries themselves and the events those hours were
+  // logged against, which keep drawing here (wearing their role accent) so the
+  // one block is still the event's own click target.
+  const workOnly = layers.logged;
+  const eventData = workOnly ? workEventsOnly(layerData, loggedSources.byEvent) : layerData;
+
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external)
     layerMaps.push(
       buildExternalLayer(
-        layerData,
+        eventData,
         days,
         hiddenCals,
         data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
@@ -466,7 +541,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // All-day events (crud read) render in the grid's all-day band.
   const allDayByDay: Record<number, AllDayBlock[]> = {};
   if (data.crudEnabled) {
-    const items = buildAllDayItems(layerData, days, hiddenCals);
+    const items = buildAllDayItems(eventData, days, hiddenCals);
     for (const [idx, evs] of Object.entries(items)) {
       allDayByDay[Number(idx)] = evs.map((e) => ({
         label: e.title,
@@ -492,7 +567,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         // Events only carry an eventId (and so can wear an accent) on the crud
         // read; without the flag the busy read has nothing to annotate, so the
         // entry has to keep drawing its own block or the hours vanish.
-        suppressSourced: { meetings: layers.external, events: layers.external && data.crudEnabled },
+        suppressSourced: {
+          // A meeting's own calendar event isn't marked as work, so in
+          // timesheet view it's filtered off the grid — nothing is left to
+          // carry the accent, and the entry has to draw its own block or the
+          // hours vanish from the one view that exists to show them.
+          meetings: !workOnly && layers.external,
+          events: layers.external && data.crudEnabled,
+        },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
@@ -514,7 +596,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // in the dedicated band (allDayByDay) instead — don't double them up.
   if (layers.external && data.crudEnabled && (view === "month" || view === "agenda"))
     layerMaps.push(
-      buildAllDayLayer(layerData, days, hiddenCals, (e, anchor) =>
+      buildAllDayLayer(eventData, days, hiddenCals, (e, anchor) =>
         setComposer({ mode: "edit", event: e, anchor }),
       ),
     );
@@ -699,7 +781,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           <MeetingComposer data={data} />
         </section>
       ) : (
-        <div className="flex gap-5 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
+        <div
+          ref={setGridBox}
+          // Sized to reach the bottom of the window (see useFillToBottom), with
+          // a viewport-fraction fallback for the first paint. The old
+          // `max(100vh - 9rem, 56rem)` under-counted the chrome above it and
+          // floored at 896px, so on a short window the grid ran past the fold
+          // and the *page* scrolled — taking the day header, which stays put
+          // only by sitting outside the grid's own scroller, with it.
+          className="flex gap-5 lg:h-[calc(100dvh-13rem)] lg:min-h-[22rem]"
+          style={gridHeight != null ? { height: gridHeight } : undefined}
+        >
           <CalendarSidebar
             data={data}
             focusDate={focusDate}

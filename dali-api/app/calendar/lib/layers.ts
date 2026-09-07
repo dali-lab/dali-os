@@ -295,6 +295,19 @@ export function buildLoggedSourceIndex(
   return { byMeeting, byEvent };
 }
 
+/** Timesheet view: the events that are *work* — the ones hours were logged
+ *  against, keyed by `buildLoggedSourceIndex().byEvent`. Feeding the layer
+ *  builders this narrowed data is what makes "View timesheet" a way of looking
+ *  at the grid rather than another overlay: an ordinary calendar event (a
+ *  class, an appointment, a meeting nobody logged) drops out of the grid and
+ *  the all-day band alike, and what's left is work. */
+export function workEventsOnly(data: LoaderData, byEvent: Map<string, LoggedAccent>): LoaderData {
+  return {
+    ...data,
+    externalEvents: data.externalEvents.filter((e) => e.eventId != null && byEvent.has(e.eventId)),
+  };
+}
+
 /** A time entry resolved to a concrete ISO range: its real times when set,
  *  else a nominal same-day slot so untimed entries still render somewhere. */
 export function timeEntryRange(t: TimeEntryDTO, timezone: string): { startIso: string; endIso: string } {
