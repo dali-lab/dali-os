@@ -5,6 +5,7 @@ vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { zonedDayEndUtc, APPLICATION_TZ } from "~/lib/timezone";
 import {
   computeDueReminders,
   runTaskDueReminders,
@@ -17,64 +18,70 @@ const mockPrisma = prisma as unknown as Record<
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
 
 const HOUR = 3_600_000;
-const NOW = new Date("2026-07-15T12:00:00Z");
+
+// dueAt is a date-only value stored as UTC midnight of the due day; the deadline
+// the reminder windows fire against is the end of that calendar day in the lab
+// timezone. DEADLINE is computed the same way the job does so the assertions
+// stay DST-correct.
+const DUE_DAY = new Date("2026-07-15T00:00:00.000Z");
+const DEADLINE = zonedDayEndUtc(2026, 7, 15, APPLICATION_TZ);
 
 function task(dueAt: Date, assigneeIds = ["u1"]) {
   return { id: "t1", dueAt, assigneeIds };
 }
 
 describe("computeDueReminders", () => {
-  it("fires DayBefore inside [dueAt-24h, dueAt-24h+6h)", () => {
+  it("fires DayBefore inside [deadline-24h, deadline-24h+6h)", () => {
     // Window opened 1h ago.
-    const dueAt = new Date(NOW.getTime() + 23 * HOUR);
-    expect(computeDueReminders(NOW, [task(dueAt)])).toEqual([
-      { taskId: "t1", userId: "u1", kind: "DayBefore", dueAtSnapshot: dueAt },
+    const now = new Date(DEADLINE.getTime() - 24 * HOUR + HOUR);
+    expect(computeDueReminders(now, [task(DUE_DAY)])).toEqual([
+      { taskId: "t1", userId: "u1", kind: "DayBefore", dueAtSnapshot: DUE_DAY },
     ]);
   });
 
   it("does not fire DayBefore before the window opens", () => {
-    const dueAt = new Date(NOW.getTime() + 25 * HOUR);
-    expect(computeDueReminders(NOW, [task(dueAt)])).toEqual([]);
+    const now = new Date(DEADLINE.getTime() - 25 * HOUR);
+    expect(computeDueReminders(now, [task(DUE_DAY)])).toEqual([]);
   });
 
   it("expires DayBefore after the 6h catch-up bound", () => {
-    // Window opened 7h ago (due in 17h).
-    const dueAt = new Date(NOW.getTime() + 17 * HOUR);
-    expect(computeDueReminders(NOW, [task(dueAt)])).toEqual([]);
+    // Window opened 7h ago.
+    const now = new Date(DEADLINE.getTime() - 24 * HOUR + 7 * HOUR);
+    expect(computeDueReminders(now, [task(DUE_DAY)])).toEqual([]);
   });
 
-  it("fires AtDeadline inside [dueAt, dueAt+6h) but not before", () => {
-    const justDue = new Date(NOW.getTime() - 1 * HOUR);
-    expect(computeDueReminders(NOW, [task(justDue)])).toEqual([
-      { taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: justDue },
+  it("fires AtDeadline inside [deadline, deadline+6h) but not before", () => {
+    const justDue = new Date(DEADLINE.getTime() + HOUR);
+    expect(computeDueReminders(justDue, [task(DUE_DAY)])).toEqual([
+      { taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: DUE_DAY },
     ]);
 
-    const notYet = new Date(NOW.getTime() + 1 * HOUR);
+    const notYet = new Date(DEADLINE.getTime() - HOUR);
     expect(
-      computeDueReminders(NOW, [task(notYet)]).filter((t) => t.kind === "AtDeadline"),
+      computeDueReminders(notYet, [task(DUE_DAY)]).filter((t) => t.kind === "AtDeadline"),
     ).toEqual([]);
 
-    const longPast = new Date(NOW.getTime() - 7 * HOUR);
-    expect(computeDueReminders(NOW, [task(longPast)])).toEqual([]);
+    const longPast = new Date(DEADLINE.getTime() + 7 * HOUR);
+    expect(computeDueReminders(longPast, [task(DUE_DAY)])).toEqual([]);
   });
 
-  it("boundary: exactly at dueAt fires AtDeadline, exactly at window end does not", () => {
-    expect(computeDueReminders(NOW, [task(NOW)])).toEqual([
-      { taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: NOW },
+  it("boundary: exactly at the deadline fires AtDeadline, exactly at window end does not", () => {
+    expect(computeDueReminders(DEADLINE, [task(DUE_DAY)])).toEqual([
+      { taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: DUE_DAY },
     ]);
-    const atEnd = new Date(NOW.getTime() - 6 * HOUR);
-    expect(computeDueReminders(NOW, [task(atEnd)])).toEqual([]);
+    const atEnd = new Date(DEADLINE.getTime() + 6 * HOUR);
+    expect(computeDueReminders(atEnd, [task(DUE_DAY)])).toEqual([]);
   });
 
   it("fans out to every assignee", () => {
-    const dueAt = new Date(NOW.getTime() - HOUR);
-    const tuples = computeDueReminders(NOW, [task(dueAt, ["u1", "u2", "u3"])]);
+    const now = new Date(DEADLINE.getTime() + HOUR);
+    const tuples = computeDueReminders(now, [task(DUE_DAY, ["u1", "u2", "u3"])]);
     expect(tuples.map((t) => t.userId)).toEqual(["u1", "u2", "u3"]);
   });
 });
 
 describe("runTaskDueReminders", () => {
-  const DUE = new Date(NOW.getTime() - HOUR); // AtDeadline window open
+  const NOW = new Date(DEADLINE.getTime() + HOUR); // AtDeadline window open
 
   function pendingRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -82,11 +89,11 @@ describe("runTaskDueReminders", () => {
       taskId: "t1",
       userId: "u1",
       kind: "AtDeadline",
-      dueAtSnapshot: DUE,
+      dueAtSnapshot: DUE_DAY,
       sentAt: null,
       task: {
         title: "Ship it",
-        dueAt: DUE,
+        dueAt: DUE_DAY,
         status: "InProgress",
         projectId: "p1",
         assignees: [{ userId: "u1" }],
@@ -108,14 +115,14 @@ describe("runTaskDueReminders", () => {
 
   it("claims tuples with skipDuplicates and sends pending rows", async () => {
     mockPrisma.task.findMany.mockResolvedValue([
-      { id: "t1", dueAt: DUE, assignees: [{ userId: "u1" }] },
+      { id: "t1", dueAt: DUE_DAY, assignees: [{ userId: "u1" }] },
     ]);
     mockPrisma.taskReminder.findMany.mockResolvedValue([pendingRow()]);
 
     const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null, settings: {} });
 
     expect(mockPrisma.taskReminder.createMany).toHaveBeenCalledWith({
-      data: [{ taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: DUE }],
+      data: [{ taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: DUE_DAY }],
       skipDuplicates: true,
     });
     expect(mockNotify).toHaveBeenCalledWith(
@@ -140,7 +147,7 @@ describe("runTaskDueReminders", () => {
       pendingRow({
         task: {
           title: "Ship it",
-          dueAt: new Date(DUE.getTime() + 2 * HOUR),
+          dueAt: new Date("2026-07-17T00:00:00.000Z"),
           status: "InProgress",
           projectId: "p1",
           assignees: [{ userId: "u1" }],
@@ -157,7 +164,7 @@ describe("runTaskDueReminders", () => {
       pendingRow({
         task: {
           title: "Done already",
-          dueAt: DUE,
+          dueAt: DUE_DAY,
           status: "Done",
           projectId: "p1",
           assignees: [{ userId: "u1" }],
@@ -168,7 +175,7 @@ describe("runTaskDueReminders", () => {
         userId: "u-gone",
         task: {
           title: "Reassigned",
-          dueAt: DUE,
+          dueAt: DUE_DAY,
           status: "Todo",
           projectId: "p1",
           assignees: [{ userId: "someone-else" }],

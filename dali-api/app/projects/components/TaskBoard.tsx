@@ -48,6 +48,7 @@ import {
   type TaskCardModel,
   type TaskStatus,
 } from "../lib/task-board";
+import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
@@ -1453,11 +1454,14 @@ function TaskCard({
   onOpen: () => void;
 }) {
   const { os } = useOsChrome();
+  // dueAt is a date-only value (UTC midnight of the due day). A task is overdue
+  // once the viewer's local calendar day is past that day — not the instant it
+  // is stored at, which would flip overdue at the viewer's local midnight.
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
     card.status !== "Cancelled" &&
-    new Date(card.dueAt).getTime() < Date.now();
+    localTodayUtcDay() > utcDayOf(card.dueAt);
 
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
@@ -1652,12 +1656,16 @@ function formatSince(iso: string): string {
 }
 
 // Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".
+// Task dates are date-only (UTC midnight), so the label reads them in UTC — the
+// same convention as the timeline's day labels — to avoid a west-of-UTC viewer
+// seeing the previous day.
 function formatDuePill(iso: string): string {
   const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear();
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
     ...(sameYear ? {} : { year: "numeric" }),
   });
 }

@@ -139,6 +139,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid startsAt" }, { status: 400 }));
   }
 
+  // Backlog is the one column that holds undated work; anywhere else a new task
+  // is scheduled work and has to land on the timeline with a deadline. The
+  // create modal enforces this client-side (TaskModal); mirror it here so a
+  // direct API call can't file dateless scheduled work.
+  if (status !== "Backlog" && dueAt == null) {
+    return withCors(
+      request,
+      Response.json(
+        { error: "Give the task a deadline, or create it in Backlog." },
+        { status: 400 },
+      ),
+    );
+  }
+
   const project = await prisma.project.findUnique({
     where: { id: params.id },
     select: { id: true, repoUrls: true },
