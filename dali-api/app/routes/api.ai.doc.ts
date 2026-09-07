@@ -11,7 +11,8 @@
 import type { Route } from "./+types/api.ai.doc";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
-import { resolveAiProvider, recordTokenUsage } from "~/lib/ai.server";
+import { resolveAiProvider } from "~/lib/ai.server";
+import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
 

@@ -11,7 +11,8 @@
 import type { Route } from "./+types/api.ai.project-tldr";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
-import { generateShortText, recordTokenUsage } from "~/lib/ai.server";
+import { generateShortText } from "~/lib/ai.server";
+import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";

@@ -16,7 +16,6 @@
 //                             (Authorization: bearer <key>).
 
 import Anthropic from "@anthropic-ai/sdk";
-import { prisma } from "~/lib/db";
 
 export type AiProviderName = "anthropic" | "dartmouth";
 
@@ -73,32 +72,6 @@ export function isAiEnabled(): boolean {
   return Boolean(
     process.env.ANTHROPIC_API_KEY || process.env.DARTMOUTH_CHAT_API_KEY,
   );
-}
-
-/**
- * Best-effort token accounting on the caller's AiUsage row (created by the
- * daily-quota upsert earlier in the same request). Never throws — a failed
- * write must not break an otherwise successful AI response. Shared by every
- * AI route (/api/ai/doc, /api/ai/project-tldr). Exported for unit tests.
- */
-export async function recordTokenUsage(
-  userId: string,
-  day: string,
-  inputTokens: number,
-  outputTokens: number,
-): Promise<void> {
-  if (inputTokens <= 0 && outputTokens <= 0) return;
-  try {
-    await prisma.aiUsage.update({
-      where: { userId_day: { userId, day } },
-      data: {
-        inputTokens: { increment: inputTokens },
-        outputTokens: { increment: outputTokens },
-      },
-    });
-  } catch {
-    // Telemetry only.
-  }
 }
 
 /**
