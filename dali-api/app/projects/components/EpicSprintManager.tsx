@@ -1406,6 +1406,14 @@ function StoryForm({
       }
     />
   );
+  const startField = (
+    <DateField
+      mode="date"
+      value={startsAt}
+      onChange={(value) => setStartsAt(value)}
+      ariaLabel="Story start (optional)"
+    />
+  );
   const endField = (
     <DateField
       mode="date"
@@ -1470,12 +1478,17 @@ function StoryForm({
             </span>
             {nameField}
           </label>
-          {/* Status and the date the story is wanted by are one decision, so
-              they share a row rather than stacking into a ladder. */}
+          {/* Status and the story's span are one decision, so they share a row
+              rather than stacking into a ladder. Start is left blank when the
+              story should inherit its span from its tasks or parent epic. */}
           <div className="os-field-row">
             <label className="os-field-group">
               <span>Status</span>
               {statusField}
+            </label>
+            <label className="os-field-group">
+              <span>Start date</span>
+              {startField}
             </label>
             <label className="os-field-group">
               <span>Due date</span>
@@ -1531,12 +1544,7 @@ function StoryForm({
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Starts (optional)</span>
-              <DateField
-                mode="date"
-                value={startsAt}
-                onChange={(value) => setStartsAt(value)}
-                ariaLabel="Story start (optional)"
-              />
+              {startField}
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Ends (optional)</span>
