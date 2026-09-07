@@ -2,15 +2,18 @@ import { describe, it, expect } from "vitest";
 import {
   computeProjectStatus,
   factsFingerprint,
+  buildTldrDetail,
   STALE_DAYS,
   type StatusTaskInput,
   type StatusSprintInput,
+  type TldrTaskInput,
 } from "../project-status";
 
 const NOW = new Date("2026-09-07T12:00:00.000Z");
 
 function task(over: Partial<StatusTaskInput>): StatusTaskInput {
   return {
+    id: "t",
     status: "Todo",
     dueAt: null,
     sprintId: "sprint-1",
@@ -18,6 +21,22 @@ function task(over: Partial<StatusTaskInput>): StatusTaskInput {
     ...over,
   };
 }
+
+function detailTask(over: Partial<TldrTaskInput>): TldrTaskInput {
+  return {
+    id: "t",
+    title: "Task",
+    status: "Todo",
+    priority: "Normal",
+    dueAt: null,
+    sprintId: "sprint-1",
+    activityAt: NOW,
+    assigneeIds: [],
+    ...over,
+  };
+}
+
+const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000);
 
 function compute(tasks: StatusTaskInput[], sprints: StatusSprintInput[] = []) {
   return computeProjectStatus(
@@ -137,13 +156,66 @@ describe("computeProjectStatus — active sprint", () => {
 
 describe("factsFingerprint", () => {
   it("is stable for identical facts and changes when a flag count changes", () => {
-    const base = compute([task({ status: "Todo", dueAt: "2026-09-01" })]);
-    const same = compute([task({ status: "Todo", dueAt: "2026-09-01" })]);
+    const base = compute([task({ id: "a", status: "Todo", dueAt: "2026-09-01" })]);
+    const same = compute([task({ id: "a", status: "Todo", dueAt: "2026-09-01" })]);
     const more = compute([
-      task({ status: "Todo", dueAt: "2026-09-01" }),
-      task({ status: "Todo", dueAt: "2026-09-02" }),
+      task({ id: "a", status: "Todo", dueAt: "2026-09-01" }),
+      task({ id: "b", status: "Todo", dueAt: "2026-09-02" }),
     ]);
     expect(factsFingerprint(base)).toBe(factsFingerprint(same));
     expect(factsFingerprint(base)).not.toBe(factsFingerprint(more));
+  });
+
+  it("changes when a different task becomes overdue even at the same count", () => {
+    const a = compute([task({ id: "a", status: "Todo", dueAt: "2026-09-01" })]);
+    const b = compute([task({ id: "b", status: "Todo", dueAt: "2026-09-01" })]);
+    // Same count (1 overdue), different identity — the AI names specifics, so
+    // the summary must be allowed to regenerate.
+    expect(a.overdue).toBe(b.overdue);
+    expect(factsFingerprint(a)).not.toBe(factsFingerprint(b));
+  });
+});
+
+describe("buildTldrDetail", () => {
+  it("names overdue tasks most-overdue-first with priority + days, excluding closed", () => {
+    const detail = buildTldrDetail(
+      [
+        detailTask({ id: "1", title: "Old", status: "Todo", priority: "High", dueAt: daysAgo(10) }),
+        detailTask({ id: "2", title: "Older", status: "InProgress", priority: "Urgent", dueAt: daysAgo(30) }),
+        detailTask({ id: "3", title: "Shipped", status: "Done", priority: "High", dueAt: daysAgo(50) }),
+      ],
+      NOW,
+    );
+    expect(detail.overdue.map((o) => o.title)).toEqual(["Older", "Old"]);
+    expect(detail.overdue[0]).toMatchObject({ priority: "Urgent", daysOver: 30 });
+  });
+
+  it("counts open priority mix, distinct team size, and unscheduled high-priority", () => {
+    const detail = buildTldrDetail(
+      [
+        detailTask({ id: "1", status: "InProgress", priority: "Urgent", sprintId: null, assigneeIds: ["u1", "u2"] }),
+        detailTask({ id: "2", status: "Todo", priority: "High", sprintId: null, assigneeIds: ["u2"] }),
+        detailTask({ id: "3", status: "Todo", priority: "High", sprintId: "s1", assigneeIds: ["u3"] }),
+        detailTask({ id: "4", status: "Done", priority: "Urgent", assigneeIds: ["u4"] }),
+      ],
+      NOW,
+    );
+    expect(detail.urgentOpen).toBe(1);
+    expect(detail.highOpen).toBe(2);
+    expect(detail.unscheduledHighPriority).toBe(2);
+    expect(detail.teamSize).toBe(4);
+  });
+
+  it("lists only stalled InProgress tasks (longest-first) and in-review titles", () => {
+    const detail = buildTldrDetail(
+      [
+        detailTask({ id: "1", title: "Stuck", status: "InProgress", activityAt: daysAgo(STALE_DAYS + 5) }),
+        detailTask({ id: "2", title: "Fresh", status: "InProgress", activityAt: daysAgo(2) }),
+        detailTask({ id: "3", title: "Reviewing", status: "InReview" }),
+      ],
+      NOW,
+    );
+    expect(detail.stale.map((s) => s.title)).toEqual(["Stuck"]);
+    expect(detail.inReview).toEqual(["Reviewing"]);
   });
 });

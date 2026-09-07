@@ -1140,6 +1140,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     {
       projectStatus: project.status as ProjectWorkStatus,
       tasks: project.tasks.map((t) => ({
+        id: t.id,
         status: t.status as TaskStatus,
         dueAt: t.dueAt,
         sprintId: t.sprintId,
