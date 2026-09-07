@@ -45,7 +45,6 @@ import {
   Folder,
   Handshake,
   MoreHorizontal,
-  Paperclip,
   Pencil,
   Trash2,
   FolderInput,
@@ -75,6 +74,8 @@ import {
   History,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
+import { categorize } from "~/lib/file-type";
+import { iconForCategory } from "~/lib/file-icon";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -206,7 +207,12 @@ function kindLabel(item: DriveItem): string {
 // offering a button that just says "no preview."
 function isPreviewable(item: DriveItem): boolean {
   if (item.type !== "file") return false;
-  return /\.(png|jpe?g|gif|webp|svg|bmp|avif|pdf)$/.test((item.title || "").toLowerCase());
+  // Drive items carry no content type and their href is the file *page* (not an
+  // inline media URL), so Quick Look renders only what an <img>/<iframe> can
+  // load from that surface: images and PDFs. Classification is shared; the
+  // narrowing to image+pdf is this surface's constraint, not the taxonomy's.
+  const cat = categorize({ fileName: item.title || "" });
+  return cat === "image" || cat === "pdf";
 }
 
 function formatSize(bytes?: number | null): string {
@@ -318,8 +324,10 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       ) : (
         <Folder className={`${cls} text-accent-coral/80 shrink-0`} />
       );
-    case "file":
-      return <Paperclip className={`${cls} text-muted-foreground shrink-0`} />;
+    case "file": {
+      const Icon = iconForCategory(categorize({ fileName: item.title || "" }));
+      return <Icon className={`${cls} text-muted-foreground shrink-0`} />;
+    }
     case "form":
       return <ClipboardList className={`${cls} text-muted-foreground shrink-0`} />;
     case "agreement":
@@ -2227,9 +2235,9 @@ function DriveQuickPreview({ item, onClose }: { item: DriveItem; onClose: () => 
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const name = (item.title || "").toLowerCase();
-  const isImage = item.type === "file" && /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(name);
-  const isPdf = item.type === "file" && name.endsWith(".pdf");
+  const cat = item.type === "file" ? categorize({ fileName: item.title || "" }) : "other";
+  const isImage = cat === "image";
+  const isPdf = cat === "pdf";
 
   return (
     <div
