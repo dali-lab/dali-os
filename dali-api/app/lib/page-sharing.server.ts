@@ -11,7 +11,7 @@
 // Nothing in this module authorises anything. Call it behind your own gate.
 
 import { prisma } from "~/lib/db";
-import { resolveGroupMembers, listVisibleGroupsForUser } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";
 
@@ -59,15 +59,18 @@ export async function groupIdsForUser(userId: string, request?: Request): Promis
 }
 
 // Which non-archived groups this user belongs to. Delegates to
-// listVisibleGroupsForUser, which derives membership from the user's own
-// assignment data in a single batch — O(user's groups). The prior approach
-// resolved EVERY active group's full membership and filtered — O(all groups ×
-// members), a ~250-query fan-out that dominated navigation TTFB even once
-// memoized to once per request (perf review Aug 2026). Dropping manually-archived
-// groups (archivedAt set) preserves the old `where: { archivedAt: null }` gate:
-// an archived group's shares no longer grant access.
+// listVisibleGroupIdsForUser, which derives membership from the user's own
+// assignment data in a single batch — O(user's groups) — and, unlike the
+// full-shape listVisibleGroupsForUser, does NOT resolve each group's member
+// list (a resolveDynamicQuery per membership), since we only need the ids to
+// match PageShare rows. The prior approach resolved EVERY active group's full
+// membership and filtered — O(all groups × members), a ~250-query fan-out that
+// dominated navigation TTFB even once memoized to once per request (perf review
+// Aug 2026). Dropping manually-archived groups (archivedAt set) preserves the
+// old `where: { archivedAt: null }` gate: an archived group's shares no longer
+// grant access.
 async function computeGroupIdsForUser(userId: string, request?: Request): Promise<string[]> {
-  const groups = await listVisibleGroupsForUser(userId, request);
+  const groups = await listVisibleGroupIdsForUser(userId, request);
   return groups.filter((g) => g.archivedAt == null).map((g) => g.id);
 }
 

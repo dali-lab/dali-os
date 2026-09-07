@@ -293,10 +293,9 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
   );
 }
 
-// Returns the groups the given user belongs to. Static membership is read
-// directly off the row; Dynamic groups are resolved via dynamicQuery. Use this
-// at consumer sites (e.g. "groups I'm in") so groups stay hidden from
-// non-members. The management page uses listAllGroups instead.
+// Derives which group definitions a user belongs to, WITHOUT resolving each
+// group's member list. Shared core of listVisibleGroupIdsForUser (hot path,
+// ids only) and listVisibleGroupsForUser (full shape, resolves memberIds).
 //
 // Perf optimisation (vs. the old resolveAllGroups().filter() path):
 // Instead of resolving EVERY group's member list (each Dynamic group fires
@@ -311,10 +310,7 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
 //   reproduce the same predicate per kind but inverted (is-this-user-in
 //   rather than who-is-in), using the same DB tables and the same fields.
 // The only observable difference is performance.
-export async function listVisibleGroupsForUser(
-  userId: string,
-  request?: Request,
-): Promise<VisibleGroup[]> {
+async function deriveUserGroups(userId: string, request?: Request) {
   // Fetch group definitions + terms in parallel (terms needed for archive state
   // and for resolving "term:<id>" dynamic queries).
   const [groups, terms, coreCycleTermIds] = await Promise.all([
@@ -480,8 +476,10 @@ export async function listVisibleGroupsForUser(
     userReviewers.length > 0 ||
     userInterviewers.length > 0;
 
-  // Now resolve each group using the in-memory data — zero additional queries.
-  const result: VisibleGroup[] = [];
+  // Collect the group definitions the user belongs to, using the in-memory
+  // data — zero additional queries. memberIds are NOT resolved here; the two
+  // public entry points below decide whether to pay for that.
+  const memberOf: typeof groups = [];
   for (const g of groups) {
     let isMember: boolean;
     if (g.type === "Static") {
@@ -503,12 +501,38 @@ export async function listVisibleGroupsForUser(
         }
       }
     }
-    if (!isMember) continue;
+    if (isMember) memberOf.push(g);
+  }
+  return { memberOf, termEndById, now };
+}
 
-    // For the member list attached to the group shape (used by the group
-    // picker to show who's in each group), we still need to resolve the full
-    // memberIds. We do that lazily only for groups the user actually belongs
-    // to — which is typically a small subset of all groups.
+// The groups a user belongs to as {id, archivedAt} only — no memberIds
+// resolved. This is the hot path: getPageAccess/groupIdsForUser call it once
+// per navigation and need only the ids (to match PageShare rows). Resolving the
+// full member list of every group the user is in — a resolveDynamicQuery per
+// membership, up to 5 queries for a term group, 4 for hiring — would be pure
+// waste here, since the caller immediately discards memberIds.
+export async function listVisibleGroupIdsForUser(
+  userId: string,
+  request?: Request,
+): Promise<{ id: string; archivedAt: Date | null }[]> {
+  const { memberOf } = await deriveUserGroups(userId, request);
+  return memberOf.map((g) => ({ id: g.id, archivedAt: g.archivedAt }));
+}
+
+// The full VisibleGroup shape (members + derived archive state) for every group
+// the user belongs to. Resolves memberIds per membership, so it costs one
+// resolveDynamicQuery per group the user is in — use it only where the member
+// list is actually consumed (e.g. the group picker showing who's in each
+// group). Permission checks that only need the ids must use
+// listVisibleGroupIdsForUser instead.
+export async function listVisibleGroupsForUser(
+  userId: string,
+  request?: Request,
+): Promise<VisibleGroup[]> {
+  const { memberOf, termEndById, now } = await deriveUserGroups(userId, request);
+  const result: VisibleGroup[] = [];
+  for (const g of memberOf) {
     let memberIds: string[];
     if (g.type === "Static") {
       memberIds = g.staticMemberIds;
@@ -517,7 +541,6 @@ export async function listVisibleGroupsForUser(
     } else {
       memberIds = [];
     }
-
     result.push({
       id: g.id,
       name: g.name,
