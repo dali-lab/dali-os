@@ -16,6 +16,7 @@
 //                             (Authorization: bearer <key>).
 
 import Anthropic from "@anthropic-ai/sdk";
+import { prisma } from "~/lib/db";
 
 export type AiProviderName = "anthropic" | "dartmouth";
 
@@ -72,4 +73,69 @@ export function isAiEnabled(): boolean {
   return Boolean(
     process.env.ANTHROPIC_API_KEY || process.env.DARTMOUTH_CHAT_API_KEY,
   );
+}
+
+/**
+ * Best-effort token accounting on the caller's AiUsage row (created by the
+ * daily-quota upsert earlier in the same request). Never throws — a failed
+ * write must not break an otherwise successful AI response. Shared by every
+ * AI route (/api/ai/doc, /api/ai/project-tldr). Exported for unit tests.
+ */
+export async function recordTokenUsage(
+  userId: string,
+  day: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<void> {
+  if (inputTokens <= 0 && outputTokens <= 0) return;
+  try {
+    await prisma.aiUsage.update({
+      where: { userId_day: { userId, day } },
+      data: {
+        inputTokens: { increment: inputTokens },
+        outputTokens: { increment: outputTokens },
+      },
+    });
+  } catch {
+    // Telemetry only.
+  }
+}
+
+/**
+ * One-shot, non-streaming completion for small server-side summaries (e.g. the
+ * project TL;DR). Resolves the same provider as the doc assistant and returns
+ * the text plus token usage for the caller to record; null when no provider is
+ * configured. No extended thinking — these are short, factual generations where
+ * the thinking budget would only add latency and cost.
+ *
+ * The caller owns rate limiting, the daily-quota upsert, and recordTokenUsage —
+ * this stays a thin "call the model" utility so both AI routes share it.
+ */
+export async function generateShortText(opts: {
+  system: string;
+  prompt: string;
+  maxTokens?: number;
+}): Promise<{ text: string; inputTokens: number; outputTokens: number } | null> {
+  const provider = resolveAiProvider();
+  if (!provider) return null;
+
+  const message = await provider.client.messages.create({
+    model: provider.model,
+    max_tokens: opts.maxTokens ?? 512,
+    system: opts.system,
+    messages: [{ role: "user", content: opts.prompt }],
+    stream: false,
+  });
+
+  const text = message.content
+    .filter((block) => block.type === "text")
+    .map((block) => (block as { type: "text"; text: string }).text)
+    .join("\n")
+    .trim();
+
+  return {
+    text,
+    inputTokens: message.usage?.input_tokens ?? 0,
+    outputTokens: message.usage?.output_tokens ?? 0,
+  };
 }

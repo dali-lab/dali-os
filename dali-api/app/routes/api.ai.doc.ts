@@ -11,7 +11,7 @@
 import type { Route } from "./+types/api.ai.doc";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
-import { resolveAiProvider } from "~/lib/ai.server";
+import { resolveAiProvider, recordTokenUsage } from "~/lib/ai.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
 
@@ -61,32 +61,6 @@ function secondsToUtcMidnight(): number {
     now.getUTCDate() + 1,
   );
   return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
-
-/**
- * Best-effort token accounting on the caller's AiUsage row (created by the
- * daily-quota upsert earlier in the same request). Never throws — a failed
- * write must not break an otherwise successful AI response.
- * Exported for unit tests.
- */
-export async function recordTokenUsage(
-  userId: string,
-  day: string,
-  inputTokens: number,
-  outputTokens: number,
-): Promise<void> {
-  if (inputTokens <= 0 && outputTokens <= 0) return;
-  try {
-    await prisma.aiUsage.update({
-      where: { userId_day: { userId, day } },
-      data: {
-        inputTokens: { increment: inputTokens },
-        outputTokens: { increment: outputTokens },
-      },
-    });
-  } catch {
-    // Telemetry only.
-  }
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────

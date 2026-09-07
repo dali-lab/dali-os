@@ -34,11 +34,9 @@ vi.mock("@anthropic-ai/sdk", () => {
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import {
-  action,
-  recordTokenUsage,
-  validateHistory,
-} from "~/routes/api.ai.doc";
+import { action, validateHistory } from "~/routes/api.ai.doc";
+// recordTokenUsage moved to its shared home (both AI routes use it).
+import { recordTokenUsage } from "~/lib/ai.server";
 
 const AUTH_OK = {
   ok: true as const,
