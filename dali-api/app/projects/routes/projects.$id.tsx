@@ -1016,6 +1016,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         status: s.status,
         epicId: s.epicId,
         termId: sprintTermId.get(s.id) ?? null,
+        startsAt: s.startsAt,
       })),
     epics: boardEpics,
     stories: project.epics.flatMap((e) =>
@@ -1620,6 +1621,7 @@ export default function ProjectDetail() {
   // beside the title, and the filled tab plates. Same tabs, same permissions.
   const os = useFeatureFlag("os-redesign");
   const showStatusBar = useFeatureFlag("project-status-bar");
+  const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -1734,6 +1736,9 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
+      // Sprint-view flag: promotes Sprint to a top-level board filter and opens
+      // the board on the current sprint. Off → the epic-nested sprint sub-filter.
+      sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={os ? peopleOptions : []}

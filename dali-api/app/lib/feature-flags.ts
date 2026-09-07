@@ -135,6 +135,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
   },
+  {
+    key: "sprint-view",
+    label: "Sprint view",
+    description:
+      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
