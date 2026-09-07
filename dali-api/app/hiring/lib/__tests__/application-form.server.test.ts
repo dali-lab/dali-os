@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db";
+import { ensureProcessFolder } from "~/lib/bindings.server";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import {
   createCycleApplicationForm,
@@ -18,11 +19,11 @@ vi.mock("~/lib/db", () => ({
     cycleDomainForm: { create: vi.fn() },
   },
 }));
-vi.mock("~/lib/pages", () => ({
-  // Placement in the Hiring drive is a side effect; stub the roots so the form
+vi.mock("~/lib/bindings.server", () => ({
+  // Folder placement is a side effect; stub the binding folder so the form
   // create just records folderPageId.
-  ensureHiringDriveRoot: vi.fn().mockResolvedValue({ id: "hiring-root" }),
-  ensureHiringTemplatesFolder: vi.fn().mockResolvedValue("hiring-templates-folder"),
+  ensureProcessFolder: vi.fn().mockResolvedValue("hiring-folder"),
+  CORE_PROCESS_ID: "core",
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([{ value: "p1", label: "Project 1" }]),
@@ -89,41 +90,24 @@ describe("loadHiringForm", () => {
 });
 
 describe("ensureHiringTemplate", () => {
-  it("re-homes a legacy top-level template into the Hiring drive and archives the empty folder", async () => {
-    mockPrisma.page.findFirst.mockResolvedValue({ id: "legacy-folder" });
-    mockPrisma.form.findFirst.mockResolvedValue({
-      id: "tmpl",
-      folderPageId: "legacy-folder",
-      versions: [{ id: "tv" }],
-    });
-    mockPrisma.page.count.mockResolvedValue(0);
-    mockPrisma.form.count.mockResolvedValue(0);
+  it("reuses the existing template in the Core application-templates folder", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue({ id: "tmpl", versions: [{ id: "tv" }] });
 
     const id = await ensureHiringTemplate("actor");
     expect(id).toBe("tmpl");
-    // Moved out of the loose Lab folder into the Hiring ▸ Templates subfolder…
-    expect(mockPrisma.form.update).toHaveBeenCalledWith({
-      where: { id: "tmpl" },
-      data: { folderPageId: "hiring-templates-folder" },
-    });
-    // …and the now-empty legacy folder is archived.
-    expect(mockPrisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "legacy-folder" } }),
+    expect(ensureProcessFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ processType: "Core", purpose: "application-templates" }),
     );
+    expect(mockPrisma.form.create).not.toHaveBeenCalled();
   });
 
-  it("leaves the legacy folder alone when it still holds other items", async () => {
-    mockPrisma.page.findFirst.mockResolvedValue({ id: "legacy-folder" });
-    mockPrisma.form.findFirst.mockResolvedValue({
-      id: "tmpl",
-      folderPageId: "hiring-templates-folder", // already in place
-      versions: [{ id: "tv" }],
-    });
-    mockPrisma.form.count.mockResolvedValue(2);
+  it("creates the template form in the binding folder when none exists", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue(null);
+    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
 
-    await ensureHiringTemplate("actor");
-    expect(mockPrisma.form.update).not.toHaveBeenCalled();
-    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+    const id = await ensureHiringTemplate("actor");
+    expect(id).toBe("tmpl-new");
+    expect(mockPrisma.form.create.mock.calls[0][0].data.folderPageId).toBe("hiring-folder");
   });
 });
 

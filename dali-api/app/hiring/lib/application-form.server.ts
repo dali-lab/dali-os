@@ -7,13 +7,12 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { ensureHiringDriveRoot, ensureHiringTemplatesFolder } from "~/lib/pages";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { ApplicationCycleType } from "~/generated/prisma/client";
 
-const TEMPLATE_FOLDER = "Hiring Templates";
 const TEMPLATE_NAME = "Internal Application Template";
 
 function defaultQuestions(): Question[] {
@@ -51,42 +50,16 @@ function defaultQuestions(): Question[] {
  * Hiring drive). We converge its placement on every call.
  */
 export async function ensureHiringTemplate(actorId: string): Promise<string> {
-  const folderPageId = await ensureHiringTemplatesFolder(actorId);
-  // The old top-level "Hiring Templates" Lab folder, if a prior build made one.
-  // We match the existing template within either the new or old home so we
-  // re-home it in place rather than creating a duplicate.
-  const legacyFolder = await prisma.page.findFirst({
-    where: {
-      title: TEMPLATE_FOLDER,
-      kind: "Folder",
-      workspaceType: "Lab",
-      parentPageId: null,
-      archivedAt: null,
-    },
-    select: { id: true },
+  const folderPageId = await ensureProcessFolder({
+    processType: "Core",
+    processId: CORE_PROCESS_ID,
+    purpose: "application-templates",
+    createdById: actorId,
   });
-  const homeFolderIds = [folderPageId, ...(legacyFolder ? [legacyFolder.id] : [])];
   const existing = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAME, folderPageId: { in: homeFolderIds } },
-    select: { id: true, folderPageId: true, versions: { select: { id: true }, take: 1 } },
+    where: { name: TEMPLATE_NAME, folderPageId },
+    select: { id: true, versions: { select: { id: true }, take: 1 } },
   });
-  if (existing && existing.folderPageId !== folderPageId) {
-    await prisma.form.update({ where: { id: existing.id }, data: { folderPageId } });
-  }
-  // Retire the now-empty legacy top-level folder so it no longer clutters the
-  // Lab-wide drive. Best-effort and only when it holds nothing else.
-  if (legacyFolder && legacyFolder.id !== folderPageId) {
-    const [childPages, otherForms] = await Promise.all([
-      prisma.page.count({ where: { parentPageId: legacyFolder.id, archivedAt: null } }),
-      prisma.form.count({ where: { folderPageId: legacyFolder.id } }),
-    ]);
-    if (childPages === 0 && otherForms === 0) {
-      await prisma.page.update({
-        where: { id: legacyFolder.id },
-        data: { archivedAt: new Date() },
-      });
-    }
-  }
   if (existing?.versions.length) return existing.id;
   if (existing) {
     await prisma.formVersion.create({
@@ -152,7 +125,12 @@ export async function createCycleApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = (await ensureHiringDriveRoot(actorId))?.id ?? null;
+  const folderPageId = await ensureProcessFolder({
+    processType: "Core",
+    processId: CORE_PROCESS_ID,
+    purpose: "hiring-forms",
+    createdById: actorId,
+  });
   const label = CYCLE_LABEL[cycle.cycleType] ?? "Application";
   const form = await prisma.form.create({
     data: {
@@ -201,7 +179,12 @@ export async function createDomainChallengeForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = (await ensureHiringDriveRoot(actorId))?.id ?? null;
+  const folderPageId = await ensureProcessFolder({
+    processType: "Core",
+    processId: CORE_PROCESS_ID,
+    purpose: "hiring-forms",
+    createdById: actorId,
+  });
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — ${domain.displayName} challenge`,

@@ -111,22 +111,11 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     key: "core",
     label: "Core",
     icon: Shield,
-    backing: "lab-scoped-root",
-    // Deferring the rekey to Wave 4 (§15): keep the existing systemKey so no
-    // migration is needed — the registry uses the live value, not "drive:space:core".
-    systemKey: "drive:core-root",
+    // A view over Core-group-scoped folders (ordinary folders shared with the
+    // Core group), not a system-owned scoped root. Hiring folds in here too.
+    backing: "virtual-filter",
     groupQuery: "core",
     gate: (r) => r.isCore,
-  },
-  {
-    key: "hiring",
-    label: "Hiring",
-    icon: Briefcase,
-    backing: "lab-scoped-root",
-    // Same rekey deferral: "drive:hiring-root" matches ensureHiringDriveRoot.
-    systemKey: "drive:hiring-root",
-    groupQuery: "hiring",
-    gate: (r) => r.hasHiringAccess,
   },
 ];
 

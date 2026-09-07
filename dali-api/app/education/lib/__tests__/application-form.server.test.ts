@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db";
-import { ensureCoreDriveRoot, ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureProcessFolder } from "~/lib/bindings.server";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -15,10 +16,13 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 vi.mock("~/lib/pages", () => ({
-  // Drive placement is a side effect; stub the roots/folders so only the form
-  // create's folderPageId matters.
-  ensureCoreDriveRoot: vi.fn().mockResolvedValue({ id: "core-root" }),
+  // Drive placement is a side effect; stub the offering Forms folder so only the
+  // form create's folderPageId matters.
   ensureOfferingFormsFolder: vi.fn().mockResolvedValue("offering-forms-folder"),
+}));
+vi.mock("~/lib/bindings.server", () => ({
+  ensureProcessFolder: vi.fn().mockResolvedValue("education-templates-folder"),
+  CORE_PROCESS_ID: "core",
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([]),
@@ -55,55 +59,28 @@ beforeEach(() => {
 });
 
 describe("ensureEducationTemplates", () => {
-  it("targets the managed Core ▸ Templates ▸ Education folder by systemKey", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ id: "managed-folder" });
-
+  it("files template forms into the Core education-templates binding folder", async () => {
     await ensureEducationTemplates("actor");
 
-    expect(mockPrisma.page.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { systemKey: "drive:core-templates-education" } }),
+    expect(ensureProcessFolder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processType: "Core",
+        purpose: "education-templates",
+        createdById: "actor",
+      }),
     );
-    // Managed folder already present → no loose top-level folder is created.
-    expect(mockPrisma.page.create).not.toHaveBeenCalled();
-    expect(ensureCoreDriveRoot).not.toHaveBeenCalled();
+    // Templates already exist (beforeEach) → the create loop is a no-op.
+    expect(mockPrisma.form.create).not.toHaveBeenCalled();
   });
 
-  it("re-homes legacy loose templates into the managed folder and archives the empty folder", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ id: "managed-folder" });
-    mockPrisma.page.findFirst.mockResolvedValue({ id: "legacy-folder" });
+  it("creates a missing template form in the binding folder", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue(null);
+    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
 
     await ensureEducationTemplates("actor");
 
-    expect(mockPrisma.form.updateMany).toHaveBeenCalledWith({
-      where: {
-        folderPageId: "legacy-folder",
-        name: { in: ["Miniseries Application Template", "Workshop RSVP Template"] },
-      },
-      data: { folderPageId: "managed-folder" },
-    });
-    expect(mockPrisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "legacy-folder" } }),
-    );
-  });
-
-  it("leaves the legacy folder alone when it still holds other items", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ id: "managed-folder" });
-    mockPrisma.page.findFirst.mockResolvedValue({ id: "legacy-folder" });
-    mockPrisma.form.count.mockResolvedValue(1);
-
-    await ensureEducationTemplates("actor");
-    expect(mockPrisma.page.update).not.toHaveBeenCalled();
-  });
-
-  it("provisions the Core drive and falls back to a loose folder when the managed folder is missing", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue(null);
-    mockPrisma.page.create.mockResolvedValue({ id: "loose-folder" });
-
-    await ensureEducationTemplates("actor");
-
-    expect(ensureCoreDriveRoot).toHaveBeenCalledWith("actor");
-    // No managed folder resolved → ensureFolder creates the loose fallback.
-    expect(mockPrisma.page.create).toHaveBeenCalled();
+    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    expect(created.folderPageId).toBe("education-templates-folder");
   });
 });
 
