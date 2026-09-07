@@ -12,7 +12,8 @@ import {
 } from 'lucide-react'
 import {
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -83,7 +84,8 @@ export function RubricDetail() {
   // ── Drag state ───────────────────────────────────────────────────────────
   const [activeId, setActiveId] = useState<string | null>(null)
   const dragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   )
 
   const selectedVersion = rubric.versions.find((v) => v.id === selectedVersionId)
@@ -232,7 +234,7 @@ export function RubricDetail() {
               </button>
               {/* Restore affordance: seeds the working draft from this version. */}
               {isCreatingVersion && (
-                <div className="px-3 pb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="px-3 pb-1 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                   <RestoreVersionButton onRestore={() => handleRestoreVersion(vCriteria)} />
                 </div>
               )}
@@ -344,7 +346,7 @@ export function RubricDetail() {
                         editingKey === c.key ? (
                           // Inline edit form — no separate panel; edits commit on "Done".
                           <div className="bg-accent-coral/5 border border-accent-coral/30 rounded-lg p-4 space-y-3">
-                            <div className="grid grid-cols-4 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                               <div className="col-span-3">
                                 <label className="block text-xs font-medium text-foreground/70 mb-1">Label</label>
                                 <input
@@ -401,7 +403,7 @@ export function RubricDetail() {
                             <div
                               {...dragHandleProps}
                               aria-label={`Reorder ${c.label}`}
-                              className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none"
+                              className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
                             >
                               <GripVertical className="w-5 h-5" />
                             </div>
@@ -416,7 +418,7 @@ export function RubricDetail() {
                                 <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
                               )}
                             </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                               <button
                                 type="button"
                                 onClick={() => startEditing(c)}

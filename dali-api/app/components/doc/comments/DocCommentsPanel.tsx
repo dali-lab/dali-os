@@ -238,7 +238,7 @@ export function DocCommentsPanel({
       className={
         inline
           ? "w-full flex flex-col p-4"
-          : "absolute right-0 top-full z-30 mt-1 w-[380px] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
+          : "absolute right-0 top-full z-30 mt-1 w-[min(380px,calc(100vw-1rem))] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
       }
       style={inline ? undefined : { maxHeight: "60vh" }}
       aria-label="Comments panel"

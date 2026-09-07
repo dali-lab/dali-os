@@ -406,7 +406,9 @@ export function LayoutOS({
     { url: '/help', label: 'Help', icon: HelpCircle },
   ]
 
-  const sidebarContent = (
+  // `collapsed` is passed as a parameter so the mobile drawer can render
+  // full labels (force false) while the desktop sidebar keeps its own state.
+  const renderSidebar = (collapsed: boolean) => (
     <div
       data-sidebar-scroll
       className="flex h-full flex-col justify-between overflow-y-auto px-5 py-6"
@@ -791,7 +793,7 @@ export function LayoutOS({
             sidebarWidth,
           )}
         >
-          {sidebarContent}
+          {renderSidebar(collapsed)}
         </aside>
       )}
 
@@ -819,6 +821,15 @@ export function LayoutOS({
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="p-1.5 text-os-grey hover:text-foreground"
+            aria-label="Search (⌘K)"
+            title="Search (⌘K)"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
             {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
             className="relative p-1.5 text-os-grey hover:text-foreground"
             aria-label={`My Tasks — ${taskCount} open`}
@@ -836,7 +847,8 @@ export function LayoutOS({
         </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — force collapsed=false so the drawer always shows full
+          labels even when the desktop sidebar is in its icon-only rail state. */}
       {mobileNavOpen && (
         <>
           <div
@@ -848,7 +860,7 @@ export function LayoutOS({
             id="os-mobile-nav"
             className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
-            {sidebarContent}
+            {renderSidebar(false)}
           </aside>
         </>
       )}

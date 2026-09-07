@@ -3,7 +3,8 @@ import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye, Undo2, Redo2 } from 'lucide-react'
 import {
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -245,7 +246,8 @@ export function FormBuilderTab({
   // `activeId` only tints sibling borders for the duration of a drag.
   const [activeId, setActiveId] = useState<string | null>(null)
   const dragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   )
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null)
@@ -676,7 +678,7 @@ export function FormBuilderTab({
                         <div
                           {...dragHandleProps}
                           aria-label="Reorder page break"
-                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none"
+                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
                         >
                           <GripVertical className="w-5 h-5" />
                         </div>
@@ -704,7 +706,7 @@ export function FormBuilderTab({
                             placeholder="Subtitle (optional)"
                           />
                         </div>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleDelete(q.key)}
                             aria-label="Remove page break"
@@ -723,7 +725,7 @@ export function FormBuilderTab({
                         <div
                           {...dragHandleProps}
                           aria-label={`Reorder ${q.data.label || 'question'}`}
-                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none"
+                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
                         >
                           <GripVertical className="w-5 h-5" />
                         </div>
@@ -780,7 +782,7 @@ export function FormBuilderTab({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleEdit(q)}
                             className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-muted"

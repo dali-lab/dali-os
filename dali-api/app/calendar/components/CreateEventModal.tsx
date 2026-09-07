@@ -461,21 +461,21 @@ export function CreateEventModal({
     >
       <div
         className={cn(
-          "relative z-10 flex w-full flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
+          "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
           hasGuests ? "max-w-6xl" : "max-w-lg",
         )}
       >
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-[52%] shrink-0 flex-col gap-3 border-r border-border bg-muted/20 p-5">
+        <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
           {/* Week nav */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               aria-label="Previous week"
               onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, -1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -486,7 +486,7 @@ export function CreateEventModal({
               type="button"
               aria-label="Next week"
               onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
