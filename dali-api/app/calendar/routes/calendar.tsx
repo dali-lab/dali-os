@@ -72,6 +72,7 @@ import {
   buildExternalLayer,
   buildLoggedSourceIndex,
   buildAllDayItems,
+  buildAllDayLayer,
   buildLoggedTimeLayer,
   mergeLayers,
   perCalendarLegend,
@@ -507,6 +508,15 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           });
         },
       }),
+    );
+  // Month & agenda have no all-day band, so fold all-day events into the shared
+  // EventBlock map there as full-width chips / "All day" rows. Week/day show them
+  // in the dedicated band (allDayByDay) instead — don't double them up.
+  if (layers.external && data.crudEnabled && (view === "month" || view === "agenda"))
+    layerMaps.push(
+      buildAllDayLayer(layerData, days, hiddenCals, (e, anchor) =>
+        setComposer({ mode: "edit", event: e, anchor }),
+      ),
     );
   const eventsByDay = mergeLayers(...layerMaps);
 

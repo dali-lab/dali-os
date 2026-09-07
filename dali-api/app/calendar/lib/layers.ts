@@ -213,13 +213,51 @@ export function buildAllDayItems(
     const start = new Date(e.startIso).getTime();
     const end = new Date(e.endIso).getTime(); // exclusive
     days.forEach((d, idx) => {
-      const dayMs = d.dateUtc.getTime();
+      // Compare civil dates, not raw instants: `dateUtc` is anchored at the
+      // viewer's *local* midnight (04:00Z in EDT), while an all-day event is
+      // stored at UTC midnight. Comparing those directly makes the event's start
+      // fall into the previous column, so e.g. Labor Day (Sep 7) bleeds onto Sun
+      // Sep 6. Re-anchoring the column to UTC midnight of its own date lines both
+      // sides up on the same civil calendar.
+      const dayMs = Date.UTC(d.dateUtc.getUTCFullYear(), d.dateUtc.getUTCMonth(), d.dateUtc.getUTCDate());
       const nextMs = dayMs + 86_400_000;
       // The day overlaps [start, end): the event covers this column.
       if (start < nextMs && end > dayMs) {
         (into[idx] ??= []).push(e);
       }
     });
+  }
+  return into;
+}
+
+/** All-day external events as EventBlocks, bucketed by day, for the month and
+ *  agenda views — those render everything through one merged EventBlock map and
+ *  have no all-day band, so without this they'd drop all-day events entirely. The
+ *  week/day grid instead shows them in its dedicated band (buildAllDayItems), so
+ *  this layer is merged only for month/agenda. Reuses the same civil-date
+ *  bucketing, so a single-day holiday sits on exactly one day. */
+export function buildAllDayLayer(
+  data: LoaderData,
+  days: GridDay[],
+  hiddenCalendarIds?: Set<string>,
+  onEdit?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
+): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  const items = buildAllDayItems(data, days, hiddenCalendarIds);
+  for (const [idx, evs] of Object.entries(items)) {
+    into[Number(idx)] = evs.map((e) => ({
+      // A nominal full-day span so it sorts to the top of the day (startHour 0)
+      // in both views, which key their ordering off startHour.
+      startHour: 0,
+      duration: 24,
+      allDay: true,
+      label: e.title,
+      className: e.color ? "" : EVENT_CORAL,
+      bgColor: e.color ?? undefined,
+      borderClassName: e.color ? undefined : "border-accent-coral-light",
+      location: e.location,
+      onEdit: onEdit && e.writable && e.eventId ? (anchor) => onEdit(e, anchor) : undefined,
+    }));
   }
   return into;
 }
