@@ -17,7 +17,12 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { APPLICATION_TZ, formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
+import {
+  APPLICATION_TZ,
+  formatInstantWithZoneLabel,
+  resolveUserTimeZone,
+  zonedDayEndUtc,
+} from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import type { ReminderKind } from "~/generated/prisma/client";
 
@@ -37,8 +42,22 @@ export type DueTuple = {
   dueAtSnapshot: Date;
 };
 
+// dueAt is a date-only value stored as UTC midnight of the due day (the
+// timeline's convention — see timeline-days.ts). The moment a task is actually
+// "due" is the end of that calendar day in the lab's timezone, which is what
+// the reminder windows fire against and what the copy reads.
+function deadlineInstant(dueAt: Date): Date {
+  return zonedDayEndUtc(
+    dueAt.getUTCFullYear(),
+    dueAt.getUTCMonth() + 1,
+    dueAt.getUTCDate(),
+    APPLICATION_TZ,
+  );
+}
+
 function windowContains(kind: ReminderKind, now: Date, dueAt: Date): boolean {
-  const start = kind === "DayBefore" ? dueAt.getTime() - DAY_MS : dueAt.getTime();
+  const deadline = deadlineInstant(dueAt).getTime();
+  const start = kind === "DayBefore" ? deadline - DAY_MS : deadline;
   return now.getTime() >= start && now.getTime() < start + WINDOW_MS;
 }
 
@@ -59,13 +78,15 @@ export function computeDueReminders(
 }
 
 export async function runTaskDueReminders({ now }: JobContext): Promise<JobResult> {
-  // Claim. The dueAt bound keeps the scan tiny: 30h back covers a DayBefore
-  // window that opened up to 6h ago; 25h forward covers one opening now.
+  // Claim. The dueAt bound keeps the scan tiny. dueAt is UTC midnight of the
+  // due day but the deadline is ~28h later (end of that day in ET), so a row
+  // whose window contains `now` has dueAt roughly 4–35h in the past; the bounds
+  // below cover that with margin for DST and the 6h catch-up.
   const tasks = await prisma.task.findMany({
     where: {
       dueAt: {
-        gte: new Date(now.getTime() - 30 * HOUR_MS),
-        lte: new Date(now.getTime() + 25 * HOUR_MS),
+        gte: new Date(now.getTime() - 40 * HOUR_MS),
+        lte: new Date(now.getTime() + 4 * HOUR_MS),
       },
       status: { in: [...OPEN_STATUSES] },
     },
@@ -89,8 +110,8 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
     where: {
       sentAt: null,
       dueAtSnapshot: {
-        gte: new Date(now.getTime() - 30 * HOUR_MS),
-        lte: new Date(now.getTime() + 25 * HOUR_MS),
+        gte: new Date(now.getTime() - 40 * HOUR_MS),
+        lte: new Date(now.getTime() + 4 * HOUR_MS),
       },
     },
     include: {
@@ -127,7 +148,7 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
     if (!stillValid) continue; // inert (moved/closed/unassigned) — never sends
 
     const when = formatInstantWithZoneLabel(
-      task.dueAt!,
+      deadlineInstant(task.dueAt!),
       tzByUser.get(reminder.userId) ?? APPLICATION_TZ,
     );
     try {

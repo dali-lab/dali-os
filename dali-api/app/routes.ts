@@ -207,6 +207,7 @@ export default [
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
+    route("api/folder-bindings", "routes/api.folder-bindings.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
@@ -644,4 +645,7 @@ export default [
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
   route("api/ai/doc", "routes/api.ai.doc.ts"),
+  // AI project TL;DR — cached work-status summary for the Progress-tab status
+  // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
+  route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
 ] satisfies RouteConfig;

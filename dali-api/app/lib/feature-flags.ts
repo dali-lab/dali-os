@@ -109,6 +109,30 @@ export const FEATURE_FLAGS = [
     description:
       "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
+  {
+    key: "drive-folder-bindings",
+    label: "Drive folder bindings",
+    description:
+      "Replaces the hidden systemKey Drive scaffolding with editable process→folder bindings. Each project / education offering / hiring cycle / Core governance area points at NORMAL Drive folders (renameable, movable, shareable) for its auto-filed items (meeting notes, forms, agreements, …), configured in that process's settings. Ships off; without it the legacy systemKey folders remain.",
+  },
+  {
+    key: "project-status-bar",
+    label: "Project status bar",
+    description:
+      "A compact work-status strip above the project timeline (Progress tab): task progress, the active sprint's deadline, and attention flags (overdue, unscheduled, in review, stale). Deterministic — no AI. Ships off.",
+  },
+  {
+    key: "project-tldr-ai",
+    label: "Project AI TL;DR",
+    description:
+      "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
+  },
+  {
+    key: "sprint-view",
+    label: "Sprint view",
+    description:
+      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

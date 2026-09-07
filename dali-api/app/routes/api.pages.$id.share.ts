@@ -13,12 +13,13 @@ import {
 import {
   requirePageShareManager,
   setGeneralAccess,
+  setFolderScope,
   notifyDocumentShared,
   PageShareForbiddenError,
   PageShareNotFoundError,
   GeneralAccessError,
 } from "~/lib/page-share-access.server";
-import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
+import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
 
 // POST /api/pages/:id/share — the one sharing endpoint for every document
 // (Project, Lab, EducationOffering, Member). Dispatched on `intent`, mirroring
@@ -34,6 +35,11 @@ function parsePermission(v: string | undefined, fallback: SharePermission = "Vie
 const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "Public"];
 function parseLinkAccess(v: string | undefined): LinkAccess {
   return v && LINK_ACCESSES.includes(v) ? (v as LinkAccess) : "Restricted";
+}
+const SCOPE_KINDS: readonly string[] = ["Private", "Lab", "Group"];
+// "" / anything else → null, meaning "inherit" (clear the folder scope).
+function parseScopeKind(v: string | undefined): ScopeKind | null {
+  return v && SCOPE_KINDS.includes(v) ? (v as ScopeKind) : null;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -134,6 +140,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         const result = await setGeneralAccess(pageId, me, {
           linkAccess: parseLinkAccess(str("linkAccess")),
           linkPermission: parsePermission(str("linkPermission")),
+        });
+        return withCors(request, Response.json({ ok: true, ...result }));
+      }
+      case "folder-scope": {
+        await requirePageShareManager(pageId, me);
+        const result = await setFolderScope(pageId, me, {
+          scopeKind: parseScopeKind(str("scopeKind")),
+          scopeGroupId: str("scopeGroupId") ?? null,
+          scopePermission: str("scopePermission")
+            ? parsePermission(str("scopePermission"))
+            : null,
         });
         return withCors(request, Response.json({ ok: true, ...result }));
       }

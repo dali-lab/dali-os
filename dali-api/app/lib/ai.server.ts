@@ -73,3 +73,42 @@ export function isAiEnabled(): boolean {
     process.env.ANTHROPIC_API_KEY || process.env.DARTMOUTH_CHAT_API_KEY,
   );
 }
+
+/**
+ * One-shot, non-streaming completion for small server-side summaries (e.g. the
+ * project TL;DR). Resolves the same provider as the doc assistant and returns
+ * the text plus token usage for the caller to record; null when no provider is
+ * configured. No extended thinking — these are short, factual generations where
+ * the thinking budget would only add latency and cost.
+ *
+ * The caller owns rate limiting, the daily-quota upsert, and recordTokenUsage —
+ * this stays a thin "call the model" utility so both AI routes share it.
+ */
+export async function generateShortText(opts: {
+  system: string;
+  prompt: string;
+  maxTokens?: number;
+}): Promise<{ text: string; inputTokens: number; outputTokens: number } | null> {
+  const provider = resolveAiProvider();
+  if (!provider) return null;
+
+  const message = await provider.client.messages.create({
+    model: provider.model,
+    max_tokens: opts.maxTokens ?? 512,
+    system: opts.system,
+    messages: [{ role: "user", content: opts.prompt }],
+    stream: false,
+  });
+
+  const text = message.content
+    .filter((block) => block.type === "text")
+    .map((block) => (block as { type: "text"; text: string }).text)
+    .join("\n")
+    .trim();
+
+  return {
+    text,
+    inputTokens: message.usage?.input_tokens ?? 0,
+    outputTokens: message.usage?.output_tokens ?? 0,
+  };
+}
