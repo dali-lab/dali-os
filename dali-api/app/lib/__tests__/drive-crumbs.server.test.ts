@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { page: { findUnique: vi.fn() } },
+  prisma: { page: { findUnique: vi.fn() }, groupDefinition: { findUnique: vi.fn() } },
 }));
 
 vi.mock("../pageAccess.server", () => ({
@@ -23,7 +23,10 @@ const TREE: Record<string, any> = {
     title: "Core",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: "drive:core-root",
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    workspaceType: "Lab",
+    archivedAt: null,
   },
   // A plain Lab folder (no scope) directly under the Lab drive root.
   labfolder: {
@@ -81,6 +84,8 @@ beforeEach(() => {
   mockPrisma.page.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
     Promise.resolve(TREE[where.id] ?? null),
   );
+  // Core scope is detected via a folder's scopeKind=Group on the core group.
+  mockPrisma.groupDefinition.findUnique.mockResolvedValue({ id: "core-grp" });
 });
 
 describe("driveFolderCrumbs access filtering", () => {
@@ -101,7 +106,11 @@ describe("driveFolderCrumbs access filtering", () => {
     const crumbs = await driveFolderCrumbs("sub", "core-member");
 
     expect(crumbs.scope).toBe("core");
-    expect(crumbs.folders).toEqual([{ id: "sub", title: "Subfolder", iconEmoji: null }]);
+    // The Core-scoped folder is now an ordinary crumb (not a hidden system root).
+    expect(crumbs.folders).toEqual([
+      { id: "core-root", title: "Core", iconEmoji: null },
+      { id: "sub", title: "Subfolder", iconEmoji: null },
+    ]);
   });
 
   it("keeps ordinary Lab folder crumbs the viewer can view", async () => {

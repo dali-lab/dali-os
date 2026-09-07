@@ -1160,9 +1160,9 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  // Email templates are Drive-managed (rename/move/delete permitted); agreements
-  // and rubrics remain placement-locked (kind-folders).
-  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric"]);
+  // Every artifact now lives in an ordinary (binding) folder, so nothing is
+  // placement-locked — agreements/rubrics/email-templates move like any file.
+  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {

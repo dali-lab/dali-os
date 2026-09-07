@@ -37,10 +37,9 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "meeting-notes-partner", label: "Partner meeting notes", defaultTitle: "Partner meeting notes" },
   ],
   EducationOffering: [{ purpose: "forms", label: "Forms", defaultTitle: "Forms" }],
-  HiringCycle: [
-    { purpose: "forms", label: "Forms", defaultTitle: "Forms" },
-    { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
-  ],
+  // Hiring folds into Core (the Hiring drive space is retired) — hiring artifacts
+  // live in Core-group-scoped folders. No per-cycle slots today.
+  HiringCycle: [],
   Core: [
     { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
     { purpose: "agreements", label: "Agreements", defaultTitle: "Agreements" },
@@ -48,6 +47,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },
     { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
     { purpose: "application-templates", label: "Application templates", defaultTitle: "Application Templates" },
+    { purpose: "hiring-forms", label: "Hiring forms", defaultTitle: "Hiring Forms" },
   ],
 };
 

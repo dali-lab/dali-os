@@ -8,6 +8,7 @@ import type { Route } from './+types/admin.email-templates'
 import { adminHandle } from '~/admin/adminNav'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { ensureProcessFolder, CORE_PROCESS_ID } from '~/lib/bindings.server'
 import { redirectToLogin } from '~/lib/login-next'
 import { isCore, getUserRoles } from '~/lib/roles'
 import { EmailTemplatesPage } from '~/admin/components/EmailTemplatesPage'
@@ -64,7 +65,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === 'create') {
     const name = (formData.get('name') as string)?.trim()
     if (!name) return { error: 'Name is required' }
-    const template = await prisma.emailTemplate.create({ data: { name } })
+    const folderPageId = await ensureProcessFolder({
+      processType: 'Core',
+      processId: CORE_PROCESS_ID,
+      purpose: 'email-templates',
+      createdById: auth.user.sub,
+    }).catch(() => null)
+    const template = await prisma.emailTemplate.create({ data: { name, folderPageId } })
     return redirect(`/admin/email-templates/${template.id}`)
   }
 
