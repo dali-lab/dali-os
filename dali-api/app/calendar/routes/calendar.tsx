@@ -92,7 +92,7 @@ import {
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover } from "~/calendar/components/timesheet";
+import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { AvailabilityView } from "~/calendar/components/AvailabilityView";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -416,6 +416,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     | { mode: "create" }
   );
   const [timesheetSel, setTimesheetSel] = useState<TimesheetSelection | null>(null);
+  // The Log hours button's dialog. Separate from timesheetSel because it has no
+  // grid slot: it carries only the times its form opens on.
+  const [logHours, setLogHours] = useState<{ startLocal: string; endLocal: string } | null>(null);
 
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
@@ -453,6 +456,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const anyModalOpen =
     Boolean(composer) ||
     Boolean(timesheetSel) ||
+    Boolean(logHours) ||
     classesOpen ||
     calMgrOpen ||
     createModalOpen ||
@@ -677,9 +681,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       openCreateModal(slot?.startLocal, slot?.endLocal);
       return;
     }
-    const resolved = slot ?? defaultSlot();
+    // A drag names its own slot, so its form belongs on that slot — the popover
+    // is anchored to the block you just drew. The button names none: pinning
+    // its form to a default slot put the dialog somewhere the user never
+    // pointed at (and drew a phantom selection on the grid), so it opens
+    // centered instead.
+    if (slot) {
+      setTimesheetSel({ mode: "create", ...slot });
+      return;
+    }
+    const resolved = defaultSlot();
     if (!resolved) return;
-    setTimesheetSel({ mode: "create", ...resolved });
+    setLogHours({ startLocal: resolved.startLocal, endLocal: resolved.endLocal });
   };
 
   const navBtn =
@@ -894,6 +907,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               )}
           </section>
         </div>
+      )}
+      {logHours && (
+        <LogHoursDialog
+          startLocal={logHours.startLocal}
+          endLocal={logHours.endLocal}
+          myRoles={data.myRoles}
+          onClose={() => setLogHours(null)}
+        />
       )}
       {hoursAnchor && (
         <WorkingHoursPopover data={data} anchor={hoursAnchor} onClose={() => setHoursAnchor(null)} />
