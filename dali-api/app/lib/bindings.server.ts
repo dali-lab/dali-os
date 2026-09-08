@@ -42,6 +42,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
   ],
   Core: [
+    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
     { purpose: "agreements", label: "Agreements", defaultTitle: "Agreements" },
     { purpose: "email-templates", label: "Email templates", defaultTitle: "Templates" },
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },

@@ -1218,7 +1218,7 @@ export function WeekGrid({
     Object.values(allDayByDay).some((blocks) => blocks.length > 0);
 
   return (
-    <div className={`relative min-w-[640px] ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    <div className={`relative min-w-[640px] ${fillAndScroll ? "md:flex md:flex-col md:flex-1 md:min-h-0" : ""}`}>
     {/* Weekday header. Its own row above the grid (and above the all-day band,
         which is what puts the band under the dates the way Google's week view
         reads). Sitting outside the scroll container is also what keeps it in
@@ -1341,7 +1341,7 @@ export function WeekGrid({
         // scrollbar-gutter: stable keeps this container's own width steady when
         // the scrollbar toggles; the all-day band above matches its columns to
         // ours by measuring our real scrollbar width (see measureScrollbar).
-        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden lg:[scrollbar-gutter:stable]" : ""
+        fillAndScroll ? "md:flex-1 md:min-h-0 md:items-start md:overflow-y-auto md:overflow-x-hidden md:[scrollbar-gutter:stable]" : ""
       }`}
     >
       {/* Hour axis */}

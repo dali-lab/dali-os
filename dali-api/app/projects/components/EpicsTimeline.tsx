@@ -130,6 +130,15 @@ const MAX_BODY_H = "clamp(360px, 70vh, 880px)";
 // a min-height on the box alone would leave blank card under them.
 const MIN_GRID_H = 420;
 
+// Horizontal scroll speed, in px/ms, at or above which the view is treated as
+// thrown rather than steered — a trackpad flick or a shift-wheel spin, not a
+// reading-speed drag. Sampled per scroll event (≈16ms apart), so this is about
+// 32px a frame.
+const FLICK_PX_PER_MS = 2;
+// Quiet time after the last scroll event before the spring-back fires; long
+// enough to sit out momentum scrolling, short enough not to feel like a lag.
+const SCROLL_SETTLE_MS = 180;
+
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
 const STORY_BOTTOM_PAD = 10;
@@ -1061,24 +1070,39 @@ export function EpicsTimeline({
     return () => clearTimeout(id);
   }, [layout.height]);
 
-  const initialScroll = useMemo(() => {
-    if (!bounds) return 0;
-    const anchors: number[] = [];
-    if (todayLeft != null) anchors.push(todayLeft);
-    for (const e of epics) {
-      if (e.startsAt) anchors.push(dayOffset(e.startsAt, bounds.min) * PX_PER_DAY);
-    }
-    const anchor = anchors.length ? Math.min(...anchors) : 0;
-    return Math.max(anchor - 3 * PX_PER_DAY, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds]);
+  // Today is the timeline's home position. The scroll offset that parks it in
+  // the middle of the box depends on the box's own width, so it is measured
+  // rather than derived: `todayCenter` is a grid coordinate, this is a scroll
+  // one. Clamped to the scrollable range, so today sits off-centre only when
+  // the grid runs out of room either side of it.
+  const centerScrollLeft = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || todayCenter == null) return null;
+    const max = Math.max(el.scrollWidth - el.clientWidth, 0);
+    return Math.min(Math.max(todayCenter - el.clientWidth / 2, 0), max);
+  }, [todayCenter]);
 
+  // Set while a spring-back is in flight, so the programmatic scroll it emits
+  // isn't read back as a fresh flick.
+  const recenterRef = useRef<{ target: number; until: number } | null>(null);
+  const centerOnToday = useCallback(
+    (behavior: ScrollBehavior) => {
+      const el = scrollerRef.current;
+      const target = centerScrollLeft();
+      if (!el || target == null || Math.abs(el.scrollLeft - target) < 1) return;
+      recenterRef.current = { target, until: performance.now() + 700 };
+      el.scrollTo({ left: target, behavior });
+    },
+    [centerScrollLeft],
+  );
+
+  // Opening the timeline — first paint or a refresh — lands on today, and so
+  // does a shift in the grid's origin (`todayCenter` moves when an epic
+  // extends the padded date range, which would otherwise slide the view).
   useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollLeft = initialScroll;
-    }
+    centerOnToday("auto");
     measureView();
-  }, [initialScroll, measureView]);
+  }, [centerOnToday, measureView]);
 
   // Re-measure when the box itself resizes (sidebar collapse, window resize),
   // not just on scroll — the visible day range depends on clientWidth.
@@ -1090,8 +1114,50 @@ export function EpicsTimeline({
     return () => ro.disconnect();
   }, [measureView]);
 
+  // Rapid sideways movement springs back to today once it stops. A flick runs
+  // an order of magnitude faster than reading-speed scrolling, which is what
+  // separates "thrown the view somewhere" from "walked out to a later sprint
+  // on purpose" — the latter is left where the viewer put it.
+  const lastSampleRef = useRef<{ x: number; t: number } | null>(null);
+  const flickedRef = useRef(false);
+  const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (settleRef.current) clearTimeout(settleRef.current);
+  }, []);
+
+  function trackFlick() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const now = performance.now();
+    const prev = lastSampleRef.current;
+    lastSampleRef.current = { x: el.scrollLeft, t: now };
+
+    const recenter = recenterRef.current;
+    if (recenter) {
+      if (Math.abs(el.scrollLeft - recenter.target) < 2 || now > recenter.until) {
+        recenterRef.current = null;
+      }
+      return;
+    }
+    // Vertical scrolling leaves scrollLeft alone, so it never reads as a flick.
+    if (prev && now > prev.t) {
+      const velocity = Math.abs(el.scrollLeft - prev.x) / (now - prev.t);
+      if (velocity >= FLICK_PX_PER_MS) flickedRef.current = true;
+    }
+
+    if (settleRef.current) clearTimeout(settleRef.current);
+    settleRef.current = setTimeout(() => {
+      if (!flickedRef.current) return;
+      flickedRef.current = false;
+      // Dragging a bar can scroll the box; that scroll belongs to the drag.
+      if (dragRef.current) return;
+      centerOnToday("smooth");
+    }, SCROLL_SETTLE_MS);
+  }
+
   const ticking = useRef(false);
   function handleScroll() {
+    trackFlick();
     if (ticking.current) return;
     ticking.current = true;
     requestAnimationFrame(() => {

@@ -21,7 +21,12 @@ import type { Page, Locator } from '@playwright/test';
 //   - Contextual New ▾ menu (only inside a drive): drive-new-menu-<scopeId> with
 //     drive-new-doc-<scopeId> / drive-new-folder-<scopeId> / drive-new-upload-
 //     <scopeId> and drive-new-form; Core adds drive-new-agreement, Lab adds
-//     drive-new-template.
+//     drive-new-template. At the drive root the pill is still on the toolbar,
+//     greyed out, as drive-new-menu-disabled.
+//   - Templates and Trash live behind the toolbar's overflow menu
+//     (drive-more-menu → drive-templates-link / drive-trash-button).
+//   - The listing carries its own header: back/forward (drive-history, with
+//     drive-back / drive-forward), the breadcrumb, the view toggle and search.
 //   - Listing rows: drive-item-<type>-<id> (doc / file / form / folder). Single
 //     click selects, double click opens (folder → navigate in; leaf → editor).
 //   - Row actions menu: drive-item-actions-<id> (Rename / Move to… / Delete).
@@ -384,16 +389,16 @@ test.describe('Drive hub', () => {
     await expect(page.getByTestId('drive-sort-name')).toBeVisible();
   });
 
-  // ── Test M: the action strip is always mounted + the details rail toggles ────
-  // Both are anti-layout-shift: the strip never mounts/unmounts on selection, and
-  // the details rail is a horizontal side-peek rather than a top bar that pushes
-  // the list down.
-  test('(M) Action strip is always present and the details rail toggles', async ({ page }) => {
+  // ── Test M: the action strip stays out of the way + the details rail toggles ─
+  // The strip carries selection actions only: with nothing selected it renders
+  // nothing and takes no room over the listing. The details rail is a horizontal
+  // side-peek rather than a top bar that pushes the list down.
+  test('(M) Action strip is absent at rest and the details rail toggles', async ({ page }) => {
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
-    // The action strip is mounted at rest (nothing selected) — no bulk bar yet.
-    await expect(page.getByTestId('drive-action-strip')).toBeVisible();
+    // Nothing selected → neither the strip nor the bulk bar is on the page.
+    await expect(page.getByTestId('drive-action-strip')).toHaveCount(0);
     await expect(page.getByTestId('drive-bulk-bar')).toHaveCount(0);
 
     // The details rail is closed by default; the toolbar toggle opens it.

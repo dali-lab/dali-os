@@ -870,7 +870,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
               <button
                 type="submit"
                 disabled={newName.trim() === "" || newLink === "" || fetcher.state !== "idle"}
-                className="w-fit rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
+                className="os-btn-primary w-fit disabled:opacity-50"
               >
                 Create calendar
               </button>
@@ -1404,16 +1404,12 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                 <button
                   type="submit"
                   disabled={!canSubmit || submitting}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
+                  className="os-btn-primary disabled:opacity-50"
                 >
                   {editingId ? "Save class" : "Add class"}
                 </button>
                 {editingId && (
-                  <button
-                    type="button"
-                    onClick={resetForm}
-                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-                  >
+                  <button type="button" onClick={resetForm} className="os-btn-ghost">
                     Cancel
                   </button>
                 )}

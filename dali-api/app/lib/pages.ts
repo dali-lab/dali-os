@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
-import { ensureProcessFolder } from "~/lib/bindings.server";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -50,6 +50,10 @@ export async function createLabMeetingPage(input: {
   // Optional Lab folder to nest under (null = Lab top level). Lets a General
   // meeting file its note at a chosen Lab location instead of the root.
   parentPageId?: string | null;
+  // Filed inside a scoped drive (Core): start Restricted so the folder's scope
+  // is the only thing granting access, rather than leaving a lab-wide link on a
+  // page the ancestry walk happens to lock down.
+  restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
   const last = await prisma.page.findFirst({
@@ -70,8 +74,8 @@ export async function createLabMeetingPage(input: {
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
       // Lab docs default to the communal shelf: everyone in the lab can edit.
-      linkAccess: "LabMembers",
-      linkPermission: "Edit",
+      linkAccess: input.restricted ? "Restricted" : "LabMembers",
+      linkPermission: input.restricted ? "View" : "Edit",
     },
     select: { id: true },
   });
@@ -172,6 +176,10 @@ export async function createLabPage(input: {
   });
 }
 
+/** systemKey of the Core drive root. Exported so a caller can look the root up
+ *  without paying for ensureCoreDriveRoot's adoption sweeps. */
+export const CORE_DRIVE_ROOT_KEY = "drive:core-root";
+
 // Idempotently ensures the lab-wide "Core" drive root exists: a top-level Lab
 // Folder scoped to the Core group. scopeKind=Group cascades Core-only access to
 // everything inside it (getPageAccess ancestry walk), and linkAccess=Restricted
@@ -180,7 +188,7 @@ export async function createLabPage(input: {
 // stops api.documents.$id deleting it. Returns the folder id, or null if the
 // Core GroupDefinition hasn't been provisioned yet (syncDefaultGroups seeds it).
 export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: string } | null> {
-  const systemKey = "drive:core-root";
+  const systemKey = CORE_DRIVE_ROOT_KEY;
 
   // ── 1. Ensure the Core root exists ───────────────────────────────────────
   let rootId: string;
@@ -723,6 +731,34 @@ export async function ensureMeetingNotesFolder(
     createdById,
   });
   return { id };
+}
+
+/** Idempotently ensure Core's "Meeting notes" folder — the Core drive's own
+ *  equivalent of a project's Team/Partner meeting-notes folders, so a Core
+ *  meeting's note lands somewhere Core-only instead of loose in the Lab drive.
+ *  Backed by a ProcessFolderBinding (Core / "meeting-notes"), so it's an
+ *  ordinary folder Core can rename, move, or repoint from settings.
+ *
+ *  Returns null when the Core group hasn't been provisioned yet — there's no
+ *  Core drive to nest under then, and the caller falls back to the Lab root.
+ */
+export async function ensureCoreMeetingNotesFolder(createdById: string): Promise<string | null> {
+  // Cheap lookup first: ensureCoreDriveRoot also runs its adoption sweeps, which
+  // this path has no reason to pay for once the root exists.
+  const existing = await prisma.page.findUnique({
+    where: { systemKey: CORE_DRIVE_ROOT_KEY },
+    select: { id: true },
+  });
+  const rootId = existing?.id ?? (await ensureCoreDriveRoot(createdById))?.id ?? null;
+  if (!rootId) return null;
+
+  return ensureProcessFolder({
+    processType: "Core",
+    processId: CORE_PROCESS_ID,
+    purpose: "meeting-notes",
+    createdById,
+    parentPageId: rootId,
+  });
 }
 
 // The page behind a project's public write-up — the body dali.website renders

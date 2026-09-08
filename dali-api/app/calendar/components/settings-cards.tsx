@@ -31,6 +31,37 @@ import type {
 } from "~/calendar/lib/types";
 
 /* ------------------------------------------------------------------ */
+/* SectionHeader                                                       */
+/* ------------------------------------------------------------------ */
+
+/** A section header on the calendar's settings surfaces: glyph, title, at most
+ *  one line of context, and an optional trailing action. Anything longer than a
+ *  line belongs in the control itself, not above it. Shared by the Availability
+ *  and Calendars panels so the two dialogs open with the same voice. */
+export function SectionHeader({
+  icon: Icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  hint?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-start gap-2.5">
+      <Icon className="mt-0.5 h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* CalendarIntegrationsCard                                            */
 /* ------------------------------------------------------------------ */
 

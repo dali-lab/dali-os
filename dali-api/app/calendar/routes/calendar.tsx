@@ -1,5 +1,5 @@
 import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -53,7 +53,7 @@ import type {
   CalendarView,
 } from "~/calendar/lib/types";
 import {
-  EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
+  ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
   HOURS, HOUR_PX, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED,
   toDatetimeLocal, dayHourToLocal,
@@ -106,6 +106,10 @@ export const handle = {
   areaSubnav: true,
   docKey: "calendar",
   docTitle: "Calendar",
+  // Fill the shell pane (iframe or tabless column) so the grid stretches to
+  // the edges and hours scroll inside it instead of the page.
+  fitViewport: true,
+  flushPane: true,
 };
 
 export async function loader({ request }: Route.LoaderArgs) { return loadCalendarData(request); }
@@ -155,6 +159,45 @@ export function shouldRevalidate({
   return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
 }
 
+/** The shell both of the calendar's settings dialogs wear — Calendars and
+ *  Availability — so they read as one surface with two bodies. Only the width
+ *  varies, and only because the bodies do. */
+function SettingsDialog({
+  title,
+  width = "max-w-3xl",
+  onClose,
+  children,
+}: {
+  title: string;
+  width?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-label={title} className={cn("w-full rounded-xl cal-surface p-6", width)}>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
   return <CalendarScreen data={data} />;
@@ -169,70 +212,6 @@ const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
-
-/* The grid box reaches from wherever it lands on screen to the bottom of the
-   window, so the hours scroll inside the grid and the page itself doesn't move
-   (the day header stays put only by sitting outside the grid's own scroller).
-
-   Measured rather than written as `100dvh - Nrem`: what sits above the box —
-   the shell's top bar, the history row, the page gutter, this page's own
-   toolbar — differs per shell, per flag and per window, and a fraction that
-   guesses low is exactly the bug (the box overshoots, the page scrolls, the
-   header leaves). Only above `lg`, where the grid scrolls internally at all;
-   narrower than that the page keeps scrolling as one piece. */
-const CAL_FILL_MIN_H = 352;
-const CAL_FILL_QUERY = "(min-width: 1024px)";
-
-function useFillToBottom() {
-  const [box, setBox] = useState<HTMLDivElement | null>(null);
-  const [height, setHeight] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    if (!box) return;
-    const wide = window.matchMedia(CAL_FILL_QUERY);
-    let frame = 0;
-
-    const measure = () => {
-      if (!wide.matches) {
-        setHeight((prev) => (prev == null ? prev : null));
-        return;
-      }
-      const top = box.getBoundingClientRect().top + window.scrollY;
-      // Everything below the box in the document — the page's bottom gutter —
-      // so the box stops short of it instead of pushing the page past the fold.
-      const below = Math.max(
-        0,
-        document.documentElement.scrollHeight - (top + box.offsetHeight),
-      );
-      const next = Math.max(
-        CAL_FILL_MIN_H,
-        Math.round(window.innerHeight - top - below),
-      );
-      // Tolerance, because this runs from a ResizeObserver the height itself
-      // feeds: without it a 1px rounding difference re-triggers forever.
-      setHeight((prev) => (prev != null && Math.abs(prev - next) <= 1 ? prev : next));
-    };
-
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-
-    measure();
-    window.addEventListener("resize", schedule);
-    wide.addEventListener("change", schedule);
-    const observer = new ResizeObserver(schedule);
-    observer.observe(document.body);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("resize", schedule);
-      wide.removeEventListener("change", schedule);
-      observer.disconnect();
-    };
-  }, [box]);
-
-  return [setBox, height] as const;
-}
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
@@ -251,7 +230,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [mode, setMode] = useState<"browse" | "meeting">(() =>
     searchParams.get("tab") === "schedule" ? "meeting" : "browse",
   );
-  const [setGridBox, gridHeight] = useFillToBottom();
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
 
   // Per-role colours for logged time, persisted like the hidden-calendar set.
@@ -709,26 +687,24 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
   const iconToolBtn =
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
-  const availabilityPill =
-    "inline-flex items-center gap-2 rounded-full border border-os-green/35 bg-os-green/10 px-4 py-2 text-[13px] font-bold text-os-green transition-colors hover:bg-os-green/20";
-  // The mockup's Add event capsule. Theme tokens rather than its literals, so
-  // it inverts correctly in light mode.
-  // Light mode gets the dark pill by inverting the page; dark mode can't invert
-  // (that lands on white) — the mockup's pill is a shade *darker* than the page
-  // there, so dark overrides to a black plate with light ink.
-  const addEventBtn = cn(
-    "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-extrabold",
-    "bg-foreground text-background transition-[transform,background-color,opacity] hover:opacity-90 active:scale-[0.97]",
-    "dark:bg-black/40 dark:text-foreground dark:hover:bg-black/25 dark:hover:opacity-100",
-  );
+  // The two settings dialogs open from the same pill, tinted by what they are:
+  // Availability is a status colour, Calendars the os accent. One builder so
+  // they can't drift into two different-looking controls.
+  const settingsPill = (tone: "green" | "accent") =>
+    cn(
+      "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-bold transition-colors",
+      tone === "green"
+        ? "border-os-green/35 bg-os-green/10 text-os-green hover:bg-os-green/20"
+        : "border-os-accent/35 bg-os-accent/10 text-os-accent hover:bg-os-accent/20",
+    );
 
   return (
-    <div className={cn("flex flex-col", "gap-3")}>
+    <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
       {/* The date navigator belongs to the grid. Availability has no date at
           all, and Timesheet brings its own pay-period navigator, so neither
           wants this row above it. */}
       {mode === "browse" && (
-      <header className="flex flex-wrap items-center gap-3">
+      <header className="flex shrink-0 flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
             <ChevronLeft className="h-4 w-4" />
@@ -768,15 +744,25 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
               <button
                 type="button"
+                onClick={() => setCalendarsOpen(true)}
+                className={settingsPill("accent")}
+                title="Connect and manage calendars"
+              >
+                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
+                Calendars
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setAvailabilityOpen(true)}
-                className={availabilityPill}
+                className={settingsPill("green")}
                 title="Classes and working hours"
               >
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
                 Availability
               </button>
 
-              <button type="button" onClick={() => startCreate()} className={addEventBtn}>
+              <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
                 <Plus className="h-4 w-4 stroke-[3]" />
                 {timesheetCreateMode ? "Log hours" : "Add event"}
               </button>
@@ -786,25 +772,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       </header>
       )}
 
+      {/* The composer is a form, not a grid: it can run taller than the window,
+          so inside a viewport-bounded shell it carries its own scrollport
+          rather than overflowing one it doesn't own. */}
       {mode === "meeting" ? (
-        <section className="flex flex-col gap-3">
+        <section className="flex min-h-0 flex-1 flex-col gap-3 md:overflow-y-auto">
           <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
           <MeetingComposer data={data} />
         </section>
       ) : (
-        <div
-          ref={setGridBox}
-          // Sized to reach the bottom of the window (see useFillToBottom), with
-          // a viewport fraction covering the first paint. Both earlier versions
-          // of this line guessed the chrome above the box — `max(100vh - 9rem,
-          // 56rem)` and then `100dvh - 9rem` — and 9rem is short of what the
-          // shell's top bar, history row, page gutter and this page's own
-          // toolbar actually come to, so the box ran past the fold and the
-          // *page* scrolled, taking the day header (which stays put only by
-          // sitting outside the grid's own scroller) with it.
-          className="flex gap-5 lg:h-[calc(100dvh-13rem)] lg:min-h-[22rem]"
-          style={gridHeight != null ? { height: gridHeight } : undefined}
-        >
+        <div className="flex min-h-0 min-w-0 flex-1 gap-5 max-md:min-h-[22rem]">
           <CalendarSidebar
             data={data}
             focusDate={focusDate}
@@ -817,14 +794,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             roleColors={roleColors}
             roleHours={roleHours}
             setRoleColor={setRoleColor}
-            onManage={() => setCalendarsOpen(true)}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />
           {/* No card around the grid — the hour rules and day rules are the
               only structure it needs, the way Google's week view reads.
               overflow-x-auto lets the min-w-[640px] WeekGrid scroll rather
               than compress on narrow viewports. */}
-          <section className="flex min-w-0 flex-1 flex-col lg:min-h-0 overflow-x-auto">
+          <section className="flex min-w-0 flex-1 flex-col md:min-h-0 overflow-x-auto">
               {view === "agenda" ? (
                 <AgendaView
                   days={days}
@@ -951,44 +927,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       )}
       {calendarsOpen &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
-            <CalendarsPanel
-              data={data}
-              layers={layers}
-              toggleLayer={toggleLayer}
-              hiddenCals={hiddenCals}
-              toggleHiddenCal={toggleHiddenCal}
-              roleBuckets={layers.logged ? roleBuckets : []}
-              excludedRoleKeys={excludedRoleKeys}
-              toggleRoleKey={toggleRoleKey}
-              onClose={() => setCalendarsOpen(false)}
-            />
-          </div>,
+          /* Wider than Availability: its rows carry a name plus three toggle
+             columns, where Availability stacks full-width cards. Same shell
+             either way — width follows the body, the dress doesn't. */
+          <SettingsDialog title="Calendars" width="max-w-5xl" onClose={() => setCalendarsOpen(false)}>
+            <CalendarsPanel data={data} hiddenCals={hiddenCals} toggleHiddenCal={toggleHiddenCal} />
+          </SettingsDialog>,
           document.body,
         )}
       {availabilityOpen &&
         createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setAvailabilityOpen(false);
-            }}
-          >
-            <div className="w-full max-w-3xl rounded-xl cal-surface p-6">
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="font-heading text-lg font-semibold text-foreground">Availability</h2>
-                <button
-                  type="button"
-                  onClick={() => setAvailabilityOpen(false)}
-                  aria-label="Close"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <AvailabilityView data={data} />
-            </div>
-          </div>,
+          <SettingsDialog title="Availability" onClose={() => setAvailabilityOpen(false)}>
+            <AvailabilityView data={data} />
+          </SettingsDialog>,
           document.body,
         )}
       {createModalOpen && (

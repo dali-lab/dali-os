@@ -1754,6 +1754,14 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   background: var(--color-os-accent-hover);
 }
 
+/* Beside a section heading or inside a card, the full-size pill shouts. Same
+   shape and colour, one size down — mirrors .os-add-btn--sm. */
+.os-btn-primary--sm {
+  padding: 6px 14px;
+  font-size: 13px;
+  gap: 6px;
+}
+
 .os-btn-ghost {
   display: inline-flex;
   align-items: center;

@@ -21,13 +21,13 @@ import type { BodySegment } from "~/lib/comment-body";
 // `anchor` (doc only) carries a Yjs relative-position range so an inline
 // comment survives collaborative edits; null = a doc/file-level comment.
 //
+// A comment has no open/resolved state — every thread on a target is returned,
+// in creation order, and the surfaces render them as one list.
+//
 // Permission matrix:
 //   doc target   — read/create/reply: canView (any member, partner-visible partner)
-//                  resolve/reopen: canResolve (canEdit || Core)
 //   file target  — read/create/reply: Core or project member of owning project
-//                  resolve/reopen: Core
 //   pagedoc      — read/create/reply: any lab member (open FAQ threads)
-//                  resolve/reopen: pagedoc maintainer
 
 const AnchorSchema = z
   .object({ from: z.string(), to: z.string() })
@@ -145,7 +145,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       body: true,
       bodyJson: true,
       anchor: true,
-      resolvedAt: true,
       createdAt: true,
       versionId: true,
       updatedAt: true,
@@ -169,7 +168,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     body: r.body,
     bodyJson: r.bodyJson as BodySegment[] | null,
     anchor: r.anchor as { from: string; to: string } | null,
-    resolved: r.resolvedAt !== null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,

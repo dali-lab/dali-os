@@ -4573,7 +4573,22 @@ function ProjectDriveTab({
     </div>
   );
 
-  const newMenu = canEdit ? (
+  // The same New pill the unified Drive wears — this tab is the same browser,
+  // and a smaller square button here read as a different app's control sitting
+  // in Drive's toolbar. Without edit rights it greys out in place rather than
+  // leaving a hole for the controls beside it to slide into.
+  const newMenu = !canEdit ? (
+    <button
+      type="button"
+      disabled
+      data-testid={`drive-new-menu-${scopeId}-disabled`}
+      title="You don't have edit access to this project"
+      className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg opacity-40 cursor-not-allowed"
+    >
+      <Plus className="w-4 h-4" /> New
+      <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+    </button>
+  ) : (
     <Menu
       align="right"
       ariaLabel="New in this project"
@@ -4581,7 +4596,7 @@ function ProjectDriveTab({
         <button
           type="button"
           data-testid={`drive-new-menu-${scopeId}`}
-          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -4599,7 +4614,7 @@ function ProjectDriveTab({
         <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload file"}</span>
       </Menu.Item>
     </Menu>
-  ) : undefined;
+  );
 
   return (
     <>

@@ -17,9 +17,9 @@ import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { canViewFile, canEditFile } from "../fileAccess.server";
 
-const denied = { canView: false, canEdit: false, canComment: false, canResolve: false };
-const viewOnly = { canView: true, canEdit: false, canComment: true, canResolve: false };
-const full = { canView: true, canEdit: true, canComment: true, canResolve: true };
+const denied = { canView: false, canEdit: false, canComment: false };
+const viewOnly = { canView: true, canEdit: false, canComment: true };
+const full = { canView: true, canEdit: true, canComment: true };
 
 beforeEach(() => {
   vi.resetAllMocks();

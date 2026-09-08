@@ -16,10 +16,10 @@ test.describe('calendar settings', () => {
 
   test('Add Google Account link is present and points at OAuth start', async ({ page }) => {
     await page.goto('/calendar?embed=1');
-    // Linked accounts live in the calendars panel, opened from the gear beside
-    // "My calendars" in the sidebar rail.
-    await page.getByRole('button', { name: 'Manage calendars' }).click();
-    const link = page.getByRole('link', { name: /Add Google account/i });
+    // Linked accounts live in the Calendars dialog, opened from the "Calendars"
+    // pill in the page toolbar (it used to be a gear in the sidebar rail).
+    await page.getByRole('button', { name: 'Calendars' }).click();
+    const link = page.getByRole('link', { name: /Add account/i });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', '/oauth/calendar/google/start');
     // Must break out of the workspace iframe so Google's auth page isn't blocked

@@ -94,6 +94,7 @@ export function MeetingComposer({ data }: { data: LoaderData }) {
           calendarLinks={data.calendarLinks}
           myProjects={data.myProjects}
           canSetSelfCheckIn={data.canSetSelfCheckIn}
+          canMarkCoreMeeting={data.canMarkCoreMeeting}
           startLocal={startLocal}
           onStartLocalChange={setStartLocal}
           endLocal={endLocal}
@@ -198,6 +199,7 @@ export function CreateScheduledMeetingForm({
   calendarLinks,
   myProjects,
   canSetSelfCheckIn,
+  canMarkCoreMeeting,
   startLocal,
   onStartLocalChange,
   endLocal,
@@ -213,6 +215,7 @@ export function CreateScheduledMeetingForm({
   calendarLinks: CalendarLinkDTO[];
   myProjects: ProjectOption[];
   canSetSelfCheckIn: boolean;
+  canMarkCoreMeeting: boolean;
   startLocal: string;
   onStartLocalChange: (v: string) => void;
   endLocal: string;
@@ -236,6 +239,9 @@ export function CreateScheduledMeetingForm({
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
+  // Core-only: lift this meeting onto the Core hub calendar without touching
+  // who's invited. Inviting the Core group ticks it as a default (see below).
+  const [coreMeeting, setCoreMeeting] = useState(false);
   const [status, setStatus] = useState<
     | null
     | {
@@ -252,19 +258,28 @@ export function CreateScheduledMeetingForm({
 
   const usersById = new Map(users.map((u) => [u.id, u]));
   const groupsById = new Map(groups.map((g) => [g.id, g]));
-  // A Core meeting is derived from inviting the Core group (systemKey "core")
-  // rather than a manual toggle — so it lands on the Core calendar automatically.
+  // Inviting the Core group (systemKey "core") puts the meeting on the Core
+  // calendar by construction — the manual toggle below is for everything else
+  // Core needs to see (a project or ad-hoc meeting whose invite list stays put).
   const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
+  const isCoreMeeting = coreSelected || (canMarkCoreMeeting && coreMeeting);
+
+  // Inviting Core pre-ticks the Core-meeting box; unticking it again is allowed,
+  // and the server keeps a Core-scoped meeting on the Core calendar regardless.
+  useEffect(() => {
+    if (coreSelected) setCoreMeeting(true);
+  }, [coreSelected]);
 
   // Prefill "About" when exactly one selected group is a system-managed project
   // group (see GroupOption.projectId) — a default the sender can still change. It
   // fills even while the note is off, so the project is already chosen if they
-  // turn it on; it never enables the note itself.
+  // turn it on; it never enables the note itself. A Core meeting's note has no
+  // project, so the prefill stays out of its way.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
+    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+  }, [selectedGroupIds, isCoreMeeting]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
@@ -299,7 +314,7 @@ export function CreateScheduledMeetingForm({
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
       }
-      if (coreSelected) {
+      if (isCoreMeeting) {
         payload.isCoreMeeting = true;
       }
 
@@ -341,6 +356,7 @@ export function CreateScheduledMeetingForm({
         onChangeSelectedGroupIds([]);
         note.reset();
         setSelfCheckIn(false);
+        setCoreMeeting(false);
       }
     } catch (err) {
       setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
@@ -480,15 +496,32 @@ export function CreateScheduledMeetingForm({
                 myProjects={myProjects}
                 fieldClass={fieldClass}
                 labelClass={labelClass}
+                core={isCoreMeeting}
               />
             )}
           </div>
 
-          {coreSelected && (
-            <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
-              <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
-              <span>The Core group is invited, so this shows on the Core calendar.</span>
+          {canMarkCoreMeeting ? (
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <Checkbox
+                checked={coreSelected || coreMeeting}
+                disabled={coreSelected}
+                onChange={(e) => setCoreMeeting(e.target.checked)}
+                label="Core meeting"
+                description={
+                  coreSelected
+                    ? "The Core group is invited, so this is on the Core calendar."
+                    : "Shows this meeting on the Core hub calendar. Doesn't change who's invited."
+                }
+              />
             </div>
+          ) : (
+            coreSelected && (
+              <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
+                <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
+                <span>The Core group is invited, so this shows on the Core calendar.</span>
+              </div>
+            )
           )}
 
           {canSetSelfCheckIn && (
