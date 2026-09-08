@@ -17,6 +17,9 @@ const Base = {
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
+  // Which calendar inside that account the invite lands on. Omitted = the
+  // account's primary, which is what every caller got before it was askable.
+  organizerCalendarId: z.string().min(1).max(320).optional(),
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
   // A meeting is either a project meeting (Team/Partner, projectId required) or a
@@ -142,6 +145,7 @@ export async function action({ request }: Route.ActionArgs) {
     startTime: body.startTime,
     recurrenceRule: body.recurrenceRule,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
+    organizerCalendarId: body.organizerCalendarId,
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,

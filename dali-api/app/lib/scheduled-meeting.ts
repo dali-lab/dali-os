@@ -88,6 +88,8 @@ export type CreateScheduledMeetingInput = {
   startTime?: string | null;
   recurrenceRule?: string | null;
   organizerCalendarLinkId?: string | null;
+  /** A calendar inside that link. Omitted = the account's primary calendar. */
+  organizerCalendarId?: string | null;
   // Meeting-note fields. When both are set, a "<label> meeting note (<date>)"
   // Page is auto-created under the project's shared documents, and a
   // MeetingAttendance row is fanned out per participant (including the
@@ -288,6 +290,10 @@ export async function createScheduledMeeting(
           timeZone: pickUserTimezone(organizerSettings?.timezone, organizerUser?.timeZone),
           attendees,
           addMeet: input.addMeet ?? false,
+          // Google refuses an insert into a calendar the account can't write,
+          // so an unusable id here fails the invite rather than silently
+          // filing it somewhere else — the picker only offers writable ones.
+          calendarId: input.organizerCalendarId ?? undefined,
         });
         externalEventId = result.eventId;
         meetingUrl = result.meetUrl;

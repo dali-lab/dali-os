@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, FileText, Plus } from "lucide-react";
 import type { Route } from "./+types/core.hub";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { isCoreCycleEligible } from "~/hiring/lib/core-hiring.server";
 import { prisma } from "~/lib/db";
@@ -15,6 +15,9 @@ import { resolveUserTimeZone } from "~/lib/timezone";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { coreCalendarMeetingWhere } from "~/core/lib/core-calendar";
+import { listCalendarsForLink } from "~/lib/google-calendar";
+import { listAllGroups } from "~/lib/groups";
+
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
@@ -103,7 +106,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true },
   });
 
-  const [meetings, generalEvents, deadlineRows, calendarLinks] = await Promise.all([
+  const [meetings, generalEvents, deadlineRows, calendarLinks, groups, termMembers] =
+    await Promise.all([
     prisma.scheduledMeeting.findMany({
       where: coreCalendarMeetingWhere(coreGroup?.id ?? null),
       select: {
@@ -143,12 +147,78 @@ export async function loader({ request }: Route.LoaderArgs) {
     // The create modal's "Send invite from" list: a Core meeting is a real
     // Google invite to members' DALI Gmail, so it needs the organizer's linked
     // accounts. Enabled Google links only — nothing else can send an invite.
-    prisma.userCalendarLink.findMany({
-      where: { userId: auth.user.sub, provider: "Google", enabled: true },
-      select: { id: true, externalEmail: true, displayName: true },
-      orderBy: { linkedAt: "asc" },
-    }),
+    prisma.userCalendarLink
+      .findMany({
+        where: { userId: auth.user.sub, provider: "Google", enabled: true },
+        select: { id: true, externalEmail: true, displayName: true },
+        orderBy: { linkedAt: "asc" },
+      })
+      // An account is not a destination: a Google account holds several
+      // calendars, and "which calendar does this land on?" is the question the
+      // organizer is actually answering. Only the writable ones — Google
+      // refuses an insert into anything the account can merely read.
+      .then((links) =>
+        Promise.all(
+          links.map(async (l) => {
+            try {
+              const items = await listCalendarsForLink(l.id);
+              return {
+                ...l,
+                calendars: items
+                  .filter((c) => c.accessRole === "owner" || c.accessRole === "writer")
+                  .map((c) => ({
+                    id: c.id,
+                    summary: c.summary,
+                    primary: c.primary === true,
+                  })),
+              };
+            } catch {
+              // Token trouble or a Google outage: the account still sends from
+              // its primary calendar, which is what an unlisted link means.
+              return { ...l, calendars: [] };
+            }
+          }),
+        ),
+      ),
+    // The invite picker is the Events page's, so it needs the same two lists:
+    // every active group, and the people a Core organizer can name.
+    listAllGroups().then((rows) =>
+      rows
+        .filter((r) => !r.archived)
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          memberIds: r.memberIds,
+          projectId: r.dynamicQuery?.startsWith("project:")
+            ? r.dynamicQuery.slice("project:".length)
+            : null,
+          systemKey: r.systemKey ?? null,
+        })),
+    ),
+    currentTermMemberWhere(request).then((where) =>
+      prisma.user.findMany({
+        where,
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      }),
+    ),
   ]);
+
+  // A group roster can name people outside the current term (alumni, inactive
+  // members), and the picker renders a raw cuid for anyone it can't name.
+  const knownIds = new Set(termMembers.map((u) => u.id));
+  const missingIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownIds.has(id))),
+  );
+  const users = [
+    ...termMembers,
+    ...(missingIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: missingIds } },
+          select: { id: true, firstName: true, lastName: true, daliEmail: true },
+        })
+      : []),
+  ];
 
   const events: CoreCalendarEvent[] = [];
   const upcoming: {
@@ -227,6 +297,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     deadlines,
     coreGroupId: coreGroup?.id ?? null,
     calendarLinks,
+    groups,
+    users,
   };
 }
 
@@ -302,7 +374,8 @@ function RailSection({
 }
 
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
-  const { timeZone, events, upcoming, deadlines, coreGroupId, calendarLinks } = loaderData;
+  const { timeZone, events, upcoming, deadlines, coreGroupId, calendarLinks, users, groups } =
+    loaderData;
   const { pageTitle } = useOsChrome();
   const { view, days, focusDate, anchorMonth, rangeLabel, changeView, navigate, goToday, goToDay } =
     useCalendarView(timeZone);
@@ -503,6 +576,8 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         <CreateCoreEventModal
           coreGroupId={coreGroupId}
           calendarLinks={calendarLinks}
+          users={users}
+          groups={groups}
           initialDateLocal={defaultStartLocal(focusDate)}
           onClose={() => setCreating(false)}
         />

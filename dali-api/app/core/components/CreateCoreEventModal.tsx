@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { CalendarDays, Clock, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
@@ -20,35 +19,87 @@ import {
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
 import { durationMinutesBetween, toDatetimeLocal } from "~/calendar/lib/event-block";
+import { ParticipantPicker } from "~/calendar/components/scheduling";
+import type { GroupOption, UserOption } from "~/calendar/lib/types";
 
 // Create straight onto the Core calendar.
 //
 // The Events page's create modal schedules anything for anyone, and reaching
 // the Core calendar from there means remembering to tick "Core meeting". This
-// one only ever produces Core entries: isCoreMeeting is fixed on, and the only
-// guest list on offer is the Core group — so what it makes lands on the Core
-// hub and nowhere else.
+// one only ever produces Core entries: isCoreMeeting is fixed on, so what it
+// makes lands on the Core hub whoever is invited. The guest list itself is the
+// Events page's picker with Core preselected — the common case as a default,
+// not the only thing on offer.
 //
-// "Meeting or event" is the guest list, same rule as the Events modal: with the
-// Core group invited it's a meeting (real Google invites to members' DALI
-// Gmail, via the organizer's linked account); with nobody invited it's an event
-// that just sits on the Core calendar.
+// "Meeting or event" is the guest list, same rule as the Events modal: with
+// anyone invited it's a meeting (real Google invites to their DALI Gmail, sent
+// from a calendar the organizer picks inside one of their linked accounts);
+// with nobody invited it's an event that just sits on the Core calendar.
 
 export type CoreCalendarLink = {
   id: string;
   externalEmail: string;
   displayName: string | null;
+  /** The writable calendars in that account — the actual invite destinations. */
+  calendars: { id: string; summary: string; primary: boolean }[];
 };
+
+// The destination is one calendar inside one linked account, so the picker's
+// value carries both. "|" can't appear in a cuid and Google's calendar ids are
+// email-shaped, so it is a safe join.
+function joinSendFrom(linkId: string, calendarId: string) {
+  return `${linkId}|${calendarId}`;
+}
+
+function splitSendFrom(value: string): [string, string] {
+  const [linkId = "", calendarId = ""] = value.split("|");
+  return [linkId, calendarId];
+}
+
+/** Each writable calendar, named by the calendar — the account is context under
+ *  it, not the label. A row reading "DALI Calendar — someone@else" named the
+ *  wrong thing twice: an account the organizer wasn't sending from, and never
+ *  the calendar the invite would actually land on. */
+function sendFromOptions(links: CoreCalendarLink[]) {
+  return links.flatMap((l) =>
+    l.calendars.length > 0
+      ? l.calendars.map((c) => ({
+          value: joinSendFrom(l.id, c.id),
+          label: c.primary && c.summary === l.externalEmail ? "Primary calendar" : c.summary,
+          description: l.externalEmail,
+        }))
+      : // Google wouldn't list this account's calendars; it can still send from
+        // whatever Google treats as its primary.
+        [{
+          value: joinSendFrom(l.id, ""),
+          label: l.displayName ?? l.externalEmail,
+          description: l.externalEmail,
+        }],
+  );
+}
+
+/** Default to the first account's primary calendar — where an invite sent
+ *  without a thought should come from. */
+function defaultSendFrom(links: CoreCalendarLink[]) {
+  const first = links[0];
+  if (!first) return "";
+  const primary = first.calendars.find((c) => c.primary) ?? first.calendars[0];
+  return joinSendFrom(first.id, primary?.id ?? "");
+}
 
 export function CreateCoreEventModal({
   coreGroupId,
   calendarLinks,
+  users,
+  groups,
   initialDateLocal,
   onClose,
 }: {
-  /** null until the Core system group is seeded — invites are unavailable then. */
+  /** null until the Core system group is seeded — Core is not preselectable then. */
   coreGroupId: string | null;
   calendarLinks: CoreCalendarLink[];
+  users: UserOption[];
+  groups: GroupOption[];
   /** "YYYY-MM-DDTHH:mm" seed for the start field (the day the grid is on). */
   initialDateLocal: string;
   onClose: () => void;
@@ -64,15 +115,32 @@ export function CreateCoreEventModal({
     return toDatetimeLocal(d);
   });
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const [inviteCore, setInviteCore] = useState(!!coreGroupId);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState(
-    calendarLinks[0]?.id ?? "",
+  // Core is the default guest list, not the only one — the picker is the Events
+  // page's, so a Core entry can invite one person, another group, or a mix.
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
+    coreGroupId ? [coreGroupId] : [],
   );
+  // The destination is a calendar, not an account: "<linkId>|<calendarId>".
+  const [sendFrom, setSendFrom] = useState(() => defaultSendFrom(calendarLinks));
   const note = useMeetingNote();
   const [status, setStatus] = useState<
     null | { ok: true; count: number; notePageId: string | null } | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const groupsById = new Map(groups.map((g) => [g.id, g]));
+  // Groups resolve to their members, so the count under the picker is the
+  // number of people who will actually get an invite.
+  const resolvedParticipantIds = (() => {
+    const set = new Set(selectedUserIds);
+    for (const gid of selectedGroupIds) {
+      for (const uid of groupsById.get(gid)?.memberIds ?? []) set.add(uid);
+    }
+    return Array.from(set);
+  })();
+  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
 
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
@@ -99,11 +167,21 @@ export function CreateCoreEventModal({
       if (rrule) payload.recurrenceRule = rrule;
       const start = new Date(startLocal);
       if (!isNaN(start.getTime())) payload.startTime = start.toISOString();
-      if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      const [linkId, calendarId] = splitSendFrom(sendFrom);
+      if (linkId) {
+        payload.organizerCalendarLinkId = linkId;
+        if (calendarId) payload.organizerCalendarId = calendarId;
+      }
       Object.assign(payload, meetingNotePayload(note.state));
-      if (inviteCore && coreGroupId) {
+      // One group and nobody else stays a group-scoped meeting, so the roster
+      // keeps resolving as the group changes; anything else is sent as the
+      // resolved people. Same rule the Events modal follows.
+      if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
-        payload.groupId = coreGroupId;
+        payload.groupId = selectedGroupIds[0];
+      } else if (resolvedParticipantIds.length > 0) {
+        payload.scopeType = "None";
+        payload.participantUserIds = resolvedParticipantIds;
       } else {
         payload.scopeType = "None";
       }
@@ -226,26 +304,35 @@ export function CreateCoreEventModal({
             fieldClassName={fieldClass}
           />
 
-          {/* Guests: the Core group or nobody — this surface has no other list. */}
-          <div className="rounded-md border border-border bg-muted/20 p-3">
-            <Checkbox
-              checked={inviteCore}
-              disabled={!coreGroupId}
-              onChange={(e) => setInviteCore(e.target.checked)}
-              label={
-                <span className="inline-flex items-center gap-1.5">
-                  <UsersRound className="h-3.5 w-3.5" /> Invite Core
-                </span>
-              }
-              description={
-                coreGroupId
-                  ? "Sends a calendar invite to every Core member's DALI account. Leave it off for something that only belongs on the calendar."
-                  : "The Core group isn't set up yet, so invites aren't available."
-              }
+          {/* Guests. Core comes preselected because that is the common case on
+              this calendar, but it is a starting point, not the whole list —
+              clearing it leaves an entry that only sits on the Core calendar. */}
+          <div>
+            <label className={labelClass}>
+              <span className="inline-flex items-center gap-1.5">
+                <UsersRound className="h-3.5 w-3.5" /> Invite
+              </span>
+            </label>
+            <ParticipantPicker
+              users={users}
+              groups={groups}
+              selectedUserIds={selectedUserIds}
+              selectedGroupIds={selectedGroupIds}
+              onChangeUsers={setSelectedUserIds}
+              onChangeGroups={setSelectedGroupIds}
+              usersById={usersById}
+              groupsById={groupsById}
+              resolvedCount={resolvedParticipantIds.length}
             />
+            {!hasGuests && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Nobody invited — this lands on the Core calendar without sending
+                anything.
+              </p>
+            )}
           </div>
 
-          {inviteCore && (
+          {hasGuests && (
             <div>
               <label className={labelClass}>Send invite from</label>
               {calendarLinks.length === 0 ? (
@@ -255,16 +342,11 @@ export function CreateCoreEventModal({
                 </p>
               ) : (
                 <Select
-                  value={organizerCalendarLinkId}
-                  onChange={setOrganizerCalendarLinkId}
+                  value={sendFrom}
+                  onChange={setSendFrom}
                   options={[
                     { value: "", label: "No invite (in-app notification only)" },
-                    ...calendarLinks.map((l) => ({
-                      value: l.id,
-                      label: l.displayName
-                        ? `${l.displayName} — ${l.externalEmail}`
-                        : l.externalEmail,
-                    })),
+                    ...sendFromOptions(calendarLinks),
                   ]}
                   buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
                 />
