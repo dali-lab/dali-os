@@ -2,20 +2,29 @@ import { useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/education.$offeringId.hub";
 import { requireEnrollment } from "~/education/lib/access.server";
 import { getHubData } from "~/education/lib/lms.server";
-import { runDiscussionAction } from "~/education/lib/discussions.server";
+import {
+  runDiscussionAction,
+  DISCUSSION_INTENTS,
+} from "~/education/lib/discussions.server";
+import { runManageAction } from "~/education/lib/manage-actions.server";
+import {
+  getInstructorHubExtras,
+  currentJourneySessionId,
+} from "~/education/lib/manage-hub.server";
+import { getSessionRoster } from "~/education/lib/attendance.server";
 import { CourseHub } from "~/education/components/CourseHub";
+import { CourseHubV2 } from "~/education/components/v2/CourseHubV2";
 import { buttonClasses } from "~/components/ui/Button";
 import { parseSessionCookie } from "~/lib/cookies";
 import { recordRouteVisit } from "~/lib/user-pages.server";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI OS` },
 ];
 
 export const handle = {
-  // Flat routes drop the opaque :offeringId, so the offering's own landing page
-  // (/education/:id) can't appear from the segment walk — declare the trail so
-  // the hub links back up to it (replacing the old inline "Offering details").
   breadcrumbTrail: (
     data: { hub: { offering: { id: string; title: string } } } | undefined,
   ) => {
@@ -35,10 +44,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     params.offeringId!,
     "member",
   );
-  // Canvas-style "Student View": a manager can render the hub as a student sees
-  // it (no manage affordances, student-framed empty state) to sanity-check the
-  // experience. Only a real manager can enter it — a student passing ?as has no
-  // manager flag to drop.
   const previewAsStudent =
     isManager && new URL(request.url).searchParams.get("as") === "student";
   const hub = await getHubData({
@@ -48,9 +53,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager: isManager && !previewAsStudent,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
-  // After the enrollment gate — the hub the viewer can open lands in recents.
   recordRouteVisit(auth.user.sub, `/education/${hub.offering.id}/hub`, hub.offering.title, request);
-  return { hub, collabToken: parseSessionCookie(request), previewAsStudent };
+
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+
+  // Instructor extras (editing mode): only when redesign + manager + not previewing
+  const instructor =
+    redesign && isManager && !previewAsStudent
+      ? await getInstructorHubExtras(params.offeringId!)
+      : null;
+
+  // Session roster for mark-by-hand: ?session= when the instructor picked a
+  // stop, defaulting to the journey's current stop (in-progress, else next
+  // upcoming, else last) so the pane can mark attendance on first land.
+  const sessionIdParam = new URL(request.url).searchParams.get("session");
+  const rosterSessionId =
+    sessionIdParam ?? (instructor ? currentJourneySessionId(hub.sessions) : null);
+  const rosterForSession =
+    isManager && !previewAsStudent && rosterSessionId
+      ? await getSessionRoster(params.offeringId!, rosterSessionId)
+      : null;
+
+  return { hub, collabToken: parseSessionCookie(request), previewAsStudent, redesign, instructor, rosterForSession };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -59,15 +84,55 @@ export async function action({ request, params }: Route.ActionArgs) {
     params.offeringId!,
     "member",
   );
-  return runDiscussionAction(await request.formData(), {
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+  if (DISCUSSION_INTENTS.includes(intent)) {
+    return runDiscussionAction(formData, {
+      offeringId: params.offeringId!,
+      userId: auth.user.sub,
+      isManager,
+    });
+  }
+  if (!isManager) return Response.json({ error: "Forbidden" }, { status: 403 });
+  return runManageAction(formData, {
     offeringId: params.offeringId!,
-    userId: auth.user.sub,
-    isManager,
+    actorId: auth.user.sub,
   });
 }
 
 export default function MemberCourseHub() {
-  const { hub, collabToken, previewAsStudent } = useLoaderData<typeof loader>();
+  const { hub, collabToken, previewAsStudent, redesign, instructor, rosterForSession } = useLoaderData<typeof loader>();
+
+  const previewPill = previewAsStudent ? (
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-brand-2 backdrop-blur">
+        <span className="text-sm font-medium text-foreground">👁 Viewing as a student</span>
+        <Link
+          to={`/education/${hub.offering.id}/hub`}
+          className={buttonClasses("secondary", "sm")}
+        >
+          Exit
+        </Link>
+      </div>
+    </div>
+  ) : null;
+
+  if (redesign) {
+    return (
+      <>
+        <CourseHubV2
+          data={hub}
+          basePath={`/education/${hub.offering.id}`}
+          collabToken={collabToken}
+          isMemberShell={true}
+          instructor={instructor}
+          rosterForSession={rosterForSession}
+          previewAsStudent={previewAsStudent}
+        />
+        {previewPill}
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -77,10 +142,6 @@ export default function MemberCourseHub() {
             {hub.offering.title}
           </h1>
         </div>
-        {/* Manager affordances only when NOT previewing — during a preview the
-            page is rendered exactly as a student sees it (isManager=false), so
-            the only added chrome is the floating exit pill below, which is
-            fixed-position and doesn't shift the hub's layout. */}
         {hub.isManager && (
           <div className="flex items-center gap-2">
             <Link
@@ -103,19 +164,7 @@ export default function MemberCourseHub() {
         basePath={`/education/${hub.offering.id}`}
         collabToken={collabToken}
       />
-      {previewAsStudent && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-brand-2 backdrop-blur">
-            <span className="text-sm font-medium text-foreground">👁 Viewing as a student</span>
-            <Link
-              to={`/education/${hub.offering.id}/hub`}
-              className={buttonClasses("secondary", "sm")}
-            >
-              Exit
-            </Link>
-          </div>
-        </div>
-      )}
+      {previewPill}
     </div>
   );
 }

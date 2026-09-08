@@ -21,7 +21,15 @@ import { Check, ChevronRight, FileText } from "lucide-react";
 // the surrounding route's action.
 
 export type HubData = {
-  offering: { id: string; title: string; descriptionHtml: string };
+  offering: {
+    id: string;
+    title: string;
+    descriptionHtml: string;
+    type?: string;
+    status?: string;
+    completionThreshold?: number | null;
+    closedOutAt?: string | Date | null;
+  };
   instructors: { id: string; name: string; photoUrl: string | null }[];
   classmates: { id: string; name: string; photoUrl: string | null; isMe: boolean }[];
   announcements: OfferingDiscussionPost[];
@@ -62,12 +70,27 @@ export type HubData = {
     authorName: string | null;
   } | null;
   myCertificateId: string | null;
+  /** Server-computed certificate eligibility (null when not enrolled). */
+  certificateProgress?: {
+    eligible: boolean;
+    sessionsNeeded: number;
+    attended: number;
+    excused: number;
+    total: number;
+  } | null;
+  /** S3-backed course files (not Page records). */
+  files?: {
+    id: string;
+    title: string;
+    folderPageId: string | null;
+    href: string | null;
+  }[];
   currentUserId: string;
   currentUserName: string;
   isManager: boolean;
 };
 
-type DiscussionPost = {
+export type DiscussionPost = {
   id: string;
   body: string;
   createdAt: string | Date;
@@ -346,7 +369,8 @@ function MaterialLink({
   );
 }
 
-function DiscussionBoard({
+/** Exported for the v2 hub Talk pane. */
+export function DiscussionBoard({
   threads,
   currentUserId,
   isManager,
@@ -490,8 +514,8 @@ function ReplyForm({ parentId }: { parentId: string }) {
 // instructor uses. The editor is mounted client-only (it can't render on the
 // server) and re-keyed per doc so switching docs rebinds cleanly. Mentions are
 // off — the mention search is member-gated, so it would be empty for portal
-// students.
-function WorkspaceTab({
+// students. Exported for the v2 hub.
+export function WorkspaceTab({
   docs,
   collabToken,
   userName,
@@ -873,8 +897,8 @@ function AssignmentRow({
 }
 
 /** Grades tab: the student's standing (attendance + certificate) and a table of
- *  every assignment with its score and status. */
-function GradesTab({
+ *  every assignment with its score and status. Exported for the v2 hub. */
+export function GradesTab({
   sessions,
   assignments,
   myCertificateId,

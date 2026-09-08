@@ -12,15 +12,12 @@ import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
-import { isCore } from "~/lib/roles";
+import { isCore, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { requireOfferingManager } from "~/education/lib/access.server";
-import {
-  getOfferingDetail,
-  runOfferingAction,
-} from "~/education/lib/offerings.server";
+import { getOfferingDetail } from "~/education/lib/offerings.server";
+import { runManageAction } from "~/education/lib/manage-actions.server";
 import { listApplications } from "~/education/lib/apply.server";
-import { decideApplication, approveAllPending } from "~/education/lib/decisions.server";
-import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
 import { ApplicationsReview } from "~/education/components/ApplicationsReview";
 import { RosterMatrix } from "~/education/components/RosterMatrix";
@@ -30,32 +27,22 @@ import { OfferingDiscussion } from "~/education/components/OfferingDiscussion";
 import {
   listMaterialPages,
   listWorkspaceDocs,
-  createMaterialPage,
-  moveMaterialPage,
-  moveMaterialFile,
 } from "~/education/lib/lms.server";
 import QRCode from "qrcode";
-import {
-  isSessionCheckInOpen,
-  setSessionCheckInOpen,
-} from "~/education/lib/session-checkin.server";
+import { isSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import {
   listAssignments,
-  createAssignment,
-  updateAssignment,
-  deleteAssignment,
+  getPerformanceByApplication,
 } from "~/education/lib/assignments.server";
-import { listDiscussion, postAnnouncement } from "~/education/lib/announcements.server";
+import { listDiscussion } from "~/education/lib/announcements.server";
 import { builtinDecisionEmail } from "~/education/lib/notifications.server";
 import {
   getAttendanceMatrix,
   getSessionRoster,
-  saveAttendance,
 } from "~/education/lib/attendance.server";
-import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
+import { notesForOffering } from "~/education/lib/student-notes.server";
+import { certificateEligibility } from "~/education/lib/certificates.server";
 import {
-  setFormBinding,
   listFeedbackResults,
   SESSION_FEEDBACK_SLOT,
   INSTRUCTOR_EXIT_SLOT,
@@ -66,18 +53,12 @@ import {
   ManageAnnouncements,
 } from "~/education/components/ManageCourseContent";
 import type { Question } from "~/types";
-import type {
-  AttendanceStatus,
-  EduApplicationStatus,
-  SubmissionType,
-} from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { X } from "lucide-react";
-import { renderEmail } from "~/lib/email";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
@@ -88,6 +69,8 @@ import { formatDateTime, formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { InfoTip } from "~/components/ui/floating";
+import { DecisionEmailRow } from "~/education/components/DecisionEmailRow";
+import { FeedbackResults } from "~/education/components/FeedbackResults";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Manage ${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -104,6 +87,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const gate = await requireOfferingManager(request, params.offeringId!);
   if (!gate.ok) return redirect("/portal");
+
+  // Redesign: the manage surface folds into the course page (Editing mode).
+  // The action below stays live either way — fetcher POSTs never run loaders.
+  const roles = await getUserRoles(gate.auth.user.sub, request);
+  if (await isFeatureEnabled("education-redesign", gate.auth.user.sub, roles, request)) {
+    return redirect(
+      gate.auth.user.type === "dartmouth"
+        ? `/portal/education/${params.offeringId}/hub`
+        : `/education/${params.offeringId}/hub`,
+    );
+  }
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering) throw new Response("Not found", { status: 404 });
@@ -266,42 +260,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ).values(),
   );
 
-  // Performance view: submissions keyed by (studentId, assignmentId) for the
-  // approved roster. Assignments already loaded above; this is just submissions.
-  const approvedStudentIds = attendanceMatrix.students.map((s) => s.applicationId);
-  // applicationId == student application id — fetch via applicantUserId.
-  const approvedApplications = await prisma.educationApplication.findMany({
-    where: {
-      id: { in: approvedStudentIds },
-    },
-    select: { id: true, applicantUserId: true },
-  });
-  const studentIdByApp = new Map(approvedApplications.map((a) => [a.id, a.applicantUserId]));
-  const studentUserIds = [...new Set(approvedApplications.map((a) => a.applicantUserId))];
-
-  const submissionsForRoster =
-    assignments.length > 0 && studentUserIds.length > 0
-      ? await prisma.educationSubmission.findMany({
-          where: {
-            assignmentId: { in: assignments.map((a) => a.id) },
-            studentId: { in: studentUserIds },
-          },
-          select: { assignmentId: true, studentId: true, grade: true, score: true },
-        })
-      : [];
-
-  // Build a map: applicationId → (assignmentId → {grade, score}) for component use.
-  // The matrix students are keyed by applicationId, so we translate via studentIdByApp.
-  const userIdToAppId = new Map(
-    approvedApplications.map((a) => [a.applicantUserId, a.id]),
+  // Performance view: grades/scores keyed by (applicationId → assignmentId)
+  // for the approved roster. Shared with the redesign People surface.
+  const performanceByApp = await getPerformanceByApplication(
+    params.offeringId!,
+    assignments.map((a) => a.id),
   );
-  const performanceByApp: Record<string, Record<string, { grade: string | null; score: number | null }>> = {};
-  for (const sub of submissionsForRoster) {
-    const appId = userIdToAppId.get(sub.studentId);
-    if (!appId) continue;
-    if (!performanceByApp[appId]) performanceByApp[appId] = {};
-    performanceByApp[appId][sub.assignmentId] = { grade: sub.grade, score: sub.score };
-  }
 
   return {
     publishedForms,
@@ -393,224 +357,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   const formData = await request.formData();
 
-  const intent = String(formData.get("intent") ?? "");
-  const contentIntents = [
-    "decide-application",
-    "create-page",
-    "move-page",
-    "move-file",
-    "set-material-session",
-    "create-assignment",
-    "update-assignment",
-    "delete-assignment",
-    "post-announcement",
-    "save-attendance",
-    "set-session-check-in",
-    "save-student-note",
-    "close-out-offering",
-    "set-form-binding",
-  ];
-  if (contentIntents.includes(intent)) {
-    if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-
-    const fail = (r: { error: string; status: number }) =>
-      Response.json({ error: r.error }, { status: r.status });
-
-    switch (intent) {
-      case "decide-application": {
-        // decideApplication self-scopes to offeringId, so a manager of another
-        // offering can't act on this application.
-        const result = await decideApplication({
-          applicationId: String(formData.get("applicationId") ?? ""),
-          offeringId: params.offeringId!,
-          status: String(formData.get("status")) as EduApplicationStatus,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "approve-all-pending": {
-        const result = await approveAllPending({
-          offeringId: params.offeringId!,
-          actorId: auth.user.sub,
-        });
-        return { ok: true, bulkApprove: result };
-      }
-      case "move-page": {
-        const result = await moveMaterialPage({
-          offeringId: params.offeringId!,
-          pageId: String(formData.get("pageId") ?? ""),
-          parentPageId: String(formData.get("parentPageId") ?? "") || null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "move-file": {
-        const result = await moveMaterialFile({
-          offeringId: params.offeringId!,
-          fileId: String(formData.get("fileId") ?? ""),
-          folderId: String(formData.get("folderId") ?? "") || null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "set-session-check-in": {
-        const result = await setSessionCheckInOpen({
-          offeringId: params.offeringId!,
-          sessionId: String(formData.get("sessionId") ?? ""),
-          open: formData.get("open") === "true",
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "create-page": {
-        const result = await createMaterialPage({
-          offeringId: params.offeringId!,
-          title: String(formData.get("title") ?? ""),
-          parentPageId: String(formData.get("parentPageId") ?? "") || null,
-          studentEditable: formData.get("studentEditable") === "true",
-          kind: formData.get("kind") === "Folder" ? "Folder" : "FreeForm",
-          sessionId: String(formData.get("sessionId") ?? "") || null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "set-material-session": {
-        const pageId = String(formData.get("pageId") ?? "");
-        const sessionId = String(formData.get("sessionId") ?? "") || null;
-        // Guard: page must belong to this offering's workspace.
-        const page = await prisma.page.findUnique({
-          where: { id: pageId },
-          select: { workspaceType: true, workspaceId: true },
-        });
-        if (
-          !page ||
-          page.workspaceType !== "EducationOffering" ||
-          page.workspaceId !== params.offeringId
-        ) {
-          return Response.json({ error: "Page not found" }, { status: 404 });
-        }
-        await prisma.page.update({ where: { id: pageId }, data: { sessionId } });
-        return { ok: true };
-      }
-      case "create-assignment": {
-        const dueAtRaw = String(formData.get("dueAt") ?? "");
-        const pointsRaw = String(formData.get("points") ?? "");
-        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
-        const result = await createAssignment({
-          offeringId: params.offeringId!,
-          sessionId: String(formData.get("sessionId") ?? "") || null,
-          title: String(formData.get("title") ?? ""),
-          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
-          submissionType: String(formData.get("submissionType")) as SubmissionType,
-          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "update-assignment": {
-        const dueAtRaw = String(formData.get("dueAt") ?? "");
-        const pointsRaw = String(formData.get("points") ?? "");
-        const pointsParsed = pointsRaw ? parseInt(pointsRaw, 10) : null;
-        const result = await updateAssignment({
-          assignmentId: String(formData.get("assignmentId") ?? ""),
-          offeringId: params.offeringId!,
-          title: String(formData.get("title") ?? ""),
-          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
-          submissionType: String(formData.get("submissionType")) as SubmissionType,
-          points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "delete-assignment": {
-        const result = await deleteAssignment({
-          assignmentId: String(formData.get("assignmentId") ?? ""),
-          offeringId: params.offeringId!,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "post-announcement": {
-        const result = await postAnnouncement({
-          offeringId: params.offeringId!,
-          authorId: auth.user.sub,
-          body: String(formData.get("body") ?? ""),
-          kind: formData.get("kind") === "Message" ? "Message" : "Announcement",
-          parentId: String(formData.get("parentId") ?? "") || null,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "set-form-binding": {
-        const result = await setFormBinding({
-          offeringId: params.offeringId!,
-          slot: String(formData.get("slot") ?? ""),
-          formId: String(formData.get("formId") ?? "") || null,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "preview-close-out": {
-        const preview = await previewCloseOut(params.offeringId!);
-        return { ok: true, closeOutPreview: preview };
-      }
-      case "close-out-offering": {
-        const result = await closeOutOffering({
-          offeringId: params.offeringId!,
-          actorId: auth.user.sub,
-        });
-        if ("error" in result) return fail(result);
-        return {
-          ok: true,
-          closeOut: {
-            issued: result.issued,
-            alreadyIssued: result.alreadyIssued,
-            ineligible: result.ineligible,
-          },
-        };
-      }
-      case "save-student-note": {
-        const applicationId = String(formData.get("applicationId") ?? "");
-        const application = await prisma.educationApplication.findUnique({
-          where: { id: applicationId },
-          select: { offeringId: true },
-        });
-        if (!application || application.offeringId !== params.offeringId)
-          return Response.json({ error: "Application not found" }, { status: 404 });
-        const result = await upsertStudentNote({
-          applicationId,
-          actorId: auth.user.sub,
-          feedback: String(formData.get("feedback") ?? ""),
-          internalNote: String(formData.get("internalNote") ?? ""),
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-      case "save-attendance": {
-        // One `mark-<applicationId>` field per roster row; "" clears the mark.
-        const marks: { applicationId: string; status: AttendanceStatus | null }[] = [];
-        for (const [key, value] of formData.entries()) {
-          if (!key.startsWith("mark-")) continue;
-          marks.push({
-            applicationId: key.slice("mark-".length),
-            status: value === "" ? null : (String(value) as AttendanceStatus),
-          });
-        }
-        const result = await saveAttendance({
-          offeringId: params.offeringId!,
-          sessionId: String(formData.get("sessionId") ?? ""),
-          marks,
-          actorId: auth.user.sub,
-        });
-        return "error" in result ? fail(result) : { ok: true };
-      }
-    }
-  }
-
-  // Pin the offering id from the URL so a form can't retarget another offering.
-  formData.set("offeringId", params.offeringId!);
-  const result = await runOfferingAction(formData, auth.user.sub);
-  if ("error" in result)
-    return Response.json({ error: result.error }, { status: result.status });
+  const result = await runManageAction(formData, {
+    offeringId: params.offeringId!,
+    actorId: auth.user.sub,
+  });
+  if (result instanceof Response) return result;
   if (formData.get("intent") === "delete-offering") return redirect("/education/manage");
   if (formData.get("intent") === "duplicate-offering" && "id" in result && result.id)
     return redirect(`/education/manage/${result.id}`);
@@ -1634,189 +1385,3 @@ export default function ManageOffering() {
   );
 }
 
-function FeedbackResults({
-  title,
-  anonymizedNote,
-  results,
-}: {
-  title: string;
-  anonymizedNote: boolean;
-  results: {
-    responded: number;
-    eligible: number;
-    questions: { key: string; type: string; data: { label: string } }[];
-    submissions: {
-      id: string;
-      answers: Record<string, unknown>;
-      submitterName: string | null;
-    }[];
-  };
-}) {
-  const visibleQuestions = results.questions.filter((q) => q.type !== "info");
-  const rate =
-    results.eligible > 0
-      ? Math.round((results.responded / results.eligible) * 100)
-      : null;
-  return (
-    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
-      <div>
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {rate !== null && (
-          <p className="text-xs font-medium text-muted-foreground mt-0.5">
-            {results.responded} of {results.eligible} responded ({rate}%)
-          </p>
-        )}
-        {anonymizedNote && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Responses are anonymized and shown in a shuffled order.
-          </p>
-        )}
-      </div>
-      {results.submissions.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No responses yet.</p>
-      ) : anonymizedNote && results.responded < 3 ? (
-        <p className="text-sm text-muted-foreground italic">
-          Only {results.responded} response{results.responded === 1 ? "" : "s"} so far —
-          individual responses stay hidden until at least 3, to keep them anonymous.
-        </p>
-      ) : (
-        visibleQuestions.map((q) => {
-          // Aggregate answers: a tally for enumerable (choice/rating) questions
-          // and an average when every answer is numeric. Skipped for free text
-          // (too many distinct values).
-          const values = results.submissions
-            .map((s) => {
-              const raw = s.answers[q.key];
-              return raw == null || raw === ""
-                ? null
-                : Array.isArray(raw)
-                  ? raw.join(", ")
-                  : String(raw);
-            })
-            .filter((v): v is string => v !== null);
-          const tally = new Map<string, number>();
-          for (const v of values) tally.set(v, (tally.get(v) ?? 0) + 1);
-          const nums = values.map(Number).filter((n) => Number.isFinite(n));
-          const avg =
-            values.length > 0 && nums.length === values.length
-              ? nums.reduce((a, b) => a + b, 0) / nums.length
-              : null;
-          const showTally = tally.size > 0 && tally.size <= 8;
-          return (
-          <div key={q.key}>
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              {q.data.label}
-            </h3>
-            {(avg !== null || showTally) && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {avg !== null && (
-                  <span className="font-semibold text-foreground">avg {avg.toFixed(1)}</span>
-                )}
-                {avg !== null && showTally && " · "}
-                {showTally &&
-                  [...tally.entries()]
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([v, n]) => `${v} (${n})`)
-                    .join(", ")}
-              </p>
-            )}
-            <ul className="mt-1 flex flex-col gap-1">
-              {results.submissions.map((s) => {
-                const raw = s.answers[q.key];
-                const value =
-                  raw == null || raw === ""
-                    ? null
-                    : Array.isArray(raw)
-                      ? raw.join(", ")
-                      : String(raw);
-                if (value === null) return null;
-                return (
-                  <li
-                    key={s.id}
-                    className="text-sm text-foreground border-l-2 border-border pl-3 whitespace-pre-wrap"
-                  >
-                    {value}
-                    {s.submitterName && (
-                      <span className="text-xs text-muted-foreground"> — {s.submitterName}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-          );
-        })
-      )}
-    </section>
-  );
-}
-
-// One row of the Decision emails table: bind a template (or fall back to the
-// built-in copy) for a status, with a live preview of exactly what sends —
-// rendered with a sample recipient so the built-in fallback isn't invisible.
-function DecisionEmailRow({
-  status,
-  boundVersionId,
-  emailTemplates,
-  builtinCopy,
-  offeringTitle,
-}: {
-  status: "Approved" | "Waitlisted" | "Rejected";
-  boundVersionId: string;
-  emailTemplates: { name: string; versionId: string; subject: string; body: string }[];
-  builtinCopy: { subject: string; body: string };
-  offeringTitle: string;
-}) {
-  const [selected, setSelected] = useState(boundVersionId);
-  const [showPreview, setShowPreview] = useState(false);
-
-  const source = selected
-    ? emailTemplates.find((t) => t.versionId === selected) ?? builtinCopy
-    : builtinCopy;
-  // Sample render: {{firstName}} → a placeholder name, {{domain}} → the offering
-  // title (education templates carry the title in {{domain}}), matching the send.
-  const preview = renderEmail(source, { firstName: "Alex", domain: offeringTitle });
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border/60 p-2">
-      <Form method="post" className="flex items-center gap-3">
-        <input type="hidden" name="intent" value="set-decision-email" />
-        <input type="hidden" name="status" value={status} />
-        <span className="text-sm text-foreground w-24">{status}</span>
-        <Select
-          name="emailTemplateVersionId"
-          value={selected}
-          onChange={setSelected}
-          placeholder="Built-in message (no template)"
-          options={[
-            { value: "", label: "Built-in message (no template)" },
-            ...emailTemplates.map((t) => ({ value: t.versionId, label: t.name })),
-          ]}
-          buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-        />
-        <button
-          type="button"
-          onClick={() => setShowPreview((v) => !v)}
-          className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md hover:bg-muted/40 transition-colors shrink-0"
-        >
-          {showPreview ? "Hide" : "Preview"}
-        </button>
-        <Button type="submit" variant="secondary" size="sm">
-          Save
-        </Button>
-      </Form>
-      {showPreview && (
-        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
-          <p className="text-muted-foreground">
-            {selected ? "Bound template" : "Built-in message"} — sample for “Alex”:
-          </p>
-          <p className="mt-1 font-medium text-foreground">{preview.subject}</p>
-          <div
-            className="mt-1 text-foreground [&_p]:my-1"
-            dangerouslySetInnerHTML={{ __html: preview.html }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}

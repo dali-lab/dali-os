@@ -10,6 +10,7 @@ vi.mock("~/lib/gmail-integration", () => ({
 import { prisma } from "~/lib/db";
 import {
   certificateEligibility,
+  sessionsNeededForEligibility,
   closeOutOffering,
 } from "~/education/lib/certificates.server";
 
@@ -89,6 +90,79 @@ describe("certificateEligibility", () => {
         threshold: 0.8,
       }),
     );
+  });
+});
+
+describe("sessionsNeededForEligibility", () => {
+  it("returns 0 once eligible", () => {
+    expect(
+      sessionsNeededForEligibility({
+        type: "Miniseries",
+        totalSessions: 5,
+        present: 4,
+        excused: 0,
+      }),
+    ).toBe(0);
+    expect(
+      sessionsNeededForEligibility({
+        type: "Workshop",
+        totalSessions: 1,
+        present: 1,
+        excused: 0,
+      }),
+    ).toBe(0);
+  });
+
+  it("counts the gap to the miniseries threshold, honoring fractional ceilings", () => {
+    // 5 sessions at 80% → 4 counted needed; 3 attended → 1 more.
+    expect(
+      sessionsNeededForEligibility({
+        type: "Miniseries",
+        totalSessions: 5,
+        present: 3,
+        excused: 0,
+      }),
+    ).toBe(1);
+    // 6 sessions at 80% → 4.8 → 5 counted needed; 3 attended → 2 more.
+    expect(
+      sessionsNeededForEligibility({
+        type: "Miniseries",
+        totalSessions: 6,
+        present: 3,
+        excused: 0,
+      }),
+    ).toBe(2);
+    // Excused counts toward the gap like Present does.
+    expect(
+      sessionsNeededForEligibility({
+        type: "Miniseries",
+        totalSessions: 6,
+        present: 2,
+        excused: 1,
+      }),
+    ).toBe(2);
+  });
+
+  it("workshops need exactly one Present", () => {
+    expect(
+      sessionsNeededForEligibility({
+        type: "Workshop",
+        totalSessions: 3,
+        present: 0,
+        excused: 2,
+      }),
+    ).toBe(1);
+  });
+
+  it("zero-session offerings have nothing attainable", () => {
+    expect(
+      sessionsNeededForEligibility({
+        type: "Miniseries",
+        totalSessions: 0,
+        present: 0,
+        excused: 0,
+      }),
+    ).toBe(0);
   });
 });
 

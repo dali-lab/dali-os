@@ -11,6 +11,10 @@ import { listAssignments } from "./assignments.server";
 import { listThreads, offeringInstructorIds } from "./discussions.server";
 import { studentVisibleFeedback } from "./student-notes.server";
 import { isSessionCheckInOpen } from "./session-checkin.server";
+import {
+  certificateEligibility,
+  sessionsNeededForEligibility,
+} from "./certificates.server";
 import type { AttendanceStatus } from "~/generated/prisma/client";
 
 export async function listMaterialPages(offeringId: string) {
@@ -297,6 +301,7 @@ export async function getStudentDashboard(userId: string) {
         },
       },
       attendances: { select: { sessionId: true, status: true } },
+      certificate: { select: { id: true } },
     },
   });
 
@@ -316,6 +321,9 @@ export async function getStudentDashboard(userId: string) {
     total: number;
     nextSessionAt: Date | null;
     isPast: boolean;
+    // Redesign shelf-card fields — v1 StudentDashboard ignores them.
+    sessionDots: { id: string; datetime: Date; present: boolean }[];
+    certificateId: string | null;
   }[] = [];
 
   for (const app of apps) {
@@ -335,6 +343,12 @@ export async function getStudentDashboard(userId: string) {
       total: off.sessions.length,
       nextSessionAt: upcoming[0]?.datetime ?? null,
       isPast: off.closedOutAt != null || (off.endsAt != null && off.endsAt < now),
+      sessionDots: off.sessions.map((s) => ({
+        id: s.id,
+        datetime: s.datetime,
+        present: present.has(s.id),
+      })),
+      certificateId: app.certificate?.id ?? null,
     });
     for (const s of off.sessions) {
       if (present.has(s.id)) continue;
@@ -397,7 +411,25 @@ export async function getStudentDashboard(userId: string) {
         (x.dueAt ? +new Date(x.dueAt) : Infinity) - (y.dueAt ? +new Date(y.dueAt) : Infinity),
     );
 
-  return { openCheckIns, dueSoon, myCourses };
+  // Per-course open-due rollup for the redesign shelf cards ("1 due Thu").
+  const dueByOffering = new Map<string, { count: number; soonestDueAt: Date | null }>();
+  for (const d of dueSoon) {
+    const entry = dueByOffering.get(d.offeringId!) ?? { count: 0, soonestDueAt: null };
+    entry.count += 1;
+    if (d.dueAt && (entry.soonestDueAt == null || d.dueAt < entry.soonestDueAt))
+      entry.soonestDueAt = d.dueAt;
+    dueByOffering.set(d.offeringId!, entry);
+  }
+
+  return {
+    openCheckIns,
+    dueSoon,
+    myCourses: myCourses.map((c) => ({
+      ...c,
+      openDueCount: dueByOffering.get(c.offeringId)?.count ?? 0,
+      soonestDueAt: dueByOffering.get(c.offeringId)?.soonestDueAt ?? null,
+    })),
+  };
 }
 
 /** Session list for the hub — includes the caller's own attendance marks. */
@@ -448,7 +480,15 @@ export async function getHubData(args: {
 }) {
   const offering = await prisma.educationOffering.findUnique({
     where: { id: args.offeringId },
-    select: { id: true, title: true, descriptionDocId: true },
+    select: {
+      id: true,
+      title: true,
+      descriptionDocId: true,
+      type: true,
+      status: true,
+      completionThreshold: true,
+      closedOutAt: true,
+    },
   });
   if (!offering) return null;
 
@@ -514,6 +554,44 @@ export async function getHubData(args: {
       })
     : null;
 
+  // Uploaded course files (S3-backed, not Page records). Served through
+  // /api/upload/raw so portal users can open them too (session-authed,
+  // unlike the member-shell /documents/file/:id route).
+  const files = await prisma.projectFile.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: args.offeringId,
+      archivedAt: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      folderPageId: true,
+      currentVersion: { select: { s3Key: true, fileName: true } },
+    },
+  });
+
+  // Journey-band certificate node, computed server-side (student lens).
+  const present = sessions.filter((s) => s.myAttendance === "Present").length;
+  const excused = sessions.filter((s) => s.myAttendance === "Excused").length;
+  const eligibilityArgs = {
+    type: offering.type as "Miniseries" | "Workshop",
+    totalSessions: sessions.length,
+    present,
+    excused,
+    threshold: offering.completionThreshold,
+  };
+  const certificateProgress = args.applicationId
+    ? {
+        eligible: certificateEligibility(eligibilityArgs),
+        sessionsNeeded: sessionsNeededForEligibility(eligibilityArgs),
+        attended: present,
+        excused,
+        total: sessions.length,
+      }
+    : null;
+
   const submissionByAssignment = new Map(mySubmissions.map((s) => [s.assignmentId, s]));
 
   return {
@@ -521,6 +599,10 @@ export async function getHubData(args: {
       id: offering.id,
       title: offering.title,
       descriptionHtml,
+      type: offering.type,
+      status: offering.status,
+      completionThreshold: offering.completionThreshold,
+      closedOutAt: offering.closedOutAt,
     },
     instructors: await Promise.all(
       instructors.map(async (i) => ({
@@ -559,6 +641,15 @@ export async function getHubData(args: {
     threads,
     myFeedback,
     myCertificateId: myCertificate?.id ?? null,
+    certificateProgress,
+    files: files.map((f) => ({
+      id: f.id,
+      title: f.title,
+      folderPageId: f.folderPageId,
+      href: f.currentVersion
+        ? `/api/upload/raw?key=${encodeURIComponent(f.currentVersion.s3Key)}`
+        : null,
+    })),
     isManager: args.isManager,
     currentUserId: args.userId,
     currentUserName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",

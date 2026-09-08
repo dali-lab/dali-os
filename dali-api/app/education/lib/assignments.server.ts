@@ -235,6 +235,19 @@ export async function submitAssignment(args: {
   if (!assignment) return { error: "Assignment not found", status: 404 };
   if (assignment.dueAt && assignment.dueAt < new Date())
     return { error: "This assignment is past due", status: 400 };
+  // Resubmission ends once feedback exists — regrading stays possible, but a
+  // graded submission is a settled artifact.
+  const existing = await prisma.educationSubmission.findUnique({
+    where: {
+      assignmentId_studentId: {
+        assignmentId: args.assignmentId,
+        studentId: args.studentId,
+      },
+    },
+    select: { gradedAt: true },
+  });
+  if (existing?.gradedAt)
+    return { error: "This submission has been graded and can no longer be changed", status: 400 };
 
   const text = args.textContent.trim();
   const link = args.link?.trim() ?? "";
@@ -374,6 +387,41 @@ export async function listSubmissions(assignmentId: string) {
       student: { select: { id: true, firstName: true, lastName: true } },
     },
   });
+}
+
+/**
+ * Grades/scores keyed by (applicationId → assignmentId) for the Approved
+ * roster — feeds the RosterMatrix performance view on both the legacy manage
+ * route and the redesign People surface.
+ */
+export async function getPerformanceByApplication(
+  offeringId: string,
+  assignmentIds: string[],
+): Promise<Record<string, Record<string, { grade: string | null; score: number | null }>>> {
+  if (assignmentIds.length === 0) return {};
+  const approvedApplications = await prisma.educationApplication.findMany({
+    where: { offeringId, status: "Approved" },
+    select: { id: true, applicantUserId: true },
+  });
+  if (approvedApplications.length === 0) return {};
+  const submissions = await prisma.educationSubmission.findMany({
+    where: {
+      assignmentId: { in: assignmentIds },
+      studentId: { in: approvedApplications.map((a) => a.applicantUserId) },
+    },
+    select: { assignmentId: true, studentId: true, grade: true, score: true },
+  });
+  const appIdByUser = new Map(
+    approvedApplications.map((a) => [a.applicantUserId, a.id]),
+  );
+  const byApp: Record<string, Record<string, { grade: string | null; score: number | null }>> = {};
+  for (const sub of submissions) {
+    const appId = appIdByUser.get(sub.studentId);
+    if (!appId) continue;
+    if (!byApp[appId]) byApp[appId] = {};
+    byApp[appId][sub.assignmentId] = { grade: sub.grade, score: sub.score };
+  }
+  return byApp;
 }
 
 export async function gradeSubmission(args: {

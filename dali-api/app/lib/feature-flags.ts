@@ -133,6 +133,12 @@ export const FEATURE_FLAGS = [
     description:
       "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
   },
+  {
+    key: "education-redesign",
+    label: "Education redesign",
+    description:
+      "Journey-band course page shared by students and instructors (Editing mode replaces the 8-tab manage screen), one-URL apply funnel with visible waitlist rank, and the courses-shelf hub with the CE chip. Ships off. Portal (non-member) users hold no roles, so role targeting never reaches them — use explicit users or Everyone when rolling out the portal side.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

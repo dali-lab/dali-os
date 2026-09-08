@@ -190,6 +190,8 @@ export default [
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
     route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
+    route("education/:offeringId/people", "education/routes/education.$offeringId.people.tsx"),
+    route("education/:offeringId/setup", "education/routes/education.$offeringId.setup.tsx"),
     route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
     route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
@@ -258,6 +260,8 @@ export default [
     route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
     route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
     route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
+    route("portal/education/:offeringId/people", "routes/portal.education.$offeringId.people.tsx"),
+    route("portal/education/:offeringId/setup", "routes/portal.education.$offeringId.setup.tsx"),
     route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
     route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),

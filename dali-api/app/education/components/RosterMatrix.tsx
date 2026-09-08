@@ -396,7 +396,7 @@ function PerformanceTable({
 }
 
 /** The active session as a comfortable list, for marking a room quickly. */
-function MarkingList({
+export function MarkingList({
   sessionId,
   students,
   onSaved,

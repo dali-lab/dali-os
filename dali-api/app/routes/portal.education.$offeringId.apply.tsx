@@ -2,6 +2,8 @@ import { redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId.apply";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   getOfferingDetail,
   registrationOpen,
@@ -25,6 +27,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "member")
     return redirect(`/education/${params.offeringId}/apply`);
+
+  // Redesign: the funnel lives on the offering-detail URL.
+  const roles = await getUserRoles(auth.user.sub, request);
+  if (await isFeatureEnabled("education-redesign", auth.user.sub, roles, request))
+    return redirect(`/portal/education/${params.offeringId}?step=apply`);
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering || offering.status !== "Published")

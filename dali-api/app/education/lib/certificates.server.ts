@@ -33,6 +33,28 @@ export function certificateEligibility(args: {
   return (args.present + args.excused) / args.totalSessions >= threshold;
 }
 
+/**
+ * How many more counted sessions (Present, or Excused for miniseries) this
+ * student needs before certificateEligibility flips true. 0 when already
+ * eligible; for a zero-session offering there is nothing attainable → 0.
+ */
+export function sessionsNeededForEligibility(args: {
+  type: "Miniseries" | "Workshop";
+  totalSessions: number;
+  present: number;
+  excused: number;
+  threshold?: number;
+}): number {
+  if (args.totalSessions === 0) return 0;
+  if (certificateEligibility(args)) return 0;
+  if (args.type === "Workshop") return 1;
+  const threshold = args.threshold ?? 0.8;
+  return Math.max(
+    0,
+    Math.ceil(args.totalSessions * threshold - (args.present + args.excused)),
+  );
+}
+
 export type CloseOutResult =
   | { ok: true; issued: number; alreadyIssued: number; ineligible: number }
   | { error: string; status: number };

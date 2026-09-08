@@ -1,4 +1,4 @@
-import { useLoaderData, Link, Form } from "react-router";
+import { redirect, useLoaderData, Link, Form } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.$offeringId";
 import { requireAuth } from "~/lib/auth";
@@ -11,19 +11,28 @@ import {
   getOfferingDetail,
   registrationOpen,
 } from "~/education/lib/offerings.server";
+import { loadOfferingApplicationForm } from "~/education/lib/application-form.server";
+import {
+  submitApplication,
+  getMyApplication,
+} from "~/education/lib/apply.server";
 import { collabDocToHtml } from "~/collab/export";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import {
   TypeBadge,
   StatusBadge,
   MyStatusChip,
   registrationWindowLabel,
 } from "~/education/components/OfferingCard";
+import { OfferingFunnel } from "~/education/components/v2/OfferingFunnel";
 import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { formatDateTime, formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -52,39 +61,115 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // After the gate — a course the viewer can open lands in their recents.
   recordRouteVisit(auth.user.sub, `/education/${offering.id}`, offering.title, request);
 
+  const url = new URL(request.url);
+  const step = url.searchParams.get("step");
+
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+
   const [descriptionHtml, myApplication] = await Promise.all([
     offering.descriptionDocId
       ? collabDocToHtml(offering.descriptionDocId)
       : Promise.resolve(""),
-    prisma.educationApplication.findUnique({
-      where: {
-        applicantUserId_offeringId: {
-          applicantUserId: auth.user.sub,
-          offeringId: offering.id,
-        },
-      },
-      select: { id: true, status: true },
-    }),
+    redesign
+      ? getMyApplication(auth.user.sub, offering.id)
+      : prisma.educationApplication.findUnique({
+          where: {
+            applicantUserId_offeringId: {
+              applicantUserId: auth.user.sub,
+              offeringId: offering.id,
+            },
+          },
+          select: { id: true, status: true },
+        }),
   ]);
 
+  const canApply =
+    registrationOpen(offering) &&
+    (!myApplication ||
+      myApplication.status === "Withdrawn" ||
+      myApplication.status === "Submitted");
+
+  if (!redesign) {
+    return {
+      redesign: false as const,
+      offering: {
+        ...offering,
+        sessions: offering.sessions.map((s) => ({
+          id: s.id,
+          sequence: s.sequence,
+          datetime: s.datetime,
+          location: s.location,
+        })),
+      },
+      descriptionHtml,
+      myStatus: myApplication?.status ?? null,
+      isManager,
+      canApply,
+    };
+  }
+
+  // Redesign path: load form data when ?step=apply and the user can apply.
+  let applyForm: {
+    questions: import("~/types").Question[];
+    description: unknown;
+    defaultAnswers?: Record<string, string>;
+    versionUpdatedAt?: string;
+  } | null = null;
+
+  if (step === "apply" && canApply) {
+    const form = await loadOfferingApplicationForm(offering.id, auth.user.sub);
+    if (form) {
+      applyForm = {
+        questions: form.questions,
+        description: ensureBlocks(form.description ?? null),
+        versionUpdatedAt: form.versionUpdatedAt,
+        defaultAnswers:
+          myApplication?.status === "Submitted"
+            ? ((("formSubmission" in myApplication
+                ? myApplication.formSubmission?.answers
+                : undefined) ?? {}) as Record<string, string>)
+            : undefined,
+      };
+    }
+  }
+
+  const resolvedStep =
+    step === "apply" && canApply ? "apply" : myApplication && myApplication.status !== "Withdrawn" ? "status" : "detail";
+
   return {
+    redesign: true as const,
     offering: {
-      ...offering,
+      id: offering.id,
+      type: offering.type,
+      title: offering.title,
+      status: offering.status,
+      capacity: offering.capacity,
+      approvedCount: offering.approvedCount,
+      requiresReview: offering.requiresReview,
+      registrationOpensAt: offering.registrationOpensAt,
+      registrationClosesAt: offering.registrationClosesAt,
+      startsAt: offering.startsAt,
+      endsAt: offering.endsAt,
+      instructors: offering.instructors,
       sessions: offering.sessions.map((s) => ({
         id: s.id,
         sequence: s.sequence,
         datetime: s.datetime,
         location: s.location,
       })),
+      descriptionHtml,
     },
-    descriptionHtml,
     myStatus: myApplication?.status ?? null,
+    waitlistRank:
+      myApplication && "waitlistRank" in myApplication
+        ? (myApplication.waitlistRank ?? null)
+        : null,
+    canApply,
     isManager,
-    canApply:
-      registrationOpen(offering) &&
-      (!myApplication ||
-        myApplication.status === "Withdrawn" ||
-        myApplication.status === "Submitted"),
+    applyForm,
+    step: resolvedStep as "detail" | "apply" | "status",
+    basePath: "/education",
   };
 }
 
@@ -92,20 +177,63 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const formData = await request.formData();
-  if (formData.get("intent") !== "withdraw")
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
-  const result = await withdrawApplication({
-    userId: auth.user.sub,
-    offeringId: params.offeringId!,
-  });
-  if ("error" in result && typeof result.error === "string")
-    return Response.json({ error: result.error }, { status: result.status });
-  return { ok: true };
+  // OfferingApplyForm posts bare answers (no intent field) — same shape the
+  // legacy /apply route action consumed.
+  const intent =
+    formData.get("intent") ?? (formData.has("answers") ? "submit-application" : null);
+
+  if (intent === "withdraw") {
+    const result = await withdrawApplication({
+      userId: auth.user.sub,
+      offeringId: params.offeringId!,
+    });
+    if ("error" in result && typeof result.error === "string")
+      return Response.json({ error: result.error }, { status: result.status });
+    return { ok: true };
+  }
+
+  if (intent === "submit-application") {
+    let answers: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(String(formData.get("answers") ?? ""));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("bad shape");
+      answers = parsed as Record<string, unknown>;
+    } catch {
+      return Response.json({ error: "Invalid submission." }, { status: 400 });
+    }
+
+    const result = await submitApplication({
+      offeringId: params.offeringId!,
+      userId: auth.user.sub,
+      answers,
+      versionUpdatedAt: (formData.get("versionUpdatedAt") as string) || undefined,
+    });
+    if ("error" in result)
+      return Response.json({ error: result.error }, { status: result.status });
+    return redirect(`/education/${params.offeringId}`);
+  }
+
+  return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
 export default function OfferingDetail() {
-  const { offering, descriptionHtml, myStatus, isManager, canApply } =
-    useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+
+  // Branch between whole components (not inline early-return before hooks) so
+  // a flag flip mid-session can't change this component's hook order.
+  if (data.redesign) {
+    return <OfferingFunnel data={data} />;
+  }
+  return <OfferingDetailV1 data={data} />;
+}
+
+function OfferingDetailV1({
+  data,
+}: {
+  data: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { redesign: false }>;
+}) {
+  const { offering, descriptionHtml, myStatus, isManager, canApply } = data;
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
