@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
-import { Tooltip } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBE_META } from "../lib/vibe";
@@ -12,6 +12,19 @@ import type {
   GridMentorGroup,
   GridPerson,
 } from "../lib/mentor-grid.server";
+
+// Core-only inline editing (behind the mentorship-manage flag). When present,
+// each mentee row gains a reassign picker + a remove button. Left undefined for
+// plain viewers and the hub, which stay read-only.
+export type MentorGridEdit = {
+  busy: boolean;
+  // Reassign candidates for this row — roster mentors in the row's domain. The
+  // current mentor is added by the grid itself (it knows the group), so this
+  // may safely omit it.
+  mentorOptionsFor: (row: GridMenteeRow) => { value: string; label: string }[];
+  onReassign: (row: GridMenteeRow, mentorUserId: string) => void;
+  onRemove: (row: GridMenteeRow) => void;
+};
 
 function fullName(u: GridPerson) {
   return `${u.firstName} ${u.lastName}`.trim();
@@ -29,6 +42,7 @@ export function MentorGrid({
   termId,
   highlightMissing,
   heading,
+  edit,
 }: {
   group: GridMentorGroup;
   weeks: number[];
@@ -36,6 +50,7 @@ export function MentorGrid({
   termId: string;
   highlightMissing: boolean;
   heading?: string;
+  edit?: MentorGridEdit;
 }) {
   const { os, panel, panelPad, heading: headingClass } = useOsChrome();
   return (
@@ -79,25 +94,42 @@ export function MentorGrid({
                   </Tooltip>
                 </th>
               ))}
+              {edit && (
+                <th className="pl-3 text-left font-medium text-muted-foreground pb-1">
+                  Mentor
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {group.rows.map((row) => (
               <tr key={row.key}>
-                <td className="pr-3 whitespace-nowrap">
-                  <span className="inline-flex items-center gap-2 align-middle">
+                {/* Fixed-width identity cell: avatar left, name stacked over
+                    project · domain. Stacking (not inline) keeps the name and
+                    the project text starting at the same x on every row, so the
+                    column reads as a column regardless of how long either is. */}
+                <td className="pr-3 align-middle">
+                  <div className="flex items-center gap-2 max-w-[16rem]">
                     <Avatar
                       photoUrl={row.mentee.photoUrl}
                       name={fullName(row.mentee)}
                       size="xs"
                     />
-                    <span className="font-medium text-foreground">
-                      {fullName(row.mentee)}
-                    </span>
-                  </span>{" "}
-                  <span className="text-xs text-muted-foreground">
-                    {row.projectName} · {row.domainCode}
-                  </span>
+                    <div className="flex flex-col leading-tight min-w-0">
+                      <span
+                        className="font-medium text-foreground truncate"
+                        title={fullName(row.mentee)}
+                      >
+                        {fullName(row.mentee)}
+                      </span>
+                      <span
+                        className="text-xs text-muted-foreground truncate"
+                        title={`${row.projectName} · ${row.domainCode}`}
+                      >
+                        {row.projectName} · {row.domainCode}
+                      </span>
+                    </div>
+                  </div>
                 </td>
                 {row.cells.map((cell) => (
                   <td key={cell.week} className="text-center">
@@ -109,6 +141,43 @@ export function MentorGrid({
                     />
                   </td>
                 ))}
+                {edit && (
+                  <td className="pl-3 whitespace-nowrap">
+                    <div className="inline-flex items-center gap-2">
+                      <Select
+                        ariaLabel={`Reassign ${fullName(row.mentee)}'s mentor`}
+                        value={group.mentor.id}
+                        onChange={(v) => {
+                          if (v && v !== group.mentor.id) edit.onReassign(row, v);
+                        }}
+                        options={[
+                          { value: group.mentor.id, label: fullName(group.mentor) },
+                          ...edit
+                            .mentorOptionsFor(row)
+                            .filter((o) => o.value !== group.mentor.id),
+                        ]}
+                        buttonClassName="min-w-[9rem] text-xs"
+                      />
+                      {row.manual && (
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          manual
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => edit.onRemove(row)}
+                        disabled={edit.busy}
+                        className="text-muted-foreground hover:text-red-500 disabled:opacity-50"
+                        title="Remove pairing"
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden />
+                        <span className="sr-only">
+                          Remove {fullName(row.mentee)} pairing
+                        </span>
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -641,6 +641,7 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+  route("api/mentorship/roster", "mentorship/routes/api.mentorship.roster.ts"),
 
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
