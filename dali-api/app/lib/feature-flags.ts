@@ -132,6 +132,8 @@ export const FEATURE_FLAGS = [
     label: "Manage mentorship pairs",
     description:
       "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
+  },
+  {
     key: "sprint-view",
     label: "Sprint view",
     description:
