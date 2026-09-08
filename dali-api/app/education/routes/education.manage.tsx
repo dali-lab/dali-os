@@ -5,16 +5,12 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { listManageable, runOfferingAction } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
-import { educationPills } from "~/education/components/educationPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { useEffect } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Manage Education · DALI OS" },
@@ -148,13 +144,6 @@ export default function ManageEducation() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* The education area pills assume the member shell; an external instructor
-          runs in the lightweight InstructorChrome, so the pill row is hidden. */}
-      {!isExternal && (
-        <AreaPillNav
-          items={educationPills({ canManage: true, isCore, active: "manage" })}
-        />
-      )}
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

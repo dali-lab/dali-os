@@ -271,7 +271,7 @@ export default function AppLayoutRoute() {
   // Mirror the os-shell class to <html> so portals that escape the shell div
   // keep the palette. In the tab-mode iframe this is the only place that runs it.
   useOsShellRoot(true)
-  const hasAreaSubnav = hasSubnavRow(matches, true)
+  const hasAreaSubnav = hasSubnavRow(matches)
   // Pages that land directly on their own title, with no subnav in between,
   // ask for a wider gap under the trail (see adminHandle).
   const roomyBreadcrumb = matches.some(

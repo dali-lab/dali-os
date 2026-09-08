@@ -110,9 +110,6 @@ export function TaskModal({
 }) {
   const dialog = useDialog();
   const isCreate = !task;
-  // Still consumed by FieldPair/ModalSection props below; the dead classic
-  // branches are gone but the os-only children keep their flag-agnostic prop.
-  const os = true;
   // The design opens a detail modal as a record — labels over plain values,
   // no footer — and the pencil turns it into a form. Creating is always a
   // form; there is no record yet to read.
@@ -839,7 +836,6 @@ export function TaskModal({
 
         {!isCreate && (
           <ModalSection
-            os={os}
             bordered={false}
             className="mb-4 gap-1.5 text-xs"
             title={
@@ -919,7 +915,7 @@ export function TaskModal({
             />
           </PropRow>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Starts">
             <DateField
               mode="date"
@@ -950,7 +946,7 @@ export function TaskModal({
           </PropRow>
           </FieldPair>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Domain">
             <Select
               value={domainId}
@@ -979,7 +975,7 @@ export function TaskModal({
             <h3 className="os-section-header">Links</h3>
           </>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Epic">
             <Select
               value={epicId}
@@ -1024,7 +1020,7 @@ export function TaskModal({
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (
-          <ModalSection os={os} title="GitHub" className="gap-2">
+          <ModalSection title="GitHub" className="gap-2">
             <Checkbox
               label="Create GitHub issue"
               checked={githubEnabled}
@@ -1043,7 +1039,7 @@ export function TaskModal({
         )}
 
         {!isCreate && task && (github.url || (canManage && githubRepos.length > 0)) && (
-          <ModalSection os={os} title="GitHub" className="gap-2 text-xs">
+          <ModalSection title="GitHub" className="gap-2 text-xs">
             {github.url ? (
               <div className="flex items-center justify-between gap-2">
                 <a
@@ -1128,7 +1124,6 @@ export function TaskModal({
 
         {!isCreate && task && (canManage || artifacts.length > 0) && (
           <ModalSection
-            os={os}
             className="gap-2 text-xs"
             title={
               <>
@@ -1230,7 +1225,6 @@ export function TaskModal({
 
         {!isCreate && task && (
           <ModalSection
-            os={os}
             // os-live: commenting stays available on a read-only record.
             className="gap-3 os-live"
             title={
@@ -1418,7 +1412,7 @@ function Field({
 
 // Two fields on one line (the design's .field-row). The classic panel doesn't
 // pair — its rows are ruled, so they have to stay direct children of it.
-function FieldPair({ os, children }: { os: boolean; children: React.ReactNode }) {
+function FieldPair({ children }: { children: React.ReactNode }) {
   return <div className="os-field-row">{children}</div>;
 }
 
@@ -1426,13 +1420,11 @@ function FieldPair({ os, children }: { os: boolean; children: React.ReactNode })
 // each with a rule and names it in caps; the classic modal uses a hairline and
 // a quiet caption.
 function ModalSection({
-  os,
   title,
   className,
   bordered = true,
   children,
 }: {
-  os: boolean;
   title: React.ReactNode;
   className?: string;
   bordered?: boolean;

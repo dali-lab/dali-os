@@ -30,14 +30,11 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "intent-to-work" as const;
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intent to Work · DALI OS" },
@@ -392,7 +389,6 @@ function Header({
   const { pageTitle } = useOsChrome();
   return (
     <>
-    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "intent" })} />
     <header className="flex items-start justify-between gap-3">
       <h1 className={pageTitle}>Intent to Work</h1>
       {onOpenSettings && (

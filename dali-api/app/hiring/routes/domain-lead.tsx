@@ -5,8 +5,6 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
-import { hiringPills } from "~/hiring/components/hiringPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { createDomainChallengeForm } from "~/hiring/lib/application-form.server";
@@ -41,8 +39,6 @@ const STATUS_MESSAGES: Record<string, string> = {
   UnderReview: "Submissions are closed. Review applications below.",
   Completed: "Decisions have been released to applicants.",
 };
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -593,10 +589,6 @@ export default function DomainLeadDashboard() {
   const revalidator = useRevalidator();
   const domainData = data?.domainData ?? [];
 
-  const areaPills = data?.pillRoles && (
-    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "domain" })} />
-  );
-
   if (domainData.length === 0) {
     return (
       <div className="text-center py-16">
@@ -608,7 +600,6 @@ export default function DomainLeadDashboard() {
 
   return (
     <div className="space-y-8">
-      {areaPills}
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {

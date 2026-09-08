@@ -12,9 +12,7 @@ import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
-import { mentorshipPills } from "../components/mentorshipPills";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
@@ -44,7 +42,6 @@ export const meta: Route.MetaFunction = () => [
 
 // Suppresses the breadcrumb trail (see layout wayfinding contract).
 export const handle = {
-  areaPills: true,
   docKey: "mentorship.notes",
   docTitle: "Mentorship notes",
 };
@@ -184,7 +181,6 @@ export default function MentorNoteEditor() {
 
   return (
     <main className="flex flex-col gap-4 w-full min-w-0">
-      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
         <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
         <p className={cn(bodyText, "inline-flex items-center gap-1")}>
