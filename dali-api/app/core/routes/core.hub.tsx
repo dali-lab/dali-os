@@ -410,7 +410,7 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         location: ev.location ?? undefined,
         organizerName: ev.organizerName ?? undefined,
         links: ev.notePageId
-          ? [{ label: "Meeting notes", href: `/documents/${ev.notePageId}` }]
+          ? [{ label: "Meeting notes", href: `/documents/${ev.notePageId}`, kind: "notes" as const }]
           : undefined,
       },
       eventsByDay,

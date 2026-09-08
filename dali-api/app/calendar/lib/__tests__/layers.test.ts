@@ -112,6 +112,39 @@ describe("buildExternalLayer", () => {
     expect(layer[1]).toBeUndefined();
   });
 
+  it("gives the block the RSVP identity the popover writes back with", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        {
+          startIso: "2026-08-16T09:00:00.000Z", endIso: "2026-08-16T10:00:00.000Z",
+          title: "Team sync", color: null, eventId: "ev1", linkId: "link1", calendarId: "cal-a",
+          rsvp: "Pending",
+        },
+      ] as LoaderData["externalEvents"],
+    });
+    expect(buildExternalLayer(data, days)[0][0].rsvp).toEqual({
+      status: "Pending",
+      eventId: "ev1",
+      linkId: "link1",
+      calendarId: "cal-a",
+      recurringEventId: null,
+    });
+  });
+
+  it("offers no RSVP on an event the viewer isn't a guest on", () => {
+    const days = buildGridDays(WEEK, 7);
+    const data = fixture({
+      externalEvents: [
+        {
+          startIso: "2026-08-16T09:00:00.000Z", endIso: "2026-08-16T10:00:00.000Z",
+          title: "Focus time", color: null, eventId: "ev1", linkId: "link1",
+        },
+      ] as LoaderData["externalEvents"],
+    });
+    expect(buildExternalLayer(data, days)[0][0].rsvp).toBeUndefined();
+  });
+
   it("hides events from calendars in hiddenCalendarIds", () => {
     const days = buildGridDays(WEEK, 7);
     const data = fixture({

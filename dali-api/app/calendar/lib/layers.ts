@@ -184,6 +184,19 @@ export function buildExternalLayer(
         links: e.links,
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
+        meeting: e.meeting,
+        // The RSVP control needs the event's identity to write back to Google;
+        // an event the viewer isn't a guest on carries no rsvp and gets none.
+        rsvp:
+          e.rsvp && e.eventId && e.linkId
+            ? {
+                status: e.rsvp,
+                eventId: e.eventId,
+                linkId: e.linkId,
+                calendarId: e.calendarId ?? null,
+                recurringEventId: e.recurringEventId ?? null,
+              }
+            : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
         // Delete affordances in the detail popover and can be dragged.

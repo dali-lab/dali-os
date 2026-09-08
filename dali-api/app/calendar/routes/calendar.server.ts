@@ -44,12 +44,15 @@ import {
   getValidAccessTokenForLink,
   listCalendarsForLink,
   subscribeCalendarForLink,
+  respondToGoogleEventAsSelf,
+  NotAGuestError,
   type CalendarEvent,
 } from "~/lib/google-calendar";
 import {
   generalCalendarId,
   generalCalendarState,
 } from "~/lib/general-calendar";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -66,6 +69,8 @@ import type {
   ExternalEventDTO,
   EventAttendeeDTO,
   EventLinkDTO,
+  EventMeetingDTO,
+  RsvpStatus,
   LoaderData,
   EventBlock,
   GroupAvailDay,
@@ -85,7 +90,7 @@ import {
 // whichever calendar the event came from.
 const GOOGLE_RSVP_LABEL: Record<
   "accepted" | "declined" | "tentative" | "needsAction",
-  EventAttendeeDTO["status"]
+  RsvpStatus
 > = {
   accepted: "Accepted",
   declined: "Declined",
@@ -107,9 +112,68 @@ function externalAttendees(
 }
 function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
   return [
-    ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl }] : []),
-    ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink }] : []),
+    ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl, kind: "video" as const }] : []),
+    ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink, kind: "source" as const }] : []),
   ];
+}
+
+/**
+ * The DALI meetings behind a set of Google events, keyed by the event id to
+ * attach them to. A meeting DALI created records the Google event it made in
+ * `externalEventId`; recurring series match on the master id, which every
+ * expanded instance carries — so each occurrence of a weekly team meeting finds
+ * the same meeting (and the same notes doc).
+ *
+ * Only meetings the viewer is part of are returned: seeing an event on a shared
+ * calendar isn't grounds for reaching its attendance page.
+ */
+async function meetingsForExternalEvents(
+  events: CalendarEvent[],
+  userId: string,
+  canMarkCoreMeeting: boolean,
+): Promise<Map<string, EventMeetingDTO>> {
+  const seriesIds = new Set<string>();
+  for (const e of events) {
+    if (e.eventId) seriesIds.add(e.eventId);
+    if (e.recurringEventId) seriesIds.add(e.recurringEventId);
+  }
+  if (seriesIds.size === 0) return new Map();
+  const meetings = await prisma.scheduledMeeting.findMany({
+    where: {
+      externalEventId: { in: [...seriesIds] },
+      status: { not: "Cancelled" },
+      OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }],
+    },
+    select: {
+      id: true,
+      externalEventId: true,
+      isCoreMeeting: true,
+      notePage: { select: { id: true } },
+      timeEntries: { where: { userId }, select: { id: true }, take: 1 },
+    },
+  });
+  const byExternalId = new Map<string, EventMeetingDTO>();
+  for (const m of meetings) {
+    if (!m.externalEventId) continue;
+    byExternalId.set(m.externalEventId, {
+      meetingId: m.id,
+      notePageId: m.notePage?.id ?? null,
+      onTimesheet: m.timeEntries.length > 0,
+      isCoreMeeting: m.isCoreMeeting,
+      canMarkCoreMeeting,
+    });
+  }
+  // Re-key onto the ids the events themselves carry, so an instance of a
+  // recurring meeting resolves through its master.
+  const byEventId = new Map<string, EventMeetingDTO>();
+  for (const e of events) {
+    if (!e.eventId) continue;
+    const hit =
+      byExternalId.get(e.eventId) ??
+      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
+    if (hit) byEventId.set(e.eventId, hit);
+  }
+  return byEventId;
 }
 
 /**
@@ -453,6 +517,65 @@ function workLogShapeError(recurrenceRule: string | null, allDay: boolean): Resp
   return null;
 }
 
+const RSVP_RESPONSES = ["accepted", "declined", "tentative"] as const;
+type RsvpResponse = (typeof RSVP_RESPONSES)[number];
+const RSVP_ENUM: Record<RsvpResponse, "Accepted" | "Declined" | "Tentative"> = {
+  accepted: "Accepted",
+  declined: "Declined",
+  tentative: "Tentative",
+};
+
+/**
+ * Answer an invite from the calendar page. The write goes to Google on the
+ * viewer's own token, against their own copy of the event, so it works for any
+ * invite they can see — and Google is what the grid re-reads, so it stays the
+ * source of truth for the response.
+ *
+ * When the event is also a DALI meeting, the matching invite Notification is
+ * brought along: otherwise answering here would leave the same invite sitting
+ * unanswered in the task list.
+ */
+async function handleEventRsvp(opts: {
+  userId: string;
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  recurringEventId: string | null;
+  response: string;
+}): Promise<Response | null> {
+  const { userId, linkId, calendarId, eventId, recurringEventId } = opts;
+  if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
+  if (!RSVP_RESPONSES.includes(opts.response as RsvpResponse)) {
+    return Response.json({ error: "Unknown response" }, { status: 400 });
+  }
+  const response = opts.response as RsvpResponse;
+  try {
+    await respondToGoogleEventAsSelf({ linkId, calendarId, eventId, response });
+  } catch (err) {
+    if (err instanceof NotAGuestError) {
+      return Response.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+  // The series master is what a meeting records, so an instance answers for the
+  // meeting it belongs to.
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: {
+      externalEventId: { in: recurringEventId ? [eventId, recurringEventId] : [eventId] },
+    },
+    select: { id: true },
+  });
+  if (meeting) {
+    const { count } = await prisma.notification.updateMany({
+      where: { scheduledMeetingId: meeting.id, recipientUserId: userId },
+      data: { rsvp: RSVP_ENUM[response], rsvpAt: new Date(), readAt: new Date() },
+    });
+    // Converge the desktop badge rather than waiting for its sync backstop.
+    if (count > 0) publishNotificationChange([userId]);
+  }
+  return null;
+}
+
 // Create / edit / move / delete a Google Calendar event (calendar-unified
 // flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
@@ -478,6 +601,17 @@ async function handleEventAction(
   try {
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
+
+    if (intent === "event-rsvp") {
+      return handleEventRsvp({
+        userId,
+        linkId,
+        calendarId,
+        eventId: get("eventId"),
+        recurringEventId,
+        response: get("response"),
+      });
+    }
 
     if (intent === "event-delete") {
       const eventId = get("eventId");
@@ -1069,10 +1203,18 @@ export async function loadCalendarData(request: Request) {
   // (eventId/linkId/writable/allDay); the busy read is title/time only. Events
   // from the DALI Timesheet mirror calendar are dropped — the logged-time layer
   // already shows those hours, so keeping them would double every work block.
+  const crudEvents = crudEnabled
+    ? (externalRaw as CalendarEvent[]).filter(
+        (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
+      )
+    : [];
+  // One query for the whole window, not one per event.
+  const eventMeetings = crudEnabled
+    ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting)
+    : new Map<string, EventMeetingDTO>();
+
   const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? (externalRaw as CalendarEvent[])
-        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
-        .map((e) => ({
+    ? crudEvents.map((e) => ({
         startIso: e.startIso,
         endIso: e.endIso,
         title: e.title || "Busy",
@@ -1088,6 +1230,8 @@ export async function loadCalendarData(request: Request) {
         organizerName: e.organizerName,
         attendees: externalAttendees(e.attendees),
         links: externalLinks(e.meetingUrl, e.htmlLink),
+        rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
+        meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
       }))
     : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
         startIso: e.start,
