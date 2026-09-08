@@ -622,7 +622,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
               </td>
               <td className="px-4 py-2">
                 <div className="flex items-center gap-1.5">
-                  <StatusPill status={p.status} />
+                  <OsStatusTag status={p.status} />
                   <PublicPill status={p.showcaseStatus} />
                 </div>
               </td>
@@ -723,21 +723,22 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
   );
 }
 
-// The design's status tag: a translucent plate over the cover so it reads on
-// any photo, tinted per status the same way StatusPill is.
+// One plate for every chip a project wears — its status and its publication
+// state alike. They sit side by side in the corner of a card's cover, so a
+// difference between them is visible as a difference: they used to disagree
+// about padding, corner radius and weight all at once.
+const PROJECT_CHIP =
+  "inline-flex items-center gap-1 rounded-full border bg-os-bg/85 px-3 py-[5px] text-xs font-semibold";
+
+// The design's status tag: a translucent plate that reads on any photo, tinted
+// per status.
 function OsStatusTag({ status }: { status: ProjectStatus }) {
   const palette: Record<ProjectStatus, string> = {
     Active: "text-os-green border-os-green/35",
     Archived: "text-os-grey border-os-grey/35",
     Paused: "text-os-amber border-os-amber/35",
   };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border bg-os-bg/85 px-3 py-[5px] text-xs font-semibold ${palette[status]}`}
-    >
-      {status}
-    </span>
-  );
+  return <span className={`${PROJECT_CHIP} ${palette[status]}`}>{status}</span>;
 }
 
 function ProjectCard({ project }: { project: ProjectRow }) {
@@ -759,7 +760,7 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           <span className="truncate">{project.name}</span>
         </span>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <StatusPill status={project.status} />
+          <OsStatusTag status={project.status} />
           <PublicPill status={project.showcaseStatus} />
         </div>
       </div>
@@ -824,25 +825,10 @@ function PublicPill({ status }: { status: ShowcaseStatusValue | null }) {
   return (
     <span
       title="Published on dali.website"
-      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border bg-os-bg/85 text-accent-coral border-accent-coral/40"
+      className={`${PROJECT_CHIP} border-os-accent/35 text-os-accent`}
     >
-      <Globe className="w-3 h-3" />
+      <Globe className="h-3 w-3" />
       {SHOWCASE_LABELS.Published}
-    </span>
-  );
-}
-
-function StatusPill({ status }: { status: ProjectStatus }) {
-  const palette: Record<ProjectStatus, string> = {
-    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
-    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
-    Archived: "bg-muted/50 text-muted-foreground border-border",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded border ${palette[status]}`}
-    >
-      {status}
     </span>
   );
 }
