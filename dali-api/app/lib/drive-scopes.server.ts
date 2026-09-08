@@ -515,3 +515,34 @@ export async function loadProjectDriveScope({
     scopeAudience: "Project members",
   };
 }
+
+// Load the Drive scope for a single education offering, shaped the same way
+// as loadProjectDriveScope so it can be passed directly to DriveBrowser as an
+// embedded scope. Forms are excluded (education materials are docs/files only).
+export async function loadEducationDriveScope({
+  userSub,
+  offeringId,
+  offeringTitle,
+  request,
+}: {
+  userSub: string;
+  offeringId: string;
+  offeringTitle: string;
+  request: Request;
+}): Promise<DriveTreeScope> {
+  const items: DriveItem[] = await loadDriveScope({
+    userSub,
+    scope: { kind: "EducationOffering", offeringId },
+    canViewForms: false,
+    request,
+  });
+
+  return {
+    id: `education:${offeringId}`,
+    label: offeringTitle,
+    iconEmoji: null,
+    items,
+    systemManaged: false,
+    scopeAudience: "Enrolled members",
+  };
+}

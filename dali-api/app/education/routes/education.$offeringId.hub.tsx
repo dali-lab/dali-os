@@ -19,6 +19,7 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { loadEducationDriveScope } from "~/lib/drive-scopes.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI OS` },
@@ -75,7 +76,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? await getSessionRoster(params.offeringId!, rosterSessionId)
       : null;
 
-  return { hub, collabToken: parseSessionCookie(request), previewAsStudent, redesign, instructor, rosterForSession };
+  // Drive embed for the Files tab (redesign only). Loaded so tab-switching is
+  // instant; same cost profile as the project hub's equivalent.
+  const offeringDriveScope = redesign
+    ? await loadEducationDriveScope({
+        userSub: auth.user.sub,
+        offeringId: params.offeringId!,
+        offeringTitle: hub.offering.title,
+        request,
+      })
+    : null;
+
+  return { hub, collabToken: parseSessionCookie(request), previewAsStudent, redesign, instructor, rosterForSession, offeringDriveScope };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -101,7 +113,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberCourseHub() {
-  const { hub, collabToken, previewAsStudent, redesign, instructor, rosterForSession } = useLoaderData<typeof loader>();
+  const { hub, collabToken, previewAsStudent, redesign, instructor, rosterForSession, offeringDriveScope } = useLoaderData<typeof loader>();
 
   const previewPill = previewAsStudent ? (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
@@ -128,6 +140,7 @@ export default function MemberCourseHub() {
           instructor={instructor}
           rosterForSession={rosterForSession}
           previewAsStudent={previewAsStudent}
+          offeringDriveScope={offeringDriveScope ?? undefined}
         />
         {previewPill}
       </>

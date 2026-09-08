@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { withdrawApplication } from "~/education/lib/decisions.server";
+import { isOfferingManager } from "~/education/lib/access.server";
 import {
   getOfferingDetail,
   registrationOpen,
@@ -68,8 +69,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // External instructors browse their own offering here — same no-self-enroll
+  // rule as the member surface (submitApplication enforces it server-side).
   const canApply =
     registrationOpen(offering) &&
+    !(await isOfferingManager(auth.user.sub, offering.id)) &&
     (!myApplication ||
       myApplication.status === "Withdrawn" ||
       myApplication.status === "Submitted");

@@ -14,6 +14,7 @@ type StatusFilter = (typeof STATUS_FILTERS)[number];
 export type PeoplePaneProps = {
   offeringId: string;
   basePath: string;
+  showBackLink?: boolean;
   applications: {
     id: string;
     status: string;
@@ -51,6 +52,7 @@ export type PeoplePaneProps = {
 export function PeoplePane({
   offeringId,
   basePath,
+  showBackLink = true,
   applications,
   attendanceMatrix,
   assignmentsForPerformance,
@@ -78,14 +80,16 @@ export function PeoplePane({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center gap-3">
-        <Link
-          to={`${basePath}/hub`}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          ← Course hub
-        </Link>
-      </header>
+      {showBackLink && (
+        <header className="flex items-center gap-3">
+          <Link
+            to={`${basePath}/hub`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            ← Course hub
+          </Link>
+        </header>
+      )}
 
       <h1 className="font-heading text-2xl font-bold text-foreground">People</h1>
 

@@ -16,6 +16,7 @@ import { useConfirmSubmit } from "~/components/ui/dialog";
 export type SetupPaneProps = {
   offeringId: string;
   basePath: string;
+  showBackLink?: boolean;
   offering: {
     id: string;
     title: string;
@@ -65,6 +66,7 @@ export type SetupPaneProps = {
 export function SetupPane({
   offeringId,
   basePath,
+  showBackLink = true,
   offering,
   emailTemplates,
   decisionEmailBindings,
@@ -100,14 +102,16 @@ export function SetupPane({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center gap-3">
-        <Link
-          to={`${basePath}/hub`}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          ← Course hub
-        </Link>
-      </header>
+      {showBackLink && (
+        <header className="flex items-center gap-3">
+          <Link
+            to={`${basePath}/hub`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            ← Course hub
+          </Link>
+        </header>
+      )}
 
       <h1 className="font-heading text-2xl font-bold text-foreground">Setup</h1>
 
@@ -181,6 +185,14 @@ export function SetupPane({
             </Button>
           </Form>
         </div>
+        {core && (
+          <p className="text-xs text-muted-foreground">
+            Certificates issue automatically at close-out ·{" "}
+            <Link to="/education/compliance" className="underline hover:text-foreground">
+              CE Compliance →
+            </Link>
+          </p>
+        )}
       </section>
 
       {/* ── Application form ──────────────────────────────────── */}

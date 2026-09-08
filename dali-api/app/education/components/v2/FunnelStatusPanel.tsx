@@ -26,9 +26,6 @@ export function FunnelStatusPanel({
       <div className="rounded-lg border border-border bg-card p-5 flex items-center justify-between gap-4">
         <div>
           <p className="font-heading font-semibold text-foreground">You&apos;re in</p>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            You&apos;ve been approved. Open the course hub to see sessions, materials, and assignments.
-          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Link
@@ -51,7 +48,7 @@ export function FunnelStatusPanel({
             Waitlisted{waitlistRank != null ? ` · #${waitlistRank} in line` : ""}
           </p>
           <p className="text-sm text-muted-foreground mt-0.5">
-            If a seat opens before registration closes you&apos;ll be enrolled automatically and notified.
+            You&apos;ll be enrolled automatically if a seat opens.
           </p>
         </div>
         <WithdrawButton myStatus={myStatus} confirmSubmit={confirmSubmit} />
@@ -64,9 +61,6 @@ export function FunnelStatusPanel({
       <div className="rounded-lg border border-border bg-card p-5 flex items-center justify-between gap-4">
         <div>
           <p className="font-heading font-semibold text-foreground">Submitted · under review</p>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Instructors will review applications and notify you of their decision.
-          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Link

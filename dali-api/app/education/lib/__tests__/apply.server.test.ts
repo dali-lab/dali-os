@@ -4,9 +4,15 @@ vi.mock("~/lib/db");
 vi.mock("~/education/lib/notifications.server", () => ({
   notifyApplicationStatus: vi.fn(),
 }));
+vi.mock("~/education/lib/access.server", () => ({
+  isOfferingManager: vi.fn().mockResolvedValue(false),
+}));
 
 import { prisma } from "~/lib/db";
+import { isOfferingManager } from "~/education/lib/access.server";
 import { submitApplication } from "~/education/lib/apply.server";
+
+const mockIsManager = isOfferingManager as unknown as ReturnType<typeof vi.fn>;
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -63,6 +69,7 @@ beforeEach(() => {
   mockPrisma.educationApplication.findUnique.mockResolvedValue(null);
   mockPrisma.educationApplication.count.mockResolvedValue(0);
   mockPrisma.educationApplication.findFirst.mockResolvedValue(null);
+  mockIsManager.mockResolvedValue(false);
 });
 
 function primeOfferingAndForm(offering: Record<string, unknown>) {
@@ -74,6 +81,20 @@ function primeOfferingAndForm(offering: Record<string, unknown>) {
 }
 
 describe("submitApplication", () => {
+  it("rejects instructors enrolling in their own course", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValueOnce(offeringRow());
+    mockIsManager.mockResolvedValue(true);
+
+    const res = await submitApplication({
+      offeringId: "off-1",
+      userId: "instructor-1",
+      answers: { q1: "hi" },
+    });
+
+    expect(res).toMatchObject({ status: 403 });
+    expect(mockPrisma.educationApplication.create).not.toHaveBeenCalled();
+  });
+
   it("auto-approves an RSVP under capacity", async () => {
     primeOfferingAndForm(offeringRow());
     mockPrisma.educationApplication.count.mockResolvedValue(1); // 1 of 2 seats

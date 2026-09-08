@@ -53,10 +53,10 @@ export function LiveCheckInCount({
   }, [fetcher.data]);
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm text-white/80">
-      <span className="font-heading text-xl font-bold text-white">{data.present}</span>
+    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+      <span className="font-heading text-xl font-bold text-foreground">{data.present}</span>
       <span>of</span>
-      <span className="font-heading text-xl font-bold text-white">{data.total}</span>
+      <span className="font-heading text-xl font-bold text-foreground">{data.total}</span>
       <span>in</span>
     </span>
   );

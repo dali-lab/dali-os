@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
-import { FileText, Download } from "lucide-react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import { Link, useSearchParams, useNavigate, useRevalidator } from "react-router";
+import { FileText, Download, FolderPlus, Plus, ChevronDown, Upload } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { cn } from "~/lib/cn";
@@ -17,6 +17,17 @@ import {
   DiscussionBoard,
   type HubData,
 } from "../CourseHub";
+import { DriveBrowser } from "~/components/drive/DriveBrowser";
+import type { DriveItem } from "~/lib/drive.server";
+import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import type { RowActions } from "~/components/drive/DriveBrowser";
+import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { DestinationPicker } from "~/components/drive/DestinationPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { Select, Menu } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
 
 // ---------------------------------------------------------------------------
 // Instructor extras type (mirrors manage-hub.server getInstructorHubExtras)
@@ -47,17 +58,19 @@ export type SessionRoster = {
 // Tab definition
 // ---------------------------------------------------------------------------
 
-type TabKey = "journey" | "grades" | "talk" | "library" | "workspace" | "about";
+type TabKey = "journey" | "grades" | "discussions" | "files" | "workspace" | "about";
 
 const TAB_ALIASES: Record<string, TabKey> = {
   journey: "journey",
   grades: "grades",
-  talk: "talk",
-  library: "library",
+  discussions: "discussions",
+  files: "files",
   workspace: "workspace",
   about: "about",
   timeline: "journey",
-  discussions: "talk",
+  // legacy URL values
+  talk: "discussions",
+  library: "files",
   overview: "about",
 };
 
@@ -435,6 +448,468 @@ function toCertificateNode(data: HubData): CertificateNode {
 }
 
 // ---------------------------------------------------------------------------
+// Education Drive tab — embedded DriveBrowser locked to the offering's scope.
+// Mirrors ProjectDriveTab in projects.$id.tsx but targets education endpoints.
+// Managers (isEditing) get full create/upload/delete; students get browse-only.
+// ---------------------------------------------------------------------------
+
+type EduDriveTypeFilter = "all" | "doc" | "file";
+const EDU_TYPE_FILTERS: { value: EduDriveTypeFilter; label: string }[] = [
+  { value: "all", label: "All types" },
+  { value: "doc", label: "Documents" },
+  { value: "file", label: "Files" },
+];
+
+function folderSubtree(items: DriveItem[], rootId: string): Set<string> {
+  const childrenOf = new Map<string, string[]>();
+  for (const it of items) {
+    if (!it.parentFolderId) continue;
+    const arr = childrenOf.get(it.parentFolderId) ?? [];
+    arr.push(it.id);
+    childrenOf.set(it.parentFolderId, arr);
+  }
+  const out = new Set<string>([rootId]);
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const c of childrenOf.get(cur) ?? []) {
+      if (!out.has(c)) {
+        out.add(c);
+        stack.push(c);
+      }
+    }
+  }
+  return out;
+}
+
+function EducationDriveTab({
+  offeringId,
+  offeringDriveScope,
+  canEdit,
+}: {
+  offeringId: string;
+  offeringDriveScope: DriveTreeScope;
+  canEdit: boolean;
+}) {
+  const revalidator = useRevalidator();
+  const navigate = useNavigate();
+  const dialog = useDialog();
+  const toast = useToast();
+  const [search, setSearch] = useState("");
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<EduDriveTypeFilter>("all");
+  const scopeId = offeringDriveScope.id;
+  const revalidate = useCallback(() => revalidator.revalidate(), [revalidator]);
+
+  // File upload: education offerings have their own endpoint (manager-only).
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadFiles = useCallback(
+    async (files: File[]): Promise<void> => {
+      if (files.length === 0) return;
+      setUploading(true);
+      setUploadError(null);
+      try {
+        for (const file of files) {
+          const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
+          const presignRes = await fetch("/api/upload/presign", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              key,
+              contentType: file.type || "application/octet-stream",
+              contentLength: file.size,
+            }),
+          });
+          if (!presignRes.ok) {
+            const b = (await presignRes.json().catch(() => ({}))) as { error?: string };
+            throw new Error(b.error ?? "Failed to get upload URL");
+          }
+          const { url, fields, key: s3Key } = (await presignRes.json()) as {
+            url: string;
+            fields: Record<string, string>;
+            key: string;
+          };
+          const fd = new FormData();
+          for (const [name, value] of Object.entries(fields)) fd.append(name, value);
+          fd.append("file", file);
+          const uploadRes = await fetch(url, { method: "POST", body: fd });
+          if (!uploadRes.ok) throw new Error("Upload to storage failed");
+          const registerRes = await fetch(`/api/education/${offeringId}/files`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: file.name,
+              s3Key,
+              fileName: file.name,
+              contentType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+              ...(currentFolderId ? { folderPageId: currentFolderId } : {}),
+            }),
+          });
+          if (!registerRes.ok) {
+            const b = (await registerRes.json().catch(() => ({}))) as { error?: string };
+            throw new Error(b.error ?? "Failed to register file");
+          }
+        }
+        revalidate();
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [offeringId, currentFolderId, revalidate],
+  );
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = "";
+    await uploadFiles(files);
+  }
+
+  // Move-destination picker.
+  const [movePicker, setMovePicker] = useState<{
+    heading: string;
+    drives: PickerDrive[];
+    folders: PickerFolder[];
+    disabledFolderIds?: Set<string>;
+    disabledDest?: Destination;
+    initial?: Destination;
+  } | null>(null);
+  const movePickerResolve = useRef<((d: Destination | null) => void) | null>(null);
+  const resolveMovePicker = useCallback((d: Destination | null) => {
+    setMovePicker(null);
+    movePickerResolve.current?.(d);
+    movePickerResolve.current = null;
+  }, []);
+
+  const onNavigate = useCallback(
+    (_scopeId: string | null, folderId: string | null) => {
+      setCurrentFolderId(folderId);
+    },
+    [],
+  );
+
+  const onOpenItem = useCallback(
+    (item: DriveItem) => {
+      if (item.href) navigate(item.href);
+    },
+    [navigate],
+  );
+
+  const onMove = useCallback(
+    async (_scopeId: string, item: DriveItem, destFolderId: string | null) => {
+      try {
+        const res = await moveDriveItem(item, destFolderId);
+        if (!res.ok) {
+          toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+          return;
+        }
+        revalidator.revalidate();
+      } catch {
+        toast.error("Couldn't move");
+      }
+    },
+    [revalidator, toast],
+  );
+
+  const pickMoveDestination = useCallback(
+    (item: DriveItem, heading: string): Promise<Destination | null> => {
+      const rootId = offeringDriveScope.rootFolderId ?? null;
+      const drives: PickerDrive[] = [
+        { id: scopeId, label: offeringDriveScope.label, iconEmoji: offeringDriveScope.iconEmoji },
+      ];
+      const folders: PickerFolder[] = offeringDriveScope.items
+        .filter((f) => f.type === "folder")
+        .map((f) => ({
+          id: f.id,
+          driveId: scopeId,
+          parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
+          title: f.title,
+          iconEmoji: f.iconEmoji,
+        }));
+      const banned =
+        item.type === "folder" ? folderSubtree(offeringDriveScope.items, item.id) : undefined;
+      const currentFolder =
+        (item.parentFolderId ?? null) === rootId ? null : (item.parentFolderId ?? null);
+      const currentDest: Destination = { driveId: scopeId, folderId: currentFolder };
+      return new Promise<Destination | null>((resolve) => {
+        movePickerResolve.current = resolve;
+        setMovePicker({
+          heading,
+          drives,
+          folders,
+          disabledFolderIds: banned,
+          disabledDest: currentDest,
+          initial: currentDest,
+        });
+      });
+    },
+    [scopeId, offeringDriveScope],
+  );
+
+  const getScopeActions = useCallback(
+    (_scopeId: string): RowActions => ({
+      onRename: async (item) => {
+        const next = await dialog.prompt({
+          title: "Rename",
+          label: "Name",
+          defaultValue: item.title || "",
+          confirmLabel: "Save",
+          validate: (v) => (v.trim() ? null : "Enter a name"),
+        });
+        if (next === null) return;
+        const title = next.trim();
+        if (title === item.title) return;
+        const isFile = item.type === "file";
+        const res = isFile
+          ? await fetch(`/api/files/${item.id}`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intent: "rename", title }),
+            })
+          : await fetch(`/api/documents/${item.id}`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title }),
+            });
+        if (res.ok) revalidate();
+        else toast.error("Couldn't rename");
+      },
+      onRequestMove: async (item) => {
+        const dest = await pickMoveDestination(item, `Move "${item.title || "Untitled"}"`);
+        if (dest) await onMove(scopeId, item, dest.folderId);
+      },
+      onDelete: async (item) => {
+        const ok = await dialog.confirm({
+          title: `Delete "${item.title || "this item"}"?`,
+          description:
+            item.type === "folder" ? "The folder must be empty first." : "This moves it to the trash.",
+          tone: "destructive",
+          confirmLabel: "Delete",
+        });
+        if (!ok) return;
+        const isFile = item.type === "file";
+        const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
+        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+        if (res.ok) revalidate();
+        else toast.error("Couldn't delete");
+      },
+    }),
+    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId],
+  );
+
+  const onToggleFavorite = useCallback(
+    async (item: DriveItem) => {
+      if (item.type !== "doc" && item.type !== "folder") return;
+      await fetch(`/api/pages/${item.id}/favorite`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorited: !item.favorited }),
+      });
+      revalidate();
+    },
+    [revalidate],
+  );
+
+  const createPage = useCallback(
+    async (kind: "FreeForm" | "Folder", title: string): Promise<string | null> => {
+      const res = await fetch(`/api/education/${offeringId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind, ...(currentFolderId ? { parentPageId: currentFolderId } : {}) }),
+      });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
+    },
+    [offeringId, currentFolderId],
+  );
+
+  const createDoc = useCallback(async () => {
+    const name = await dialog.prompt({
+      title: "New document",
+      label: "Name",
+      defaultValue: "Untitled",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("FreeForm", name.trim());
+    if (id) navigate(`/documents/${id}`);
+    else toast.error("Couldn't create the document");
+  }, [dialog, createPage, navigate, toast]);
+
+  const createFolder = useCallback(async () => {
+    const name = await dialog.prompt({
+      title: "New folder",
+      label: "Folder name",
+      defaultValue: "New folder",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("Folder", name.trim());
+    if (id) {
+      toast.success("Folder created");
+      revalidate();
+    } else {
+      toast.error("Couldn't create the folder");
+    }
+  }, [dialog, createPage, revalidate, toast]);
+
+  const onBulkDelete = useCallback(
+    async (items: DriveItem[]) => {
+      if (items.length === 0) return;
+      const ok = await dialog.confirm({
+        title: `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
+        description: "Folders must be empty first.",
+        tone: "destructive",
+        confirmLabel: "Delete",
+      });
+      if (!ok) return;
+      let fail = 0;
+      for (const it of items) {
+        const endpoint = it.type === "file" ? `/api/files/${it.id}` : `/api/documents/${it.id}`;
+        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+        if (!res.ok) fail++;
+      }
+      revalidate();
+      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
+      else toast.success(`Deleted ${items.length}`);
+    },
+    [dialog, toast, revalidate],
+  );
+
+  const onBulkMove = useCallback(
+    async (items: DriveItem[]) => {
+      const movable = items.filter(
+        (i) => i.type === "doc" || i.type === "folder" || i.type === "file",
+      );
+      if (movable.length === 0) return;
+      const dest = await pickMoveDestination(
+        movable[0],
+        `Move ${movable.length} item${movable.length === 1 ? "" : "s"}`,
+      );
+      if (!dest) return;
+      for (const it of movable) await onMove(scopeId, it, dest.folderId);
+      revalidate();
+    },
+    [pickMoveDestination, onMove, scopeId, revalidate],
+  );
+
+  const filterControl = (
+    <div>
+      <Select<EduDriveTypeFilter>
+        value={typeFilter}
+        onChange={setTypeFilter}
+        ariaLabel="Filter by type"
+        align="right"
+        options={EDU_TYPE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
+        buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
+      />
+    </div>
+  );
+
+  const newMenu = canEdit ? (
+    <Menu
+      align="right"
+      ariaLabel="New in this course"
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+        >
+          <Plus className="w-4 h-4" /> New
+          <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+        </button>
+      }
+    >
+      <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDoc()}>
+        New document
+      </Menu.Item>
+      <Menu.Item
+        icon={<FolderPlus className="w-3.5 h-3.5" />}
+        onSelect={() => void createFolder()}
+      >
+        New folder
+      </Menu.Item>
+      <Menu.Separator />
+      <Menu.Item
+        icon={<Upload className="w-3.5 h-3.5" />}
+        disabled={uploading}
+        onSelect={() => uploadInputRef.current?.click()}
+      >
+        {uploading ? "Uploading…" : "Upload file"}
+      </Menu.Item>
+    </Menu>
+  ) : undefined;
+
+  // useMemo to stabilise the typeFilter cast for DriveBrowser's prop type.
+  const driveTypeFilter = useMemo(
+    () => typeFilter as "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric",
+    [typeFilter],
+  );
+
+  return (
+    <>
+      {uploadError && (
+        <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive">
+          {uploadError}
+        </div>
+      )}
+      <DriveBrowser
+        scopes={[offeringDriveScope]}
+        currentScopeId={scopeId}
+        currentFolderId={currentFolderId}
+        typeFilter={driveTypeFilter}
+        search={search}
+        onSearchChange={setSearch}
+        onNavigate={onNavigate}
+        onOpenItem={onOpenItem}
+        onMove={onMove}
+        getScopeActions={getScopeActions}
+        onToggleFavorite={onToggleFavorite}
+        onBulkDelete={canEdit ? onBulkDelete : undefined}
+        onBulkMove={canEdit ? onBulkMove : undefined}
+        onUploadFiles={canEdit ? uploadFiles : undefined}
+        filterControl={filterControl}
+        newMenu={newMenu}
+        embeddedScopeId={scopeId}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={handleFileChange}
+      />
+      {movePicker && (
+        <DestinationPicker
+          open
+          heading={movePicker.heading}
+          drives={movePicker.drives}
+          folders={movePicker.folders}
+          disabledFolderIds={movePicker.disabledFolderIds}
+          disabledDest={movePicker.disabledDest}
+          initial={movePicker.initial}
+          onClose={() => resolveMovePicker(null)}
+          onConfirm={(dest) => resolveMovePicker(dest)}
+        />
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main CourseHubV2
 // ---------------------------------------------------------------------------
 
@@ -446,6 +921,7 @@ export function CourseHubV2({
   instructor = null,
   rosterForSession = null,
   previewAsStudent = false,
+  offeringDriveScope,
 }: {
   data: HubData;
   basePath: string;
@@ -454,6 +930,9 @@ export function CourseHubV2({
   instructor?: InstructorExtras | null;
   rosterForSession?: SessionRoster;
   previewAsStudent?: boolean;
+  /** When present (member shell only), renders the Files tab as an embedded
+   *  DriveBrowser. When absent (portal), falls back to the read-only list. */
+  offeringDriveScope?: DriveTreeScope;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tz = useUserTimeZone();
@@ -482,8 +961,8 @@ export function CourseHubV2({
   const tabs: { key: TabKey; label: string; badge?: number }[] = [
     { key: "journey", label: "Journey", badge: openAssignments > 0 ? openAssignments : undefined },
     { key: "grades", label: "Grades" },
-    { key: "talk", label: "Talk" },
-    { key: "library", label: "Library" },
+    { key: "discussions", label: "Discussions" },
+    { key: "files", label: "Files" },
     ...(hasWorkspace ? [{ key: "workspace" as TabKey, label: "Workspace" }] : []),
     { key: "about", label: "About" },
   ];
@@ -686,15 +1165,23 @@ export function CourseHubV2({
         />
       )}
 
-      {activeTab === "talk" && <TalkPane data={data} tz={tz} />}
+      {activeTab === "discussions" && <TalkPane data={data} tz={tz} />}
 
-      {activeTab === "library" && (
-        <LibraryPane
-          materials={data.materials}
-          files={files}
-          sessions={data.sessions}
-          basePath={basePath}
-        />
+      {activeTab === "files" && (
+        offeringDriveScope ? (
+          <EducationDriveTab
+            offeringId={data.offering.id}
+            offeringDriveScope={offeringDriveScope}
+            canEdit={isEditing}
+          />
+        ) : (
+          <LibraryPane
+            materials={data.materials}
+            files={files}
+            sessions={data.sessions}
+            basePath={basePath}
+          />
+        )
       )}
 
       {activeTab === "workspace" && hasWorkspace && (

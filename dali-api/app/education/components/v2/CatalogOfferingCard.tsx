@@ -8,10 +8,10 @@ import { MyStatusChip, registrationWindowLabel, type OfferingCardData } from "..
 type CatalogEntry = OfferingCardData & { myStatus?: string | null };
 
 /**
- * Light card on the dark navy catalog band. Shows title, type badge, date range,
- * session count, instructor stack, seats context, and a CTA — Apply (accent-yellow
- * outline) or RSVP (teal) — or the user's status chip when they already have an
- * application.
+ * Card on the light brand-tint catalog band. Shows title, type badge, date
+ * range, session count, instructor stack, seats context, and a CTA — Apply
+ * (accent-coral outline) or RSVP (teal) — or the user's status chip when they
+ * already have an application.
  */
 export function CatalogOfferingCard({
   offering,
@@ -28,7 +28,7 @@ export function CatalogOfferingCard({
     <div className="group relative">
       <Link
         to={`${basePath}/${offering.id}`}
-        className="block rounded-2xl bg-white/10 border border-white/15 p-4 h-full transition-all group-hover:bg-white/15 group-hover:border-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
+        className="block rounded-2xl bg-card border border-border p-4 h-full transition-all group-hover:bg-muted/40 group-hover:border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
       >
         {/* Type badge */}
         <div className="flex items-center gap-2 mb-2">
@@ -36,8 +36,8 @@ export function CatalogOfferingCard({
             className={cn(
               "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
               offering.type === "Miniseries"
-                ? "bg-accent-teal-light/20 text-accent-teal-light"
-                : "bg-accent-coral-light/20 text-accent-coral-light",
+                ? "bg-accent-teal/10 text-accent-teal"
+                : "bg-accent-coral/10 text-accent-coral",
             )}
           >
             {offering.type}
@@ -45,12 +45,12 @@ export function CatalogOfferingCard({
         </div>
 
         {/* Title */}
-        <h3 className="font-heading font-bold text-white text-sm leading-snug mb-1 group-hover:text-accent-yellow transition-colors">
+        <h3 className="font-heading font-bold text-foreground text-sm leading-snug mb-1 group-hover:text-dark-blue transition-colors">
           {offering.title}
         </h3>
 
         {/* Date + sessions */}
-        <p className="text-xs text-white/60 mb-0.5">
+        <p className="text-xs text-muted-foreground mb-0.5">
           {offering.startsAt && offering.endsAt
             ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
             : "Dates TBD"}
@@ -59,11 +59,11 @@ export function CatalogOfferingCard({
         </p>
 
         {/* Registration window */}
-        <p className="text-xs text-white/50 mb-3">
+        <p className="text-xs text-muted-foreground mb-3">
           {registrationWindowLabel(offering, tz)}
           {seatsLeft > 0
             ? ` · ${seatsLeft} seats left`
-            : " · Full — waitlist open"}
+            : " · Waitlist"}
         </p>
 
         {/* Instructor row */}
@@ -76,11 +76,11 @@ export function CatalogOfferingCard({
                   photoUrl={i.photoUrl}
                   name={i.name}
                   size="xs"
-                  className="ring-2 ring-white/10"
+                  className="ring-2 ring-card"
                 />
               ))}
             </div>
-            <p className="text-xs text-white/60 truncate">
+            <p className="text-xs text-muted-foreground truncate">
               {offering.instructors.map((i) => i.name).join(", ")}
             </p>
           </div>
@@ -91,11 +91,11 @@ export function CatalogOfferingCard({
           {hasApp ? (
             <MyStatusChip status={offering.myStatus ?? null} />
           ) : offering.requiresReview ? (
-            <span className="inline-flex items-center rounded-full border border-accent-yellow/70 px-3 py-1 text-xs font-semibold text-accent-yellow">
+            <span className="inline-flex items-center rounded-full border border-accent-coral/60 px-3 py-1 text-xs font-semibold text-accent-coral">
               Apply
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-full bg-accent-teal/20 border border-accent-teal/40 px-3 py-1 text-xs font-semibold text-accent-teal-light">
+            <span className="inline-flex items-center rounded-full bg-accent-teal/10 border border-accent-teal/40 px-3 py-1 text-xs font-semibold text-accent-teal">
               RSVP
             </span>
           )}

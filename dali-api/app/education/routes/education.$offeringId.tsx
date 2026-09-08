@@ -84,8 +84,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         }),
   ]);
 
+  // Managers can't enroll in their own course — the Editing/As-student toggle
+  // covers their view, and a self-enrollment would double them as a student.
   const canApply =
     registrationOpen(offering) &&
+    !isManager &&
     (!myApplication ||
       myApplication.status === "Withdrawn" ||
       myApplication.status === "Submitted");

@@ -205,6 +205,7 @@ export default function SetupPage() {
     <SetupPane
       offeringId={data.offering.id}
       basePath={`/education/${data.offering.id}`}
+      showBackLink={false}
       offering={data.offering}
       emailTemplates={data.emailTemplates}
       decisionEmailBindings={data.decisionEmailBindings}

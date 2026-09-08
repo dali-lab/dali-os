@@ -1,7 +1,10 @@
 import { useState, useId } from "react";
 import { Form, useFetcher } from "react-router";
+import { Pencil, Check, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { DateField } from "~/components/ui/DateField";
+import { TimeField } from "~/components/ui/TimeField";
 import { AddFormModal } from "~/education/components/AddFormModal";
 import { MarkingList, type MatrixStudent } from "~/education/components/RosterMatrix";
 import { toDatetimeLocal } from "~/education/components/OfferingFields";
@@ -116,6 +119,18 @@ function AssignmentModal({
   );
 }
 
+/** Extract "YYYY-MM-DD" from a session.datetime (ISO string or Date). */
+function extractDate(value: string | Date): string {
+  const local = toDatetimeLocal(value);
+  return local.slice(0, 10);
+}
+
+/** Extract "HH:mm" from a session.datetime. */
+function extractTime(value: string | Date): string {
+  const local = toDatetimeLocal(value);
+  return local.includes("T") ? (local.split("T")[1] ?? "") : "";
+}
+
 export function SessionPaneInstructor({
   session,
   offeringId,
@@ -138,6 +153,44 @@ export function SessionPaneInstructor({
   const confirmSubmit = useConfirmSubmit();
   const deleteFetcher = useFetcher<{ error?: string }>();
   const updateFormId = useId();
+  const renameFetcher = useFetcher<{ error?: string }>();
+
+  // Date + time pickers for the update-session form
+  const [sessionDate, setSessionDate] = useState(() => extractDate(session.datetime));
+  const [sessionStartTime, setSessionStartTime] = useState(() => extractTime(session.datetime));
+  const [sessionEndDate] = useState(() =>
+    session.endsAt ? extractDate(session.endsAt) : "",
+  );
+  const [sessionEndTime, setSessionEndTime] = useState(() =>
+    session.endsAt ? extractTime(session.endsAt) : "",
+  );
+
+  // Combine into datetime-local strings for hidden fields
+  const datetimeValue = sessionDate && sessionStartTime
+    ? `${sessionDate}T${sessionStartTime}`
+    : "";
+  // End date stays the same as start date (editing sessions doesn't cross midnight)
+  const endsAtValue = sessionDate && sessionEndTime
+    ? `${sessionDate}T${sessionEndTime}`
+    : "";
+
+  // Inline title rename
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(session.title ?? "");
+
+  function handleRenameSave() {
+    const fd = new FormData();
+    fd.set("intent", "update-session");
+    fd.set("sessionId", session.id);
+    fd.set("title", renameValue);
+    fd.set("datetime", datetimeValue || toDatetimeLocal(session.datetime));
+    fd.set("endsAt", endsAtValue || "");
+    fd.set("location", session.location ?? "");
+    fd.set("notes", session.notes ?? "");
+    fd.set("recordingUrl", session.recordingUrl ?? "");
+    renameFetcher.submit(fd, { method: "post" });
+    setRenaming(false);
+  }
 
   // Transform roster to MatrixStudent[] for MarkingList
   const students: MatrixStudent[] = rosterForSession
@@ -151,12 +204,64 @@ export function SessionPaneInstructor({
 
   return (
     <div id="session-pane" className="flex flex-col gap-6 border-t border-border pt-6 mt-2">
+      {/* Session header with inline rename */}
+      <div className="flex items-center gap-2">
+        {renaming ? (
+          <>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRenameSave();
+                if (e.key === "Escape") { setRenaming(false); setRenameValue(session.title ?? ""); }
+              }}
+              placeholder={`Session ${session.sequence}`}
+              className="flex-1 rounded-md border border-accent-teal bg-card px-2 py-1 text-sm font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-accent-teal/60"
+            />
+            <button
+              type="button"
+              onClick={handleRenameSave}
+              aria-label="Save title"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-accent-teal text-white hover:bg-accent-teal/90 transition-colors"
+            >
+              <Check size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRenaming(false); setRenameValue(session.title ?? ""); }}
+              aria-label="Cancel rename"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <X size={13} />
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-sm font-semibold text-foreground">
+              {session.title ?? `Session ${session.sequence}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRenaming(true)}
+              aria-label="Rename session"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <Pencil size={12} />
+            </button>
+          </>
+        )}
+      </div>
+
       {/* (a) Update session */}
       <div>
         <SectionHeading>Session details</SectionHeading>
         <Form method="post" id={updateFormId} className="flex flex-col gap-3">
           <input type="hidden" name="intent" value="update-session" />
           <input type="hidden" name="sessionId" value={session.id} />
+          {/* Hidden datetime fields built from date+time pickers */}
+          <input type="hidden" name="datetime" value={datetimeValue} />
+          <input type="hidden" name="endsAt" value={endsAtValue} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted-foreground">Title</label>
@@ -178,25 +283,39 @@ export function SessionPaneInstructor({
               />
             </div>
           </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1 block">
+              Date
+            </label>
+            <DateField
+              mode="date"
+              value={sessionDate}
+              onChange={setSessionDate}
+              ariaLabel="Session date"
+              className="w-full"
+            />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">
-                Date &amp; time
+              <label className="text-xs font-semibold text-muted-foreground mb-1 block">
+                Start time
               </label>
-              <input
-                name="datetime"
-                type="datetime-local"
-                defaultValue={toDatetimeLocal(session.datetime)}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
+              <TimeField
+                value={sessionStartTime}
+                onChange={setSessionStartTime}
+                ariaLabel="Start time"
+                className="w-full"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Ends at</label>
-              <input
-                name="endsAt"
-                type="datetime-local"
-                defaultValue={toDatetimeLocal(session.endsAt ?? undefined)}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
+              <label className="text-xs font-semibold text-muted-foreground mb-1 block">
+                End time <span className="font-normal">(optional)</span>
+              </label>
+              <TimeField
+                value={sessionEndTime}
+                onChange={setSessionEndTime}
+                ariaLabel="End time"
+                className="w-full"
               />
             </div>
           </div>

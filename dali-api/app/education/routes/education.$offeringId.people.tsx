@@ -121,6 +121,7 @@ export default function PeoplePage() {
     <PeoplePane
       offeringId={offeringId}
       basePath={`/education/${offeringId}`}
+      showBackLink={false}
       applications={applications}
       attendanceMatrix={attendanceMatrix}
       assignmentsForPerformance={assignmentsForPerformance}

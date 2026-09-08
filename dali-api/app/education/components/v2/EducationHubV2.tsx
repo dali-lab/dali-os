@@ -51,6 +51,7 @@ export function EducationHubV2({
   upcoming,
   past,
   canManage,
+  isCore,
   // Whether we're in the member shell (affects bleed classes on the band).
   isMemberShell,
 }: {
@@ -60,6 +61,7 @@ export function EducationHubV2({
   upcoming: CatalogOffering[];
   past: CatalogOffering[];
   canManage: boolean;
+  isCore?: boolean;
   isMemberShell: boolean;
 }) {
   const tz = useUserTimeZone();
@@ -103,14 +105,24 @@ export function EducationHubV2({
               : "Miniseries and workshops open to Dartmouth students — no lab membership required. Apply or RSVP below; once you're accepted, your course hub opens up here."}
           </p>
         </div>
-        {canManage && (
-          <Link
-            to="/education/manage"
-            className="shrink-0 inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
-          >
-            Teaching
-          </Link>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {canManage && (
+            <Link
+              to="/education/manage"
+              className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+            >
+              Teaching
+            </Link>
+          )}
+          {isCore && isMemberShell && (
+            <Link
+              to="/education/compliance"
+              className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+            >
+              CE Compliance
+            </Link>
+          )}
+        </div>
       </header>
 
       {/* ── Your courses shelf ─────────────────────────────── */}
@@ -137,18 +149,18 @@ export function EducationHubV2({
       <EduBand bleedClassName={bleed} contentClassName={bandContent}>
         {/* Band header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-heading text-lg font-bold text-white">Catalog</h2>
+          <h2 className="font-heading text-lg font-bold text-dark-blue">Catalog</h2>
           {catalogCount > 0 && (
-            <span className="text-xs text-white/50">
-              {catalogCount} taking application{catalogCount === 1 ? "" : "s"}
+            <span className="text-xs text-muted-foreground">
+              {catalogCount} open{catalogCount === 1 ? "" : ""}
             </span>
           )}
         </div>
 
         {upcoming.length === 0 ? (
-          <div className="rounded-2xl border border-white/15 p-8 text-center">
-            <p className="font-heading font-semibold text-white">Nothing open right now</p>
-            <p className="text-sm text-white/60 mt-1">
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <p className="font-heading font-semibold text-foreground">Nothing open right now</p>
+            <p className="text-sm text-muted-foreground mt-1">
               New miniseries and workshops will appear here each term.
             </p>
           </div>
@@ -163,7 +175,7 @@ export function EducationHubV2({
               <button
                 type="button"
                 onClick={() => setShowPast((v) => !v)}
-                className="rounded-2xl border-2 border-dashed border-white/20 p-4 text-left text-white/50 hover:border-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                className="rounded-2xl border-2 border-dashed border-border p-4 text-left text-muted-foreground hover:border-dark-blue/30 hover:text-foreground transition-colors cursor-pointer"
               >
                 <span className="font-heading text-sm font-semibold block mb-1">
                   {showPast ? "Hide past terms" : "Browse all terms"}

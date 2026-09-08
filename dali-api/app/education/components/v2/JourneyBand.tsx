@@ -90,21 +90,21 @@ function AttendanceGlyph({
   }
   if (attendance === "Excused") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400/20 text-amber-300 text-[10px] font-bold leading-none border border-amber-400/40">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 text-[10px] font-bold leading-none border border-amber-300/60">
         E
       </span>
     );
   }
   if (attendance === "Absent") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/40 text-[10px] font-bold leading-none">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-[10px] font-bold leading-none">
         ✗
       </span>
     );
   }
   // Unmarked
   return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/20 text-white/30 text-[10px]" />
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground text-[10px]" />
   );
 }
 
@@ -147,7 +147,7 @@ function SessionCheckInButton({
 
   if (present) {
     return (
-      <span className="text-xs font-semibold text-accent-teal-light">✓ Checked in</span>
+      <span className="text-xs font-semibold text-accent-teal">✓ Checked in</span>
     );
   }
   return (
@@ -161,7 +161,7 @@ function SessionCheckInButton({
       >
         {submitting ? "Checking in…" : "Check in"}
       </Button>
-      {error && <span className="text-[11px] text-red-300">{error}</span>}
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
 }
@@ -205,26 +205,26 @@ function CurrentStopCard({
         "shrink-0 w-56 rounded-2xl p-4 text-left transition-all cursor-pointer",
         "bg-accent-coral/15 border border-accent-coral/30",
         "shadow-lg",
-        selected && "ring-2 ring-white/60",
+        selected && "ring-2 ring-dark-blue/30",
       )}
       aria-current="true"
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-white/50 mb-0.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">
         Session {stop.sequence}
       </p>
-      <p className="font-heading text-base font-bold text-white leading-snug line-clamp-2">
+      <p className="font-heading text-base font-bold text-foreground leading-snug line-clamp-2">
         {stop.title ?? `Session ${stop.sequence}`}
       </p>
-      <p className="mt-1 text-xs text-white/70">
+      <p className="mt-1 text-xs text-muted-foreground">
         {formatSessionWhen(stop.datetime, stop.endsAt, tz)}
       </p>
       {stop.location && (
-        <p className="mt-0.5 text-xs text-white/50 truncate">{stop.location}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground truncate">{stop.location}</p>
       )}
 
       {/* Meta line */}
       {(stop.hasMaterials || stop.hasAssignments) && (
-        <p className="mt-2 flex items-center gap-2 text-[11px] text-white/60">
+        <p className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
           {stop.hasMaterials && <span>📄 Materials</span>}
           {stop.hasAssignments && <span>📝 Assignment</span>}
         </p>
@@ -234,11 +234,11 @@ function CurrentStopCard({
       {lens === "student" && (
         <div className="mt-3">
           {alreadyAttended ? (
-            <span className="text-xs font-semibold text-accent-teal-light">✓ Checked in</span>
+            <span className="text-xs font-semibold text-accent-teal">✓ Checked in</span>
           ) : canCheckIn ? (
             <SessionCheckInButton sessionId={stop.id} initialPresent={false} />
           ) : stop.myAttendance === "Excused" ? (
-            <span className="text-xs font-semibold text-amber-300">Excused</span>
+            <span className="text-xs font-semibold text-amber-600">Excused</span>
           ) : null}
         </div>
       )}
@@ -271,12 +271,12 @@ function PastTile({
       onClick={() => onSelect(stop.id)}
       className={cn(
         "shrink-0 flex flex-col items-center justify-center gap-1 w-16 h-16 rounded-2xl border transition-colors",
-        "border-white/20 bg-white/5 hover:bg-white/10",
-        selected && "ring-2 ring-white/60 bg-white/10",
+        "border-border bg-card hover:bg-muted/40",
+        selected && "ring-2 ring-dark-blue/30 bg-muted/40",
       )}
       title={stop.title ?? `Session ${stop.sequence}`}
     >
-      <span className="text-[10px] font-semibold text-white/60">S{stop.sequence}</span>
+      <span className="text-[10px] font-semibold text-muted-foreground">S{stop.sequence}</span>
       {lens === "student" && (
         <AttendanceGlyph attendance={stop.myAttendance} />
       )}
@@ -303,12 +303,12 @@ function CollapsedStub({
     <button
       type="button"
       onClick={onExpand}
-      className="shrink-0 flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-2xl border-2 border-dashed border-white/20 text-white/50 hover:border-white/40 hover:text-white/70 transition-colors"
+      className="shrink-0 flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-2xl border-2 border-dashed border-border text-muted-foreground hover:border-dark-blue/30 hover:text-foreground transition-colors"
       title="Expand past sessions"
     >
       <span className="text-[11px] font-semibold">{count} done</span>
       {lens === "student" && (
-        <span className="text-[10px] text-white/40">{attendedCount} attended</span>
+        <span className="text-[10px] text-muted-foreground">{attendedCount} attended</span>
       )}
     </button>
   );
@@ -333,8 +333,8 @@ function FutureTile({
       onClick={() => onSelect(stop.id)}
       className={cn(
         "shrink-0 flex flex-col items-center justify-center gap-1 w-16 h-16 rounded-2xl border-2 border-dashed transition-colors",
-        "border-white/20 text-white/40 hover:border-white/40 hover:text-white/60",
-        selected && "ring-2 ring-white/60 border-white/40 text-white/60",
+        "border-border text-muted-foreground hover:border-dark-blue/30 hover:text-foreground",
+        selected && "ring-2 ring-dark-blue/30 border-dark-blue/30 text-foreground",
       )}
       title={stop.title ?? `Session ${stop.sequence}`}
     >
@@ -352,7 +352,7 @@ function CertNode({ certificate }: { certificate: NonNullable<CertificateNode> }
     return (
       <Link
         to={`/education/certificates/${certificate.certificateId}`}
-        className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-yellow-300/40 bg-yellow-300/10 text-yellow-200 hover:bg-yellow-300/20 transition-colors"
+        className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-accent-yellow/50 bg-accent-yellow/20 text-foreground hover:bg-accent-yellow/30 transition-colors"
         title="View your certificate"
       >
         <span className="text-lg leading-none">🎓</span>
@@ -362,7 +362,7 @@ function CertNode({ certificate }: { certificate: NonNullable<CertificateNode> }
   }
   if (certificate.kind === "onTrack") {
     return (
-      <div className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-white/20 text-white/50">
+      <div className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-border text-muted-foreground">
         <span className="text-lg leading-none">🏅</span>
         <span className="text-[10px] font-semibold text-center">On track</span>
       </div>
@@ -370,7 +370,7 @@ function CertNode({ certificate }: { certificate: NonNullable<CertificateNode> }
   }
   // needsMore
   return (
-    <div className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-white/15 text-white/35">
+    <div className="shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-2xl border border-border text-muted-foreground">
       <span className="text-[10px] font-semibold text-center leading-tight">
         {certificate.sessionsNeeded} more to earn
       </span>
@@ -386,18 +386,18 @@ function FooterLine({ certificate }: { certificate: CertificateNode }) {
   if (!certificate) return null;
   if (certificate.kind === "unlocked") {
     return (
-      <p className="mt-3 text-xs text-white/50 text-center">Certificate earned 🎉</p>
+      <p className="mt-3 text-xs text-muted-foreground text-center">Certificate earned 🎉</p>
     );
   }
   if (certificate.kind === "onTrack") {
     return (
-      <p className="mt-3 text-xs text-white/50 text-center">
+      <p className="mt-3 text-xs text-muted-foreground text-center">
         You&apos;re on track for the certificate
       </p>
     );
   }
   return (
-    <p className="mt-3 text-xs text-white/50 text-center">
+    <p className="mt-3 text-xs text-muted-foreground text-center">
       Attend {certificate.sessionsNeeded} more session{certificate.sessionsNeeded === 1 ? "" : "s"} to unlock your certificate
     </p>
   );
@@ -433,7 +433,7 @@ export function JourneyBand({
   if (stops.length === 0) {
     return (
       <div className={cn("flex flex-col gap-3", className)}>
-        <p className="text-sm text-white/50 italic">No sessions scheduled yet.</p>
+        <p className="text-sm text-muted-foreground italic">No sessions scheduled yet.</p>
       </div>
     );
   }
@@ -522,7 +522,7 @@ export function JourneyBand({
         {/* Certificate node */}
         {certificate && (
           <>
-            <div className="shrink-0 w-px h-8 bg-white/15" />
+            <div className="shrink-0 w-px h-8 bg-border" />
             <CertNode certificate={certificate} />
           </>
         )}

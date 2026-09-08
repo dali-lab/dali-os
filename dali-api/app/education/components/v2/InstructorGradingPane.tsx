@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Form } from "react-router";
 import { Check, Pencil } from "lucide-react";
+import { DateField } from "~/components/ui/DateField";
+import { TimeField } from "~/components/ui/TimeField";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { Button } from "~/components/ui/Button";
@@ -56,6 +58,16 @@ export function InstructorGradingPane({
   );
   const [editOpen, setEditOpen] = useState(false);
   const confirmSubmit = useConfirmSubmit();
+
+  // Date + time pickers for the dueAt field
+  const dueAtInit = assignment.dueAt
+    ? new Date(assignment.dueAt).toISOString().slice(0, 16)
+    : "";
+  const [dueDate, setDueDate] = useState(() => dueAtInit.slice(0, 10));
+  const [dueTime, setDueTime] = useState(() =>
+    dueAtInit.includes("T") ? (dueAtInit.split("T")[1] ?? "") : "",
+  );
+  const dueAtValue = dueDate && dueTime ? `${dueDate}T${dueTime}` : "";
 
   const selected = submissions.find((s) => s.id === selectedId) ?? null;
 
@@ -253,23 +265,28 @@ export function InstructorGradingPane({
                         className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
                       />
                     </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">
+                    <div className="block">
+                      <span className="block text-xs font-semibold text-muted-foreground mb-1">
                         Due date/time
                       </span>
-                      <input
-                        type="datetime-local"
-                        name="dueAt"
-                        defaultValue={
-                          assignment.dueAt
-                            ? new Date(assignment.dueAt)
-                                .toISOString()
-                                .slice(0, 16)
-                            : ""
-                        }
-                        className="mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                      />
-                    </label>
+                      {/* Hidden field carries the combined datetime-local string */}
+                      <input type="hidden" name="dueAt" value={dueAtValue} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <DateField
+                          mode="date"
+                          value={dueDate}
+                          onChange={setDueDate}
+                          ariaLabel="Due date"
+                          className="min-w-[140px]"
+                        />
+                        <TimeField
+                          value={dueTime}
+                          onChange={setDueTime}
+                          ariaLabel="Due time"
+                          className="w-[120px]"
+                        />
+                      </div>
+                    </div>
                     <label className="block">
                       <span className="text-xs font-semibold text-muted-foreground">
                         Submission type

@@ -71,6 +71,7 @@ export default function EducationCatalog() {
         upcoming={upcoming}
         past={past}
         canManage={canManage}
+        isCore={isCore}
         isMemberShell={true}
       />
     );

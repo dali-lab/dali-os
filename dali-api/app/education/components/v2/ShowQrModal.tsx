@@ -68,7 +68,7 @@ export function ShowQrModal({
       onClose={closeCheckIn}
       labelledBy={titleId}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 sm:p-6 overflow-y-auto"
-      containerClassName="bg-white rounded-2xl shadow-brand-2 max-w-md w-full p-6 my-auto"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-6 my-auto"
     >
       <ModalHeader
         titleId={titleId}
@@ -99,7 +99,7 @@ export function ShowQrModal({
         )}
 
         {/* Live count */}
-        <div className="rounded-xl bg-gray-900 px-6 py-3 text-center">
+        <div className="rounded-xl bg-card border border-border px-6 py-3 text-center">
           <LiveCheckInCount
             sessionId={sessionId}
             initialPresent={qrData?.presentCount ?? 0}

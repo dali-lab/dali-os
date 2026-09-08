@@ -60,10 +60,7 @@ export function OfferingFunnel({ data }: { data: OfferingFunnelData }) {
   const seatsPart =
     seatsLeft > 0
       ? `${offering.approvedCount} of ${offering.capacity} seats`
-      : `Full — waitlist open`;
-  const reviewPart = offering.requiresReview
-    ? "Applications are reviewed — not first-come"
-    : "First-come RSVP";
+      : `Waitlist`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -99,9 +96,9 @@ export function OfferingFunnel({ data }: { data: OfferingFunnelData }) {
         )}
       </div>
 
-      {/* Butter-yellow callout: registration window info */}
+      {/* Callout: registration window info */}
       <div className="rounded-lg border border-accent-yellow/40 bg-accent-yellow/15 px-4 py-3 text-sm text-foreground">
-        Applications close {closesFormatted} · {seatsPart} · {reviewPart}
+        Closes {closesFormatted} · {seatsPart}
       </div>
 
       {/* Main content: form state or status panel or detail CTA */}
@@ -152,11 +149,9 @@ export function OfferingFunnel({ data }: { data: OfferingFunnelData }) {
       ) : (
         /* Detail state: no application, or Withdrawn, or Rejected-and-can-reapply */
         <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-5 py-4">
-          <p className="text-sm text-muted-foreground">
-            {canApply
-              ? "Ready to join this offering?"
-              : "Registration for this offering is closed."}
-          </p>
+          {!canApply && (
+            <p className="text-sm text-muted-foreground">Registration is closed.</p>
+          )}
           {canApply && (
             <div className="flex items-center gap-2 shrink-0">
               <Link
