@@ -16,6 +16,15 @@ import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
+import { DomainChips } from "~/components/DomainChips";
+import {
+  DetailEditRow,
+  DetailRow,
+  HeroClusterLabel,
+  OS_DETAIL_CARD,
+  OS_DETAIL_ICON,
+  OsTabBar,
+} from "~/components/os-page";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -1757,48 +1766,31 @@ export default function ProjectDetail() {
 
       {/* Tab bar. Each section now owns its own edit button — there's no
           page-level edit mode left to clear when switching tabs. */}
-      <div
-        className={cn(
-          "flex items-center border-b border-border",
-          "gap-2",
-        )}
-      >
-        {OS_TABS
-          .filter((t) => t !== "mentorship" || canViewMentorshipTab)
-          .map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={cn(
-                    // The design marks the open tab with a filled, top-rounded
-                    // plate that meets the rule below it, not an underline.
-                    "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
-                    tab === t
-                      ? "bg-os-container text-foreground"
-                      : "text-os-grey hover:text-foreground",
-                  )
-            }
-          >
-            {OS_TAB_LABELS[t as OsTab]}
-          </button>
-        ))}
-        {/* Scope/challenge config lives behind this gear, visible only to
-            Core/Admin/Staff. */}
-        {canViewScope && (
-          <Tooltip content="Project settings" className="ml-auto -mb-px">
-            <button
-              type="button"
-              onClick={() => setScopeSettingsOpen(true)}
-              aria-label="Project settings"
-              className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              title="Project settings & challenges"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          </Tooltip>
-        )}
-      </div>
+      <OsTabBar
+        ariaLabel="Project sections"
+        tabs={OS_TABS.filter(
+          (t) => t !== "mentorship" || canViewMentorshipTab,
+        ).map((t) => ({ key: t, label: OS_TAB_LABELS[t] }))}
+        active={tab as OsTab}
+        onSelect={setTab}
+        trailing={
+          // Scope/challenge config lives behind this gear, visible only to
+          // Core/Admin/Staff.
+          canViewScope ? (
+            <Tooltip content="Project settings" className="ml-auto -mb-px">
+              <button
+                type="button"
+                onClick={() => setScopeSettingsOpen(true)}
+                aria-label="Project settings"
+                className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                title="Project settings & challenges"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          ) : null
+        }
+      />
 
       {/* Page-level action errors — above the tab content so a failed save
           (e.g. the header form) is visible from any tab. The settings modal
@@ -2191,18 +2183,6 @@ function ProjectHeader({
   );
 }
 
-/* The label a hero cluster wears (TERMS, ROLES) with its contents beside it. */
-function HeroClusterLabel({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-xs font-semibold tracking-widest text-os-grey uppercase">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
 function DescriptionSegment({
   description,
   canEdit,
@@ -2556,28 +2536,6 @@ function TermsChipsEditor({
 // Calendar email + image URL + term count + repo URLs. One form posting
 // intent=details with the full field set, so the action handler stays
 // unchanged. Section-level Save submits; Cancel reverts via the wrapper.
-// One label/value row of the os Project-details read view: a muted label with
-// its glyph on the left, the value right-aligned.
-function DetailRow({
-  icon,
-  label,
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-os-container py-3 last:border-0">
-      <span className="flex items-center gap-2.5 text-sm text-os-grey">
-        {icon}
-        {label}
-      </span>
-      <div className="min-w-0 text-right text-sm text-foreground">{children}</div>
-    </div>
-  );
-}
-
 // The os read view of Project details: a compact icon/label row list with the
 // less-common fields folded behind "Additional details". The edit form is
 // unchanged — this only replaces the read layout under the os tab set.
@@ -2591,10 +2549,10 @@ function DetailsReadOs({
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
   const dash = <span className="text-os-muted">—</span>;
-  const ic = "h-[17px] w-[17px] text-os-grey";
+  const ic = OS_DETAIL_ICON;
 
   return (
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       <DetailRow icon={<Mail className={ic} />} label="Calendar email">
         {project.calendarEmail ? (
           <a
@@ -2711,33 +2669,6 @@ function DetailsReadOs({
   );
 }
 
-/* The same row, with a field where the value was. Stacks on a narrow screen so
-   an input never has to share a line with its own label. */
-function DetailEditRow({
-  icon,
-  label,
-  hint,
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2.5 text-sm text-os-grey">
-          {icon}
-          {label}
-        </span>
-        {hint && <span className="pl-[27px] text-xs text-os-muted">{hint}</span>}
-      </span>
-      <div className="w-full sm:max-w-[24rem]">{children}</div>
-    </div>
-  );
-}
-
 /* Project details in edit mode: the read view's own card and rows, with each
    value swapped for its field. Every field the `details` intent writes is
    rendered — that write replaces the whole set, so a field left out of the
@@ -2750,11 +2681,11 @@ function DetailsEditOs({
   project: LoaderData["project"];
   canEditFinance: boolean;
 }) {
-  const ic = "h-[17px] w-[17px] text-os-grey";
+  const ic = OS_DETAIL_ICON;
   const field = "w-full";
 
   return (
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       <DetailEditRow icon={<Mail className={ic} />} label="Calendar email">
         <input
           name="calendarEmail"
@@ -3003,94 +2934,6 @@ function DomainScopesSegment({
   );
 }
 
-// The design gives each role its own tinted chip. The four hues it drew were
-// matched by name against a handful of short keys and everything else fell to
-// a hash across those same four — so with the real catalog (17 domains, whose
-// labels are "Fullstack Dev", "UI/UX Design", "Product Management"…) every
-// lookup missed and three unrelated domains routinely came out the same
-// colour. Each catalog domain now names its own hue, so a role reads
-// identically on the header, the team cards, and anywhere else it appears.
-const OS_ROLE_CHIPS = {
-  amber: "bg-[#3d3a26] text-[#e8dd9a]",
-  teal: "bg-[#1f3a37] text-[#8fd6cb]",
-  violet: "bg-[#31284a] text-[#c3aef2]",
-  pink: "bg-[#3f2530] text-[#f2a8bd]",
-  blue: "bg-[#1e3348] text-[#a2d2fd]",
-  green: "bg-[#263a29] text-[#a6dda6]",
-  orange: "bg-[#43301f] text-[#f0b98a]",
-  magenta: "bg-[#3d2440] text-[#e2a6ee]",
-  slate: "bg-[#2b3340] text-[#aec4de]",
-  cyan: "bg-[#193a3f] text-[#8fd4e0]",
-  red: "bg-[#3f2424] text-[#f0a5a5]",
-  lime: "bg-[#333d1f] text-[#cfe08a]",
-  indigo: "bg-[#2a2c4d] text-[#b0b4f0]",
-  sand: "bg-[#3a3128] text-[#ddc3a3]",
-} as const;
-
-// Matched as a prefix of the domain's normalised name, so a domain's catalog
-// label, its legacy name and its code all land on one hue — the header reads
-// `displayName` ("Fullstack Dev") while a team card reads `name`
-// ("Fullstack"), and the two have to agree. Longest first: "production" would
-// otherwise be swallowed by "product".
-const OS_ROLE_STEMS: [string, keyof typeof OS_ROLE_CHIPS][] = [
-  ["threedmodeling", "green"],
-  ["3dmodeling", "green"],
-  ["videography", "cyan"],
-  ["photography", "red"],
-  ["digitalarts", "sand"],
-  ["engineering", "slate"],
-  ["production", "lime"],
-  ["fullstack", "teal"],
-  ["animation", "orange"],
-  ["graphics", "magenta"],
-  ["product", "violet"],
-  ["writing", "indigo"],
-  ["design", "pink"],
-  ["arvr", "blue"],
-  ["uiux", "pink"],
-  ["data", "amber"],
-  ["dev", "teal"],
-  ["pm", "violet"],
-  ["ux", "pink"],
-];
-
-// An unlisted domain still gets a stable colour without anyone editing the
-// table above — off the whole ring now, not off four slots.
-const OS_ROLE_CHIP_RING = Object.values(OS_ROLE_CHIPS);
-
-function osRoleChipClass(name: string): string {
-  const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-  for (const [stem, hue] of OS_ROLE_STEMS) {
-    if (key.startsWith(stem)) return OS_ROLE_CHIPS[hue];
-  }
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 997;
-  return OS_ROLE_CHIP_RING[hash % OS_ROLE_CHIP_RING.length];
-}
-
-function DomainChips({
-  items,
-  muted = false,
-}: {
-  items: { id: string; name: string }[];
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((d) => (
-        <span
-          key={d.id}
-          className={cn(
-            "inline-flex items-center rounded-full px-3.5 py-[5px] text-[13px] font-semibold",
-            muted ? "bg-os-container text-os-grey" : osRoleChipClass(d.name),
-          )}
-        >
-          {d.name}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function StatusBadge({
   status,
@@ -3865,7 +3708,7 @@ function PartnersContactsOs({
     // The design's partner directory: one surface, a row per contact. The
     // section around it carries no border of its own, so this is where the
     // list gets its ground.
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       {contacts.length === 0 ? (
         <p className="py-4 text-sm text-os-muted italic">No partner contacts yet.</p>
       ) : (

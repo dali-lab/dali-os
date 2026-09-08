@@ -1257,6 +1257,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 .os-shell .os-form input[type="email"],
 .os-shell .os-form input[type="url"],
 .os-shell .os-form input[type="number"],
+.os-shell .os-form select,
 .os-shell .os-form textarea {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
@@ -1267,6 +1268,7 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   transition: border-color 0.15s ease;
 }
 .os-shell .os-form input:focus,
+.os-shell .os-form select:focus,
 .os-shell .os-form textarea:focus {
   outline: none;
   border-color: var(--color-os-accent);

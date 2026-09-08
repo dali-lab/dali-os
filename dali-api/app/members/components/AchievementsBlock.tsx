@@ -11,11 +11,13 @@ import {
   Users,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import type { Achievement, AchievementKey } from "~/members/lib/achievements.server";
 
-// Medals for the profile rail. Each milestone gets its own shape and palette
-// rather than one badge in four colours — at rail width they're read as a
-// group, and silhouette separates them faster than hue does.
+// Medals for the profile's Activity tab. Each milestone gets its own shape and
+// palette rather than one badge in four colours — they're read as a group, and
+// silhouette separates them faster than hue does.
 
 const MEDAL: Record<
   AchievementKey,
@@ -31,9 +33,9 @@ const MEDAL: Record<
   },
   "first-term": {
     Icon: Rocket,
-    ring: "ring-accent-coral/30",
-    fill: "bg-accent-coral/15",
-    ink: "text-accent-coral",
+    ring: "ring-os-accent/30",
+    fill: "bg-os-accent/15",
+    ink: "text-os-accent",
     // Rounded square.
     shape: "rounded-xl",
   },
@@ -79,9 +81,9 @@ const MEDAL: Record<
   },
   "big-period": {
     Icon: Flame,
-    ring: "ring-accent-coral/30",
-    fill: "bg-accent-coral/15",
-    ink: "text-accent-coral",
+    ring: "ring-os-accent/30",
+    fill: "bg-os-accent/15",
+    ink: "text-os-accent",
     // Diamond.
     shape: "[clip-path:polygon(50%_0%,100%_50%,50%_100%,0%_50%)]",
   },
@@ -107,40 +109,43 @@ export function AchievementsBlock({ achievements }: { achievements: Achievement[
   // Earned medals only — an unearned one is a list of things you haven't done,
   // which is worse to look at than nothing on your own profile and nobody
   // else's business on someone else's. The section itself always renders, so
-  // the rail keeps its shape and the first medal appears in a place the member
+  // the tab keeps its shape and the first medal appears in a place the member
   // has already seen.
   const earned = achievements.filter((a) => a.earned);
+  const { panel, sectionShell, sectionTitle } = useOsChrome();
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-foreground">Achievements</h2>
+    <section className={sectionShell}>
+      <h2 className={sectionTitle}>Achievements</h2>
 
-      {earned.length === 0 && (
-        <p className="text-xs text-muted-foreground italic">No achievements yet.</p>
-      )}
+      <div className={cn(panel, "p-5")}>
+        {earned.length === 0 && (
+          <p className="text-sm text-os-muted italic">No achievements yet.</p>
+        )}
 
-      <ul className="grid grid-cols-4 gap-2">
-        {earned.map((a) => {
-          const m = MEDAL[a.key];
-          const { Icon } = m;
-          return (
-            <li key={a.key} className="flex flex-col items-center gap-1.5">
-              <Tooltip content={`${a.title} — ${a.description}`} variant="rich">
-                <span
-                  aria-hidden
-                  className={`flex h-11 w-11 items-center justify-center ring-1 ${m.shape} ${m.fill} ${m.ring}`}
-                >
-                  <Icon className={`h-5 w-5 ${m.ink}`} strokeWidth={2} />
+        <ul className="grid grid-cols-4 gap-4 sm:grid-cols-6 lg:grid-cols-8">
+          {earned.map((a) => {
+            const m = MEDAL[a.key];
+            const { Icon } = m;
+            return (
+              <li key={a.key} className="flex flex-col items-center gap-1.5">
+                <Tooltip content={`${a.title} — ${a.description}`} variant="rich">
+                  <span
+                    aria-hidden
+                    className={`flex h-11 w-11 items-center justify-center ring-1 ${m.shape} ${m.fill} ${m.ring}`}
+                  >
+                    <Icon className={`h-5 w-5 ${m.ink}`} strokeWidth={2} />
+                  </span>
+                </Tooltip>
+                <span className="text-center text-[11px] font-medium leading-tight text-foreground">
+                  {a.title}
                 </span>
-              </Tooltip>
-              <span className="text-center text-[10px] font-medium leading-tight text-foreground">
-                {a.title}
-              </span>
-              <span className="sr-only">{a.description}</span>
-            </li>
-          );
-        })}
-      </ul>
+                <span className="sr-only">{a.description}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </section>
   );
 }

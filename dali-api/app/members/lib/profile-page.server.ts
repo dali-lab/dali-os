@@ -133,7 +133,13 @@ export type ProfilePageData = {
     /** Null when the member isn't staffed this term: the credit is a
      *  requirement of being hired, so there's nothing to be compliant with. */
     ce: { termCode: string; credits: number; compliant: boolean } | null;
-    agreements: { signatureId: string; documentName: string; context: string; signedAt: string }[];
+    agreements: {
+      signatureId: string;
+      bindingId: string;
+      documentName: string;
+      context: string;
+      signedAt: string;
+    }[];
     /** This cycle's staffing forms for the member — the surface that used to
      *  live at /projects/my-staffing. Empty outside an open cycle. */
     staffingForms: MemberStaffingForm[];
@@ -533,6 +539,7 @@ export async function loadProfilePage({
           staffingForms,
           agreements: signed.map((d) => ({
             signatureId: d.signatureId,
+            bindingId: d.bindingId,
             documentName: d.documentName,
             context: d.context,
             signedAt: d.signedAt.toISOString(),
