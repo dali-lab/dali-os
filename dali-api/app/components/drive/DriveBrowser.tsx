@@ -1391,6 +1391,11 @@ export function DriveBrowser({
         ? listing.length
         : scopes.length;
 
+  // Whether the floating selection bar is up — the listing leaves room under
+  // its last row for it.
+  const stripVisible =
+    showBulk || !!(detailItem && detailActions && !detailsOpen);
+
   // "Location" line for the rail: scope name + folder chain to the item.
   const detailScope = detailScopeId ? scopes.find((s) => s.id === detailScopeId) ?? null : null;
   const detailPathLabel =
@@ -1645,30 +1650,6 @@ export function DriveBrowser({
 
         {tagChips}
 
-        {/* ── Action strip ──────────────────────────────────────────────────
-            Present only when a selection gives it something to carry: exactly
-            one selected → that item's quick actions; many → the bulk-action
-            set. At rest it renders nothing and takes no room, so the listing
-            sits directly under the toolbar the way a Finder window does. ── */}
-        <DriveActionStrip
-          os={true}
-          showBulk={showBulk}
-          selectedCount={selected.size}
-          selectedItems={selectedItems}
-          onBulkMove={onBulkMove}
-          onBulkDelete={onBulkDelete}
-          onClearSelection={() => setSelected(new Set())}
-          item={detailItem}
-          actions={detailActions}
-          canDownload={!!canItemDownload}
-          canRename={!!canItemRename}
-          canMove={!!canItemMove}
-          canShare={!!canItemShare}
-          canDelete={!!canItemDelete}
-          detailsOpen={detailsOpen}
-          onOpenDetails={() => setDetailsOpen(true)}
-        />
-
         {/* ── Body + details rail ────────────────────────────────────────────
             Horizontal split: the browser body flexes, the side-peek rail takes
             a fixed width on the right. Opening the rail reflows the body's WIDTH
@@ -1681,7 +1662,7 @@ export function DriveBrowser({
               (search). The page title above no longer has a stray folder name
               hanging under it, and every control that acts on the table now
               sits on the table. */}
-          <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2">
               {historyPair}
               <Breadcrumb
@@ -1837,7 +1818,12 @@ export function DriveBrowser({
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
               onDrop={onFileDrop}
-              className="relative min-w-0 overflow-hidden focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30"
+              className={cn(
+                "relative min-w-0 overflow-hidden focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
+                // Room under the last row for the floating selection bar.
+                // Padding below the content moves nothing above it.
+                stripVisible && "pb-14",
+              )}
             >
               {uploadOver && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
@@ -1890,6 +1876,32 @@ export function DriveBrowser({
               )}
             </div>
           )}
+
+          {/* ── Selection actions ─────────────────────────────────────────
+              Floated over the listing rather than stacked above it. A bar in
+              the flow appears the instant the first click of a double-click
+              lands, shoving the row out from under the second click — which is
+              what an always-mounted fixed-height row used to prevent, at the
+              cost of an empty band over every resting listing. Out of the flow
+              it can be absent at rest AND move nothing when it arrives. ── */}
+          <DriveActionStrip
+            os={true}
+            showBulk={showBulk}
+            selectedCount={selected.size}
+            selectedItems={selectedItems}
+            onBulkMove={onBulkMove}
+            onBulkDelete={onBulkDelete}
+            onClearSelection={() => setSelected(new Set())}
+            item={detailItem}
+            actions={detailActions}
+            canDownload={!!canItemDownload}
+            canRename={!!canItemRename}
+            canMove={!!canItemMove}
+            canShare={!!canItemShare}
+            canDelete={!!canItemDelete}
+            detailsOpen={detailsOpen}
+            onOpenDetails={() => setDetailsOpen(true)}
+          />
           </div>
 
           {detailsOpen && !columnsActive && (
@@ -1998,8 +2010,10 @@ function DriveActionStrip({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-md border px-3 min-h-9",
-        showBulk ? "border-os-accent/40 bg-os-accent/5" : "border-border bg-card/60",
+        // Pinned to the bottom of the listing it belongs to, clear of the rows
+        // it acts on. Its own surface and shadow, since it sits over content.
+        "absolute inset-x-3 bottom-3 z-20 flex items-center gap-2 rounded-md border px-3 min-h-9 shadow-brand-2",
+        showBulk ? "border-os-accent/40 bg-os-accent/10" : "border-border bg-card",
         os ? "text-base" : "text-sm",
       )}
       data-testid={showBulk ? "drive-bulk-bar" : "drive-action-strip"}
