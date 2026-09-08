@@ -193,7 +193,32 @@ export type EventMeetingDTO = {
   isCoreMeeting: boolean;
   /** Core only — hides the "Core meeting" checkbox for everyone else. */
   canMarkCoreMeeting: boolean;
+  /** Route the toggles post to. Unset means the current route, which is right
+   *  on the calendar page; a page that shows the same popover without owning
+   *  the calendar action (the Core hub) names "/calendar" here. */
+  actionPath?: string;
 };
+
+/**
+ * How the viewer answers this invite. Google events on the calendar page
+ * answer through Google directly (`google`), against their own copy of the
+ * event. A DALI meeting drawn from the database — the Core calendar — has no
+ * such copy to hand, so it answers through its invite notification
+ * (`notification`), whose endpoint pushes the same answer on to Google using
+ * the organizer's link.
+ */
+export type EventRsvpTarget =
+  | {
+      via: "google";
+      status: RsvpStatus;
+      eventId: string;
+      linkId: string;
+      calendarId: string | null;
+      /** Master id when this is one instance of a series — a DALI meeting
+       *  records the master, so the mirror back to its invite needs it. */
+      recurringEventId: string | null;
+    }
+  | { via: "notification"; status: RsvpStatus; notificationId: string };
 
 /** One external (Google/Outlook) event for display, from events.list. Carries
  *  CRUD identity (eventId/linkId/writable) behind the calendar-unified flag
@@ -363,18 +388,9 @@ export type EventBlock = {
   /** Set when this block is a DALI meeting: the detail popover adds its
    *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
   meeting?: EventMeetingDTO;
-  /** Set when the viewer is a guest on this Google event: the detail popover
-   *  offers Going / Maybe / Can't go, written straight back to Google. Carries
-   *  the event identity the RSVP action needs. */
-  rsvp?: {
-    status: RsvpStatus;
-    eventId: string;
-    linkId: string;
-    calendarId: string | null;
-    /** Master id when this is one instance of a series — a DALI meeting records
-     *  the master, so the mirror back to its invite needs it. */
-    recurringEventId: string | null;
-  };
+  /** Set when the viewer is a guest: the detail popover offers Going / Maybe /
+   *  Can't go. Carries the identity the write needs — see EventRsvpTarget. */
+  rsvp?: EventRsvpTarget;
 };
 
 // Group availability (POST /api/calendar/group-availability) — shared by the

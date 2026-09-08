@@ -1,16 +1,19 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useFetcher } from "react-router";
+import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
   Check, HelpCircle, X, Video, ExternalLink,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd } from "~/lib/pay-period";
-import type { EventBlock, EventAttendeeDTO, EventLinkDTO, RsvpStatus, WhDay } from "~/calendar/lib/types";
+import type {
+  EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
+} from "~/calendar/lib/types";
 import {
   HOURS, HOUR_PX, INITIAL_SCROLL_CENTER_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
@@ -53,17 +56,20 @@ const RSVP_CHOICES = [
   { response: "tentative", status: "Tentative", label: "Maybe", icon: HelpCircle },
   { response: "declined", status: "Declined", label: "Can't go", icon: X },
 ] as const satisfies readonly {
-  response: string;
+  response: RsvpResponse;
   status: RsvpStatus;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }[];
 
+/** The wire vocabulary the RSVP routes take. */
+type RsvpResponse = "accepted" | "declined" | "tentative";
+
 const RSVP_FROM_RESPONSE = {
   accepted: "Accepted",
   tentative: "Tentative",
   declined: "Declined",
-} as const satisfies Record<string, RsvpStatus>;
+} as const satisfies Record<RsvpResponse, RsvpStatus>;
 
 /** One section of the detail card: an eyebrow label over its content. The
  *  popover is a stack of these, so every block gets the same rhythm. */
@@ -135,17 +141,66 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
   );
 }
 
-/** Going / Maybe / Can't go, written straight to Google Calendar on the
- *  viewer's own account. The grid re-reads Google after the write, so the
- *  answer shown here and the one in Gmail/Google Calendar are the same value. */
-export function EventRsvpControl({ rsvp }: { rsvp: NonNullable<EventBlock["rsvp"]> }) {
+/**
+ * Going / Maybe / Can't go. Both routes end at Google: a Google event is
+ * patched on the viewer's own copy through the calendar action, and a DALI
+ * meeting goes through its invite endpoint, which pushes the answer on with
+ * the organizer's link. Either way the next read shows what Google holds.
+ */
+export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
   const fetcher = useFetcher<{ error?: string }>();
-  // Revalidation lands a beat after the write, so read the in-flight answer off
-  // formData — otherwise the pressed button visibly snaps back before settling.
-  const pending = fetcher.formData?.get("response");
-  const status: RsvpStatus = pending
-    ? RSVP_FROM_RESPONSE[String(pending) as keyof typeof RSVP_FROM_RESPONSE]
-    : rsvp.status;
+  const revalidator = useRevalidator();
+  // The notification route is a plain endpoint, not this page's action, so its
+  // in-flight state is tracked here rather than by a fetcher.
+  const [sending, setSending] = useState<RsvpResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Revalidation lands a beat after the write, so show the answer being sent —
+  // otherwise the pressed button visibly snaps back before settling.
+  const inFlight = sending ?? (fetcher.formData?.get("response") as RsvpResponse | null);
+  const status: RsvpStatus = inFlight ? RSVP_FROM_RESPONSE[inFlight] : rsvp.status;
+  const busy = sending !== null || fetcher.state !== "idle";
+
+  async function answer(response: RsvpResponse) {
+    setError(null);
+    if (rsvp.via === "google") {
+      fetcher.submit(
+        {
+          intent: "event-rsvp",
+          destination: `${rsvp.linkId}:${rsvp.calendarId ?? ""}`,
+          eventId: rsvp.eventId,
+          recurringEventId: rsvp.recurringEventId ?? "",
+          response,
+        },
+        { method: "post" },
+      );
+      return;
+    }
+    setSending(response);
+    try {
+      const res = await fetch(`/api/notifications/${rsvp.notificationId}/rsvp`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Failed to RSVP");
+        return;
+      }
+      if (json.gcalError) {
+        setError(`Recorded in DALI, but Google sync failed: ${json.gcalError}`);
+        return;
+      }
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSending(null);
+    }
+  }
 
   return (
     <DetailSection label="Going?">
@@ -156,19 +211,8 @@ export function EventRsvpControl({ rsvp }: { rsvp: NonNullable<EventBlock["rsvp"
             <button
               key={choice.response}
               type="button"
-              disabled={fetcher.state !== "idle"}
-              onClick={() =>
-                fetcher.submit(
-                  {
-                    intent: "event-rsvp",
-                    destination: `${rsvp.linkId}:${rsvp.calendarId ?? ""}`,
-                    eventId: rsvp.eventId,
-                    recurringEventId: rsvp.recurringEventId ?? "",
-                    response: choice.response,
-                  },
-                  { method: "post" },
-                )
-              }
+              disabled={busy}
+              onClick={() => answer(choice.response)}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-60",
                 active
@@ -185,8 +229,8 @@ export function EventRsvpControl({ rsvp }: { rsvp: NonNullable<EventBlock["rsvp"
       {status === "Pending" && (
         <p className="mt-1.5 text-[12px] text-os-grey">You haven&rsquo;t replied yet.</p>
       )}
-      {fetcher.data?.error && (
-        <p className="mt-1.5 text-[12px] text-red-600">{fetcher.data.error}</p>
+      {(error ?? fetcher.data?.error) && (
+        <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
       )}
     </DetailSection>
   );
@@ -219,7 +263,7 @@ export function CalendarEventDetailPopover({
   attendees?: EventAttendeeDTO[];
   links?: EventLinkDTO[];
   /** The viewer's own answer, when they're a guest — renders the RSVP control. */
-  rsvp?: EventBlock["rsvp"];
+  rsvp?: EventRsvpTarget;
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -445,7 +489,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
               meetingId: meeting.meetingId,
               onTimesheet: String(ev.target.checked),
             },
-            { method: "post" },
+            { method: "post", action: meeting.actionPath },
           )
         }
         label="Add to timesheet"
@@ -465,7 +509,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
                   meetingId: meeting.meetingId,
                   isCoreMeeting: String(ev.target.checked),
                 },
-                { method: "post" },
+                { method: "post", action: meeting.actionPath },
               )
             }
             label="Core meeting"

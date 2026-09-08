@@ -190,6 +190,7 @@ export function buildExternalLayer(
         rsvp:
           e.rsvp && e.eventId && e.linkId
             ? {
+                via: "google" as const,
                 status: e.rsvp,
                 eventId: e.eventId,
                 linkId: e.linkId,

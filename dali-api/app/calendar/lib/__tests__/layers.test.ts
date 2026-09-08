@@ -124,6 +124,7 @@ describe("buildExternalLayer", () => {
       ] as LoaderData["externalEvents"],
     });
     expect(buildExternalLayer(data, days)[0][0].rsvp).toEqual({
+      via: "google",
       status: "Pending",
       eventId: "ev1",
       linkId: "link1",
