@@ -915,7 +915,7 @@ function GradesTab({
       {assignments.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No graded work yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>

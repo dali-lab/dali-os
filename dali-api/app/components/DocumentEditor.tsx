@@ -828,7 +828,7 @@ export function DocumentEditor({
                 The hover-reveal row is always reserved (h-6) so the title does
                 not shift when hovering; items appear with opacity transition. */}
             {canEdit && (
-              <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100">
+              <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 touch:opacity-100">
                 {!iconEmoji && (
                   <PageIconPicker
                     iconEmoji={null}

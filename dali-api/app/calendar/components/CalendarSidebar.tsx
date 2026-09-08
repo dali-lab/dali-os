@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { Check, ChevronDown, ChevronRight, Clock3, Search, Settings2, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Search, Settings2, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
@@ -215,7 +216,7 @@ function RoleRow({
             }}
             aria-label={`Remove ${label}`}
             title="Remove this job"
-            className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+            className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -242,21 +243,7 @@ function RoleRow({
   );
 }
 
-export function CalendarSidebar({
-  data,
-  focusDate,
-  onPickDate,
-  hiddenCals,
-  toggleHiddenCal,
-  layers,
-  onToggleTimesheet,
-  myRoles,
-  roleColors,
-  roleHours,
-  setRoleColor,
-  onManage,
-  onMeetWith,
-}: {
+type CalendarSidebarProps = {
   data: LoaderData;
   focusDate: Date;
   onPickDate: (dateUtc: Date) => void;
@@ -276,15 +263,29 @@ export function CalendarSidebar({
   /** Opens the full calendars panel — connecting accounts, the main calendar,
    *  and what counts toward availability all live there, not in this rail. */
   onManage: () => void;
-}) {
+};
+
+/** Inner content shared by the desktop rail and the mobile drawer. */
+function CalendarSidebarContent({
+  data,
+  focusDate,
+  onPickDate,
+  hiddenCals,
+  toggleHiddenCal,
+  layers,
+  onToggleTimesheet,
+  myRoles,
+  roleColors,
+  roleHours,
+  setRoleColor,
+  onManage,
+  onMeetWith,
+}: CalendarSidebarProps) {
   const revalidator = useRevalidator();
   const links = data.calendarLinks.filter((l) => l.enabled);
 
   return (
-    // pr-4 on top of the row's gap: the rail scrolls, so its own right edge is
-    // where a scrollbar lands, and the mini-month's cells ran up against the
-    // grid without it.
-    <aside className="hidden w-64 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
+    <>
       <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
 
       <MeetWith users={data.users} onPick={onMeetWith} />
@@ -318,7 +319,6 @@ export function CalendarSidebar({
             />
           ))
         )}
-
       </div>
 
       {/* Timesheet is a way of *looking* at the grid, not a calendar to overlay,
@@ -374,6 +374,66 @@ export function CalendarSidebar({
           </>
         )}
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function CalendarSidebar(props: CalendarSidebarProps) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  return (
+    <>
+      {/* Mobile toggle button — only visible below lg. Sits outside the aside so
+          it participates in the flex row that holds it + the grid section. */}
+      <button
+        type="button"
+        onClick={() => setDrawerOpen(true)}
+        aria-label="Open calendars panel"
+        className="lg:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+
+      {/* Desktop rail — hidden below lg, same as before. */}
+      {/* pr-4 on top of the row's gap: the rail scrolls, so its own right edge is
+          where a scrollbar lands, and the mini-month's cells ran up against the
+          grid without it. */}
+      <aside className="hidden w-64 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
+        <CalendarSidebarContent {...props} />
+      </aside>
+
+      {/* Mobile slide-over drawer — rendered in a portal so it's not clipped by
+          the grid's overflow-x-auto ancestor. */}
+      {drawerOpen && typeof document !== "undefined" && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            aria-hidden
+            onClick={() => setDrawerOpen(false)}
+          />
+          {/* Drawer panel */}
+          <div
+            role="dialog"
+            aria-label="Calendars"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-5 overflow-y-auto bg-card px-4 py-5 shadow-xl"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">Calendars</span>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Close calendars panel"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <CalendarSidebarContent {...props} />
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
   );
 }

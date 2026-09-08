@@ -13,8 +13,23 @@
 // per-term status column) the manager uses the role-specific "+ Add" button.
 // Slot-parameterised via SLOT_ROLES, so adding a slot is a registry change,
 // not a component change.
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useFetcher } from "react-router";
+import {
+  DndContext,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Select, Tooltip } from "~/components/ui/floating";
@@ -233,11 +248,27 @@ export function SlotColumnMapper({
     });
   }
 
-  // Native HTML5 drag, matching the TabWorkspace pattern: a ref tracks which
-  // row is being dragged (so it doesn't trigger re-renders mid-drag), and a
-  // `dragOver` index is the insertion line the user is hovering over.
-  const dragSourceRef = useRef<string | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIdx = cols.findIndex((c) => c.uid === String(active.id));
+    const toIdx = cols.findIndex((c) => c.uid === String(over.id));
+    if (fromIdx < 0 || toIdx < 0) return;
+    // Direct splice reorder: remove the dragged item then insert at the target
+    // position. This is equivalent to arrayMove and preserves the exact visual
+    // position the user dropped onto.
+    setCols((cs) => {
+      const next = [...cs];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  }
 
   function save() {
     const entries: ColumnMappingEntry[] = [];
@@ -360,87 +391,33 @@ export function SlotColumnMapper({
         Submissions are always recorded.
       </p>
 
-      <div
-        className="flex flex-col"
-        onDragOver={(e) => {
-          // Allow dropping into the empty area at the very end of the list,
-          // so a row can be sent to the bottom past the last row's midpoint.
-          if (!dragSourceRef.current) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (dragOverIndex !== cols.length) setDragOverIndex(cols.length);
-        }}
-        onDrop={(e) => {
-          if (!dragSourceRef.current) return;
-          e.preventDefault();
-          moveTo(dragSourceRef.current, dragOverIndex ?? cols.length);
-          dragSourceRef.current = null;
-          setDragOverIndex(null);
-        }}
+      <DndContext
+        sensors={dragSensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
       >
+        <SortableContext
+          items={cols.map((c) => c.uid)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="flex flex-col">
         {cols.map((c, i) => {
           const isBuiltin = c.source === "builtin";
           const isDisplay = c.role === "display";
-          const showIndicatorBefore = dragOverIndex === i;
-          const showIndicatorAfter =
-            dragOverIndex === i + 1 && i === cols.length - 1;
-          const isDragging = dragSourceRef.current === c.uid;
           return (
-            <div key={c.uid}>
-              <div
-                aria-hidden
-                className={`h-0.5 rounded-full transition-colors ${
-                  showIndicatorBefore ? "bg-accent-coral" : "bg-transparent"
-                }`}
-              />
-              <div
-                className={`py-2 flex flex-col gap-2 border-b border-border last:border-b-0 lg:grid lg:items-center ${
-                  canManage
-                    ? "lg:grid-cols-[auto_14rem_minmax(0,1fr)_auto]"
-                    : "lg:grid-cols-[14rem_minmax(0,1fr)]"
-                } ${isDragging ? "opacity-50" : ""}`}
-                onDragOver={(e) => {
-                  if (!dragSourceRef.current) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = "move";
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const midpoint = rect.top + rect.height / 2;
-                  const insertIdx = e.clientY < midpoint ? i : i + 1;
-                  if (dragOverIndex !== insertIdx) setDragOverIndex(insertIdx);
-                }}
-                onDrop={(e) => {
-                  if (!dragSourceRef.current) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  moveTo(dragSourceRef.current, dragOverIndex ?? i);
-                  dragSourceRef.current = null;
-                  setDragOverIndex(null);
-                }}
-              >
+            <SortableColRow key={c.uid} uid={c.uid} canManage={canManage} saving={saving}>
+              {(dragHandleProps) => (
+              <>
                 {/* Drag handle — only this element starts a drag, so inputs
                     and buttons inside the row stay normally interactive.
                     Hidden for viewers (canManage=false). */}
                 {canManage ? (
                   <button
                     type="button"
-                    draggable
+                    {...dragHandleProps}
                     aria-label={`Reorder ${c.label}`}
-                    onDragStart={(e) => {
-                      dragSourceRef.current = c.uid;
-                      e.dataTransfer.effectAllowed = "move";
-                      try {
-                        e.dataTransfer.setData("text/plain", c.uid);
-                      } catch {
-                        // Firefox quirk; ignore.
-                      }
-                    }}
-                    onDragEnd={() => {
-                      dragSourceRef.current = null;
-                      setDragOverIndex(null);
-                    }}
                     disabled={saving}
-                    className="cursor-grab active:cursor-grabbing px-1.5 py-1 text-muted-foreground hover:text-foreground select-none disabled:opacity-40"
+                    className="dnd-touch-handle cursor-grab active:cursor-grabbing px-1.5 py-1 text-muted-foreground hover:text-foreground select-none disabled:opacity-40"
                   >
                     ⋮⋮
                   </button>
@@ -531,17 +508,14 @@ export function SlotColumnMapper({
                     </button>
                   </div>
                 )}
-              </div>
-              {showIndicatorAfter && (
-                <div
-                  aria-hidden
-                  className="h-0.5 rounded-full bg-accent-coral"
-                />
+              </>
               )}
-            </div>
+            </SortableColRow>
           );
         })}
-      </div>
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
       {canManage && missing.length > 0 && (
@@ -605,6 +579,45 @@ export function SlotColumnMapper({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Sortable row shell — owns the useSortable hook so it can be called at the
+// component level (not inside a .map callback, which violates rules-of-hooks).
+// Renders as the grid row; passes handle props down via render-prop so the
+// caller can spread them onto the grip button while keeping inputs interactive.
+function SortableColRow({
+  uid,
+  canManage,
+  saving,
+  children,
+}: {
+  uid: string;
+  canManage: boolean;
+  saving: boolean;
+  children: (dragHandleProps: Record<string, unknown>) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: uid, disabled: !canManage || saving });
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  const dragHandleProps = { ...attributes, ...listeners } as Record<string, unknown>;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`py-2 flex flex-col gap-2 border-b border-border last:border-b-0 lg:grid lg:items-center ${
+        canManage
+          ? "lg:grid-cols-[auto_14rem_minmax(0,1fr)_auto]"
+          : "lg:grid-cols-[14rem_minmax(0,1fr)]"
+      } ${isDragging ? "opacity-50" : ""}`}
+    >
+      {children(dragHandleProps)}
     </div>
   );
 }

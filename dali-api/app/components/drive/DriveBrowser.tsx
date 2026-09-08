@@ -27,7 +27,8 @@ import {
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -752,7 +753,10 @@ export function DriveBrowser({
     setActiveId(null);
   }, [currentScopeId, currentFolderId, search]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
   const suppressClickRef = useRef(false);
 
   // "searching" is really "showing flat results across every drive", which a
@@ -1630,7 +1634,7 @@ export function DriveBrowser({
               {/* No height of its own: the row is as tall as its tallest
                   column, which caps itself (see MillerColumn), so a shallow
                   Drive doesn't paint an empty panel down to the fold. */}
-              <div className="flex divide-x divide-border/60">
+              <div className="flex divide-x divide-border/60 overflow-x-auto">
                 {/* Column 0: scope list — hidden in embedded mode (the user is
                     already inside the project context, no cross-scope nav). */}
                 {!embeddedScopeId && (
@@ -2410,7 +2414,7 @@ function ColumnItemRow({
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none ${
+      className={`group flex items-center dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver ? "ring-2 ring-inset ring-accent-coral bg-accent-coral/10" : ""
@@ -3103,7 +3107,7 @@ function ListRow({
         gridTemplateColumns: GRID_COLUMNS,
         ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
       }}
-      className={`group grid items-center ${t.itemRow} rounded-md ${t.row} cursor-default select-none ${
+      className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-md ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && isFolder
@@ -3225,7 +3229,7 @@ function GridTile({
       // view reads. Selection lives on the label chip below (Finder's blue
       // rectangle), not on a border, so a grid of files reads as a grid of
       // files rather than a grid of boxes.
-      className={`${GRID_TILE} ${
+      className={`${GRID_TILE} dnd-touch-handle ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && isFolder

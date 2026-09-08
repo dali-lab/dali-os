@@ -760,7 +760,7 @@ export function TaskBoard({
       // `text-foreground` on its title slot, which would otherwise win over
       // the colour inherited from the header.
       title: <span style={{ color: accent.ink }}>{label}</span>,
-      className: cn(shell, "w-64"),
+      className: cn(shell, "w-full md:w-64"),
       headerClassName: cn(
         "flex items-center justify-between gap-2 px-3 py-2",
         roundedTop,

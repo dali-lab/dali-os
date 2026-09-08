@@ -306,7 +306,8 @@ export default function AdminConsoleAnalytics() {
             No client errors in the last {rangeDays} days.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
@@ -338,6 +339,7 @@ export default function AdminConsoleAnalytics() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

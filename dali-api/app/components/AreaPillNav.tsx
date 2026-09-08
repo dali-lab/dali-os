@@ -46,7 +46,7 @@ const underlineTabBarClass = cn(
 // to auto too, so a negative margin on a child became 1px of vertical scroll
 // inside the list. On the list itself it still laps the bar's bottom border.
 const underlineTabListClass =
-  "flex min-w-0 flex-1 items-stretch gap-0.5 flex-nowrap overflow-x-auto no-scrollbar -mb-px";
+  "flex min-w-0 flex-1 items-stretch gap-0.5 flex-nowrap overflow-x-auto no-scrollbar -mb-px [mask-image:linear-gradient(to_right,black_85%,transparent)]";
 
 // Actions never scroll with the tabs and keep the row's right edge.
 const tabBarActionsClass = "flex shrink-0 items-center gap-2 self-center pl-2 pr-2";

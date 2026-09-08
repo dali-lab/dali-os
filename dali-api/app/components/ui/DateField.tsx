@@ -199,7 +199,14 @@ export function DateField({
     const r = triggerRef.current.getBoundingClientRect();
     const minWidth = Math.max(r.width, 260);
     const left = Math.min(r.left, window.innerWidth - minWidth - 8);
-    const top = r.bottom + 4;
+    // Estimate popover height from the DOM element when available, otherwise
+    // use a reasonable fallback (calendar grid ~300px, datetime adds time row).
+    const popoverEl = document.querySelector<HTMLElement>("[data-datefield-popover]");
+    const popoverHeight = popoverEl ? popoverEl.offsetHeight : 320;
+    let top = r.bottom + 4;
+    if (top + popoverHeight > window.innerHeight) {
+      top = r.top - 4 - popoverHeight;
+    }
     setPos({ top, left, minWidth });
   }, []);
 
@@ -292,6 +299,7 @@ export function DateField({
           <div
             ref={popRef}
             role="dialog"
+            data-datefield-popover
             style={{ position: "fixed", top: pos.top, left: pos.left, minWidth: pos.minWidth }}
             className="z-[60] rounded-lg border border-border bg-card p-3 shadow-brand-2"
           >

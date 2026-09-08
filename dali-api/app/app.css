@@ -15,6 +15,10 @@
 /* Class-based dark mode (html.dark) so settings can override system preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Touch/coarse-pointer variant — applied to devices where (hover: none).
+   Use `touch:opacity-100` etc. to force-show hover-gated actions on phones. */
+@custom-variant touch (@media (hover: none));
+
 @theme {
   /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
   --color-accent-coral:       #FF8B81;  /* "Sunrise" — primary CTA */
@@ -522,6 +526,14 @@ input[type="range"] {
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Drag handles for @dnd-kit sortables: block the browser's default pan/scroll
+   handling so the drag sensor can claim the pointer gesture on touch devices.
+   Without this a PointerSensor fires pointercancel immediately on mobile and
+   the drag is silently lost to the scroll container. */
+@utility dnd-touch-handle {
+  touch-action: none;
 }
 
 html {

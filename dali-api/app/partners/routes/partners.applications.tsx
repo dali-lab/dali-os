@@ -1114,7 +1114,7 @@ function ApplicationsBoard({
     id: status,
     title: <StatusPill status={status} />,
     cards: byStatus[status],
-    className: "flex-shrink-0 w-72 border rounded-lg border-border bg-card flex flex-col",
+    className: "flex-shrink-0 w-full md:w-72 border rounded-lg border-border bg-card flex flex-col",
   }));
 
   return (
