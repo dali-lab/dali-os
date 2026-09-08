@@ -105,9 +105,8 @@ export async function requireEnrollment(
       },
       select: { id: true, status: true },
     }),
-    surface === "member"
-      ? isOfferingManager(auth.user.sub, offeringId)
-      : Promise.resolve(false),
+    // Both surfaces: external instructors manage from the portal shell.
+    isOfferingManager(auth.user.sub, offeringId),
   ]);
 
   const enrolled = application?.status === "Approved";

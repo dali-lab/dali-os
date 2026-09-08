@@ -2,10 +2,13 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/portal.education";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { getUserRoles } from "~/lib/roles";
 import { listCatalog } from "~/education/lib/offerings.server";
 import { getStudentDashboard } from "~/education/lib/lms.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
+import { EducationHubV2 } from "~/education/components/v2/EducationHubV2";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = () => [
@@ -18,20 +21,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members use the member-shell education surface instead.
   if (auth.user.type === "member") return redirect("/education");
 
-  const [offerings, dashboard] = await Promise.all([
+  // Portal users carry no roles; pass the empty role object that getUserRoles
+  // returns for a non-member — flag targeting that requires a role never fires.
+  const [offerings, dashboard, roles] = await Promise.all([
     listCatalog(auth.user.sub),
     getStudentDashboard(auth.user.sub),
+    getUserRoles(auth.user.sub),
   ]);
-  return { offerings, dashboard };
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+  return { offerings, dashboard, redesign };
 }
 
 export default function PortalEducation() {
-  const { offerings, dashboard } = useLoaderData<typeof loader>();
+  const { offerings, dashboard, redesign } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   // Enrolled courses show in the dashboard's "My courses"; the list below is
   // offerings still open to apply to or RSVP for.
+  const now = Date.now();
+  const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date | null }) =>
+    o.closedOutAt != null || (o.endsAt != null && new Date(o.endsAt).getTime() < now);
   const openOfferings = offerings.filter((o) => o.myStatus !== "Approved");
+  const upcoming = openOfferings.filter((o) => !isPast(o));
+  const past = offerings.filter(isPast);
   const hasCourses = dashboard.myCourses.some((c) => !c.isPast);
+
+  if (redesign) {
+    return (
+      <div className="py-8 flex flex-col gap-8">
+        <EducationHubV2
+          basePath="/portal/education"
+          ceStanding={null}
+          dashboard={dashboard}
+          upcoming={upcoming}
+          past={past}
+          canManage={false}
+          isMemberShell={false}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">

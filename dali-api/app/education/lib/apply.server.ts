@@ -4,6 +4,7 @@ import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { loadOfferingApplicationForm } from "./application-form.server";
 import { registrationOpen } from "./offerings.server";
+import { isOfferingManager } from "./access.server";
 import { notifyApplicationStatus } from "./notifications.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -73,6 +74,10 @@ export async function submitApplication(args: {
   if (!offering) return { error: "Offering not found.", status: 404 };
   if (!registrationOpen(offering))
     return { error: "Registration isn't open for this offering.", status: 400 };
+  // Managers can't enroll in their own course — the As-student preview covers
+  // their view without creating a real enrollment row.
+  if (await isOfferingManager(args.userId, args.offeringId))
+    return { error: "Instructors can't enroll in their own course.", status: 403 };
 
   const form = await loadOfferingApplicationForm(args.offeringId, args.userId);
   if (!form)

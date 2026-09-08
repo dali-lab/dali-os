@@ -15,6 +15,8 @@ import {
 import { OfferingApplyForm } from "~/education/components/OfferingApplyForm";
 import { MyStatusChip, TypeBadge } from "~/education/components/OfferingCard";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Apply · ${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -41,6 +43,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return redirect(`/portal/education/${params.offeringId}/apply`);
+
+  // When the redesign flag is ON, all funnel states live at the detail URL.
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+  if (redesign) return redirect(`/education/${params.offeringId}?step=apply`);
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering || offering.status !== "Published")

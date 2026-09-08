@@ -16,6 +16,8 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { parseSessionCookie } from "~/lib/cookies";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Grade ${data?.assignment.title ?? "Assignment"} · DALI OS` },
@@ -50,6 +52,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!offeringId) throw new Response("Not found", { status: 404 });
   const gate = await requireOfferingManager(request, offeringId);
   if (!gate.ok) return redirect("/portal");
+
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+  if (redesign) {
+    return redirect(`/education/${offeringId}/assignments/${params.assignmentId!}`);
+  }
 
   const [assignment, submissions, offering] = await Promise.all([
     prisma.educationAssignment.findUnique({

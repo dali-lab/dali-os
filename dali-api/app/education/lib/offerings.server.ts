@@ -891,6 +891,52 @@ export async function runOfferingAction(
       return { ok: true };
     }
 
+    case "reorder-sessions": {
+      // Sequence is chronologically derived (recomputeOfferingDates renumbers
+      // after every mutation), so reordering permutes *schedule slots*: the
+      // i-th session in the submitted order takes the i-th slot's
+      // (datetime, endsAt). Location stays with the session — it follows the
+      // topic, not the room booking.
+      const sessionIds = formData.getAll("sessionIds").map(String);
+      if (sessionIds.length < 2) return bad("Nothing to reorder");
+      if (new Set(sessionIds).size !== sessionIds.length)
+        return bad("Duplicate session ids");
+      const rows = await prisma.educationSession.findMany({
+        where: { id: { in: sessionIds }, offeringId },
+        select: {
+          id: true,
+          datetime: true,
+          endsAt: true,
+          _count: { select: { attendances: true } },
+        },
+      });
+      if (rows.length !== sessionIds.length) return bad("Session not found", 404);
+      const now = new Date();
+      if (rows.some((s) => s.datetime <= now))
+        return bad("Only future sessions can be reordered");
+      if (rows.some((s) => s._count.attendances > 0))
+        return bad("Sessions with attendance records can't be reordered");
+      const slots = rows
+        .map((s) => ({ datetime: s.datetime, endsAt: s.endsAt }))
+        .sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
+      await prisma.$transaction(
+        sessionIds.map((id, i) =>
+          prisma.educationSession.update({
+            where: { id },
+            data: { datetime: slots[i].datetime, endsAt: slots[i].endsAt },
+          }),
+        ),
+      );
+      await logAuditEvent({
+        action: "education.session.update",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { offeringId, bulkReorder: true, count: sessionIds.length },
+      });
+      await recomputeOfferingDates(offeringId);
+      return { ok: true };
+    }
+
     case "set-decision-email": {
       const status = formData.get("status");
       if (status !== "Approved" && status !== "Waitlisted" && status !== "Rejected")

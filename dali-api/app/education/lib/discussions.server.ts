@@ -138,6 +138,14 @@ export async function deletePost(args: {
 }
 
 /** FormData dispatcher shared by the member and portal hub route actions. */
+/** The intents runDiscussionAction handles — hub actions route these to it
+ * before falling through to the manager dispatcher. */
+export const DISCUSSION_INTENTS = [
+  "post-announcement",
+  "post-discussion",
+  "delete-discussion",
+];
+
 export async function runDiscussionAction(
   formData: FormData,
   ctx: { offeringId: string; userId: string; isManager: boolean },

@@ -7,8 +7,10 @@ import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listCatalog, listMyApplications } from "~/education/lib/offerings.server";
 import { getStudentDashboard } from "~/education/lib/lms.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
+import { EducationHubV2 } from "~/education/components/v2/EducationHubV2";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Link } from "react-router";
 
@@ -27,6 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     getStudentDashboard(auth.user.sub),
     getUserRoles(auth.user.sub),
   ]);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
   return {
     offerings,
     myApplications,
@@ -34,6 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     dashboard,
     canManage: roles.isCore || roles.isInstructor,
     isCore: roles.isCore,
+    redesign,
   };
 }
 
@@ -46,7 +50,7 @@ const APPLICATION_STATUS_STYLE: Record<string, string> = {
 };
 
 export default function EducationCatalog() {
-  const { offerings, myApplications, ceStanding, dashboard, canManage, isCore } =
+  const { offerings, myApplications, ceStanding, dashboard, canManage, isCore, redesign } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const now = Date.now();
@@ -57,6 +61,21 @@ export default function EducationCatalog() {
   // for offerings the student can still apply to or RSVP for.
   const upcoming = offerings.filter((o) => !isPast(o) && o.myStatus !== "Approved");
   const past = offerings.filter(isPast);
+
+  if (redesign) {
+    return (
+      <EducationHubV2
+        basePath="/education"
+        ceStanding={ceStanding}
+        dashboard={dashboard}
+        upcoming={upcoming}
+        past={past}
+        canManage={canManage}
+        isCore={isCore}
+        isMemberShell={true}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

@@ -1,6 +1,57 @@
 import type { Route } from "./+types/api.education.sessions.$sessionId.check-in";
+import QRCode from "qrcode";
 import { requireAuth } from "~/lib/auth";
-import { selfCheckInToSession } from "~/education/lib/session-checkin.server";
+import { prisma } from "~/lib/db";
+import { isOfferingManager } from "~/education/lib/access.server";
+import {
+  isSessionCheckInOpen,
+  selfCheckInToSession,
+} from "~/education/lib/session-checkin.server";
+
+// GET /api/education/sessions/:sessionId/check-in[?qr=1]
+//
+// Manager-only status read for the course page's Editing mode: the live
+// "N of M in" count (polled while check-in is open) and, with ?qr=1, the
+// projectable QR + link for the session's self-check-in URL.
+
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const session = await prisma.educationSession.findUnique({
+    where: { id: params.sessionId! },
+    select: { id: true, offeringId: true, datetime: true, endsAt: true, checkInOpenAt: true },
+  });
+  if (!session) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await isOfferingManager(auth.user.sub, session.offeringId))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const [presentCount, totalCount] = await Promise.all([
+    prisma.educationAttendance.count({
+      where: { sessionId: session.id, status: "Present" },
+    }),
+    prisma.educationApplication.count({
+      where: { offeringId: session.offeringId, status: "Approved" },
+    }),
+  ]);
+
+  const wantsQr = new URL(request.url).searchParams.get("qr") === "1";
+  const checkInUrl = wantsQr
+    ? `${new URL(request.url).origin}/education/check-in/${session.id}`
+    : null;
+  const checkInQrSvg = checkInUrl
+    ? await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 200 })
+    : null;
+
+  return Response.json({
+    open: isSessionCheckInOpen(session),
+    presentCount,
+    totalCount,
+    checkInUrl,
+    checkInQrSvg,
+  });
+}
 
 // POST /api/education/sessions/:sessionId/check-in
 //

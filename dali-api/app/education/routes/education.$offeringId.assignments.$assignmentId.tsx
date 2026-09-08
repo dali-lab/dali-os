@@ -1,17 +1,25 @@
-import { useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/education.$offeringId.assignments.$assignmentId";
 import { requireEnrollment } from "~/education/lib/access.server";
 import {
   getAssignmentForStudent,
   submitAssignment,
   ensureDocSubmissionRow,
+  listSubmissions,
+  gradeSubmission,
+  updateAssignment,
+  deleteAssignment,
 } from "~/education/lib/assignments.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
+import { AssignmentScreenV2 } from "~/education/components/v2/AssignmentScreenV2";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import type { SubmissionType } from "~/generated/prisma/client";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI OS` },
@@ -90,7 +98,52 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { title: true },
   });
 
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+
+  // When redesign is on and the viewer is a manager, load the instructor payload
+  // so the v2 screen can render the grading pane instead of the student view.
+  let instructorPayload: {
+    submissions: Awaited<ReturnType<typeof listSubmissions>> extends (infer U)[]
+      ? (U & { files: { key: string; name: string }[]; docContent: unknown })[]
+      : never;
+    enrolledCount: number;
+    toGrade: number;
+    collabToken: string | null;
+  } | null = null;
+
+  if (redesign && isManager) {
+    const [rawSubmissions, enrolledCount] = await Promise.all([
+      listSubmissions(params.assignmentId!),
+      prisma.educationApplication.count({
+        where: { offeringId: params.offeringId!, status: "Approved" },
+      }),
+    ]);
+
+    const submissionsWithDocs = await Promise.all(
+      rawSubmissions.map(async (s) => ({
+        ...s,
+        files: (s.files as { key: string; name: string }[]) ?? [],
+        docContent: s.contentDocId
+          ? await readDocAsBlocks(s.contentDocId)
+          : null,
+      })),
+    );
+
+    const toGrade = submissionsWithDocs.filter(
+      (s) => s.submittedAt != null && s.gradedAt == null,
+    ).length;
+
+    instructorPayload = {
+      submissions: submissionsWithDocs,
+      enrolledCount,
+      toGrade,
+      collabToken: parseSessionCookie(request),
+    };
+  }
+
   return {
+    redesign,
     offeringId: params.offeringId!,
     offeringTitle: offering?.title ?? "Offering",
     assignment: { ...result.assignment, instructionsContent },
@@ -105,21 +158,76 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager,
     collabToken: parseSessionCookie(request),
     userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
+    instructorPayload,
   };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { auth, applicationId } = await requireEnrollment(
+  const { auth, applicationId, isManager } = await requireEnrollment(
     request,
     params.offeringId!,
     "member",
   );
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  // ── Manager-gated intents ────────────────────────────────────────────────
+  if (intent === "grade-submission" || intent === "update-assignment" || intent === "delete-assignment") {
+    if (!isManager) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (intent === "grade-submission") {
+      const scoreRaw = String(formData.get("score") ?? "");
+      const scoreParsed = scoreRaw !== "" ? parseInt(scoreRaw, 10) : null;
+      const result = await gradeSubmission({
+        submissionId: String(formData.get("submissionId") ?? ""),
+        offeringId: params.offeringId!,
+        grade: String(formData.get("grade") ?? ""),
+        score: Number.isFinite(scoreParsed) ? scoreParsed : null,
+        actorId: auth.user.sub,
+      });
+      if ("error" in result)
+        return Response.json({ error: result.error }, { status: result.status });
+      return { ok: true };
+    }
+
+    if (intent === "update-assignment") {
+      const dueAtRaw = String(formData.get("dueAt") ?? "");
+      const pointsRaw = String(formData.get("points") ?? "");
+      const pointsParsed = pointsRaw !== "" ? parseInt(pointsRaw, 10) : null;
+      const result = await updateAssignment({
+        assignmentId: params.assignmentId!,
+        offeringId: params.offeringId!,
+        title: String(formData.get("title") ?? ""),
+        dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+        submissionType: String(formData.get("submissionType") ?? "Text") as SubmissionType,
+        points: Number.isFinite(pointsParsed) ? pointsParsed : null,
+        actorId: auth.user.sub,
+      });
+      if ("error" in result)
+        return Response.json({ error: result.error }, { status: result.status });
+      return { ok: true };
+    }
+
+    if (intent === "delete-assignment") {
+      const result = await deleteAssignment({
+        assignmentId: params.assignmentId!,
+        offeringId: params.offeringId!,
+        actorId: auth.user.sub,
+      });
+      if ("error" in result)
+        return Response.json({ error: result.error }, { status: result.status });
+      return redirect(`/education/${params.offeringId!}/hub`);
+    }
+  }
+
+  // ── Student intents (unchanged) ──────────────────────────────────────────
   if (!applicationId)
     return Response.json(
       { error: "Manager preview can't submit assignments." },
       { status: 403 },
     );
-  const formData = await request.formData();
   let files: { key: string; name: string }[] = [];
   try {
     const parsed: unknown = JSON.parse(String(formData.get("files") ?? "[]"));
@@ -147,8 +255,22 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberAssignment() {
-  const { assignment, submission, canSubmit, collabToken, userName } =
-    useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+
+  // Branch at component level (not early return) to keep hook order stable
+  // across flag flips, mirroring the OfferingDetail pattern.
+  if (data.redesign) {
+    return <MemberAssignmentV2 data={data} />;
+  }
+  return <MemberAssignmentV1 data={data} />;
+}
+
+function MemberAssignmentV1({
+  data,
+}: {
+  data: ReturnType<typeof useLoaderData<typeof loader>>;
+}) {
+  const { assignment, submission, canSubmit, collabToken, userName } = data;
   const tz = useUserTimeZone();
 
   return (
@@ -169,5 +291,36 @@ export default function MemberAssignment() {
         userName={userName}
       />
     </div>
+  );
+}
+
+function MemberAssignmentV2({
+  data,
+}: {
+  data: ReturnType<typeof useLoaderData<typeof loader>>;
+}) {
+  const {
+    assignment,
+    submission,
+    canSubmit,
+    isManager,
+    collabToken,
+    userName,
+    offeringId,
+    instructorPayload,
+  } = data;
+
+  return (
+    <AssignmentScreenV2
+      assignment={assignment}
+      submission={submission}
+      canSubmit={canSubmit}
+      isManager={isManager}
+      basePath="/education"
+      collabToken={collabToken}
+      userName={userName}
+      offeringId={offeringId}
+      instructorPayload={instructorPayload}
+    />
   );
 }

@@ -8,8 +8,11 @@ import {
 } from "~/education/lib/assignments.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
+import { AssignmentScreenV2 } from "~/education/components/v2/AssignmentScreenV2";
 import { formatDateTime } from "~/lib/display";
 import { parseSessionCookie } from "~/lib/cookies";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI` },
@@ -58,7 +61,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? await readDocAsBlocks(`edusubmission:${result.submission.id}:feedback`)
       : null;
 
+  const roles = await getUserRoles(auth.user.sub, request);
+  const redesign = await isFeatureEnabled("education-redesign", auth.user.sub, roles, request);
+
   return {
+    redesign,
     offeringId: params.offeringId!,
     assignment: { ...result.assignment, instructionsContent },
     submission: result.submission
@@ -110,8 +117,22 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function PortalAssignment() {
-  const { offeringId, assignment, submission, canSubmit, collabToken, userName } =
-    useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+
+  // Branch at component level (not early return) to keep hook order stable
+  // across flag flips.
+  if (data.redesign) {
+    return <PortalAssignmentV2 data={data} />;
+  }
+  return <PortalAssignmentV1 data={data} />;
+}
+
+function PortalAssignmentV1({
+  data,
+}: {
+  data: ReturnType<typeof useLoaderData<typeof loader>>;
+}) {
+  const { offeringId, assignment, submission, canSubmit, collabToken, userName } = data;
 
   return (
     <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
@@ -137,6 +158,30 @@ export default function PortalAssignment() {
         canSubmit={canSubmit}
         collabToken={collabToken}
         userName={userName}
+      />
+    </div>
+  );
+}
+
+function PortalAssignmentV2({
+  data,
+}: {
+  data: ReturnType<typeof useLoaderData<typeof loader>>;
+}) {
+  const { offeringId, assignment, submission, canSubmit, collabToken, userName } = data;
+
+  return (
+    <div className="w-full px-4 sm:px-6 py-8">
+      <AssignmentScreenV2
+        assignment={assignment}
+        submission={submission}
+        canSubmit={canSubmit}
+        isManager={false}
+        basePath="/portal/education"
+        collabToken={collabToken}
+        userName={userName}
+        offeringId={offeringId}
+        instructorPayload={null}
       />
     </div>
   );
