@@ -26,7 +26,9 @@ import { ADD_EVENT_BTN, EVENT_TEXT, EVENT_CORAL } from "~/calendar/lib/event-blo
 import { placeBlock } from "~/calendar/lib/layers";
 import { fetchWindow, parseAnchor } from "~/calendar/lib/view-window";
 import { useCalendarView } from "~/calendar/lib/use-calendar-view";
-import type { CalendarView, EventBlock } from "~/calendar/lib/types";
+import type {
+  CalendarView, EventAttendeeDTO, EventBlock, EventMeetingDTO, EventRsvpTarget,
+} from "~/calendar/lib/types";
 import { CreateCoreEventModal } from "~/core/components/CreateCoreEventModal";
 import { coreHandle } from "~/core/coreNav";
 import { useOsChrome } from "~/components/os-chrome";
@@ -56,7 +58,9 @@ const DEADLINE_WINDOW_DAYS = 30;
 // the grid window, so paging the calendar back a month doesn't empty it.
 const UPCOMING_WINDOW_DAYS = 60;
 
-/** One thing on the Core calendar, in the shape the grids place blocks from. */
+/** One thing on the Core calendar, in the shape the grids place blocks from.
+ *  Carries the same detail the Events page's popover shows, so clicking a block
+ *  reads the same on both calendars. */
 type CoreCalendarEvent = {
   id: string;
   kind: "meeting" | "general";
@@ -65,9 +69,17 @@ type CoreCalendarEvent = {
   endIso: string;
   allDay: boolean;
   location: string | null;
+  description: string | null;
   organizerName: string | null;
-  /** Meetings with a notes page — the block's one outbound link. */
-  notePageId: string | null;
+  /** Join link (a meeting's Meet URL) and the event's own web page. */
+  meetingUrl: string | null;
+  url: string | null;
+  attendees: EventAttendeeDTO[];
+  /** Set on meetings: the notes doc, the attendance page, the timesheet toggle. */
+  meeting: EventMeetingDTO | null;
+  /** The viewer's invite, when they have one — answered through the same
+   *  endpoint the notification bell uses, which pushes on to Google. */
+  rsvp: EventRsvpTarget | null;
 };
 
 /**
@@ -116,8 +128,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         selectedAt: true,
         durationMinutes: true,
         recurrenceRule: true,
+        meetingUrl: true,
+        organizerId: true,
+        participantUserIds: true,
         organizer: { select: { firstName: true, lastName: true } },
         notePage: { select: { id: true, title: true } },
+        // The guest list and everyone's answer: an invite notification per
+        // recipient is where a DALI meeting keeps its RSVPs.
+        notifications: {
+          where: { kind: "MeetingInvite" },
+          select: { id: true, recipientUserId: true, rsvp: true },
+        },
+        timeEntries: { where: { userId: auth.user.sub }, select: { id: true }, take: 1 },
         exceptions: {
           select: {
             originalStart: true,
@@ -228,8 +250,48 @@ export async function loader({ request }: Route.LoaderArgs) {
     notePageId: string | null;
   }[] = [];
 
+  // Everyone named on a Core meeting, so the guest list can show names rather
+  // than ids. `users` above covers current-term members; this picks up the rest
+  // (alumni, anyone off-term) in one query.
+  const namedIds = new Map(users.map((u) => [u.id, fullName(u)]));
+  const guestIds = new Set(
+    meetings.flatMap((m) => [m.organizerId, ...m.participantUserIds]).filter((id) => !namedIds.has(id)),
+  );
+  if (guestIds.size > 0) {
+    for (const u of await prisma.user.findMany({
+      where: { id: { in: [...guestIds] } },
+      select: { id: true, firstName: true, lastName: true },
+    })) {
+      namedIds.set(u.id, fullName(u));
+    }
+  }
+
   for (const m of meetings) {
     const organizerName = fullName(m.organizer) || null;
+    const rsvpByUser = new Map(m.notifications.map((n) => [n.recipientUserId, n.rsvp]));
+    // The organizer reads as attending without having answered anything —
+    // Google says the same about the person who called the meeting.
+    const attendees: EventAttendeeDTO[] = [
+      { name: organizerName || "Organizer", status: "Accepted" as const, organizer: true },
+      ...m.participantUserIds
+        .filter((uid) => uid !== m.organizerId)
+        .map((uid) => ({
+          name: namedIds.get(uid) || "Guest",
+          status: (rsvpByUser.get(uid) ?? "Pending") as EventAttendeeDTO["status"],
+        })),
+    ];
+    const myInvite = m.notifications.find((n) => n.recipientUserId === auth.user.sub);
+    const meeting: EventMeetingDTO = {
+      meetingId: m.id,
+      notePageId: m.notePage?.id ?? null,
+      onTimesheet: m.timeEntries.length > 0,
+      isCoreMeeting: true,
+      // Everything on this calendar is here *because* it's a Core meeting, so
+      // clearing the flag from here would delete the block you clicked.
+      canMarkCoreMeeting: false,
+      // The toggles are the Events page's action; the Core hub only shows them.
+      actionPath: "/calendar",
+    };
     for (const occ of expandOccurrences(m, m.exceptions, scanStart, scanEnd)) {
       const id = `${m.id}:${occ.originalStart.toISOString()}`;
       if (occ.start < gridEnd && occ.end > gridStart) {
@@ -240,11 +302,21 @@ export async function loader({ request }: Route.LoaderArgs) {
           startIso: occ.start.toISOString(),
           endIso: occ.end.toISOString(),
           allDay: false,
-          // Meetings have a join link, not a place — the grid's popover shows
-          // the notes link instead, which is the one Core reaches for.
+          // A meeting has a join link, not a place.
           location: null,
+          description: null,
           organizerName,
-          notePageId: m.notePage?.id ?? null,
+          meetingUrl: m.meetingUrl,
+          url: null,
+          attendees,
+          meeting,
+          rsvp: myInvite
+            ? {
+                via: "notification" as const,
+                status: myInvite.rsvp ?? "Pending",
+                notificationId: myInvite.id,
+              }
+            : null,
         });
       }
       if (occ.start >= now && occ.start < upcomingEnd) {
@@ -268,8 +340,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       endIso: g.end.toISOString(),
       allDay: g.allDay,
       location: g.location,
+      description: g.description,
       organizerName: g.organizer,
-      notePageId: null,
+      meetingUrl: null,
+      url: g.url,
+      // The lab feed is read-only: no guest list to show and nothing to answer.
+      attendees: [],
+      meeting: null,
+      rsvp: null,
     });
   });
 
@@ -408,10 +486,19 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         label: ev.title,
         className: fill,
         location: ev.location ?? undefined,
+        description: ev.description ?? undefined,
         organizerName: ev.organizerName ?? undefined,
-        links: ev.notePageId
-          ? [{ label: "Meeting notes", href: `/documents/${ev.notePageId}` }]
-          : undefined,
+        attendees: ev.attendees.length > 0 ? ev.attendees : undefined,
+        // The notes doc rides on `meeting` (the popover's meeting row), so it
+        // isn't repeated here.
+        links: [
+          ...(ev.meetingUrl
+            ? [{ label: "Join video call", href: ev.meetingUrl, kind: "video" as const }]
+            : []),
+          ...(ev.url ? [{ label: "Open event", href: ev.url, kind: "source" as const }] : []),
+        ],
+        meeting: ev.meeting ?? undefined,
+        rsvp: ev.rsvp ?? undefined,
       },
       eventsByDay,
     );

@@ -50,12 +50,6 @@ export const INITIAL_SCROLL_CENTER_HOUR = 12;
 export const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
 export const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
 
-export const RSVP_BADGE: Record<"Accepted" | "Declined" | "Tentative", string> = {
-  Accepted: "bg-green-100 text-green-800",
-  Declined: "bg-red-100 text-red-800",
-  Tentative: "bg-yellow-100 text-yellow-800",
-};
-
 export const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 export const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

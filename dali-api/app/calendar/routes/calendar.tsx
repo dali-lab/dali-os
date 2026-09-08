@@ -55,7 +55,7 @@ import type {
 import {
   ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
   HOURS, HOUR_PX, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
-  RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED,
+  DAY_KEYS,
   toDatetimeLocal, dayHourToLocal,
   ROLE_COLOR_PALETTE, roleColor,
   readableTextColor,
@@ -64,8 +64,7 @@ import {
 import {
   WeekGrid, WeekGridEvent, useNow, useRefreshOnFocus,
   workingHoursStripeLayer, DayBg, BlockBlock,
-  SelectionPopoverPortal, CalendarEventDetailPopover,
-  MeetingDetailToggles, EventGuestList,
+  SelectionPopoverPortal,
   type AllDayBlock,
 } from "~/calendar/components/WeekGrid";
 import {
