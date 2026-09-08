@@ -871,14 +871,14 @@ function TimesheetEntryForm({
         <button
           type="button"
           onClick={onClose}
-          className="px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted"
+          className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={!canSubmit}
-          className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
+          className="rounded-full bg-os-accent px-5 py-2 text-sm font-medium text-os-bg transition-colors hover:bg-os-accent-hover disabled:opacity-50"
         >
           {submitting ? "Adding…" : "Add entry"}
         </button>
