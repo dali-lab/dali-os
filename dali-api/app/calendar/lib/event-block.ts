@@ -6,6 +6,17 @@ import type { EventAttendeeDTO, TimeEntryDTO } from "~/calendar/lib/types";
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 export const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
+// The "Add event" capsule, shared by the Events page and the Core hub so the two
+// calendars open their create flow from the same control. Theme tokens rather
+// than the mockup's literals, so it inverts correctly in light mode: light gets
+// the dark pill by inverting the page; dark can't invert (that lands on white),
+// and the mockup's pill is a shade *darker* than the page there, so dark
+// overrides to a black plate with light ink.
+export const ADD_EVENT_BTN =
+  "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-extrabold " +
+  "bg-foreground text-background transition-[transform,background-color,opacity] hover:opacity-90 active:scale-[0.97] " +
+  "dark:bg-black/40 dark:text-foreground dark:hover:bg-black/25 dark:hover:opacity-100";
+
 // Classes-this-term blocks use the brand navy (every accent token is already
 // claimed by blocks/meetings/roles). Dark enough to carry white ink, distinct
 // from the coral/teal/green/pink/yellow the other layers use. Applied via the

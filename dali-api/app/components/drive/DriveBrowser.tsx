@@ -37,6 +37,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -65,7 +66,6 @@ import {
   Share2,
   Columns,
   ClipboardCheck,
-  CornerLeftUp,
   Mail,
   Info,
   PanelRightClose,
@@ -120,6 +120,8 @@ export type RowActions = {
 type SortKey = "name" | "modified" | "size";
 type SortDir = "asc" | "desc";
 type ViewMode = "columns" | "list" | "grid";
+/** Where the browser is pointed: a drive, and a folder inside it. */
+type DriveLocation = { scopeId: string | null; folderId: string | null };
 
 export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
@@ -144,6 +146,9 @@ export type DriveBrowserProps = {
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
   newMenu?: ReactNode;
+  /** Overflow ("…") menu for the toolbar's occasional destinations. Owned by
+   *  the hub; sits at the end of the row, right of the search field. */
+  overflowMenu?: ReactNode;
   /** Tag chip row, rendered under the toolbar. Owned by the hub. */
   tagChips?: ReactNode;
   /**
@@ -612,6 +617,7 @@ export function DriveBrowser({
   onUploadFiles,
   filterControl,
   newMenu,
+  overflowMenu,
   tagChips,
   tagFilter,
   onShareItem,
@@ -663,12 +669,23 @@ export function DriveBrowser({
   // cursor the way an inserted top bar did. Toggled from the toolbar, persisted,
   // and auto-opened the first time a selection is made (see below).
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Search rests collapsed as a round icon button; focus (or a query already in
+  // the box) stretches it into a field.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   // Item queued for the spacebar Quick Look overlay (null = closed).
   const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
   const [uploadOver, setUploadOver] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DriveItem | null>(null);
   const dragDepth = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Visited locations, oldest first, with `cursor` marking where in that trail
+  // the browser currently sits — the state behind the toolbar's < > pair.
+  const historyRef = useRef<DriveLocation[]>([
+    { scopeId: currentScopeId, folderId: currentFolderId },
+  ]);
+  const [cursor, setCursor] = useState(0);
 
   // ── Miller column state ────────────────────────────────────────────────────
   const [colSel, setColSel] = useState<ColumnSelection>(() =>
@@ -763,6 +780,7 @@ export function DriveBrowser({
   // tag selection does just as much as a text query — the tree can't express
   // "tagged X" the way a folder path expresses location.
   const searching = search.trim().length > 0 || !!tagFilter;
+  const searchExpanded = searchFocused || search.length > 0;
   const hits = useMemo(
     () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
     [searching, scopes, search, typeFilter, tagFilter],
@@ -860,12 +878,11 @@ export function DriveBrowser({
     else onOpenItem(item);
   }
 
-  // ── Up one level (list/grid) ──────────────────────────────────────────────
+  // ── Up one level ──────────────────────────────────────────────────────────
   //
-  // Columns carry their own trail, but the list and grid views only had the
-  // breadcrumb — which is empty at a drive's top level under the redesign, so
-  // there was no way back out to the drive list at all.
-  const canGoUp = !searching && !!currentScope;
+  // Keyboard only (⌘↑ / Backspace), as in Finder: the toolbar carries back and
+  // forward, and the way up the tree is the breadcrumb — or, at a drive's top
+  // level where the trail has nothing above it, the page title.
   function goUp() {
     if (!currentScope) return;
     if (currentFolderId) {
@@ -875,6 +892,38 @@ export function DriveBrowser({
     } else {
       onNavigate(null, null);
     }
+  }
+
+  // ── Back / forward (Finder's < > pair) ────────────────────────────────────
+  //
+  // A trail of visited locations rather than a peek at the browser's own
+  // history, which can't be read: the pair has to know whether each direction
+  // is available so it can grey itself out instead of appearing and vanishing.
+  // Arriving at a location that is already the neighbouring entry is treated as
+  // a step along the trail (the browser's own Back does exactly that), so the
+  // forward branch survives it; anything else starts a new branch from here.
+  useEffect(() => {
+    const trail = historyRef.current;
+    const at = (l?: DriveLocation) =>
+      !!l && l.scopeId === currentScopeId && l.folderId === currentFolderId;
+    if (at(trail[cursor])) return;
+    if (at(trail[cursor - 1])) return setCursor(cursor - 1);
+    if (at(trail[cursor + 1])) return setCursor(cursor + 1);
+    historyRef.current = [
+      ...trail.slice(0, cursor + 1),
+      { scopeId: currentScopeId, folderId: currentFolderId },
+    ];
+    setCursor(historyRef.current.length - 1);
+  }, [currentScopeId, currentFolderId, cursor]);
+
+  const canGoBack = cursor > 0;
+  const canGoForward = cursor < historyRef.current.length - 1;
+
+  function goHistory(delta: -1 | 1) {
+    const target = historyRef.current[cursor + delta];
+    if (!target) return;
+    setCursor(cursor + delta);
+    onNavigate(target.scopeId, target.folderId);
   }
 
   // ── Keyboard navigation (list/grid mode) ──────────────────────────────────
@@ -1328,9 +1377,9 @@ export function DriveBrowser({
     (detailItem.type === "doc" || detailItem.type === "folder") &&
     !!detailActions?.onShare;
 
-  // The count shown in the action strip's resting state — the current column /
-  // folder's contents, matching what the user is looking at. At the drive-root
-  // chooser (no scope entered yet) it counts the drives on offer.
+  // How many items the current column / folder holds. The listing itself no
+  // longer carries a count banner (Finder doesn't), so this survives only for
+  // the details rail's empty state, where it answers "what am I looking at?".
   const restingCount = columnsActive
     ? (() => {
         const last = colSel.levels[colSel.levels.length - 1];
@@ -1406,141 +1455,162 @@ export function DriveBrowser({
     (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
     !!leafActions?.onShare;
 
+  // ── The listing header's controls ─────────────────────────────────────────
+  // Built here rather than inline so the header itself stays a readable row of
+  // four parts: where you are, and the three ways of changing what you see.
+
+  // Finder's < > pair: one segmented control, always present. A direction with
+  // nowhere to go greys out rather than disappearing, so the controls beside it
+  // never shift sideways.
+  const historyPair = (
+    <div
+      data-testid="drive-history"
+      className="inline-flex shrink-0 items-stretch overflow-hidden rounded-full border border-border bg-card"
+    >
+      <Tooltip content="Back">
+        <button
+          type="button"
+          data-testid="drive-back"
+          aria-label="Back"
+          disabled={!canGoBack}
+          onClick={(e) => {
+            e.stopPropagation();
+            goHistory(-1);
+          }}
+          className={cn(
+            "inline-flex items-center justify-center px-2.5 py-1.5 text-muted-foreground transition-colors",
+            "hover:bg-muted/50 hover:text-foreground",
+            "disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
+          )}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      </Tooltip>
+      <span className="w-px self-stretch bg-border" aria-hidden />
+      <Tooltip content="Forward">
+        <button
+          type="button"
+          data-testid="drive-forward"
+          aria-label="Forward"
+          disabled={!canGoForward}
+          onClick={(e) => {
+            e.stopPropagation();
+            goHistory(1);
+          }}
+          className={cn(
+            "inline-flex items-center justify-center px-2.5 py-1.5 text-muted-foreground transition-colors",
+            "hover:bg-muted/50 hover:text-foreground",
+            "disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
+          )}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </Tooltip>
+    </div>
+  );
+
+  const viewToggle = (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-border bg-card">
+      {(
+        [
+          ["columns", Columns, "Column view"],
+          ["list", ListIcon, "List view"],
+          ["grid", LayoutGrid, "Grid view"],
+        ] as const
+      ).map(([mode, Icon, label]) => (
+        <Tooltip key={mode} content={label}>
+          <button
+            type="button"
+            data-testid={`drive-view-${mode}`}
+            aria-label={label}
+            aria-pressed={viewMode === mode}
+            onClick={(e) => {
+              e.stopPropagation();
+              changeView(mode);
+            }}
+            className={cn(
+              "px-2.5 py-1.5",
+              viewMode === mode
+                ? "bg-os-container text-foreground"
+                : "text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            <Icon className="w-4 h-4" />
+          </button>
+        </Tooltip>
+      ))}
+    </div>
+  );
+
+  // Search rests as a round icon button at the end of the header and stretches
+  // into a field on focus — the Finder / Safari toolbar move. It stays open
+  // while it holds a query, so results are never one blur away from losing the
+  // search that produced them.
+  const searchField = (
+    <div
+      className={cn(
+        "relative shrink-0 transition-[width] duration-200 ease-out",
+        // Collapsed, it is a circle the size of the header's other controls, so
+        // the row reads as one set.
+        searchExpanded ? "w-52" : "w-[30px]",
+      )}
+    >
+      <Search
+        className={cn(
+          "pointer-events-none absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-all duration-200",
+          searchExpanded ? "left-2.5" : "left-1/2 -translate-x-1/2",
+        )}
+      />
+      <input
+        ref={searchInputRef}
+        type="search"
+        value={search}
+        data-testid="drive-search"
+        aria-label="Search Drive"
+        placeholder={searchExpanded ? "Search Drive" : ""}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            onSearchChange("");
+            searchInputRef.current?.blur();
+          }
+        }}
+        onChange={(e) => onSearchChange(e.target.value)}
+        className={cn(
+          "h-[30px] w-full rounded-full border border-border bg-card text-sm text-foreground",
+          "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-os-accent/40",
+          "pl-8 transition-all duration-200",
+          searchExpanded ? "pr-8 cursor-text" : "pr-0 cursor-pointer",
+        )}
+      />
+      {search && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSearchChange("");
+          }}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <DriveScale.Provider value={true}>
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={() => setSelected(new Set())}>
-        {/* The trail gets its own line. Sharing the toolbar row, it was the one
-            flexible item among half a dozen shrink-0 controls, so it took
-            whatever width was left over — at a couple of levels deep that was
-            "Pro… › Hood M…", which is not a hierarchy anyone can read. */}
-        <Breadcrumb
-          currentScope={currentScope}
-          folderCrumbs={folderCrumbs}
-          onNavigate={onNavigate}
-          dragging={!!activeDrag}
-        />
-
-        {/* ── Toolbar row: up · filter · search · view · New ── */}
+        {/* ── Page toolbar: filters on the left, actions on the right ──
+            Navigation, view and search live on the listing's own header
+            instead — they act on the table, so they belong to it. ── */}
         <div className="flex items-center gap-3 flex-wrap">
-          {viewMode !== "columns" && (
-            <Tooltip content="Enclosing folder (⌘↑)">
-              <button
-                type="button"
-                data-testid="drive-up"
-                aria-label="Go to enclosing folder"
-                disabled={!canGoUp}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goUp();
-                }}
-                className={cn(
-                  "shrink-0 inline-flex items-center justify-center border border-border text-muted-foreground transition-colors",
-                  "hover:bg-muted/50 hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-                  "rounded-full bg-card px-3.5 py-2.5",
-                )}
-              >
-                <CornerLeftUp className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          )}
-
           {filterControl}
-
-          <div className="relative w-full sm:w-56 shrink-0">
-            <Search
-              className="pointer-events-none absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground left-3.5"
-            />
-            <input
-              type="search"
-              value={search}
-              data-testid="drive-search"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search Drive"
-              className="w-full border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40 rounded-full pl-9 pr-9 py-2.5"
-            />
-            {search && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSearchChange("");
-                }}
-                className="absolute top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground right-3"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* View toggle — columns / list / grid */}
-          <div
-            className="inline-flex border border-border overflow-hidden shrink-0 rounded-full bg-card"
-          >
-            <Tooltip content="Column view">
-              <button
-                type="button"
-                data-testid="drive-view-columns"
-                aria-label="Column view"
-                aria-pressed={viewMode === "columns"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  changeView("columns");
-                }}
-                className={cn(
-                  "px-3.5 py-2.5",
-                  viewMode === "columns"
-                    ? "bg-os-container text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                <Columns className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            <Tooltip content="List view">
-              <button
-                type="button"
-                data-testid="drive-view-list"
-                aria-label="List view"
-                aria-pressed={viewMode === "list"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  changeView("list");
-                }}
-                className={cn(
-                  "px-3.5 py-2.5",
-                  viewMode === "list"
-                    ? "bg-os-container text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                <ListIcon className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            <Tooltip content="Grid view">
-              <button
-                type="button"
-                data-testid="drive-view-grid"
-                aria-label="Grid view"
-                aria-pressed={viewMode === "grid"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  changeView("grid");
-                }}
-                className={cn(
-                  "px-3.5 py-2.5",
-                  viewMode === "grid"
-                    ? "bg-os-container text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
             {/* Column view carries its own in-column details (LeafPreviewColumn),
@@ -1569,18 +1639,17 @@ export function DriveBrowser({
               </Tooltip>
             )}
             {newMenu}
+            {overflowMenu}
           </div>
         </div>
 
         {tagChips}
 
         {/* ── Action strip ──────────────────────────────────────────────────
-            One always-mounted, fixed-height row that SWAPS its contents by
-            selection state rather than a bar that mounts and shoves the list
-            down (which used to re-target the cursor mid-click). Resting → the
-            item count; exactly one selected → that item's quick actions; many →
-            the bulk-action set. Its height never changes, so nothing below it
-            ever moves. ── */}
+            Present only when a selection gives it something to carry: exactly
+            one selected → that item's quick actions; many → the bulk-action
+            set. At rest it renders nothing and takes no room, so the listing
+            sits directly under the toolbar the way a Finder window does. ── */}
         <DriveActionStrip
           os={true}
           showBulk={showBulk}
@@ -1596,7 +1665,6 @@ export function DriveBrowser({
           canMove={!!canItemMove}
           canShare={!!canItemShare}
           canDelete={!!canItemDelete}
-          restingCount={restingCount}
           detailsOpen={detailsOpen}
           onOpenDetails={() => setDetailsOpen(true)}
         />
@@ -1607,14 +1675,33 @@ export function DriveBrowser({
             once — never its vertical position — so the columns/rows the cursor
             is over stay put. ── */}
         <div className="flex gap-3 min-w-0 items-start">
-          <div className="min-w-0 flex-1">
+          {/* The listing is a window: one bordered surface whose header carries
+              where you are (the trail), how you got there (< >), how you are
+              looking at it (the view toggle) and what you are looking for
+              (search). The page title above no longer has a stray folder name
+              hanging under it, and every control that acts on the table now
+              sits on the table. */}
+          <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2">
+              {historyPair}
+              <Breadcrumb
+                currentScope={currentScope}
+                folderCrumbs={folderCrumbs}
+                onNavigate={onNavigate}
+                dragging={!!activeDrag}
+              />
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {viewToggle}
+                {searchField}
+              </div>
+            </div>
           {viewMode === "columns" && !searching ? (
             /* ── MILLER COLUMNS ─────────────────────────────────────────── */
             <div
               ref={columnsContainerRef}
               tabIndex={0}
               onKeyDown={onColumnsKeyDown}
-              className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-x-auto focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-coral/30"
+              className="min-w-0 overflow-x-auto focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-os-accent/30"
               onDragEnter={onFileDragEnter}
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
@@ -1750,7 +1837,7 @@ export function DriveBrowser({
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
               onDrop={onFileDrop}
-              className="relative flex-1 min-w-0 rounded-lg border border-border bg-card overflow-hidden focus:outline-none focus:ring-1 focus:ring-accent-coral/30"
+              className="relative min-w-0 overflow-hidden focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30"
             >
               {uploadOver && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
@@ -1879,7 +1966,6 @@ function DriveActionStrip({
   canMove,
   canShare,
   canDelete,
-  restingCount,
   detailsOpen,
   onOpenDetails,
 }: {
@@ -1897,7 +1983,6 @@ function DriveActionStrip({
   canMove: boolean;
   canShare: boolean;
   canDelete: boolean;
-  restingCount: number;
   detailsOpen: boolean;
   onOpenDetails: () => void;
 }) {
@@ -1905,11 +1990,16 @@ function DriveActionStrip({
     "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
     os ? "text-sm" : "text-xs",
   );
+  // With nothing selected the strip has nothing to say — Finder keeps no
+  // item-count banner over its listing — so it leaves the flow entirely rather
+  // than holding an empty band (and the gap above the listing) open. It returns
+  // the moment a selection gives it something to carry.
+  if (!showBulk && !(item && actions && !detailsOpen)) return null;
   return (
     <div
       className={cn(
         "flex items-center gap-2 rounded-md border px-3 min-h-9",
-        showBulk ? "border-accent-coral/40 bg-accent-coral/5" : "border-border bg-card/60",
+        showBulk ? "border-os-accent/40 bg-os-accent/5" : "border-border bg-card/60",
         os ? "text-base" : "text-sm",
       )}
       data-testid={showBulk ? "drive-bulk-bar" : "drive-action-strip"}
@@ -1992,11 +2082,7 @@ function DriveActionStrip({
             )}
           </div>
         </>
-      ) : (
-        <span className="text-muted-foreground">
-          {restingCount} {restingCount === 1 ? "item" : "items"}
-        </span>
-      )}
+      ) : null}
     </div>
   );
 }

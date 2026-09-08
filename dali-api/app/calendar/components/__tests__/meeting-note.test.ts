@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  CORE_NOTE_LABEL,
   emptyMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
@@ -89,5 +90,21 @@ describe("meetingNotePayload", () => {
     expect(out.noteLocation).toEqual({ workspaceType: "Project", workspaceId: "proj_2", parentPageId: null });
     // General notes never carry a projectId — filing location is not project association.
     expect(out).not.toHaveProperty("projectId");
+  });
+});
+
+describe("the Core shape", () => {
+  // A Core meeting's note takes the General path — Core isn't a project, so
+  // there's nothing to file it under and no Team/Partner split to draw. The
+  // default name is what keeps it submittable the moment the toggle goes on.
+  it("is valid as soon as the default Core name is in place", () => {
+    expect(meetingNoteValid(base({ enabled: true, about: "", label: CORE_NOTE_LABEL }))).toBe(true);
+  });
+
+  it("emits the General payload, never a project one", () => {
+    expect(meetingNotePayload(base({ enabled: true, about: "", label: CORE_NOTE_LABEL }))).toEqual({
+      meetingType: "Other",
+      meetingTypeLabel: CORE_NOTE_LABEL,
+    });
   });
 });

@@ -76,7 +76,6 @@ export function PartnerDocumentView({
                 targetId={pageId}
                 currentUserId={currentUserId}
                 canComment
-                canResolve={false}
               />
             </aside>
           </div>

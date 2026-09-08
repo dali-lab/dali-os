@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { Handshake, FileText } from "lucide-react";
+import { ChevronRight, Handshake } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
@@ -14,28 +14,28 @@ type Pair = {
   term: { id: string; code: string };
 };
 
-type NoteRow = {
-  id: string;
-  weekOf: string;
-  mentor: Person;
-  mentee: Person;
-  project: { id: string; name: string };
-  domain: { id: string; code: string; displayName: string };
-};
-
 type PairsResponse = { pairs: Pair[] };
-type NotesResponse = { notes: NoteRow[] };
 
 function fullName(u: Person) {
   return `${u.firstName} ${u.lastName}`.trim();
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+// A pairing's notes live in the mentorship hub's weekly grid, so a row links
+// there pre-filtered to that pairing: project + domain + term narrow the grid,
+// and the mentee's name in the hub's people search keeps just their row.
+function notesHref(
+  projectId: string,
+  domainId: string,
+  termId: string | null,
+  mentee: Person,
+) {
+  const params = new URLSearchParams({
+    projectId,
+    domainId,
+    q: fullName(mentee),
   });
+  if (termId) params.set("termId", termId);
+  return `/mentorship/browse?${params.toString()}`;
 }
 
 interface Props {
@@ -44,28 +44,25 @@ interface Props {
 }
 
 // Mentorship view on a project page. Lists confirmed pairings for the current
-// term (derived from ProjectAssignment by staffing finalize) and the project's
-// recent notes. Visible to lab mentors + Core only — gated server-side via
-// the project loader's canViewMentorshipTab. Note/pair APIs further scope
-// non-Core mentors to their own domains.
+// term (derived from ProjectAssignment by staffing finalize), each linking to
+// that pairing's notes in the mentorship hub. Visible to lab mentors + Core
+// only — gated server-side via the project loader's canViewMentorshipTab. The
+// pairs API further scopes non-Core mentors to their own domains.
 export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
   const { panel, panelPad, heading, headingIcon } = useOsChrome();
   const pairsFetcher = useFetcher<PairsResponse>();
-  const notesFetcher = useFetcher<NotesResponse>();
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (loaded) return;
     const termQ = currentTermId ? `&termId=${currentTermId}` : "";
     pairsFetcher.load(`/api/mentorship/pairs?projectId=${projectId}${termQ}`);
-    notesFetcher.load(`/api/mentorship/notes?projectId=${projectId}`);
     setLoaded(true);
     // Loaders are idempotent; intentionally one-shot per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pairs = pairsFetcher.data?.pairs ?? [];
-  const notes = notesFetcher.data?.notes ?? [];
 
   // Group pairs by domain → mentee → mentors[].
   const grouped = new Map<
@@ -114,68 +111,31 @@ export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
                 </h3>
                 <ul className="divide-y divide-border">
                   {[...mentees.values()].map(({ mentee, mentors }) => (
-                    <li
-                      key={mentee.id}
-                      className="py-2 flex items-center justify-between text-sm"
-                    >
-                      <span className="font-medium text-foreground">
-                        {fullName(mentee)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        Mentor: {mentors.map(fullName).join(", ")}
-                      </span>
+                    <li key={mentee.id}>
+                      <Link
+                        to={notesHref(
+                          projectId,
+                          domain.id,
+                          currentTermId,
+                          mentee,
+                        )}
+                        title={`Open ${fullName(mentee)}'s mentorship notes`}
+                        className="group -mx-2 flex items-center justify-between gap-3 rounded-os-item px-2 py-2 text-sm transition-colors hover:bg-os-container"
+                      >
+                        <span className="font-medium text-foreground">
+                          {fullName(mentee)}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-muted-foreground group-hover:text-foreground">
+                          Mentor: {mentors.map(fullName).join(", ")}
+                          <ChevronRight className="h-4 w-4" aria-hidden />
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
-        <div className="flex items-center justify-between">
-          <h2 className={heading}>
-            <FileText className={headingIcon} aria-hidden />
-            Recent notes
-          </h2>
-          <Link
-            to={`/mentorship/browse?projectId=${projectId}`}
-            className="text-sm text-accent-coral hover:underline"
-          >
-            Browse all
-          </Link>
-        </div>
-        {notesFetcher.state !== "idle" && notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No notes written for this project yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {notes.slice(0, 10).map((n) => (
-              <li
-                key={n.id}
-                className="py-2 flex items-center justify-between gap-3"
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground">
-                    {fullName(n.mentor)} → {fullName(n.mentee)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {n.domain.code} · week of {fmt(n.weekOf)}
-                  </span>
-                </div>
-                <Link
-                  to={`/mentorship/notes/${n.id}`}
-                  className="text-sm text-accent-coral hover:underline"
-                >
-                  Open
-                </Link>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
     </div>

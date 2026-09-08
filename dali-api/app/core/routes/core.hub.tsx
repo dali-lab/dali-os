@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import { Link } from "react-router";
-import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, FileText, Plus } from "lucide-react";
 import type { Route } from "./+types/core.hub";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -18,11 +19,12 @@ import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { WeekGrid, type AllDayBlock } from "~/calendar/components/WeekGrid";
-import { EVENT_TEXT, EVENT_CORAL } from "~/calendar/lib/event-block";
+import { ADD_EVENT_BTN, EVENT_TEXT, EVENT_CORAL } from "~/calendar/lib/event-block";
 import { placeBlock } from "~/calendar/lib/layers";
 import { fetchWindow, parseAnchor } from "~/calendar/lib/view-window";
 import { useCalendarView } from "~/calendar/lib/use-calendar-view";
 import type { CalendarView, EventBlock } from "~/calendar/lib/types";
+import { CreateCoreEventModal } from "~/core/components/CreateCoreEventModal";
 import { coreHandle } from "~/core/coreNav";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -101,7 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true },
   });
 
-  const [meetings, generalEvents, deadlineRows] = await Promise.all([
+  const [meetings, generalEvents, deadlineRows, calendarLinks] = await Promise.all([
     prisma.scheduledMeeting.findMany({
       where: coreCalendarMeetingWhere(coreGroup?.id ?? null),
       select: {
@@ -137,6 +139,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       select: { title: true, dueAt: true, link: true },
       orderBy: { dueAt: "asc" },
+    }),
+    // The create modal's "Send invite from" list: a Core meeting is a real
+    // Google invite to members' DALI Gmail, so it needs the organizer's linked
+    // accounts. Enabled Google links only — nothing else can send an invite.
+    prisma.userCalendarLink.findMany({
+      where: { userId: auth.user.sub, provider: "Google", enabled: true },
+      select: { id: true, externalEmail: true, displayName: true },
+      orderBy: { linkedAt: "asc" },
     }),
   ]);
 
@@ -215,6 +225,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     events,
     upcoming: upcoming.slice(0, 5),
     deadlines,
+    coreGroupId: coreGroup?.id ?? null,
+    calendarLinks,
   };
 }
 
@@ -290,10 +302,11 @@ function RailSection({
 }
 
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
-  const { timeZone, events, upcoming, deadlines } = loaderData;
+  const { timeZone, events, upcoming, deadlines, coreGroupId, calendarLinks } = loaderData;
   const { pageTitle } = useOsChrome();
   const { view, days, focusDate, anchorMonth, rangeLabel, changeView, navigate, goToday, goToDay } =
     useCalendarView(timeZone);
+  const [creating, setCreating] = useState(false);
 
   const eventsByDay: Record<number, EventBlock[]> = {};
   const allDayByDay: Record<number, AllDayBlock[]> = {};
@@ -394,6 +407,14 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
               </button>
             ))}
           </div>
+
+          {/* Last in the row, same capsule as the Events page's — the two
+              calendars open their create flow from the same control. Everything
+              it makes is a Core entry; see CreateCoreEventModal. */}
+          <button type="button" onClick={() => setCreating(true)} className={ADD_EVENT_BTN}>
+            <Plus className="h-4 w-4 stroke-[3]" />
+            Add event
+          </button>
         </div>
       </header>
 
@@ -477,6 +498,25 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
           )}
         </section>
       </div>
+
+      {creating && (
+        <CreateCoreEventModal
+          coreGroupId={coreGroupId}
+          calendarLinks={calendarLinks}
+          initialDateLocal={defaultStartLocal(focusDate)}
+          onClose={() => setCreating(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Seed the create form with 9am on the day the grid is focused, so the common
+ *  case ("something this week") needs no date picking at all. */
+function defaultStartLocal(focusDate: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${focusDate.getUTCFullYear()}-${pad(focusDate.getUTCMonth() + 1)}` +
+    `-${pad(focusDate.getUTCDate())}T09:00`
   );
 }

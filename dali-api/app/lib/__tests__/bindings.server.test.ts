@@ -45,6 +45,9 @@ describe("slot registry", () => {
       "meeting-notes-partner",
     ]);
     expect(FOLDER_SLOTS.EducationOffering.map((s) => s.purpose)).toEqual(["forms"]);
+    // Core files its own meeting notes the way a project does — see
+    // ensureCoreMeetingNotesFolder.
+    expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).toContain("meeting-notes");
     expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meeting notes");
     expect(slotFor("Project", "nope")).toBeUndefined();
   });

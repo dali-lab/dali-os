@@ -72,7 +72,6 @@ beforeEach(() => {
     canView: false,
     canEdit: false,
     canComment: false,
-    canResolve: false,
   });
 });
 
@@ -218,7 +217,6 @@ describe("authorizeCollabDoc", () => {
         canView: true,
         canEdit: true,
         canComment: true,
-        canResolve: true,
       });
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toEqual({
         allowed: true,
@@ -232,7 +230,6 @@ describe("authorizeCollabDoc", () => {
         canView: true,
         canEdit: false,
         canComment: true,
-        canResolve: false,
       });
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toEqual({
         allowed: true,
@@ -246,7 +243,6 @@ describe("authorizeCollabDoc", () => {
         canView: false,
         canEdit: false,
         canComment: false,
-        canResolve: false,
       });
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
@@ -333,7 +329,6 @@ describe("authorizeCollabDoc", () => {
         canView: true,
         canEdit: true,
         canComment: true,
-        canResolve: true,
       });
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(allowed());
     });

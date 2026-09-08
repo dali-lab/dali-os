@@ -40,15 +40,13 @@ export interface DocCommentsConfig {
   currentUserId: string;
   /** Whether the viewer may post new comments / replies. */
   canComment: boolean;
-  /** Whether the viewer may resolve / reopen threads. */
-  canResolve: boolean;
+  /** Whether the viewer may delete other people's comments and whole threads
+   * (the editor role: canEdit || Core). Comments have no resolved state. */
+  canModerate: boolean;
   /** Whether the comments panel is currently open (W2 uses for sidebar sync). */
   panelOpen?: boolean;
   /** The DOM id of the comments panel — BlockNote anchors jump to it. */
   panelTargetId?: string;
-  /** Which thread filter to apply to the ThreadsSidebar portal — mirrors the
-   * panel's Open/Resolved tab so the inline sidebar matches the active tab. */
-  panelFilter?: "open" | "resolved";
   /** When true, the right-hand rail is visible; FloatingThreadController is
    * suppressed and the rail handles thread selection display instead. */
   railVisible?: boolean;
@@ -56,8 +54,6 @@ export interface DocCommentsConfig {
   railTargetId?: string;
   /** Ref to the paper card element (mark measurement + resize watch). */
   editorContentRef?: React.RefObject<HTMLElement | null>;
-  /** Called when the rail's Open/Resolved filter changes. */
-  onRailFilterChange?: (filter: "open" | "resolved") => void;
   /** Deep-linked comment id (?comment=) for the rail to select once loaded. */
   focusCommentId?: string;
 }

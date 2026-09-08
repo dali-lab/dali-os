@@ -1233,6 +1233,9 @@ model DocComment {
   // { from: <encoded RelativePosition>, to: <encoded RelativePosition> } for
   // inline doc comments. Null for doc-level / file-level comments.
   anchor     Json?
+  // Dead column. Comments have no open/resolved state — nothing reads or
+  // writes this any more; kept only so removing the concept didn't require a
+  // data-losing migration. Drop it in its own migration when convenient.
   resolvedAt DateTime?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt

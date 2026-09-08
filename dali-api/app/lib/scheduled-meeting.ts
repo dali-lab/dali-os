@@ -10,7 +10,12 @@ import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-cal
 import { primaryEmail, formatDateShort } from "~/lib/display";
 import { pickUserTimezone } from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
-import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import {
+  createProjectPage,
+  createLabMeetingPage,
+  ensureMeetingNotesFolder,
+  ensureCoreMeetingNotesFolder,
+} from "~/lib/pages";
 import { isCore } from "~/lib/roles";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
@@ -107,7 +112,9 @@ export type CreateScheduledMeetingInput = {
   // lives on the note when present, otherwise on /calendar/check-in/:id).
   attendanceMode?: AttendanceMode;
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
-  // for checking the setter is Core; this layer just persists the flag.
+  // for checking the setter is Core; this layer just persists the flag. It also
+  // decides where a project-less note is filed: Core's own meeting-notes folder
+  // rather than the organizer's chosen `noteLocation`.
   isCoreMeeting?: boolean;
   // Mint a Google Meet link for the meeting. Only takes effect when the meeting
   // is actually pushed to the organizer's linked Google calendar (a start time,
@@ -337,6 +344,23 @@ export async function createScheduledMeeting(
         createdById: input.organizerId,
         meetingNoteId: meeting.id,
         parentPageId,
+      });
+      notePageId = page.id;
+    } else if (input.isCoreMeeting) {
+      // A Core meeting's note belongs to Core, the way a project meeting's note
+      // belongs to its project: always Core's own meeting-notes folder, never a
+      // location the organizer picked. The folder is Core-scoped, so the note is
+      // Core-only without depending on its own link access.
+      if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+      const coreFolderId = await ensureCoreMeetingNotesFolder(input.organizerId);
+      const page = await createLabMeetingPage({
+        title,
+        createdById: input.organizerId,
+        meetingNoteId: meeting.id,
+        // Null only when the Core group isn't seeded yet — the note lands at the
+        // Lab root rather than not existing at all.
+        parentPageId: coreFolderId,
+        restricted: coreFolderId !== null,
       });
       notePageId = page.id;
     } else {

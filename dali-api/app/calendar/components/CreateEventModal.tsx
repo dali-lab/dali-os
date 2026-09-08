@@ -178,17 +178,28 @@ export function CreateEventModal({
   const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
+  // ── Core meeting ─────────────────────────────────────────────────────────
+  // Core-only marker that lifts the meeting onto the Core hub calendar without
+  // touching its guest list. Inviting the Core group implies it.
+  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
+  const [coreMeeting, setCoreMeeting] = useState(false);
+  useEffect(() => {
+    if (coreSelected) setCoreMeeting(true);
+  }, [coreSelected]);
+  const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
+
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
 
   // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own.
+  // the sender can still change; it never enables the note on its own. A Core
+  // meeting's note has no project, so the prefill stays out of its way.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
+    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+  }, [selectedGroupIds, isCoreMeeting]);
 
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
@@ -264,10 +275,12 @@ export function CreateEventModal({
 
   // Hours hang off one concrete, timed occurrence: a repeating event has no
   // single occurrence to attach them to and an all-day event has no range to
-  // measure. The server rejects both, so don't offer the toggle for them.
-  // Meetings are always single and timed, so this only gates the Event form.
+  // measure. The server rejects both, so don't offer the toggle for them. A
+  // repeating meeting is the same story, minus the all-day case this form
+  // doesn't offer there.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
+  const meetingCanLogWork = repeatSpecToRRule(repeat, selectedStartLocal) === null;
 
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
@@ -279,12 +292,13 @@ export function CreateEventModal({
     startIso < endIso &&
     (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
+  const meetingLoggingWork = isWork && meetingCanLogWork;
   const canSubmitMeeting =
     title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
     meetingNoteValid(note.state) &&
-    (!isWork || (roleKey !== "" && workNote.trim() !== "")) &&
+    (!meetingLoggingWork || (roleKey !== "" && workNote.trim() !== "")) &&
     !submitting;
 
   // ── Meeting submit ───────────────────────────────────────────────────────
@@ -302,8 +316,13 @@ export function CreateEventModal({
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
       }
       if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
+      if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
       Object.assign(payload, meetingNotePayload(note.state));
+      if (isCoreMeeting) {
+        payload.isCoreMeeting = true;
+      }
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -333,7 +352,7 @@ export function CreateEventModal({
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
         // block (not a duplicate) and isn't mirrored to the Timesheet calendar.
-        if (isWork && roleKey && startIso && endIso) {
+        if (meetingLoggingWork && roleKey && startIso && endIso) {
           const [assignmentType, roleRefId] = roleKey.split("::");
           const meetingId = json.meeting?.id as string | undefined;
           if (assignmentType && roleRefId) {
@@ -806,6 +825,16 @@ export function CreateEventModal({
                 )}
               </div>
 
+              {/* Repeat. A meeting series is anchored to its start, not to the
+                  all-day range — this form has no all-day mode. */}
+              <RepeatField
+                value={repeat}
+                onChange={setRepeat}
+                anchorLocal={selectedStartLocal}
+                labelClassName={labelClass}
+                fieldClassName={fieldClass}
+              />
+
               {/* Send invite from */}
               {googleLinks.length > 0 && (
                 <div>
@@ -877,6 +906,23 @@ export function CreateEventModal({
                 />
               </div>
 
+              {/* Core meeting (Core only) */}
+              {data.canMarkCoreMeeting && (
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <Toggle
+                    checked={coreSelected || coreMeeting}
+                    disabled={coreSelected}
+                    onChange={(e) => setCoreMeeting(e.target.checked)}
+                    label="Core meeting"
+                    description={
+                      coreSelected
+                        ? "The Core group is invited, so this is already on the Core calendar."
+                        : "Adds this to the Core hub calendar. Doesn't change who's invited."
+                    }
+                  />
+                </div>
+              )}
+
               {/* Meeting notes toggle */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
@@ -892,13 +938,15 @@ export function CreateEventModal({
                       myProjects={data.myProjects}
                       fieldClass={fieldClass}
                       labelClass={labelClass}
+                      core={isCoreMeeting}
                     />
                   </div>
                 )}
               </div>
 
-              {/* Timesheet */}
-              {timesheetSection}
+              {/* Timesheet — a repeating meeting has no single occurrence for
+                  the hours to hang off. */}
+              {meetingCanLogWork && timesheetSection}
 
               {/* Status */}
               {meetingStatus?.ok === true && (

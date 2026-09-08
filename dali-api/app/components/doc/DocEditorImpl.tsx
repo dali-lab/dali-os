@@ -321,7 +321,7 @@ function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
 
 /**
  * Returns the shared DaliThreadStore for (pageId, currentUserId, canComment,
- * canResolve) — or null when comments config is absent. Uses the module-level
+ * canModerate) — or null when comments config is absent. Uses the module-level
  * registry so the editor, the count hook, and the panel all read/write the
  * same in-memory thread map; mutations update the bubble count immediately
  * without waiting for the next poll cycle.
@@ -332,10 +332,10 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
     return getOrCreateStore(comments.pageId, {
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
-      canResolve: comments.canResolve,
+      canModerate: comments.canModerate,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canResolve]);
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate]);
 }
 
 /**
@@ -691,9 +691,8 @@ function DocView(
           the BlockNoteView context (required for editor/store access). */}
       {hasComments && panelTarget &&
         createPortal(
-          // panelFilter mirrors the panel's Open/Resolved tab; fall back to
-          // "open" when the panel is newly opened (no tab state yet).
-          <ThreadsSidebar filter={props.comments?.panelFilter ?? "open"} sort="position" />,
+          // "all": a comment has no resolved state, so every thread is listed.
+          <ThreadsSidebar filter="all" sort="position" />,
           panelTarget,
         )
       }
@@ -701,8 +700,6 @@ function DocView(
       {hasComments && railVisible && railTarget && editorContentRef &&
         createPortal(
           <DocCommentsRail
-            filter={props.comments?.panelFilter ?? "open"}
-            onFilterChange={props.comments?.onRailFilterChange ?? (() => {})}
             editorContentRef={editorContentRef}
             focusCommentId={props.comments?.focusCommentId}
           />,

@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Tag as TagIcon, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronDown, Search, Tag as TagIcon, X } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
@@ -67,12 +68,67 @@ export function DriveTagFilter({
       )}
     >
       {() => (
-        <div className="min-w-[12rem] max-w-[16rem]">
-          {tags.length === 0 ? (
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">No tags yet.</p>
+        <TagPanel
+          tags={tags}
+          selectedIds={selectedIds}
+          onToggle={onToggle}
+          onClear={onClear}
+          os={os}
+        />
+      )}
+    </Popover>
+  );
+}
+
+// The panel is its own component so the query it holds is created fresh with
+// each opening — a stale filter left behind by the previous visit would hide
+// tags the pill claims are there.
+function TagPanel({
+  tags,
+  selectedIds,
+  onToggle,
+  onClear,
+  os,
+}: {
+  tags: FilterTag[];
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  onClear: () => void;
+  os: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const count = selectedIds.size;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? tags.filter((t) => t.label.toLowerCase().includes(q)) : tags;
+  }, [tags, query]);
+
+  return (
+    <div className="min-w-[12rem] max-w-[16rem]">
+      {tags.length === 0 ? (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground">No tags yet.</p>
+      ) : (
+        <>
+          {/* Type to narrow the list. A lab with more than a screenful of tags
+              is the case this control exists for, and scrolling a checklist to
+              find one is the slow way to do it. */}
+          <div className="relative border-b border-border pb-1.5">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter tags"
+              aria-label="Filter tags"
+              className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            />
+          </div>
+          {shown.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">No tags match.</p>
           ) : (
             <ul className="max-h-72 overflow-y-auto py-0.5" role="group" aria-label="Tags">
-              {tags.map((tag) => {
+              {shown.map((tag) => {
                 const active = selectedIds.has(tag.id);
                 const swatch = hexColor(tag.color);
                 return (
@@ -86,13 +142,13 @@ export function DriveTagFilter({
                         "flex w-full items-center gap-2 text-left text-sm transition-colors",
                         os ? "rounded-lg px-3 py-2" : "rounded px-2 py-1.5",
                         active
-                          ? "bg-accent-coral/5 text-accent-coral"
+                          ? "bg-os-accent/10 text-foreground"
                           : "text-foreground hover:bg-muted/50",
                       )}
                     >
                       <Check
                         className={cn(
-                          "h-3.5 w-3.5 shrink-0 text-accent-coral",
+                          "h-3.5 w-3.5 shrink-0 text-os-accent",
                           active ? "opacity-100" : "opacity-0",
                         )}
                       />
@@ -109,23 +165,23 @@ export function DriveTagFilter({
               })}
             </ul>
           )}
-          {count > 0 && (
-            <div className="mt-0.5 border-t border-border pt-0.5">
-              <button
-                type="button"
-                onClick={onClear}
-                className={cn(
-                  "flex w-full items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
-                  os ? "rounded-lg px-3 py-2 hover:bg-os-container" : "rounded px-2 py-1.5 hover:bg-muted/50",
-                )}
-              >
-                <X className="h-3.5 w-3.5 shrink-0" />
-                Clear tags
-              </button>
-            </div>
-          )}
+        </>
+      )}
+      {count > 0 && (
+        <div className="mt-0.5 border-t border-border pt-0.5">
+          <button
+            type="button"
+            onClick={onClear}
+            className={cn(
+              "flex w-full items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
+              os ? "rounded-lg px-3 py-2 hover:bg-os-container" : "rounded px-2 py-1.5 hover:bg-muted/50",
+            )}
+          >
+            <X className="h-3.5 w-3.5 shrink-0" />
+            Clear tags
+          </button>
         </div>
       )}
-    </Popover>
+    </div>
   );
 }

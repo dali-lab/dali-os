@@ -24,18 +24,12 @@ import {
 import { MessageSquare } from "lucide-react";
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { ThreadData } from "@blocknote/core/comments";
-import {
-  Thread,
-  getReferenceText,
-  useThreads,
-} from "@blocknote/react";
+import { Thread, useThreads } from "@blocknote/react";
 import { useBlockNoteEditor } from "@blocknote/react";
 import { useExtension, useExtensionState } from "@blocknote/react";
 
 // How DocEditorImpl talks to the rail via comments config.
 export interface DocCommentsRailProps {
-  filter: "open" | "resolved";
-  onFilterChange: (f: "open" | "resolved") => void;
   /** Ref to the paper card element (mark-measure query root + resize watch). */
   editorContentRef: React.RefObject<HTMLElement | null>;
   /** Deep-linked comment id (?comment=) — select + scroll once threads load. */
@@ -56,8 +50,6 @@ function mapsEqual(a: Map<string, number>, b: Map<string, number>): boolean {
 // ─── DocCommentsRail ────────────────────────────────────────────────────────
 
 export function DocCommentsRail({
-  filter,
-  onFilterChange,
   editorContentRef,
   focusCommentId,
 }: DocCommentsRailProps) {
@@ -75,16 +67,6 @@ export function DocCommentsRail({
   // Real rendered card elements, for height-aware overlap resolution.
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
 
-  // Thread ids visible under the current filter — measurement ignores marks of
-  // hidden threads so their reserved space doesn't leave gaps.
-  const visibleIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const t of threads.values()) {
-      if ((filter === "resolved") === Boolean(t.resolved)) ids.add(t.id);
-    }
-    return ids;
-  }, [threads, filter]);
-
   // Measure mark offsets relative to the cards region, then resolve overlaps
   // using each card's real rendered height. Offsets are scroll-invariant (mark
   // and region live in the same scrolling flow), so scrolling never needs a
@@ -100,25 +82,25 @@ export function DocCommentsRail({
     const markEls = root.querySelectorAll<HTMLElement>(".bn-thread-mark[data-bn-thread-id]");
     for (const el of markEls) {
       const tid = el.getAttribute("data-bn-thread-id");
-      if (!tid || rawTops.has(tid) || !visibleIds.has(tid)) continue; // first mark wins (top of range)
+      if (!tid || rawTops.has(tid)) continue; // first mark wins (top of range)
       rawTops.set(tid, Math.max(0, el.getBoundingClientRect().top - regionTop));
     }
 
     // Sort by position, then push cards down when they'd overlap.
     const anchored = Array.from(rawTops.entries()).sort((a, b) => a[1] - b[1]);
-    const resolved = new Map<string, number>();
+    const next = new Map<string, number>();
     let cursor = 0;
     for (const [tid, rawTop] of anchored) {
       const top = Math.max(rawTop, cursor);
-      resolved.set(tid, top);
+      next.set(tid, top);
       const h = cardEls.current.get(tid)?.offsetHeight ?? CARD_FALLBACK_H;
       cursor = top + h + CARD_GAP;
     }
 
     // Only commit real changes — card ResizeObservers re-enter measure after
     // every layout pass, and an identical Map would loop the render cycle.
-    setCardTops((prev) => (mapsEqual(prev, resolved) ? prev : resolved));
-  }, [editorContentRef, visibleIds]);
+    setCardTops((prev) => (mapsEqual(prev, next) ? prev : next));
+  }, [editorContentRef]);
 
   // Stable identity for observers that outlive `measure` recreations.
   const measureRef = useRef(measure);
@@ -171,7 +153,7 @@ export function DocCommentsRail({
     };
   }, [editorContentRef]);
 
-  // Re-measure when thread set or positions change (new threads, resolved, etc.)
+  // Re-measure when thread set or positions change (new or deleted threads).
   useEffect(() => {
     requestAnimationFrame(() => measureRef.current());
   }, [threads, threadPositions, measure]);
@@ -210,20 +192,15 @@ export function DocCommentsRail({
   // Split threads into anchored (have a measured mark) vs unanchored
   // (doc-level / orphaned).
   const { anchored, unanchored } = useMemo(() => {
-    const threadsArray = Array.from(threads.values());
-    const visible = threadsArray.filter((t) => visibleIds.has(t.id));
+    const anch: Array<{ thread: ThreadData; orphaned: boolean }> = [];
+    const unanch: Array<{ thread: ThreadData; orphaned: boolean }> = [];
 
-    const anch: Array<{ thread: ThreadData; referenceText: string; orphaned: boolean }> = [];
-    const unanch: Array<{ thread: ThreadData; referenceText: string; orphaned: boolean }> = [];
-
-    for (const thread of visible) {
-      const pos = threadPositions.get(thread.id);
-      const orphaned = pos === undefined;
-      const referenceText = getReferenceText(editor, pos);
+    for (const thread of threads.values()) {
+      const orphaned = threadPositions.get(thread.id) === undefined;
       if (cardTops.has(thread.id)) {
-        anch.push({ thread, referenceText, orphaned });
+        anch.push({ thread, orphaned });
       } else {
-        unanch.push({ thread, referenceText, orphaned });
+        unanch.push({ thread, orphaned });
       }
     }
 
@@ -231,7 +208,7 @@ export function DocCommentsRail({
     anch.sort((a, b) => (cardTops.get(a.thread.id) ?? 0) - (cardTops.get(b.thread.id) ?? 0));
 
     return { anchored: anch, unanchored: unanch };
-  }, [threads, threadPositions, cardTops, visibleIds, editor]);
+  }, [threads, threadPositions, cardTops]);
 
   // The region's min-height: bottom edge of the lowest card (real height), so
   // the in-flow "General" section lands below the anchored stack.
@@ -244,9 +221,7 @@ export function DocCommentsRail({
     return max > 0 ? max + CARD_GAP : 0;
   }, [cardTops]);
 
-  const totalThreadCount = threads.size;
-  const openCount = Array.from(threads.values()).filter((t) => !t.resolved).length;
-  const displayCount = filter === "resolved" ? totalThreadCount - openCount : openCount;
+  const displayCount = threads.size;
 
   const select = useCallback(
     (threadId: string) => {
@@ -259,6 +234,35 @@ export function DocCommentsRail({
     [comments],
   );
   const deselect = useCallback(() => comments.selectThread(undefined), [comments]);
+
+  // Clicking away closes the open card. A card's own blur only fires when
+  // focus moves to another focusable element, so a click on the page ground —
+  // or on the rail's own empty column — used to leave a thread selected with
+  // no way out of it. Capture phase, so a click that lands on the editor is
+  // handled before ProseMirror moves focus. Escape does the same from the
+  // keyboard. Clicks on a mark, another card, or any floating UI the card owns
+  // (emoji picker, menus) are the card's business, not a dismissal.
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (
+        el?.closest(
+          ".dali-doc-rail__card, .bn-thread-mark, .bn-action-toolbar, [data-floating-ui-portal], [data-radix-popper-content-wrapper], [data-slot='dropdown-menu-content'], [data-slot='popover-content']",
+        )
+      ) return;
+      deselect();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") deselect();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selectedThreadId, deselect]);
 
   return (
     <div className="dali-doc-rail">
@@ -275,30 +279,6 @@ export function DocCommentsRail({
             </span>
           )}
         </div>
-        <div className="inline-flex rounded-full bg-muted/60 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => onFilterChange("open")}
-            className={`rounded-full px-2 py-0.5 transition-colors ${
-              filter === "open"
-                ? "bg-card font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Open
-          </button>
-          <button
-            type="button"
-            onClick={() => onFilterChange("resolved")}
-            className={`rounded-full px-2 py-0.5 transition-colors ${
-              filter === "resolved"
-                ? "bg-card font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Resolved
-          </button>
-        </div>
       </div>
 
       {/* Absolutely-positioned anchored cards. The region top-aligns with the
@@ -309,12 +289,11 @@ export function DocCommentsRail({
         className="dali-doc-rail__region"
         style={{ minHeight: anchoredRegionHeight }}
       >
-        {anchored.map(({ thread, referenceText, orphaned }) => (
+        {anchored.map(({ thread, orphaned }) => (
           <RailCard
             key={thread.id}
             thread={thread}
             selectedThreadId={selectedThreadId}
-            referenceText={referenceText}
             orphaned={orphaned}
             top={cardTops.get(thread.id) ?? 0}
             registerEl={registerCard}
@@ -333,12 +312,11 @@ export function DocCommentsRail({
             <div className="flex-1 border-t border-border" />
           </div>
           <div className="flex flex-col gap-2">
-            {unanchored.map(({ thread, referenceText, orphaned }) => (
+            {unanchored.map(({ thread, orphaned }) => (
               <RailCard
                 key={thread.id}
                 thread={thread}
                 selectedThreadId={selectedThreadId}
-                referenceText={referenceText}
                 orphaned={orphaned}
                 top={null}
                 registerEl={registerCard}
@@ -352,7 +330,7 @@ export function DocCommentsRail({
 
       {anchored.length === 0 && unanchored.length === 0 && (
         <p className="text-xs text-muted-foreground italic px-1 py-2">
-          {filter === "resolved" ? "No resolved comments." : "No comments yet. Select text to add a comment."}
+          No comments yet. Select text to add a comment.
         </p>
       )}
     </div>
@@ -364,7 +342,6 @@ export function DocCommentsRail({
 interface RailCardProps {
   thread: ThreadData;
   selectedThreadId: string | undefined;
-  referenceText: string;
   orphaned: boolean;
   /** null = flow (for unanchored). */
   top: number | null;
@@ -376,7 +353,6 @@ interface RailCardProps {
 function RailCard({
   thread,
   selectedThreadId,
-  referenceText,
   orphaned,
   top,
   registerEl,
@@ -446,7 +422,6 @@ function RailCard({
         thread={thread}
         selected={selected}
         orphaned={orphaned}
-        referenceText={referenceText}
         maxCommentsBeforeCollapse={3}
         onFocus={onFocus}
         onBlur={onBlur}

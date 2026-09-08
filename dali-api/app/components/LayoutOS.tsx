@@ -59,6 +59,10 @@ interface LayoutOSProps {
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
   focusMode?: boolean
+  /** The routed page fills the shell's main column instead of growing past it
+   *  (see `handle.fitViewport`) — the shell is then bounded to the window and
+   *  the page scrolls inside its own panes. */
+  fitViewport?: boolean
   children?: React.ReactNode
 }
 
@@ -117,6 +121,7 @@ export function LayoutOS({
   isInstructor = false,
   favorites = [],
   focusMode = false,
+  fitViewport = false,
   children,
 }: LayoutOSProps) {
   const location = useLocation()
@@ -785,7 +790,19 @@ export function LayoutOS({
   const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
 
   return (
-    <div className="os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0">
+    <div
+      className={cn(
+        'os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0',
+        // `min-h-dvh` alone is a floor, so a page taller than the window still
+        // grows the document — every `min-h-0`/`flex-1` below here can only
+        // shrink against a *definite* height. A `fitViewport` page gets one, so
+        // its own scrollports do the scrolling instead of the window. Desktop
+        // only: below `md` — the same breakpoint this shell goes mobile at —
+        // those pages fall back to page scroll (the calendar's hour grid doesn't
+        // scroll internally there), and capping would clip it.
+        fitViewport && 'md:h-dvh md:overflow-hidden',
+      )}
+    >
       {!focusMode && (
         <aside
           className={cn(
@@ -868,10 +885,13 @@ export function LayoutOS({
       <main
         className={cn(
           'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
+          fitViewport && 'min-h-0',
           !focusMode && mainPad,
         )}
       >
-        {!focusMode && <div className="hidden md:block">{topBar}</div>}
+        {/* `shrink-0` so a bounded shell takes the height out of the page's
+            own scrollport rather than squashing the favourites bar. */}
+        {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
         <DesktopBanner />
         {tabless ? (
           <ShellGuideProvider>

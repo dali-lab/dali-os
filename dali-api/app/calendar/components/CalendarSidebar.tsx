@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Search, Settings2, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Search, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
@@ -260,9 +260,6 @@ type CalendarSidebarProps = {
   /** Opens the create modal with this person already invited, on the current
    *  week, so their availability is on screen immediately. */
   onMeetWith: (userId: string) => void;
-  /** Opens the full calendars panel — connecting accounts, the main calendar,
-   *  and what counts toward availability all live there, not in this rail. */
-  onManage: () => void;
 };
 
 /** Inner content shared by the desktop rail and the mobile drawer. */
@@ -278,7 +275,6 @@ function CalendarSidebarContent({
   roleColors,
   roleHours,
   setRoleColor,
-  onManage,
   onMeetWith,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
@@ -291,20 +287,9 @@ function CalendarSidebarContent({
       <MeetWith users={data.users} onPick={onMeetWith} />
 
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1 px-1 pb-1">
-          <h2 className="flex-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            My calendars
-          </h2>
-          <button
-            type="button"
-            onClick={onManage}
-            aria-label="Manage calendars"
-            title="Connect and manage calendars"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Settings2 className="h-4 w-4" />
-          </button>
-        </div>
+        <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          My calendars
+        </h2>
         {links.length === 0 ? (
           <p className="px-1 text-xs text-muted-foreground">
             No calendars linked yet.
@@ -336,7 +321,7 @@ function CalendarSidebarContent({
           )}
         >
           <Clock3 className="h-4 w-4" />
-          {layers.logged ? "Viewing timesheet" : "View timesheet"}
+          {layers.logged ? "Timesheet mode" : "Enter timesheet mode"}
         </button>
 
         {layers.logged && (
@@ -398,7 +383,7 @@ export function CalendarSidebar(props: CalendarSidebarProps) {
       {/* pr-4 on top of the row's gap: the rail scrolls, so its own right edge is
           where a scrollbar lands, and the mini-month's cells ran up against the
           grid without it. */}
-      <aside className="hidden w-64 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
+      <aside className="hidden w-64 min-h-0 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
         <CalendarSidebarContent {...props} />
       </aside>
 
