@@ -287,7 +287,6 @@ function Loaded({
     { gate: "ok" }
   >;
 }) {
-  const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -353,7 +352,7 @@ function Loaded({
       <div
         className={cn(
           "overflow-hidden",
-          os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+          "rounded-os-card bg-os-card",
         )}
       >
         {data.noFormConnected ? (
@@ -390,7 +389,7 @@ function Header({
   onOpenSettings?: () => void;
   settingsLabel?: string;
 }) {
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   return (
     <>
     <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "intent" })} />
@@ -402,9 +401,7 @@ function Header({
           onClick={onOpenSettings}
           className={cn(
             "shrink-0",
-            os
-              ? "os-edit-btn"
-              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+            "os-edit-btn",
           )}
         >
           {settingsLabel ?? "Advanced settings"}

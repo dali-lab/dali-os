@@ -384,7 +384,7 @@ function Header({
   onOpenSettings?: () => void;
   settingsLabel?: string;
 }) {
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   return (
     <>
     <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "bids" })} />
@@ -396,9 +396,7 @@ function Header({
           onClick={onOpenSettings}
           className={cn(
             "shrink-0",
-            os
-              ? "os-edit-btn"
-              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+            "os-edit-btn",
           )}
         >
           {settingsLabel ?? "Advanced settings"}

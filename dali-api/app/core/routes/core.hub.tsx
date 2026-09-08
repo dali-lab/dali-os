@@ -291,7 +291,7 @@ function RailSection({
 
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
   const { timeZone, events, upcoming, deadlines } = loaderData;
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   const { view, days, focusDate, anchorMonth, rangeLabel, changeView, navigate, goToday, goToDay } =
     useCalendarView(timeZone);
 
@@ -352,7 +352,7 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
+    <div className={cn("flex flex-col", "gap-3")}>
       <h1 className={pageTitle}>Core hub</h1>
 
       {/* The date navigator belongs to the grid, so it shares a line with the

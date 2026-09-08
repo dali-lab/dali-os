@@ -43,10 +43,10 @@ export function CalendarIntegrationsCard({
   ingestionError: string | null;
   generalCalendar: LoaderData["generalCalendar"];
 }) {
-  const { os, card, cardPad, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
+  const { card, cardPad, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
   return (
     <section>
-      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
+      <div className={cn("flex items-center justify-between", "mb-4")}>
         <h2 className={heading}>
           <CalendarDays className={headingIcon} />
           Calendar Integrations
@@ -96,7 +96,6 @@ export function CalendarIntegrationsCard({
 // account. One account → subscribe straight away; several → let the member pick
 // which one it lands on.
 export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
-  const { os } = useOsChrome();
   const fetcher = useFetcher<{ error?: string }>();
   const [picking, setPicking] = useState(false);
   const accounts = links.filter((l) => l.provider === "Google");
@@ -111,7 +110,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
     <div
       className={cn(
         "bg-os-accent/10 border border-os-accent/30 px-3 py-2.5 mb-2 flex flex-col gap-2",
-        os ? "rounded-os-item" : "rounded-md",
+        "rounded-os-item",
       )}
     >
       <p className="text-xs text-foreground">Add the DALI General Calendar</p>
@@ -125,7 +124,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
               onClick={() => subscribe(a.id)}
               className={cn(
                 "flex items-center gap-2 border border-border bg-card px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted transition-colors disabled:opacity-60",
-                os ? "rounded-os-item" : "rounded-md",
+                "rounded-os-item",
               )}
             >
               <GoogleIcon />
@@ -140,7 +139,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
           onClick={() => (accounts.length === 1 ? subscribe(accounts[0].id) : setPicking(true))}
           className={cn(
             "self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-os-accent text-os-bg hover:bg-os-accent-hover transition-colors disabled:opacity-60",
-            os ? "rounded-full" : "rounded-md",
+            "rounded-full",
           )}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -161,7 +160,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
 /* ------------------------------------------------------------------ */
 
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
-  const { os, card, bodyText } = useOsChrome();
+  const { card, bodyText } = useOsChrome();
   const removeFetcher = useFetcher();
   const [open, setOpen] = useState(false);
   const bodyId = useId();
@@ -171,9 +170,6 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
       className={cn(
         "overflow-hidden",
         card,
-        // The teal edge is the brand shell's source marker; under os the tinted
-        // header carries that on its own and a 4px edge fights the 24px corner.
-        !os && "border-l-4 border-l-accent-teal",
       )}
     >
       <div className="flex items-center justify-between bg-accent-teal/10 pr-3">
@@ -308,7 +304,7 @@ export function WorkingHoursCard({
    *  add context here rather than stacking a second heading above it. */
   hint?: string;
 }) {
-  const { os, card, cardPad, iconBtn } = useOsChrome();
+  const { card, cardPad, iconBtn } = useOsChrome();
   const resetFetcher = useFetcher();
   const toggleFetcher = useFetcher();
 
@@ -368,7 +364,7 @@ export function WorkingHoursCard({
 
   return (
     <section>
-      <div className={cn("flex items-center justify-between", os ? "mb-4" : "mb-3")}>
+      <div className={cn("flex items-center justify-between", "mb-4")}>
         {/* Matches the Availability tab's other section headers: a muted glyph
             in the gutter and a sentence-case semibold title, rather than the
             eyebrow + accent-icon pair the older settings cards use. */}
@@ -629,7 +625,7 @@ function TimeField({
   onCommit,
   ...rest
 }: { valueMin: number; onCommit: (min: number) => void } & React.AriaAttributes) {
-  const { os, compactField } = useOsChrome();
+  const { compactField } = useOsChrome();
   const [text, setText] = useState(formatTime(valueMin));
   // Keep the typed text in sync when the canonical minute changes (toggle on,
   // reset to defaults, another day edit revalidating the week).
@@ -654,7 +650,6 @@ function TimeField({
         className={cn(
           "w-[88px] pl-2 pr-6 py-1 text-xs border border-border focus:outline-none",
           compactField,
-          !os && "focus:ring-2 focus:ring-os-accent/30",
         )}
       />
       <Clock className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
@@ -709,7 +704,7 @@ function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => 
 /* ------------------------------------------------------------------ */
 
 export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
-  const { os, card, cardPad, heading, headingIcon } = useOsChrome();
+  const { card, cardPad, heading, headingIcon } = useOsChrome();
   const fetcher = useFetcher();
   const pending = fetcher.formData;
   const selectedMin = pending ? Number(pending.get("defaultEventBufferMin")) : bufferMin;
@@ -722,7 +717,7 @@ export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
   ];
   return (
     <section>
-      <h2 className={cn(heading, os ? "mb-4" : "mb-3")}>
+      <h2 className={cn(heading, "mb-4")}>
         <Shield className={headingIcon} />
         Event Buffers
       </h2>
@@ -743,16 +738,12 @@ export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
               }
               className={cn(
                 "px-3 py-1.5 text-xs font-semibold transition-colors",
-                os ? "rounded-full" : "rounded-md",
+                "rounded-full",
                 selectedMin === o.value
                   ? // The os design marks a chosen segment with the container
                     // fill, as the People directory's Active/Alumni switch does.
-                    os
-                    ? "bg-os-container text-foreground"
-                    : "bg-os-accent text-os-bg"
-                  : os
-                    ? "bg-os-well text-os-grey hover:text-foreground"
-                    : "bg-background text-foreground border border-border hover:bg-muted",
+                    "bg-os-container text-foreground"
+                  : "bg-os-well text-os-grey hover:text-foreground",
               )}
             >
               {o.label}

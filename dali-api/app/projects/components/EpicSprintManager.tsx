@@ -206,7 +206,6 @@ export function EpicSprintManager({
 
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // "All" shows every epic; otherwise only epics matching the selected
-  const os = true;
   // The design's toolbar under the timeline: an Edit toggle that turns the
   // bars into things you can drag, and an Add menu.
   const [editMode, setEditMode] = useState(false);
@@ -335,7 +334,7 @@ export function EpicSprintManager({
   // menu. Under os and with manage rights only. The people filter used to sit
   // here too and sliced the timeline; it now lives on the task board beside its
   // search and only narrows the board's tasks.
-  const progressActions = os && canManage ? (
+  const progressActions = canManage ? (
     <div className="flex items-center gap-2.5">
       <button
         type="button"
@@ -453,12 +452,7 @@ export function EpicSprintManager({
         onClose={() => setNewEpicOpen(false)}
         labelledBy="new-epic-title"
         disableEscape={busy}
-        containerClassName={cn(
-          "w-full my-auto",
-          os
-            ? "max-w-[560px] os-modal-card os-form"
-            : "max-w-xl bg-card rounded-2xl shadow-xl p-5 sm:p-6",
-        )}
+        containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
       >
         {/* Eyebrow rather than a heading: the form's own name field is the
             prominent title, exactly as in the detail modal. Under os the
@@ -466,30 +460,17 @@ export function EpicSprintManager({
             dialog, so the epic's own name can be a field with a required mark
             on it. */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          {os ? (
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
               <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
               <h2 id="new-epic-title" className="os-modal-title min-w-0 truncate">
                 New epic
               </h2>
             </div>
-          ) : (
-            <h2
-              id="new-epic-title"
-              className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              New epic
-            </h2>
-          )}
           <button
             type="button"
             onClick={() => setNewEpicOpen(false)}
             aria-label="Close"
-            className={
-              os
-                ? "os-icon-btn"
-                : "p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            }
+            className="os-icon-btn"
           >
             <X className="w-4 h-4" />
           </button>
@@ -556,13 +537,7 @@ export function EpicSprintManager({
         terms={timelineTerms}
         storyDependencies={storyDependencies}
         actions={
-          os ? (
-            progressActions
-          ) : canManage ? (
-            <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>
-              + Add epic
-            </Button>
-          ) : undefined
+          progressActions
         }
         editMode={editMode}
         onReschedule={canManage ? reschedule : undefined}

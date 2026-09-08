@@ -138,7 +138,7 @@ const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
   const dialog = useDialog();
-  const { os, pageTitle, bodyText, iconBtn } = useOsChrome();
+  const { pageTitle, bodyText, iconBtn } = useOsChrome();
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -215,12 +215,10 @@ export default function MentorNoteEditor() {
                 aria-pressed={active}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border transition",
-                  os ? "px-3.5 py-1.5 text-sm font-medium" : "px-2.5 py-1 text-xs",
+                  "px-3.5 py-1.5 text-sm font-medium",
                   active
                     ? VIBE_META[v].pill
-                    : os
-                    ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground",
+                    : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
                   data.canEdit ? "" : "cursor-default opacity-70",
                 )}
               >
@@ -265,7 +263,7 @@ export default function MentorNoteEditor() {
               aria-label="Delete note"
               className={cn(
                 "inline-flex items-center justify-center",
-                os ? iconBtn : "p-1.5 text-accent-coral hover:underline",
+                iconBtn,
               )}
             >
               <Trash2 className="w-3.5 h-3.5" />

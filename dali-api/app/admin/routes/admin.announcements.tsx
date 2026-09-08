@@ -16,7 +16,6 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
-  Megaphone,
   Search,
   Users,
   UserRound,
@@ -128,7 +127,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function AnnouncementsPage() {
   const { members, groups, publishedForms, scheduled, viewerIsAdmin } =
     useLoaderData<typeof loader>();
-  const { os, pageTitle, card, cardPad } = useOsChrome();
+  const { pageTitle, card, cardPad } = useOsChrome();
 
   // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
   // affordance opens this composer with the bound form + whole-lab audience
@@ -280,7 +279,6 @@ export default function AnnouncementsPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-5 max-w-3xl">
       <header className="flex items-start gap-3">
-        {!os && <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />}
         <h1 className={pageTitle}>Announcements</h1>
       </header>
 
@@ -585,9 +583,7 @@ export default function AnnouncementsPage() {
           disabled={!canSend}
           className={cn(
             "disabled:opacity-60 disabled:cursor-not-allowed",
-            os
-              ? "os-btn-primary"
-              : "px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors",
+            "os-btn-primary",
           )}
         >
           {sending ? (scheduling ? "Scheduling…" : "Sending…") : scheduling ? "Schedule" : "Send"}
