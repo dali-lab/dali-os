@@ -33,6 +33,10 @@ import type { ReactNode } from "react";
 import type { EditorState } from "prosemirror-state";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { en } from "@blocknote/core/locales";
+import {
+  locales as multiColumnLocales,
+  multiColumnDropCursor,
+} from "@blocknote/xl-multi-column";
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { User } from "@blocknote/core";
 import {
@@ -105,6 +109,7 @@ function LocalDoc(props: ResolvedProps) {
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
+      ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
   );
@@ -152,6 +157,9 @@ function CollabDocInner(
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
+      // The edge-drop cursor is what turns "drag a block to the side of
+      // another" into a column split; without it columns are slash-menu only.
+      ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
       // Wire CommentsExtension when a threadStore is available. Extensions are
       // passed through withCollaboration unchanged (see dist/yjs.js).
       ...(threadStore
@@ -561,6 +569,51 @@ function DocView(
     return () => dom.removeEventListener("keydown", onKeyDown);
   }, [editor, editable, dialog]);
 
+  // Cmd/Ctrl+Shift+C / +V — paint format, the Google Docs pair. C snapshots the
+  // styles at the cursor, V replaces the selection's styles with that snapshot.
+  // Like Cmd+K above, BlockNote ships no binding for either.
+  //
+  // V CLEARS BEFORE IT APPLIES: paint format replaces formatting rather than
+  // adding to it, and removeStyles only reads the KEYS of what it's handed
+  // (StyleManager.removeStyles -> unsetMark per key), so a clear-all object
+  // built from the schema's own style keys wipes marks the snapshot doesn't
+  // carry. Passing the snapshot alone would leave the target's existing bold
+  // in place.
+  //
+  // Both are gated on a non-empty selection, matching Cmd+K. Note Chrome binds
+  // Cmd+Shift+C to the DevTools inspector — preventDefault on the editor DOM is
+  // what keeps it from opening while the caret is in a document.
+  const paintedStylesRef = useRef<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (!editable) return;
+    const pmView = editor.prosemirrorView;
+    if (!pmView) return;
+    const dom = pmView.dom as HTMLElement;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+      if (pmView.state.selection.empty) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (key === "c") {
+        paintedStylesRef.current = { ...editor.getActiveStyles() };
+        return;
+      }
+      const painted = paintedStylesRef.current;
+      if (!painted) return; // nothing copied yet — leave the selection alone
+      const clearAll = Object.fromEntries(
+        Object.keys(editor.schema.styleSchema).map((styleKey) => [styleKey, true]),
+      );
+      editor.removeStyles(clearAll as Parameters<typeof editor.removeStyles>[0]);
+      if (Object.keys(painted).length > 0) {
+        editor.addStyles(painted as Parameters<typeof editor.addStyles>[0]);
+      }
+    };
+    dom.addEventListener("keydown", onKeyDown);
+    return () => dom.removeEventListener("keydown", onKeyDown);
+  }, [editor, editable]);
+
   // Register/unregister the find-replace PM plugin when findOpen toggles.
   // We create a new plugin instance each time so plugin state is fresh.
   const FIND_REPLACE_KEY = "dali-find-replace-ext";
@@ -846,16 +899,24 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.files, features.richBlocks, features.pageBreak, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.pageBreak, Boolean(features.signing)],
   );
 }
 
+// multi_column is merged in unconditionally: getMultiColumnSlashMenuItems calls
+// getMultiColumnDictionary, which THROWS when the key is absent rather than
+// degrading, and the dictionary is inert data on surfaces without columns.
+const docDictionaryBase = { ...en, multi_column: multiColumnLocales.en };
+
 function useDocDictionary(placeholder: string | undefined) {
   return useMemo(() => {
-    if (!placeholder) return en;
+    if (!placeholder) return docDictionaryBase;
     // Only the empty-document placeholder is overridden; per-block "type /"
     // hints keep BlockNote's defaults.
-    return { ...en, placeholders: { ...en.placeholders, emptyDocument: placeholder } };
+    return {
+      ...docDictionaryBase,
+      placeholders: { ...docDictionaryBase.placeholders, emptyDocument: placeholder },
+    };
   }, [placeholder]);
 }
 

@@ -15,6 +15,15 @@ export interface Features {
   files?: boolean;
   /** Rich extras: callout, table, toggle list — and their slash-menu items. */
   richBlocks?: boolean;
+  /**
+   * Side-by-side layout: the columnList/column block pair from
+   * @blocknote/xl-multi-column, its "/" items and the edge-drop cursor.
+   * Separate from richBlocks because guides need columns (screenshots side by
+   * side) without tables/callouts. Enabling it on a surface is a one-way door
+   * per document: buildSchema strips unregistered blocks on load, so a doc
+   * authored with columns loses them if reopened on a surface without this.
+   */
+  columns?: boolean;
   /** Page-break block + slash item (full document surfaces only). */
   pageBreak?: boolean;
   /**
@@ -40,8 +49,8 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   field: {}, // short structured input
   notes: { images: true }, // mentorship notes/templates, hiring notes
   agreement: { images: true, signing: true }, // signing document body
-  guide: { mentions: true, images: true, files: true, pageBreak: true }, // page-doc guides
-  document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true }, // full document
+  guide: { mentions: true, images: true, files: true, pageBreak: true, columns: true }, // page-doc guides
+  document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true }, // full document
 };
 
 export function resolveFeatures(input: EditorPresetName | Features | undefined): Features {
