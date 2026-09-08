@@ -273,14 +273,17 @@ export function CreateEventModal({
     prevEventState.current = eventFetcher.state;
   }, [eventFetcher.state, eventFetcher.data, onClose]);
 
-  // Hours hang off one concrete, timed occurrence: a repeating event has no
-  // single occurrence to attach them to and an all-day event has no range to
-  // measure. The server rejects both, so don't offer the toggle for them. A
-  // repeating meeting is the same story, minus the all-day case this form
-  // doesn't offer there.
+  // An all-day event has no range for hours to measure, and the server rejects
+  // it, so the Event form drops the toggle there. A repeating Google event is
+  // rejected too: the create returns the series master, whose id matches none
+  // of the occurrence ids the grid draws, so a log keyed on it would be
+  // invisible.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
-  const meetingCanLogWork = repeatSpecToRRule(repeat, selectedStartLocal) === null;
+  // A meeting keeps the toggle when it repeats. The log links to the
+  // ScheduledMeeting (one row per meeting per user) and is dated to the series
+  // anchor — the first occurrence, the one time being scheduled here.
+  const meetingRepeats = repeatSpecToRRule(repeat, selectedStartLocal) !== null;
 
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
@@ -292,13 +295,12 @@ export function CreateEventModal({
     startIso < endIso &&
     (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
-  const meetingLoggingWork = isWork && meetingCanLogWork;
   const canSubmitMeeting =
     title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
     meetingNoteValid(note.state) &&
-    (!meetingLoggingWork || (roleKey !== "" && workNote.trim() !== "")) &&
+    (!isWork || (roleKey !== "" && workNote.trim() !== "")) &&
     !submitting;
 
   // ── Meeting submit ───────────────────────────────────────────────────────
@@ -352,7 +354,7 @@ export function CreateEventModal({
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
         // block (not a duplicate) and isn't mirrored to the Timesheet calendar.
-        if (meetingLoggingWork && roleKey && startIso && endIso) {
+        if (isWork && roleKey && startIso && endIso) {
           const [assignmentType, roleRefId] = roleKey.split("::");
           const meetingId = json.meeting?.id as string | undefined;
           if (assignmentType && roleRefId) {
@@ -423,7 +425,11 @@ export function CreateEventModal({
           }
         }}
         label="Count this as work"
-        description="Automatically logs this event to your Timesheet once it's created."
+        description={
+          type === "Meeting" && meetingRepeats
+            ? "Logs the first occurrence to your Timesheet once the meeting is created."
+            : "Automatically logs this event to your Timesheet once it's created."
+        }
       />
       {isWork && (
         <div className="mt-3 space-y-3">
@@ -944,9 +950,8 @@ export function CreateEventModal({
                 )}
               </div>
 
-              {/* Timesheet — a repeating meeting has no single occurrence for
-                  the hours to hang off. */}
-              {meetingCanLogWork && timesheetSection}
+              {/* Timesheet — a repeating meeting logs its first occurrence. */}
+              {timesheetSection}
 
               {/* Status */}
               {meetingStatus?.ok === true && (
