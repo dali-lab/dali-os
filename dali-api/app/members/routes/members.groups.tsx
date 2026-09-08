@@ -14,7 +14,6 @@ import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { cn } from "~/lib/cn";
 import {
   Users,
@@ -25,11 +24,8 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
-  LayoutGrid,
 } from "lucide-react";
 import { Radio } from "~/components/ui/Radio";
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -271,12 +267,6 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav
-        items={[
-          { label: "Hub", to: "/members", icon: LayoutGrid },
-          { label: "Groups", to: "/members/groups", active: true, icon: Users },
-        ]}
-      />
       {/* Same header shape as the People directory this sits beside: title
           left, add control right. The design's title carries the page on its
           own, so the decorative Users glyph goes with the smaller heading. */}

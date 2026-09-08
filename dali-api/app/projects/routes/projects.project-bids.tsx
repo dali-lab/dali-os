@@ -30,14 +30,11 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "project-bids" as const;
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Project Bids · DALI OS" },
@@ -387,7 +384,6 @@ function Header({
   const { pageTitle } = useOsChrome();
   return (
     <>
-    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "bids" })} />
     <header className="flex items-start justify-between gap-3">
       <h1 className={pageTitle}>Project Bids</h1>
       {onOpenSettings && (

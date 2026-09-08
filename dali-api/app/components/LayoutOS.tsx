@@ -123,9 +123,9 @@ export function LayoutOS({
   const matches = useMatches()
   useRecordTablessHistory()
   const tabless = children !== undefined
-  // This shell always owns the sub-tabs in its rail, so the in-page pill row is
-  // gone whatever `sidebar-redesign` says — pass the redesigned-row rule flat.
-  const ownsSubnavRow = hasSubnavRow(matches, true)
+  // This shell owns the sub-tabs in its rail; only areaSubnav pages (calendar)
+  // render their own in-page row.
+  const ownsSubnavRow = hasSubnavRow(matches)
   useOsShellRoot(true)
 
   const {

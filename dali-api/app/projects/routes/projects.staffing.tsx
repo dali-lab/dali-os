@@ -17,10 +17,8 @@ import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
 import { dedupeLiveAssignments, matchesDomainFilter } from "../lib/staffing-board";
-import { projectsPills } from "../components/projectsPills";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
   BidField,
@@ -30,7 +28,6 @@ import type {
 } from "../lib/staffing-board";
 
 export const handle = {
-  areaPills: true,
   docKey: "projects.staffing",
   docTitle: "Staffing",
 };
@@ -435,7 +432,6 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "staffing" })} />
       <header className="flex items-start justify-between gap-3">
         <h1 className={pageTitle}>Staffing</h1>
         <PresenceBar />
