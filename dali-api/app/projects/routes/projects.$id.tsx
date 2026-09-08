@@ -1619,9 +1619,6 @@ export default function ProjectDetail() {
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
-  // The dali.os dress for this page: the taller hero, the terms/roles clusters
-  // beside the title, and the filled tab plates. Same tabs, same permissions.
-  const os = true;
   const showStatusBar = useFeatureFlag("project-status-bar");
   const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
@@ -1661,18 +1658,12 @@ export default function ProjectDetail() {
   // render an empty body (valid tab, but its content branch is gated) — treat
   // it as invalid and fall back to the default.
   const resolveTab = (): Tab | OsTab => {
-    const want = os
-      ? isOsTab(tabParam)
-        ? tabParam
-        : isTab(tabParam)
-          ? CLASSIC_TO_OS[tabParam]
-          : "progress"
+    const want = isOsTab(tabParam)
+      ? tabParam
       : isTab(tabParam)
-        ? tabParam
-        : isOsTab(tabParam)
-          ? OS_TO_CLASSIC[tabParam]
-          : "overview";
-    if (want === "mentorship" && !canViewMentorshipTab) return os ? "progress" : "overview";
+        ? CLASSIC_TO_OS[tabParam]
+        : "progress";
+    if (want === "mentorship" && !canViewMentorshipTab) return "progress";
     return want;
   };
   const tab = resolveTab();
@@ -1683,7 +1674,7 @@ export default function ProjectDetail() {
     closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
-        prev.set("tab", os ? "progress" : "board");
+        prev.set("tab", "progress");
         prev.set("task", taskId);
         return prev;
       },
@@ -1726,7 +1717,7 @@ export default function ProjectDetail() {
       onTaskClick={openTaskFromTimeline}
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
-      onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
+      onAddTask={() => setTaskCreateNonce((n) => n + 1)}
     />
   );
   const board = (
@@ -1743,8 +1734,8 @@ export default function ProjectDetail() {
       sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
-      peopleOptions={os ? peopleOptions : []}
-      filterPeopleIds={os ? selectedPeopleIds : []}
+      peopleOptions={peopleOptions}
+      filterPeopleIds={selectedPeopleIds}
       onPeopleChange={setSelectedPeopleIds}
     />
   );
@@ -1754,7 +1745,7 @@ export default function ProjectDetail() {
     // same as the task board and the partner/public views. The design's 1020px
     // figure was measured on a narrower shell than this one, and capping here
     // left every uncapped block on the page hanging past the right edge.
-    <div className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
+    <div className={cn("flex flex-col", "gap-6")}>
       <PresenceBar className="self-end" />
 
       {/* Overview header — always on top, not behind a tab */}
@@ -1762,7 +1753,6 @@ export default function ProjectDetail() {
         project={project}
         partnerNames={partnerNames}
         canEdit={canEdit}
-        os={os}
       />
 
       {/* Tab bar. Each section now owns its own edit button — there's no
@@ -1770,19 +1760,17 @@ export default function ProjectDetail() {
       <div
         className={cn(
           "flex items-center border-b border-border",
-          os ? "gap-2" : "gap-1",
+          "gap-2",
         )}
       >
-        {(os ? OS_TABS : TABS)
+        {OS_TABS
           .filter((t) => t !== "mentorship" || canViewMentorshipTab)
           .map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={
-              os
-                ? cn(
+            className={cn(
                     // The design marks the open tab with a filled, top-rounded
                     // plate that meets the rule below it, not an underline.
                     "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
@@ -1790,14 +1778,9 @@ export default function ProjectDetail() {
                       ? "bg-os-container text-foreground"
                       : "text-os-grey hover:text-foreground",
                   )
-                : `px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                    tab === t
-                      ? "border-accent-coral text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`
             }
           >
-            {os ? OS_TAB_LABELS[t as OsTab] : TAB_LABELS[t as Tab]}
+            {OS_TAB_LABELS[t as OsTab]}
           </button>
         ))}
         {/* Scope/challenge config lives behind this gear, visible only to
@@ -1830,9 +1813,9 @@ export default function ProjectDetail() {
         <OverviewTab
           // Under the os tabs the timeline is the Progress tab's own content,
           // so Project details renders without it.
-          planning={os ? null : planningNode}
-          showMeetings={!os}
-          showDocuments={!os}
+          planning={null}
+          showMeetings={false}
+          showDocuments={false}
           project={project}
           teams={teams}
           documents={documents}
@@ -1899,7 +1882,7 @@ export default function ProjectDetail() {
           space every tab pays for whether or not it needs it. A quarter of the
           viewport is enough to keep the scroll range alive without the page
           ending in a void. */}
-      <div className={cn("flex flex-col", os ? "gap-6 min-h-[25vh]" : "gap-4")}>
+      <div className={cn("flex flex-col", "gap-6 min-h-[25vh]")}>
         {/* Progress (os): the timeline and the board are one surface — the plan
             above, the work under it — rather than two tabs you flip between to
             answer one question. */}
@@ -1973,12 +1956,10 @@ function ProjectHeader({
   project,
   partnerNames,
   canEdit,
-  os = false,
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
-  os?: boolean;
 }) {
   const submit = useSubmit();
   // Name, status and icon each save the moment you change them — the hero has
@@ -2075,26 +2056,9 @@ function ProjectHeader({
           // colours as a declared one.
           <DomainChips
             items={project.domains.length > 0 ? project.domains : project.derivedDomains}
-            os
           />
         )}
       </HeroClusterLabel>
-    </div>
-  );
-
-  // Classic keeps a header Schedule-meeting button; under os this folds into
-  // the Progress toolbar's New ▸ Meeting. There is no header edit button any
-  // more — name, status and icon edit in place, and project scope lives behind
-  // the settings gear.
-  const editControls = os ? null : (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <Link
-        to={`/calendar?tab=schedule&project=${project.id}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-      >
-        <CalendarPlus className="w-4 h-4" />
-        Schedule meeting
-      </Link>
     </div>
   );
 
@@ -2104,7 +2068,7 @@ function ProjectHeader({
   // can't edit gets the same three elements, read-only.
   const nameClasses = cn(
     "font-heading text-foreground",
-    os ? "text-[32px] font-medium" : "text-2xl font-bold",
+    "text-[32px] font-medium",
   );
   const titleCluster = (
     <>
@@ -2118,7 +2082,7 @@ function ProjectHeader({
           onChange={(v) => saveHeader({ iconEmoji: v })}
         />
       ) : (
-        <ProjectIcon iconEmoji={project.iconEmoji} size={os ? "inherit" : "lg"} />
+        <ProjectIcon iconEmoji={project.iconEmoji} size="inherit" />
       )}
       {canEdit && editingName ? (
         <input
@@ -2139,13 +2103,11 @@ function ProjectHeader({
           autoFocus
           // Sized to the name it holds so the title doesn't jump to a box of
           // some other width the moment you click it.
-          style={os ? { width: `${Math.max(nameDraft.length, 8) + 1}ch` } : undefined}
+          style={{ width: `${Math.max(nameDraft.length, 8) + 1}ch` }}
           className={cn(
             nameClasses,
             "bg-transparent max-w-full focus:outline-none",
-            os
-              ? "border-b border-os-container-hi focus:border-os-accent"
-              : "px-2 py-1 border border-border rounded-md bg-background focus:ring-2 focus:ring-accent-coral/30",
+            "border-b border-os-container-hi focus:border-os-accent",
           )}
         />
       ) : (
@@ -2185,63 +2147,45 @@ function ProjectHeader({
           // status plate's shape and colour so the dropdown reads as the badge.
           buttonClassName={cn(
             "rounded-full border transition-[filter] hover:brightness-95",
-            os
-              ? cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status])
-              : cn("px-2 py-0.5 text-[11px] font-medium", STATUS_PILL_CLASSIC[project.status]),
+            cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status]),
           )}
         />
       ) : (
-        <StatusBadge status={project.status} os={os} />
+        <StatusBadge status={project.status} />
       )}
     </>
   );
 
   return (
-    <header className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
+    <header className={cn("flex flex-col", "gap-6")}>
       <ProjectImageBanner
         projectId={project.id}
         projectName={project.name}
         initialPreviewUrl={project.imageUrlResolved}
         canEdit={canEdit}
-        frameClassName={os ? "h-[275px] rounded-os-card" : undefined}
+        frameClassName="h-[275px] rounded-os-card"
       />
       <div className="min-w-0 flex-1">
         {/* The edit control is its own column at the far right, outside the
             row that wraps: while it rode along with the tag clusters it got
             pushed onto a line of its own under Roles as soon as they filled
             the row, and opening the editor re-flowed the clusters with it. */}
-        <div className={cn("flex items-start justify-between", os ? "gap-4" : "gap-3")}>
+        <div className={cn("flex items-start justify-between", "gap-4")}>
           <div
             className={cn(
               "min-w-0 flex-1",
-              os && "flex flex-wrap items-center justify-between gap-x-6 gap-y-4",
+              "flex flex-wrap items-center justify-between gap-x-6 gap-y-4",
             )}
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">{titleCluster}</div>
-
-              {/* Domains sit on their own row under the title. Sharing the
-                  title's wrapped flex row meant they trailed off the end of the
-                  name and broke to an arbitrary place as it grew. */}
-              {!os &&
-                (project.domains.length > 0 ? (
-                  <div className="mt-1.5">
-                    <DomainChips items={project.domains} />
-                  </div>
-                ) : project.derivedDomains.length > 0 ? (
-                  <div className="mt-1.5">
-                    <DomainChips items={project.derivedDomains} muted />
-                  </div>
-                ) : null)}
             </div>
 
             {/* os: the design's hero-meta row — title left, the term and role
                 clusters right, both inside the wrapping column. */}
-            {os && osTagGroup}
+            {osTagGroup}
           </div>
-          {editControls}
         </div>
-        {!os && subtitle}
       </div>
     </header>
   );
@@ -2268,7 +2212,7 @@ function DescriptionSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const { os, panel } = useOsChrome();
+  const { panel } = useOsChrome();
 
   return (
     <EditableSection
@@ -2284,7 +2228,7 @@ function DescriptionSegment({
           <Form
             method="post"
             ref={formRef}
-            className={cn("flex flex-col gap-1.5", os && cn(panel, "os-form p-5"))}
+            className={cn("flex flex-col gap-1.5", cn(panel, "os-form p-5"))}
           >
             <input type="hidden" name="intent" value="description" />
             <textarea
@@ -2292,16 +2236,12 @@ function DescriptionSegment({
               rows={6}
               defaultValue={description ?? ""}
               placeholder="Add a short description… (Markdown supported)"
-              className={
-                os
-                  ? "w-full resize-y"
-                  : "px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              }
+              className="w-full resize-y"
               autoFocus
             />
           </Form>
         ) : (
-          <div className={os ? cn(panel, "p-5") : undefined}>
+          <div className={cn(panel, "p-5")}>
             {description ? (
               <Markdown>{description}</Markdown>
             ) : (
@@ -2930,7 +2870,6 @@ function DetailsSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const os = true;
 
   return (
     <EditableSection
@@ -2940,226 +2879,15 @@ function DetailsSegment({
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
       {({ editing }) =>
-        os ? (
-          editing ? (
-            <Form method="post" ref={formRef} className="os-form w-full">
-              <input type="hidden" name="intent" value="details" />
-              <DetailsEditOs project={project} canEditFinance={canEditFinance} />
-            </Form>
-          ) : (
-            <DetailsReadOs project={project} canEditFinance={canEditFinance} />
-          )
+        editing ? (
+          <Form method="post" ref={formRef} className="os-form w-full">
+            <input type="hidden" name="intent" value="details" />
+            <DetailsEditOs project={project} canEditFinance={canEditFinance} />
+          </Form>
         ) : (
-        <Form method="post" ref={formRef} className="flex flex-col gap-4 w-full">
-          <input type="hidden" name="intent" value="details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Calendar email</span>
-              {editing ? (
-                <input
-                  name="calendarEmail"
-                  type="email"
-                  defaultValue={project.calendarEmail ?? ""}
-                  placeholder="projectname@dali.dartmouth.edu"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.calendarEmail ?? "—"}
-                </span>
-              )}
-            </label>
-
-            {/* Team email group — provisioned by the staffing "Create team email
-                group" automation; read-only here (not lead-editable). */}
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Team email group</span>
-              <span className="px-2 py-1.5 text-sm">
-                {project.teamGroupEmail ? (
-                  <a
-                    href={`mailto:${project.teamGroupEmail}`}
-                    className="text-accent-coral hover:underline break-all"
-                  >
-                    {project.teamGroupEmail}
-                  </a>
-                ) : (
-                  <span className="text-muted-foreground">
-                    Not created yet — run staffing finalize.
-                  </span>
-                )}
-              </span>
-            </label>
-
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">GitHub team</span>
-              {editing ? (
-                <input
-                  name="githubTeamSlug"
-                  type="text"
-                  defaultValue={project.githubTeamSlug ?? ""}
-                  placeholder="project-team-name"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.githubTeamSlug ?? "—"}
-                </span>
-              )}
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Slack channel</span>
-              {editing ? (
-                <input
-                  name="slackChannelName"
-                  type="text"
-                  defaultValue={project.slackChannelName ?? ""}
-                  placeholder="project-name"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : project.slackChannelName && project.slackChannelId ? (
-                // Only the channel *id* resolves reliably in Slack's
-                // app_redirect; a bare name renders as plain text below.
-                <a
-                  href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
-                >
-                  {project.slackChannelName}
-                </a>
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.slackChannelName ?? "—"}
-                </span>
-              )}
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                Terms required (planned span)
-              </span>
-              {editing ? (
-                <input
-                  name="termCount"
-                  type="number"
-                  min={1}
-                  defaultValue={project.termCount}
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.termCount}{" "}
-                  {project.termCount === 1 ? "term" : "terms"}
-                </span>
-              )}
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              Repositories (one URL per line)
-            </span>
-            {editing ? (
-              <textarea
-                name="repoUrls"
-                rows={3}
-                defaultValue={project.repoUrls.join("\n")}
-                placeholder="https://github.com/dali-lab/…"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-              />
-            ) : project.repoUrls.length > 0 ? (
-              <ul className="flex flex-col gap-1 px-2 py-1.5">
-                {project.repoUrls.map((url) => (
-                  <li key={url}>
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm text-accent-coral hover:underline break-all"
-                    >
-                      {url}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-muted-foreground">
-                —
-              </span>
-            )}
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Deployment</span>
-            {editing ? (
-              <input
-                name="deploymentUrl"
-                type="url"
-                defaultValue={project.deploymentUrl ?? ""}
-                placeholder="https://projectname.fly.dev"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-              />
-            ) : project.deploymentUrl ? (
-              <a
-                href={project.deploymentUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
-              >
-                {project.deploymentUrl}
-              </a>
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
-            )}
-          </label>
-
-          {/* Payroll chart string — surfaced and editable only to Core (action
-              handler enforces the same gate). Read-only to project members. */}
-          {canEditFinance && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
-              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-                <span className="text-muted-foreground font-medium">
-                  Payroll
-                </span>
-              </label>
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Chart string type</span>
-                {editing ? (
-                  <input
-                    name="chartStringType"
-                    type="text"
-                    defaultValue={project.chartStringType ?? ""}
-                    placeholder="e.g. Grant, Department"
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                ) : (
-                  <span className="px-2 py-1.5 text-sm text-foreground">
-                    {project.chartStringType ?? "—"}
-                  </span>
-                )}
-              </label>
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Full chart string</span>
-                {editing ? (
-                  <input
-                    name="chartString"
-                    type="text"
-                    defaultValue={project.chartString ?? ""}
-                    placeholder="full GL chart string"
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-                  />
-                ) : (
-                  <span className="px-2 py-1.5 text-sm text-foreground font-mono break-all">
-                    {project.chartString ?? "—"}
-                  </span>
-                )}
-              </label>
-            </div>
-          )}
-        </Form>
-      )}
+          <DetailsReadOs project={project} canEditFinance={canEditFinance} />
+        )
+      }
     </EditableSection>
   );
 }
@@ -3343,29 +3071,19 @@ function osRoleChipClass(name: string): string {
 function DomainChips({
   items,
   muted = false,
-  os = false,
 }: {
   items: { id: string; name: string }[];
   muted?: boolean;
-  os?: boolean;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((d) => (
         <span
           key={d.id}
-          className={
-            os
-              ? cn(
-                  "inline-flex items-center rounded-full px-3.5 py-[5px] text-[13px] font-semibold",
-                  muted ? "bg-os-container text-os-grey" : osRoleChipClass(d.name),
-                )
-              : `inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
-                  muted
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-blue-50 text-blue-700 border border-blue-100"
-                }`
-          }
+          className={cn(
+            "inline-flex items-center rounded-full px-3.5 py-[5px] text-[13px] font-semibold",
+            muted ? "bg-os-container text-os-grey" : osRoleChipClass(d.name),
+          )}
         >
           {d.name}
         </span>
@@ -3376,20 +3094,14 @@ function DomainChips({
 
 function StatusBadge({
   status,
-  os = false,
 }: {
   status: (typeof STATUSES)[number];
-  os?: boolean;
 }) {
   // The design's status tag — the same plate the project cards wear over their
   // cover, so a project reads the same in the grid and on its own page.
   return (
     <span
-      className={
-        os
-          ? `rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`
-          : `text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_PILL_CLASSIC[status]}`
-      }
+      className={`rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`}
     >
       {status}
     </span>
@@ -3403,12 +3115,10 @@ function TeamTermGroup({
   team,
   canEdit,
   currentTermCode,
-  os,
 }: {
   team: LoaderData["teams"][number];
   canEdit: boolean;
   currentTermCode: string | null;
-  os: boolean;
 }) {
   return (
     <div>
@@ -3422,68 +3132,42 @@ function TeamTermGroup({
           </span>
         )}
       </div>
-      {os ? (
-        // The design's member cards: avatar, name, and the role as plain text.
-        // The level itself is not shown — P1/P2/P3 is an internal ladder, and
-        // the only part of it this page needs to say is who mentors each
-        // domain, which is the domain's P3.
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {team.members.map((m) => (
-            <div
-              key={m.assignmentId}
-              className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
-            >
-              <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">
-                  {m.name}
-                </div>
-                <div className="truncate text-[12px] text-os-muted">
-                  {m.domain}
-                </div>
+      {/* The design's member cards: avatar, name, and the role as plain text.
+          The level itself is not shown — P1/P2/P3 is an internal ladder, and
+          the only part of it this page needs to say is who mentors each
+          domain, which is the domain's P3. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {team.members.map((m) => (
+          <div
+            key={m.assignmentId}
+            className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
+          >
+            <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-foreground">
+                {m.name}
               </div>
-              {m.level === "P3" &&
-                (canEdit ? (
-                  <Link
-                    to={`/members/${m.userId}#project-assignments`}
-                    title={`Change ${m.name}'s level on their profile`}
-                    className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
-                  >
-                    Mentor
-                  </Link>
-                ) : (
-                  <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
-                    Mentor
-                  </span>
-                ))}
+              <div className="truncate text-[12px] text-os-muted">
+                {m.domain}
+              </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {team.members.map((m) => (
-            <span
-              key={m.assignmentId}
-              className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
-            >
-              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
-              {m.name}
-              <span className="text-muted-foreground">· {m.domain}</span>
-              {canEdit ? (
+            {m.level === "P3" &&
+              (canEdit ? (
                 <Link
                   to={`/members/${m.userId}#project-assignments`}
                   title={`Change ${m.name}'s level on their profile`}
-                  className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
+                  className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
                 >
-                  {m.level}
+                  Mentor
                 </Link>
               ) : (
-                <span className="text-muted-foreground">{m.level}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
+                <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
+                  Mentor
+                </span>
+              ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3498,19 +3182,15 @@ function TeamSection({
   currentTermCode: string | null;
 }) {
   const [showPrevious, setShowPrevious] = useState(false);
-  const { os, sectionTitle } = useOsChrome();
+  const { sectionTitle } = useOsChrome();
   // teams is pre-sorted newest term first by the loader, so the head is the
   // roster the page is about and the tail is history.
   const [currentTeam, ...previousTeams] = teams;
 
   return (
     <div className="flex flex-col gap-2">
-      <h2
-        className={
-          os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-        }
-      >
-        {!os && <Users className="w-4 h-4" />} Team
+      <h2 className={sectionTitle}>
+        Team
       </h2>
       {teams.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No team assignments yet.</p>
@@ -3520,7 +3200,6 @@ function TeamSection({
             team={currentTeam}
             canEdit={canEdit}
             currentTermCode={currentTermCode}
-            os={os}
           />
 
           {/* Past terms live in a folder rather than in the roster: a project
@@ -3532,11 +3211,7 @@ function TeamSection({
                 type="button"
                 onClick={() => setShowPrevious((v) => !v)}
                 aria-expanded={showPrevious}
-                className={
-                  os
-                    ? "flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
-                    : "flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                }
+                className="flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
               >
                 {showPrevious ? (
                   <ChevronDown className="h-4 w-4 flex-shrink-0" />
@@ -3556,7 +3231,6 @@ function TeamSection({
                     team={team}
                     canEdit={canEdit}
                     currentTermCode={currentTermCode}
-                    os={os}
                   />
                 ))}
             </div>
@@ -3733,7 +3407,7 @@ function OverviewTab({
   const tz = useUserTimeZone();
   // Under dali.os a section is a title over its content, not a box around it —
   // so the cards these sections hold stop showing a second border inside a first.
-  const { os, sectionShell, sectionTitle, panel } = useOsChrome();
+  const { sectionShell, sectionTitle, panel } = useOsChrome();
 
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
@@ -3774,7 +3448,7 @@ function OverviewTab({
         (currentChallenges.length > 0 || futureChallengeGroups.length > 0) && (
           <section className={sectionShell}>
             <div className="flex items-center justify-between">
-              <h3 className={os ? sectionTitle : "text-sm font-semibold text-foreground"}>
+              <h3 className={sectionTitle}>
                 Challenge{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   · {currentTerm.code}
@@ -3794,7 +3468,7 @@ function OverviewTab({
             </div>
             {/* The body takes the surface under os; the section around it is
                 only a title, so this is the one card here. */}
-            <div className={os ? cn(panel, "p-4") : undefined}>
+            <div className={cn(panel, "p-4")}>
               {currentChallenges.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {currentChallenges.map((c) => (
@@ -3881,14 +3555,10 @@ function OverviewTab({
           returns an empty list otherwise). Read-only. */}
       {canEdit && recentActivity.length > 0 && (
         <section className={sectionShell}>
-          <h2
-            className={
-              os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-            }
-          >
-            {!os && <History className="w-4 h-4" />} Recent activity
+          <h2 className={sectionTitle}>
+            Recent activity
           </h2>
-          <ul className={cn("flex flex-col gap-2", os && cn(panel, "p-4"))}>
+          <ul className={cn("flex flex-col gap-2", cn(panel, "p-4"))}>
             {recentActivity.map((a) => (
               <li key={a.id} className="text-xs text-muted-foreground">
                 <span className="text-foreground font-medium">{a.actorName}</span>{" "}
@@ -4322,17 +3992,13 @@ function PartnersSection({
   const confirmSubmit = useConfirmSubmit();
   const [linking, setLinking] = useState(false);
   const tz = useUserTimeZone();
-  const { os, sectionShell, sectionTitle } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
 
   return (
     <section className={sectionShell}>
       <div className="flex items-center justify-between">
-        <h2
-          className={
-            os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-          }
-        >
-          {!os && <Handshake className="w-4 h-4" />} Partners
+        <h2 className={sectionTitle}>
+          Partners
         </h2>
         {canManage && linkablePartnerOrgs.length > 0 && (
           <button
@@ -4367,118 +4033,12 @@ function PartnersSection({
         </Form>
       )}
 
-      {os ? (
-        <PartnersContactsOs
-          partners={partners}
-          canManage={canManage}
-          tz={tz}
-          confirmSubmit={confirmSubmit}
-        />
-      ) : partners.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">
-          No partner organizations linked.
-        </p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {partners.map((p) => (
-            <div key={p.id} className="py-2.5 flex items-center gap-3">
-              {p.org.logoUrl ? (
-                <img
-                  src={p.org.logoUrl}
-                  alt=""
-                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {p.org.name.slice(0, 1)}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {canManage ? (
-                    <Link
-                      to={`/partners/${p.org.id}`}
-                      className="text-sm font-medium text-foreground hover:underline leading-none"
-                    >
-                      {p.org.name}
-                    </Link>
-                  ) : (
-                    <span className="text-sm font-medium text-foreground leading-none">
-                      {p.org.name}
-                    </span>
-                  )}
-                  {/* Partnership lifecycle at a glance: ended partnerships keep
-                      their record (partner-end), active ones show their start. */}
-                  {p.endedAt ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
-                      Ended {formatDateShort(p.endedAt, tz)}
-                    </span>
-                  ) : p.active && p.startedAt ? (
-                    <span className="text-xs text-muted-foreground">
-                      since {formatDateShort(p.startedAt, tz)}
-                    </span>
-                  ) : null}
-                </div>
-                {p.org.contacts.length > 0 && (
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {p.org.contacts
-                      .map((c) => (c.displayRole ? `${c.name} (${c.displayRole})` : c.name))
-                      .join(", ")}
-                  </div>
-                )}
-              </div>
-              {canManage && !p.endedAt && (
-                <Form
-                  method="post"
-                  onSubmit={confirmSubmit({
-                    title: `End the partnership with ${p.org.name}?`,
-                    description:
-                      "The record and its dates are kept — this only marks the partnership as ended today.",
-                    confirmLabel: "End partnership",
-                    tone: "destructive",
-                  })}
-                >
-                  <input type="hidden" name="intent" value="partner-end" />
-                  <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip content="End partnership (keeps the record)">
-                    <button
-                      type="submit"
-                      aria-label="End partnership"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 flex-shrink-0"
-                    >
-                      <CalendarX className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </Form>
-              )}
-              {canManage && (
-                <Form
-                  method="post"
-                  onSubmit={confirmSubmit({
-                    title: `Unlink ${p.org.name}?`,
-                    description:
-                      'This erases the partnership record entirely — use "End partnership" instead to keep the history.',
-                    confirmLabel: "Unlink",
-                    tone: "destructive",
-                  })}
-                >
-                  <input type="hidden" name="intent" value="partner-unlink" />
-                  <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip content="Unlink organization (erases the record)">
-                    <button
-                      type="submit"
-                      aria-label="Unlink organization"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10 flex-shrink-0"
-                    >
-                      <Unlink className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </Form>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <PartnersContactsOs
+        partners={partners}
+        canManage={canManage}
+        tz={tz}
+        confirmSubmit={confirmSubmit}
+      />
     </section>
   );
 }
@@ -4706,7 +4266,6 @@ function ProjectDriveTab({
   const navigate = useNavigate();
   const dialog = useDialog();
   const toast = useToast();
-  const os = true;
   const [search, setSearch] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");

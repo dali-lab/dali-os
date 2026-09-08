@@ -239,7 +239,7 @@ function useFillToBottom() {
 // UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
 // (?tab=schedule|timesheet) translate to the matching mode/layer.
 function CalendarScreen({ data }: { data: LoaderData }) {
-  const { os, panel } = useOsChrome();
+  const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
@@ -723,7 +723,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   );
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
+    <div className={cn("flex flex-col", "gap-3")}>
       {/* The date navigator belongs to the grid. Availability has no date at
           all, and Timesheet brings its own pay-period navigator, so neither
           wants this row above it. */}

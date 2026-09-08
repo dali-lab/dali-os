@@ -26,13 +26,10 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
-import { LayoutGrid, Plus, UsersRound } from "lucide-react";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { Plus } from "lucide-react";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
-export const handle = { areaPills: true };
-
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
 type MemberRow = {
@@ -304,12 +301,6 @@ export default function MembersList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
-        items={[
-          { label: "Hub", to: "/members", active: true, icon: LayoutGrid },
-          ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups", icon: UsersRound }] : []),
-        ]}
-      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1

@@ -251,7 +251,7 @@ function sortEvents(events: AttendanceEvent[], sort: SortKey): AttendanceEvent[]
 
 export default function AdminAttendancePage() {
   const { terms, selected, viewerIsAdmin, events } = useLoaderData<typeof loader>();
-  const { os, pageTitle, panel } = useOsChrome();
+  const { pageTitle, panel } = useOsChrome();
   const tz = useUserTimeZone();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date-desc");
@@ -281,12 +281,7 @@ export default function AdminAttendancePage() {
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          {!os && (
-            <p className="text-[11px] uppercase tracking-[0.14em] text-accent-coral font-medium">
-              Self check-in
-            </p>
-          )}
-          <h1 className={cn(pageTitle, !os && "mt-0.5")}>Attendance</h1>
+          <h1 className={pageTitle}>Attendance</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="attendance-sort">
@@ -297,7 +292,7 @@ export default function AdminAttendancePage() {
             value={sort}
             onChange={(v) => setSort(v as SortKey)}
             options={SORT_OPTIONS}
-            buttonClassName={cn(filterPillClass(os), "sm:w-48")}
+            buttonClassName={cn(filterPillClass(), "sm:w-48")}
           />
           <TermFilter terms={terms} selected={selected} />
         </div>

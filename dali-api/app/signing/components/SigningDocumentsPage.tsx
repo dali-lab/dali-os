@@ -15,7 +15,7 @@ const SCOPE_LABELS: Record<string, string> = {
 export function SigningDocumentsPage() {
   const data = useLoaderData<typeof loader>();
   const [creating, setCreating] = useState(false);
-  const { os, pageTitle, card, formClass } = useOsChrome();
+  const { pageTitle, card, formClass } = useOsChrome();
   // The route serves this legacy card grid only in "list" mode (the console
   // mode renders AgreementsConsole instead).
   if (data.mode !== "list") return null;
@@ -30,12 +30,10 @@ export function SigningDocumentsPage() {
           onClick={() => setCreating((c) => !c)}
           className={cn(
             "shrink-0",
-            os
-              ? "os-add-btn"
-              : "inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm",
+            "os-add-btn",
           )}
         >
-          <Plus className={os ? "h-[17px] w-[17px]" : "w-4 h-4 mr-2"} strokeWidth={os ? 3 : undefined} />
+          <Plus className="h-[17px] w-[17px]" strokeWidth={3} />
           New Agreement
         </button>
       </div>
@@ -46,7 +44,7 @@ export function SigningDocumentsPage() {
           className={cn(
             "p-5 grid gap-3 sm:grid-cols-2",
             formClass,
-            os ? "rounded-os-card bg-os-card" : "bg-card rounded-xl border border-border shadow-sm",
+            "rounded-os-card bg-os-card",
           )}
           onSubmit={() => setCreating(false)}
         >
@@ -107,20 +105,14 @@ export function SigningDocumentsPage() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className={
-                os
-                  ? "os-btn-ghost"
-                  : "px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-              }
+              className="os-btn-ghost"
             >
               Cancel
             </button>
             <button
               type="submit"
               className={cn(
-                os
-                  ? "os-btn-primary"
-                  : "px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90",
+                "os-btn-primary",
               )}
             >
               Create
@@ -141,9 +133,7 @@ export function SigningDocumentsPage() {
                 to={`/core/agreements/${doc.id}`}
                 className={cn(
                   "group block p-6",
-                  os
-                    ? "rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover"
-                    : "bg-card rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow",
+                  "rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover",
                 )}
               >
                 <div className="flex items-start justify-between">

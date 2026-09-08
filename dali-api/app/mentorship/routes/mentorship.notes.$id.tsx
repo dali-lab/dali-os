@@ -12,9 +12,7 @@ import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
-import { mentorshipPills } from "../components/mentorshipPills";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
@@ -44,7 +42,6 @@ export const meta: Route.MetaFunction = () => [
 
 // Suppresses the breadcrumb trail (see layout wayfinding contract).
 export const handle = {
-  areaPills: true,
   docKey: "mentorship.notes",
   docTitle: "Mentorship notes",
 };
@@ -138,7 +135,7 @@ const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
   const dialog = useDialog();
-  const { os, pageTitle, bodyText, iconBtn } = useOsChrome();
+  const { pageTitle, bodyText, iconBtn } = useOsChrome();
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -184,7 +181,6 @@ export default function MentorNoteEditor() {
 
   return (
     <main className="flex flex-col gap-4 w-full min-w-0">
-      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
         <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
         <p className={cn(bodyText, "inline-flex items-center gap-1")}>
@@ -215,12 +211,10 @@ export default function MentorNoteEditor() {
                 aria-pressed={active}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border transition",
-                  os ? "px-3.5 py-1.5 text-sm font-medium" : "px-2.5 py-1 text-xs",
+                  "px-3.5 py-1.5 text-sm font-medium",
                   active
                     ? VIBE_META[v].pill
-                    : os
-                    ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground",
+                    : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
                   data.canEdit ? "" : "cursor-default opacity-70",
                 )}
               >
@@ -265,7 +259,7 @@ export default function MentorNoteEditor() {
               aria-label="Delete note"
               className={cn(
                 "inline-flex items-center justify-center",
-                os ? iconBtn : "p-1.5 text-accent-coral hover:underline",
+                iconBtn,
               )}
             >
               <Trash2 className="w-3.5 h-3.5" />

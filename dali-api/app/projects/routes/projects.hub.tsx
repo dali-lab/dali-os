@@ -17,8 +17,6 @@ import {
   captureProjectTemplate,
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -44,7 +42,6 @@ import {
 } from "../lib/showcase-filter";
 
 export const handle = {
-  areaPills: true,
   docKey: "projects.hub",
   docTitle: "Projects",
 };
@@ -324,11 +321,7 @@ export default function ProjectsListPage() {
   // In the URL (like ?term=) rather than component state, so "show me every
   // project still needing a write-up" is a link someone can share.
   const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
-  // Only consulted with the flag off — the os hub has one view. Left on the
-  // shared "dali:view:projects" key so a member's list/card choice survives
-  // being shown the design and taken back off it.
   const [view, setView] = useViewPreference("dali:view:projects", "list");
-  const os = true;
 
   const filtered = useMemo(() => {
     let base = rows;
@@ -347,7 +340,6 @@ export default function ProjectsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
       <header className="flex items-center justify-between gap-3">
         <h1
           className={cn(
@@ -506,9 +498,7 @@ export default function ProjectsListPage() {
           placeholder="Search by project or partner name"
           className={cn(
             "flex-1 min-w-[200px] border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            os
-              ? "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card"
-              : "max-w-sm px-3 py-2 rounded-md bg-background",
+            "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card",
           )}
         />
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -530,11 +520,7 @@ export default function ProjectsListPage() {
             buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
           />
         </label>
-        {/* The design has one view of this page, the card grid — so the
-            list/card toggle is gone with it. The table view and the toggle
-            are still what the current hub renders with the flag off. */}
-        {!os && <ViewToggle value={view} onChange={setView} />}
-        <span className={cn("ml-auto text-muted-foreground", os ? "text-base" : "text-xs")}>
+        <span className={cn("ml-auto text-muted-foreground", "text-base")}>
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
           {(query || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
           filtered.length !== rows.length
@@ -583,10 +569,8 @@ export default function ProjectsListPage() {
             "No projects yet."
           )}
         </div>
-      ) : !os && view === "list" ? (
-        <ProjectsTable rows={filtered} />
       ) : (
-        <ProjectsCards rows={filtered} os={os} />
+        <ProjectsCards rows={filtered} />
       )}
     </div>
   );
@@ -653,25 +637,16 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   );
 }
 
-function ProjectsCards({ rows, os = false }: { rows: ProjectRow[]; os?: boolean }) {
-  if (os) {
-    return (
-      // auto-fill rather than fixed columns: the design's cards hold their
-      // 280px minimum and the row simply fits fewer of them as the pane
-      // narrows, which is what a split-screen workspace tab needs. No width
-      // cap on the grid — one left the cards short of the pane's right edge on
-      // a wide window, with the filter row above still running full width.
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
-        {rows.map((p) => (
-          <OsProjectCard key={p.id} project={p} />
-        ))}
-      </div>
-    );
-  }
+function ProjectsCards({ rows }: { rows: ProjectRow[] }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    // auto-fill rather than fixed columns: the design's cards hold their
+    // 280px minimum and the row simply fits fewer of them as the pane
+    // narrows, which is what a split-screen workspace tab needs. No width
+    // cap on the grid — one left the cards short of the pane's right edge on
+    // a wide window, with the filter row above still running full width.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
       {rows.map((p) => (
-        <ProjectCard key={p.id} project={p} />
+        <OsProjectCard key={p.id} project={p} />
       ))}
     </div>
   );

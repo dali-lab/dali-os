@@ -9,12 +9,8 @@ import { getStudentDashboard } from "~/education/lib/lms.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
-import { educationPills } from "~/education/components/educationPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Link } from "react-router";
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
 
@@ -64,7 +60,6 @@ export default function EducationCatalog() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AreaPillNav items={educationPills({ canManage, isCore, active: "hub" })} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Education

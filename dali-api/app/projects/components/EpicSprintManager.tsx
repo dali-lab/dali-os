@@ -206,7 +206,6 @@ export function EpicSprintManager({
 
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // "All" shows every epic; otherwise only epics matching the selected
-  const os = true;
   // The design's toolbar under the timeline: an Edit toggle that turns the
   // bars into things you can drag, and an Add menu.
   const [editMode, setEditMode] = useState(false);
@@ -335,7 +334,7 @@ export function EpicSprintManager({
   // menu. Under os and with manage rights only. The people filter used to sit
   // here too and sliced the timeline; it now lives on the task board beside its
   // search and only narrows the board's tasks.
-  const progressActions = os && canManage ? (
+  const progressActions = canManage ? (
     <div className="flex items-center gap-2.5">
       <button
         type="button"
@@ -453,12 +452,7 @@ export function EpicSprintManager({
         onClose={() => setNewEpicOpen(false)}
         labelledBy="new-epic-title"
         disableEscape={busy}
-        containerClassName={cn(
-          "w-full my-auto",
-          os
-            ? "max-w-[560px] os-modal-card os-form"
-            : "max-w-xl bg-card rounded-2xl shadow-xl p-5 sm:p-6",
-        )}
+        containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
       >
         {/* Eyebrow rather than a heading: the form's own name field is the
             prominent title, exactly as in the detail modal. Under os the
@@ -466,30 +460,17 @@ export function EpicSprintManager({
             dialog, so the epic's own name can be a field with a required mark
             on it. */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          {os ? (
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
               <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
               <h2 id="new-epic-title" className="os-modal-title min-w-0 truncate">
                 New epic
               </h2>
             </div>
-          ) : (
-            <h2
-              id="new-epic-title"
-              className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              New epic
-            </h2>
-          )}
           <button
             type="button"
             onClick={() => setNewEpicOpen(false)}
             aria-label="Close"
-            className={
-              os
-                ? "os-icon-btn"
-                : "p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            }
+            className="os-icon-btn"
           >
             <X className="w-4 h-4" />
           </button>
@@ -556,13 +537,7 @@ export function EpicSprintManager({
         terms={timelineTerms}
         storyDependencies={storyDependencies}
         actions={
-          os ? (
-            progressActions
-          ) : canManage ? (
-            <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>
-              + Add epic
-            </Button>
-          ) : undefined
+          progressActions
         }
         editMode={editMode}
         onReschedule={canManage ? reschedule : undefined}
@@ -1110,7 +1085,6 @@ function EpicForm({
   }) => void;
   onCancel: () => void;
 }) {
-  const os = true;
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<EditableEpic["status"]>("Open");
   const [targetTermId, setTargetTermId] = useState("");
@@ -1170,97 +1144,56 @@ function EpicForm({
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         });
       }}
-      className={os ? undefined : "flex flex-col gap-4"}
     >
-      {os ? (
-        // The design's first field, carrying the mark that says it's the one
-        // you can't leave blank.
-        <div className="os-field-group">
-          <label htmlFor="new-epic-name" className="os-field-label">
-            Name<span className="os-required-mark">*</span>
-          </label>
-          <input
-            id="new-epic-name"
-            type="text"
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What is this epic?"
-            className="w-full"
-          />
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-            style={{ background: LEVEL_COLOR.epic }}
-          />
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Epic name"
-            aria-label="Epic name"
-            className="w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </div>
-      )}
+      {/* The design's first field, carrying the mark that says it's the one
+          you can't leave blank. */}
+      <div className="os-field-group">
+        <label htmlFor="new-epic-name" className="os-field-label">
+          Name<span className="os-required-mark">*</span>
+        </label>
+        <input
+          id="new-epic-name"
+          type="text"
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="What is this epic?"
+          className="w-full"
+        />
+      </div>
 
-      {os ? (
-        // Fields that answer one question sit on one row: the pairing is what
-        // says Starts and Ends are two ends of a single span, and it halves
-        // the ladder these four made when each took a row of its own.
-        <>
-          <div className="os-field-row">
-            <div className="os-field-group">
-              <span className="os-field-label">Status</span>
-              {statusField}
-            </div>
-            {terms.length > 0 && (
-              <div className="os-field-group">
-                <span className="os-field-label">Target term</span>
-                {termField}
-              </div>
-            )}
+      {/* Fields that answer one question sit on one row: the pairing is what
+          says Starts and Ends are two ends of a single span, and it halves
+          the ladder these four made when each took a row of its own. */}
+      <>
+        <div className="os-field-row">
+          <div className="os-field-group">
+            <span className="os-field-label">Status</span>
+            {statusField}
           </div>
-          <div className="os-field-row">
+          {terms.length > 0 && (
             <div className="os-field-group">
-              <span className="os-field-label">Starts</span>
-              {startField}
-              <span className="os-field-hint">
-                Optional — left blank, the epic takes its span from its stories.
-              </span>
+              <span className="os-field-label">Target term</span>
+              {termField}
             </div>
-            <div className="os-field-group">
-              <span className="os-field-label">Ends</span>
-              {endField}
-            </div>
+          )}
+        </div>
+        <div className="os-field-row">
+          <div className="os-field-group">
+            <span className="os-field-label">Starts</span>
+            {startField}
+            <span className="os-field-hint">
+              Optional — left blank, the epic takes its span from its stories.
+            </span>
           </div>
-        </>
-      ) : (
-        <section className="border-t border-border pt-4">
-          <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">Status</dt>
-            <dd className="min-w-0">{statusField}</dd>
+          <div className="os-field-group">
+            <span className="os-field-label">Ends</span>
+            {endField}
+          </div>
+        </div>
+      </>
 
-            {terms.length > 0 && (
-              <>
-                <dt className="text-muted-foreground">Target term</dt>
-                <dd className="min-w-0">{termField}</dd>
-              </>
-            )}
-
-            <dt className="text-muted-foreground">Starts</dt>
-            <dd className="min-w-0">{startField}</dd>
-
-            <dt className="text-muted-foreground">Ends</dt>
-            <dd className="min-w-0">{endField}</dd>
-          </dl>
-        </section>
-      )}
-
-      <div className={os ? "os-modal-footer" : "flex justify-end gap-1.5"}>
+      <div className="os-modal-footer">
         <button
           type="button"
           onClick={onCancel}
@@ -1367,7 +1300,6 @@ function StoryForm({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(
     initial?.acceptanceCriteria ?? "",
   );
-  const os = true;
   const [category, setCategory] = useState(initial?.category ?? "");
   const [priority, setPriority] = useState<StoryPriority | "">(initial?.priority ?? "");
   const [startsAt, setStartsAt] = useState(
@@ -1386,11 +1318,7 @@ function StoryForm({
       autoFocus
       value={title}
       onChange={(e) => setTitle(e.target.value)}
-      className={cn(
-        os
-          ? "w-full"
-          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-      )}
+      className="w-full"
     />
   );
   const statusField = (
@@ -1398,11 +1326,7 @@ function StoryForm({
       value={status}
       onChange={(value) => setStatus(value as EditableStory["status"])}
       options={STORY_STATUSES.map((st) => ({ value: st, label: st }))}
-      buttonClassName={
-        os
-          ? "w-full"
-          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-      }
+      buttonClassName="w-full"
     />
   );
   const startField = (
@@ -1427,23 +1351,15 @@ function StoryForm({
       value={category}
       onChange={(e) => setCategory(e.target.value)}
       placeholder="e.g. Functional"
-      className={cn(
-        os
-          ? "w-full"
-          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-      )}
+      className="w-full"
     />
   );
   const notesField = (
     <textarea
       value={notes}
       onChange={(e) => setNotes(e.target.value)}
-      rows={os ? 4 : 2}
-      className={cn(
-        os
-          ? "w-full"
-          : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-      )}
+      rows={4}
+      className="w-full"
     />
   );
 
@@ -1467,125 +1383,42 @@ function StoryForm({
           priority: priority || null,
         });
       }}
-      className={cn(os ? "mb-3" : "flex flex-col gap-2 mb-3")}
+      className="mb-3"
     >
-      {os ? (
-        <>
+      <>
+        <label className="os-field-group">
+          <span>
+            Name<span className="os-required-mark">*</span>
+          </span>
+          {nameField}
+        </label>
+        {/* Status and the story's span are one decision, so they share a row
+            rather than stacking into a ladder. Start is left blank when the
+            story should inherit its span from its tasks or parent epic. */}
+        <div className="os-field-row">
           <label className="os-field-group">
-            <span>
-              Name<span className="os-required-mark">*</span>
-            </span>
-            {nameField}
-          </label>
-          {/* Status and the story's span are one decision, so they share a row
-              rather than stacking into a ladder. Start is left blank when the
-              story should inherit its span from its tasks or parent epic. */}
-          <div className="os-field-row">
-            <label className="os-field-group">
-              <span>Status</span>
-              {statusField}
-            </label>
-            <label className="os-field-group">
-              <span>Start date</span>
-              {startField}
-            </label>
-            <label className="os-field-group">
-              <span>Due date</span>
-              {endField}
-            </label>
-          </div>
-          <label className="os-field-group">
-            <span>Labels</span>
-            {categoryField}
+            <span>Status</span>
+            {statusField}
           </label>
           <label className="os-field-group">
-            <span>Description</span>
-            {notesField}
+            <span>Start date</span>
+            {startField}
           </label>
-        </>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
-              <span className="text-muted-foreground">Story (e.g. “As a user, I can …”)</span>
-              {nameField}
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Status</span>
-              {statusField}
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Category</span>
-              {categoryField}
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground inline-flex items-center gap-1">
-                Priority
-                <InfoTip
-                  content="MoSCoW priority: Must = required for launch, Should = high value, Could = nice-to-have, Won't = out of scope this term."
-                  placement="top"
-                />
-              </span>
-              <Select
-                value={priority}
-                onChange={(value) => setPriority(value as StoryPriority | "")}
-                placeholder="—"
-                options={[
-                  { value: "", label: "—" },
-                  ...STORY_PRIORITIES.map((p) => ({ value: p, label: p })),
-                ]}
-                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-              />
-            </label>
-          </div>
-          {/* Timeline placement. Left blank, the story inherits its span from
-              its tasks, then from the parent epic — so a bar still renders. */}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Starts (optional)</span>
-              {startField}
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Ends (optional)</span>
-              {endField}
-            </label>
-            {initial && storyOptions.length > 0 && (
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Depends on</span>
-                <DependsOnField
-                  options={storyOptions}
-                  value={dependsOn}
-                  onChange={setDependsOn}
-                  noun="story"
-                />
-              </label>
-            )}
-          </div>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Success metric (optional)</span>
-            <textarea
-              value={successMetric}
-              onChange={(e) => setSuccessMetric(e.target.value)}
-              rows={2}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
+          <label className="os-field-group">
+            <span>Due date</span>
+            {endField}
           </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Acceptance criteria (optional)</span>
-            <textarea
-              value={acceptanceCriteria}
-              onChange={(e) => setAcceptanceCriteria(e.target.value)}
-              rows={2}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Notes (optional)</span>
-            {notesField}
-          </label>
-        </>
-      )}
-      <div className={os ? "os-modal-footer" : "flex gap-1.5"}>
+        </div>
+        <label className="os-field-group">
+          <span>Labels</span>
+          {categoryField}
+        </label>
+        <label className="os-field-group">
+          <span>Description</span>
+          {notesField}
+        </label>
+      </>
+      <div className="os-modal-footer">
         <button
           type="button"
           onClick={onCancel}

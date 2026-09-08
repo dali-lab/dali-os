@@ -127,18 +127,18 @@ export function WeekToolbar({
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
-  const { os, iconBtn } = useOsChrome();
+  const { iconBtn } = useOsChrome();
   // Use URL-relative resolution so "?weekStart=…" stays on /calendar instead of
   // bubbling up to the parent route (which would land on /).
   const prev = `?weekStart=${shiftWeekParam(weekStartIso, -1)}`;
   const next = `?weekStart=${shiftWeekParam(weekStartIso, 1)}`;
   return (
-    <div className={cn("flex items-center justify-between", os ? "mb-5" : "mb-3")}>
+    <div className={cn("flex items-center justify-between", "mb-5")}>
       <div className="flex items-center gap-3">
         <h2
           className={cn(
             "font-heading text-foreground",
-            os ? "text-2xl font-medium" : "text-lg font-bold",
+            "text-2xl font-medium",
           )}
         >
           {monthLabel}
@@ -159,9 +159,7 @@ export function WeekToolbar({
             preventScrollReset
             className={cn(
               "text-xs font-semibold transition-colors",
-              os
-                ? "os-edit-btn os-add-btn--sm"
-                : "px-3 py-1 rounded-md border border-border hover:bg-muted",
+              "os-edit-btn os-add-btn--sm",
             )}
           >
             Today
