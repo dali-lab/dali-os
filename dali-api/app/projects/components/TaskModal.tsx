@@ -964,7 +964,10 @@ export function TaskModal({
             <AssigneePicker
               all={options.members}
               selected={assigneeIds}
-              disabled={!canManage}
+              // Read-only as well as no-rights: a record you are only reading
+              // shows who is on the task, not an Edit link into a picker the
+              // readonly form has already made inert.
+              disabled={!canManage || readOnly}
               onChange={setAssigneeIds}
             />
           </PropRow>
