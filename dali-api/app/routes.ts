@@ -17,6 +17,11 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Activities (specs/activities.md): the time-boxed "mode" surface — the
+    // onboarding scavenger hunt lives here. Index lists what's live for the
+    // member; :id is the mechanic's surface (submit + progress + leaderboard).
+    route("activities", "routes/activities._index.tsx"),
+    route("activities/:id", "routes/activities.$id.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -75,6 +80,8 @@ export default [
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/activities", "admin/routes/admin.activities.tsx"),
+    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),

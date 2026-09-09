@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Clock,
+  Compass,
   Flag,
   Mail,
   Receipt,
@@ -105,6 +106,14 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         to: "/admin/feature-flags",
         icon: Flag,
         description: "Roll features out gradually — target everyone, specific roles, or named users.",
+      },
+      {
+        key: "activities",
+        label: "Activities",
+        to: "/admin/activities",
+        icon: Compass,
+        description:
+          "Time-boxed onboarding activities and site modes — author and run the onboarding scavenger hunt (distinct from the Activity audit log).",
       },
       {
         key: "email-senders",

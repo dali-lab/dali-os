@@ -4679,6 +4679,78 @@ model FeatureFlag {
   createdAt DateTime @default(now())
 }
 
+// ─── Activities — time-boxed "mode" layer (specs/activities.md) ───────────────
+// A generic, term-scoped, audience-targeted experience that changes what the
+// site shows for assigned members during a window, then auto-reverts. The
+// mechanic (Activity.kind) is registry-validated in app code (app/lib/
+// activities.ts), NOT a DB enum, so a new mechanic needs no migration. termId
+// and assignedGroupId are loose scalar refs (like FeatureFlag.userIds) — no FK,
+// so a removed term/group just stops matching and never cascades. Per-user
+// participation lives in ActivityEvent; progress/leaderboards derive from it.
+model Activity {
+  id               String         @id @default(cuid())
+  // Registry-validated mechanic key: "scavenger_hunt" | "theme" | … (app code).
+  kind             String
+  termId           String?
+  name             String
+  // Draft | Published | Archived. "Live right now" (Active/Ended) is DERIVED
+  // from status=Published + the window, not stored (see isActivityActive).
+  status           ActivityStatus @default(Draft)
+  startsAt         DateTime
+  endsAt           DateTime
+  // Audience (mirrors FeatureFlag targeting): union of everyone / role / group /
+  // explicit participant. audienceRoles holds ROLE_TARGETS keys.
+  audienceEveryone Boolean        @default(false)
+  audienceRoles    String[]       @default([])
+  assignedGroupId  String?
+  // Mechanic content, validated by a per-kind zod schema in app code.
+  config           Json           @default("{}")
+  createdById      String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  participants ActivityParticipant[]
+  events       ActivityEvent[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([termId, kind])
+}
+
+// Explicit participants, unioned with the group/role/everyone audience.
+model ActivityParticipant {
+  activityId String
+  userId     String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, userId])
+  @@index([userId])
+}
+
+// The one generic per-user participation primitive. `type` + `refId` are
+// mechanic-defined (e.g. "code_found" + codeId). refId defaults to "" and is
+// NEVER null: Postgres treats NULLs as distinct, which would defeat the dedup
+// unique index for single-action mechanics (e.g. "rsvp").
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  activityId String
+  userId     String
+  type       String
+  refId      String   @default("")
+  points     Int      @default(0)
+  createdAt  DateTime @default(now())
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, userId, type, refId])
+  @@index([activityId, userId])
+  @@index([activityId, type])
+}
+
+enum ActivityStatus {
+  Draft
+  Published
+  Archived
+}
+
 // A composed announcement waiting for its send time. Payload + audience
 // mirror the /api/notifications/send schema; the scheduled-announcements job
 // fires due rows through the same shared fan-out (app/lib/announcements.server).

@@ -133,6 +133,12 @@ export const FEATURE_FLAGS = [
     description:
       "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
   },
+  {
+    key: "activities",
+    label: "Activities",
+    description:
+      "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a banner and its on-page codes, plus the /activities page; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
