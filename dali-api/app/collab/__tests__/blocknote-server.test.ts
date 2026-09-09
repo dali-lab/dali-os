@@ -160,6 +160,50 @@ describe("blocksToFragment / fragmentToBlocks", () => {
   });
 });
 
+describe("column blocks", () => {
+  // The client only registers columnList/column on surfaces with the `columns`
+  // feature, but the server schema carries them unconditionally. If that ever
+  // regresses, the server strips columns out of every document it reads —
+  // silently flattening a two-column layout on export and version restore.
+  function columnDoc(): DocBlock[] {
+    const col = (text: string): DocBlock =>
+      ({
+        id: crypto.randomUUID(),
+        type: "column",
+        props: { width: 1 },
+        children: [para([{ type: "text", text, styles: {} }])],
+      }) as unknown as DocBlock;
+    return [
+      {
+        id: crypto.randomUUID(),
+        type: "columnList",
+        props: {},
+        children: [col("left side"), col("right side")],
+      } as unknown as DocBlock,
+    ];
+  }
+
+  it("survives a Yjs fragment round-trip instead of being stripped", () => {
+    const ydoc = new Y.Doc();
+    blocksToFragment(columnDoc(), ydoc.getXmlFragment("blocknote"));
+    const out = fragmentToBlocks(ydoc.getXmlFragment("blocknote"));
+
+    expect(out).toHaveLength(1);
+    expect(out[0]!.type).toBe("columnList");
+    const columns = out[0]!.children ?? [];
+    expect(columns).toHaveLength(2);
+    expect(columns.every((c) => c.type === "column")).toBe(true);
+    expect(blocksToPlainText(out)).toContain("left side");
+    expect(blocksToPlainText(out)).toContain("right side");
+  });
+
+  it("renders both columns into exported HTML", async () => {
+    const html = await blocksToHtml(columnDoc());
+    expect(html).toContain("left side");
+    expect(html).toContain("right side");
+  });
+});
+
 describe("plainTextToBlocks", () => {
   it("emits one paragraph per line, preserving blank lines as empty paragraphs", () => {
     const blocks = plainTextToBlocks("one\n\nthree");
