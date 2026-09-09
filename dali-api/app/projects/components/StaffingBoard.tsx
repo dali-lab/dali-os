@@ -25,6 +25,7 @@ import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
+import { FinalizeAllModal } from "./FinalizeAllModal";
 import { AddMemberFlow } from "./AddMemberFlow";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
@@ -97,6 +98,8 @@ export function StaffingBoard({
   const [openBid, setOpenBid] = useState<{ userId: string; columnKey: string } | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
+  // Whether the "Finalize all" (whole-cycle) modal is open.
+  const [finalizeAllOpen, setFinalizeAllOpen] = useState(false);
 
   // Per-card mentor/mentee role overrides for this cycle (userId → isMentor).
   // A member's role defaults to their level (P3 → mentor); an override flips it.
@@ -737,6 +740,17 @@ export function StaffingBoard({
               onExternalMentorAdded={() => loadExternalMentorsRef.current()}
             />
           )}
+          {canManage && projects.length > 0 && (
+            <Tooltip
+              variant="rich"
+              content="Finalize every project on the board at once. Defaults to propagating assignments only; opt into Slack/GitHub/email per run."
+            >
+              <Button variant="secondary" size="sm" onClick={() => setFinalizeAllOpen(true)}>
+                <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
+                Finalize all
+              </Button>
+            </Tooltip>
+          )}
           <DomainFilter
             domains={domains}
             value={selectedDomainId}
@@ -886,6 +900,15 @@ export function StaffingBoard({
           defaultGithubSlug={
             projects.find((p) => p.id === finalizeProjectId)?.githubTeamSlug ?? ""
           }
+        />
+      )}
+
+      {finalizeAllOpen && (
+        <FinalizeAllModal
+          open={true}
+          onClose={() => setFinalizeAllOpen(false)}
+          cycleId={cycleId}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
         />
       )}
 
