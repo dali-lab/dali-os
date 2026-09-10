@@ -471,7 +471,7 @@ export async function loadProfilePage({
   // this page already is — neither is something you're hired into, so neither
   // belongs here. Core titles and Domain Lead posts do, and they're listed by
   // their real names rather than a generic label.
-  const [coreTitles, domainLeadRows, instructorRows] = term
+  const [coreTitles, domainLeadRows, instructorRows, technigalaRows] = term
     ? await Promise.all([
         prisma.coreAssignment.findMany({
           where: { userId: targetId, termId: term.id },
@@ -485,8 +485,12 @@ export async function loadProfilePage({
           where: { userId: targetId, termId: term.id },
           select: { offering: { select: { title: true, type: true } } },
         }),
+        prisma.technigalaAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { id: true },
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
   const roleLabels = [
     ...coreTitles.map((c) => (c.leadTitle ? `Core — ${c.leadTitle}` : "Core")),
@@ -494,6 +498,8 @@ export async function loadProfilePage({
     // Named by what they teach: "Instructor" alone doesn't identify a post, and
     // a member can hold several in one term.
     ...instructorRows.map((i) => instructorRoleLabel(i.offering.type, i.offering.title)),
+    // A termly Technigala-support hire (one row per member per term).
+    ...(technigalaRows.length > 0 ? ["Technigala Support"] : []),
   ];
 
   const collabToken = parseSessionCookie(request);
