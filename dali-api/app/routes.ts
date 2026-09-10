@@ -425,6 +425,7 @@ export default [
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+  route("api/staffing/finalize-all", "projects/routes/api.staffing.finalize-all.ts"),
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
   route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
