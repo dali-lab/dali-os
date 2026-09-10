@@ -172,6 +172,7 @@ model User {
   projectAssignments       ProjectAssignment[]
   coreAssignments          CoreAssignment[]
   instructorAssignments    InstructorAssignment[]
+  technigalaAssignments    TechnigalaAssignment[]
   adminMembership          AdminMembership?
   mentorshipPairsAsMentee  MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor  MentorshipPair[]       @relation("MentorPairs")
@@ -2318,6 +2319,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
+  technigalaAssignments TechnigalaAssignment[]
   educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
@@ -2591,6 +2593,28 @@ model InstructorAssignment {
 
   @@unique([userId, offeringId, termId])
   @@index([offeringId, termId])
+}
+
+// A termly Technigala-support hire. Unlike Core/Instructor there's no upstream
+// role to derive from — a Core admin picks lab members on the Payroll Export
+// page and each pick is one row here. Purely a payroll-export input: it feeds a
+// row under the fixed Technigala Job ID (see payroll-export.ts), so there's no
+// level/domain/pay column (those live as constants). One hire per member per
+// term.
+model TechnigalaAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  termId    String
+  createdAt DateTime @default(now())
+  // Free-form actor userId of whoever added the hire — not an FK so the record
+  // survives user deletion (mirrors AdminMembership.grantedBy).
+  createdById String?
+
+  user User @relation(fields: [userId], references: [id])
+  term Term @relation(fields: [termId], references: [id])
+
+  @@unique([userId, termId])
+  @@index([termId])
 }
 
 // Permanent (until revoked). The admin-access marker. Admin is a superset of

@@ -1,25 +1,37 @@
-import { useMemo, useState } from "react";
-import { redirect, useLoaderData, useSearchParams, useSubmit } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  redirect,
+  useFetcher,
+  useLoaderData,
+  useSearchParams,
+  useSubmit,
+} from "react-router";
 import type { Route } from "./+types/admin.payroll-export";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin } from "~/lib/roles";
-import { Download, FileDown, AlertTriangle, Users } from "lucide-react";
+import { isAdmin, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { fullName } from "~/lib/display";
+import { logAuditEvent } from "~/lib/audit";
+import { Download, FileDown, AlertTriangle, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select } from "~/components/ui/floating";
+import { Select, Combobox } from "~/components/ui/floating";
 import { ALL_LEVELS, isLevel } from "~/lib/level";
 import {
   buildPayrollRows,
   listCoreCandidates,
   listInstructorCandidates,
+  listTechnigalaCandidates,
   listTermDomains,
   pickDefaultTermId,
   type PayrollRow,
   type RoleCandidate,
 } from "~/admin/lib/payroll-export";
+
+type AddableMember = { id: string; name: string; netId: string | null };
 
 // Comma-separated search-param → trimmed, deduped values.
 function parseCsvParam(raw: string | null): string[] {
@@ -36,6 +48,45 @@ export const meta: Route.MetaFunction = () => [
 // The CSV itself is served by the sibling resource route at
 // /admin/payroll-export.csv (no layout wrapping), so the Download
 // button is a plain link to that URL.
+
+// Add/remove a Technigala termly hire. Same Admin gate as the loader; the
+// hiring record is what feeds the export's Technigala rows.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (!(await isAdmin(auth.user.sub))) return redirect("/admin/members");
+
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+  const userId = String(form.get("userId") ?? "");
+  const termId = String(form.get("termId") ?? "");
+  if (!userId || !termId) {
+    return Response.json({ ok: false, error: "Missing userId or termId" }, { status: 400 });
+  }
+
+  if (intent === "add-technigala") {
+    // Idempotent: a double-click or stale board shouldn't 500 on the unique key.
+    await prisma.technigalaAssignment.upsert({
+      where: { userId_termId: { userId, termId } },
+      update: {},
+      create: { userId, termId, createdById: auth.user.sub },
+    });
+  } else if (intent === "remove-technigala") {
+    await prisma.technigalaAssignment.deleteMany({ where: { userId, termId } });
+  } else {
+    return Response.json({ ok: false, error: "Unknown intent" }, { status: 400 });
+  }
+
+  await logAuditEvent({
+    action: `payroll.technigala.${intent === "add-technigala" ? "add" : "remove"}`,
+    userId: auth.user.sub,
+    targetId: userId,
+    metadata: { termId },
+    request,
+  });
+
+  return Response.json({ ok: true });
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -65,6 +116,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       projectRows: [] as PayrollRow[],
       coreCandidates: [] as RoleCandidate[],
       instructorCandidates: [] as RoleCandidate[],
+      technigalaCandidates: [] as RoleCandidate[],
+      addableMembers: [] as AddableMember[],
       termDomains: [] as { id: string; displayName: string }[],
       selectedDomainIds,
       selectedLevels,
@@ -72,7 +125,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   }
 
-  const [projectRows, coreCandidates, instructorCandidates, termDomains] =
+  const [projectRows, coreCandidates, instructorCandidates, technigalaCandidates, termDomains, addableMembers] =
     await Promise.all([
       buildPayrollRows(selectedTerm.id, {
         domainIds: selectedDomainIds,
@@ -80,7 +133,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       }),
       listCoreCandidates(selectedTerm.id),
       listInstructorCandidates(selectedTerm.id),
+      listTechnigalaCandidates(selectedTerm.id),
       listTermDomains(selectedTerm.id),
+      // Addable Technigala hires: the current lab roster. Payroll runs on a
+      // recent term, so "who could work Technigala" is the live membership.
+      (async (): Promise<AddableMember[]> => {
+        const where = await currentTermMemberWhere();
+        const users = await prisma.user.findMany({
+          where,
+          orderBy: MEMBER_LIST_ORDER_BY,
+          select: { id: true, firstName: true, lastName: true, netId: true },
+        });
+        return users.map((u) => ({ id: u.id, name: fullName(u), netId: u.netId }));
+      })(),
     ]);
 
   // Flag the term bracketing now() so the picker can mark it "· current",
@@ -96,6 +161,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectRows,
     coreCandidates,
     instructorCandidates,
+    technigalaCandidates,
+    addableMembers,
     termDomains,
     selectedDomainIds,
     selectedLevels,
@@ -118,6 +185,33 @@ export default function PayrollExport() {
     () => new Set(("instructorCandidates" in data ? data.instructorCandidates : []).map((c) => c.userId)),
   );
 
+  // Technigala include/exclude selection. Unlike Core/Instructor, its roster
+  // changes in-place (add/remove revalidates the loader without remounting), so
+  // reconcile the selection when the hire list changes: keep prior checked
+  // state for hires that are still here, default a brand-new hire to checked,
+  // and drop hires that were removed. Ephemeral like the other sections.
+  // Memoized so the reconcile effect below keys off loader changes, not every
+  // render (the empty-terms branch would otherwise be a fresh [] each render).
+  const technigalaHires = useMemo(
+    () => ("technigalaCandidates" in data ? data.technigalaCandidates : []),
+    [data],
+  );
+  const [technigalaSelected, setTechnigalaSelected] = useState<Set<string>>(
+    () => new Set(technigalaHires.map((c) => c.userId)),
+  );
+  const prevTechIdsRef = useRef<Set<string>>(new Set(technigalaHires.map((c) => c.userId)));
+  useEffect(() => {
+    const ids = technigalaHires.map((c) => c.userId);
+    setTechnigalaSelected((prev) => {
+      const next = new Set<string>();
+      for (const id of ids) {
+        if (!prevTechIdsRef.current.has(id) || prev.has(id)) next.add(id);
+      }
+      return next;
+    });
+    prevTechIdsRef.current = new Set(ids);
+  }, [technigalaHires]);
+
   if (!("projectRows" in data) || !data.selectedTermId) {
     return (
       <div className="space-y-4">
@@ -139,6 +233,8 @@ export default function PayrollExport() {
     projectRows,
     coreCandidates,
     instructorCandidates,
+    technigalaCandidates,
+    addableMembers,
     termDomains,
     selectedDomainIds,
     selectedLevels,
@@ -161,7 +257,10 @@ export default function PayrollExport() {
 
   const projectWarnings = projectRows.filter((r) => r.warnings.length > 0).length;
   const totalRows =
-    projectRows.length + coreSelected.size + instructorSelected.size;
+    projectRows.length +
+    coreSelected.size +
+    instructorSelected.size +
+    technigalaSelected.size;
 
   const csvHref = useMemo(() => {
     const params = new URLSearchParams({ term: selectedTermId });
@@ -171,6 +270,8 @@ export default function PayrollExport() {
     if (coreSelected.size > 0) params.set("core", [...coreSelected].join(","));
     if (instructorSelected.size > 0)
       params.set("instructor", [...instructorSelected].join(","));
+    if (technigalaSelected.size > 0)
+      params.set("technigala", [...technigalaSelected].join(","));
     return `/admin/payroll-export.csv?${params.toString()}`;
   }, [
     selectedTermId,
@@ -178,6 +279,7 @@ export default function PayrollExport() {
     selectedLevels,
     coreSelected,
     instructorSelected,
+    technigalaSelected,
   ]);
 
   // Toggle one value in a comma-separated filter param and re-navigate (GET),
@@ -250,7 +352,9 @@ export default function PayrollExport() {
       <p className="text-sm text-muted-foreground">
         Project assignments are auto-included. Core and Instructor sections are
         opt-in per member — uncheck anyone who isn't working in{" "}
-        <strong>{selectedTermCode}</strong>. Primary supervisor, secondary
+        <strong>{selectedTermCode}</strong>. Technigala hires are added by name
+        in their own section (uncheck to skip one; × removes the record).
+        Primary supervisor, secondary
         supervisor, and anticipated hours/week are constants; phone, term, and
         max-hours columns are intentionally blank per the payroll spec.
       </p>
@@ -398,7 +502,163 @@ export default function PayrollExport() {
         setSelected={setInstructorSelected}
         emptyLabel="No Instructor assignments for this term."
       />
+
+      <TechnigalaSection
+        termId={selectedTermId}
+        hires={technigalaCandidates}
+        addableMembers={addableMembers}
+        selected={technigalaSelected}
+        setSelected={setTechnigalaSelected}
+      />
     </div>
+  );
+}
+
+// Technigala support: a manually-built termly roster (there's no upstream role
+// to derive candidates from), so this section BOTH manages the records and
+// picks which to export. Adding a member writes a TechnigalaAssignment; the ×
+// deletes it (for a mis-add). The per-row checkbox is the non-destructive
+// exclude — like Core/Instructor, it drops the hire from THIS CSV without
+// touching the record. Add/remove post to this route's action via a fetcher and
+// revalidate the list; the checkbox selection is ephemeral (parent state).
+function TechnigalaSection({
+  termId,
+  hires,
+  addableMembers,
+  selected,
+  setSelected,
+}: {
+  termId: string;
+  hires: RoleCandidate[];
+  addableMembers: AddableMember[];
+  selected: Set<string>;
+  setSelected: (s: Set<string>) => void;
+}) {
+  const fetcher = useFetcher();
+  const [picked, setPicked] = useState("");
+
+  const hiredIds = useMemo(() => new Set(hires.map((h) => h.userId)), [hires]);
+  const options = useMemo(
+    () =>
+      addableMembers
+        .filter((m) => !hiredIds.has(m.id))
+        .map((m) => ({ value: m.id, label: m.netId ? `${m.name} · ${m.netId}` : m.name })),
+    [addableMembers, hiredIds],
+  );
+  const allChecked = hires.length > 0 && selected.size === hires.length;
+
+  function add(userId: string) {
+    if (!userId) return;
+    setPicked("");
+    fetcher.submit(
+      { intent: "add-technigala", userId, termId },
+      { method: "post" },
+    );
+  }
+
+  function remove(userId: string) {
+    fetcher.submit(
+      { intent: "remove-technigala", userId, termId },
+      { method: "post" },
+    );
+  }
+
+  function toggle(userId: string) {
+    const next = new Set(selected);
+    if (next.has(userId)) next.delete(userId);
+    else next.add(userId);
+    setSelected(next);
+  }
+
+  function toggleAll() {
+    if (allChecked) setSelected(new Set());
+    else setSelected(new Set(hires.map((h) => h.userId)));
+  }
+
+  return (
+    <section className="space-y-2">
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-foreground/70" />
+          <h2 className="text-base font-semibold text-foreground">Technigala</h2>
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+            {selected.size} of {hires.length}
+          </span>
+          {hires.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="text-xs font-medium text-accent-coral hover:underline"
+            >
+              {allChecked ? "Clear all" : "Select all"}
+            </button>
+          )}
+        </div>
+        <div className="w-64 max-w-[60%]">
+          <Combobox
+            value={picked}
+            options={options}
+            onChange={add}
+            placeholder="Add a lab member…"
+            ariaLabel="Add a Technigala hire"
+          />
+        </div>
+      </header>
+      <div className="bg-card border border-border rounded-lg overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="w-10 px-3 py-2"></th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">NetID</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Name</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Job ID</th>
+              <th className="w-10 px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {hires.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground/70">
+                  No Technigala hires for this term. Add lab members above.
+                </td>
+              </tr>
+            )}
+            {hires.map((c) => {
+              const checked = selected.has(c.userId);
+              return (
+                <tr
+                  key={c.userId}
+                  className={`hover:bg-muted/50 ${checked ? "" : "opacity-50"}`}
+                >
+                  <td className="px-3 py-2">
+                    <Checkbox
+                      checked={checked}
+                      onChange={() => toggle(c.userId)}
+                      aria-label={`Include ${c.firstName} ${c.lastName} in payroll export`}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-foreground font-mono">{c.netId || "—"}</td>
+                  <td className="px-3 py-2 text-foreground">
+                    {c.firstName} {c.lastName}
+                  </td>
+                  <td className="px-3 py-2 text-foreground font-mono">8274</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => remove(c.userId)}
+                      aria-label={`Remove ${c.firstName} ${c.lastName} from Technigala`}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

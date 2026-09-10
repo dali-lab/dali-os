@@ -138,6 +138,9 @@ export const AUDIT_ACTIONS = [
   "education.form-binding.set",
   // Drive unified tree (Wave 3): placement move for files and forms.
   "drive.item.move",
+  // Payroll export: Technigala termly hire roster changes.
+  "payroll.technigala.add",
+  "payroll.technigala.remove",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

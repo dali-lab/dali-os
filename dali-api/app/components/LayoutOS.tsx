@@ -101,7 +101,12 @@ function railRowClass(active: boolean, collapsed: boolean) {
     collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
     active
       ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
-      : 'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+      : cn(
+          'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+          // Match the active state / sub-tabs: right-rounded hover, square on
+          // the left where the rail accent sits (not a bare rectangle).
+          !collapsed && 'rounded-r-os-item',
+        ),
     collapsed && active && 'bg-os-container text-foreground',
   )
 }
