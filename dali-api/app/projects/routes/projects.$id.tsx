@@ -826,16 +826,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })(),
   }));
 
-  // Per-epic task progress for the epic list rows + timeline tooltips.
-  // Cancelled tasks don't count toward either side.
-  const taskCountsByEpic: Record<string, { done: number; total: number }> = {};
-  for (const t of project.tasks) {
-    if (!t.epicId || t.status === "Cancelled") continue;
-    const counts = (taskCountsByEpic[t.epicId] ??= { done: 0, total: 0 });
-    counts.total += 1;
-    if (t.status === "Done") counts.done += 1;
-  }
-
   // Team grouped by term, newest term first. Current = highest sortKey.
   // Levels are read-only here — Core edits them from the member's profile
   // (the row links out to /members/:id#project-assignments).
@@ -1235,7 +1225,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     timelineTerms: termSpans,
     tasks,
     boardOptions,
-    taskCountsByEpic,
     statusFacts,
     aiTldr: project.aiTldr,
     aiTldrGeneratedAt: project.aiTldrGeneratedAt
@@ -1600,7 +1589,6 @@ export default function ProjectDetail() {
     timelineTerms,
     tasks,
     boardOptions,
-    taskCountsByEpic,
     statusFacts,
     aiTldr,
     aiTldrStale,
@@ -1633,6 +1621,12 @@ export default function ProjectDetail() {
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+
+  // Per-epic term footprint, indexed for the planning list's term filter.
+  const epicTermIds = useMemo(
+    () => Object.fromEntries(boardOptions.epics.map((e) => [e.id, e.termIds])),
+    [boardOptions.epics],
+  );
 
   // Board people filter — narrows the task board to the chosen people. Lives in
   // the URL (?people=<id,id>) like the board's other filters, so a person-sliced
@@ -1719,7 +1713,10 @@ export default function ProjectDetail() {
       storyDependencies={storyDependencies}
       timelineTerms={timelineTerms}
       terms={plannedTerms}
-      taskCountsByEpic={taskCountsByEpic}
+      // The list view's term filter reads the same per-epic term footprint the
+      // board's does, rather than deriving a second one from the same dates.
+      epicTermIds={epicTermIds}
+      currentTermId={boardOptions.currentTermId}
       canEdit={canEdit}
       collabToken={collabToken}
       userName={userName}
@@ -5280,7 +5277,8 @@ function PlanningTab({
   storyDependencies,
   timelineTerms,
   terms,
-  taskCountsByEpic,
+  epicTermIds,
+  currentTermId,
   canEdit,
   collabToken,
   userName,
@@ -5293,7 +5291,8 @@ function PlanningTab({
   storyDependencies: StoryDependencyEdge[];
   timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
-  taskCountsByEpic: Record<string, { done: number; total: number }>;
+  epicTermIds: Record<string, string[]>;
+  currentTermId: string | null;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
@@ -5306,13 +5305,14 @@ function PlanningTab({
         projectId={projectId}
         epics={editableEpics}
         terms={terms}
-        taskCounts={taskCountsByEpic}
         canManage={canEdit}
         collabToken={collabToken}
         userName={userName}
         timelineEpics={epics}
         storyDependencies={storyDependencies}
         timelineTerms={timelineTerms}
+        epicTermIds={epicTermIds}
+        currentTermId={currentTermId}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
       />

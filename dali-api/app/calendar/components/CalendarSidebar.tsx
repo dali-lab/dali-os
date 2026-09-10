@@ -7,6 +7,7 @@ import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
 import { userLabel } from "~/calendar/components/scheduling";
+import { GeneralCalendarPrompt } from "~/calendar/components/settings-cards";
 import type { CalendarLinkDTO, LoaderData } from "~/calendar/lib/types";
 import type { LayerVisibility } from "~/calendar/lib/layers";
 import type { RoleInstance } from "~/lib/roles";
@@ -303,6 +304,17 @@ function CalendarSidebarContent({
               toggleHiddenCal={toggleHiddenCal}
             />
           ))
+        )}
+        {/* Nudge to add the shared DALI General Calendar, below the member's own
+            calendars because it's the odd one out — a calendar they don't have
+            yet. `data.calendarLinks` unfiltered, not the `enabled` subset above:
+            the loader derived "missing" from every link, so filtering here would
+            hide the prompt from someone whose only Google account is disabled
+            while the state still says they need it. */}
+        {data.generalCalendar === "missing" && (
+          <div className="px-1 pt-1">
+            <GeneralCalendarPrompt links={data.calendarLinks} />
+          </div>
         )}
       </div>
 
