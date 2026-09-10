@@ -86,13 +86,10 @@ import {
 import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import {
-  GeneralCalendarPrompt,
-} from "~/calendar/components/settings-cards";
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
+import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { AvailabilityView } from "~/calendar/components/AvailabilityView";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -146,6 +143,15 @@ export function shouldRevalidate({
   // or time entry off the grid until the next window focus. Anything that
   // isn't a plain GET defers to the default, which is to revalidate.
   if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  // …and a mutation that went out through plain `fetch()` rather than a router
+  // form carries no formMethod at all: the timesheet's add/edit/delete and the
+  // several /api writes on this page all post that way and then ask for a
+  // revalidate by hand. That arrives here as "same URL, no form", which the
+  // comparison below also reads as nothing-changed — so the row landed in
+  // Postgres and never appeared on the grid. An identical URL is never the
+  // view switch this guard exists to skip (those change a param), so it defers
+  // to the default, which is to revalidate.
+  if (currentUrl.href === nextUrl.href) return defaultShouldRevalidate;
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   const cur = new URLSearchParams(currentUrl.search);
   const next = new URLSearchParams(nextUrl.search);

@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
-import { X, Trash2, Pencil, Plus, CheckSquare, FileText, Zap, Calendar } from "lucide-react";
+import {
+  X,
+  Trash2,
+  Pencil,
+  Plus,
+  CheckSquare,
+  FileText,
+  Zap,
+  Calendar,
+  GanttChart,
+  List,
+} from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
@@ -18,6 +29,7 @@ import {
   type TimelineTerm,
   type StoryDependencyEdge,
 } from "./EpicsTimeline";
+import { EpicList } from "./EpicList";
 
 // MoSCoW priority for a product requirement (story). Null = unset.
 export type StoryPriority = "Must" | "Should" | "Could" | "Wont";
@@ -108,9 +120,6 @@ type Props = {
   // The project's planned terms (newest first) — options for an epic's
   // optional target term. Empty hides the picker.
   terms: EpicTermOption[];
-  // Per-epic task progress keyed by epic id (Cancelled tasks excluded from
-  // both numbers). Epics with no counted tasks may simply be absent.
-  taskCounts: Record<string, { done: number; total: number }>;
   canManage: boolean;
   // Hocuspocus WebSocket auth token; userName labels the presence cursor.
   // Both are forwarded into the EpicDetail modal where the description
@@ -124,6 +133,13 @@ type Props = {
   storyDependencies?: StoryDependencyEdge[];
   // Project terms (oldest first) anchoring the timeline's one-week sprint grid.
   timelineTerms?: TimelineTerm[];
+  // Terms each epic counts toward, keyed by epic id — the same footprint the
+  // board's term filter uses (sprint terms ∪ span overlap ∪ target term),
+  // derived in the loader. Drives the list view's term filter.
+  epicTermIds?: Record<string, string[]>;
+  // The term "now" falls in, when the project runs it. The list view opens on
+  // it; null falls back to all terms.
+  currentTermId?: string | null;
   // Opens a task from a timeline task bar. Left to the caller because the task
   // modal lives on the board (?task=), not in this component.
   onTaskClick?: (taskId: string) => void;
@@ -189,13 +205,14 @@ export function EpicSprintManager({
   projectId,
   epics,
   terms,
-  taskCounts,
   canManage,
   collabToken,
   userName,
   timelineEpics = [],
   storyDependencies = [],
   timelineTerms = [],
+  epicTermIds,
+  currentTermId,
   onTaskClick,
   onAddTask,
 }: Props) {
@@ -209,6 +226,9 @@ export function EpicSprintManager({
   // The design's toolbar under the timeline: an Edit toggle that turns the
   // bars into things you can drag, and an Add menu.
   const [editMode, setEditMode] = useState(false);
+  // Timeline or outline. The two show the same tree; the grid places it in
+  // time, the list folds it up so an epic's stories and tasks read at a glance.
+  const [view, setView] = useState<EpicView>("timeline");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Second level of the Add menu: "User story" has to be told which epic it
   // belongs to, so picking it lists the epics rather than guessing one.
@@ -328,116 +348,123 @@ export function EpicSprintManager({
   // It survives revalidation because we look the epic up fresh each render.
   const activeEpic = openEpicId ? epics.find((e) => e.id === openEpicId) : null;
 
-  // The Progress toolbar controls ride on the timeline's own header row now, to
-  // the right of the level legend (Epics / User stories / Tasks) via its
-  // `actions` slot: an Edit toggle that turns the bars draggable, and an Add
-  // menu. Under os and with manage rights only. The people filter used to sit
-  // here too and sliced the timeline; it now lives on the task board beside its
-  // search and only narrows the board's tasks.
-  const progressActions = canManage ? (
+  // The Progress toolbar controls ride on whichever view is up, in its header
+  // row — right of the timeline's level legend (Epics / User stories / Tasks)
+  // or of the list's filters, via the same `actions` slot. The view toggle is
+  // everyone's and sits last, past New; Edit (drag the bars, timeline only) and
+  // the Add menu need manage rights. The people filter used to sit here too and sliced the
+  // timeline; it now lives on the task board beside its search and only
+  // narrows the board's tasks.
+  const progressActions = (
     <div className="flex items-center gap-2.5">
-      <button
-        type="button"
-        className="os-edit-btn"
-        aria-pressed={editMode}
-        onClick={() => setEditMode((v) => !v)}
-        title={
-          editMode
-            ? "Done — bars are read-only again"
-            : "Drag a bar to move it, or its ends to change one date"
-        }
-      >
-        <Pencil className="h-[15px] w-[15px]" aria-hidden />
-        {editMode ? "Done" : "Edit"}
-      </button>
-
-      <div ref={addMenuRef} className="relative">
+      {canManage && view === "timeline" && (
         <button
           type="button"
-          className="os-add-btn"
-          aria-haspopup="menu"
-          aria-expanded={addMenuOpen}
-          onClick={() => {
-            setAddMenuOpen((v) => !v);
-            setAddStoryPicking(false);
-          }}
+          className="os-edit-btn"
+          aria-pressed={editMode}
+          onClick={() => setEditMode((v) => !v)}
+          title={
+            editMode
+              ? "Done — bars are read-only again"
+              : "Drag a bar to move it, or its ends to change one date"
+          }
         >
-          <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-          New
+          <Pencil className="h-[15px] w-[15px]" aria-hidden />
+          {editMode ? "Done" : "Edit"}
         </button>
-        {addMenuOpen && (
-          <div
-            role="menu"
-            className="absolute top-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
+      )}
+
+      {canManage && (
+        <div ref={addMenuRef} className="relative">
+          <button
+            type="button"
+            className="os-add-btn"
+            aria-haspopup="menu"
+            aria-expanded={addMenuOpen}
+            onClick={() => {
+              setAddMenuOpen((v) => !v);
+              setAddStoryPicking(false);
+            }}
           >
-            {addStoryPicking ? (
-              epics.length === 0 ? (
-                <p className="px-2.5 py-2 text-sm text-os-muted">
-                  No epics yet — add one first.
-                </p>
+            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            New
+          </button>
+          {addMenuOpen && (
+            <div
+              role="menu"
+              className="absolute top-[calc(100%+8px)] right-0 z-[100] max-h-72 min-w-[200px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
+            >
+              {addStoryPicking ? (
+                epics.length === 0 ? (
+                  <p className="px-2.5 py-2 text-sm text-os-muted">
+                    No epics yet — add one first.
+                  </p>
+                ) : (
+                  <>
+                    <p className="px-2.5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
+                      Add story to
+                    </p>
+                    {epics.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
+                        onClick={() => {
+                          setAddMenuOpen(false);
+                          setAddStoryPicking(false);
+                          setAutoNewStoryEpicId(e.id);
+                          openEpic(e.id);
+                        }}
+                      >
+                        <span className="truncate">{e.title}</span>
+                      </button>
+                    ))}
+                  </>
+                )
               ) : (
                 <>
-                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
-                    Add story to
-                  </p>
-                  {epics.map((e) => (
-                    <button
-                      key={e.id}
-                      type="button"
-                      role="menuitem"
-                      className="flex w-full items-center gap-2.5 truncate rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
+                  {onAddTask && (
+                    <AddMenuItem
+                      label="Task"
+                      icon={<CheckSquare className="h-4 w-4" aria-hidden />}
                       onClick={() => {
                         setAddMenuOpen(false);
-                        setAddStoryPicking(false);
-                        setAutoNewStoryEpicId(e.id);
-                        openEpic(e.id);
+                        onAddTask();
                       }}
-                    >
-                      <span className="truncate">{e.title}</span>
-                    </button>
-                  ))}
-                </>
-              )
-            ) : (
-              <>
-                {onAddTask && (
+                    />
+                  )}
                   <AddMenuItem
-                    label="Task"
-                    icon={<CheckSquare className="h-4 w-4" aria-hidden />}
+                    label="User story"
+                    icon={<FileText className="h-4 w-4" aria-hidden />}
+                    onClick={() => setAddStoryPicking(true)}
+                  />
+                  <AddMenuItem
+                    label="Epic"
+                    icon={<Zap className="h-4 w-4" aria-hidden />}
                     onClick={() => {
                       setAddMenuOpen(false);
-                      onAddTask();
+                      setNewEpicOpen(true);
                     }}
                   />
-                )}
-                <AddMenuItem
-                  label="User story"
-                  icon={<FileText className="h-4 w-4" aria-hidden />}
-                  onClick={() => setAddStoryPicking(true)}
-                />
-                <AddMenuItem
-                  label="Epic"
-                  icon={<Zap className="h-4 w-4" aria-hidden />}
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    setNewEpicOpen(true);
-                  }}
-                />
-                <AddMenuItem
-                  label="Meeting"
-                  icon={<Calendar className="h-4 w-4" aria-hidden />}
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    navigate(`/calendar?tab=schedule&project=${projectId}`);
-                  }}
-                />
-              </>
-            )}
-          </div>
-        )}
-      </div>
+                  <AddMenuItem
+                    label="Meeting"
+                    icon={<Calendar className="h-4 w-4" aria-hidden />}
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      navigate(`/calendar?tab=schedule&project=${projectId}`);
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ViewToggle value={view} onChange={setView} />
     </div>
-  ) : null;
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -531,20 +558,30 @@ export function EpicSprintManager({
           defers to the caller, which opens the board's task modal via ?task=.
           The Edit/New controls (os) and the classic "+ Add epic" button ride in
           the timeline's own header row, right of the level legend. */}
-      <EpicsTimeline
-        epics={timelineEpics}
-        taskCounts={taskCounts}
-        terms={timelineTerms}
-        storyDependencies={storyDependencies}
-        actions={
-          progressActions
-        }
-        editMode={editMode}
-        onReschedule={canManage ? reschedule : undefined}
-        onEpicClick={canManage ? (id) => openEpic(id) : undefined}
-        onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
-        onTaskClick={onTaskClick}
-      />
+      {view === "timeline" ? (
+        <EpicsTimeline
+          epics={timelineEpics}
+          terms={timelineTerms}
+          storyDependencies={storyDependencies}
+          actions={progressActions}
+          editMode={editMode}
+          onReschedule={canManage ? reschedule : undefined}
+          onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+          onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+          onTaskClick={onTaskClick}
+        />
+      ) : (
+        <EpicList
+          epics={timelineEpics}
+          terms={terms}
+          epicTermIds={epicTermIds}
+          currentTermId={currentTermId}
+          actions={progressActions}
+          onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+          onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+          onTaskClick={onTaskClick}
+        />
+      )}
     </div>
   );
 }
@@ -970,95 +1007,95 @@ export function EpicDetail({
             ref={storyListRef}
             className="os-item-list"
           >
-            {epic.stories.map((story) => (
-              // .quick-add-item: the story's name on the left, one × on the right.
-              <li key={story.id} className="os-item-row">
-                <Tooltip content={story.title}>
-                  <button
-                    type="button"
-                    onClick={() => canEditContent && setEditStoryId(story.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    {isStoryIncomplete(story) && (
-                      <Tooltip
-                        variant="rich"
-                        content="Quick-captured by name only — open this story to add notes, dates, and priority."
-                        placement="right"
+            {epic.stories.map((story) => {
+              const editing = editStoryId === story.id;
+              return (
+              // .quick-add-item: the story's name on the left, one × on the
+              // right — and, once opened, its form directly underneath.
+              <li key={story.id}>
+                <div className="os-item-row">
+                  <Tooltip content={story.title}>
+                    <button
+                      type="button"
+                      aria-expanded={editing}
+                      onClick={() =>
+                        canEditContent && setEditStoryId(editing ? null : story.id)
+                      }
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      {isStoryIncomplete(story) && (
+                        <Tooltip
+                          variant="rich"
+                          content="Quick-captured by name only — open this story to add notes, dates, and priority."
+                          placement="right"
+                        >
+                          <span className="os-incomplete-dot">!</span>
+                        </Tooltip>
+                      )}
+                      <span className="truncate">{story.title}</span>
+                    </button>
+                  </Tooltip>
+                  {canEditContent && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Remove ${story.title}`}
+                      className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
+                      onClick={async () => {
+                        if (
+                          !(await dialog.confirm({
+                            title: `Delete story "${story.title}"?`,
+                            confirmLabel: "Delete",
+                            tone: "destructive",
+                          }))
+                        )
+                          return;
+                        run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* The story opens where it sits, not in a second dialog over
+                    the first: a story belongs to the epic you already have
+                    open, and a modal on a modal buries it. */}
+                {editing && (
+                  <div className="mt-2 rounded-[10px] border border-os-container bg-os-well px-3 pt-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="os-type-badge os-type-badge--story">
+                        User story
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditStoryId(null)}
+                        aria-label="Close story"
+                        className="os-icon-btn"
                       >
-                        <span className="os-incomplete-dot">!</span>
-                      </Tooltip>
-                    )}
-                    <span className="truncate">{story.title}</span>
-                  </button>
-                </Tooltip>
-                {canEditContent && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-label={`Remove ${story.title}`}
-                    className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
-                    onClick={async () => {
-                      if (
-                        !(await dialog.confirm({
-                          title: `Delete story "${story.title}"?`,
-                          confirmLabel: "Delete",
-                          tone: "destructive",
-                        }))
-                      )
-                        return;
-                      run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <StoryForm
+                      busy={busy}
+                      initial={story}
+                      storyOptions={storyOptions.filter((o) => o.id !== story.id)}
+                      onCancel={() => setEditStoryId(null)}
+                      onSubmit={(values) =>
+                        run(async () => {
+                          await api(`/api/stories/${story.id}`, "POST", values);
+                          setEditStoryId(null);
+                        })
+                      }
+                    />
+                  </div>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
 
-        {/* Editing a story is the same .modal-card as creating one, so the two
-            paths look and behave alike. Hoisted out of the list: rendering it
-            per-<li> would have swapped the card out for a form mid-row. */}
-        {(() => {
-          const editing = epic.stories.find((st) => st.id === editStoryId);
-          if (!editing) return null;
-          return (
-            <Modal
-              open
-              onClose={() => setEditStoryId(null)}
-              labelledBy="edit-story-title"
-              disableEscape={busy}
-              containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
-            >
-              <div className="mb-6 flex items-center justify-between gap-3">
-                <h2 id="edit-story-title" className="os-type-badge os-type-badge--story">
-                  User story
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setEditStoryId(null)}
-                  aria-label="Close"
-                  className="os-icon-btn"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <StoryForm
-                busy={busy}
-                initial={editing}
-                storyOptions={storyOptions.filter((o) => o.id !== editing.id)}
-                onCancel={() => setEditStoryId(null)}
-                onSubmit={(values) =>
-                  run(async () => {
-                    await api(`/api/stories/${editing.id}`, "POST", values);
-                    setEditStoryId(null);
-                  })
-                }
-              />
-            </Modal>
-          );
-        })()}
       </section>
     </div>
   );
@@ -1436,5 +1473,66 @@ function StoryForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+type EpicView = "timeline" | "list";
+
+/** Timeline or outline, in the shape of the hub's list/cards switch — the two
+ *  are the same choice (how to read a set of things), so they wear the same
+ *  control. Sits with Edit and New rather than with the level legend because
+ *  it changes the view, not what the view shows. */
+function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: EpicView;
+  onChange: (next: EpicView) => void;
+}) {
+  return (
+    <div className="inline-flex items-center overflow-hidden rounded-full border border-os-container bg-os-card">
+      <ViewToggleButton
+        active={value === "timeline"}
+        onClick={() => onChange("timeline")}
+        label="Timeline view"
+      >
+        <GanttChart className="h-4 w-4" aria-hidden />
+      </ViewToggleButton>
+      <ViewToggleButton
+        active={value === "list"}
+        onClick={() => onChange("list")}
+        label="List view"
+      >
+        <List className="h-4 w-4" aria-hidden />
+      </ViewToggleButton>
+    </div>
+  );
+}
+
+function ViewToggleButton({
+  active,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "px-3.5 py-2.5 transition-colors",
+        active ? "bg-os-container text-foreground" : "text-os-grey hover:bg-os-hover",
+      )}
+    >
+      {children}
+    </button>
   );
 }

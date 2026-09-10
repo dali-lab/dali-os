@@ -879,6 +879,15 @@ select:not(:disabled) {
   --os-task-fill-hover:  rgba(240, 169, 45, 0.95);
   --os-task-edge:        rgba(224, 147, 11, 0.8);
   --os-task-ink:         #2a1c02;
+  /* The same three hues as ink on a *card* rather than on their own plate —
+     the bar popover names its record in the level's colour, and `--os-*-ink`
+     is the wrong direction there: it is chosen against the plate, so the dark
+     shell's task ink (near-black, for an amber bar) fell to black-on-charcoal
+     the moment it was printed on the card. Each theme takes the tone that
+     carries on the card's ground: light in the dark shell, deep on paper. */
+  --os-epic-title:       #c4b0ff;
+  --os-story-title:      #6fded9;
+  --os-task-title:       #f2b94e;
 
   /* A sprint is not a fourth record level, but its chip sits in the same
      modal as the epic and task badges and has to read as their sibling. It
@@ -954,21 +963,26 @@ html.os-shell {
      an already-pale page is no band at all. `edge` is the hue at full
      strength for the card's left border, which the tint is too faint to draw.
      Hues are the brand accents, so a column here and a bar on the timeline
-     sit in the same register. */
+     sit in the same register — and at the same weight: these carry the plates'
+     own 0.8 alpha rather than the 0.18–0.22 wash they started at. The board
+     shares the Progress tab with the epic timeline, and a header that barely
+     tints its column read as a different design language from the epic bars
+     above it. Ink follows the plate it is printed on, exactly as the level
+     plates do: light on the deeper hues, dark on the bright ones. */
   --os-status-backlog-fill:    #3f3f48;
   --os-status-backlog-ink:     #e8e8ee;
   --os-status-backlog-edge:    #54545f;
-  --os-status-todo-fill:       rgba(124, 92, 214, 0.22);
-  --os-status-todo-ink:        #c3aef7;
+  --os-status-todo-fill:       rgba(124, 92, 214, 0.8);
+  --os-status-todo-ink:        #ece3ff;
   --os-status-todo-edge:       #7c5ce0;
-  --os-status-progress-fill:   rgba(0, 173, 171, 0.20);
-  --os-status-progress-ink:    #5fd6d3;
+  --os-status-progress-fill:   rgba(0, 173, 171, 0.8);
+  --os-status-progress-ink:    #e0fffb;
   --os-status-progress-edge:   #2fc7c4;
-  --os-status-review-fill:     rgba(242, 184, 75, 0.18);
-  --os-status-review-ink:      #f2b84b;
+  --os-status-review-fill:     rgba(224, 147, 11, 0.8);
+  --os-status-review-ink:      #2a1c02;
   --os-status-review-edge:     #f2b84b;
-  --os-status-done-fill:       rgba(159, 224, 168, 0.18);
-  --os-status-done-ink:        #9fe0a8;
+  --os-status-done-fill:       rgba(92, 203, 153, 0.8);
+  --os-status-done-ink:        #05331e;
   --os-status-done-edge:       #9fe0a8;
   --os-status-cancelled-fill:  rgba(63, 63, 72, 0.5);
   --os-status-cancelled-ink:   #bababa;
@@ -1058,6 +1072,9 @@ html.light,
   --os-task-fill-hover:  #f6c86e;
   --os-task-edge:        #e0930b;
   --os-task-ink:         #3b2400;
+  --os-epic-title:       #5a3fb8;
+  --os-story-title:      #04716f;
+  --os-task-title:       #8a5a06;
   --os-sprint-fill:      #7ccbdc;
   --os-sprint-ink:       #06333d;
 
