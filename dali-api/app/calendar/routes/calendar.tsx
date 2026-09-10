@@ -86,9 +86,6 @@ import {
 import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import {
-  GeneralCalendarPrompt,
-} from "~/calendar/components/settings-cards";
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";

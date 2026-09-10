@@ -29,7 +29,7 @@ import { CalendarDays, ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2 } f
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { CalendarManagerModal } from "~/calendar/components/composer";
-import { SectionHeader } from "~/calendar/components/settings-cards";
+import { GeneralCalendarPrompt, SectionHeader } from "~/calendar/components/settings-cards";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
 import { perCalendarLegend, type CalendarLegendGroup } from "~/calendar/lib/layers";
 
@@ -90,6 +90,14 @@ export function CalendarsPanel({
             </a>
           }
         />
+
+        {/* Same prompt the left rail shows, mounted here too because this dialog
+            is where someone lands when they go looking for what they're missing.
+            It renders nothing once the calendar is on one of their accounts, and
+            nothing at all when no Google account is connected. */}
+        {data.generalCalendar === "missing" && (
+          <GeneralCalendarPrompt links={data.calendarLinks} />
+        )}
 
         {googleLinks.length === 0 ? (
           <div className={cn(card, "text-sm text-muted-foreground")}>
