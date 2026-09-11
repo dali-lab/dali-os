@@ -1,14 +1,13 @@
-// Activity surface (specs/activities.md §7.7). Generic route: it loads the
-// activity + the member's events, computes progress/results via the SERVER
-// mechanic registry, and delegates rendering to the CLIENT mechanic's Surface.
-// The action forwards form fields to the mechanic's onAction. Server-only
-// imports (prisma, *.server) are stripped from the client bundle by React
-// Router; the component uses only the client registry.
+// Activity data endpoint (specs/activities.md §7.7). A resource route — no UI —
+// that the shell's ActivityLauncher modal fetches from: the loader returns the
+// member's progress + results (computed via the SERVER mechanic registry), and
+// the action forwards a submitted form to the mechanic's onAction. The surface
+// itself renders in a modal over whatever page the member is on (the activity's
+// whole point is to explore the site), so there is no navigable page here — just
+// this endpoint the modal loads and posts to. Gated on the flag + assignment.
 
-import { useLoaderData } from "react-router";
-import type { Route } from "./+types/activities.$id";
+import type { Route } from "./+types/api.activities.$id";
 import { requireAuth } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
@@ -16,15 +15,10 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { ACTIVITIES_FLAG } from "~/lib/activities";
 import { getActivityForMember } from "~/lib/activities.server";
 import { mechanicServer } from "~/activities/mechanics/registry.server";
-import { mechanicClient } from "~/activities/mechanics/registry";
-
-export const meta: Route.MetaFunction = ({ data }) => [
-  { title: `${data?.name ?? "Activity"} · DALI OS` },
-];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
+  if (!auth.ok) return Response.json({ ok: false }, { status: 401 });
   const userId = auth.user.sub;
   const roles = await getUserRoles(userId);
   if (!(await isFeatureEnabled(ACTIVITIES_FLAG, userId, roles, request))) {
@@ -97,34 +91,4 @@ export async function action({ request, params }: Route.ActionArgs) {
   const input = Object.fromEntries(form) as Record<string, unknown>;
   const outcome = await mech.onAction({ activity: found.activity, userId, input });
   return Response.json(outcome, { status: outcome.ok ? 200 : 400 });
-}
-
-export default function ActivitySurface() {
-  const data = useLoaderData<typeof loader>();
-  const mech = mechanicClient(data.kind);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-xl font-semibold text-foreground">{data.name}</h1>
-        {!data.active && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            This activity isn’t live right now.
-          </p>
-        )}
-      </header>
-      {mech ? (
-        <mech.Surface
-          activityId={data.activityId}
-          name={data.name}
-          currentUserId={data.currentUserId}
-          nameByUserId={data.nameByUserId}
-          progress={data.progress}
-          results={data.results}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">This activity type isn’t supported here.</p>
-      )}
-    </div>
-  );
 }

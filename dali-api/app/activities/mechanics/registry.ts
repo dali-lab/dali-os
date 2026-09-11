@@ -16,10 +16,16 @@ export type OverlayProps = {
 export type SurfaceProps = {
   activityId: string;
   name: string;
+  /** False once the window has closed (rare race); disables mutating controls. */
+  active: boolean;
   currentUserId: string;
   nameByUserId: Record<string, string>;
   progress: unknown;
   results: unknown;
+  /** Endpoint the surface's forms post to (the /api/activities/:id action). */
+  submitAction: string;
+  /** Called after a successful mutation so the host modal reloads its data. */
+  onChanged?: () => void;
 };
 
 export type AdminEditorProps = {

@@ -1,7 +1,10 @@
 # Activities — a time-boxed "mode" layer
 
-**Status:** BUILT on `feat/activities` (v1: scavenger-hunt mechanic). Deferred: the
-lifecycle job + notifications (§7.9) and MCP tools (§7.10).
+**Status:** BUILT on `feat/activities` (v1: scavenger-hunt mechanic). Review pass 2026-09-10 moved
+the surface from a dedicated `/activities/:id` page to a **shell modal** over the current page
+(fed by the `/api/activities/:id` resource endpoint) and the entry point from a floating pill to a
+`DesktopBanner`-style **top-bar bar**. Deferred: the lifecycle job + notifications (§7.9) and MCP
+tools (§7.10).
 **Author:** planning session, 2026-09
 **Rollout flag:** `activities` (default off)
 
@@ -12,8 +15,8 @@ can change what the site shows for the people it's assigned to, and optionally c
 per-user participation and show results. When the window closes, the site reverts on its own.
 
 The first (and today only) concrete use is an **onboarding scavenger hunt**: new members get a
-Drive doc of clues, hunt for codes hidden across the site, submit them on a dedicated page, and
-watch a leaderboard. Future uses named during planning — seasonal **themes**, **event** banners,
+Drive doc of clues, hunt for codes hidden across the site, submit them in a modal that floats over
+whatever page they're exploring, and watch a leaderboard. Future uses named during planning — seasonal **themes**, **event** banners,
 onboarding **bingo**, demo-day **voting** — plug in as new *mechanics* with **no schema change**.
 
 This is deliberately its own layer, **not** an extension of feature flags. See §3.
@@ -24,9 +27,12 @@ This is deliberately its own layer, **not** an extension of feature flags. See �
 - **Mechanic** — the pluggable behavior an activity runs (`scavenger_hunt`, `theme`, `event`, …),
   selected by `Activity.kind`. Defined in code; adding one needs no migration.
 - **Spine** — everything every activity shares: window, term, audience, status, the
-  "active-for-me" gate, the banner slot, the results surface. Generic; lives in the 3 tables below.
+  "active-for-me" gate, the shell bar, the surface. Generic; lives in the 3 tables below.
 - **Overlay** — the mechanic's scattered on-page elements (the hunt's hidden codes).
-- **Surface** — the mechanic's own page at `/activities/:id` (submit + progress + results).
+- **Surface** — the mechanic's own UI (submit + progress + results), rendered in a **modal**
+  over whatever page the member is on (the activity's point is to explore the site, so a
+  dedicated page would force constant back-and-forth). Data comes from the `/api/activities/:id`
+  resource endpoint (loader + submit action); there is no navigable surface page.
 
 ## 3. Why its own layer, not a feature flag
 
@@ -125,16 +131,20 @@ registries**, keyed by `kind`.
   (`everyone || roles∩audienceRoles || assignedGroupId∈groupIds || explicit participant`).
 
 **Client mechanic registry** — `app/activities/mechanics/registry.ts` — `kind → React pieces`:
-- `Overlay(activity)` — the scattered on-page elements for the current route.
-- `Surface(activity, progress, results)` — the `/activities/:id` page.
+- `Overlay(overlay)` — the scattered on-page elements for the current route.
+- `Surface({ active, progress, results, submitAction, onChanged, … })` — the submit + progress +
+  results UI the shell renders **in the activity modal**. Its forms post to `submitAction`
+  (`/api/activities/:id`); after a successful mutation it calls `onChanged()` so the modal reloads.
 - `AdminEditor(config, onChange)` — authoring UI for `config`.
-- `bannerContent(activity)` — what the persistent banner says.
+- `bannerCta` — the shell bar's button label for this mechanic.
 
 **Server mechanic registry** — `app/activities/mechanics/registry.server.ts` — `kind → handlers`:
-- `configSchema` (zod) — validates `config` on author.
+- `parseConfig(input)` (zod) — validates + normalizes `config` on author.
+- `overlayPayload(activity, pathname)` — route-filtered, safe-to-send on-page payload.
 - `onAction(activity, userId, input)` — handle an action, write `ActivityEvent`(s), return a result.
-- `progressFor(activity, userId, events)` — per-user progress.
-- `resultsFor(activity, events)` — leaderboard / tally.
+- `summarize({ activity, userEvents, allEvents, viewerIsCore })` — `{ progress, results }`.
+- `bannerSummary?(activity, userEvents)` — optional short shell-bar label (e.g. `"3/8 found"`);
+  return `null` for mechanics with nothing to count (e.g. a theme).
 
 Adding a mechanic = one client module + one server module + a `kind` value. Nothing in the spine
 or schema changes.
@@ -175,28 +185,31 @@ Line refs are against the tree at spec time; treat as anchors.
    `useActivity(kind)` let any component read hunt state + overlay data.
 
 5. **Global chrome — mind the iframe.** In tab mode the routed page renders **inside a
-   `TabWorkspace` iframe**: the *embedded* branch returns at ll.484-506 with `pageContent`, while
-   the sidebar shell + `LaunchWelcome`/`TimeZonePrompt` render in the main branch (ll.512-529).
+   `TabWorkspace` iframe**: the *embedded* branch returns early with `pageContent`, while the
+   sidebar shell (`LayoutOS`) + `LaunchWelcome`/`TimeZonePrompt` render in the main branch.
    Therefore:
-   - **`<ActivityBanner>`** (persistent, one per active activity) → mount in the **main shell**
-     branch next to `LaunchWelcome` (l.526). Shows once around the tabs.
-   - **`<ActivityOverlay>`** (scattered per-route code elements) → mount **inside `pageContent`**
-     (ll.445-480), because that's what renders in the iframe where actual pages live. It reads
-     `useLocation().pathname` and asks each active mechanic's `Overlay` to render the elements whose
-     `location` matches. In tabless mode both live in the same document — still correct.
-   - Wrap both branches' trees in `ActivitiesProvider` (the same three spots that already re-supply
-     `FeatureFlagsProvider`: ll.257, 486, 513). Each iframe runs the loader, so the data is present
-     in every document.
+   - **`<ActivityLauncher>`** (the shell bar + surface modal) → mount in **`LayoutOS`**, right after
+     `<DesktopBanner/>`. That's the idiomatic shell-banner slot (matches `DesktopBanner`'s
+     full-width bar, not a floating pill), it renders once around the tabs, and the modal it owns
+     (`fixed inset-0`) cleanly covers the iframe. The embedded branch never renders `LayoutOS`, so
+     the bar/modal correctly stay out of the iframe. The bar opens the modal (one live activity →
+     straight to its surface; several → a small picker).
+   - **`<ActivityOverlay>`** (scattered per-route code elements) → mount **inside `pageContent`**,
+     because that's what renders in the iframe where actual pages live. It reads the active list and
+     renders each mechanic's `Overlay` for the current route. In tabless mode both live in the same
+     document — still correct.
+   - Wrap the trees in `ActivitiesProvider` (the same spots that already re-supply
+     `FeatureFlagsProvider`). Each iframe runs the loader, so the data is present in every document.
 
-6. **Revalidation.** Add `/activities` (and the write route, e.g. `/api/activities`) to
-   `LAYOUT_MUTATING_ACTION_PREFIXES` (l.224) so submitting a code re-runs the shell loader and the
-   banner/overlay/progress update without a full reload.
+6. **Revalidation.** Add `/api/activities` to `LAYOUT_MUTATING_ACTION_PREFIXES` so submitting a code
+   re-runs the shell loader and the bar's progress label updates without a full reload. (The modal's
+   own progress/leaderboard refresh independently via `onChanged` → refetch of the endpoint.)
 
-7. **Surface route** — `app/routes/activities.$id.tsx` (+ `activities._index.tsx` listing the
-   user's active activities). Loader loads the activity + the user's `ActivityEvent`s + calls
-   `progressFor`/`resultsFor`; the component delegates to the mechanic's `Surface`. The `action`
-   calls `onAction` and returns its result. Standard RR7 loader/action (model on `onboarding.tsx`
-   and `api.forms.fill.$token.ts`). Gate on the `activities` flag + audience membership.
+7. **Surface endpoint** — `app/routes/api.activities.$id.ts`, a **resource route** (no UI). Loader
+   loads the activity + the user's `ActivityEvent`s + calls `summarize`; the shell modal fetches it
+   and delegates rendering to the mechanic's `Surface`. The `action` calls `onAction` and returns
+   its result. Gate on the `activities` flag + audience membership. There is deliberately no
+   navigable `/activities` page — the surface is a modal (§2).
 
 8. **Admin authoring** — `app/admin/routes/admin.activities*.tsx` (+ an `api.activities.$id` write
    route). CRUD: pick `kind`, set name/term/window, set audience (group + explicit list +
@@ -227,8 +240,8 @@ Line refs are against the tree at spec time; treat as anchors.
   reveals `code.value` (styling can make it subtle / hover-to-reveal). Clue difficulty lives in the
   Drive doc, not in pixel-hiding. Precise placement via optional `data-activity-anchor` hooks is a
   later, additive enhancement — start with route-pinned elements.
-- **Surface:** progress ("3 / 10 found"), a code-submit form, the found list, and (if
-  `leaderboard: "public"`) the leaderboard.
+- **Surface (in the modal):** progress ("3 / 10 found"), a code-submit form, and (per
+  `leaderboard`) the leaderboard. `bannerSummary` returns `"N/total found"` for the shell bar.
 - **`onAction("submit_code", { code })`:** normalize (trim + case-fold), match against
   `config.codes`; on a fresh match write `ActivityEvent{ type:"code_found", refId: code.id,
   points }` (the unique index dedups re-submits); return `{ found, points, label }`.
@@ -238,9 +251,9 @@ Line refs are against the tree at spec time; treat as anchors.
 
 **End-to-end:** Core creates a `scavenger_hunt` activity for term 26F, window Sep 15–22, audience =
 "New members 26F" group, adds codes, links the clue doc, Publishes → assigned members see the
-banner + on-page codes, submit on `/activities/:id`, climb the leaderboard → Sep 22 the window
-closes and the shell drops it, everything reverts → next term Core clones it, bumps to 27W, edits
-codes, Publishes. No developer in the loop.
+shell bar + on-page codes, open the modal to submit codes and watch the leaderboard while they keep
+exploring, → Sep 22 the window closes and the shell drops it, everything reverts → next term Core
+clones it, bumps to 27W, edits codes, Publishes. No developer in the loop.
 
 ## 9. Future mechanics (proof the contract holds)
 
@@ -259,8 +272,12 @@ codes, Publishes. No developer in the loop.
 - **Client/server registry split is load-bearing** — mechanic *handlers* in `.server.ts`,
   *components* in client modules. Never import a server handler into a client module (the
   node-import-crashes-the-client-bundle trap that's bitten this repo before).
-- **Tab-mode iframe** — banner in the shell, overlay in `pageContent` (§7.5). Getting this wrong
-  puts codes in the wrong document or the banner inside every tab.
+- **Tab-mode iframe** — the launcher (bar + modal) in the shell (`LayoutOS`), overlay in
+  `pageContent` (§7.5). Getting this wrong puts codes in the wrong document or the bar inside every
+  tab.
+- **Surface is a modal, not a page** — the activity is about roaming the site, so a dedicated
+  `/activities/:id` page would force constant navigation away and back. The surface floats over the
+  current page; `/api/activities/:id` is a resource endpoint (data + submit), not a route you visit.
 - **`ActivityEvent.refId` defaults to `""`, never null** — Postgres treats NULLs as distinct, so a
   nullable `refId` would defeat the dedup unique index for single-action mechanics (e.g. `rsvp`).
 - **`kind` carries one value until mechanic #2 ships** — accepted cost of building the layer before
@@ -271,8 +288,8 @@ codes, Publishes. No developer in the loop.
 
 1. Schema migration + `activities` flag (off) + spine (`Activity`/`ActivityParticipant`/
    `ActivityEvent`) + client/server registries with no mechanics.
-2. Scavenger-hunt mechanic (config, overlay, surface, handlers) + `/activities` routes.
-3. Shell wiring (loader resolve, provider, banner, overlay, revalidation).
+2. Scavenger-hunt mechanic (config, overlay, surface, handlers) + `/api/activities/:id` endpoint.
+3. Shell wiring (loader resolve, provider, launcher bar + modal, overlay, revalidation).
 4. Admin authoring + Clone.
 5. Optional: lifecycle job + notifications; MCP tools.
 6. Flag to Core, run the first hunt, then widen.

@@ -30,6 +30,13 @@ function readConfig(activity: Activity): HuntConfig {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
+/** Distinct codes this member has found (dedup'd on refId). */
+function countFound(userEvents: { type: string; refId: string }[]): number {
+  return new Set(
+    userEvents.filter((e) => e.type === "code_found").map((e) => e.refId),
+  ).size;
+}
+
 export const scavengerHuntServer: MechanicServer = {
   kind: "scavenger_hunt",
 
@@ -86,6 +93,12 @@ export const scavengerHuntServer: MechanicServer = {
       message: `Found: ${match.label || match.value}`,
       data: { points: match.points },
     };
+  },
+
+  bannerSummary(activity, userEvents) {
+    const total = readConfig(activity).codes.length;
+    if (total === 0) return null;
+    return `${countFound(userEvents)}/${total} found`;
   },
 
   summarize({ activity, viewerIsCore, userEvents, allEvents }) {

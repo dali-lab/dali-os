@@ -17,11 +17,6 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
-    // Activities (specs/activities.md): the time-boxed "mode" surface — the
-    // onboarding scavenger hunt lives here. Index lists what's live for the
-    // member; :id is the mechanic's surface (submit + progress + leaderboard).
-    route("activities", "routes/activities._index.tsx"),
-    route("activities/:id", "routes/activities.$id.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -355,6 +350,13 @@ export default [
 
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
+
+  // Activities (specs/activities.md): the time-boxed "mode" layer — the
+  // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
+  // activity modal (progress + leaderboard on GET; code submit on POST); the
+  // modal floats over whatever page the member is exploring, so there is no
+  // navigable surface page. Authored in Admin → Activities.
+  route("api/activities/:id", "routes/api.activities.$id.ts"),
 
   // Domain & member management API
   route("api/domains", "admin/routes/api.domains.ts"),

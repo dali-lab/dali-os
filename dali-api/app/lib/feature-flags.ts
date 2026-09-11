@@ -137,7 +137,7 @@ export const FEATURE_FLAGS = [
     key: "activities",
     label: "Activities",
     description:
-      "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a banner and its on-page codes, plus the /activities page; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+      "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a top-bar bar, its on-page codes, and a surface modal (submit + progress + leaderboard) that floats over whatever page they're on; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

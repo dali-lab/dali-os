@@ -1,6 +1,7 @@
 // Scavenger-hunt mechanic — client half (specs/activities.md §8): the on-page
-// clue Overlay, the Surface page (submit + progress + leaderboard), and the
-// admin config editor (the code list). Client-safe; no server imports.
+// clue Overlay, the Surface (submit + progress + leaderboard, shown in the
+// shell's activity modal), and the admin config editor (the code list).
+// Client-safe; no server imports.
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useFetcher } from "react-router";
@@ -52,24 +53,36 @@ function Overlay({ overlay }: OverlayProps) {
   );
 }
 
-// ─── Surface: the /activities/:id page for this hunt ─────────────────────────
+// ─── Surface: the hunt's submit + progress + leaderboard (in the modal) ──────
 
-function Surface({ progress, results, currentUserId, nameByUserId }: SurfaceProps) {
+function Surface({
+  active,
+  progress,
+  results,
+  currentUserId,
+  nameByUserId,
+  submitAction,
+  onChanged,
+}: SurfaceProps) {
   const p = progress as HuntProgress;
   const board = results as HuntResults;
   const fetcher = useFetcher<{ ok?: boolean; message?: string }>();
   const [code, setCode] = useState("");
   const busy = fetcher.state !== "idle";
 
-  // Clear the field after a successful, non-duplicate find.
+  // On a successful find, clear the field and tell the modal to reload so the
+  // progress bar + leaderboard reflect the new event.
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) setCode("");
-  }, [fetcher.state, fetcher.data]);
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setCode("");
+      onChanged?.();
+    }
+  }, [fetcher.state, fetcher.data, onChanged]);
 
   const pct = p.total > 0 ? Math.round((p.found / p.total) * 100) : 0;
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="flex flex-col gap-5">
       {/* Progress */}
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="mb-3 flex items-center justify-between">
@@ -108,18 +121,19 @@ function Surface({ progress, results, currentUserId, nameByUserId }: SurfaceProp
         <p className="mb-3 text-xs text-muted-foreground">
           Found a code out in the wild? Drop it in.
         </p>
-        <fetcher.Form method="post" className="flex gap-2">
+        <fetcher.Form method="post" action={submitAction} className="flex gap-2">
           <input
             name="code"
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="e.g. MARLIN"
             autoComplete="off"
-            className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent-coral focus:outline-none"
+            disabled={!active}
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent-coral focus:outline-none disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={busy || !code.trim()}
+            disabled={busy || !code.trim() || !active}
             className={buttonClasses("primary", "md")}
           >
             {busy ? "Checking…" : "Submit"}

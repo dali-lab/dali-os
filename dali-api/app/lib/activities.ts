@@ -22,7 +22,7 @@ export const ACTIVITY_KINDS = [
     kind: "scavenger_hunt",
     label: "Scavenger hunt",
     description:
-      "Members find codes hidden across the site (clued by a Drive doc), submit them on the activity page, and climb a leaderboard.",
+      "Members find codes hidden across the site (clued by a Drive doc), submit them in the activity modal, and climb a leaderboard.",
   },
 ] as const;
 
@@ -102,4 +102,8 @@ export type ActiveActivity = {
   name: string;
   endsAt: string; // ISO
   overlay: unknown;
+  // Short "at a glance" label for the shell bar, e.g. "3/8 found". Computed by
+  // the mechanic (bannerSummary) from the member's own events; null when the
+  // mechanic has nothing to summarize (e.g. a theme).
+  progressLabel: string | null;
 };

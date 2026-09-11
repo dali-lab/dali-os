@@ -36,6 +36,12 @@ export type MechanicServer = {
   }): Promise<ActionOutcome>;
   /** Compute what the surface renders: per-user progress + (optional) results. */
   summarize(args: SummarizeArgs): { progress: unknown; results: unknown };
+  /**
+   * Optional short label for the shell bar (e.g. "3/8 found"), derived from the
+   * member's own events. Omit — or return null — for mechanics with nothing to
+   * count (e.g. a theme). Kept cheap: the layout loader calls it per navigation.
+   */
+  bannerSummary?(activity: Activity, userEvents: ActivityEvent[]): string | null;
 };
 
 const MECHANICS: Record<string, MechanicServer> = {

@@ -31,7 +31,7 @@ import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ACTIVITIES_FLAG } from '~/lib/activities'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
-import { ActivityBanner, ActivityOverlay } from '~/components/activities/ActivityChrome'
+import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import type { Route } from './+types/layout'
@@ -244,8 +244,8 @@ const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/api/tour',
   '/api/timezone',
   '/onboarding',
-  // Submitting a code updates the shell banner/overlay/progress.
-  '/activities',
+  // Submitting a code updates the shell bar's progress label.
+  '/api/activities',
   '/api/hiring/cycles',
   '/logout',
   '/members',
@@ -552,7 +552,6 @@ export default function AppLayoutRoute() {
       {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
-      <ActivityBanner />
       </ActivitiesProvider>
     </FeatureFlagsProvider>
   )

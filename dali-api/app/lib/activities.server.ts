@@ -46,7 +46,7 @@ export async function isAssigned(
   return false;
 }
 
-// ─── Live-for-me resolution (layout loader + /activities index) ──────────────
+// ─── Live-for-me resolution (layout loader → shell bar + on-page overlay) ────
 
 export async function resolveActiveActivitiesForUser(
   userId: string,
@@ -64,12 +64,22 @@ export async function resolveActiveActivitiesForUser(
     if (!(await isAssigned(a, userId, roles))) continue;
     const mech = mechanicServer(a.kind);
     const overlay = mech ? mech.overlayPayload(a, pathname) : null;
+    // Only the mechanics that summarize need the member's events; fetch them
+    // lazily so a non-summarizing mechanic (or none) costs no extra query.
+    let progressLabel: string | null = null;
+    if (mech?.bannerSummary) {
+      const userEvents = await prisma.activityEvent.findMany({
+        where: { activityId: a.id, userId },
+      });
+      progressLabel = mech.bannerSummary(a, userEvents);
+    }
     out.push({
       id: a.id,
       kind: a.kind as ActivityKind,
       name: a.name,
       endsAt: a.endsAt.toISOString(),
       overlay,
+      progressLabel,
     });
   }
   return out;
