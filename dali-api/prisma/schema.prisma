@@ -4735,6 +4735,7 @@ enum ActivityStatus {
   Draft
   Published
   Archived
+}
 // ─── Infrastructure Dashboard ────────────────────────────────────────────────
 
 // Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
