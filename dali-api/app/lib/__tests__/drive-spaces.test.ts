@@ -66,11 +66,6 @@ describe("DRIVE_SPACES registry", () => {
     expect(core.groupQuery).toBe("core");
   });
 
-  it("has no systemKey scoped-root spaces any more", () => {
-    expect(DRIVE_SPACES.some((s) => s.backing === "lab-scoped-root")).toBe(false);
-    expect(DRIVE_SPACES.every((s) => !s.systemKey)).toBe(true);
-  });
-
   it("mine and lab have no gate (always visible)", () => {
     const mine = DRIVE_SPACES.find((s) => s.key === "mine")!;
     const lab = DRIVE_SPACES.find((s) => s.key === "lab")!;

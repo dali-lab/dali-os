@@ -108,6 +108,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/attendance", "core/routes/core.attendance.tsx"),
+    route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),

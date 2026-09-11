@@ -10,6 +10,7 @@ import {
   Files,
   FileSignature,
   FileText,
+  FolderCog,
   FolderKanban,
   Gavel,
   Globe,
@@ -255,6 +256,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Agreements left Admin's Documents cluster; it is lab process, not
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
+      { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
       { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },

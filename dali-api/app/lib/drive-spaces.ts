@@ -22,17 +22,15 @@ import type { RoleFlags } from "~/lib/nav-areas";
  *
  * - `member`           — viewer's private drive (`workspaceType=Member`, `workspaceId=user`).
  * - `lab-open`         — lab-wide pages/files, top-level, no scoped-root carve-outs.
- * - `lab-scoped-root`  — a single system-keyed scoped root inside the Lab workspace
- *                        (Core / Hiring). `systemKey` + `groupQuery` identify the root.
  * - `workspace-multi`  — one sub-space per workspace the viewer can access
  *                        (Projects / Education offerings).
- * - `virtual-filter`   — a saved filter over existing items, no physical root
- *                        (Partners: pages where `partnerVisible=true`). Deferred to Wave 4.
+ * - `virtual-filter`   — a view over existing items, no physical root. Core:
+ *                        Core-group-scoped Lab folders. Partners (deferred):
+ *                        pages where `partnerVisible=true`.
  */
 export type DriveSpaceBacking =
   | "member"
   | "lab-open"
-  | "lab-scoped-root"
   | "workspace-multi"
   | "virtual-filter";
 
@@ -56,14 +54,8 @@ export type DriveSpaceDef = {
    */
   gate?: (r: RoleFlags) => boolean;
   /**
-   * For `lab-scoped-root` spaces: the `Page.systemKey` that identifies the
-   * scoped root folder in the Lab workspace (e.g. `"drive:space:core"`).
-   */
-  systemKey?: string;
-  /**
-   * For `lab-scoped-root` spaces: the group slug/query used to look up the
-   * scoping group (e.g. `"core"`, `"hiring"`). Consumed by Wave 1 to resolve
-   * `Page.scopeGroupId`.
+   * For `virtual-filter` spaces: the group slug/query naming the scoping group
+   * (e.g. `"core"`). Documents which group's scoped folders the space filters to.
    */
   groupQuery?: string;
 };

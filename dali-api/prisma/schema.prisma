@@ -4264,13 +4264,6 @@ model Page {
   meetingNoteId String?           @unique
   meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
 
-  // Marks a page as system-managed and undeletable (mirrors
-  // GroupDefinition.systemKey) — e.g. the default "Team meeting notes" /
-  // "Partner meeting notes" folders auto-created per project (see
-  // ensureProjectFolder in app/lib/pages.ts). Null for ordinary user-created
-  // pages. The unique constraint makes ensure-create idempotent.
-  systemKey String? @unique
-
   // When true, this page acts as a template: it is excluded from the normal
   // document list and offered as a starting point when creating new pages.
   // The new page is created by byte-copying the CollabDocument state into a

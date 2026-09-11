@@ -162,7 +162,6 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
       kind: true,
       archivedAt: true,
       createdById: true,
-      systemKey: true,
       partnerVisible: true,
       publicVisible: true,
       projectAsOverview: { select: { id: true } },
@@ -208,7 +207,6 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   }
 
   if (!sameWorkspace) {
-    if (page.systemKey) throw new ManagePageError("This default folder can't be moved to another workspace", 400);
     if (page.projectAsOverview || page.projectAsPRD) {
       throw new ManagePageError("The Overview and PRD docs can't be moved out of their project", 400);
     }

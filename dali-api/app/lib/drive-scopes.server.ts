@@ -35,12 +35,6 @@ export type DriveTreeScope = {
    * `Page.scopeKind` + resolved group audience in Wave 2; unpopulated in Wave 0.
    */
   scopeAudience?: string | null;
-  /**
-   * Whether this scope is system-managed (its root folder has a `Page.systemKey`
-   * and cannot be renamed/deleted). Consumed by Signal ① in Wave 2 to render the
-   * "Managed" hover chip and hide destructive actions. Unpopulated in Wave 0.
-   */
-  systemManaged?: boolean;
 };
 
 // Given a flat item list and a root folder id, return the ids of the root plus
@@ -304,7 +298,7 @@ export async function loadDriveScopes({
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
 
   // Build the output by iterating the registry in display order.
-  // Signals ①/③: populate systemManaged + scopeAudience per the space definition.
+  // Signal ③: populate scopeAudience per the space definition.
   const result: DriveTreeScope[] = [];
   for (const space of spaces) {
     switch (space.backing) {
@@ -314,7 +308,6 @@ export async function loadDriveScopes({
           label: "My Drive",
           iconEmoji: null,
           items: tagFavorites(memberItems, favIds),
-          systemManaged: false,
           scopeAudience: "Private",
         });
         break;
@@ -325,7 +318,6 @@ export async function loadDriveScopes({
           label: "Lab-wide",
           iconEmoji: null,
           items: tagFavorites(filteredLab, favIds),
-          systemManaged: false,
           scopeAudience: "Everyone in the lab",
         });
         break;
@@ -339,7 +331,6 @@ export async function loadDriveScopes({
             label: "Core",
             iconEmoji: null,
             items: tagFavorites(finalCoreItems, favIds),
-            systemManaged: false,
             // Only Core members can see this space.
             scopeAudience: "Core only",
           });
@@ -369,7 +360,6 @@ export async function loadDriveScopes({
               sizeBytes: null,
               favorited: false,
               linkedProcess: null,
-              systemKey: null,
             } as DriveItem);
 
             // Real items: reparent those whose top-level parentFolderId is null
@@ -395,7 +385,6 @@ export async function loadDriveScopes({
             label: "Projects",
             iconEmoji: null,
             items: tagFavorites(syntheticProjectItems, favIds),
-            systemManaged: false,
             scopeAudience: "Project members",
           });
         } else if (space.key === "education" && educationIds.length > 0) {
@@ -416,7 +405,6 @@ export async function loadDriveScopes({
               sizeBytes: null,
               favorited: false,
               linkedProcess: null,
-              systemKey: null,
             } as DriveItem);
 
             for (const item of offeringItems) {
@@ -433,7 +421,6 @@ export async function loadDriveScopes({
             label: "Education",
             iconEmoji: null,
             items: tagFavorites(syntheticEducationItems, favIds),
-            systemManaged: false,
             scopeAudience: "Enrolled members",
           });
         }
@@ -491,7 +478,6 @@ export async function loadProjectDriveScope({
     label: projectName,
     iconEmoji: projectIconEmoji,
     items,
-    systemManaged: false,
     scopeAudience: "Project members",
   };
 }

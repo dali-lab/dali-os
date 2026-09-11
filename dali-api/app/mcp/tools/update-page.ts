@@ -1,8 +1,7 @@
 // MCP `update_page` — rename / re-icon / move / archive a project workspace
 // page. Mirrors the app's rules (api.documents.$id.ts + api.projects.$id
 // .documents.ts): pages (documents and folders alike) nest inside any Folder up
-// to MAX_PAGE_DEPTH, system-managed pages (systemKey) can't be archived or
-// moved, and archiving a Folder requires it to be empty. Archive is the Page model's soft delete, so this
+// to MAX_PAGE_DEPTH, and archiving a Folder requires it to be empty. Archive is the Page model's soft delete, so this
 // doubles as the delete tool — idempotent re-syncs unarchive/rename instead of
 // duplicating. Gate mirrors web project-edit access: Core, or staffed on the
 // page's project.
@@ -65,7 +64,6 @@ export async function runUpdatePage(callerId: string, input: Input) {
       workspaceId: true,
       parentPageId: true,
       kind: true,
-      systemKey: true,
       archivedAt: true,
     },
   });
@@ -97,9 +95,6 @@ export async function runUpdatePage(callerId: string, input: Input) {
   }
 
   if (input.parentPageId !== undefined && input.parentPageId !== (page.parentPageId ?? "")) {
-    if (page.systemKey) {
-      throw new UpdatePageError("System-managed pages can't be moved", 400);
-    }
     const newParentId = input.parentPageId === "" ? null : input.parentPageId;
     if (newParentId) {
       if (newParentId === page.id) {
@@ -150,9 +145,6 @@ export async function runUpdatePage(callerId: string, input: Input) {
 
   if (input.archived !== undefined) {
     if (input.archived && !page.archivedAt) {
-      if (page.systemKey) {
-        throw new UpdatePageError("This default folder can't be archived", 400);
-      }
       if (page.kind === "Folder") {
         const childCount = await prisma.page.count({
           where: { parentPageId: page.id, archivedAt: null },

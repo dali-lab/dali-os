@@ -14,10 +14,11 @@ import { driveFolderCrumbs } from "../drive-crumbs.server";
 
 const mockPrisma = prisma as any;
 
-// A tiny Drive tree: a doc parented under "sub", itself under the Core root.
-//   Core (drive:core-root) ▸ Subfolder(sub) ▸ <doc>
+// A tiny Drive tree: a doc parented under "sub", itself under the Core-scoped
+// folder (scopeKind=Group on the core group).
+//   Core (scoped folder) ▸ Subfolder(sub) ▸ <doc>
 const TREE: Record<string, any> = {
-  sub: { id: "sub", title: "Subfolder", iconEmoji: null, parentPageId: "core-root", systemKey: null },
+  sub: { id: "sub", title: "Subfolder", iconEmoji: null, parentPageId: "core-root" },
   "core-root": {
     id: "core-root",
     title: "Core",
@@ -34,7 +35,6 @@ const TREE: Record<string, any> = {
     title: "Team Notes",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
   },
   // Folders in the non-Lab workspaces — the scope comes from workspaceType.
   projfolder: {
@@ -42,7 +42,6 @@ const TREE: Record<string, any> = {
     title: "Sprint Docs",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Project",
     archivedAt: null,
   },
@@ -51,7 +50,6 @@ const TREE: Record<string, any> = {
     title: "Forms",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "EducationOffering",
     archivedAt: null,
   },
@@ -60,7 +58,6 @@ const TREE: Record<string, any> = {
     title: "Private Notes",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Member",
     archivedAt: null,
   },
@@ -70,7 +67,6 @@ const TREE: Record<string, any> = {
     title: "Old Stuff",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Lab",
     archivedAt: new Date("2026-01-01"),
   },
