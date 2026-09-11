@@ -4760,13 +4760,6 @@ model InfraUsageSample {
 // Core) ASK; Core/Admin fulfill from the fleet console. v1 is fulfilled
 // manually — Core performs the change via the console actions, then marks it
 // resolved. userIds are free-form (AuditLog-style), not FKs.
-enum InfraRequestKind {
-  provision_database
-  scale_compute
-  adjust_limits
-  other
-}
-
 enum InfraRequestStatus {
   Pending
   Fulfilled
@@ -4779,7 +4772,9 @@ model InfraRequest {
   resolvedAt        DateTime?
   projectId         String
   requestedByUserId String
-  kind              InfraRequestKind
+  // Free-form, backed by the registry in app/lib/infra/request-kinds.ts (not an
+  // enum) so kinds broaden without a migration; submit validates against the pool.
+  kind              String
   details           String
   targetHint        String?
   status            InfraRequestStatus @default(Pending)

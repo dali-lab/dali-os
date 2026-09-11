@@ -9,12 +9,13 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { createInfraRequest, resolveInfraRequest } from "~/lib/infra/requests.server";
+import { INFRA_REQUEST_KIND_VALUES } from "~/lib/infra/request-kinds";
 
 const Body = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("submit"),
     projectId: z.string(),
-    kind: z.enum(["provision_database", "scale_compute", "adjust_limits", "other"]),
+    kind: z.enum(INFRA_REQUEST_KIND_VALUES),
     details: z.string().min(1).max(2000),
     targetHint: z.string().max(200).optional(),
   }),

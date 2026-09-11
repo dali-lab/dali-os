@@ -21,6 +21,7 @@ import type { FlyApp, FlyMachine, NeonProject, NeonEndpoint } from "~/lib/infra/
 import { infraCryptoConfigured } from "~/lib/infra/crypto.server";
 import { neonConfigured } from "~/lib/infra/neon.server";
 import { listPendingInfraRequests } from "~/lib/infra/requests.server";
+import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
 import { buttonClasses } from "~/components/ui/Button";
 import { fmtBytes, fmtHours, timeAgo, StateBadge, UsageStrip } from "~/components/infra/format";
@@ -680,7 +681,7 @@ function Requests({ data, infra }: { data: Data; infra: InfraApi }) {
             <div>
               <div className="flex items-center gap-2 text-sm">
                 <span className="font-medium text-zinc-900">{r.projectName}</span>
-                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600">{r.kind.replace(/_/g, " ")}</span>
+                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600">{infraRequestKindLabel(r.kind)}</span>
               </div>
               <p className="mt-1 text-sm text-zinc-700">{r.details}</p>
               {r.targetHint && <p className="mt-0.5 text-xs text-zinc-500">Target: {r.targetHint}</p>}

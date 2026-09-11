@@ -5,13 +5,13 @@
 // style), so names are resolved with a follow-up query.
 
 import { prisma } from "~/lib/db";
-import type { InfraRequestKind, InfraRequestStatus } from "~/generated/prisma/client";
+import type { InfraRequestStatus } from "~/generated/prisma/client";
 
 export type PendingInfraRequest = {
   id: string;
   projectId: string;
   projectName: string;
-  kind: InfraRequestKind;
+  kind: string;
   details: string;
   targetHint: string | null;
   requestedByName: string;
@@ -51,7 +51,7 @@ export async function listPendingInfraRequests(): Promise<PendingInfraRequest[]>
 
 export type ProjectInfraRequest = {
   id: string;
-  kind: InfraRequestKind;
+  kind: string;
   details: string;
   targetHint: string | null;
   status: InfraRequestStatus;
@@ -85,7 +85,7 @@ export async function listProjectInfraRequests(
 export async function createInfraRequest(input: {
   projectId: string;
   requestedByUserId: string;
-  kind: InfraRequestKind;
+  kind: string;
   details: string;
   targetHint?: string | null;
 }): Promise<string> {

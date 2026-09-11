@@ -17,6 +17,7 @@ import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { timeAgo } from "~/components/infra/format";
+import { INFRA_REQUEST_KINDS, infraRequestKindLabel } from "~/lib/infra/request-kinds";
 
 type Config = {
   flyOrgSlug: string | null;
@@ -25,13 +26,6 @@ type Config = {
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
 };
-
-const KINDS: { value: string; label: string }[] = [
-  { value: "provision_database", label: "Provision a database" },
-  { value: "scale_compute", label: "Scale compute" },
-  { value: "adjust_limits", label: "Adjust limits" },
-  { value: "other", label: "Something else" },
-];
 
 // The off-os field dress; under os the enclosing `.os-form` styles inputs, so
 // this stays empty there (matching the project-details edit form).
@@ -178,8 +172,8 @@ function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => v
           <span>Request</span>
           <Select
             name="kind"
-            defaultValue="provision_database"
-            options={KINDS}
+            defaultValue={INFRA_REQUEST_KINDS[0].value}
+            options={INFRA_REQUEST_KINDS}
             buttonClassName={os ? undefined : "w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"}
           />
         </label>
@@ -215,7 +209,7 @@ function RequestHistory({ requests }: { requests: ProjectInfraRequest[] }) {
         {requests.map((r) => (
           <li key={r.id} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
             <div>
-              <span className="text-foreground">{r.kind.replace(/_/g, " ")}</span>
+              <span className="text-foreground">{infraRequestKindLabel(r.kind)}</span>
               <span className="text-muted-foreground"> — {r.details}</span>
               {r.resolutionNote && <span className="block text-muted-foreground">Note: {r.resolutionNote}</span>}
             </div>
