@@ -224,7 +224,9 @@ export function ProjectImageBanner({
         </button>
 
         {canEdit && !busy && (
-          <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+          /* Kept out of sight until you hover the banner (or tab into them),
+             so the controls don't sit permanently over the image. */
+          <div className="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}

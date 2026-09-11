@@ -1382,7 +1382,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1494,6 +1494,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Lifecycle status — Active / Paused / Archived. Core-only (listed in
+  // SCOPE_INTENTS above); edited from Project settings and shown as the
+  // read-only pill in the hero.
+  if (intent === "status") {
+    const status = (form.get("status") as string | null) ?? "";
+    if (!STATUSES.includes(status as ProjectStatus)) {
+      return { error: "Invalid status." };
+    }
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { status: status as ProjectStatus },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -2012,12 +2027,12 @@ function ProjectHeader({
   canEdit: boolean;
 }) {
   const submit = useSubmit();
-  // Name, status and icon each save the moment you change them — the hero has
-  // no edit mode and no pencil (which used to collide with the taskboard's
-  // Edit-task pencil). Only the name needs a transient draft while you type;
-  // status and icon read/write project state directly, so the fields never
-  // drift from the loader. Terms and roles are read-only here now — they live
-  // in Project settings (the gear), the one place that edits project scope.
+  // Name and icon each save the moment you change them — the hero has no edit
+  // mode and no pencil (which used to collide with the taskboard's Edit-task
+  // pencil). Only the name needs a transient draft while you type; icon
+  // read/writes project state directly, so the field never drifts from the
+  // loader. Status, terms and roles are read-only here now — they live in
+  // Project settings (the gear), the one place that edits project scope.
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
 
@@ -2031,20 +2046,21 @@ function ProjectHeader({
     if (!trimmed || trimmed === project.name) return;
     saveHeader({ name: trimmed });
   }
-  // One write path for all three fields: post the current project values with
-  // the one field being changed overridden, so a status flip doesn't blank the
-  // name and vice versa. iconEmoji goes through "in patch" because null (no
-  // icon) is a real value the ?? fallback would swallow.
+  // One write path for name + icon: post the current project values with the
+  // one field being changed overridden, so a rename doesn't blank the icon and
+  // vice versa. iconEmoji goes through "in patch" because null (no icon) is a
+  // real value the ?? fallback would swallow. Status is edited in Project
+  // settings now, but the `header` intent still validates it, so we carry the
+  // current value through unchanged.
   function saveHeader(patch: {
     name?: string;
-    status?: ProjectStatus;
     iconEmoji?: string | null;
   }) {
     submit(
       {
         intent: "header",
         name: patch.name ?? project.name,
-        status: patch.status ?? project.status,
+        status: project.status,
         iconEmoji: ("iconEmoji" in patch ? patch.iconEmoji : project.iconEmoji) ?? "",
       },
       { method: "post" },
@@ -2187,22 +2203,11 @@ function ProjectHeader({
           {project.name}
         </h1>
       )}
-      {canEdit ? (
-        <Select
-          value={project.status}
-          onChange={(v) => saveHeader({ status: v as ProjectStatus })}
-          ariaLabel="Project status"
-          options={STATUSES.map((s) => ({ value: s, label: s }))}
-          // The Select trigger adds its own flex layout; this just supplies the
-          // status plate's shape and colour so the dropdown reads as the badge.
-          buttonClassName={cn(
-            "rounded-full border transition-[filter] hover:brightness-95",
-            cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status]),
-          )}
-        />
-      ) : (
-        <StatusBadge status={project.status} />
-      )}
+      {/* Status is display-only in the hero — the pill still states the
+          project's lifecycle, but changing it lives in Project settings (the
+          gear) with the rest of the project's scope, so Core owns lifecycle
+          changes in one place. */}
+      <StatusBadge status={project.status} />
     </>
   );
 
@@ -2288,6 +2293,53 @@ function DescriptionSegment({
               </p>
             )}
           </div>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+// Status: the project's lifecycle plate (Active / Paused / Archived), edited
+// here in Project settings so Core owns lifecycle changes in one place; the
+// hero shows the same pill read-only.
+function StatusSegment({
+  status,
+  canEdit,
+}: {
+  status: ProjectStatus;
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Status"
+      canEdit={canEdit}
+      description="Active, Paused, or Archived — the lifecycle state shown as the pill beside the project name."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="status" />
+            <Select
+              name="status"
+              defaultValue={status}
+              ariaLabel="Project status"
+              options={STATUSES.map((s) => ({ value: s, label: s }))}
+              // The pill wears the current status's colour; the read view below
+              // uses the same plate, so editing reads as the same badge.
+              buttonClassName={cn(
+                "rounded-full border transition-[filter] hover:brightness-95",
+                cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[status]),
+              )}
+            />
+          </Form>
+        ) : (
+          <StatusBadge status={status} />
         )
       }
     </EditableSection>
@@ -3649,6 +3701,8 @@ function ScopeTab({
           {actionError}
         </div>
       )}
+
+      <StatusSegment status={project.status} canEdit={canEdit} />
 
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
 
