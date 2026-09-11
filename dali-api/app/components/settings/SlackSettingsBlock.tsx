@@ -1,5 +1,7 @@
 import { useFetcher } from "react-router";
 import { CheckCircle2, Slack, Trash2 } from "lucide-react";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Tooltip } from "~/components/ui/floating";
 
 const SLACK_ACTION = "/settings/slack";
 
@@ -17,6 +19,7 @@ export function SlackSettingsBlock({
     fetcher.data && "slackUserId" in fetcher.data ? fetcher.data.slackUserId : slackUserId;
   const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
   const busy = fetcher.state !== "idle";
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <div className="flex flex-col gap-3">
@@ -36,16 +39,28 @@ export function SlackSettingsBlock({
               </span>
               <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
             </div>
-            <fetcher.Form method="post" action={SLACK_ACTION}>
+            <fetcher.Form
+              method="post"
+              action={SLACK_ACTION}
+              onSubmit={confirmSubmit({
+                title: "Disconnect Slack?",
+                description:
+                  "You'll stop receiving Slack DM notifications from DALI OS and won't be auto-joined to new channels.",
+                confirmLabel: "Disconnect",
+                tone: "destructive",
+              })}
+            >
               <input type="hidden" name="intent" value="disconnect" />
-              <button
-                type="submit"
-                disabled={busy}
-                aria-label="Disconnect Slack"
-                className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <Tooltip content="Disconnect Slack">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  aria-label="Disconnect Slack"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
             </fetcher.Form>
           </div>
           <div className="px-3 py-3">

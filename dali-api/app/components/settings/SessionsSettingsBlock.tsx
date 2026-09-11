@@ -1,5 +1,6 @@
 import { Form, useNavigation } from "react-router";
 import { KeyRound } from "lucide-react";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import type { SessionRowDTO } from "~/lib/settings-page.server";
 
 const SESSIONS_ACTION = "/settings/sessions";
@@ -14,6 +15,7 @@ export function SessionsSettingsBlock({
   const nav = useNavigation();
   const submitting = nav.state !== "idle";
   const otherCount = sessions.filter((s) => s.id !== currentSessionId).length;
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <div className="flex flex-col gap-4">
@@ -22,7 +24,17 @@ export function SessionsSettingsBlock({
           Browsers, the desktop app, and connected tools currently signed in to your account.
         </p>
         {otherCount > 0 && (
-          <Form method="post" action={SESSIONS_ACTION}>
+          <Form
+            method="post"
+            action={SESSIONS_ACTION}
+            onSubmit={confirmSubmit({
+              title: `Sign out ${otherCount} other ${otherCount === 1 ? "session" : "sessions"}?`,
+              description:
+                "The desktop app and any connected tools (e.g. Claude MCP) will need to sign in again.",
+              confirmLabel: "Sign out others",
+              tone: "destructive",
+            })}
+          >
             <input type="hidden" name="intent" value="revoke-others" />
             <button
               type="submit"
@@ -76,7 +88,30 @@ export function SessionsSettingsBlock({
                       </p>
                     )}
                   </div>
-                  <Form method="post" action={SESSIONS_ACTION}>
+                  <Form
+                    method="post"
+                    action={SESSIONS_ACTION}
+                    onSubmit={confirmSubmit(
+                      isCurrent
+                        ? {
+                            title: "Sign out of this device?",
+                            description: "You'll be redirected to the login page.",
+                            confirmLabel: "Sign out",
+                            tone: "destructive",
+                          }
+                        : {
+                            title: `Revoke session on ${s.device}?`,
+                            description:
+                              s.isDesktop
+                                ? "The desktop app will need to sign in again."
+                                : s.kind.type === "oauth"
+                                  ? `${s.kind.clientName} will lose access until it re-authenticates.`
+                                  : "That browser or device will be signed out.",
+                            confirmLabel: "Revoke",
+                            tone: "destructive",
+                          },
+                    )}
+                  >
                     <input type="hidden" name="intent" value="revoke-one" />
                     <input type="hidden" name="sessionId" value={s.id} />
                     <button

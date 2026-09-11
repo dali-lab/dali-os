@@ -4,6 +4,7 @@ import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
 
 // Everything about a note's audience, in one place: who can see it at all,
@@ -44,6 +45,7 @@ export function NoteShareModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const dialog = useDialog();
 
   useEffect(() => {
     if (!open) return;
@@ -315,8 +317,14 @@ export function NoteShareModal({
         <button
           type="button"
           disabled={busy}
-          onClick={() => {
-            if (!window.confirm(`Delete “${note.title}”? This can't be undone.`)) return;
+          onClick={async () => {
+            const ok = await dialog.confirm({
+              title: `Delete “${note.title}”?`,
+              description: "This page will be permanently deleted and can't be recovered.",
+              confirmLabel: "Delete",
+              tone: "destructive",
+            });
+            if (!ok) return;
             void run({ intent: "delete", pageId: note.id }, onClose);
           }}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-destructive transition-colors"
