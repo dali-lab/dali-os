@@ -17,10 +17,13 @@ import {
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
-  sprint: { findFirst: ReturnType<typeof vi.fn> };
   epic: { findFirst: ReturnType<typeof vi.fn> };
   task: { groupBy: ReturnType<typeof vi.fn> };
 };
+
+// Wide first-term window so "today" always falls in a sprint → deterministic.
+const wideStart = new Date("2000-01-03T00:00:00Z"); // a Monday
+const wideEnd = new Date("2100-01-01T00:00:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -43,8 +46,15 @@ describe("get_project_overview", () => {
       overviewPageId: "pg-o",
       prdPageId: null,
       projectTerms: [
-        { term: { code: "26S", sortKey: 2026.1 } },
-        { term: { code: "26X", sortKey: 2026.2 } },
+        { term: { code: "26S", sortKey: 2026.1, startDate: wideStart, endDate: wideEnd } },
+        {
+          term: {
+            code: "26X",
+            sortKey: 2026.2,
+            startDate: new Date("2100-02-01T00:00:00Z"),
+            endDate: new Date("2100-05-01T00:00:00Z"),
+          },
+        },
       ],
       partners: [{ partnerOrg: { id: "po1", name: "Acme" } }],
     });
@@ -55,12 +65,6 @@ describe("get_project_overview", () => {
         domain: { id: "d1", displayName: "Dev" },
       },
     ]);
-    mockPrisma.sprint.findFirst.mockResolvedValue({
-      id: "s1",
-      name: "Sprint 1",
-      startsAt: new Date("2026-06-01T00:00:00Z"),
-      endsAt: new Date("2026-06-14T00:00:00Z"),
-    });
     mockPrisma.epic.findFirst.mockResolvedValue({
       id: "e1",
       title: "Onboarding",
@@ -79,10 +83,12 @@ describe("get_project_overview", () => {
       termCodes: ["26S", "26X"],
       partners: [{ id: "po1", name: "Acme" }],
       currentTermRoster: [{ userId: "u1", name: "A B", domain: "Dev", level: "P3" }],
-      activeSprint: { id: "s1", name: "Sprint 1" },
       currentEpic: { id: "e1", title: "Onboarding", status: "InProgress" },
       taskCountByStatus: { Todo: 3, InProgress: 0, InReview: 0, Done: 5, Cancelled: 0 },
     });
+    // Current sprint is the term-anchored week containing today.
+    expect(out.activeSprint?.label).toMatch(/^Sprint \d+$/);
+    expect(typeof out.activeSprint?.endsAt).toBe("string");
   });
 
   it("throws when the project is missing", async () => {

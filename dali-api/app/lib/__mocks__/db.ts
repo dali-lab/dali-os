@@ -247,15 +247,6 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
   },
-  sprint: {
-    findMany: vi.fn().mockResolvedValue([]),
-    findFirst: vi.fn(),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    updateMany: vi.fn(),
-    delete: vi.fn(),
-  },
   epic: {
     findFirst: vi.fn(),
     findUnique: vi.fn(),

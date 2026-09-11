@@ -29,8 +29,6 @@ describe("list_my_tasks", () => {
         createdAt: new Date("2026-06-01T00:00:00Z"),
         projectId: "p1",
         project: { name: "Alpha" },
-        sprintId: "s1",
-        sprint: { name: "Sprint 1" },
         epicId: null,
         epic: null,
         domain: { displayName: "Dev" },
@@ -42,7 +40,6 @@ describe("list_my_tasks", () => {
     expect(out.tasks[0]).toMatchObject({
       id: "t1",
       projectName: "Alpha",
-      sprintName: "Sprint 1",
       domainName: "Dev",
       assigneeUserIds: ["u1", "u2"],
       dueAt: "2026-06-10T00:00:00.000Z",

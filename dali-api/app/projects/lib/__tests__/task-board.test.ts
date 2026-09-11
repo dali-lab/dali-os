@@ -6,22 +6,15 @@ import {
   nextPositionInColumn,
   resolveTermIdForDate,
   termIdsInRange,
-  activeSprintIds,
+  currentSprintBand,
   defaultSprintScope,
   resolveSprintScope,
   taskInSprintScope,
-  type BoardSprint,
+  sprintPickerOptions,
   type TaskCardModel,
   type TermWindow,
 } from "../task-board";
-
-function sprint(
-  id: string,
-  status: BoardSprint["status"],
-  startsAt = "2026-07-01T00:00:00.000Z",
-): BoardSprint {
-  return { id, name: id, status, epicId: null, termId: null, startsAt };
-}
+import type { TimelineTermSpan } from "../timeline-days";
 
 function task(
   id: string,
@@ -38,7 +31,6 @@ function task(
     dueAt: null,
     startsAt: null,
     epicId: null,
-    sprintId: null,
     storyId: null,
     checklist: null,
     assignees: [],
@@ -245,56 +237,69 @@ describe("taskMatchesQuery", () => {
   });
 });
 
-describe("sprint scope", () => {
-  const SPRINTS = [
-    sprint("s1", "Closed", "2026-06-01T00:00:00.000Z"),
-    sprint("s2", "Active", "2026-07-01T00:00:00.000Z"),
-    sprint("s3", "Planned", "2026-08-01T00:00:00.000Z"),
+describe("computed sprint scope", () => {
+  // A 10-week fall term; sprints run Sep 7 (Sprint 1) in fixed 7-day bands.
+  const TERMS: TimelineTermSpan[] = [
+    { code: "26F", startsAt: "2026-09-07T00:00:00.000Z", endsAt: "2026-11-15T00:00:00.000Z" },
   ];
+  const NOW = new Date("2026-09-16T12:00:00.000Z"); // in Sprint 2 (Sep 14–20)
+  const OUTSIDE = new Date("2026-08-01T12:00:00.000Z"); // before the term
 
-  it("collects the active sprint ids", () => {
-    expect(activeSprintIds(SPRINTS)).toEqual(["s2"]);
-    expect(activeSprintIds([sprint("a", "Closed"), sprint("b", "Planned")])).toEqual([]);
+  it("finds the current sprint band, numbered off the term start", () => {
+    expect(currentSprintBand(TERMS, NOW)?.label).toBe("Sprint 2");
+    expect(currentSprintBand(TERMS, OUTSIDE)).toBeNull();
+    expect(currentSprintBand([], NOW)).toBeNull();
   });
 
-  it("defaults to the current sprint when one is active, else all", () => {
-    expect(defaultSprintScope(SPRINTS)).toBe("current");
-    expect(defaultSprintScope([sprint("a", "Closed")])).toBe("all");
-    expect(defaultSprintScope([])).toBe("all");
+  it("defaults to current when a sprint is running, else all", () => {
+    expect(defaultSprintScope(TERMS, NOW)).toBe("current");
+    expect(defaultSprintScope(TERMS, OUTSIDE)).toBe("all");
+    expect(defaultSprintScope([], NOW)).toBe("all");
   });
 
   it("resolves an explicit, still-valid param and falls back otherwise", () => {
-    expect(resolveSprintScope("all", SPRINTS)).toBe("all");
-    expect(resolveSprintScope("backlog", SPRINTS)).toBe("backlog");
-    expect(resolveSprintScope("current", SPRINTS)).toBe("current");
-    expect(resolveSprintScope("s1", SPRINTS)).toBe("s1");
+    const key = String(currentSprintBand(TERMS, NOW)!.key);
+    expect(resolveSprintScope("all", TERMS, NOW)).toBe("all");
+    expect(resolveSprintScope("backlog", TERMS, NOW)).toBe("backlog");
+    expect(resolveSprintScope("current", TERMS, NOW)).toBe("current");
+    expect(resolveSprintScope(key, TERMS, NOW)).toBe(key);
     // No param → default (current here).
-    expect(resolveSprintScope(null, SPRINTS)).toBe("current");
-    // Stale id → default.
-    expect(resolveSprintScope("gone", SPRINTS)).toBe("current");
-    // `current` with nothing active → default (all here).
-    const noActive = [sprint("a", "Closed")];
-    expect(resolveSprintScope("current", noActive)).toBe("all");
-    expect(resolveSprintScope(null, noActive)).toBe("all");
+    expect(resolveSprintScope(null, TERMS, NOW)).toBe("current");
+    // A key not aligned to any term's sprint grid → default.
+    expect(resolveSprintScope("123", TERMS, NOW)).toBe("current");
+    // `current` with nothing running → default (all here).
+    expect(resolveSprintScope("current", TERMS, OUTSIDE)).toBe("all");
   });
 
-  it("matches tasks against the selected scope", () => {
-    const active = ["s2"];
-    const inActive = { sprintId: "s2" };
-    const inClosed = { sprintId: "s1" };
-    const unsprinted = { sprintId: null };
+  it("matches a task to a scope by its date span", () => {
+    const sprint2 = String(currentSprintBand(TERMS, NOW)!.key); // Sep 14–20
+    const inSprint2 = { startsAt: null, dueAt: "2026-09-17T00:00:00.000Z" };
+    const inSprint1 = { startsAt: null, dueAt: "2026-09-09T00:00:00.000Z" };
+    const undated = { startsAt: null, dueAt: null };
+    // A task spanning Sprint 1 into Sprint 2.
+    const spanning = { startsAt: "2026-09-09T00:00:00.000Z", dueAt: "2026-09-17T00:00:00.000Z" };
 
-    expect(taskInSprintScope(inActive, "all", active)).toBe(true);
-    expect(taskInSprintScope(unsprinted, "all", active)).toBe(true);
+    expect(taskInSprintScope(inSprint2, "all", TERMS, NOW)).toBe(true);
+    expect(taskInSprintScope(undated, "all", TERMS, NOW)).toBe(true);
 
-    expect(taskInSprintScope(inActive, "current", active)).toBe(true);
-    expect(taskInSprintScope(inClosed, "current", active)).toBe(false);
-    expect(taskInSprintScope(unsprinted, "current", active)).toBe(false);
+    expect(taskInSprintScope(inSprint2, "current", TERMS, NOW)).toBe(true);
+    expect(taskInSprintScope(inSprint1, "current", TERMS, NOW)).toBe(false);
+    expect(taskInSprintScope(undated, "current", TERMS, NOW)).toBe(false);
 
-    expect(taskInSprintScope(unsprinted, "backlog", active)).toBe(true);
-    expect(taskInSprintScope(inActive, "backlog", active)).toBe(false);
+    expect(taskInSprintScope(undated, "backlog", TERMS, NOW)).toBe(true);
+    expect(taskInSprintScope(inSprint2, "backlog", TERMS, NOW)).toBe(false);
 
-    expect(taskInSprintScope(inClosed, "s1", active)).toBe(true);
-    expect(taskInSprintScope(inActive, "s1", active)).toBe(false);
+    expect(taskInSprintScope(inSprint2, sprint2, TERMS, NOW)).toBe(true);
+    expect(taskInSprintScope(inSprint1, sprint2, TERMS, NOW)).toBe(false);
+    expect(taskInSprintScope(spanning, sprint2, TERMS, NOW)).toBe(true);
+  });
+
+  it("lists the selected term's sprints current-first, nothing for all-terms", () => {
+    const opts = sprintPickerOptions(TERMS, "26F", NOW);
+    expect(opts).toHaveLength(10);
+    expect(opts[0].label).toBe("Sprint 2 · Current");
+    for (const o of opts) expect(Number.isFinite(Number(o.value))).toBe(true);
+    expect(sprintPickerOptions(TERMS, null, NOW)).toEqual([]);
+    expect(sprintPickerOptions(TERMS, "99W", NOW)).toEqual([]);
   });
 });

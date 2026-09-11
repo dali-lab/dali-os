@@ -38,7 +38,6 @@ function buildIssueBody(task: TaskWithAssignees): string {
   const meta: string[] = [];
   if (task.priority && task.priority !== "Normal") meta.push(`**Priority:** ${task.priority}`);
   if (task.dueAt) meta.push(`**Due:** ${task.dueAt.toISOString().slice(0, 10)}`);
-  if (task.sprint) meta.push(`**Sprint:** ${task.sprint.name}`);
   if (task.epic) meta.push(`**Epic:** ${task.epic.title}`);
   if (task.domain) meta.push(`**Domain:** ${task.domain.displayName}`);
   meta.push(`**Project:** ${task.project.name}`);
@@ -283,7 +282,6 @@ type TaskWithAssignees = {
   status: TaskStatus;
   githubRepo: string | null;
   githubIssueNumber: number | null;
-  sprint: { name: string } | null;
   epic: { title: string } | null;
   domain: { displayName: string } | null;
   project: { name: string };
@@ -303,7 +301,6 @@ async function loadTask(taskId: string): Promise<TaskWithAssignees | null> {
       status: true,
       githubRepo: true,
       githubIssueNumber: true,
-      sprint: { select: { name: true } },
       epic: { select: { title: true } },
       domain: { select: { displayName: true } },
       project: { select: { name: true } },

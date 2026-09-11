@@ -25,7 +25,6 @@ export const CREATE_TASK_TOOL = {
         description: "Defaults to 'Todo'.",
       },
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      sprintId: { type: "string", description: "Omit or empty string for backlog." },
       epicId: { type: "string", description: "Optional epic linkage." },
       storyId: {
         type: "string",
@@ -59,7 +58,6 @@ type Input = {
   title: string;
   status?: string;
   priority?: Priority;
-  sprintId?: string;
   epicId?: string;
   storyId?: string;
   domainId?: string;
@@ -92,18 +90,9 @@ export async function runCreateTask(callerId: string, input: Input) {
   });
   if (!project) throw new CreateTaskError("Project not found", 404);
 
-  // A sprint/epic id must belong to this project — a foreign id would let a
+  // An epic/story id must belong to this project — a foreign id would let a
   // member of one project file tasks onto another project's board (matches the
   // web create route's guard).
-  if (input.sprintId && input.sprintId !== "") {
-    const sprint = await prisma.sprint.findUnique({
-      where: { id: input.sprintId },
-      select: { projectId: true },
-    });
-    if (!sprint || sprint.projectId !== input.projectId) {
-      throw new CreateTaskError("Sprint is not part of this project", 400);
-    }
-  }
   // A story pins its epic (UserStory.epicId is required), so the two are never
   // set independently: a story derives the epic; only a story-less task takes a
   // free-standing epic (matches the web create route).
@@ -168,7 +157,6 @@ export async function runCreateTask(callerId: string, input: Input) {
         status,
         position,
         priority: input.priority ?? "Normal",
-        sprintId: input.sprintId && input.sprintId !== "" ? input.sprintId : null,
         epicId,
         storyId,
         domainId: input.domainId && input.domainId !== "" ? input.domainId : null,

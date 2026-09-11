@@ -3903,7 +3903,6 @@ async function main() {
         await prisma.taskAssignee.deleteMany({ where: { task: { projectId: dali.id } } });
         await prisma.task.deleteMany({ where: { projectId: dali.id } });
         await prisma.userStory.deleteMany({ where: { epic: { projectId: dali.id } } });
-        await prisma.sprint.deleteMany({ where: { projectId: dali.id } });
         await prisma.epic.deleteMany({ where: { projectId: dali.id } });
 
         const DAY = 86_400_000;
@@ -3940,7 +3939,6 @@ async function main() {
           status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
           start: number | null;
           end: number | null;
-          sprint?: { name: string; status: "Planned" | "Active" | "Closed"; start: number; end: number };
           stories: StorySeed[];
         };
 
@@ -3950,7 +3948,6 @@ async function main() {
             status: "Done",
             start: -35,
             end: -7,
-            sprint: { name: "Foundations", status: "Closed", start: -21, end: -7 },
             stories: [
               {
                 key: "board-dnd",
@@ -3991,7 +3988,6 @@ async function main() {
             status: "InProgress",
             start: -10,
             end: 18,
-            sprint: { name: "Timeline", status: "Active", start: -7, end: 7 },
             stories: [
               {
                 key: "gantt-grid",
@@ -4050,7 +4046,6 @@ async function main() {
             status: "Open",
             start: 14,
             end: 40,
-            sprint: { name: "Wallet", status: "Planned", start: 14, end: 28 },
             stories: [
               {
                 key: "wallet-pass",
@@ -4128,20 +4123,6 @@ async function main() {
               endsAt: e.end != null ? at(e.end) : null,
             },
           });
-          if (e.sprint) {
-            // An Active demo sprint must genuinely span "now" or the
-            // sprint-lifecycle job auto-closes it on the first tick.
-            await prisma.sprint.create({
-              data: {
-                projectId: dali.id,
-                epicId: epic.id,
-                name: e.sprint.name,
-                startsAt: at(e.sprint.start),
-                endsAt: at(e.sprint.end),
-                status: e.sprint.status,
-              },
-            });
-          }
           for (const [si, s] of e.stories.entries()) {
             const story = await prisma.userStory.create({
               data: {
@@ -4364,7 +4345,6 @@ async function main() {
       });
       if (tuckProject) {
         await prisma.task.deleteMany({ where: { projectId: tuckProject.id } });
-        await prisma.sprint.deleteMany({ where: { projectId: tuckProject.id } });
         await prisma.userStory.deleteMany({
           where: { epic: { projectId: tuckProject.id } },
         });
@@ -4404,29 +4384,9 @@ async function main() {
           },
         });
 
-        // Relative dates, same reason as Sprint 1 above: Active must span
-        // "now" or the sprint-lifecycle job closes it out from under the
-        // partner-portal e2e expectations.
-        const tuckSprint = await prisma.sprint.create({
-          data: {
-            projectId: tuckProject.id,
-            epicId: tuckEpic.id,
-            name: "Sprint 3 — Matching flow",
-            startsAt: new Date(Date.now() - 7 * 86_400_000),
-            endsAt: new Date(Date.now() + 7 * 86_400_000),
-            status: "Active",
-          },
-        });
-        await prisma.sprint.create({
-          data: {
-            projectId: tuckProject.id,
-            epicId: tuckEpic.id,
-            name: "Sprint 4 — Notifications",
-            startsAt: new Date(Date.now() + 7 * 86_400_000),
-            endsAt: new Date(Date.now() + 21 * 86_400_000),
-            status: "Planned",
-          },
-        });
+        // Dated within the story's window so each task lands in a computed
+        // sprint (the term-anchored week its dates fall in) rather than the
+        // undated backlog.
         const tuckTasks: {
           title: string;
           status: "Todo" | "InProgress" | "Done";
@@ -4441,11 +4401,12 @@ async function main() {
           await prisma.task.create({
             data: {
               projectId: tuckProject.id,
-              sprintId: tuckSprint.id,
               epicId: tuckEpic.id,
               storyId: tuckStory.id,
               title: t.title,
               status: t.status,
+              startsAt: new Date(Date.now() - 3 * 86_400_000),
+              dueAt: new Date(Date.now() + 3 * 86_400_000),
               createdById: admin.id,
             },
           });
