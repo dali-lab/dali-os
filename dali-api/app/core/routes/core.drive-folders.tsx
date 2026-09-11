@@ -10,12 +10,14 @@
 // Access/sharing of a bound folder is a separate control — open the folder in
 // Drive and use Share. These folders default to a Core-group scope when created.
 
-import { redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.drive-folders";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
+// bindings.server is server-only; CORE_PROCESS_ID is read in the loader (not the
+// component) so React Router strips this import from the client bundle.
 import { CORE_PROCESS_ID } from "~/lib/bindings.server";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 
@@ -27,10 +29,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
-  return { isAdmin: await isAdmin(auth.user.sub) };
+  return { isAdmin: await isAdmin(auth.user.sub), processId: CORE_PROCESS_ID };
 }
 
 export default function CoreDriveFoldersPage() {
+  const { processId } = useLoaderData<typeof loader>();
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-lg font-semibold text-gray-900">Drive folders</h1>
@@ -39,7 +42,7 @@ export default function CoreDriveFoldersPage() {
         forms. Point each at any Drive folder, or let DALI create one. These are normal folders:
         rename, move, or share them like anything else in Drive.
       </p>
-      <DriveFolderBindings processType="Core" processId={CORE_PROCESS_ID} className="mt-6" />
+      <DriveFolderBindings processType="Core" processId={processId} className="mt-6" />
     </div>
   );
 }
