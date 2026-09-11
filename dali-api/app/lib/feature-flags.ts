@@ -115,6 +115,7 @@ export const FEATURE_FLAGS = [
     description:
       "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
   },
+  {
     key: "drive-folder-bindings",
     label: "Drive folder bindings",
     description:
