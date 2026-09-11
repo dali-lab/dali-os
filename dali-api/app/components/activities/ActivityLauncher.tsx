@@ -12,7 +12,7 @@
 // Reads the live-for-me list from ActivitiesProvider; renders nothing when it's
 // empty, so the bar and modal disappear on their own once a window closes.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Sparkles } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -141,6 +141,21 @@ function SurfaceView({
 }) {
   const title = data?.name ?? "Activity";
   const mech = data ? mechanicClient(data.kind) : undefined;
+
+  // Live updates: while this surface is open, subscribe to the activity's SSE
+  // stream and refetch on any push so the leaderboard reflects everyone's
+  // submissions, not just this viewer's. Keyed on id only; the latest onChanged
+  // is read through a ref so reconnecting isn't tied to render identity.
+  const onChangedRef = useRef(onChanged);
+  onChangedRef.current = onChanged;
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    const es = new EventSource(`/api/activities/${id}/stream`, { withCredentials: true });
+    const onPush = () => onChangedRef.current();
+    es.addEventListener("change", onPush);
+    es.addEventListener("sync", onPush);
+    return () => es.close();
+  }, [id]);
 
   return (
     <>

@@ -15,6 +15,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { ACTIVITIES_FLAG } from "~/lib/activities";
 import { getActivityForMember } from "~/lib/activities.server";
 import { mechanicServer } from "~/activities/mechanics/registry.server";
+import { publishActivityChange } from "~/lib/activity-events.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -90,5 +91,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const input = Object.fromEntries(form) as Record<string, unknown>;
   const outcome = await mech.onAction({ activity: found.activity, userId, input });
+  // Nudge every open surface for this activity so the leaderboard updates live.
+  if (outcome.ok) publishActivityChange(params.id);
   return Response.json(outcome, { status: outcome.ok ? 200 : 400 });
 }

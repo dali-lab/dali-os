@@ -357,6 +357,8 @@ export default [
   // modal floats over whatever page the member is exploring, so there is no
   // navigable surface page. Authored in Admin → Activities.
   route("api/activities/:id", "routes/api.activities.$id.ts"),
+  // Live push for the surface modal (leaderboard/progress) — see §7.6.
+  route("api/activities/:id/stream", "routes/api.activities.$id.stream.ts"),
 
   // Domain & member management API
   route("api/domains", "admin/routes/api.domains.ts"),

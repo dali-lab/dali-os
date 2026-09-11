@@ -3,8 +3,11 @@
 **Status:** BUILT on `feat/activities` (v1: scavenger-hunt mechanic). Review pass 2026-09-10 moved
 the surface from a dedicated `/activities/:id` page to a **shell modal** over the current page
 (fed by the `/api/activities/:id` resource endpoint) and the entry point from a floating pill to a
-`DesktopBanner`-style **top-bar bar**. Deferred: the lifecycle job + notifications (§7.9) and MCP
-tools (§7.10).
+`DesktopBanner`-style **top-bar bar**. Review pass 2026-09-11: authored code **routes normalized**
+(the exact-match bug — §8); admin editor uses the real **breadcrumb trail** instead of a hand-rolled
+path; the leaderboard is now **live via SSE** (§7.6); and codes take an optional **hint** with an
+operator-chosen reveal policy (free / points / delay — §8). Deferred: the lifecycle job +
+notifications (§7.9) and MCP tools (§7.10).
 **Author:** planning session, 2026-09
 **Rollout flag:** `activities` (default off)
 
@@ -201,9 +204,14 @@ Line refs are against the tree at spec time; treat as anchors.
    - Wrap the trees in `ActivitiesProvider` (the same spots that already re-supply
      `FeatureFlagsProvider`). Each iframe runs the loader, so the data is present in every document.
 
-6. **Revalidation.** Add `/api/activities` to `LAYOUT_MUTATING_ACTION_PREFIXES` so submitting a code
-   re-runs the shell loader and the bar's progress label updates without a full reload. (The modal's
-   own progress/leaderboard refresh independently via `onChanged` → refetch of the endpoint.)
+6. **Revalidation + live push.** Add `/api/activities` to `LAYOUT_MUTATING_ACTION_PREFIXES` so
+   submitting a code re-runs the shell loader and the bar's progress label updates without a full
+   reload. For the *leaderboard*, one viewer's own `onChanged` refetch isn't enough — everyone
+   else's board would sit stale until they reload. So the surface subscribes to an **SSE stream**
+   (`GET /api/activities/:id/stream`, mirroring `api.notifications.stream.ts`): the write action
+   calls `publishActivityChange(id)` (in-process bus, `app/lib/activity-events.server.ts`) and every
+   open modal refetches on the `change` push. A periodic `sync` event is the cross-machine backstop
+   (per-process bus, same trade-off as notify/staffing streams).
 
 7. **Surface endpoint** — `app/routes/api.activities.$id.ts`, a **resource route** (no UI). Loader
    loads the activity + the user's `ActivityEvent`s + calls `summarize`; the shell modal fetches it
@@ -231,23 +239,33 @@ Line refs are against the tree at spec time; treat as anchors.
 - `config` (zod-validated):
   ```ts
   {
-    codes: { id: string; value: string; label: string; location: string; points?: number }[]
+    codes: { id; value; label; location; points?; hint? }[]
     leaderboard: "public" | "core" | "off"
-    instructionsUrl?: string   // informal link to the Drive clue doc, if any
+    instructionsUrl?: string          // informal link to the Drive clue doc, if any
+    hintPolicy: { mode: "free" | "points" | "delay"; penalty: number; delayMinutes: number }
   }
   ```
-- **Overlay:** for each `code.location === location.pathname`, render a discoverable element that
-  reveals `code.value` (styling can make it subtle / hover-to-reveal). Clue difficulty lives in the
-  Drive doc, not in pixel-hiding. Precise placement via optional `data-activity-anchor` hooks is a
-  later, additive enhancement — start with route-pinned elements.
-- **Surface (in the modal):** progress ("3 / 10 found"), a code-submit form, and (per
-  `leaderboard`) the leaderboard. `bannerSummary` returns `"N/total found"` for the shell bar.
-- **`onAction("submit_code", { code })`:** normalize (trim + case-fold), match against
-  `config.codes`; on a fresh match write `ActivityEvent{ type:"code_found", refId: code.id,
-  points }` (the unique index dedups re-submits); return `{ found, points, label }`.
-- **`progressFor`:** `code_found` count / `config.codes.length`.
-- **`resultsFor`:** group `code_found` events by user, sum `points`, order desc with earliest
-  last-find as the completion tiebreak.
+- **Overlay:** for each code whose `location` matches the current path, render a discoverable
+  element that reveals `code.value`. The match is via `routesMatch` (both sides normalized — leading
+  slash, no trailing slash, query/hash stripped) so an authored route like `projects` or
+  `/projects/` still lands on `/projects`; `location` is also normalized on save. Precise placement
+  via optional `data-activity-anchor` hooks is a later, additive enhancement.
+- **Surface (in the modal):** progress ("3 / 10 found"), a code-submit form, an optional **Hints**
+  section, and (per `leaderboard`) the leaderboard. `bannerSummary` returns `"N/total found"` for
+  the shell bar.
+- **Hints (optional, per code + one policy).** Any code may carry a `hint`. How a member reveals it
+  is operator-chosen per activity (`hintPolicy.mode`): **free** (reveal anytime), **points** (costs
+  `penalty` points — recorded as a `hint_revealed` event so the leaderboard reflects it), or
+  **delay** (locked until `delayMinutes` after the activity's start, then free). The server sends a
+  hint's text only when the policy currently permits it (`resolveHintState`), so points/delay can't
+  be bypassed from the client.
+- **`onAction`:** a `reveal=<codeId>` input reveals a hint per the policy; otherwise a `code` input
+  is a submission — normalize (trim + case-fold), match against `config.codes`, and on a fresh match
+  write `ActivityEvent{ type:"code_found", refId, points }` (the unique index dedups re-submits).
+- **`summarize`:** progress = `code_found` count / `codes.length`, plus the per-code hint states.
+  Leaderboard groups `code_found` events by user (sum `points`, `found` count, earliest last-find as
+  the completion tiebreak) and applies `hint_revealed` point penalties; only members with ≥1 find
+  are ranked.
 
 **End-to-end:** Core creates a `scavenger_hunt` activity for term 26F, window Sep 15–22, audience =
 "New members 26F" group, adds codes, links the clue doc, Publishes → assigned members see the
@@ -298,8 +316,8 @@ clones it, bumps to 27W, edits codes, Publishes. No developer in the loop.
 
 - **Name.** `Activity` matches the codebase's `kind` idiom (`Page.kind`) and the user's wording;
   confirm no clash with an activity/audit-log concept before the migration.
-- **Leaderboard identity.** Show real names to all participants, or Core-only per the hunt's
-  `leaderboard` setting? (Planning leaned "progress + public leaderboard.")
+- **Leaderboard identity.** Resolved: real names, gated by the hunt's `leaderboard` setting
+  (`public` = everyone, `core` = Core only, `off`). Live via SSE (§7.6).
 - **Assignment source for onboarding.** A hand-maintained "New members <term>" group, or is there a
   cleaner "joined this term" signal to auto-populate it?
 - **Does the first hunt want the lifecycle job/notifications**, or is the banner enough for v1?

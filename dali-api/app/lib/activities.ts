@@ -45,15 +45,86 @@ export type HuntCode = {
   label: string; // shown when found / clue name
   location: string; // route the code element renders on, e.g. "/projects"
   points: number;
+  hint?: string; // optional nudge toward where this code hides
 };
 
 export type HuntLeaderboard = "public" | "core" | "off";
+
+// How a member may reveal a code's hint. Operator-chosen per activity
+// (Admin → Activities). "free" = always available; "points" = revealing costs
+// `penalty` points (recorded so the leaderboard reflects it); "delay" = hints
+// stay locked until `delayMinutes` after the activity starts, then are free.
+export type HuntHintMode = "free" | "points" | "delay";
+
+export type HuntHintPolicy = {
+  mode: HuntHintMode;
+  penalty: number; // points mode: cost to reveal one hint
+  delayMinutes: number; // delay mode: minutes after start before hints unlock
+};
+
+export const DEFAULT_HINT_POLICY: HuntHintPolicy = {
+  mode: "free",
+  penalty: 0,
+  delayMinutes: 0,
+};
 
 export type HuntConfig = {
   codes: HuntCode[];
   leaderboard: HuntLeaderboard;
   instructionsUrl?: string; // informal link to the Drive clue doc, if any
+  hintPolicy?: HuntHintPolicy;
 };
+
+// ─── Route normalization (pure) ──────────────────────────────────────────────
+// A code's `location` is matched against the current path by exact string, so a
+// stray space, a missing leading slash, or a trailing slash silently kept the
+// clue from ever showing. Normalize both sides: trim, drop any query/hash if a
+// full URL was pasted, force a single leading slash, strip a trailing slash.
+
+export function normalizeRoute(input: string | null | undefined): string {
+  const t = (input ?? "").trim();
+  if (!t) return "";
+  let p = t.split(/[?#]/)[0];
+  if (!p.startsWith("/")) p = `/${p}`;
+  if (p.length > 1) p = p.replace(/\/+$/, "");
+  return p;
+}
+
+export function routesMatch(codeLocation: string, pathname: string): boolean {
+  const a = normalizeRoute(codeLocation);
+  return a !== "" && a === normalizeRoute(pathname);
+}
+
+// ─── Hint visibility (pure) ──────────────────────────────────────────────────
+// Given the policy and whether this member already revealed the hint, decide
+// what the surface may show: the hint text now (`show`), a points cost to
+// reveal it (`cost`), or a locked-until timestamp (`unlocksAt`). The server
+// fills the actual hint text only when `show` is true, so points/delay can't be
+// bypassed from the client.
+
+export type HintState = {
+  show: boolean;
+  cost: number | null;
+  unlocksAt: number | null; // epoch ms
+};
+
+export function resolveHintState(
+  policy: HuntHintPolicy,
+  opts: { revealed: boolean; nowMs: number; startsAtMs: number },
+): HintState {
+  if (policy.mode === "points") {
+    return opts.revealed
+      ? { show: true, cost: null, unlocksAt: null }
+      : { show: false, cost: policy.penalty, unlocksAt: null };
+  }
+  if (policy.mode === "delay") {
+    const unlocksAt = opts.startsAtMs + policy.delayMinutes * 60_000;
+    return opts.nowMs >= unlocksAt
+      ? { show: true, cost: null, unlocksAt: null }
+      : { show: false, cost: null, unlocksAt };
+  }
+  return { show: true, cost: null, unlocksAt: null }; // free
+}
 
 // ─── Active-window predicate (mirrors education's isRegistrationOpen) ─────────
 

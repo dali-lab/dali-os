@@ -5,9 +5,9 @@
 // editor comes from the client registry.
 
 import { useEffect, useState } from "react";
-import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
+import { Form, redirect, useActionData, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.activities.$id";
-import { adminHandle } from "~/admin/adminNav";
+import { adminTrail } from "~/admin/adminNav";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
@@ -25,7 +25,19 @@ import {
   updateActivity,
 } from "~/lib/activities.server";
 
-export const handle = adminHandle("activities");
+// Append the activity's name as the breadcrumb leaf so the shell trail reads
+// Admin → System & Insights → Activities → <name>, instead of the page rolling
+// its own duplicate path row.
+export const handle = {
+  roomyBreadcrumb: true,
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as
+      | { activity?: { name: string }; viewerIsAdmin?: boolean; isAdmin?: boolean }
+      | undefined;
+    const base = adminTrail("activities", !!d?.isAdmin || !!d?.viewerIsAdmin);
+    return d?.activity?.name ? [...base, { label: d.activity.name }] : base;
+  },
+};
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.activity?.name ?? "Activity"} · Admin · DALI OS` },
@@ -184,19 +196,11 @@ export default function AdminActivityEditor() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link to="/admin/activities" className="text-sm text-muted-foreground hover:underline">
-              Activities
-            </Link>
-            <span className="text-muted-foreground">/</span>
-            <span className="text-sm font-medium text-foreground">{activity.name}</span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {activityKindLabel(activity.kind)} · {activity.status}
-          </p>
-        </div>
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">{activity.name}</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {activityKindLabel(activity.kind)} · {activity.status}
+        </p>
       </div>
 
       {error && (

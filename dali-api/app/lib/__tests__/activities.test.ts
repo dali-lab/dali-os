@@ -5,6 +5,10 @@ import {
   isActivityActive,
   isActivityKind,
   matchesAudienceRoles,
+  normalizeRoute,
+  resolveHintState,
+  routesMatch,
+  type HuntHintPolicy,
 } from "~/lib/activities";
 
 // Fixed clock so the window math is deterministic.
@@ -89,5 +93,79 @@ describe("isActivityKind", () => {
   it("recognizes registered mechanics and rejects unknown kinds", () => {
     expect(isActivityKind("scavenger_hunt")).toBe(true);
     expect(isActivityKind("nope")).toBe(false);
+  });
+});
+
+describe("normalizeRoute", () => {
+  it("forces a single leading slash and strips a trailing one", () => {
+    expect(normalizeRoute("projects")).toBe("/projects");
+    expect(normalizeRoute("/projects/")).toBe("/projects");
+    expect(normalizeRoute("  /projects  ")).toBe("/projects");
+  });
+
+  it("drops any query/hash if a full path was pasted", () => {
+    expect(normalizeRoute("/projects?tab=1")).toBe("/projects");
+    expect(normalizeRoute("/projects#top")).toBe("/projects");
+  });
+
+  it("keeps root as / and treats empty as empty", () => {
+    expect(normalizeRoute("/")).toBe("/");
+    expect(normalizeRoute("")).toBe("");
+    expect(normalizeRoute(null)).toBe("");
+  });
+});
+
+describe("routesMatch", () => {
+  it("matches across sloppy formatting on either side", () => {
+    expect(routesMatch("projects", "/projects")).toBe(true);
+    expect(routesMatch("/projects/", "/projects")).toBe(true);
+    expect(routesMatch(" /projects ", "/projects/")).toBe(true);
+  });
+
+  it("does not match a different route, and an empty location never matches", () => {
+    expect(routesMatch("/projects", "/calendar")).toBe(false);
+    expect(routesMatch("", "/projects")).toBe(false);
+  });
+});
+
+describe("resolveHintState", () => {
+  const start = new Date("2026-09-15T12:00:00Z").getTime();
+  const policy = (over: Partial<HuntHintPolicy>): HuntHintPolicy =>
+    ({ mode: "free", penalty: 0, delayMinutes: 0, ...over });
+
+  it("free mode always shows, no cost", () => {
+    const s = resolveHintState(policy({ mode: "free" }), {
+      revealed: false,
+      nowMs: start,
+      startsAtMs: start,
+    });
+    expect(s).toEqual({ show: true, cost: null, unlocksAt: null });
+  });
+
+  it("points mode withholds until revealed, surfacing the cost", () => {
+    const p = policy({ mode: "points", penalty: 3 });
+    expect(resolveHintState(p, { revealed: false, nowMs: start, startsAtMs: start })).toEqual({
+      show: false,
+      cost: 3,
+      unlocksAt: null,
+    });
+    expect(resolveHintState(p, { revealed: true, nowMs: start, startsAtMs: start })).toEqual({
+      show: true,
+      cost: null,
+      unlocksAt: null,
+    });
+  });
+
+  it("delay mode locks until the unlock time, then shows", () => {
+    const p = policy({ mode: "delay", delayMinutes: 60 });
+    const unlocksAt = start + 60 * 60_000;
+    expect(resolveHintState(p, { revealed: false, nowMs: start, startsAtMs: start })).toEqual({
+      show: false,
+      cost: null,
+      unlocksAt,
+    });
+    expect(
+      resolveHintState(p, { revealed: false, nowMs: unlocksAt, startsAtMs: start }),
+    ).toEqual({ show: true, cost: null, unlocksAt: null });
   });
 });

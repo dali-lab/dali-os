@@ -5,10 +5,17 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useFetcher } from "react-router";
-import { CheckCircle2, ExternalLink, Plus, Search, Trash2, Trophy } from "lucide-react";
+import { CheckCircle2, ExternalLink, Lightbulb, Lock, Plus, Search, Trash2, Trophy } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { buttonClasses } from "~/components/ui/Button";
-import type { HuntCode, HuntConfig, HuntLeaderboard } from "~/lib/activities";
+import { DEFAULT_HINT_POLICY } from "~/lib/activities";
+import type {
+  HuntCode,
+  HuntConfig,
+  HuntHintMode,
+  HuntHintPolicy,
+  HuntLeaderboard,
+} from "~/lib/activities";
 import type {
   AdminEditorProps,
   MechanicClient,
@@ -18,12 +25,22 @@ import type {
 
 type OverlayData = { codes: { id: string; value: string; label: string }[] } | null;
 
+type HuntHint = {
+  id: string;
+  label: string;
+  hint: string | null; // present when the policy allows showing it now
+  cost: number | null; // points mode: cost to reveal (not yet revealed)
+  unlocksAt: number | null; // delay mode: epoch ms until it unlocks
+};
+
 type HuntProgress = {
   total: number;
   found: number;
   complete: boolean;
   foundCodeIds: string[];
   instructionsUrl: string | null;
+  hintMode: HuntHintMode;
+  hints: HuntHint[];
 };
 
 type HuntResultRow = { userId: string; points: number; found: number; lastAt: number };
@@ -151,6 +168,9 @@ function Surface({
         )}
       </section>
 
+      {/* Hints (only when the hunt has any) */}
+      <HintList hints={p.hints} submitAction={submitAction} onChanged={onChanged} active={active} />
+
       {/* Leaderboard */}
       {board && board.rows.length > 0 && (
         <section className="rounded-xl border border-border bg-card p-5">
@@ -190,7 +210,113 @@ function Surface({
   );
 }
 
-// ─── Admin editor: the code list + leaderboard/instructions settings ─────────
+// ─── Hints: per-clue nudges, revealed per the activity's hint policy ─────────
+
+function formatUnlock(ms: number): string {
+  return new Date(ms).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function HintList({
+  hints,
+  submitAction,
+  onChanged,
+  active,
+}: {
+  hints: HuntHint[];
+  submitAction: string;
+  onChanged?: () => void;
+  active: boolean;
+}) {
+  if (!hints.length) return null;
+  return (
+    <section className="rounded-xl border border-border bg-card p-5">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Lightbulb className="h-4 w-4 text-accent-coral" /> Hints
+      </h2>
+      <ul className="flex flex-col divide-y divide-border">
+        {hints.map((h) => (
+          <HintRow
+            key={h.id}
+            hint={h}
+            submitAction={submitAction}
+            onChanged={onChanged}
+            active={active}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function HintRow({
+  hint,
+  submitAction,
+  onChanged,
+  active,
+}: {
+  hint: HuntHint;
+  submitAction: string;
+  onChanged?: () => void;
+  active: boolean;
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; message?: string; data?: { hint?: string } }>();
+  const [open, setOpen] = useState(false);
+  const busy = fetcher.state !== "idle";
+
+  // Available when the policy already permits it (free / delay-unlocked /
+  // previously revealed) or when this reveal just succeeded.
+  const text = hint.hint ?? (fetcher.data?.ok ? fetcher.data.data?.hint ?? null : null);
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setOpen(true);
+      onChanged?.();
+    }
+  }, [fetcher.state, fetcher.data, onChanged]);
+
+  return (
+    <li className="py-2 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-foreground">{hint.label || "Clue"}</span>
+        {text ? (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="text-xs font-medium text-accent-coral hover:underline"
+          >
+            {open ? "Hide" : "Show hint"}
+          </button>
+        ) : hint.unlocksAt != null ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Lock className="h-3 w-3" /> Unlocks {formatUnlock(hint.unlocksAt)}
+          </span>
+        ) : hint.cost != null ? (
+          <fetcher.Form method="post" action={submitAction}>
+            <input type="hidden" name="reveal" value={hint.id} />
+            <button
+              type="submit"
+              disabled={busy || !active}
+              className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-50"
+            >
+              {busy ? "Revealing…" : hint.cost > 0 ? `Reveal hint (−${hint.cost} pts)` : "Reveal hint"}
+            </button>
+          </fetcher.Form>
+        ) : null}
+      </div>
+      {open && text && <p className="mt-1 text-muted-foreground">{text}</p>}
+      {fetcher.data && !fetcher.data.ok && fetcher.data.message && (
+        <p className="mt-1 text-xs text-destructive">{fetcher.data.message}</p>
+      )}
+    </li>
+  );
+}
+
+// ─── Admin editor: the code list + leaderboard/instructions/hint settings ────
 
 function coerceConfig(value: unknown): HuntConfig {
   const v = (value ?? {}) as Partial<HuntConfig>;
@@ -198,13 +324,17 @@ function coerceConfig(value: unknown): HuntConfig {
     codes: Array.isArray(v.codes) ? v.codes : [],
     leaderboard: v.leaderboard ?? "public",
     instructionsUrl: v.instructionsUrl ?? "",
+    hintPolicy: { ...DEFAULT_HINT_POLICY, ...(v.hintPolicy ?? {}) },
   };
 }
 
 function AdminEditor({ value, onChange }: AdminEditorProps) {
   const cfg = coerceConfig(value);
+  const policy = cfg.hintPolicy ?? DEFAULT_HINT_POLICY;
 
   const update = (patch: Partial<HuntConfig>) => onChange({ ...cfg, ...patch });
+  const updatePolicy = (patch: Partial<HuntHintPolicy>) =>
+    update({ hintPolicy: { ...policy, ...patch } });
   const updateCode = (i: number, patch: Partial<HuntCode>) => {
     const codes = cfg.codes.map((c, idx) => (idx === i ? { ...c, ...patch } : c));
     update({ codes });
@@ -213,7 +343,7 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
     update({
       codes: [
         ...cfg.codes,
-        { id: crypto.randomUUID(), value: "", label: "", location: "", points: 1 },
+        { id: crypto.randomUUID(), value: "", label: "", location: "", points: 1, hint: "" },
       ],
     });
   const removeCode = (i: number) =>
@@ -239,10 +369,67 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
           <input
             value={cfg.instructionsUrl ?? ""}
             onChange={(e) => update({ instructionsUrl: e.target.value })}
-            placeholder="https://… (optional Drive clue doc)"
+            placeholder="https://docs.google.com/…"
             className="rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
+          <span className="text-xs text-muted-foreground">
+            Full link to the Drive clue doc. Members open it from the hunt (the
+            “Open the instructions” link). Optional.
+          </span>
         </label>
+      </div>
+
+      {/* Hint policy — configurable per activity */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="h-4 w-4 text-accent-coral" />
+          <h3 className="text-sm font-semibold text-foreground">Hints</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Add an optional hint to any code below. This controls how members may
+          reveal them.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground">Reveal</span>
+            <select
+              value={policy.mode}
+              onChange={(e) => updatePolicy({ mode: e.target.value as HuntHintMode })}
+              className="rounded-md border border-border bg-card px-3 py-2 text-sm"
+            >
+              <option value="free">Free — reveal anytime</option>
+              <option value="points">Costs points</option>
+              <option value="delay">Unlock after a delay</option>
+            </select>
+          </label>
+          {policy.mode === "points" && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-foreground">Points per hint</span>
+              <input
+                type="number"
+                min={0}
+                value={policy.penalty}
+                onChange={(e) => updatePolicy({ penalty: Number(e.target.value) || 0 })}
+                className="rounded-md border border-border bg-card px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+          {policy.mode === "delay" && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-foreground">Unlock after (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={policy.delayMinutes}
+                onChange={(e) => updatePolicy({ delayMinutes: Number(e.target.value) || 0 })}
+                className="rounded-md border border-border bg-card px-3 py-2 text-sm"
+              />
+              <span className="text-xs text-muted-foreground">
+                Minutes after the activity’s start time.
+              </span>
+            </label>
+          )}
+        </div>
       </div>
 
       <div>
@@ -263,56 +450,69 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
             {cfg.codes.map((c, i) => (
               <div
                 key={c.id}
-                className="grid grid-cols-[1fr_1fr_1fr_4rem_auto] items-end gap-2 rounded-md border border-border bg-background p-2"
+                className="flex flex-col gap-2 rounded-md border border-border bg-background p-2"
               >
-                <Field label="Code">
+                <div className="grid grid-cols-[1fr_1fr_1fr_4rem_auto] items-end gap-2">
+                  <Field label="Code">
+                    <input
+                      value={c.value}
+                      onChange={(e) => updateCode(i, { value: e.target.value })}
+                      placeholder="MARLIN"
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
+                    />
+                  </Field>
+                  <Field label="Label">
+                    <input
+                      value={c.label}
+                      onChange={(e) => updateCode(i, { label: e.target.value })}
+                      placeholder="Projects clue"
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
+                    />
+                  </Field>
+                  <Field label="Route">
+                    <input
+                      value={c.location}
+                      onChange={(e) => updateCode(i, { location: e.target.value })}
+                      placeholder="/projects"
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
+                    />
+                  </Field>
+                  <Field label="Points">
+                    <input
+                      type="number"
+                      min={0}
+                      value={c.points}
+                      onChange={(e) => updateCode(i, { points: Number(e.target.value) || 0 })}
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    onClick={() => removeCode(i)}
+                    aria-label="Remove code"
+                    className={buttonClasses("ghost", "sm")}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <Field label="Hint (optional)">
                   <input
-                    value={c.value}
-                    onChange={(e) => updateCode(i, { value: e.target.value })}
-                    placeholder="MARLIN"
+                    value={c.hint ?? ""}
+                    onChange={(e) => updateCode(i, { hint: e.target.value })}
+                    placeholder="Where should they look? e.g. “Check a project’s Overview tab.”"
                     className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
                   />
                 </Field>
-                <Field label="Label">
-                  <input
-                    value={c.label}
-                    onChange={(e) => updateCode(i, { label: e.target.value })}
-                    placeholder="Projects clue"
-                    className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
-                  />
-                </Field>
-                <Field label="Route">
-                  <input
-                    value={c.location}
-                    onChange={(e) => updateCode(i, { location: e.target.value })}
-                    placeholder="/projects"
-                    className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
-                  />
-                </Field>
-                <Field label="Points">
-                  <input
-                    type="number"
-                    min={0}
-                    value={c.points}
-                    onChange={(e) => updateCode(i, { points: Number(e.target.value) || 0 })}
-                    className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
-                  />
-                </Field>
-                <button
-                  type="button"
-                  onClick={() => removeCode(i)}
-                  aria-label="Remove code"
-                  className={buttonClasses("ghost", "sm")}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
               </div>
             ))}
           </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          Each code shows as a clue on its route while the hunt is live. Leave the
-          route blank to keep a code off-site (clued only by the doc).
+          The <strong>Route</strong> is the page path where the code appears as a
+          clue while the hunt is live — e.g. <code>/projects</code> or{" "}
+          <code>/calendar</code>. It’s matched against the page you’re on, so it
+          needs the leading slash (spaces and trailing slashes are cleaned up for
+          you). Leave it blank to keep a code off-site (clued only by the doc).
         </p>
       </div>
     </div>
@@ -335,6 +535,10 @@ export const scavengerHuntClient: MechanicClient = {
   Overlay,
   Surface,
   AdminEditor,
-  defaultConfig: (): HuntConfig => ({ codes: [], leaderboard: "public" }),
+  defaultConfig: (): HuntConfig => ({
+    codes: [],
+    leaderboard: "public",
+    hintPolicy: DEFAULT_HINT_POLICY,
+  }),
   bannerCta: "Find the codes →",
 };
