@@ -7,6 +7,7 @@
 
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { SendHorizonal, Mail, MessageSquare } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/admin.outbound-messages";
 import { adminHandle } from "~/admin/adminNav";
 import { StatusDot } from "~/admin/components/console-ui";
@@ -359,12 +360,12 @@ export default function AdminOutboundMessages() {
         </div>
 
         {/* Text search */}
-        <input
-          type="search"
+        <SearchInput
+          size="sm"
           name="q"
           defaultValue={q}
           placeholder="Search target / recipient / event / subject…"
-          className="ml-auto min-w-[240px] rounded-md border border-border bg-page px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
+          containerClassName="ml-auto min-w-[240px]"
         />
         {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
         <button type="submit" className={buttonClasses("ghost", "sm")}>

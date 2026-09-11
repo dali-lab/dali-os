@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
-import { Download, Search } from "lucide-react";
+import { Download } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Tooltip } from "~/components/ui/floating";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/forms.responses.$formId";
@@ -291,17 +292,14 @@ export default function FormResponses() {
                 buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
               />
             )}
-            <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name or email"
-                aria-label="Search responses by name or email"
-                className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            </div>
+            <SearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name or email"
+              aria-label="Search responses by name or email"
+              size="sm"
+              containerClassName="w-full sm:ml-auto sm:w-64 min-w-[12rem]"
+            />
             <Tooltip content="Export CSV — exports all responses, ignoring current filters">
               <a
                 href={`/forms/responses/${formId}/export.csv`}

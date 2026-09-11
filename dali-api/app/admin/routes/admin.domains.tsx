@@ -16,6 +16,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { ChevronDown, Trash2, Plus, X } from "lucide-react";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -292,13 +293,13 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
               <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
               <div className="absolute left-0 z-20 mt-1 w-64 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
                 <div className="p-2 border-b border-border">
-                  <input
-                    type="text"
+                  <SearchInput
+                    size="sm"
                     autoFocus
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    containerClassName="w-full"
                   />
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
@@ -490,13 +491,13 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
               <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
               <div className="absolute left-0 z-20 mt-1 w-80 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
                 <div className="p-2 border-b border-border">
-                  <input
-                    type="text"
+                  <SearchInput
+                    size="sm"
                     autoFocus
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    containerClassName="w-full"
                   />
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">

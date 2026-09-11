@@ -39,6 +39,7 @@ import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
+import { SearchInput } from "~/components/ui/SearchInput";
 import {
   FilterCountBadge,
   FilterGroup,
@@ -469,12 +470,11 @@ export default function PartnersApplications() {
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
         <TablessHistoryNavInline />
         <SegmentedTabButtons label="Partners" items={areaTabs} />
-        <input
-          type="search"
+        <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by title, partner, or domain"
-          className="flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         {/* Status, domain and term used to sit here as a row of selects that
             grew with the lab's domains and every term ever seeded. Behind one

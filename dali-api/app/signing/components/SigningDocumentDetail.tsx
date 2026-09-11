@@ -15,6 +15,7 @@ import {
   Trash2,
   Send,
 } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import {
   DocEditor,
   insertSigningField,
@@ -133,13 +134,13 @@ function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) 
       </Tooltip>
       {open && (
         <div className="absolute left-0 z-50 mt-1 w-72 rounded-md border border-border bg-card p-2 shadow-lg">
-          <input
+          <SearchInput
             autoFocus
-            type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search a signatory by name or email…"
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            size="sm"
+            containerClassName="w-full"
           />
           <div className="mt-2 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
             {loading && <p className="px-1 py-1 text-xs text-muted-foreground">Searching…</p>}

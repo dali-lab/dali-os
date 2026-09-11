@@ -19,6 +19,7 @@ import { fullName } from "~/lib/display";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
 import { listFlagsForAdmin, type AdminFlagView } from "~/lib/feature-flags.server";
 import { buttonClasses } from "~/components/ui/Button";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("feature-flags");
@@ -264,13 +265,13 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
             </div>
           )}
           <div className="relative mt-1.5 max-w-sm">
-            <input
-              type="text"
+            <SearchInput
+              size="sm"
               value={search}
               disabled={!enabled}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Add a person by name or email…"
-              className="w-full rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm disabled:opacity-50"
+              containerClassName="w-full"
             />
             {matches.length > 0 && (
               <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg">

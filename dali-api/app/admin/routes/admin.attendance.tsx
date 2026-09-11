@@ -23,12 +23,12 @@ import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { SearchInput } from "~/components/ui/SearchInput";
 import {
   ClipboardCheck,
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Search,
   Trash2,
   UserCheck,
   UserX,
@@ -298,20 +298,14 @@ export default function AdminAttendancePage() {
         </div>
       </header>
 
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by event, organizer, project, or attendee…"
-          aria-label="Search attendance events"
-          className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </div>
+      <SearchInput
+        size="sm"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by event, organizer, project, or attendee…"
+        aria-label="Search attendance events"
+        containerClassName="w-full"
+      />
 
       {events.length === 0 ? (
         <div className={cn(panel, "p-10 text-center")}>
