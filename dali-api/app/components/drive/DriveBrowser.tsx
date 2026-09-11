@@ -1,7 +1,7 @@
 // DriveBrowser — Miller-column (Finder-style) browser for the unified Drive.
 //
 // PRIMARY VIEW: Miller columns — a horizontally-scrolling row of columns.
-//   Column 0 = scope list (My Drive, Lab, Core, Hiring, Projects).
+//   Column 0 = scope list (My Drive, Lab, Core, Projects).
 //   Each scope/folder click opens a new column to the right.
 //   Selecting a leaf shows an action toolbar above the columns.
 //
@@ -53,7 +53,6 @@ import {
   User,
   Users,
   Shield,
-  Briefcase,
   HardDrive,
   Search,
   X,
@@ -359,7 +358,6 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
   }`;
   if (scope.id === "mine") return <User className={`${cls} text-muted-foreground`} />;
   if (scope.id === "core") return <Shield className={`${cls} text-accent-coral/80`} />;
-  if (scope.id === "hiring") return <Briefcase className={`${cls} text-accent-coral/80`} />;
   if (scope.id === "lab") return <Users className={`${cls} text-muted-foreground`} />;
   // Synthetic group scopes use a folder icon (no emoji on the group itself).
   if (scope.id === "projects" || scope.id === "education") return <Folder className={`${cls} text-accent-coral/80`} />;
@@ -642,7 +640,7 @@ export function DriveBrowser({
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
         const wt =
-          !scope || scope.id === "lab" || scope.id === "core" || scope.id === "hiring"
+          !scope || scope.id === "lab" || scope.id === "core"
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
@@ -2380,12 +2378,11 @@ function ColumnScopeRow({
 }) {
   const t = useDriveText();
   const isCore = scope.id === "core";
-  const isHiring = scope.id === "hiring";
   // Synthetic group scopes ("projects"/"education") are not valid drop targets —
   // dropping on the group row is ambiguous (which project?). Only individual
   // project folders inside the group accept drops via the normal folder-drop path.
   const isGroupScope = scope.id === "projects" || scope.id === "education";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
   const label =
     scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
 
@@ -2958,9 +2955,8 @@ function ScopeList({
     <div className="flex flex-col divide-y divide-border/50" data-testid="drive-listing">
       {scopes.map((scope) => {
         const isCore = scope.id === "core";
-        const isHiring = scope.id === "hiring";
         const isGroupScope = scope.id === "projects" || scope.id === "education";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div

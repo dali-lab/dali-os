@@ -101,7 +101,6 @@ export async function loadDriveScopes({
   canViewForms,
   canManageAgreements,
   isCore,
-  hasHiringAccess,
   request,
 }: {
   userSub: string;
@@ -111,18 +110,16 @@ export async function loadDriveScopes({
   canViewForms: boolean;
   /** Whether to include agreement templates in the Lab scope (= isCore). */
   canManageAgreements: boolean;
-  /** Whether the viewer is Core — gates the auto-provisioned Core drive. */
+  /** Whether the viewer is Core — gates the Core drive space. */
   isCore: boolean;
-  /** Whether the viewer has hiring access — gates the auto-provisioned Hiring drive. */
-  hasHiringAccess: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
   // Build the minimal RoleFlags needed by the drive-spaces gates. The registry
-  // gates only read `isCore` and `hasHiringAccess`; the other fields default to
-  // false (safe: we'd only under-show spaces, never over-show).
+  // gates only read `isCore` (the Hiring space folded into Core); the other
+  // fields default to false (safe: we'd only under-show spaces, never over-show).
   const roleFlags: RoleFlags = {
     isCore,
-    hasHiringAccess,
+    hasHiringAccess: false,
     isAdmin: false,
     isDomainLead: false,
     isInterviewer: false,

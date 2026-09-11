@@ -179,7 +179,9 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // Hiring artifacts folded into the Core drive, which is Core-only — so the
+      // Library (an embedded Core-drive view) is Core/Admin, not domain leads.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
     ],
   },
   {
@@ -277,7 +279,9 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // Hiring artifacts folded into the Core drive, which is Core-only — so the
+      // Library (an embedded Core-drive view) is Core/Admin, not domain leads.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
     ],
   },
   {

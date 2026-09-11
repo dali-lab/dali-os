@@ -59,7 +59,6 @@ export const handle = {
     if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
     if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
     if (scope === "core") return { key: "drive.core", title: "Core Drive" };
-    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
     return { key: "drive.project", title: "Project Drive" };
   },
 };
@@ -112,27 +111,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
-  // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
-  // + cycle reviewers/interviewers) so the scope shows for exactly the people
-  // the Hiring root is scoped to.
-  const [hiringReviewer, termFilter] = await Promise.all([
-    roles.isCore || roles.isDomainLead || roles.isInterviewer
-      ? null // already qualifies; skip the DB hit
-      : await prisma.cycleReviewer.findFirst({
-          where: { userId: auth.user.sub },
-          select: { id: true },
-        }),
-    resolveTermFilter(request),
-  ]);
-  const hasHiringAccess =
-    roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
+  const termFilter = await resolveTermFilter(request);
 
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
   // they're staffed on, scoped to the selected term. `?term=` scopes which
   // project (and Education) drives appear, exactly as it scopes the projects
   // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
-  // General / Core / Hiring are never term-filtered.
+  // General / Core are never term-filtered.
   const termId = termFilter.isAll ? null : termFilter.termId;
   const rawProjects = await prisma.project.findMany({
     where: {
@@ -192,7 +178,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
-    hasHiringAccess,
     request,
   });
 
@@ -474,7 +459,7 @@ type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-grou
 // "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
   if (id === "mine") return "mine";
-  if (id === "lab" || id === "core" || id === "hiring") return "lab";
+  if (id === "lab" || id === "core") return "lab";
   if (id === "projects") return "projects-group";
   if (id === "education") return "education-group";
   return "project";
@@ -484,7 +469,6 @@ function scopeKindOf(id: string): ScopeKind {
 // the mover knows a move re-scopes visibility.
 function scopeAudience(scopeId: string): string {
   if (scopeId === "core") return "Core only";
-  if (scopeId === "hiring") return "the hiring team";
   if (scopeId === "lab") return "everyone in the lab";
   // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
   if (scopeId === "projects") return "the project team";
@@ -1057,10 +1041,10 @@ export default function DriveHub() {
 
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
-  // into the Hiring drive so the hiring team lands on their artifacts.
+  // into the Core drive (the hiring artifacts folded into Core live there).
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
-  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "core" : null);
   const currentFolderId = searchParams.get("folder");
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.
@@ -1470,7 +1454,7 @@ export default function DriveHub() {
   const uploadTarget: UploadTarget = useMemo(() => {
     if (!currentScope) return { scope: { kind: "Lab" } };
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core" || currentScope.id === "hiring")
+    if (currentScope.id === "lab" || currentScope.id === "core")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
       // Resolve the project from the current folder to target the upload correctly.
