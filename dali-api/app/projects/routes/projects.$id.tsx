@@ -3478,16 +3478,15 @@ function OverviewTab({
       />
 
       {/* Cloud infrastructure (Fly + Neon): read-only inventory/usage for any
-          member; config + change-requests for staffed (core||isProjectMember). */}
-      <section className={sectionShell}>
-        <ProjectInfraSection
-          projectId={project.id}
-          canEdit={canEdit}
-          config={infra.config}
-          view={infra.view}
-          requests={infra.requests}
-        />
-      </section>
+          member; config + change-requests for staffed (core||isProjectMember).
+          Wears the shared EditableSection primitive (own section shell). */}
+      <ProjectInfraSection
+        projectId={project.id}
+        canEdit={canEdit}
+        config={infra.config}
+        view={infra.view}
+        requests={infra.requests}
+      />
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className={sectionShell}>

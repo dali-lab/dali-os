@@ -37,7 +37,6 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             Neon billing <ExternalLink className="h-3 w-3" />
           </a>
         )}
-        <span className="text-muted-foreground">Usage figures only — see billing for cost.</span>
       </div>
 
       {/* Fly */}

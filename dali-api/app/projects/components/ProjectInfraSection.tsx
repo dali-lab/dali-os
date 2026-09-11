@@ -2,15 +2,15 @@
 // for anyone who can view the project; config editing + change-requests for
 // staffed members (core||isProjectMember, passed as canEdit). No infra actions
 // here — those live in the Core/Admin fleet console; staffed members ask via a
-// request that Core fulfills. Dresses itself from the same os-chrome the rest of
-// the project hub uses, so it reads as a native section under both shells.
+// request that Core fulfills. Config editing uses the shared EditableSection
+// primitive, so it reads like the other hub sections.
 
-import { useEffect, useState, type FormEvent } from "react";
-import { useFetcher } from "react-router";
-import { Server } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { Form, useFetcher, useSubmit } from "react-router";
 import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 import type { ProjectInfraRequest } from "~/lib/infra/requests.server";
 import { ProjectInfraView } from "~/components/infra/ProjectInfraView";
+import { EditableSection } from "~/components/EditableSection";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Select } from "~/components/ui/floating";
@@ -27,14 +27,6 @@ type Config = {
   hasFlyWriteToken: boolean;
 };
 
-// The off-os field dress; under os the enclosing `.os-form` styles inputs, so
-// this stays empty there (matching the project-details edit form).
-function fieldClass(os: boolean) {
-  return os
-    ? ""
-    : "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
-}
-
 export function ProjectInfraSection({
   projectId,
   canEdit,
@@ -48,102 +40,103 @@ export function ProjectInfraSection({
   view: ProjectFleet | null;
   requests: ProjectInfraRequest[];
 }) {
-  const { os, sectionTitle } = useOsChrome();
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const configured = Boolean(config.flyOrgSlug || config.neonOrgId);
-  const [showConfig, setShowConfig] = useState(false);
-  const [showRequest, setShowRequest] = useState(false);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className={os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"}>
-          {!os && <Server className="h-4 w-4" />} Infrastructure
-        </h2>
-        {canEdit && (
-          <div className="flex gap-2">
-            {configured && (
-              <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setShowRequest((v) => !v)}>
-                Request a change
-              </button>
+    <EditableSection
+      title="Infrastructure"
+      canEdit={canEdit}
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <ConfigForm formRef={formRef} resetKey={resetKey} config={config} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {view ? (
+              <ProjectInfraView project={view} />
+            ) : configured ? (
+              <p className="text-sm text-muted-foreground">
+                Configured — check back after the next infrastructure sweep.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No cloud infrastructure linked to this project yet.
+                {canEdit ? " Use Edit to add its Fly.io / Neon details." : ""}
+              </p>
             )}
-            <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setShowConfig((v) => !v)}>
-              {showConfig ? "Close config" : configured ? "Edit config" : "Configure"}
-            </button>
+            {canEdit && configured && <RequestPanel projectId={projectId} />}
+            {canEdit && requests.length > 0 && <RequestHistory requests={requests} />}
           </div>
-        )}
-      </div>
-
-      {canEdit && showConfig && <ConfigEditor config={config} onDone={() => setShowConfig(false)} />}
-      {canEdit && showRequest && configured && (
-        <RequestForm projectId={projectId} onDone={() => setShowRequest(false)} />
-      )}
-
-      {view ? (
-        <ProjectInfraView project={view} />
-      ) : configured ? (
-        <p className="text-sm text-muted-foreground">
-          Configured, but not swept yet — check back after the next infrastructure sweep.
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          No cloud infrastructure linked to this project yet.
-          {canEdit ? " Use Configure to add its Fly.io / Neon details." : ""}
-        </p>
-      )}
-
-      {canEdit && requests.length > 0 && <RequestHistory requests={requests} />}
-    </div>
+        )
+      }
+    </EditableSection>
   );
 }
 
-function ConfigEditor({ config, onDone }: { config: Config; onDone: () => void }) {
-  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
-  const field = fieldClass(os);
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) onDone();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetcher.state]);
-
+function ConfigForm({
+  formRef,
+  resetKey,
+  config,
+}: {
+  formRef: RefObject<HTMLFormElement | null>;
+  resetKey: number;
+  config: Config;
+}) {
+  const { panel, fieldLabel } = useOsChrome();
   return (
-    <fetcher.Form method="post" className={cn(card, cardPad, formClass, "flex flex-col gap-3")}>
+    <Form
+      method="post"
+      ref={formRef}
+      key={resetKey}
+      className={cn(panel, "os-form p-5 flex flex-col gap-3")}
+    >
       <input type="hidden" name="intent" value="infra-config" />
       <div className="flex flex-wrap gap-3">
         <label className={cn(fieldLabel, "w-44")}>
           <span>Fly org slug</span>
-          <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className={cn("w-full", field)} />
+          <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className="w-full" />
         </label>
         <label className={cn(fieldLabel, "w-44")}>
           <span>Neon org id</span>
-          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className={cn("w-full", field)} />
+          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className="w-full" />
         </label>
         <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" className="self-end pb-1.5" />
       </div>
       <div className="flex flex-wrap gap-3">
         <label className={cn(fieldLabel, "w-56")}>
-          <span>Fly read token (write-only)</span>
-          <input name="flyReadToken" type="password" placeholder={config.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} className={cn("w-full", field)} />
+          <span>Fly read token</span>
+          <input name="flyReadToken" type="password" placeholder={config.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-full" />
         </label>
         <label className={cn(fieldLabel, "w-56")}>
-          <span>Fly write token (write-only)</span>
-          <input name="flyWriteToken" type="password" placeholder={config.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} className={cn("w-full", field)} />
+          <span>Fly write token</span>
+          <input name="flyWriteToken" type="password" placeholder={config.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-full" />
         </label>
       </div>
-      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={fetcher.state !== "idle"} className={buttonClasses("primary", "sm")}>
-          {fetcher.state !== "idle" ? "Saving…" : "Save config"}
-        </button>
-        <button type="button" className={buttonClasses("ghost", "sm")} onClick={onDone}>Cancel</button>
-        <span className="text-xs text-muted-foreground">Tokens are encrypted at rest; the Neon key is shared across projects.</span>
-      </div>
-    </fetcher.Form>
+    </Form>
   );
 }
 
+function RequestPanel({ projectId }: { projectId: string }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <div>
+        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setOpen(true)}>
+          Request a change
+        </button>
+      </div>
+    );
+  }
+  return <RequestForm projectId={projectId} onDone={() => setOpen(false)} />;
+}
+
 function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => void }) {
-  const { os, card, cardPad, formClass, fieldLabel } = useOsChrome();
-  const field = fieldClass(os);
+  const { panel, fieldLabel } = useOsChrome();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) onDone();
@@ -166,25 +159,20 @@ function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => v
   }
 
   return (
-    <form onSubmit={submit} className={cn(card, cardPad, formClass, "flex flex-col gap-3")}>
+    <form onSubmit={submit} className={cn(panel, "os-form p-5 flex flex-col gap-3")}>
       <div className="flex flex-wrap gap-3">
         <label className={cn(fieldLabel, "w-52")}>
           <span>Request</span>
-          <Select
-            name="kind"
-            defaultValue={INFRA_REQUEST_KINDS[0].value}
-            options={INFRA_REQUEST_KINDS}
-            buttonClassName={os ? undefined : "w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"}
-          />
+          <Select name="kind" defaultValue={INFRA_REQUEST_KINDS[0].value} options={INFRA_REQUEST_KINDS} />
         </label>
         <label className={cn(fieldLabel, "w-52")}>
           <span>Which resource? (optional)</span>
-          <input name="targetHint" placeholder="e.g. the worker app" className={cn("w-full", field)} />
+          <input name="targetHint" placeholder="e.g. the worker app" className="w-full" />
         </label>
       </div>
       <label className={cn(fieldLabel, "w-full")}>
         <span>Details</span>
-        <textarea name="details" required rows={2} placeholder="What do you need, and why?" className={cn("w-full", field)} />
+        <textarea name="details" required rows={2} placeholder="What do you need, and why?" className="w-full" />
       </label>
       {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
       <div className="flex flex-wrap items-center gap-2">
@@ -192,7 +180,6 @@ function RequestForm({ projectId, onDone }: { projectId: string; onDone: () => v
           {fetcher.state !== "idle" ? "Sending…" : "Send request"}
         </button>
         <button type="button" className={buttonClasses("ghost", "sm")} onClick={onDone}>Cancel</button>
-        <span className="text-xs text-muted-foreground">Core reviews requests in the Infrastructure console.</span>
       </div>
     </form>
   );

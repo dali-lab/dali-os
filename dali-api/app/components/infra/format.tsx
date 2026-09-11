@@ -99,9 +99,7 @@ export function StateBadge({ state }: { state: string }) {
 export function UsageStrip({ usage }: { usage: UsageSeries[] }) {
   if (usage.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground">
-        No usage samples yet (needs a completed sweep on a paid Neon plan / Prometheus access).
-      </p>
+      <p className="text-xs text-muted-foreground">No usage samples yet.</p>
     );
   }
   return (

@@ -1,7 +1,7 @@
 // Admin → System → Infrastructure. The lab-wide Fly.io + Neon fleet console
-// (Core/Admin): per-project inventory + usage (no dollars — usage only, links
-// out for billing), plus scale / limit / provision / cleanup actions and the
-// member change-request queue. Renders from cached snapshots (the infra-snapshot
+// (Core/Admin): per-project inventory + usage, plus scale / limit / provision /
+// cleanup actions and the member change-request queue. Renders from cached
+// snapshots (the infra-snapshot
 // job sweeps); "Refresh" re-runs the sweep. Per-project config lives on the
 // Project row and is edited in each project's hub. Behind the `infra-dashboard`
 // flag.
@@ -107,9 +107,8 @@ export default function AdminInfrastructure() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Infrastructure</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Fly.io + Neon across every lab project. Figures are usage, not dollars — neither
-            provider exposes spend via API; use the billing links for cost. Per-project config is
-            set in each project's workspace. Data is cached; Refresh re-sweeps.
+            Fly.io + Neon across every lab project. Per-project config lives in each project's
+            workspace; data is cached — Refresh re-sweeps.
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-500">
@@ -562,7 +561,7 @@ function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet
       tone: "destructive",
       confirmLabel: "Set limits",
       description:
-        "Warning: when a billing-period limit is hit, Neon suspends this project's compute until the next billing period — a normal connection will NOT wake it. Set 0 to leave unlimited.",
+        "Warning: when a usage limit is hit, Neon suspends this project's compute until the quota period resets — a normal connection will NOT wake it. Set 0 to leave unlimited.",
     });
     if (!ok) return;
     const quota: Record<string, number> = {};
