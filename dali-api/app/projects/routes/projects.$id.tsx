@@ -951,15 +951,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   //
   // Assignments accumulate term after term, so deduping across all of them
   // offered everyone who had ever been staffed here — including people who
-  // left the project terms ago. Scope to the current term's team instead, with
-  // two deliberate additions:
-  //   - a project not staffed this term falls back to its most recent staffed
-  //     term, so tasks on a finished project can still be reassigned rather
-  //     than facing an empty picker;
-  //   - anyone already assigned to one of this project's tasks stays listed.
-  //     The picker doubles as the un-assign control (TaskModal renders its
-  //     checkbox list from this set), so dropping them would strand the task
-  //     with an assignee nobody could remove.
+  // left the project terms ago. Scope to the current term's team instead,
+  // falling back to the most recent staffed term so tasks on a finished
+  // project can still be reassigned rather than facing an empty picker.
+  //
+  // A task carried over from an earlier term may still hold an assignee who has
+  // since rolled off. TaskModal folds that task's own assignees into its picker
+  // so they stay removable — which keeps the un-assign path working without
+  // widening this project-wide list back out to every past member.
   const currentTermAssignments = current
     ? project.assignments.filter((a) => a.termId === current.id)
     : [];
@@ -979,11 +978,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
-    }
-  }
-  for (const t of tasks) {
-    for (const a of t.assignees) {
-      if (!memberMap.has(a.id)) memberMap.set(a.id, a.name);
     }
   }
   const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
