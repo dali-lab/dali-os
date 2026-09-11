@@ -2787,7 +2787,6 @@ model Project {
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
-  sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
   // Declared domains for the project — surfaced on the project detail page
@@ -3010,16 +3009,15 @@ model Epic {
   status           EpicStatus @default(Open)
   // Explicit timeline span. Nullable: an epic may be created before its
   // dates are known. When null, the timeline falls back to the min/max of
-  // the epic's sprint dates (see projects.$id loader).
+  // its stories' (and their tasks') dates (see buildTimelineEpics).
   startsAt         DateTime?
   endsAt           DateTime?
-  // Optional target term for cross-term epics that span multiple sprints.
+  // Optional target term for cross-term epics that span multiple terms.
   targetTermId     String?
   position         Int        @default(0)
 
   project Project     @relation(fields: [projectId], references: [id])
   tasks   Task[]
-  sprints Sprint[]
   stories UserStory[]
 
   createdAt DateTime @default(now())
@@ -3062,7 +3060,7 @@ model UserStory {
   epic  Epic   @relation(fields: [epicId], references: [id])
   tasks Task[]
 
-  // Timeline dependency edges, same two-sided shape as SprintDependency.
+  // Timeline dependency edges (a two-sided "must finish before" shape).
   // `dependencies` are rows where this story is the dependent (stories it
   // waits on); `blocking` are rows where it is the predecessor.
   dependencies UserStoryDependency[] @relation("UserStoryDependent")
@@ -3104,61 +3102,14 @@ enum UserStoryStatus {
   Done
 }
 
-model Sprint {
-  id        String       @id @default(cuid())
-  projectId String
-  // Optional epic this sprint belongs to. Null = standalone/cross-epic
-  // sprint. Tasks still carry their own epicId for cross-sprint grouping.
-  epicId    String?
-  name      String
-  startsAt  DateTime
-  endsAt    DateTime
-  // Sprint goal as collab doc. Retros live as collab pages in the project's
-  // page tree.
-  goalDocId String?
-  status    SprintStatus @default(Planned)
-
-  project Project @relation(fields: [projectId], references: [id])
-  epic    Epic?   @relation(fields: [epicId], references: [id])
-  tasks   Task[]
-
-  // Timeline dependency edges. `dependencies` are the rows where this sprint is
-  // the dependent (the sprints it waits on); `blocking` are rows where it is
-  // the predecessor (sprints that wait on it). Both sides are same-project —
-  // enforced in the API, not the schema.
-  dependencies SprintDependency[] @relation("SprintDependent")
-  blocking     SprintDependency[] @relation("SprintBlocker")
-
-  @@index([projectId, status])
-}
-
-// A directed "must finish before" edge between two sprints, drawn as an arrow
-// on the epics timeline. `sprintId` depends on (waits for) `dependsOnSprintId`.
-model SprintDependency {
-  id                String @id @default(cuid())
-  sprintId          String
-  dependsOnSprintId String
-
-  sprint          Sprint @relation("SprintDependent", fields: [sprintId], references: [id], onDelete: Cascade)
-  dependsOnSprint Sprint @relation("SprintBlocker", fields: [dependsOnSprintId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([sprintId, dependsOnSprintId])
-  @@index([dependsOnSprintId])
-}
-
-enum SprintStatus {
-  Planned
-  Active
-  Closed
-}
+// Sprints are not stored: a sprint is a computed term-anchored one-week band
+// (Sprint 1..N per term), derived from the project's terms — see
+// app/projects/lib/timeline-days.ts (sprintBands). A task belongs to a sprint
+// by its dates, not a stored FK.
 
 model Task {
   id        String  @id @default(cuid())
   projectId String
-  // Null sprintId = backlog.
-  sprintId  String?
   // Optional epic linkage for cross-sprint grouping.
   epicId    String?
   // Optional parent user story. Null = the task hangs directly off the epic
@@ -3173,8 +3124,9 @@ model Task {
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional timeline start. Pairs with dueAt to give the task a span on the
-  // project timeline; null falls back to the parent story/sprint start.
-  // Purely a planning field — it fires no reminders.
+  // project timeline (and, via those dates, which sprint week it lands in);
+  // null falls back to the parent story start. Purely a planning field — it
+  // fires no reminders.
   startsAt         DateTime?
   // Optional deadline. UTC instant; UI formats in local time. When set,
   // the task-due-reminders job notifies assignees 24h before and at the
@@ -3215,7 +3167,6 @@ model Task {
   githubIssueUrl    String?
 
   project   Project        @relation(fields: [projectId], references: [id])
-  sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
   story     UserStory?     @relation(fields: [storyId], references: [id])
   domain    Domain?        @relation(fields: [domainId], references: [id])
@@ -3231,7 +3182,7 @@ model Task {
   updatedAt   DateTime @updatedAt
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
-  @@index([projectId, sprintId])
+  @@index([projectId])
   @@index([storyId])
 }
 

@@ -459,7 +459,7 @@ export default [
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
-  // Project epics & sprints
+  // Project epics & stories
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
   route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
@@ -469,8 +469,6 @@ export default [
   ),
   route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
   route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
-  route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),
-  route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
 
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),

@@ -24,7 +24,6 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  sprint: { findUnique: ReturnType<typeof vi.fn> };
   epic: { findUnique: ReturnType<typeof vi.fn> };
   userStory: { findUnique: ReturnType<typeof vi.fn> };
   taskAssignee: {
@@ -60,7 +59,6 @@ beforeEach(() => {
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockReturnValue("task-delete-op"),
   };
-  mockPrisma.sprint = { findUnique: vi.fn() };
   mockPrisma.epic = { findUnique: vi.fn() };
   mockPrisma.userStory = { findUnique: vi.fn() };
   mockPrisma.taskAssignee = {
@@ -76,42 +74,6 @@ beforeEach(() => {
       ? (arg as (tx: unknown) => unknown)(mockPrisma)
       : Promise.all(arg as Promise<unknown>[]),
   );
-});
-
-describe("PATCH /api/tasks/:id sprint", () => {
-  it("rejects a sprint that belongs to another project", async () => {
-    mockPrisma.sprint.findUnique.mockResolvedValue({ projectId: "other-project" });
-    const res = await call("PATCH", { sprintId: "sprint-9" });
-    expect(res.status).toBe(400);
-    expect(mockPrisma.task.update).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unknown sprint", async () => {
-    mockPrisma.sprint.findUnique.mockResolvedValue(null);
-    const res = await call("PATCH", { sprintId: "nope" });
-    expect(res.status).toBe(400);
-    expect(mockPrisma.task.update).not.toHaveBeenCalled();
-  });
-
-  it("writes a sprint from the task's own project", async () => {
-    mockPrisma.sprint.findUnique.mockResolvedValue({ projectId: PROJECT_ID });
-    const res = await call("PATCH", { sprintId: "sprint-1" });
-    expect(res.status).toBe(200);
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: TASK_ID },
-      data: { sprintId: "sprint-1", activityAt: expect.any(Date) },
-    });
-  });
-
-  it("moves to backlog on null without a sprint lookup", async () => {
-    const res = await call("PATCH", { sprintId: null });
-    expect(res.status).toBe(200);
-    expect(mockPrisma.sprint.findUnique).not.toHaveBeenCalled();
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: TASK_ID },
-      data: { sprintId: null, activityAt: expect.any(Date) },
-    });
-  });
 });
 
 describe("PATCH /api/tasks/:id epic", () => {

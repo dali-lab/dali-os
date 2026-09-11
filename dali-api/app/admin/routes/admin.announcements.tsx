@@ -17,7 +17,6 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
-  Search,
   Users,
   UserRound,
   Globe,
@@ -424,16 +423,13 @@ export default function AnnouncementsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search published forms…"
-                value={formSearch}
-                onChange={(e) => setFormSearch(e.target.value)}
-                className="w-72 pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
+            <SearchInput
+              size="sm"
+              placeholder="Search published forms…"
+              value={formSearch}
+              onChange={(e) => setFormSearch(e.target.value)}
+              containerClassName="w-72"
+            />
             {formSearch.trim() && (
               <div className="max-h-48 w-72 overflow-y-auto border border-border rounded-md divide-y divide-border">
                 {filteredForms.map((f) => (

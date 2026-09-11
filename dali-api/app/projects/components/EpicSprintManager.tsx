@@ -77,18 +77,6 @@ export type EditableEpic = {
 // A term the project runs, for the epic target-term picker. Newest first.
 export type EpicTermOption = { id: string; code: string };
 
-export type EditableSprint = {
-  id: string;
-  name: string;
-  // ISO strings; rendered into <input type="date"> as YYYY-MM-DD.
-  startsAt: string;
-  endsAt: string;
-  status: "Planned" | "Active" | "Closed";
-  epicId: string | null;
-  // Ids of sprints this one depends on (waits for), edited in the sprint form.
-  dependsOn: string[];
-};
-
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 const STORY_PRIORITIES: StoryPriority[] = ["Must", "Should", "Could", "Wont"];
 

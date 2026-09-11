@@ -79,7 +79,6 @@ import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
   EpicSprintManager,
   type EditableEpic,
-  type EditableSprint,
 } from "../components/EpicSprintManager";
 import {
   resolveTermIdForDate,
@@ -93,7 +92,6 @@ import {
   computeProjectStatus,
   factsFingerprint,
   type ProjectWorkStatus,
-  type SprintPhase,
 } from "../lib/project-status";
 import { ProjectStatusBar } from "../components/ProjectStatusBar";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -407,19 +405,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           },
         },
       },
-      sprints: {
-        orderBy: { startsAt: "asc" },
-        select: {
-          id: true,
-          name: true,
-          startsAt: true,
-          endsAt: true,
-          status: true,
-          epicId: true,
-          // Edges where this sprint is the dependent (waits on another).
-          dependencies: { select: { dependsOnSprintId: true } },
-        },
-      },
       tasks: {
         // Archived tasks (auto-archived Done/Cancelled) drop off the board.
         // Safety bound: 1000 tasks is well above any real project; keeps the
@@ -437,7 +422,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           startsAt: true,
           epicId: true,
-          sprintId: true,
           storyId: true,
           checklist: true,
           githubIssueNumber: true,
@@ -731,7 +715,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // itself lives in ../lib/timeline-epics — the partner hub draws the same bars.
   const epics: TimelineEpic[] = buildTimelineEpics({
     epics: project.epics,
-    sprints: project.sprints,
     tasks: project.tasks.map((t) => ({
       id: t.id,
       storyId: t.storyId,
@@ -769,19 +752,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
-  const sprints: EditableSprint[] = project.sprints.map((s) => ({
-    id: s.id,
-    name: s.name,
-    startsAt: s.startsAt.toISOString(),
-    endsAt: s.endsAt.toISOString(),
-    status: s.status as EditableSprint["status"],
-    epicId: s.epicId,
-    dependsOn: s.dependencies.map((d) => d.dependsOnSprintId),
-  }));
-
   // Flat directed dependency edges (storyId waits on dependsOnStoryId), drawn
-  // as arrows between story bars on the timeline. Same shape as the sprint
-  // edges above, one tier down.
+  // as arrows between story bars on the timeline.
   const storyDependencies = project.epics.flatMap((e) =>
     e.stories.flatMap((st) =>
       st.dependencies.map((d) => ({
@@ -804,7 +776,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     epicId: t.epicId,
-    sprintId: t.sprintId,
     storyId: t.storyId,
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
@@ -909,29 +880,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     current !== null && plannedTerms.some((t) => t.id === current.id);
 
   // ─── Board term derivation ───────────────────────────────────────────────
-  // Term-ness on the board is derived, not stored: a sprint's term is the one
-  // its start date falls in (roll-forward through break weeks, mirroring
-  // currentTerm()), and an epic's term footprint is the union of its sprints'
-  // terms, the terms its effective span overlaps, and its explicit target
-  // term. Term.startDate/endDate stays the single source of truth, so a sprint
-  // can never drift out of sync with "its" term. `allTerms` is ascending here,
-  // which resolveTermIdForDate/termIdsInRange rely on.
-  const sprintTermId = new Map<string, string | null>();
-  for (const s of project.sprints) {
-    sprintTermId.set(s.id, resolveTermIdForDate(allTerms, s.startsAt));
-  }
-  // Effective epic span (explicit dates expanded by sprint union) is already
-  // computed as ISO strings on `epics`; index it for the range overlap.
+  // Term-ness on the board is derived, not stored: a task's term is the one its
+  // date falls in (roll-forward through break weeks, mirroring currentTerm()),
+  // and an epic's term footprint is the terms its effective span (widened to
+  // cover its stories/tasks by buildTimelineEpics) overlaps, plus its explicit
+  // target term. Term.startDate/endDate stays the single source of truth.
+  // `allTerms` is ascending here, which resolveTermIdForDate/termIdsInRange rely on.
   const epicSpanById = new Map(
     epics.map((e) => [e.id, { startsAt: e.startsAt, endsAt: e.endsAt }]),
   );
   const boardEpics = project.epics.map((e) => {
     const ids = new Set<string>();
-    for (const s of project.sprints) {
-      if (s.epicId !== e.id) continue;
-      const tid = sprintTermId.get(s.id);
-      if (tid) ids.add(tid);
-    }
     const span = epicSpanById.get(e.id);
     const start = span?.startsAt ? new Date(span.startsAt) : null;
     const end = span?.endsAt ? new Date(span.endsAt) : null;
@@ -939,13 +898,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (e.targetTermId) ids.add(e.targetTermId);
     return { id: e.id, title: e.title, termIds: [...ids] };
   });
-  // Term filter options: the project's planned terms plus any term a sprint
-  // actually resolves to (a sprint may land in a term not in the planned set).
+  // Term filter options: the project's planned terms plus any term a task
+  // actually lands in (a task may be dated in a term outside the planned set).
   const boardTermIds = new Set<string>();
   for (const t of plannedTerms) boardTermIds.add(t.id);
-  for (const tid of sprintTermId.values()) if (tid) boardTermIds.add(tid);
-  const boardTerms = allTerms
-    .filter((t) => boardTermIds.has(t.id))
+  for (const t of tasks) {
+    const d = t.dueAt ?? t.startsAt;
+    if (!d) continue;
+    const tid = resolveTermIdForDate(allTerms, new Date(d));
+    if (tid) boardTermIds.add(tid);
+  }
+  const boardTermList = allTerms.filter((t) => boardTermIds.has(t.id));
+  const boardTerms = [...boardTermList]
     .sort((a, b) => b.sortKey - a.sortKey)
     .map((t) => ({ id: t.id, code: t.code }));
   const boardCurrentTermId =
@@ -985,12 +949,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       memberMap.set(id, fullName(a.user));
     }
   }
-  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
-  // Term spans anchor the fixed one-week sprint grid and label its bands
-  // (26FA, 26FB, …). Oldest first, the order the grid walks them. Both the
-  // timeline and the task modal read weeks off this same anchor, so it's built
-  // once here rather than twice.
-  const termSpans = [...plannedTerms]
+  // Term spans anchor the fixed one-week sprint grid (Sprint 1..N per term).
+  // Oldest first, the order the grid walks them; the same set as the board's
+  // term filter so every term option can populate the sprint picker. Both the
+  // timeline and the task board read sprints off this same anchor.
+  const termSpans = [...boardTermList]
     .sort((a, b) => a.sortKey - b.sortKey)
     .map((t) => ({
       code: t.code,
@@ -1003,20 +966,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
-    sprints: [...sprints]
-      .sort(
-        (a, b) =>
-          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
-          a.startsAt.localeCompare(b.startsAt),
-      )
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        epicId: s.epicId,
-        termId: sprintTermId.get(s.id) ?? null,
-        startsAt: s.startsAt,
-      })),
     epics: boardEpics,
     stories: project.epics.flatMap((e) =>
       e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
@@ -1160,27 +1109,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     requests: infraRequests,
   };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
-  // AI summary's freshness. Facts come from the same task/sprint rows the board
-  // already loaded, so the bar costs no extra query. aiTldrStale compares the
-  // current facts fingerprint against the one the cached summary was written
-  // from; the client regenerates when it differs (see ProjectStatusBar).
+  // AI summary's freshness. Facts come from the same task rows the board
+  // already loaded (the current sprint is derived from term spans), so the bar
+  // costs no extra query. aiTldrStale compares the current facts fingerprint
+  // against the one the cached summary was written from; the client regenerates
+  // when it differs (see ProjectStatusBar).
   const statusFacts = computeProjectStatus(
     {
       projectStatus: project.status as ProjectWorkStatus,
       tasks: project.tasks.map((t) => ({
         id: t.id,
         status: t.status as TaskStatus,
+        startsAt: t.startsAt,
         dueAt: t.dueAt,
-        sprintId: t.sprintId,
         activityAt: t.activityAt,
       })),
-      sprints: project.sprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        status: s.status as SprintPhase,
-      })),
+      terms: termSpans,
     },
     new Date(),
   );
@@ -1248,7 +1192,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     recentActivity,
     epics,
     editableEpics,
-    sprints,
     storyDependencies,
     timelineTerms: termSpans,
     tasks,
@@ -1692,7 +1635,6 @@ export default function ProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
   const showStatusBar = useFeatureFlag("project-status-bar");
-  const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -1810,9 +1752,6 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
-      // Sprint-view flag: promotes Sprint to a top-level board filter and opens
-      // the board on the current sprint. Off → the epic-nested sprint sub-filter.
-      sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={peopleOptions}

@@ -19,6 +19,8 @@ import { Download, FileDown, AlertTriangle, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, Combobox } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { cn } from "~/lib/cn";
 import { ALL_LEVELS, isLevel } from "~/lib/level";
 import {
   buildPayrollRows,
@@ -601,6 +603,7 @@ function TechnigalaSection({
             onChange={add}
             placeholder="Add a lab member…"
             ariaLabel="Add a Technigala hire"
+            className={cn(filterPillClass(), "w-full")}
           />
         </div>
       </header>

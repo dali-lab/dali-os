@@ -27,6 +27,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Plus } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
@@ -384,15 +385,11 @@ export default function MembersList() {
           in reading order and first in the tab order. */}
       <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
         <StatusTabs status={status} />
-        <input
-          type="search"
+        <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
-          className={cn(
-            "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            "max-w-[420px] px-5 py-2.5 rounded-full bg-card",
-          )}
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />

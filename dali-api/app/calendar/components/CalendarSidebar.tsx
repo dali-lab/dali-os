@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Search, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
@@ -133,18 +134,12 @@ function MeetWith({
         Meet with
       </h2>
       <div className="relative">
-        {/* Same field dress as the rest of the app — a filled slab read as a
-            separate surface against the rail's bare ground. */}
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-colors focus-within:border-os-accent">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for people"
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </div>
+        <SearchInput
+          size="sm"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search for people"
+        />
         {matches.length > 0 && (
           <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-56 overflow-y-auto rounded-lg cal-surface p-1">
             {matches.map((u) => (

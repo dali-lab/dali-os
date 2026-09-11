@@ -1586,7 +1586,7 @@ export function DriveBrowser({
         onChange={(e) => onSearchChange(e.target.value)}
         className={cn(
           "h-[30px] w-full rounded-full border border-border bg-card text-sm text-foreground",
-          "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-os-accent/40",
+          "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
           "pl-8 transition-all duration-200",
           searchExpanded ? "pr-8 cursor-text" : "pr-0 cursor-pointer",
         )}

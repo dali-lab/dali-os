@@ -23,6 +23,7 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
@@ -1216,19 +1217,17 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                   section fills the fields below; manual entry stays fully available. */}
               <div className="relative flex flex-col gap-1 text-sm">
                 <span className="text-muted-foreground">Find your course (optional)</span>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    value={courseQuery}
-                    onChange={(e) => {
-                      setCourseQuery(e.target.value);
-                      setShowCourseResults(true);
-                    }}
-                    onFocus={() => setShowCourseResults(true)}
-                    placeholder="Search the timetable, e.g. COSC 52"
-                    className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2.5 text-foreground"
-                  />
-                </div>
+                <SearchInput
+                  size="sm"
+                  value={courseQuery}
+                  onChange={(e) => {
+                    setCourseQuery(e.target.value);
+                    setShowCourseResults(true);
+                  }}
+                  onFocus={() => setShowCourseResults(true)}
+                  placeholder="Search the timetable, e.g. COSC 52"
+                  containerClassName="w-full"
+                />
                 {showCourseResults && trimmedCourseQuery.length >= 2 && (
                   <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
                     {courseHits.length > 0 && (

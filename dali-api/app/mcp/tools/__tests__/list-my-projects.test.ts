@@ -16,8 +16,18 @@ import {
 const mockPrisma = prisma as unknown as {
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
   project: { findMany: ReturnType<typeof vi.fn> };
-  sprint: { findMany: ReturnType<typeof vi.fn> };
   task: { groupBy: ReturnType<typeof vi.fn> };
+};
+
+// A term window wide enough that "today" always falls inside it, so the
+// computed current-sprint band is deterministically non-null in any test run.
+const WIDE_TERM = {
+  term: {
+    code: "26S",
+    startDate: new Date("2000-01-03T00:00:00Z"), // a Monday
+    endDate: new Date("2100-01-01T00:00:00Z"),
+    sortKey: 1,
+  },
 };
 
 beforeEach(() => {
@@ -36,7 +46,7 @@ describe("list_my_projects", () => {
     expect(out).toEqual({ projects: [] });
   });
 
-  it("enriches assignments with active sprint + open task count", async () => {
+  it("enriches assignments with current sprint + open task count", async () => {
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
     mockPrisma.projectAssignment.findMany.mockResolvedValue([
       {
@@ -55,16 +65,10 @@ describe("list_my_projects", () => {
       },
     ]);
     mockPrisma.project.findMany.mockResolvedValue([
-      { id: "p1", name: "Alpha", status: "Active", imageUrl: null },
-      { id: "p2", name: "Beta", status: "Active", imageUrl: null },
-    ]);
-    mockPrisma.sprint.findMany.mockResolvedValue([
-      {
-        id: "s1",
-        projectId: "p1",
-        name: "Sprint 4",
-        endsAt: new Date("2026-06-15T00:00:00Z"),
-      },
+      // p1 runs a term whose window contains today → a current sprint exists.
+      { id: "p1", name: "Alpha", status: "Active", imageUrl: null, projectTerms: [WIDE_TERM] },
+      // p2 runs no terms → no current sprint.
+      { id: "p2", name: "Beta", status: "Active", imageUrl: null, projectTerms: [] },
     ]);
     mockPrisma.task.groupBy.mockResolvedValue([
       { projectId: "p1", _count: { _all: 7 } },
@@ -77,9 +81,10 @@ describe("list_my_projects", () => {
       id: "p1",
       name: "Alpha",
       currentTermAssignment: { termCode: "26S", domainName: "Fullstack Dev", level: "P3" },
-      activeSprint: { id: "s1", name: "Sprint 4" },
       openTaskCount: 7,
     });
+    expect(out.projects[0].activeSprint?.label).toMatch(/^Sprint \d+$/);
+    expect(typeof out.projects[0].activeSprint?.endsAt).toBe("string");
     expect(out.projects[1]).toMatchObject({
       id: "p2",
       currentTermAssignment: null,
@@ -92,7 +97,6 @@ describe("list_my_projects", () => {
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
     mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
     mockPrisma.project.findMany.mockResolvedValue([]);
-    mockPrisma.sprint.findMany.mockResolvedValue([]);
     mockPrisma.task.groupBy.mockResolvedValue([]);
 
     await runListMyProjects("u1", { currentTermOnly: true });

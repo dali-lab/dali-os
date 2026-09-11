@@ -1,150 +1,132 @@
-// Sprint lifecycle: Active sprints past endsAt flip to Closed — unfinished
-// tasks roll to the project's next Planned sprint (else the backlog), and a
-// summary lands in the project's Slack channel — and Planned sprints at or
-// past startsAt flip to Active. Parallel sprints are allowed by design, so
-// every due sprint activates; there is no "only one Active" guard. Activation
-// is silent (no Slack post — the close-out summary is the channel moment).
+// Sprint lifecycle: a per-sprint wrap-up.
 //
-// Each status flip is a CAS claim — only the machine that wins it does the
-// follow-up work, so a crashed run loses at most one close-out rather than
-// duplicating it (same trade as scheduled announcements).
+// Sprints are not stored rows — a sprint is a fixed one-week band anchored to
+// each term a project runs (Sprint 1..N per term), the same grid the board and
+// timeline draw. So there is nothing to "activate" or "close": a sprint simply
+// ends when its last day passes. On the day after a sprint's last day, this job
+// posts a wrap-up (done/total of the tasks that were due in it) to the project's
+// members (in-app + desktop banner, preference-gated) and Slack channel.
+//
+// Idempotency comes from notify()'s dedupKey (sprint-closed:<projectId>:<key>),
+// not a CAS row-claim: a re-fired tick creates no new in-app rows, and the Slack
+// post is gated on that fresh dispatch so it fires exactly once per sprint.
 
 import { prisma } from "~/lib/db";
-import { getAppEnv } from "~/lib/app-env";
 import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
+import { jobChannelPostAllowed } from "~/jobs/job-slack";
+import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
-const BATCH = 20;
+const SPRINT_STEP = SPRINT_DAYS * DAY;
+const BATCH = 50;
 
-// Unattended channel posts are prod-only for the same reason as notify()'s
-// Slack-DM gate: staging restores a prod snapshot on every deploy, so real
-// project channel ids live there. NOTIFY_SLACK_DM_OVERRIDE=1 covers testing
-// all unattended outbound Slack, channel posts included.
-export function jobChannelPostAllowed(): boolean {
-  return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
+type TermWindow = { startsAt: string; endsAt: string };
+
+/**
+ * The sprint band that ended *yesterday* for a project, given its term windows —
+ * the sprint that just closed and is worth a wrap-up today. Numbered from 1 off
+ * its term's start (matching the timeline). Null when no band ended yesterday.
+ */
+export function sprintClosedYesterday(
+  terms: TermWindow[],
+  todayUtc: number,
+): { key: number; label: string; start: number; end: number } | null {
+  const yesterday = todayUtc - DAY;
+  for (const t of terms) {
+    const start = utcDayOf(t.startsAt);
+    const end = utcDayOf(t.endsAt);
+    if (yesterday < start || yesterday > end) continue;
+    const n = Math.floor((yesterday - start) / SPRINT_STEP);
+    const key = start + n * SPRINT_STEP;
+    const bandEnd = Math.min(key + SPRINT_STEP - DAY, end);
+    if (bandEnd === yesterday) return { key, label: `Sprint ${n + 1}`, start: key, end: bandEnd };
+  }
+  return null;
 }
 
 export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult> {
-  const due = await prisma.sprint.findMany({
-    where: { status: "Active", endsAt: { lte: now } },
-    orderBy: { endsAt: "asc" },
+  const todayUtc = localTodayUtcDay(now);
+  const projects = await prisma.project.findMany({
+    where: { status: "Active" },
     take: BATCH,
     select: {
       id: true,
       name: true,
-      projectId: true,
-      endsAt: true,
-      project: { select: { name: true, slackChannelId: true } },
+      slackChannelId: true,
+      projectTerms: {
+        select: { term: { select: { startDate: true, endDate: true } } },
+      },
     },
   });
 
   let closed = 0;
   let failed = 0;
-  for (const sprint of due) {
-    const claim = await prisma.sprint.updateMany({
-      where: { id: sprint.id, status: "Active" },
-      data: { status: "Closed" },
-    });
-    if (claim.count === 0) continue; // raced with another machine or a manual close
+  for (const project of projects) {
+    const terms = project.projectTerms.map((pt) => ({
+      startsAt: pt.term.startDate.toISOString(),
+      endsAt: pt.term.endDate.toISOString(),
+    }));
+    const band = sprintClosedYesterday(terms, todayUtc);
+    if (!band) continue;
 
     try {
+      // Tasks whose anchor date (due, else start) fell in the closed sprint —
+      // the same "which sprint is this in" rule the board uses.
+      const from = new Date(band.start);
+      const to = new Date(band.end + DAY);
       const tasks = await prisma.task.findMany({
-        where: { sprintId: sprint.id },
+        where: {
+          projectId: project.id,
+          status: { not: "Cancelled" },
+          OR: [
+            { dueAt: { gte: from, lt: to } },
+            { AND: [{ dueAt: null }, { startsAt: { gte: from, lt: to } }] },
+          ],
+        },
         select: { status: true },
       });
+      if (tasks.length === 0) continue; // an empty sprint isn't worth a ping
+
       const doneCount = tasks.filter((t) => t.status === "Done").length;
+      const summary = `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`;
 
-      const next = await prisma.sprint.findFirst({
-        where: {
-          projectId: sprint.projectId,
-          status: "Planned",
-          startsAt: { gte: sprint.endsAt },
-        },
-        orderBy: { startsAt: "asc" },
-        select: { id: true, name: true },
-      });
-      // Done/Cancelled tasks stay on the closed sprint for the record.
-      const moved = await prisma.task.updateMany({
-        where: { sprintId: sprint.id, status: { notIn: ["Done", "Cancelled"] } },
-        data: { sprintId: next?.id ?? null },
-      });
+      // In-app + desktop first: its dedupKey is the source of once-only truth.
+      const memberIds = await currentProjectParticipantIds(project.id);
+      let fresh = false;
+      if (memberIds.size > 0) {
+        const res = await notify({
+          eventType: "project.sprint_closed",
+          message: {
+            title: `${band.label} wrapped up`,
+            body: `${project.name} — ${summary}`,
+            link: `/projects/${project.id}?tab=board`,
+            dedupKey: `sprint-closed:${project.id}:${band.key}`,
+          },
+          recipients: [...memberIds].map((userId) => ({ userId })),
+        });
+        fresh = res.inApp > 0;
+      }
 
-      const dest = next ? `moved to "${next.name}"` : "moved to the backlog";
-      const summary = [
-        `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`,
-        moved.count > 0
-          ? `${moved.count} unfinished task${moved.count === 1 ? "" : "s"} ${dest}.`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      if (
-        sprint.project.slackChannelId &&
-        slackConfigured() &&
-        jobChannelPostAllowed()
-      ) {
-        const text = `:checkered_flag: Sprint *${sprint.name}* is closed. ${summary}`;
-        await postMessage(sprint.project.slackChannelId, text).catch((err) =>
-          console.error(`[jobs] sprint ${sprint.id}: slack post failed`, err),
+      // Slack channel post rides the same fresh dispatch, so a re-fired tick
+      // (dedupKey already claimed → no new in-app rows) posts nothing.
+      if (fresh && project.slackChannelId && slackConfigured() && jobChannelPostAllowed()) {
+        const text = `:checkered_flag: *${band.label}* wrapped up. ${summary}`;
+        await postMessage(project.slackChannelId, text).catch((err) =>
+          console.error(`[jobs] project ${project.id}: slack post failed`, err),
         );
       }
 
-      // A one-time wrap-up to the project's current members (in-app + desktop
-      // banner, preference-gated). Best-effort and independent of the Slack
-      // channel post — a notify hiccup must not mark the close-out failed, and
-      // the rollover above has already persisted. dedupKey makes a re-fired
-      // close a no-op rather than a second ping.
-      try {
-        const memberIds = await currentProjectParticipantIds(sprint.projectId);
-        if (memberIds.size > 0) {
-          await notify({
-            eventType: "project.sprint_closed",
-            message: {
-              title: `Sprint "${sprint.name}" wrapped up`,
-              body: `${sprint.project.name} — ${summary}`,
-              link: `/projects/${sprint.projectId}?tab=board`,
-              dedupKey: `sprint-closed:${sprint.id}`,
-            },
-            recipients: [...memberIds].map((userId) => ({ userId })),
-          });
-        }
-      } catch (err) {
-        console.error(`[jobs] sprint ${sprint.id}: member notify failed`, err);
-      }
-
-      closed++;
+      if (fresh) closed++;
     } catch (err) {
-      // The sprint is already Closed; losing its rollover beats blocking the
-      // rest of the batch. Surfaced via the job row's note.
       failed++;
-      console.error(`[jobs] sprint ${sprint.id}: close-out failed`, err);
+      console.error(`[jobs] project ${project.id}: sprint wrap-up failed`, err);
     }
   }
 
-  // Activation pass, after close-out so a Planned sprint whose whole window
-  // already elapsed (e.g. the runner was down) activates now and gets a
-  // normal close-out on a later tick instead of an activate-and-close in one.
-  const dueToStart = await prisma.sprint.findMany({
-    where: { status: "Planned", startsAt: { lte: now } },
-    orderBy: { startsAt: "asc" },
-    take: BATCH,
-    select: { id: true },
-  });
-
-  let activated = 0;
-  for (const sprint of dueToStart) {
-    const claim = await prisma.sprint.updateMany({
-      where: { id: sprint.id, status: "Planned" },
-      data: { status: "Active" },
-    });
-    if (claim.count > 0) activated++; // count === 0: raced with another machine or a manual move
-  }
-
   return {
-    items: closed + activated,
-    note: failed > 0 ? `${failed} close-out(s) failed — see logs` : undefined,
+    items: closed,
+    note: failed > 0 ? `${failed} wrap-up(s) failed — see logs` : undefined,
   };
 }
