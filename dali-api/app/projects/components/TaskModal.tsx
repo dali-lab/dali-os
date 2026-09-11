@@ -5,7 +5,7 @@
 // the save fails. In create mode there's no task yet, so it collects the full
 // set of fields and hands them to onCreate on submit.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { X, Pencil } from "lucide-react";
 import { Modal } from "~/components/Modal";
@@ -151,6 +151,19 @@ export function TaskModal({
   // Stories always belong to an epic, so with no epic picked there's nothing
   // to choose from.
   const epicStories = epicId ? options.stories.filter((s) => s.epicId === epicId) : [];
+
+  // Assignable people are the current-term team (options.members). A task
+  // carried over from an earlier term may still hold an assignee who has since
+  // rolled off and so is absent from that list; fold this task's own assignees
+  // in so they render as removable chips instead of being silently stranded.
+  // Create mode has no prior assignees, so its picker stays the current team.
+  const assigneeOptions = useMemo(() => {
+    const byId = new Map(options.members.map((m) => [m.id, m]));
+    for (const a of task?.assignees ?? []) {
+      if (!byId.has(a.id)) byId.set(a.id, { id: a.id, name: a.name, photoUrl: null });
+    }
+    return [...byId.values()];
+  }, [options.members, task]);
   // Why a picker has nothing in it, said once under the field. Inside the
   // control it read as a value you could choose; the design's .field-hint is
   // where an explanation belongs.
@@ -324,7 +337,7 @@ export function TaskModal({
       sortedNext.some((id, i) => id !== sortedCurrent[i]);
     if (assigneesChanged) {
       patch.assignees = assigneeIds.map((id) => {
-        const m = options.members.find((m) => m.id === id);
+        const m = assigneeOptions.find((m) => m.id === id);
         return { id, name: m?.name ?? "" };
       });
     }
@@ -962,7 +975,7 @@ export function TaskModal({
           </PropRow>
           <PropRow label="Assignees" align="start">
             <AssigneePicker
-              all={options.members}
+              all={assigneeOptions}
               selected={assigneeIds}
               // Read-only as well as no-rights: a record you are only reading
               // shows who is on the task, not an Edit link into a picker the
