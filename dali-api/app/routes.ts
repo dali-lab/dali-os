@@ -75,6 +75,8 @@ export default [
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/activities", "admin/routes/admin.activities.tsx"),
+    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
@@ -349,6 +351,15 @@ export default [
 
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
+
+  // Activities (specs/activities.md): the time-boxed "mode" layer — the
+  // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
+  // activity modal (progress + leaderboard on GET; code submit on POST); the
+  // modal floats over whatever page the member is exploring, so there is no
+  // navigable surface page. Authored in Admin → Activities.
+  route("api/activities/:id", "routes/api.activities.$id.ts"),
+  // Live push for the surface modal (leaderboard/progress) — see §7.6.
+  route("api/activities/:id/stream", "routes/api.activities.$id.stream.ts"),
 
   // Domain & member management API
   route("api/domains", "admin/routes/api.domains.ts"),
