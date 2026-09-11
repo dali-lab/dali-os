@@ -172,6 +172,7 @@ model User {
   projectAssignments       ProjectAssignment[]
   coreAssignments          CoreAssignment[]
   instructorAssignments    InstructorAssignment[]
+  technigalaAssignments    TechnigalaAssignment[]
   adminMembership          AdminMembership?
   mentorshipPairsAsMentee  MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor  MentorshipPair[]       @relation("MentorPairs")
@@ -1233,6 +1234,9 @@ model DocComment {
   // { from: <encoded RelativePosition>, to: <encoded RelativePosition> } for
   // inline doc comments. Null for doc-level / file-level comments.
   anchor     Json?
+  // Dead column. Comments have no open/resolved state — nothing reads or
+  // writes this any more; kept only so removing the concept didn't require a
+  // data-losing migration. Drop it in its own migration when convenient.
   resolvedAt DateTime?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
@@ -1930,6 +1934,14 @@ model TimeEntry {
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
   googleTimesheetEventId String?
   googleTimesheetLinkId  String?
+  // The calendar event this entry was logged against — "count this as work" on
+  // an event in the composer. Soft pointers, no FK, same pattern as the mirror
+  // pair above. When set, the event and its hours are ONE thing: the grid draws
+  // the event block with a role accent instead of an overlapping logged block,
+  // and the entry is not mirrored to the DALI Timesheet calendar (it already
+  // lives on a real one). Null for entries logged straight onto the timesheet.
+  sourceEventId          String?
+  sourceCalendarLinkId   String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
@@ -1938,6 +1950,9 @@ model TimeEntry {
   project     Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
+  // One work log per event per user — lets the composer upsert on re-save
+  // instead of stacking a second entry every time the event is edited.
+  @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
 }
@@ -2221,6 +2236,14 @@ model MemberClass {
   linkId         String?
   calendarId     String?
   googleEventIds String[]
+  // Provenance for a class autofilled from the Dartmouth timetable: the picked
+  // section's CRN + subject/number/section. Denormalized (no FK into the
+  // disposable CourseOffering cache) so it survives cache pruning; null for a
+  // manually-entered class. Groundwork for future room/time-change detection.
+  offeringCrn    String?
+  subject        String?
+  courseNumber   String?
+  section        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -2228,6 +2251,43 @@ model MemberClass {
   term Term @relation(fields: [termId], references: [id])
 
   @@index([userId, termId])
+}
+
+// Pre-synced Dartmouth timetable sections — one row per (term, CRN) — backing
+// the course-autofill typeahead in the class composer. Populated by the
+// `timetable-sync` job from the public Oracle registrar timetable; NOT tied to
+// MemberClass (autofill only — a saved class stores its own resolved values).
+// Rows are a disposable cache: the sync replaces a term's set on each run, so a
+// wiped table self-heals. Only current + upcoming terms are ever synced.
+model CourseOffering {
+  id         String   @id @default(cuid())
+  termId     String
+  oracleTerm String // "202609" as fetched, for debugging
+  crn        String
+  subject    String // "COSC"
+  number     String // "52" (Dartmouth's zero-padding stripped)
+  section    String // "01"
+  title      String
+  periodCode String? // "10","2A"… plugs into getPeriod(); null/"ARR" when unscheduled
+  periodText String? // human "MWF 10:10-11:15" — shown as a hint when the code is unknown
+  building   String?
+  room       String?
+  instructor String?
+  crosslist  String?
+  distributive String? // "TAS", "QDS"… (distributive/world-culture code)
+  enrollLimit  Int? // seat cap, null when unlimited/unknown
+  enrollCurrent Int? // current enrollment, for an open/closed badge
+  // Lowercased "subject number title" for one case-insensitive contains match.
+  searchText String
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, crn])
+  @@index([termId, subject, number])
+  @@index([termId, searchText])
 }
 
 // ═══ V0 Phase 1 ═════════════════════════════════════════════════════════════
@@ -2259,6 +2319,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
+  technigalaAssignments TechnigalaAssignment[]
   educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
@@ -2276,6 +2337,7 @@ model Term {
   timelineWeeks         TimelineWeek[]
   timelineDomains       TimelineDomain[]
   memberClasses         MemberClass[]
+  courseOfferings       CourseOffering[]
 
   @@index([sortKey])
 }
@@ -2533,6 +2595,28 @@ model InstructorAssignment {
   @@index([offeringId, termId])
 }
 
+// A termly Technigala-support hire. Unlike Core/Instructor there's no upstream
+// role to derive from — a Core admin picks lab members on the Payroll Export
+// page and each pick is one row here. Purely a payroll-export input: it feeds a
+// row under the fixed Technigala Job ID (see payroll-export.ts), so there's no
+// level/domain/pay column (those live as constants). One hire per member per
+// term.
+model TechnigalaAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  termId    String
+  createdAt DateTime @default(now())
+  // Free-form actor userId of whoever added the hire — not an FK so the record
+  // survives user deletion (mirrors AdminMembership.grantedBy).
+  createdById String?
+
+  user User @relation(fields: [userId], references: [id])
+  term Term @relation(fields: [termId], references: [id])
+
+  @@unique([userId, termId])
+  @@index([termId])
+}
+
 // Permanent (until revoked). The admin-access marker. Admin is a superset of
 // Core. Both students (elected leads) and full-time staff can hold Admin.
 // `isStaff` marks the strict subset who are full-time staff — professional
@@ -2606,6 +2690,16 @@ model Project {
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
 
+  // AI "TL;DR" of the project's work status, shown under the Progress-tab
+  // status bar. Cached here (shared across viewers) and regenerated only when
+  // the underlying work changes — aiTldrInputHash fingerprints the facts the
+  // last summary was written from, so a stale hash (or age past the TTL) marks
+  // it for refresh. All null until first generated; gated by the
+  // `project-tldr-ai` flag + a configured AI provider.
+  aiTldr            String?
+  aiTldrGeneratedAt DateTime?
+  aiTldrInputHash   String?
+
   // Auto-created on Project creation: a top-level FreeForm Page in the
   // Project workspace. The workspace's Overview tab renders this page's
   // contentDoc with a structured project header above. Nullable to allow
@@ -2616,6 +2710,12 @@ model Project {
   // Product Requirement Doc — a collab Page, same pattern as overviewPageId
   // (loose reference; workspaceType dispatches at the app layer).
   prdPageId String? @unique
+
+  // The project's public write-up page (rendered on the dali.website showcase
+  // card). Same single-artifact FK pattern as overviewPageId — replaces the old
+  // `project:{id}:public-writeup` systemKey page. onDelete SetNull so deleting
+  // the page just clears the link.
+  publicWriteupPageId String? @unique
 
   // Project hero image, shown on the hub, partner, and public views.
   imageUrl String?
@@ -2663,8 +2763,9 @@ model Project {
   // Toggled by Core/Admin in the project settings modal.
   isPrivate Boolean @default(false)
 
-  overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
-  prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
+  overviewPage      Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
+  prdPage           Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
+  publicWriteupPage Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
 
   partners          ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
@@ -4227,8 +4328,14 @@ model Page {
   // dispatches to the right table at the app layer (see expansion_plan
   // §"Page Tree"). Two FK constraints on one column would conflict at the
   // DB level.
-  projectAsOverview Project? @relation("ProjectOverview")
-  projectAsPRD      Project? @relation("ProjectPRD")
+  projectAsOverview      Project? @relation("ProjectOverview")
+  projectAsPRD           Project? @relation("ProjectPRD")
+  projectAsPublicWriteup Project? @relation("ProjectPublicWriteup")
+
+  // Reverse of ProcessFolderBinding.folderPageId — the process folder-binding
+  // rows (project meeting-notes folder, offering Forms folder, Core Agreements
+  // folder, …) that point at this folder as their auto-file target.
+  processFolderBindings ProcessFolderBinding[] @relation("PageProcessBindings")
 
   createdById  String
   createdBy    User     @relation("PageCreatedBy", fields: [createdById], references: [id])
@@ -4268,6 +4375,44 @@ model PageLink {
 
   @@unique([fromPageId, toPageId])
   @@index([toPageId])
+}
+
+// A named, editable relation from a "process" (a project, an education offering,
+// a hiring cycle, or lab-wide Core governance) to a NORMAL Drive folder that
+// receives its auto-filed artifacts — e.g. a project's "Team meeting notes"
+// folder, an offering's "Forms" folder, or Core's "Agreements" folder. This
+// replaces the old `Page.systemKey` scaffolding: the folder is an ordinary Page
+// (renameable / movable / shareable / deletable), and the binding is what the
+// filing code and the settings UI read. Idempotency comes from the unique key,
+// not systemKey. `folderPageId` is nullable + onDelete SetNull so deleting the
+// folder simply clears the binding (settings then offers to rebind/recreate).
+model ProcessFolderBinding {
+  id           String      @id @default(cuid())
+  processType  ProcessType
+  // The owning process's id. For singleton scopes (Core / lab-wide governance)
+  // this is the constant "core" (there is exactly one) — kept non-null so the
+  // unique key below dedupes reliably (Postgres treats NULLs as distinct).
+  processId    String
+  // Stable slot key the filing code and settings UI look up by, e.g.
+  // "meeting-notes-team", "meeting-notes-partner", "forms", "agreements",
+  // "email-templates", "rubrics", "application-templates".
+  purpose      String
+  folderPageId String?
+  folderPage   Page?       @relation("PageProcessBindings", fields: [folderPageId], references: [id], onDelete: SetNull)
+  createdById  String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([processType, processId, purpose])
+  @@index([folderPageId])
+}
+
+enum ProcessType {
+  Project
+  EducationOffering
+  HiringCycle
+  // Lab-wide governance singleton (agreements, email templates, rubrics, …).
+  Core
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible

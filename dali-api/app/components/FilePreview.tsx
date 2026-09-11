@@ -1,4 +1,5 @@
 import { Download, FileText, ExternalLink } from "lucide-react";
+import { categorize, type FileCategory } from "~/lib/file-type";
 
 // Shared in-app file rendering. Two shapes:
 //   - <FilePreview>    a large single-file preview (images/video/audio/pdf/text
@@ -6,45 +7,56 @@ import { Download, FileText, ExternalLink } from "lucide-react";
 //                      project file viewer.
 //   - <FileAttachment> a compact row (thumbnail for images, "open" link
 //                      otherwise) for lists like assignment submissions.
-// Both key off content type; when it's absent (e.g. education submission files
-// store only { key, name }) it's inferred from the file extension.
+// Both classify through ~/lib/file-type so the "what is this / can we preview
+// it" taxonomy stays identical across every surface. When content type is
+// absent (e.g. education submission files store only { key, name }) it's
+// inferred from the file extension there.
 
-const EXT_TYPE: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-  pdf: "application/pdf",
-  mp4: "video/mp4",
-  mov: "video/quicktime",
-  webm: "video/webm",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  m4a: "audio/mp4",
-  txt: "text/plain",
-  md: "text/markdown",
-  csv: "text/csv",
-  json: "application/json",
+type ViewerProps = {
+  previewUrl: string;
+  fileName: string;
+  reloadKey?: string;
 };
 
-export function inferContentType(fileName: string, provided?: string | null): string {
-  if (provided) return provided;
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  return EXT_TYPE[ext] ?? "";
-}
-
-type Kind = "image" | "video" | "audio" | "pdf" | "text" | "other";
-
-function kindOf(contentType: string): Kind {
-  if (contentType.startsWith("image/")) return "image";
-  if (contentType.startsWith("video/")) return "video";
-  if (contentType.startsWith("audio/")) return "audio";
-  if (contentType === "application/pdf") return "pdf";
-  if (contentType.startsWith("text/") || contentType === "application/json") return "text";
-  return "other";
-}
+// Category → inline renderer. Adding a new inline viewer (e.g. 3D, office) is a
+// one-line entry here plus the category in file-type's PREVIEWABLE_INLINE — no
+// call-site edits. Categories absent from this map fall back to download.
+const VIEWERS: Partial<Record<FileCategory, (p: ViewerProps) => React.ReactElement>> = {
+  image: ({ previewUrl, fileName }) => (
+    <img
+      src={previewUrl}
+      alt={fileName}
+      className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
+    />
+  ),
+  video: ({ previewUrl, reloadKey }) => (
+    <video
+      key={reloadKey}
+      src={previewUrl}
+      controls
+      className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
+    />
+  ),
+  audio: ({ previewUrl, reloadKey }) => (
+    <audio key={reloadKey} src={previewUrl} controls className="w-full" />
+  ),
+  pdf: ({ previewUrl, fileName, reloadKey }) => (
+    <iframe
+      key={reloadKey}
+      src={previewUrl}
+      title={fileName}
+      className="w-full h-[70vh] rounded-lg border border-border bg-white"
+    />
+  ),
+  text: ({ previewUrl, fileName, reloadKey }) => (
+    <iframe
+      key={reloadKey}
+      src={previewUrl}
+      title={fileName}
+      className="w-full h-[70vh] rounded-lg border border-border bg-white"
+    />
+  ),
+};
 
 /**
  * Large inline preview of a single file. `previewUrl` should serve the file
@@ -64,39 +76,10 @@ export function FilePreview({
   fileName: string;
   reloadKey?: string;
 }) {
-  const kind = kindOf(inferContentType(fileName, contentType));
+  const Viewer = VIEWERS[categorize({ fileName, contentType })];
 
-  if (kind === "video") {
-    return (
-      <video
-        key={reloadKey}
-        src={previewUrl}
-        controls
-        className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
-      />
-    );
-  }
-  if (kind === "audio") {
-    return <audio key={reloadKey} src={previewUrl} controls className="w-full" />;
-  }
-  if (kind === "image") {
-    return (
-      <img
-        src={previewUrl}
-        alt={fileName}
-        className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
-      />
-    );
-  }
-  if (kind === "pdf" || kind === "text") {
-    return (
-      <iframe
-        key={reloadKey}
-        src={previewUrl}
-        title={fileName}
-        className="w-full h-[70vh] rounded-lg border border-border bg-white"
-      />
-    );
+  if (Viewer) {
+    return <Viewer previewUrl={previewUrl} fileName={fileName} reloadKey={reloadKey} />;
   }
   return (
     <div className="rounded-lg border border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
@@ -131,7 +114,7 @@ export function FileAttachment({
   contentType?: string | null;
   trailing?: React.ReactNode;
 }) {
-  const isImage = kindOf(inferContentType(fileName, contentType)) === "image";
+  const isImage = categorize({ fileName, contentType }) === "image";
   return (
     <div className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
       {isImage ? (

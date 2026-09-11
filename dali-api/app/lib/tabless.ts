@@ -20,8 +20,19 @@ function tablessFromCookies(cookieString: string): boolean {
   return true;
 }
 
+// Phones and small tablets that can't usefully render the iframe tab workspace.
+// Broad but conservative — any UA string that looks like a mobile browser.
+const MOBILE_UA_RE = /Mobi|Android|iPhone|iPad|iPod/i;
+
+export function isMobileUA(request: Request): boolean {
+  return MOBILE_UA_RE.test(request.headers.get("user-agent") ?? "");
+}
+
 export function isTablessRequest(request: Request): boolean {
-  return tablessFromCookies(request.headers.get("Cookie") ?? "");
+  // Mobile UAs always get the single-page shell regardless of the cookie —
+  // the iframe tab workspace is unusable on a phone.  The cookie preference
+  // still controls the desktop experience byte-for-byte.
+  return isMobileUA(request) || tablessFromCookies(request.headers.get("Cookie") ?? "");
 }
 
 // Whether this device has ever made an explicit choice either way, as

@@ -17,8 +17,6 @@ import {
   captureProjectTemplate,
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -36,7 +34,6 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 import { Globe, Plus } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { filterPillClass } from "~/components/ui/floating/styles";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   matchesShowcaseFilter,
   SHOWCASE_FILTER_ALL,
@@ -45,7 +42,6 @@ import {
 } from "../lib/showcase-filter";
 
 export const handle = {
-  areaPills: true,
   docKey: "projects.hub",
   docTitle: "Projects",
 };
@@ -325,13 +321,6 @@ export default function ProjectsListPage() {
   // In the URL (like ?term=) rather than component state, so "show me every
   // project still needing a write-up" is a link someone can share.
   const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
-  // The dali.os hub is this same page in the design's dress — the title scales
-  // up, the toolbar controls become pills, and the card view takes the cover-led
-  // layout. Every control keeps its behaviour; nothing here is flag-only.
-  const os = useFeatureFlag("os-redesign");
-  // Only consulted with the flag off — the os hub has one view. Left on the
-  // shared "dali:view:projects" key so a member's list/card choice survives
-  // being shown the design and taken back off it.
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   const filtered = useMemo(() => {
@@ -351,12 +340,11 @@ export default function ProjectsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
       <header className="flex items-center justify-between gap-3">
         <h1
           className={cn(
             "min-w-0 font-heading text-foreground",
-            os ? "text-[40px] font-medium" : "text-2xl font-bold",
+            "text-[40px] font-medium",
           )}
         >
           Projects
@@ -370,17 +358,13 @@ export default function ProjectsListPage() {
             }}
             className={cn(
               "shrink-0",
-              os ? "os-add-btn" : buttonClasses("primary", "sm"),
+              "os-add-btn",
             )}
           >
-            {os ? (
-              <>
-                <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-                New project
-              </>
-            ) : (
-              "+ New project"
-            )}
+            <>
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              New project
+            </>
           </button>
         )}
       </header>
@@ -492,13 +476,13 @@ export default function ProjectsListPage() {
                 setNewIconEmoji(null);
                 setCreating(false);
               }}
-              className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
+              className="os-btn-ghost"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+              className="os-btn-primary"
             >
               Create
             </button>
@@ -506,7 +490,7 @@ export default function ProjectsListPage() {
         </Form>
       )}
 
-      <div className={cn("flex items-center gap-3 flex-wrap", os && "gap-4 pt-2 pb-4")}>
+      <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
         <input
           type="search"
           value={query}
@@ -514,9 +498,7 @@ export default function ProjectsListPage() {
           placeholder="Search by project or partner name"
           className={cn(
             "flex-1 min-w-[200px] border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            os
-              ? "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card"
-              : "max-w-sm px-3 py-2 rounded-md bg-background",
+            "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card",
           )}
         />
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -535,14 +517,10 @@ export default function ProjectsListPage() {
             }}
             ariaLabel="Filter by status on dali.website"
             options={SHOWCASE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-            buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+            buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
           />
         </label>
-        {/* The design has one view of this page, the card grid — so the
-            list/card toggle is gone with it. The table view and the toggle
-            are still what the current hub renders with the flag off. */}
-        {!os && <ViewToggle value={view} onChange={setView} />}
-        <span className={cn("ml-auto text-muted-foreground", os ? "text-base" : "text-xs")}>
+        <span className={cn("ml-auto text-muted-foreground", "text-base")}>
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
           {(query || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
           filtered.length !== rows.length
@@ -591,10 +569,8 @@ export default function ProjectsListPage() {
             "No projects yet."
           )}
         </div>
-      ) : !os && view === "list" ? (
-        <ProjectsTable rows={filtered} />
       ) : (
-        <ProjectsCards rows={filtered} os={os} />
+        <ProjectsCards rows={filtered} />
       )}
     </div>
   );
@@ -646,7 +622,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
               </td>
               <td className="px-4 py-2">
                 <div className="flex items-center gap-1.5">
-                  <StatusPill status={p.status} />
+                  <OsStatusTag status={p.status} />
                   <PublicPill status={p.showcaseStatus} />
                 </div>
               </td>
@@ -661,23 +637,16 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   );
 }
 
-function ProjectsCards({ rows, os = false }: { rows: ProjectRow[]; os?: boolean }) {
-  if (os) {
-    return (
-      // auto-fill rather than fixed columns: the design's cards hold their
-      // 280px minimum and the row simply fits fewer of them as the pane
-      // narrows, which is what a split-screen workspace tab needs.
-      <div className="grid max-w-[1080px] grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
-        {rows.map((p) => (
-          <OsProjectCard key={p.id} project={p} />
-        ))}
-      </div>
-    );
-  }
+function ProjectsCards({ rows }: { rows: ProjectRow[] }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    // auto-fill rather than fixed columns: the design's cards hold their
+    // 280px minimum and the row simply fits fewer of them as the pane
+    // narrows, which is what a split-screen workspace tab needs. No width
+    // cap on the grid — one left the cards short of the pane's right edge on
+    // a wide window, with the filter row above still running full width.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
       {rows.map((p) => (
-        <ProjectCard key={p.id} project={p} />
+        <OsProjectCard key={p.id} project={p} />
       ))}
     </div>
   );
@@ -754,21 +723,22 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
   );
 }
 
-// The design's status tag: a translucent plate over the cover so it reads on
-// any photo, tinted per status the same way StatusPill is.
+// One plate for every chip a project wears — its status and its publication
+// state alike. They sit side by side in the corner of a card's cover, so a
+// difference between them is visible as a difference: they used to disagree
+// about padding, corner radius and weight all at once.
+const PROJECT_CHIP =
+  "inline-flex items-center gap-1 rounded-full border bg-os-bg/85 px-3 py-[5px] text-xs font-semibold";
+
+// The design's status tag: a translucent plate that reads on any photo, tinted
+// per status.
 function OsStatusTag({ status }: { status: ProjectStatus }) {
   const palette: Record<ProjectStatus, string> = {
     Active: "text-os-green border-os-green/35",
     Archived: "text-os-grey border-os-grey/35",
     Paused: "text-os-amber border-os-amber/35",
   };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border bg-os-bg/85 px-3 py-[5px] text-xs font-semibold ${palette[status]}`}
-    >
-      {status}
-    </span>
-  );
+  return <span className={`${PROJECT_CHIP} ${palette[status]}`}>{status}</span>;
 }
 
 function ProjectCard({ project }: { project: ProjectRow }) {
@@ -790,7 +760,7 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           <span className="truncate">{project.name}</span>
         </span>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <StatusPill status={project.status} />
+          <OsStatusTag status={project.status} />
           <PublicPill status={project.showcaseStatus} />
         </div>
       </div>
@@ -855,25 +825,10 @@ function PublicPill({ status }: { status: ShowcaseStatusValue | null }) {
   return (
     <span
       title="Published on dali.website"
-      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border bg-os-bg/85 text-accent-coral border-accent-coral/40"
+      className={`${PROJECT_CHIP} border-os-accent/35 text-os-accent`}
     >
-      <Globe className="w-3 h-3" />
+      <Globe className="h-3 w-3" />
       {SHOWCASE_LABELS.Published}
-    </span>
-  );
-}
-
-function StatusPill({ status }: { status: ProjectStatus }) {
-  const palette: Record<ProjectStatus, string> = {
-    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
-    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
-    Archived: "bg-muted/50 text-muted-foreground border-border",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded border ${palette[status]}`}
-    >
-      {status}
     </span>
   );
 }

@@ -42,7 +42,6 @@ export function TemplatesModal({
   collabToken: string | null;
   userName: string;
 }) {
-  const { os } = useOsChrome();
   const [templates, setTemplates] = useState<TemplateListItem[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -127,7 +126,6 @@ export function TemplatesModal({
       labelledBy={TITLE_ID}
       disableEscape={busy}
       containerClassName={modalCardClass(
-        os,
         "max-w-3xl h-[80vh] max-h-[calc(100vh-3rem)] flex flex-col overflow-hidden !p-0",
       )}
     >
@@ -137,12 +135,12 @@ export function TemplatesModal({
             id={TITLE_ID}
             className={cn(
               "font-heading text-foreground",
-              os ? "text-xl font-medium" : "text-lg font-bold",
+              "text-xl font-medium",
             )}
           >
             Note templates
           </h2>
-          <p className={cn("text-muted-foreground", os ? "mt-1 text-sm" : "mt-0.5 text-xs")}>
+          <p className={cn("text-muted-foreground", "mt-1 text-sm")}>
             Every new mentor note starts from a template. The default is applied
             automatically.
           </p>
@@ -151,11 +149,7 @@ export function TemplatesModal({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className={
-            os
-              ? "os-icon-btn"
-              : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-          }
+          className="os-icon-btn"
         >
           <X className="w-5 h-5" aria-hidden />
         </button>
@@ -174,9 +168,7 @@ export function TemplatesModal({
               disabled={busy}
               className={cn(
                 "w-full justify-center disabled:opacity-50",
-                os
-                  ? "os-btn-primary"
-                  : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm hover:opacity-90",
+                "os-btn-primary",
               )}
             >
               <Plus className="w-4 h-4" aria-hidden />
@@ -202,11 +194,9 @@ export function TemplatesModal({
                       aria-current={selectedId === t.id}
                       className={cn(
                         "w-full flex items-center gap-2 px-2.5 py-2 text-left text-sm transition-colors",
-                        os ? "rounded-os-item" : "rounded-md",
+                        "rounded-os-item",
                         selectedId === t.id
-                          ? os
-                            ? "bg-os-container text-foreground"
-                            : "bg-accent-coral/10 text-foreground"
+                          ? "bg-os-container text-foreground"
                           : "text-foreground/80 hover:bg-muted",
                       )}
                     >
@@ -214,7 +204,7 @@ export function TemplatesModal({
                         <Star
                           className={cn(
                             "w-3.5 h-3.5 shrink-0 fill-current",
-                            os ? "text-os-accent" : "text-accent-coral",
+                            "text-os-accent",
                           )}
                           aria-label="Default"
                         />
@@ -288,7 +278,7 @@ function TemplateDetail({
   onMakeDefault: () => void;
   onDelete: () => void;
 }) {
-  const { os, iconBtn } = useOsChrome();
+  const { iconBtn } = useOsChrome();
   const [name, setName] = useState("");
   const [content, setContent] = useState<unknown>(null);
   const [loaded, setLoaded] = useState(false);
@@ -361,9 +351,7 @@ function TemplateDetail({
           aria-label="Back to templates"
           className={cn(
             "sm:hidden",
-            os
-              ? "os-icon-btn"
-              : "text-muted-foreground hover:text-foreground rounded p-1 hover:bg-muted",
+            "os-icon-btn",
           )}
         >
           <ChevronLeft className="w-5 h-5" aria-hidden />
@@ -379,7 +367,7 @@ function TemplateDetail({
           placeholder="Template name"
           className={cn(
             "flex-1 min-w-0 font-heading text-base font-semibold text-foreground bg-transparent border-b border-transparent focus:outline-none",
-            os ? "focus:border-os-accent" : "focus:border-accent-coral",
+            "focus:border-os-accent",
           )}
         />
         <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -426,7 +414,7 @@ function TemplateDetail({
             <Star
               className={cn(
                 "w-3.5 h-3.5 fill-current",
-                os ? "text-os-accent" : "text-accent-coral",
+                "text-os-accent",
               )}
               aria-hidden
             />
@@ -439,7 +427,7 @@ function TemplateDetail({
             disabled={busy}
             className={cn(
               "text-sm hover:underline disabled:opacity-50",
-              os ? "text-os-accent" : "text-accent-coral",
+              "text-os-accent",
             )}
           >
             Make default
@@ -473,9 +461,7 @@ function TemplateDetail({
               aria-label="Delete template"
               className={cn(
                 "inline-flex items-center justify-center",
-                os
-                  ? iconBtn
-                  : "p-1.5 text-sm text-muted-foreground hover:text-accent-coral",
+                iconBtn,
               )}
             >
               <Trash2 className="w-4 h-4" aria-hidden />

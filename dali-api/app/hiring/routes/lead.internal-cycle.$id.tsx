@@ -1402,7 +1402,8 @@ function DecisionsSection({
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-muted/50 border-b border-border">
             <tr>
               <th className="text-left px-3 py-2 font-semibold text-foreground/80">Applicant</th>
@@ -1495,6 +1496,7 @@ function DecisionsSection({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {previewing && (

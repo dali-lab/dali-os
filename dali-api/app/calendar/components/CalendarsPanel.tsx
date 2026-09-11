@@ -1,26 +1,19 @@
-// Phase 5 consolidated Calendars panel.
+// The Calendars dialog's body.
 //
-// One in-page panel that replaces the CalendarLayerList dropdown, the
-// CalendarManagerModal quick-link, the ClassesManagerModal quick-link, the
-// WorkingHoursPopover quick-link, and the Settings → Calendar sub-calendar
-// toggles.  It owns:
+// One in-page column that replaces the CalendarLayerList dropdown and the
+// Settings → Calendar sub-calendar toggles. It owns:
 //
 //   • Connected Google accounts (connect / disconnect)
 //   • Per-calendar row: Main + Show on grid + Counts toward availability
-//     + color swatch + rename/delete (Google-owned only)
+//     + colour swatch, with rename/delete behind the manager sub-modal
 //
 // Layer visibility is NOT here any more: every layer is a row in the Events
-// page's left rail (each linked calendar, plus the Timesheet pseudo-calendar),
-// so this panel is purely about connecting and configuring accounts.
+// page's left rail, so this panel is purely about connecting and configuring
+// accounts.
 //
-// Working hours and Classes used to open from here too. They now live inline on
-// the calendar's Availability tab, so the quick-links were removed rather than
-// leaving two ways to edit the same thing.
-//
-// Mount point in calendar.tsx: replace the existing CalendarLayerList +
-// its wrapper dropdown with a slide-in drawer or a wider panel that renders
-// <CalendarsPanel ...>.  The integration agent will wire it in;  the
-// component only needs the props defined here.
+// Like AvailabilityView, this renders the *contents* only — the dialog shell
+// (backdrop, title, close) belongs to the page that opens it, so the two
+// calendar dialogs are the same dialog with different bodies.
 //
 // Timesheet-sync intent wired below:
 //   intent    = "set-timesheet-sync"
@@ -34,73 +27,34 @@ import { createPortal } from "react-dom";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { useFetcher, useRevalidator } from "react-router";
-import {
-  CalendarDays,
-  ChevronDown,
-  ChevronRight,
-  Pencil,
-  Plus,
-  SlidersHorizontal,
-  Star,
-  Trash2,
-  X,
-} from "lucide-react";
-import { Toggle } from "~/components/ui/Toggle";
+import { CalendarDays, ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { CalendarManagerModal } from "~/calendar/components/composer";
+import { GeneralCalendarPrompt, SectionHeader } from "~/calendar/components/settings-cards";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
-import type { LayerVisibility } from "~/calendar/lib/layers";
 import { perCalendarLegend, type CalendarLegendGroup } from "~/calendar/lib/layers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type CalendarsPanelProps = {
   data: LoaderData;
-  // Layer visibility mirrors CalendarLayerList's props so the integration agent
-  // can replace CalendarLayerList with CalendarsPanel cleanly.
-  layers: LayerVisibility;
-  toggleLayer: (key: keyof LayerVisibility) => void;
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   // Whether to include the "Show on grid" toggle AND the "Counts toward
   // availability" toggle on each sub-calendar row.
   showAvailabilityToggle?: boolean;
-  // Called when the panel itself is closed (the integration agent wires this).
-  onClose?: () => void;
-  // Rendered in the page flow (the Availability tab) rather than as a floating
-  // dropdown: drop the fixed width, the raised surface and the viewport cap.
-  inline?: boolean;
-  // Passed through to the classes / working-hours sub-modals so they can
-  // open from inside the panel.
-  classesEnabled?: boolean;
-  // "Mirror my timesheet to Google" current saved state.  Default = false.
-  timesheetSyncEnabled?: boolean;
-  // Per-role filter chips for the Logged-time layer — show/hide your logged
-  // hours by paid role. The controls are hidden if these are omitted.
-  roleBuckets?: { key: string; label: string; hours: number }[];
-  excludedRoleKeys?: Set<string>;
-  toggleRoleKey?: (key: string) => void;
 };
 
 // ── CalendarsPanel ─────────────────────────────────────────────────────────────
 
 export function CalendarsPanel({
   data,
-  layers,
-  toggleLayer,
   hiddenCals,
   toggleHiddenCal,
   showAvailabilityToggle = true,
-  onClose,
-  inline = false,
-  classesEnabled,
-  timesheetSyncEnabled = false,
-  roleBuckets = [],
-  excludedRoleKeys,
-  toggleRoleKey,
 }: CalendarsPanelProps) {
-  const { panel, panelPad } = useOsChrome();
+  const { panel, cardPad } = useOsChrome();
   const [calMgrOpen, setCalMgrOpen] = useState(false);
 
   const revalidator = useRevalidator();
@@ -119,115 +73,75 @@ export function CalendarsPanel({
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google");
   const calendars = perCalendarLegend(data);
 
-  const hasAnyLinked = data.calendarLinks.length > 0;
-
-  const sectionHead = "mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+  const card = cn(panel, cardPad);
+  // The design's rounded action pill, one size down — these sit beside a section
+  // heading and inside a card, not on a page header.
+  const action = "os-btn-primary os-btn-primary--sm shrink-0";
 
   return (
-    <>
-      {/* ── Overlay backdrop ─────────────────────────────────────────── */}
-      {onClose && (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 cursor-default"
-          aria-hidden
-          onClick={onClose}
-          tabIndex={-1}
-        />
-      )}
-
-      {/* ── Panel shell ──────────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "flex flex-col gap-5",
-          inline
-            ? cn(panel, panelPad)
-            : "relative z-50 w-[22rem] overflow-y-auto rounded-xl cal-surface p-4 max-h-[85vh]",
-        )}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-            <SlidersHorizontal className="h-4 w-4" /> Calendars
-          </h2>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close calendars panel"
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {/* ── Section 1: Connected accounts ──────────────────────────── */}
-        <section className="flex flex-col gap-2">
-          <div className={sectionHead}>
-            <CalendarDays className="h-3.5 w-3.5" /> Google accounts
-            <a
-              href="/oauth/calendar/google/start"
-              target="_top"
-              rel="noopener"
-              aria-label="Add Google account"
-              className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-foreground hover:bg-muted"
-            >
-              <Plus className="h-3 w-3" /> Add
+    <div className="flex w-full flex-col gap-7">
+      <section>
+        <SectionHeader
+          icon={CalendarDays}
+          title="Google accounts"
+          action={
+            /* `target="_top"` — Google's auth page sends X-Frame-Options: DENY,
+               so it can't render inside the workspace iframe. */
+            <a href="/oauth/calendar/google/start" target="_top" rel="noopener" className={action}>
+              <Plus className="h-3.5 w-3.5" /> Add account
             </a>
+          }
+        />
+
+        {/* Same prompt the left rail shows, mounted here too because this dialog
+            is where someone lands when they go looking for what they're missing.
+            It renders nothing once the calendar is on one of their accounts, and
+            nothing at all when no Google account is connected. */}
+        {data.generalCalendar === "missing" && (
+          <GeneralCalendarPrompt links={data.calendarLinks} />
+        )}
+
+        {googleLinks.length === 0 ? (
+          <div className={cn(card, "text-sm text-muted-foreground")}>
+            No accounts connected yet.
           </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {googleLinks.map((link) => (
+              <AccountSection
+                key={link.id}
+                link={link}
+                calendars={calendars}
+                hiddenCals={hiddenCals}
+                toggleHiddenCal={toggleHiddenCal}
+                showAvailabilityToggle={showAvailabilityToggle}
+                defaultEventDest={data.defaultEventDest}
+                setMain={setMain}
+              />
+            ))}
 
-          {googleLinks.length === 0 && (
-            <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-3 text-center text-xs text-muted-foreground">
-              No Google accounts connected.{" "}
-              <a
-                href="/oauth/calendar/google/start"
-                target="_top"
-                rel="noopener"
-                className="font-medium text-accent-teal hover:underline"
+            {data.crudEnabled && (
+              <button
+                type="button"
+                onClick={() => setCalMgrOpen(true)}
+                className={cn(action, "self-start")}
               >
-                Connect one
-              </a>{" "}
-              to sync your events.
-            </div>
-          )}
+                <Pencil className="h-3.5 w-3.5" /> Manage calendars
+              </button>
+            )}
+          </div>
+        )}
+      </section>
 
-          {googleLinks.map((link) => (
-            <AccountSection
-              key={link.id}
-              link={link}
-              calendars={calendars}
-              hiddenCals={hiddenCals}
-              toggleHiddenCal={toggleHiddenCal}
-              showAvailabilityToggle={showAvailabilityToggle}
-              defaultEventDest={data.defaultEventDest}
-              setMain={setMain}
-            />
-          ))}
-
-          {data.crudEnabled && hasAnyLinked && (
-            <button
-              type="button"
-              onClick={() => setCalMgrOpen(true)}
-              className="mt-0.5 inline-flex w-fit items-center gap-1.5 text-xs font-medium text-accent-teal hover:underline"
-            >
-              <Pencil className="h-3 w-3" /> Manage calendars (create / rename / delete)
-            </button>
-          )}
-        </section>
-
-      </div>
-
-      {/* ── Sub-modals ────────────────────────────────────────────────── */}
-      {/* Portaled to <body>: the panel opens from inside the toolbar dropdown,
-          whose transformed ancestors would otherwise trap `position: fixed` and
-          pin these modals to the top of the panel instead of the viewport. */}
+      {/* Portaled to <body>: this panel renders inside a dialog whose transformed
+          ancestors would otherwise trap `position: fixed` and pin the sub-modal
+          to the top of the panel instead of the viewport. */}
       {calMgrOpen &&
         createPortal(
           <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />,
           document.body,
         )}
-    </>
+    </div>
   );
 }
 
@@ -257,11 +171,13 @@ function AccountSection({
   const Chevron = open ? ChevronDown : ChevronRight;
 
   const accountGroup = calendars.find((g) => g.account === (link.displayName ?? link.externalEmail));
+  const colHead =
+    "w-[4.5rem] text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
 
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       {/* Account header */}
-      <div className="flex items-center justify-between bg-accent-teal/10 pr-2">
+      <div className="flex items-center justify-between bg-os-accent/10 pr-2">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -313,22 +229,13 @@ function AccountSection({
             <p className="text-xs italic text-muted-foreground">No calendars found.</p>
           ) : (
             <>
-              {/* Column headers */}
+              {/* Column headers. The name column is self-evident and its
+                  header only crowded the three it does have to label. */}
               <div className="mb-1 flex items-center gap-2 pl-5">
-                <span className="flex-1 truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Calendar
-                </span>
-                <span className="w-12 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Main
-                </span>
-                <span className="w-[4.5rem] text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Show
-                </span>
-                {showAvailabilityToggle && (
-                  <span className="w-[4.5rem] text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Availability
-                  </span>
-                )}
+                <span className="flex-1" />
+                <span className={cn(colHead, "w-12")}>Main</span>
+                <span className={colHead}>Show</span>
+                {showAvailabilityToggle && <span className={colHead}>Availability</span>}
               </div>
               {link.subCalendars.map((cal) => (
                 <SubCalendarPanelRow
@@ -441,7 +348,7 @@ function SubCalendarPanelRow({
           onClick={() => toggleHiddenCal(cal.id)}
           className={cn(
             "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
-            gridVisible ? "bg-accent-teal" : "bg-muted-foreground/30 ring-1 ring-inset ring-black/10",
+            gridVisible ? "bg-os-accent" : "bg-muted-foreground/30 ring-1 ring-inset ring-black/10",
           )}
         >
           <span
@@ -489,177 +396,6 @@ function SubCalendarPanelRow({
     </div>
   );
 }
-
-// ── LayerToggles ───────────────────────────────────────────────────────────────
-// Compact layer visibility controls — same logic as CalendarLayerList's list,
-// without the per-calendar sub-rows (those live in AccountSection above).
-
-const LAYER_SPECS: Array<{
-  key: keyof LayerVisibility;
-  label: string;
-  swatch: string;
-  hideWhenClassesOff?: boolean;
-}> = [
-  { key: "external", label: "Linked calendars", swatch: "bg-accent-teal" },
-  { key: "logged", label: "Logged time", swatch: "bg-violet-500" },
-  { key: "workingHours", label: "Working hours", swatch: "bg-gray-300" },
-];
-
-function LayerToggles({
-  layers,
-  toggleLayer,
-  classesEnabled,
-  roleBuckets = [],
-  excludedRoleKeys,
-  toggleRoleKey,
-}: {
-  layers: LayerVisibility;
-  toggleLayer: (key: keyof LayerVisibility) => void;
-  classesEnabled: boolean;
-  roleBuckets?: { key: string; label: string; hours: number }[];
-  excludedRoleKeys?: Set<string>;
-  toggleRoleKey?: (key: string) => void;
-}) {
-  return (
-    <ul className="flex flex-col gap-0.5">
-      {LAYER_SPECS.filter((s) => !s.hideWhenClassesOff || classesEnabled).map((spec) => {
-        const on = layers[spec.key];
-        return (
-          <li key={spec.key}>
-            <button
-              type="button"
-              onClick={() => toggleLayer(spec.key)}
-              aria-pressed={on}
-              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-            >
-              <span
-                className={cn(
-                  "grid h-4 w-4 place-items-center rounded-[4px] border transition-colors",
-                  on ? cn(spec.swatch, "border-transparent") : "border-border bg-transparent",
-                )}
-              >
-                {on && <span className="h-1.5 w-1.5 rounded-[1px] bg-white/90" />}
-              </span>
-              <span className={cn(on ? "text-foreground" : "text-muted-foreground")}>
-                {spec.label}
-              </span>
-            </button>
-            {/* Per-role filter chips under the Logged-time layer: click a role
-                to hide/show your logged hours for it (excludedRoleKeys). */}
-            {spec.key === "logged" && on && toggleRoleKey && roleBuckets.length > 0 && (
-              <div className="ml-6 mt-1 flex flex-wrap gap-1">
-                {roleBuckets.map((b) => {
-                  const excluded = excludedRoleKeys?.has(b.key) ?? false;
-                  return (
-                    <button
-                      key={b.key}
-                      type="button"
-                      onClick={() => toggleRoleKey(b.key)}
-                      aria-pressed={!excluded}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                        excluded
-                          ? "border-border bg-transparent text-muted-foreground line-through"
-                          : "border-violet-500/40 bg-violet-500/10 text-foreground",
-                      )}
-                    >
-                      {b.label}
-                      <span className="text-muted-foreground">{Math.round(b.hours * 10) / 10}h</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-// ── TimesheetSyncToggle ────────────────────────────────────────────────────────
-// "Mirror my timesheet to Google" opt-in.
-//
-// Server intent: set-timesheet-sync
-// Form fields:   intent = "set-timesheet-sync", enabled = "true" | "false"
-//
-// When on:  the server lazily calls getOrCreateNamedCalendar(daliLinkId,
-//           "DALI Timesheet") on the user's @dali.dartmouth.edu Google link and
-//           stores the flag on UserAvailabilitySettings (or equivalent).
-// When no DALI link exists: shows a prompt to connect it.
-
-function TimesheetSyncToggle({
-  data,
-  enabled,
-  googleLinks,
-}: {
-  data: LoaderData;
-  enabled: boolean;
-  googleLinks: CalendarLinkDTO[];
-}) {
-  const fetcher = useFetcher();
-  const pendingEnabled = fetcher.formData?.get("enabled");
-  const optimisticEnabled = pendingEnabled != null ? pendingEnabled === "true" : enabled;
-
-  // Detect whether the user has a DALI Google link (externalEmail ends in
-  // @dali.dartmouth.edu).  When absent we show a link-account prompt instead
-  // of silently failing when they turn the toggle on.
-  const hasDaliLink = googleLinks.some((l) =>
-    l.externalEmail.toLowerCase().endsWith("@dali.dartmouth.edu"),
-  );
-
-  const toggle = () => {
-    const next = !optimisticEnabled;
-    fetcher.submit(
-      { intent: "set-timesheet-sync", enabled: String(next) },
-      { method: "post" },
-    );
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">Mirror my timesheet to Google</span>
-          <span className="text-xs text-muted-foreground">
-            When on, your logged work hours also appear on a "DALI Timesheet" calendar on your DALI
-            Google account.
-          </span>
-        </div>
-        <Toggle
-          checked={optimisticEnabled}
-          onChange={toggle}
-          aria-label="Mirror timesheet to Google"
-          disabled={fetcher.state !== "idle"}
-        />
-      </div>
-
-      {optimisticEnabled && !hasDaliLink && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Connect your{" "}
-          <span className="font-semibold">@dali.dartmouth.edu</span> Google account to use this
-          feature.{" "}
-          <a
-            href="/oauth/calendar/google/start"
-            target="_top"
-            rel="noopener"
-            className="font-semibold underline hover:text-amber-900"
-          >
-            Add account
-          </a>
-        </div>
-      )}
-
-      {optimisticEnabled && hasDaliLink && (
-        <p className="text-[11px] text-muted-foreground">
-          Syncing to "DALI Timesheet" on your @dali.dartmouth.edu calendar.
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ── GoogleIcon ────────────────────────────────────────────────────────────────
 
 function GoogleIcon() {
   return (

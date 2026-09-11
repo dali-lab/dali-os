@@ -178,17 +178,28 @@ export function CreateEventModal({
   const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
+  // ── Core meeting ─────────────────────────────────────────────────────────
+  // Core-only marker that lifts the meeting onto the Core hub calendar without
+  // touching its guest list. Inviting the Core group implies it.
+  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
+  const [coreMeeting, setCoreMeeting] = useState(false);
+  useEffect(() => {
+    if (coreSelected) setCoreMeeting(true);
+  }, [coreSelected]);
+  const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
+
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
 
   // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own.
+  // the sender can still change; it never enables the note on its own. A Core
+  // meeting's note has no project, so the prefill stays out of its way.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
+    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+  }, [selectedGroupIds, isCoreMeeting]);
 
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
@@ -262,6 +273,18 @@ export function CreateEventModal({
     prevEventState.current = eventFetcher.state;
   }, [eventFetcher.state, eventFetcher.data, onClose]);
 
+  // An all-day event has no range for hours to measure, and the server rejects
+  // it, so the Event form drops the toggle there. A repeating Google event is
+  // rejected too: the create returns the series master, whose id matches none
+  // of the occurrence ids the grid draws, so a log keyed on it would be
+  // invisible.
+  const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
+  const eventLoggingWork = isWork && eventCanLogWork;
+  // A meeting keeps the toggle when it repeats. The log links to the
+  // ScheduledMeeting (one row per meeting per user) and is dated to the series
+  // anchor — the first occurrence, the one time being scheduled here.
+  const meetingRepeats = repeatSpecToRRule(repeat, selectedStartLocal) !== null;
+
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
     title.trim() !== "" &&
@@ -270,7 +293,7 @@ export function CreateEventModal({
     endIso !== "" &&
     startEndValid &&
     startIso < endIso &&
-    (!isWork || (roleKey !== "" && workNote.trim() !== ""));
+    (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
     title.trim() !== "" &&
@@ -295,8 +318,13 @@ export function CreateEventModal({
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
       }
       if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
+      if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
       Object.assign(payload, meetingNotePayload(note.state));
+      if (isCoreMeeting) {
+        payload.isCoreMeeting = true;
+      }
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -397,7 +425,11 @@ export function CreateEventModal({
           }
         }}
         label="Count this as work"
-        description="Automatically logs this event to your Timesheet once it's created."
+        description={
+          type === "Meeting" && meetingRepeats
+            ? "Logs the first occurrence to your Timesheet once the meeting is created."
+            : "Automatically logs this event to your Timesheet once it's created."
+        }
       />
       {isWork && (
         <div className="mt-3 space-y-3">
@@ -454,21 +486,21 @@ export function CreateEventModal({
     >
       <div
         className={cn(
-          "relative z-10 flex w-full flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
+          "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
           hasGuests ? "max-w-6xl" : "max-w-lg",
         )}
       >
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-[52%] shrink-0 flex-col gap-3 border-r border-border bg-muted/20 p-5">
+        <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
           {/* Week nav */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               aria-label="Previous week"
               onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, -1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -479,7 +511,7 @@ export function CreateEventModal({
               type="button"
               aria-label="Next week"
               onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -557,7 +589,7 @@ export function CreateEventModal({
               <input type="hidden" name="timeZone" value={data.timezone} />
               <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat, repeatAnchorLocal) ?? ""} />
               <input type="hidden" name="description" value={description} />
-              {isWork && roleKey && (
+              {eventLoggingWork && roleKey && (
                 <>
                   <input type="hidden" name="isWork" value="1" />
                   <input type="hidden" name="assignmentType" value={roleKey.split("::")[0] ?? ""} />
@@ -704,8 +736,9 @@ export function CreateEventModal({
                 </FieldRow>
               )}
 
-              {/* Timesheet */}
-              {timesheetSection}
+              {/* Timesheet — hidden for all-day and repeating events, which
+                  have nothing for hours to attach to. */}
+              {eventCanLogWork && timesheetSection}
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (
@@ -798,6 +831,16 @@ export function CreateEventModal({
                 )}
               </div>
 
+              {/* Repeat. A meeting series is anchored to its start, not to the
+                  all-day range — this form has no all-day mode. */}
+              <RepeatField
+                value={repeat}
+                onChange={setRepeat}
+                anchorLocal={selectedStartLocal}
+                labelClassName={labelClass}
+                fieldClassName={fieldClass}
+              />
+
               {/* Send invite from */}
               {googleLinks.length > 0 && (
                 <div>
@@ -869,6 +912,23 @@ export function CreateEventModal({
                 />
               </div>
 
+              {/* Core meeting (Core only) */}
+              {data.canMarkCoreMeeting && (
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <Toggle
+                    checked={coreSelected || coreMeeting}
+                    disabled={coreSelected}
+                    onChange={(e) => setCoreMeeting(e.target.checked)}
+                    label="Core meeting"
+                    description={
+                      coreSelected
+                        ? "The Core group is invited, so this is already on the Core calendar."
+                        : "Adds this to the Core hub calendar. Doesn't change who's invited."
+                    }
+                  />
+                </div>
+              )}
+
               {/* Meeting notes toggle */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
@@ -884,12 +944,13 @@ export function CreateEventModal({
                       myProjects={data.myProjects}
                       fieldClass={fieldClass}
                       labelClass={labelClass}
+                      core={isCoreMeeting}
                     />
                   </div>
                 )}
               </div>
 
-              {/* Timesheet */}
+              {/* Timesheet — a repeating meeting logs its first occurrence. */}
               {timesheetSection}
 
               {/* Status */}

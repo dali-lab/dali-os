@@ -1,4 +1,4 @@
-import { redirect, Link, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
@@ -16,6 +16,7 @@ import {
   Tag as TagIcon,
   Trash2,
   RotateCcw,
+  MoreHorizontal,
   X,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
@@ -33,11 +34,13 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { filterPillClass } from "~/components/ui/floating/styles";
 
@@ -452,96 +455,8 @@ function TemplateGroup({
 
 // ── File upload helper ─────────────────────────────────────────────────────────
 
-// Hidden <input type="file"> that drives the upload flow: presign → PUT S3 →
-// POST /api/drive/files, registering the file in the given drive target (a scope
-// plus optional folder). Reuses the same presign pattern as AssignmentWorkArea
-// and ProjectImageBanner. Returns the file input ref so a Menu item can click it.
-type UploadScope =
-  | { kind: "Lab" }
-  | { kind: "Member" }
-  | { kind: "Project"; projectId: string };
-
-type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
-
-function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // Upload a single file: presign → PUT S3 → register in the target drive.
-  async function uploadOne(file: File): Promise<void> {
-    const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
-    const presignRes = await fetch("/api/upload/presign", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key,
-        contentType: file.type || "application/octet-stream",
-        contentLength: file.size,
-      }),
-    });
-    if (!presignRes.ok) {
-      const body = await presignRes.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Failed to get upload URL");
-    }
-    const { url, fields, key: s3Key } = await presignRes.json() as {
-      url: string;
-      fields: Record<string, string>;
-      key: string;
-    };
-
-    const formData = new FormData();
-    for (const [name, value] of Object.entries(fields)) formData.append(name, value);
-    formData.append("file", file);
-    const uploadRes = await fetch(url, { method: "POST", body: formData });
-    if (!uploadRes.ok) throw new Error("Upload to storage failed");
-
-    const registerRes = await fetch("/api/drive/files", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        s3Key,
-        title: file.name,
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        scope: target.scope,
-        ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
-      }),
-    });
-    if (!registerRes.ok) {
-      const body = await registerRes.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Failed to register file");
-    }
-  }
-
-  // Upload one or many files (drag-drop can drop several). Sequential so an
-  // early failure surfaces without racing the rest.
-  async function uploadFiles(files: File[]): Promise<void> {
-    if (files.length === 0) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      for (const file of files) await uploadOne(file);
-      onComplete();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files ? Array.from(e.target.files) : [];
-    // Reset the input so the same file can be re-selected after an error.
-    e.target.value = "";
-    await uploadFiles(files);
-  }
-
-  return { inputRef, uploading, uploadError, handleFileChange, uploadFiles };
-}
+// The upload flow (presign → PUT S3 → POST /api/drive/files) lives in the shared
+// hook so the project-embedded Drive uploads through the exact same path.
 
 // ── Browse scope section ───────────────────────────────────────────────────────
 
@@ -618,10 +533,6 @@ function folderAndDescendants(items: DriveItem[], folderId: string): Set<string>
     }
   }
   return out;
-}
-
-async function errorFrom(res: Response): Promise<string | undefined> {
-  return (await res.json().catch(() => ({})) as { error?: string }).error;
 }
 
 type ScopeActions = {
@@ -825,7 +736,7 @@ function makeScopeActions({
       toast.success("Renamed");
       revalidate();
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't rename");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't rename");
     }
   }
 
@@ -897,7 +808,7 @@ function makeScopeActions({
       }
       revalidate();
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't delete");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't delete");
     }
   }
 
@@ -941,20 +852,10 @@ function makeScopeActions({
           }),
         });
       } else {
-        res = await fetch(`/api/pages/${item.id}/move`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parentPageId: target }),
-        });
+        res = await moveDriveItem(item, target);
       }
     } else {
-      res = await fetch("/api/drive/move", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: target }),
-      });
+      res = await moveDriveItem(item, target);
     }
     if (res.ok) {
       // Undo: move the item back to its previous folder.
@@ -975,7 +876,7 @@ function makeScopeActions({
         { duration: 6000 },
       );
     } else {
-      toast.error((await errorFrom(res)) ?? "Couldn't move");
+      toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
     }
     revalidate();
   }
@@ -1007,7 +908,6 @@ function NewMenu({
   onTemplate: () => void;
   currentFolderId: string | null;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
@@ -1073,10 +973,7 @@ function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className={cn(
-            "shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover",
-            os ? "rounded-full px-5 py-2.5 text-sm" : "rounded-md px-3 py-1.5 text-sm",
-          )}
+          className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover rounded-full px-5 py-2.5 text-sm"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -1127,7 +1024,6 @@ export default function DriveHub() {
     canViewForms,
     canManageAgreements,
   } = useLoaderData() as LoaderData;
-  const os = useFeatureFlag("os-redesign");
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -1389,7 +1285,7 @@ export default function DriveHub() {
           { duration: 6000 },
         );
       } else {
-        toast.error((await errorFrom(res)) ?? "Couldn't move");
+        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
       }
       revalidator.revalidate();
     },
@@ -1654,7 +1550,7 @@ export default function DriveHub() {
   const selectedTags = allTags.filter((t) => selectedTagIds.has(t.id));
   const tagChips =
     selectedTags.length > 0 ? (
-      <div className={cn("flex items-center gap-2 flex-wrap", os && "pb-1")}>
+      <div className="flex items-center gap-2 flex-wrap pb-1">
         <TagIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {selectedTags.map((tag) => (
           <button
@@ -1664,10 +1560,8 @@ export default function DriveHub() {
             aria-label={`Remove ${tag.label} filter`}
             className={cn(
               "inline-flex items-center gap-1 rounded-full border font-medium transition-colors",
-              os ? "px-3.5 py-1.5 text-sm" : "px-2.5 py-0.5 text-xs",
-              os
-                ? "border-os-accent bg-os-accent/15 text-os-accent hover:bg-os-accent/25"
-                : "border-accent-coral bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20",
+              "px-3.5 py-1.5 text-sm",
+              "border-os-accent bg-os-accent/15 text-os-accent hover:bg-os-accent/25",
             )}
           >
             {tag.label}
@@ -1677,10 +1571,7 @@ export default function DriveHub() {
         <button
           type="button"
           onClick={clearTags}
-          className={cn(
-            "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground",
-            os ? "text-sm" : "text-xs",
-          )}
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm"
         >
           Clear
         </button>
@@ -1701,14 +1592,14 @@ export default function DriveHub() {
           ariaLabel="Filter by type"
           align="right"
           options={visibleFilters.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
-          buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+          buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
         />
       </div>
       {/* Scopes the term-aware spaces — Projects and Education. My Drive /
           General / Core / Hiring are never term-bound. */}
       {terms.length > 0 && (
         <div data-testid="drive-term-filter">
-          <TermFilter terms={terms} selected={selectedTerm} />
+          <TermFilter terms={terms} selected={selectedTerm} searchable />
         </div>
       )}
       {/* Multi-select tag filter. Shown only when the lab has tags — otherwise
@@ -1721,14 +1612,17 @@ export default function DriveHub() {
             selectedIds={selectedTagIds}
             onToggle={toggleTag}
             onClear={clearTags}
-            os={os}
+            os={true}
           />
         </div>
       )}
     </>
   );
 
-  const newMenuNode =
+  // New is a fixture of the toolbar: at the drive chooser, where there is no
+  // scope to create into, it greys out in place rather than leaving a hole that
+  // shifts every control beside it once a drive is opened.
+  const toolbarActions =
     currentScope && currentActions ? (
       <NewMenu
         scope={currentScope}
@@ -1740,35 +1634,50 @@ export default function DriveHub() {
         onTemplate={() => setTemplatePickerOpen(true)}
         currentFolderId={currentFolderId}
       />
-    ) : null;
-
-  // Toolbar actions: the Templates gallery link + Trash button + scope New menu.
-  const toolbarActions = (
-    <>
-      <Link
-        to="/drive/templates"
-        className={cn(
-          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
-          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
-        )}
-      >
-        <LayoutTemplate className="w-3.5 h-3.5" />
-        Templates
-      </Link>
+    ) : (
       <button
         type="button"
-        data-testid="drive-trash-button"
-        onClick={() => setTrashOpen(true)}
-        className={cn(
-          "shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors",
-          os ? "rounded-full bg-card px-5 py-2.5" : "rounded-md px-3 py-1.5",
-        )}
+        disabled
+        data-testid="drive-new-menu-disabled"
+        title="Open a drive to create something"
+        className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold rounded-full px-5 py-2.5 text-sm opacity-40 cursor-not-allowed"
       >
-        <Trash2 className="w-3.5 h-3.5" />
-        Trash
+        <Plus className="w-4 h-4" /> New
+        <ChevronDown className="w-3.5 h-3.5 opacity-80" />
       </button>
-      {newMenuNode}
-    </>
+    );
+
+  // Templates and Trash are places you visit occasionally, not per-file
+  // actions — they sit behind the toolbar's overflow menu rather than spending
+  // two full-width pills on the row Drive's actual controls need.
+  const overflowMenu = (
+    <Menu
+      align="right"
+      ariaLabel="More Drive actions"
+      trigger={
+        <button
+          type="button"
+          data-testid="drive-more-menu"
+          aria-label="More Drive actions"
+          className="shrink-0 inline-flex items-center justify-center rounded-full border border-border bg-card px-3.5 py-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      }
+    >
+      <Menu.Item
+        icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+        onSelect={() => navigate("/drive/templates")}
+      >
+        <span data-testid="drive-templates-link">Templates</span>
+      </Menu.Item>
+      <Menu.Item
+        icon={<Trash2 className="w-3.5 h-3.5" />}
+        onSelect={() => setTrashOpen(true)}
+      >
+        <span data-testid="drive-trash-button">Trash</span>
+      </Menu.Item>
+    </Menu>
   );
 
   return (
@@ -1776,19 +1685,33 @@ export default function DriveHub() {
     // a 64px/60px gutter on every page, so a second inset here started Drive's
     // content 16px in from where every other page's begins — visible as soon as
     // two tabs sit side by side.
-    <div className={cn("w-full flex flex-col", os ? "gap-4" : "gap-3 p-4")}>
+    <div className="w-full flex flex-col gap-4">
       {/* Drive used to treat its breadcrumb as the page title. That worked when
           no page had a title; under the design every hub opens with one, and a
           page that starts straight into a toolbar reads as a fragment of some
           other screen. The breadcrumb stays — it's navigation, and it carries
           the scope and folder the title can't. */}
-      {os && (
-        <header className="flex items-start justify-between gap-3 flex-wrap">
-          <h1 className="font-heading text-4xl font-medium text-foreground">
-            {isHiringLibrary ? "Library" : "Drive"}
-          </h1>
-        </header>
-      )}
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        {/* Inside a drive the title doubles as the way back out to the drive
+            chooser — the Finder move of clicking the window's own title to step
+            out of the volume. The breadcrumb starts at the drive itself, so
+            without this a top-level folder listing had no click path back. */}
+        <h1 className="font-heading text-4xl font-medium text-foreground">
+          {effectiveScopeId && !isHiringLibrary ? (
+            <button
+              type="button"
+              data-testid="drive-title-root"
+              title="All drives"
+              onClick={() => onNavigate(null, null)}
+              className="transition-colors hover:text-os-accent"
+            >
+              Drive
+            </button>
+          ) : (
+            (isHiringLibrary ? "Library" : "Drive")
+          )}
+        </h1>
+      </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
       <DriveBrowser
@@ -1809,6 +1732,7 @@ export default function DriveHub() {
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
+        overflowMenu={overflowMenu}
         tagChips={tagChips}
         tagFilter={tagFilter}
       />

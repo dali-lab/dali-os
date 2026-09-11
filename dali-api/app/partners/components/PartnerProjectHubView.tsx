@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { ChevronDown, ChevronRight, Download, Eye, Folder, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
+import { categorize } from "~/lib/file-type";
 import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
@@ -472,11 +473,13 @@ function SharedFilePreviewModal({
   file: PartnerDriveFile;
   onClose: () => void;
 }) {
-  const ct = file.contentType ?? "";
   const url = file.downloadUrl ?? undefined;
-  const isImage = ct.startsWith("image/");
-  const isPdf = ct === "application/pdf";
-  const isText = ct.startsWith("text/") || ct === "application/json";
+  const cat = categorize({
+    fileName: file.fileName ?? file.title ?? "",
+    contentType: file.contentType,
+  });
+  const isImage = cat === "image";
+  const isFrame = cat === "pdf" || cat === "text";
 
   return (
     <Modal
@@ -521,7 +524,7 @@ function SharedFilePreviewModal({
             alt={file.title}
             className="max-w-full max-h-[70vh] mx-auto rounded-lg border border-border object-contain bg-muted/20"
           />
-        ) : isPdf || isText ? (
+        ) : isFrame ? (
           <iframe
             src={url}
             title={file.title}

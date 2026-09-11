@@ -141,6 +141,11 @@ export interface TimesheetEntryInput {
   endTime: Date | null;
   googleTimesheetEventId?: string | null;
   googleTimesheetLinkId?: string | null;
+  /** Set when the entry is the work half of something already on a real
+   *  calendar — a meeting, or an event marked as work. Those are never
+   *  mirrored; see gate 0 in syncTimeEntryToGoogle. */
+  scheduledMeetingId?: string | null;
+  sourceEventId?: string | null;
 }
 
 /**
@@ -168,6 +173,13 @@ export interface TimesheetEntryInput {
  *   swallows all Google errors internally.)
  */
 export async function syncTimeEntryToGoogle(entry: TimesheetEntryInput): Promise<void> {
+  // Gate 0: entries attached to something already on a real calendar — a
+  // meeting, or an event marked as work — are never mirrored. The hours are
+  // visible at that event's own slot, so a mirror event would draw them a
+  // second time. Enforced here rather than at each call site so the update and
+  // delete paths can't forget it.
+  if (entry.scheduledMeetingId || entry.sourceEventId) return;
+
   // Gate 1: sync must be on.
   const settings = await prisma.userAvailabilitySettings.findUnique({
     where: { userId: entry.userId },

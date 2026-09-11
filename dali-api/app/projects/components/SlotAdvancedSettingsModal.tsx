@@ -7,7 +7,6 @@
 // is false.
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { SlotFormPicker } from "./SlotFormPicker";
 import { SlotColumnMapper } from "./SlotColumnMapper";
 import type { Slot } from "~/projects/lib/form-slots";
@@ -51,14 +50,13 @@ export function SlotAdvancedSettingsModal({
   cycleTerms: { id: string; code: string }[];
   canManage: boolean;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const titleId = `slot-advanced-${slot}`;
   return (
     <Modal
       open={open}
       onClose={onClose}
       labelledBy={titleId}
-      containerClassName={modalCardClass(os, "max-w-3xl")}
+      containerClassName={modalCardClass("max-w-3xl")}
     >
       <ModalHeader
         titleId={titleId}

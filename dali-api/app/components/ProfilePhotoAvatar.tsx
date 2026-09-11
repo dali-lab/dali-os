@@ -156,12 +156,12 @@ export function ProfilePhotoAvatar({
           <img
             src={previewUrl}
             alt=""
-            className="w-32 h-32 rounded-lg object-cover border border-border"
+            className="w-32 h-32 rounded-os-item object-cover border border-os-container"
           />
         ) : (
           <div
             className={cn(
-              "w-32 h-32 rounded-lg border border-border flex items-center justify-center font-bold text-3xl",
+              "w-32 h-32 rounded-os-item border border-os-container flex items-center justify-center font-bold text-3xl",
               tint,
             )}
           >
@@ -170,7 +170,7 @@ export function ProfilePhotoAvatar({
         )}
 
         {busy && (
-          <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-os-item bg-black/40 flex items-center justify-center">
             <span className="inline-block w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           </div>
         )}
@@ -182,7 +182,7 @@ export function ProfilePhotoAvatar({
             onClick={() => fileRef.current?.click()}
             aria-label={previewUrl ? "Replace profile photo" : "Upload profile photo"}
             title={previewUrl ? "Replace photo" : "Upload photo"}
-            className="absolute -bottom-1.5 -right-1.5 w-9 h-9 rounded-full bg-accent-coral text-white border-2 border-card shadow-sm flex items-center justify-center hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            className="absolute -bottom-1.5 -right-1.5 w-9 h-9 rounded-full bg-black/55 text-white border-2 border-os-bg shadow-sm flex items-center justify-center transition-colors hover:bg-black/70 disabled:opacity-60"
           >
             <Camera className="w-4 h-4" />
           </button>

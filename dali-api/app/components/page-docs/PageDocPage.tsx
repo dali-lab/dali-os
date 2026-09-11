@@ -13,15 +13,12 @@ import {
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { CommentsRail } from "~/components/collab/CommentsRail";
-import { buttonClasses } from "~/components/ui/Button";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 // PageDocPage is lazy-loaded (see PageDocContext), so importing from the doc
 // schema package here doesn't drag BlockNote into any route's initial chunk.
 import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
-import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 type Maintainer = { id: string; name: string; handle: string | null };
 
@@ -59,8 +56,6 @@ type DraftSection = {
   videoLabel: string | null;
 };
 
-const SECTION_LABEL_CLASS =
-  "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 // The dali.os eyebrow: wider tracking on the design's secondary grey, as on the
 // project page's section labels.
 const OS_SECTION_LABEL_CLASS =
@@ -70,7 +65,7 @@ const EMPTY_CLASS = "py-2 text-sm text-muted-foreground";
 const TITLE_ID = "page-doc-page-title";
 
 function useOsLabelClass() {
-  return useFeatureFlag("os-redesign") ? OS_SECTION_LABEL_CLASS : SECTION_LABEL_CLASS;
+  return OS_SECTION_LABEL_CLASS;
 }
 
 function newClientSectionId(): string {
@@ -104,10 +99,6 @@ export function PageDocPage({
   focusCommentId?: string;
   onClose: () => void;
 }) {
-  // Under the dali.os shell the guide wears that design instead of the brand
-  // shell's: a large light title, pill buttons on the pale-blue accent, and the
-  // rail's own active-row marker on the section list. Content is untouched.
-  const os = useFeatureFlag("os-redesign");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<DocData | null>(null);
   const [editing, setEditing] = useState(false);
@@ -232,12 +223,7 @@ export function PageDocPage({
             type="button"
             onClick={cancelEditing}
             disabled={saving}
-            className={cn(
-              "disabled:opacity-50",
-              os
-                ? "os-btn-ghost"
-                : "px-2.5 py-1 text-sm rounded-md text-foreground/80 hover:bg-muted",
-            )}
+            className="os-btn-ghost disabled:opacity-50"
           >
             Cancel
           </button>
@@ -245,48 +231,28 @@ export function PageDocPage({
             type="button"
             onClick={() => void save()}
             disabled={saving || uploading || !draftTitle.trim()}
-            className={cn(
-              os ? "os-btn-primary" : buttonClasses("primary", "sm"),
-              "disabled:opacity-50",
-            )}
+            className="os-btn-primary disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>
         </>
-      ) : os ? (
+      ) : (
         // The design labels its secondary actions rather than reducing them to
         // a bare glyph, so the pill carries the word and needs no tooltip.
         <button type="button" onClick={startEditing} className="os-edit-btn os-add-btn--sm">
           <Pencil className="h-3.5 w-3.5" aria-hidden />
           Edit
         </button>
-      ) : (
-        <Tooltip content="Edit guide">
-          <button
-            type="button"
-            onClick={startEditing}
-            aria-label="Edit guide"
-            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        </Tooltip>
       )
     ) : null;
 
   return (
     <div
-      className={cn("flex min-h-[70vh] flex-col", os ? "gap-8" : "gap-5")}
+      className="flex min-h-[70vh] flex-col gap-8"
       aria-labelledby={TITLE_ID}
     >
       <header
-        className={cn(
-          "flex items-start justify-between gap-4",
-          // The os pages separate the title from the page with space, not a
-          // rule — the only rules that design draws are structural (the rail
-          // divider, the tab bar).
-          os ? "pb-1" : "border-b border-border pb-4",
-        )}
+        className="flex items-start justify-between gap-4 pb-1"
       >
         <div className="min-w-0 flex-1">
           {/* The input lives inside the h1 so the heading — and the
@@ -294,10 +260,7 @@ export function PageDocPage({
               input's value carries into the accessible name. */}
           <h1
             id={TITLE_ID}
-            className={cn(
-              "font-heading text-foreground",
-              os ? "text-4xl font-medium" : "text-xl font-bold sm:text-2xl",
-            )}
+            className="font-heading text-foreground text-4xl font-medium"
           >
             {editing ? (
               <input
@@ -305,12 +268,7 @@ export function PageDocPage({
                 onChange={(e) => setDraftTitle(e.target.value)}
                 placeholder={fallbackTitle}
                 aria-label="Guide title"
-                className={cn(
-                  "w-full border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2",
-                  os
-                    ? "rounded-os-item text-4xl font-medium focus:ring-os-accent/40"
-                    : "rounded-md text-xl font-bold focus:ring-accent-coral/30 sm:text-2xl",
-                )}
+                className="w-full border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 rounded-os-item text-4xl font-medium focus:ring-os-accent/40"
               />
             ) : (
               (data?.doc.title ?? fallbackTitle)
@@ -328,10 +286,7 @@ export function PageDocPage({
             </div>
           ) : (
             <p
-              className={cn(
-                "text-muted-foreground",
-                os ? "mt-2 text-sm" : "mt-0.5 text-xs",
-              )}
+              className="text-muted-foreground mt-2 text-sm"
             >
               {data?.maintainer
                 ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
@@ -345,11 +300,7 @@ export function PageDocPage({
             type="button"
             onClick={onClose}
             aria-label="Close guide"
-            className={
-              os
-                ? "flex h-10 w-10 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
-                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-            }
+            className="flex h-10 w-10 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
@@ -367,12 +318,9 @@ export function PageDocPage({
       )}
 
       {status === "ready" && data && (
-        <div className={cn("flex flex-col", os ? "gap-8" : "gap-5")}>
+        <div className="flex flex-col gap-8">
           <div
-            className={cn(
-              "flex flex-col sm:flex-row sm:items-start",
-              os ? "gap-6" : "gap-4",
-            )}
+            className="flex flex-col sm:flex-row sm:items-start gap-6"
           >
             <SectionSidebar
               sections={sections.map((s) => ({ id: s.id, title: s.title }))}
@@ -422,7 +370,7 @@ export function PageDocPage({
               }}
             />
 
-            <div className={cn("min-w-0 flex-1 flex flex-col", os ? "gap-6" : "gap-4")}>
+            <div className="min-w-0 flex-1 flex flex-col gap-6">
               {active ? (
                 editing ? (
                   <SectionEditPanel
@@ -447,17 +395,13 @@ export function PageDocPage({
           {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
           <section
-            className={cn(
-              "flex flex-col gap-2 border-t border-border",
-              os ? "pt-8" : "pt-5",
-            )}
+            className="flex flex-col gap-2 border-t border-border pt-8"
           >
             <CommentsRail
               targetType="pagedoc"
               targetId={data.doc.id}
               currentUserId={data.currentUserId}
               canComment
-              canResolve={data.maintainer?.id === data.currentUserId}
               mentionPath={path}
               focusCommentId={focusCommentId}
             />
@@ -487,30 +431,22 @@ function SectionSidebar({
   onMove: (id: string, dir: "up" | "down") => void;
   onDelete: (id: string) => void;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const labelClass = useOsLabelClass();
   return (
     <aside
-      className={cn(
-        "w-full shrink-0 sm:border-r sm:border-border",
-        os ? "sm:w-60 sm:pr-5" : "sm:w-52 sm:pr-4",
-      )}
+      className="w-full shrink-0 sm:border-r sm:border-border sm:w-60 sm:pr-5"
     >
-      <div className={cn("flex items-center justify-between gap-2", os ? "mb-3" : "mb-2")}>
+      <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className={labelClass}>Sections</h3>
         {editing && (
           <button
             type="button"
             onClick={onAdd}
-            className={
-              os
-                ? "os-add-btn os-add-btn--sm"
-                : "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
-            }
+            className="os-add-btn os-add-btn--sm"
           >
             <Plus
-              className={os ? "h-3 w-3" : "h-3.5 w-3.5"}
-              strokeWidth={os ? 3 : undefined}
+              className="h-3 w-3"
+              strokeWidth={3}
               aria-hidden
             />
             Add
@@ -532,16 +468,9 @@ function SectionSidebar({
               // transparent edge of the same width, so the labels stay aligned.
               className={cn(
                 "group flex min-w-[8rem] flex-col gap-1 sm:min-w-0",
-                os
-                  ? selected
-                    ? "os-subtab-active"
-                    : "rounded-os-item border-l-2 border-transparent hover:bg-os-hover"
-                  : cn(
-                      "rounded-md border-l-2",
-                      selected
-                        ? "border-accent-coral bg-accent-coral/10"
-                        : "border-transparent hover:bg-muted/40",
-                    ),
+                selected
+                  ? "os-subtab-active"
+                  : "rounded-os-item border-l-2 border-transparent hover:bg-os-hover",
               )}
             >
               {editing ? (
@@ -588,15 +517,10 @@ function SectionSidebar({
                   type="button"
                   onClick={() => onSelect(s.id)}
                   className={cn(
-                    "w-full truncate text-left",
-                    os ? "px-3 py-2 text-base" : "px-2.5 py-1.5 text-sm",
-                    os
-                      ? selected
-                        ? "font-medium text-foreground"
-                        : "text-os-grey hover:text-foreground"
-                      : selected
-                        ? "font-semibold text-accent-coral"
-                        : "text-foreground/80",
+                    "w-full truncate text-left px-3 py-2 text-base",
+                    selected
+                      ? "font-medium text-foreground"
+                      : "text-os-grey hover:text-foreground",
                   )}
                 >
                   {s.title}
@@ -611,7 +535,6 @@ function SectionSidebar({
 }
 
 function SectionReadPanel({ section }: { section: SectionData }) {
-  const os = useFeatureFlag("os-redesign");
   const emptyBody = isEmptyBlocks(section.body);
   return (
     <div className="flex flex-col gap-4">
@@ -619,10 +542,7 @@ function SectionReadPanel({ section }: { section: SectionData }) {
           legible as the heading of this pane rather than sitting at body
           size. */}
       <h3
-        className={cn(
-          "font-heading text-foreground",
-          os ? "text-2xl font-medium" : "text-lg font-bold sm:text-xl",
-        )}
+        className="font-heading text-foreground text-2xl font-medium"
       >
         {section.title}
       </h3>
@@ -630,7 +550,7 @@ function SectionReadPanel({ section }: { section: SectionData }) {
         <video
           src={section.videoUrl}
           controls
-          className={cn("w-full bg-black", os ? "rounded-os-card" : "rounded-lg")}
+          className="w-full bg-black rounded-os-card"
         />
       )}
       {emptyBody ? (
@@ -661,7 +581,6 @@ function SectionEditPanel({
   onUploading: (v: boolean) => void;
   onChange: (patch: Partial<DraftSection>) => void;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const labelClass = useOsLabelClass();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -703,12 +622,7 @@ function SectionEditPanel({
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className={cn(
-              "disabled:opacity-50",
-              os
-                ? "os-edit-btn"
-                : "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50",
-            )}
+            className="os-edit-btn disabled:opacity-50"
           >
             {uploading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -751,7 +665,7 @@ function SectionEditPanel({
           <video
             src={section.videoUrl}
             controls
-            className={cn("mt-1 w-full bg-black", os ? "rounded-os-card" : "rounded-lg")}
+            className="mt-1 w-full bg-black rounded-os-card"
           />
         )}
       </div>
@@ -767,12 +681,7 @@ function SectionEditPanel({
           initialContent={section.body}
           onChange={(body) => onChange({ body })}
           placeholder="Explain this section of the page."
-          className={cn(
-            "py-2",
-            os
-              ? "rounded-os-card bg-os-card"
-              : "rounded-md border border-border bg-card",
-          )}
+          className="py-2 rounded-os-card bg-os-card"
         />
       </div>
 
@@ -794,7 +703,6 @@ function MaintainerPicker({
   const [results, setResults] = useState<MentionUser[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(currentLabel);
   const [open, setOpen] = useState(false);
-  const os = useFeatureFlag("os-redesign");
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -829,12 +737,7 @@ function MaintainerPicker({
             setQuery("");
           }}
           onChange={(e) => setQuery(e.target.value)}
-          className={cn(
-            "flex-1 border border-border text-sm text-foreground focus:outline-none focus:ring-2",
-            os
-              ? "rounded-full bg-os-card px-4 py-2 focus:ring-os-accent/40"
-              : "rounded-md bg-background px-3 py-1.5 focus:ring-accent-coral/30",
-          )}
+          className="flex-1 border border-border text-sm text-foreground focus:outline-none focus:ring-2 rounded-full bg-os-card px-4 py-2 focus:ring-os-accent/40"
         />
         {selectedLabel && (
           <button

@@ -114,7 +114,6 @@ beforeEach(() => {
     canView: true,
     canEdit: true,
     canComment: true,
-    canResolve: true,
   });
 });
 
@@ -174,7 +173,6 @@ describe("doc comments permission model", () => {
       canView: true,
       canEdit: false,
       canComment: true,
-      canResolve: false,
     });
     const res = (await post(docComment())) as Response;
     expect(res.status).toBe(201);
@@ -186,7 +184,6 @@ describe("doc comments permission model", () => {
       canView: false,
       canEdit: false,
       canComment: false,
-      canResolve: false,
     });
     const res = (await post(docComment())) as Response;
     expect(res.status).toBe(403);
@@ -199,7 +196,6 @@ describe("doc comments permission model", () => {
       canView: true,
       canEdit: false,
       canComment: true,
-      canResolve: false,
     });
     const res = (await post(docComment())) as Response;
     expect(res.status).toBe(201);
@@ -211,7 +207,6 @@ describe("doc comments permission model", () => {
       canView: false,
       canEdit: false,
       canComment: false,
-      canResolve: false,
     });
     const res = (await post(docComment())) as Response;
     expect(res.status).toBe(403);
@@ -246,7 +241,6 @@ describe("GET /api/comments loader", () => {
         authorId: "u1",
         body: "hello",
         anchor: null,
-        resolvedAt: null,
         createdAt: now,
         updatedAt: now,
         versionId: null,

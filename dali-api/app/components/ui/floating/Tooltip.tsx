@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  forwardRef,
   isValidElement,
   useState,
   type ReactElement,
@@ -45,26 +46,37 @@ const LABEL_CLASS =
 const RICH_CLASS =
   "max-w-[260px] rounded-md border border-border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-brand-2";
 
-export function Tooltip({
-  content,
-  children,
-  placement = "top",
-  variant = "label",
-  delay = 250,
-  disabled = false,
-  className,
-}: {
-  /** The tip text/markup. `null`/`""` renders the trigger with no tooltip. */
-  content: ReactNode;
-  /** A single focusable trigger element (a button, a span, a pill…). */
-  children: ReactElement;
-  placement?: Placement;
-  variant?: "label" | "rich";
-  /** Hover open delay, ms. Focus opens immediately. */
-  delay?: number;
-  disabled?: boolean;
-  className?: string;
-}) {
+export const Tooltip = forwardRef<
+  HTMLElement,
+  {
+    /** The tip text/markup. `null`/`""` renders the trigger with no tooltip. */
+    content: ReactNode;
+    /** A single focusable trigger element (a button, a span, a pill…). */
+    children: ReactElement;
+    placement?: Placement;
+    variant?: "label" | "rich";
+    /** Hover open delay, ms. Focus opens immediately. */
+    delay?: number;
+    disabled?: boolean;
+    className?: string;
+  }
+>(function Tooltip(
+  {
+    content,
+    children,
+    placement = "top",
+    variant = "label",
+    delay = 250,
+    disabled = false,
+    className,
+    // A parent floating primitive (Popover/Menu) that uses this Tooltip as its
+    // `trigger` clones us with a ref + reference props (onClick, aria-expanded…).
+    // Capture and forward them to the real child button — otherwise the parent's
+    // open handler never lands on the button and it can't open.
+    ...rest
+  },
+  forwardedRef,
+) {
   const [open, setOpen] = useState(false);
 
   const { refs, floatingStyles, context } = useFloating({
@@ -93,11 +105,16 @@ export function Tooltip({
   });
 
   const childRef = (children as { ref?: unknown }).ref ?? (children.props as { ref?: unknown }).ref;
-  const ref = useMergeRefs([refs.setReference, childRef as never]);
+  const ref = useMergeRefs([refs.setReference, forwardedRef as never, childRef as never]);
   const trigger = isValidElement(children)
     ? cloneElement(children, {
         ref,
-        ...getReferenceProps(children.props as Record<string, unknown>),
+        // Merge our own reference props (hover/focus) with any injected by a
+        // parent floating primitive so both sets of handlers reach the button.
+        ...getReferenceProps({
+          ...(children.props as Record<string, unknown>),
+          ...(rest as Record<string, unknown>),
+        }),
       } as Record<string, unknown>)
     : children;
 
@@ -129,7 +146,7 @@ export function Tooltip({
       )}
     </>
   );
-}
+});
 
 // A muted ⓘ that reveals a `rich` tooltip — the affordance for explaining a
 // jargon term or a process next to its label ("Essentiality ⓘ"). Renders as a

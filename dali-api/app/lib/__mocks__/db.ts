@@ -367,6 +367,14 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
   },
+  meetingAttendance: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   meetingReminderLog: {
     create: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -506,6 +514,20 @@ export const prisma = {
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+  },
+  courseOffering: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    groupBy: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  memberClass: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
   },
   adminMembership: {
     findUnique: vi.fn(),

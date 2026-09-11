@@ -162,7 +162,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     linkAccess: page.linkAccess,
     linkPermission: page.linkPermission,
   });
-  const { canEdit, canComment, canResolve } = access;
+  const { canEdit, canComment } = access;
   if (!access.canView) throw new Response("Not found", { status: 404 });
 
   // Folder pages are Drive containers, not documents — the doc viewer would
@@ -338,7 +338,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     allTags,
     canEdit,
     canComment,
-    canResolve,
     canManageAccess,
     favorited,
     collabToken,
@@ -361,7 +360,6 @@ export default function DocumentPage() {
     allTags,
     canEdit,
     canComment,
-    canResolve,
     canManageAccess,
     favorited,
     collabToken,
@@ -416,7 +414,6 @@ export default function DocumentPage() {
         subtitle={subtitle}
         canEdit={canEdit}
         canComment={canComment}
-        canResolve={canResolve}
         canManageAccess={canManageAccess}
         favorited={favorited}
         workspaceType={workspaceType}

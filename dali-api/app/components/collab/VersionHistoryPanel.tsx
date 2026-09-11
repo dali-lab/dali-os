@@ -302,11 +302,11 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
       onClose={onClose}
       labelledBy="version-history-title"
       disableEscape={restoring}
-      containerClassName="bg-card rounded-xl shadow-2xl border border-border w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden"
+      containerClassName="bg-card rounded-xl shadow-2xl border border-border w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden flex-col sm:flex-row"
     >
       <>
         {/* Left: version list */}
-        <div className="w-72 border-r border-border flex flex-col">
+        <div className="w-full sm:w-72 border-b sm:border-b-0 sm:border-r border-border flex flex-col max-h-40 sm:max-h-none">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/50">
             <h2 id="version-history-title" className="text-sm font-semibold text-foreground inline-flex items-center gap-1">
               Version history
@@ -315,7 +315,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
             <button
               type="button"
               onClick={onClose}
-              className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+              className="text-muted-foreground/70 hover:text-foreground rounded p-2.5 hover:bg-muted"
               aria-label="Close"
             >
               <X className="w-5 h-5" aria-hidden />

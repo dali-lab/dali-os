@@ -209,6 +209,22 @@ describe("syncTimeEntryToGoogle — sync enabled", () => {
     expect(googleCalendarMock.createGoogleCalendarEvent).not.toHaveBeenCalled();
   });
 
+  // Gate 0. These entries are the work half of something already drawn at its
+  // own slot on a real calendar, so a mirror event would show the same hours a
+  // second time. Enforced in the module (not at each call site) so the update
+  // path can't reintroduce the duplicate.
+  it("no-ops for an entry attached to a meeting", async () => {
+    await syncTimeEntryToGoogle(makeEntry({ scheduledMeetingId: "meeting-1" }));
+    expect(prismaMock.userAvailabilitySettings.findUnique).not.toHaveBeenCalled();
+    expect(googleCalendarMock.createGoogleCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it("no-ops for an entry attached to a calendar event marked as work", async () => {
+    await syncTimeEntryToGoogle(makeEntry({ sourceEventId: "gcal-event-9" }));
+    expect(prismaMock.userAvailabilitySettings.findUnique).not.toHaveBeenCalled();
+    expect(googleCalendarMock.createGoogleCalendarEvent).not.toHaveBeenCalled();
+  });
+
   it("creates a Google event for a timed work entry and persists googleTimesheetEventId", async () => {
     await syncTimeEntryToGoogle(makeEntry());
 

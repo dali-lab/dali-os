@@ -18,11 +18,14 @@ import { publishCycleChange } from "../lib/staffing-events.server";
 //     level }, ...]` for multi-domain staffing, or the legacy single `domainId`
 //     + `level`. Other projects are untouched (this is the additive "add to a
 //     second project" path).
-//   - fromProjectId set → also remove the member from that source project (a
-//     drag MOVE A→B sends projectId=B, fromProjectId=A atomically).
-//   - projectId === null + fromProjectId set → remove the member from that one
-//     project only (drag to Unassigned / × on a project card). Confirmed rows on
-//     that project are Declined so a finalized card actually disappears.
+//   - fromProjectId set → the member is LEAVING that project: their Proposed
+//     rows there are dropped, any Confirmed row is Declined, and the canonical
+//     ProjectAssignment for (userId, fromProjectId, term) is deleted so they
+//     stop counting as staffed in payroll/jobx export and on their profile right
+//     away. Covers both a drag MOVE A→B (projectId=B, fromProjectId=A) and a drag
+//     to Unassigned / × (projectId=null, fromProjectId=A).
+//   - projectId set + no fromProjectId → additive "add to a second project": the
+//     member's rows on every other project are left intact.
 //   - projectId === null + no fromProjectId → full unassign: drop every Proposed
 //     row for (userId, cycle) (legacy behaviour, still used by MCP callers).
 //
@@ -139,11 +142,15 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    // Removing the member from a project (drag to Unassigned / ×): decline any
-    // Confirmed rows there so a finalized card leaves the column. On a plain move
-    // the target project keeps its Confirmed audit trail (dedup lets the fresh
-    // Proposed set win). ProjectAssignment cleanup happens on re-finalize.
-    if (body.projectId === null && body.fromProjectId) {
+    // Leaving a project (drag to Unassigned / × OR a move A→B — both send
+    // fromProjectId). Decline any Confirmed staffing rows there so a finalized
+    // card leaves the column, AND delete the canonical ProjectAssignment for that
+    // project so the member drops off payroll/jobx export and their profile
+    // immediately. We can't defer this to re-finalize: finalize's drop-detector
+    // only sees rows still marked Confirmed, but we just flipped this one to
+    // Declined, so it would never clean the roster row up. A plain "add to a
+    // second project" carries no fromProjectId, so multi-project staffing stays.
+    if (body.fromProjectId) {
       await tx.staffingAssignment.updateMany({
         where: {
           userId: body.userId,
@@ -152,6 +159,13 @@ export async function action({ request }: Route.ActionArgs) {
           status: "Confirmed",
         },
         data: { status: "Declined" },
+      });
+      await tx.projectAssignment.deleteMany({
+        where: {
+          userId: body.userId,
+          projectId: body.fromProjectId,
+          termId: cycle.termId,
+        },
       });
     }
 

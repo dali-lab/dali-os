@@ -19,8 +19,6 @@ import {
   mentorshipPairWhere,
 } from "../lib/visibility";
 import { isCore, currentTerm } from "~/lib/roles";
-import { AreaPillNav } from "~/components/AreaPillNav";
-import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
@@ -38,9 +36,6 @@ import { VIBES, VIBE_META } from "../lib/vibe";
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
 ];
-
-// Surfaces the area subtab row (see layout.tsx's areaPills handling).
-export const handle = { areaPills: true };
 
 type FilterOption = { id: string; label: string };
 
@@ -231,7 +226,7 @@ function searchGrid(
 
 export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -272,7 +267,6 @@ export default function MentorshipBrowse() {
 
   return (
     <main className="flex flex-col gap-6">
-      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
@@ -280,14 +274,10 @@ export default function MentorshipBrowse() {
             <button
               type="button"
               onClick={() => setTemplatesOpen(true)}
-              className={
-                os
-                  ? "os-edit-btn"
-                  : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
-              }
+              className="os-edit-btn"
             >
               <LayoutTemplate
-                className={cn("w-4 h-4", os ? "text-os-grey" : "text-accent-coral")}
+                className={cn("w-4 h-4", "text-os-grey")}
                 aria-hidden
               />
               Templates
@@ -305,7 +295,7 @@ export default function MentorshipBrowse() {
               { value: "", label: "Any term" },
               ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
             ]}
-            buttonClassName={cn(filterPillClass(os), "sm:w-40")}
+            buttonClassName={cn(filterPillClass(), "sm:w-40")}
           />
         </div>
       </header>
@@ -356,11 +346,7 @@ export default function MentorshipBrowse() {
         <div className="ml-auto flex items-center gap-2">
           <button
             type="submit"
-            className={
-              os
-                ? "os-btn-primary"
-                : "px-3 py-1 rounded-md bg-accent-coral text-white text-sm hover:opacity-90"
-            }
+            className="os-btn-primary"
           >
             Apply
           </button>
@@ -372,11 +358,7 @@ export default function MentorshipBrowse() {
                   window.localStorage.removeItem(FILTERS_STORAGE_KEY);
                 }
               }}
-              className={
-                os
-                  ? "os-btn-ghost"
-                  : "px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
-              }
+              className="os-btn-ghost"
             >
               Clear
             </Link>
@@ -419,7 +401,7 @@ function FilterSelect({
   options: FilterOption[];
   value: string;
 }) {
-  const { os, bodyText } = useOsChrome();
+  const { bodyText } = useOsChrome();
   return (
     <label className={cn("inline-flex items-center gap-1.5", bodyText)}>
       {label}
@@ -430,7 +412,7 @@ function FilterSelect({
           { value: "", label: "Any" },
           ...options.map((o) => ({ value: o.id, label: o.label })),
         ]}
-        buttonClassName={filterPillClass(os)}
+        buttonClassName={filterPillClass()}
       />
     </label>
   );

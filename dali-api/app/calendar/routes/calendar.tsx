@@ -1,5 +1,5 @@
 import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -53,9 +53,9 @@ import type {
   CalendarView,
 } from "~/calendar/lib/types";
 import {
-  EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
-  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
-  RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED,
+  ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
+  HOURS, HOUR_PX, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  DAY_KEYS,
   toDatetimeLocal, dayHourToLocal,
   ROLE_COLOR_PALETTE, roleColor,
   readableTextColor,
@@ -64,15 +64,16 @@ import {
 import {
   WeekGrid, WeekGridEvent, useNow, useRefreshOnFocus,
   workingHoursStripeLayer, DayBg, BlockBlock,
-  SelectionPopoverPortal, CalendarEventDetailPopover,
-  MeetingDetailToggles, EventGuestList,
+  SelectionPopoverPortal,
   type AllDayBlock,
 } from "~/calendar/components/WeekGrid";
 import {
-  buildGridDays,
   buildExternalLayer,
+  buildLoggedSourceIndex,
   buildAllDayItems,
+  buildAllDayLayer,
   buildLoggedTimeLayer,
+  workEventsOnly,
   mergeLayers,
   perCalendarLegend,
   type CalendarLegendGroup,
@@ -81,20 +82,17 @@ import {
   toGridRange,
   DEFAULT_LAYER_VISIBILITY,
   type LayerVisibility,
-  type GridDay,
 } from "~/calendar/lib/layers";
-import { parseAnchor, parseView, viewWindow } from "~/calendar/lib/view-window";
+import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import {
-  GeneralCalendarPrompt,
-} from "~/calendar/components/settings-cards";
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetView, TimesheetEditPopover } from "~/calendar/components/timesheet";
+import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { AvailabilityView } from "~/calendar/components/AvailabilityView";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
+import { useIsMobile } from "~/hooks/useIsMobile";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
@@ -104,6 +102,10 @@ export const handle = {
   areaSubnav: true,
   docKey: "calendar",
   docTitle: "Calendar",
+  // Fill the shell pane (iframe or tabless column) so the grid stretches to
+  // the edges and hours scroll inside it instead of the page.
+  fitViewport: true,
+  flushPane: true,
 };
 
 export async function loader({ request }: Route.LoaderArgs) { return loadCalendarData(request); }
@@ -127,12 +129,29 @@ export async function action({ request }: Route.ActionArgs) { return submitCalen
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
+  formMethod,
   defaultShouldRevalidate,
 }: {
   currentUrl: URL;
   nextUrl: URL;
+  formMethod?: string;
   defaultShouldRevalidate: boolean;
 }) {
+  // A mutation leaves the URL untouched (every action on this screen posts to
+  // the current location), so the search-param comparison below would read it
+  // as "nothing changed" and skip the loader — leaving the just-created event
+  // or time entry off the grid until the next window focus. Anything that
+  // isn't a plain GET defers to the default, which is to revalidate.
+  if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  // …and a mutation that went out through plain `fetch()` rather than a router
+  // form carries no formMethod at all: the timesheet's add/edit/delete and the
+  // several /api writes on this page all post that way and then ask for a
+  // revalidate by hand. That arrives here as "same URL, no form", which the
+  // comparison below also reads as nothing-changed — so the row landed in
+  // Postgres and never appeared on the grid. An identical URL is never the
+  // view switch this guard exists to skip (those change a param), so it defers
+  // to the default, which is to revalidate.
+  if (currentUrl.href === nextUrl.href) return defaultShouldRevalidate;
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   const cur = new URLSearchParams(currentUrl.search);
   const next = new URLSearchParams(nextUrl.search);
@@ -143,6 +162,45 @@ export function shouldRevalidate({
   cur.sort();
   next.sort();
   return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
+}
+
+/** The shell both of the calendar's settings dialogs wear — Calendars and
+ *  Availability — so they read as one surface with two bodies. Only the width
+ *  varies, and only because the bodies do. */
+function SettingsDialog({
+  title,
+  width = "max-w-3xl",
+  onClose,
+  children,
+}: {
+  title: string;
+  width?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-label={title} className={cn("w-full rounded-xl cal-surface p-6", width)}>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 export default function CalendarPage() {
@@ -159,23 +217,17 @@ const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-function ymdUtc(d: Date) {
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-}
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
 // UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
 // (?tab=schedule|timesheet) translate to the matching mode/layer.
 function CalendarScreen({ data }: { data: LoaderData }) {
-  const { os, panel } = useOsChrome();
+  const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // One screen now. Availability is a modal and the timesheet is a way of
   // viewing the same grid, so the only other "mode" left is the legacy
@@ -361,81 +413,56 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       { method: "post" },
     );
   };
-  // The grid editor slot: click-to-edit on an existing logged-time block.
-  // Creating goes through the unified create modal, never this slot.
-  type CalendarEditor = {
-    entry: TimeEntryDTO;
-    dayIdx: number;
-    startHour: number;
-    endHour: number;
-    startLocal: string;
-    endLocal: string;
-  };
-  const [editor, setEditor] = useState<CalendarEditor | null>(null);
+  // The grid's timesheet slot. In timesheet mode the grid logs hours directly:
+  // clicking a logged block edits it, and dragging out an empty slot creates an
+  // entry with no event behind it. With the timesheet layer off, dragging opens
+  // the event modal instead and this slot is only ever the editor.
+  type TimesheetSelection = { dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string } & (
+    | { mode: "edit"; entry: TimeEntryDTO }
+    | { mode: "create" }
+  );
+  const [timesheetSel, setTimesheetSel] = useState<TimesheetSelection | null>(null);
+  // The Log hours button's dialog. Separate from timesheetSel because it has no
+  // grid slot: it carries only the times its form opens on.
+  const [logHours, setLogHours] = useState<{ startLocal: string; endLocal: string } | null>(null);
 
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
   // repaints from data already in hand instead of waiting for a round-trip that
-  // goes out to Google.
-  const view = parseView(searchParams.get("view"));
-  const anchorParam = parseAnchor(searchParams.get("anchor") ?? searchParams.get("weekStart"));
-  const { start: rangeStart, end: rangeEnd } = viewWindow(data.timezone, view, anchorParam);
+  // goes out to Google. Shared with the Core hub, which draws the same grids.
+  const {
+    view,
+    rangeStart,
+    rangeEnd,
+    days,
+    focusDate,
+    anchorMonth,
+    rangeLabel,
+    changeView,
+    navigate,
+    goToday,
+    goToDay,
+  } = useCalendarView(data.timezone);
   const rangeStartIso = rangeStart.toISOString();
   const rangeEndIso = rangeEnd.toISOString();
-  const dayCount = Math.max(
-    1,
-    Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86_400_000),
-  );
-  const days = buildGridDays(rangeStartIso, dayCount);
-  // The date the view is centered on (prev/next math + the month label). For
-  // month view rangeStart is the Sunday before the 1st, so +14d lands mid-month.
-  // Agenda shares the month window, so its focus/label track the month too.
-  const focusDate =
-    view === "month" || view === "agenda" ? new Date(rangeStart.getTime() + 14 * 86_400_000) : rangeStart;
-  const anchorMonth = { year: focusDate.getUTCFullYear(), month: focusDate.getUTCMonth() + 1 };
 
-  const setParams = (mut: (p: URLSearchParams) => void) =>
-    setSearchParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        mut(p);
-        return p;
-      },
-      { preventScrollReset: true },
-    );
-  // Touches `view` and nothing else. An absent anchor already means "today",
-  // which every view resolves correctly on its own — and leaving the rest of
-  // the query identical is what lets shouldRevalidate skip the loader.
-  const changeView = (v: CalendarView) => setParams((p) => p.set("view", v));
-  const navigate = (delta: number) => {
-    const d = new Date(focusDate);
-    if (view === "day") d.setUTCDate(d.getUTCDate() + delta);
-    else if (view === "week") d.setUTCDate(d.getUTCDate() + delta * 7);
-    else d.setUTCMonth(d.getUTCMonth() + delta);
-    setParams((p) => {
-      p.set("view", view);
-      p.set("anchor", ymdUtc(d));
-      p.delete("weekStart");
-    });
-  };
-  const goToday = () =>
-    setParams((p) => {
-      p.set("view", view);
-      p.delete("anchor");
-      p.delete("weekStart");
-    });
-  const goToDay = (dateUtc: Date) =>
-    setParams((p) => {
-      p.set("view", "day");
-      p.set("anchor", ymdUtc(dateUtc));
-      p.delete("weekStart");
-    });
+  // On mobile, default to "day" view so the single-column layout is usable
+  // without horizontal scrolling through a compressed 7-day week grid.
+  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (isMobile && view === "week") changeView("day");
+  // Only run when isMobile first becomes true (post-mount). Don't chase every
+  // view change the user makes — they should be able to switch back to week.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
 
   // Keyboard nav (Google-Calendar style): D/W/M switch view, T jumps to today,
   // ←/→ page. Only in browse mode, never while a dialog is open or while typing
   // into a field. Modifier chords are left for the browser/OS.
   const anyModalOpen =
     Boolean(composer) ||
+    Boolean(timesheetSel) ||
+    Boolean(logHours) ||
     classesOpen ||
     calMgrOpen ||
     createModalOpen ||
@@ -480,23 +507,39 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }
     : data;
 
+  // Hours logged against something the event layer already draws — a meeting,
+  // or an event marked as work. Those annotate their source block with a role
+  // accent rather than drawing a second block on top of it, so there's one
+  // block, and one click target, per thing.
+  const loggedSources = buildLoggedSourceIndex(data, excludedRoleKeys, roleColors);
+
+  // "View timesheet" is a way of *looking* at the grid, not another overlay:
+  // it answers "what did I work on", so an ordinary calendar event — a class, a
+  // dentist appointment, a meeting nobody logged — has no place on it. What
+  // stays is the logged entries themselves and the events those hours were
+  // logged against, which keep drawing here (wearing their role accent) so the
+  // one block is still the event's own click target.
+  const workOnly = layers.logged;
+  const eventData = workOnly ? workEventsOnly(layerData, loggedSources.byEvent) : layerData;
+
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external)
     layerMaps.push(
       buildExternalLayer(
-        layerData,
+        eventData,
         days,
         hiddenCals,
         data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
         data.crudEnabled ? moveEvent : undefined,
         data.crudEnabled ? duplicateEvent : undefined,
         data.crudEnabled ? deleteEvent : undefined,
+        layers.logged ? loggedSources.byEvent : undefined,
       ),
     );
   // All-day events (crud read) render in the grid's all-day band.
   const allDayByDay: Record<number, AllDayBlock[]> = {};
   if (data.crudEnabled) {
-    const items = buildAllDayItems(layerData, days, hiddenCals);
+    const items = buildAllDayItems(eventData, days, hiddenCals);
     for (const [idx, evs] of Object.entries(items)) {
       allDayByDay[Number(idx)] = evs.map((e) => ({
         label: e.title,
@@ -512,18 +555,30 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     layerMaps.push(
       buildLoggedTimeLayer(data, days, {
         excludedRoleKeys,
-        // Suppress the duplicate block for meeting-sourced entries *while the
-        // event layer is drawing them* — otherwise the logged block lands on
-        // top of the meeting's own block and swallows the click, leaving no way
-        // to open the event and edit its details. With the event layer off
-        // there is nothing underneath, so the logged block is still needed.
+        // Suppress the duplicate block for entries the event layer is already
+        // drawing (meetings, and events marked as work) — otherwise the logged
+        // block lands on top of the event's own block and swallows the click,
+        // leaving no way to open the event and edit its details. Those blocks
+        // carry a role accent instead. With the event layer off there is
+        // nothing underneath, so the logged block is still needed.
         roleColors,
-        suppressSourced: { meetings: layers.external },
+        // Events only carry an eventId (and so can wear an accent) on the crud
+        // read; without the flag the busy read has nothing to annotate, so the
+        // entry has to keep drawing its own block or the hours vanish.
+        suppressSourced: {
+          // A meeting's own calendar event isn't marked as work, so in
+          // timesheet view it's filtered off the grid — nothing is left to
+          // carry the accent, and the entry has to draw its own block or the
+          // hours vanish from the one view that exists to show them.
+          meetings: !workOnly && layers.external,
+          events: layers.external && data.crudEnabled,
+        },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
           if (!day) return;
-          setEditor({
+          setTimesheetSel({
+            mode: "edit",
             entry: t,
             dayIdx,
             startHour,
@@ -533,6 +588,15 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           });
         },
       }),
+    );
+  // Month & agenda have no all-day band, so fold all-day events into the shared
+  // EventBlock map there as full-width chips / "All day" rows. Week/day show them
+  // in the dedicated band (allDayByDay) instead — don't double them up.
+  if (layers.external && data.crudEnabled && (view === "month" || view === "agenda"))
+    layerMaps.push(
+      buildAllDayLayer(eventData, days, hiddenCals, (e, anchor) =>
+        setComposer({ mode: "edit", event: e, anchor }),
+      ),
     );
   const eventsByDay = mergeLayers(...layerMaps);
 
@@ -585,23 +649,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Pay-period hours per role, for the sidebar's role list.
   const roleHours = Object.fromEntries(roleBuckets.map((b) => [b.key, b.hours]));
 
-  const df = (d: Date, opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, ...opts }).format(d);
-  let rangeLabel: string;
-  if (view === "day") rangeLabel = df(focusDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  else if (view === "month" || view === "agenda") rangeLabel = df(focusDate, { month: "long", year: "numeric" });
-  else {
-    const last = days[days.length - 1].dateUtc;
-    rangeLabel = `${df(rangeStart, { month: "short", day: "numeric" })} – ${df(last, {
-      month: "short",
-      day: "numeric",
-    })}, ${df(last, { year: "numeric" })}`;
-  }
+  // In timesheet mode the grid logs hours, so the create paths land on the
+  // timesheet popover instead of the event modal — an entry with no event
+  // behind it, which is the whole point of logging straight onto the grid.
+  // The popover anchors to a slot, so it needs a view that draws one; month and
+  // agenda keep the event modal.
+  const timesheetCreateMode = layers.logged && (view === "week" || view === "day");
 
-  // Open the create modal at a sensible default slot (today if it's in range,
-  // 9am for the user's default duration) — the New-button path when there's no
-  // drag to seed the times.
-  const openQuickCreate = () => {
+  // A sensible default slot for the Add button, which has no drag to seed it:
+  // today if it's in range, else the first visible day, 9am for the user's
+  // default duration.
+  const defaultSlot = () => {
     const nowKey = new Intl.DateTimeFormat("en-CA", {
       timeZone: data.timezone,
       year: "numeric",
@@ -609,36 +667,62 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       day: "2-digit",
     }).format(new Date());
     const found = days.findIndex((d) => ymdUtc(d.dateUtc) === nowKey);
-    const day = days[found >= 0 ? found : 0];
-    if (!day) return;
+    const dayIdx = found >= 0 ? found : 0;
+    const day = days[dayIdx];
+    if (!day) return null;
     const endHour = 9 + data.defaultEventDurationMin / 60;
-    openCreateModal(dayHourToLocal(day.dateUtc, 9), dayHourToLocal(day.dateUtc, endHour));
+    return {
+      dayIdx,
+      startHour: 9,
+      endHour,
+      startLocal: dayHourToLocal(day.dateUtc, 9),
+      endLocal: dayHourToLocal(day.dateUtc, endHour),
+    };
+  };
+
+  // Every create path funnels through here: grid drag, and the Add button
+  // (which passes no slot and falls back to the default one).
+  const startCreate = (slot?: { dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string }) => {
+    if (!timesheetCreateMode) {
+      openCreateModal(slot?.startLocal, slot?.endLocal);
+      return;
+    }
+    // A drag names its own slot, so its form belongs on that slot — the popover
+    // is anchored to the block you just drew. The button names none: pinning
+    // its form to a default slot put the dialog somewhere the user never
+    // pointed at (and drew a phantom selection on the grid), so it opens
+    // centered instead.
+    if (slot) {
+      setTimesheetSel({ mode: "create", ...slot });
+      return;
+    }
+    const resolved = defaultSlot();
+    if (!resolved) return;
+    setLogHours({ startLocal: resolved.startLocal, endLocal: resolved.endLocal });
   };
 
   const navBtn =
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
   const iconToolBtn =
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
-  const availabilityPill =
-    "inline-flex items-center gap-2 rounded-full border border-os-green/35 bg-os-green/10 px-4 py-2 text-[13px] font-bold text-os-green transition-colors hover:bg-os-green/20";
-  // The mockup's Add event capsule. Theme tokens rather than its literals, so
-  // it inverts correctly in light mode.
-  // Light mode gets the dark pill by inverting the page; dark mode can't invert
-  // (that lands on white) — the mockup's pill is a shade *darker* than the page
-  // there, so dark overrides to a black plate with light ink.
-  const addEventBtn = cn(
-    "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-extrabold",
-    "bg-foreground text-background transition-[transform,background-color,opacity] hover:opacity-90 active:scale-[0.97]",
-    "dark:bg-black/40 dark:text-foreground dark:hover:bg-black/25 dark:hover:opacity-100",
-  );
+  // The two settings dialogs open from the same pill, tinted by what they are:
+  // Availability is a status colour, Calendars the os accent. One builder so
+  // they can't drift into two different-looking controls.
+  const settingsPill = (tone: "green" | "accent") =>
+    cn(
+      "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-bold transition-colors",
+      tone === "green"
+        ? "border-os-green/35 bg-os-green/10 text-os-green hover:bg-os-green/20"
+        : "border-os-accent/35 bg-os-accent/10 text-os-accent hover:bg-os-accent/20",
+    );
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-3" : "gap-4")}>
+    <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
       {/* The date navigator belongs to the grid. Availability has no date at
           all, and Timesheet brings its own pay-period navigator, so neither
           wants this row above it. */}
       {mode === "browse" && (
-      <header className="flex flex-wrap items-center gap-3">
+      <header className="flex shrink-0 flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
             <ChevronLeft className="h-4 w-4" />
@@ -678,16 +762,27 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
               <button
                 type="button"
+                onClick={() => setCalendarsOpen(true)}
+                className={settingsPill("accent")}
+                title="Connect and manage calendars"
+              >
+                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
+                Calendars
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setAvailabilityOpen(true)}
-                className={availabilityPill}
+                className={settingsPill("green")}
                 title="Classes and working hours"
               >
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
                 Availability
               </button>
 
-              <button type="button" onClick={() => openCreateModal()} className={addEventBtn}>
-                <Plus className="h-4 w-4 stroke-[3]" /> Add event
+              <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
+                <Plus className="h-4 w-4 stroke-[3]" />
+                {timesheetCreateMode ? "Log hours" : "Add event"}
               </button>
             </>
           )}
@@ -695,13 +790,16 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       </header>
       )}
 
+      {/* The composer is a form, not a grid: it can run taller than the window,
+          so inside a viewport-bounded shell it carries its own scrollport
+          rather than overflowing one it doesn't own. */}
       {mode === "meeting" ? (
-        <section className="flex flex-col gap-3">
+        <section className="flex min-h-0 flex-1 flex-col gap-3 md:overflow-y-auto">
           <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
           <MeetingComposer data={data} />
         </section>
       ) : (
-        <div className="flex gap-5 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-5 max-md:min-h-[22rem]">
           <CalendarSidebar
             data={data}
             focusDate={focusDate}
@@ -714,12 +812,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             roleColors={roleColors}
             roleHours={roleHours}
             setRoleColor={setRoleColor}
-            onManage={() => setCalendarsOpen(true)}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />
           {/* No card around the grid — the hour rules and day rules are the
-              only structure it needs, the way Google's week view reads. */}
-          <section className="flex min-w-0 flex-1 flex-col lg:min-h-0">
+              only structure it needs, the way Google's week view reads.
+              overflow-x-auto lets the min-w-[640px] WeekGrid scroll rather
+              than compress on narrow viewports. */}
+          <section className="flex min-w-0 flex-1 flex-col md:min-h-0 overflow-x-auto">
               {view === "agenda" ? (
                 <AgendaView
                   days={days}
@@ -755,36 +854,48 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   onDayPointerSelect={(dayIdx, startHour, endHour) => {
                     const day = days[dayIdx];
                     if (!day) return;
-                    openCreateModal(
-                      dayHourToLocal(day.dateUtc, startHour),
-                      dayHourToLocal(day.dateUtc, endHour),
-                    );
+                    startCreate({
+                      dayIdx,
+                      startHour,
+                      endHour,
+                      startLocal: dayHourToLocal(day.dateUtc, startHour),
+                      endLocal: dayHourToLocal(day.dateUtc, endHour),
+                    });
                   }}
                   selection={
-                    editor
-                      ? { dayIdx: editor.dayIdx, startHour: editor.startHour, endHour: editor.endHour }
+                    timesheetSel
+                      ? { dayIdx: timesheetSel.dayIdx, startHour: timesheetSel.startHour, endHour: timesheetSel.endHour }
                       : createSel
                   }
                   selectionPopover={
-                    editor
-                      ? () => (
-                          <TimesheetEditPopover
-                            entry={editor.entry}
-                            startLocal={editor.startLocal}
-                            endLocal={editor.endLocal}
-                            myRoles={data.myRoles}
-                            onClose={() => setEditor(null)}
-                          />
-                        )
+                    timesheetSel
+                      ? () =>
+                          timesheetSel.mode === "create" ? (
+                            <TimesheetDragPopover
+                              startLocal={timesheetSel.startLocal}
+                              endLocal={timesheetSel.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setTimesheetSel(null)}
+                            />
+                          ) : (
+                            <TimesheetEditPopover
+                              entry={timesheetSel.entry}
+                              startLocal={timesheetSel.startLocal}
+                              endLocal={timesheetSel.endLocal}
+                              myRoles={data.myRoles}
+                              onClose={() => setTimesheetSel(null)}
+                            />
+                          )
                       : undefined
                   }
-                  onSelectionDismiss={() => setEditor(null)}
-                  // Only the timesheet editor's selection resizes; the crud create
-                  // preview (createSel) is a static hint driven by the composer.
+                  onSelectionDismiss={() => setTimesheetSel(null)}
+                  // Only the timesheet selection resizes — both its popovers
+                  // follow startLocal/endLocal live. The crud create preview
+                  // (createSel) is a static hint driven by the composer.
                   onSelectionResize={
-                    editor
+                    timesheetSel
                       ? (startHour, endHour) =>
-                          setEditor((prev) => {
+                          setTimesheetSel((prev) => {
                             if (!prev) return prev;
                             const day = days[prev.dayIdx];
                             if (!day) return prev;
@@ -802,6 +913,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               )}
           </section>
         </div>
+      )}
+      {logHours && (
+        <LogHoursDialog
+          startLocal={logHours.startLocal}
+          endLocal={logHours.endLocal}
+          myRoles={data.myRoles}
+          onClose={() => setLogHours(null)}
+        />
       )}
       {hoursAnchor && (
         <WorkingHoursPopover data={data} anchor={hoursAnchor} onClose={() => setHoursAnchor(null)} />
@@ -834,44 +953,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       )}
       {calendarsOpen &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
-            <CalendarsPanel
-              data={data}
-              layers={layers}
-              toggleLayer={toggleLayer}
-              hiddenCals={hiddenCals}
-              toggleHiddenCal={toggleHiddenCal}
-              roleBuckets={layers.logged ? roleBuckets : []}
-              excludedRoleKeys={excludedRoleKeys}
-              toggleRoleKey={toggleRoleKey}
-              onClose={() => setCalendarsOpen(false)}
-            />
-          </div>,
+          /* Wider than Availability: its rows carry a name plus three toggle
+             columns, where Availability stacks full-width cards. Same shell
+             either way — width follows the body, the dress doesn't. */
+          <SettingsDialog title="Calendars" width="max-w-5xl" onClose={() => setCalendarsOpen(false)}>
+            <CalendarsPanel data={data} hiddenCals={hiddenCals} toggleHiddenCal={toggleHiddenCal} />
+          </SettingsDialog>,
           document.body,
         )}
       {availabilityOpen &&
         createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setAvailabilityOpen(false);
-            }}
-          >
-            <div className="w-full max-w-3xl rounded-xl cal-surface p-6">
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="font-heading text-lg font-semibold text-foreground">Availability</h2>
-                <button
-                  type="button"
-                  onClick={() => setAvailabilityOpen(false)}
-                  aria-label="Close"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <AvailabilityView data={data} />
-            </div>
-          </div>,
+          <SettingsDialog title="Availability" onClose={() => setAvailabilityOpen(false)}>
+            <AvailabilityView data={data} />
+          </SettingsDialog>,
           document.body,
         )}
       {createModalOpen && (

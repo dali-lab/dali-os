@@ -1,5 +1,4 @@
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Tooltip } from "~/components/ui/floating";
 
 export type RolePillSize = "sm" | "md";
@@ -20,10 +19,8 @@ const SIZES: Record<RolePillSize, string> = {
 };
 
 const PILL_BASE = "inline-flex items-center rounded-full font-medium";
-// Admin is the one role the brand shell singles out in coral. The os palette
-// has no coral in its chrome, so it marks the same distinction with the
-// accent — the pill still stands apart from the neutral ones beside it.
-const ADMIN_TONE = "bg-accent-coral/15 text-accent-coral";
+// Admin is the one role the brand shell singles out with the accent tone —
+// the pill stands apart from the neutral ones beside it.
 const OS_ADMIN_TONE = "bg-os-accent/15 text-os-accent";
 const DEFAULT_TONE = "bg-muted text-foreground";
 
@@ -36,8 +33,7 @@ export function RolePills({
   showLevel = false,
   className,
 }: RolePillsProps) {
-  const os = useFeatureFlag("os-redesign");
-  const adminTone = os ? OS_ADMIN_TONE : ADMIN_TONE;
+  const adminTone = OS_ADMIN_TONE;
   const sizeClass = SIZES[size];
   return (
     <span className={cn("inline-flex flex-wrap gap-1", className)}>

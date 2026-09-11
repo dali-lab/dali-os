@@ -86,23 +86,17 @@ describe("isAreaSubtabPath", () => {
 describe("hasSubnavRow", () => {
   const m = (handle: unknown) => [{ handle }];
 
-  it("is true for areaSubnav routes whether or not the redesign is on", () => {
-    expect(hasSubnavRow(m({ areaSubnav: true }), false)).toBe(true);
-    expect(hasSubnavRow(m({ areaSubnav: true }), true)).toBe(true);
-  });
-
-  it("is true for areaPills routes only while the redesign is off", () => {
-    expect(hasSubnavRow(m({ areaPills: true }), false)).toBe(true);
-    expect(hasSubnavRow(m({ areaPills: true }), true)).toBe(false);
+  it("is true for areaSubnav routes", () => {
+    expect(hasSubnavRow(m({ areaSubnav: true }))).toBe(true);
   });
 
   it("is false for a plain route, and tolerates handle-less matches", () => {
-    expect(hasSubnavRow(m({}), false)).toBe(false);
-    expect(hasSubnavRow([{}, { handle: undefined }], false)).toBe(false);
+    expect(hasSubnavRow(m({}))).toBe(false);
+    expect(hasSubnavRow([{}, { handle: undefined }])).toBe(false);
   });
 
   it("takes the signal from any match in the chain, not just the leaf", () => {
-    expect(hasSubnavRow([{ handle: {} }, { handle: { areaSubnav: true } }], true)).toBe(true);
+    expect(hasSubnavRow([{ handle: {} }, { handle: { areaSubnav: true } }])).toBe(true);
   });
 });
 

@@ -167,14 +167,15 @@ test.describe('project hub share toggle (member)', () => {
   });
 
   // Each row's actions live behind its own "⋯" menu trigger, marked with a
-  // data-testid="drive-item-actions-<id>". The title renders as a span, so
-  // anchor on its text and take the next actions trigger in document order —
-  // that's this row's menu. (The shared Menu puts its aria-label on the popup
-  // panel, not the trigger, so we key off the trigger's data-testid.)
+  // data-testid="drive-item-actions-<id>". Scope to the Drive row, not a bare
+  // text match: the DriveBrowser action strip now echoes the selected item's
+  // title, so `getByText(title)` alone resolves to two elements (the row + the
+  // strip) and trips strict mode.
   const docMenuTrigger = (page: import('@playwright/test').Page, title: string) =>
     page
-      .getByText(title, { exact: true })
-      .locator('xpath=following::button[starts-with(@data-testid, "drive-item-actions-")][1]');
+      .locator('[data-testid^="drive-item-"]')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .locator('[data-testid^="drive-item-actions-"]');
 
   // Opening a row menu is racy in the Finder-shaped Drive: the trigger is
   // opacity-0 until row hover and the row carries dnd-kit pointer listeners (so a

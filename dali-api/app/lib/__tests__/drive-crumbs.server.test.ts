@@ -73,8 +73,8 @@ const TREE: Record<string, any> = {
   },
 };
 
-const grant = { canView: true, canEdit: true, canComment: true, canResolve: true };
-const deny = { canView: false, canEdit: false, canComment: false, canResolve: false };
+const grant = { canView: true, canEdit: true, canComment: true };
+const deny = { canView: false, canEdit: false, canComment: false };
 
 beforeEach(() => {
   vi.resetAllMocks();

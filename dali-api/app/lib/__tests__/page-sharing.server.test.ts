@@ -8,12 +8,12 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 vi.mock("~/lib/groups", () => ({
-  listVisibleGroupsForUser: vi.fn().mockResolvedValue([]),
+  listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import {
   permissionAtLeast,
   sharePermissionFor,
@@ -24,13 +24,13 @@ import {
 
 const m = prisma as any;
 
-// Shaped as listVisibleGroupsForUser returns — groupIdsForUser reads only id + archivedAt.
+// Shaped as listVisibleGroupIdsForUser returns — groupIdsForUser reads only id + archivedAt.
 const memberGroup = (id: string, archivedAt: string | null = null) => ({ id, archivedAt }) as any;
 
 beforeEach(() => {
   vi.resetAllMocks();
   m.pageShare.findMany.mockResolvedValue([]);
-  vi.mocked(listVisibleGroupsForUser).mockResolvedValue([]);
+  vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
 });
 
 describe("permissionAtLeast", () => {
@@ -58,7 +58,7 @@ describe("sharePermissionFor", () => {
   });
 
   it("includes the user's groups in the lookup", async () => {
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([memberGroup("g1")]);
+    vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([memberGroup("g1")]);
     m.pageShare.findMany.mockResolvedValue([{ permission: "Comment" }]);
     expect(await sharePermissionFor("p1", "u1")).toBe("Comment");
     const where = m.pageShare.findMany.mock.calls[0][0].where;
@@ -66,7 +66,7 @@ describe("sharePermissionFor", () => {
   });
 
   it("excludes manually-archived groups from the lookup", async () => {
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([
+    vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([
       memberGroup("g-archived", "2020-01-01T00:00:00.000Z"),
     ]);
     m.pageShare.findMany.mockResolvedValue([]);
@@ -82,14 +82,14 @@ describe("groupIdsForUser request memoization", () => {
   // sidebar Favorites/Recents read pays it per page (the dominant navigation-TTFB
   // cost; perf review Aug 2026).
   beforeEach(() => {
-    vi.mocked(listVisibleGroupsForUser).mockResolvedValue([memberGroup("g1")]);
+    vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([memberGroup("g1")]);
     m.pageShare.findMany.mockResolvedValue([]);
   });
 
   it("derives group membership once across many calls sharing a request", async () => {
     const req = new Request("http://localhost/x");
     await Promise.all(Array.from({ length: 20 }, () => groupIdsForUser("u1", req)));
-    expect(listVisibleGroupsForUser).toHaveBeenCalledTimes(1);
+    expect(listVisibleGroupIdsForUser).toHaveBeenCalledTimes(1);
   });
 
   it("sharePermissionFor over many pages resolves groups once with a shared request", async () => {
@@ -97,7 +97,7 @@ describe("groupIdsForUser request memoization", () => {
     await Promise.all(
       Array.from({ length: 14 }, (_, i) => sharePermissionFor(`page-${i}`, "u1", req)),
     );
-    expect(listVisibleGroupsForUser).toHaveBeenCalledTimes(1);
+    expect(listVisibleGroupIdsForUser).toHaveBeenCalledTimes(1);
     // still one pageShare lookup per (distinct) page
     expect(m.pageShare.findMany).toHaveBeenCalledTimes(14);
   });
@@ -105,7 +105,7 @@ describe("groupIdsForUser request memoization", () => {
   it("without a request each call re-derives", async () => {
     await groupIdsForUser("u1");
     await groupIdsForUser("u1");
-    expect(listVisibleGroupsForUser).toHaveBeenCalledTimes(2);
+    expect(listVisibleGroupIdsForUser).toHaveBeenCalledTimes(2);
   });
 });
 

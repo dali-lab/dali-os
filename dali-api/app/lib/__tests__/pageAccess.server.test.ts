@@ -23,13 +23,13 @@ vi.mock("~/partners/lib/partner-access", () => ({
 
 vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
-  listVisibleGroupsForUser: vi.fn().mockResolvedValue([]),
+  listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
-import { resolveGroupMembers, listVisibleGroupsForUser } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
 import { getPageAccess } from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(partnerHasProjectAccess).mockResolvedValue(false);
   vi.mocked(resolveGroupMembers).mockResolvedValue([]);
-  vi.mocked(listVisibleGroupsForUser).mockResolvedValue([]);
+  vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findFirst.mockResolvedValue(null);
@@ -72,9 +72,9 @@ function page(overrides: Record<string, unknown> = {}) {
 }
 
 function denied() {
-  return { canView: false, canEdit: false, canComment: false, canResolve: false };
+  return { canView: false, canEdit: false, canComment: false };
 }
-const full = { canView: true, canEdit: true, canComment: true, canResolve: true };
+const full = { canView: true, canEdit: true, canComment: true };
 
 // ── Archived pages ──────────────────────────────────────────────────────────
 describe("archived pages", () => {
@@ -102,7 +102,7 @@ describe("Member workspace", () => {
 
   it("grants view+comment to a profile-visible viewer (no edit)", async () => {
     const result = await getPageAccess("viewer", note({ profileVisible: true }));
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: true, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
 
   it("denies a stranger on a private, unshared note", async () => {
@@ -113,13 +113,13 @@ describe("Member workspace", () => {
   it("a View share grants view only — not comment", async () => {
     withShare("View");
     const result = await getPageAccess("viewer", note());
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: false, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
   });
 
   it("a Comment share grants view+comment, not edit", async () => {
     withShare("Comment");
     const result = await getPageAccess("viewer", note());
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: true, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
 
   it("an Edit share grants edit", async () => {
@@ -151,7 +151,7 @@ describe("Lab workspace", () => {
   it("'Everyone in the lab · View' grants a lab member view only — not edit", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", everyone({ linkPermission: "View" }));
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: false, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
   });
 
   it("denies non-members even on a doc open to the lab", async () => {
@@ -205,7 +205,7 @@ describe("Project workspace", () => {
   it("grants view+comment to a non-member lab member", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", projectPage());
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: true, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
 
   it("denies a stranger", async () => {
@@ -240,7 +240,7 @@ describe("Project workspace", () => {
 
   it("General access Public grants view only", async () => {
     const result = await getPageAccess("any-user", projectPage({ linkAccess: "Public" }));
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: false, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
   });
 
   it("General access never downgrades a project member", async () => {
@@ -267,7 +267,7 @@ describe("EducationOffering workspace", () => {
   it("grants view+comment to a non-instructor lab member", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", eduPage());
-    expect(result).toEqual({ canView: true, canEdit: false, canComment: true, canResolve: false });
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
 
   it("denies a complete stranger", async () => {

@@ -9,15 +9,13 @@ import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions";
 import type { BodySegment } from "~/lib/comment-body";
 
-// POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" | "react" | "unreact" }
+// POST   /api/comments/:id  { intent: "edit" | "set-anchor" | "react" | "unreact" }
 // DELETE /api/comments/:id
 //
-// Permission matrix per action:
+// A comment has no open/resolved state: it is posted, optionally edited or
+// reacted to, and deleted. Nothing marks a thread "done".
 //
-//   resolve/reopen:
-//     doc     → canResolve per getPageAccess (canEdit || Core)
-//     file    → Core
-//     pagedoc → pagedoc maintainer
+// Permission matrix per action:
 //
 //   edit (body update, author-only):
 //     all target types → comment author only
@@ -207,32 +205,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ ok: true }));
   }
 
-  // resolve / reopen
-  if (intent !== "resolve" && intent !== "reopen") {
-    return withCors(request, Response.json({ error: "Invalid intent" }, { status: 400 }));
-  }
-
-  if (comment.targetType === "pagedoc") {
-    const pageDoc = await prisma.pageDoc.findUnique({
-      where: { id: comment.targetId },
-      select: { maintainerId: true },
-    });
-    if (!pageDoc || pageDoc.maintainerId !== auth.user.sub) {
-      return forbidden(request);
-    }
-  } else if (comment.targetType === "doc") {
-    // canResolve = canEdit || Core (per getPageAccess)
-    const access = await getPageAccess(auth.user.sub, comment.targetId);
-    if (!access.canResolve) return forbidden(request);
-  } else {
-    // file: Core only
-    if (!core) return forbidden(request);
-  }
-
-  await prisma.docComment.update({
-    where: { id: comment.id },
-    data: { resolvedAt: intent === "resolve" ? new Date() : null },
-  });
-  if (comment.targetType === "doc") publishCommentChange(comment.targetId);
-  return withCors(request, Response.json({ ok: true }));
+  return withCors(request, Response.json({ error: "Invalid intent" }, { status: 400 }));
 }

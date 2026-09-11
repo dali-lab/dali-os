@@ -1,22 +1,13 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
-  AlignLeft,
   ListTodo,
-  ListChecks,
   Check,
-  CalendarDays,
-  ChevronLeft,
   ExternalLink,
   Search,
   CalendarClock,
-  GraduationCap,
-  MapPin,
-  Star,
-  UserRound,
   X,
 } from "lucide-react";
-import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -25,36 +16,22 @@ import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { timed } from "~/lib/server-timing";
-import { ProjectIcon } from "~/components/ProjectIcon";
 import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { getHomeEducationSummary } from "~/education/lib/offerings.server";
-import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
-import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled, resolveHomeSurface } from "~/lib/feature-flags.server";
+import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
 import {
   getZonedHourFraction,
-  getZonedYMD,
   resolveUserTimeZone,
-  zonedDayStartUtc,
 } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import type { Route } from "./+types/home";
-import {
-  WeekCalendarPanel,
-  formatWeekRange,
-} from "~/components/WeekCalendarPanel";
-import {
-  generalCalendarWeekEvents,
-  resolveWeekWindow,
-} from "~/lib/week-events";
 
 type HomeNotification = {
   id: string;
@@ -83,26 +60,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub, request);
   const surface = await resolveHomeSurface(auth.user.sub, roles, request);
   if (surface === "calendar") return redirect("/calendar");
-  const redesign = surface === "search";
-  // The dali.os home is the search-first home in the design's dress, so it
-  // wins over both other surfaces wherever the shell it belongs to is on.
-  const osRedesign = await isFeatureEnabled("os-redesign", auth.user.sub, roles, request);
 
-  // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
-  // both to build the day columns and to window the calendar fetch. The shell
-  // loads this same user row concurrently, so the memoized read shares it
-  // rather than issuing a second lookup.
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
-  const now = new Date();
-  const { weekOffset, weekStart, weekEnd, weekDays } = resolveWeekWindow(
-    request,
-    tz,
-    now,
-  );
 
-  const [items, tasks, rawEvents, assignedTasks, educationSummary, upcomingSessions, pages] =
-    await Promise.all([
+  const [items, tasks, pages] = await Promise.all([
     timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
       // banner, just as they're dropped from tasks and the bell. Also hide
@@ -137,73 +99,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     })),
     timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub, request)),
-    // Real events from the public DALI General Calendar (empty when unconfigured
-    // or on fetch failure — the panel then shows an empty grid + hint). The
-    // redesigned home drops the week panel, so its external fetch goes too.
-    redesign
-      ? []
-      : timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
-    // Open board tasks assigned to the viewer, across all their projects
-    // (Archived projects are retired — their tasks are noise here). One
-    // bounded query: soonest deadline first (undated last), then priority.
-    timed(request, 'home.assignedTasks', () => prisma.task.findMany({
-      where: {
-        status: { in: ["Todo", "InProgress", "InReview"] },
-        assignees: { some: { userId: auth.user.sub } },
-        project: { status: { not: "Archived" } },
-      },
-      orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { priority: "desc" }],
-      take: 8,
-      select: {
-        id: true,
-        title: true,
-        dueAt: true,
-        priority: true,
-        projectId: true,
-        project: { select: { name: true, iconEmoji: true } },
-      },
-    })),
-    // Education for the home card: count-only summary (no full offering/session/
-    // instructor rows), plus the viewer's next few sessions.
-    timed(request, 'home.educationSummary', () => getHomeEducationSummary(auth.user.sub)),
-    timed(request, 'home.sessions', () => listUpcomingSessionsForUser(auth.user.sub, { limit: 3 })),
     // `request` reuses the read the shell's sidebar already kicked off for the
     // same navigation instead of re-running the per-row access checks.
     timed(request, 'home.favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
   ]);
-
-  const education: EducationSummary = {
-    enrolledCount: educationSummary.enrolledCount,
-    openAssignments: educationSummary.openAssignments,
-    openOfferings: educationSummary.openOfferings,
-    pendingCount: educationSummary.pendingCount,
-    upcoming: upcomingSessions.map((s) => ({
-      id: s.id,
-      offeringId: s.offeringId,
-      label: s.title
-        ? `${s.offeringTitle} · ${s.title}`
-        : `${s.offeringTitle} · Session ${s.sequence}`,
-      when: s.datetime.toLocaleString("en-US", {
-        timeZone: tz,
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-      location: s.location,
-    })),
-  };
-
-  const myProjectTasks: MyProjectTask[] = assignedTasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    projectId: t.projectId,
-    projectName: t.project.name,
-    projectIconEmoji: t.project.iconEmoji,
-    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
-    priority: t.priority,
-  }));
 
   const notifications: HomeNotification[] = items.map((n) => ({
     id: n.id,
@@ -217,12 +116,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     rsvp: n.rsvp,
   }));
 
-  const weekEvents = generalCalendarWeekEvents(rawEvents, weekStart, tz);
-
-  // Label for the range being shown, formatted server-side in the viewer's zone
-  // so the client doesn't re-derive it in the browser's.
-  const weekLabel = formatWeekRange(weekStart, tz);
-
   const __loaderTotal = performance.now() - __loaderStart;
   if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
@@ -234,19 +127,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
 
   return {
-    redesign,
-    osRedesign,
     greeting,
     user: auth.user,
     notifications,
     tasks,
-    myProjectTasks,
-    weekDays,
-    weekEvents,
-    weekOffset,
-    weekLabel,
-    timeZone: tz,
-    education,
     pages: {
       favorites: pages.favorites.slice(0, HOME_PAGE_LIMIT),
       recents: pages.recents.slice(0, HOME_PAGE_LIMIT),
@@ -259,41 +143,19 @@ export async function loader({ request }: Route.LoaderArgs) {
    an index, and an unbounded pin list pushed everything else off the screen. */
 const HOME_PAGE_LIMIT = 6;
 
-type EducationSummary = {
-  enrolledCount: number;
-  openAssignments: number;
-  openOfferings: number;
-  pendingCount: number;
-  upcoming: {
-    id: string;
-    offeringId: string;
-    label: string;
-    when: string;
-    location: string | null;
-  }[];
-};
-
-type MyProjectTask = {
-  id: string;
-  title: string;
-  projectId: string;
-  projectName: string;
-  projectIconEmoji: string | null;
-  dueAt: string | null;
-  priority: "Low" | "Normal" | "High" | "Urgent";
-};
+// Home's quiet state centres itself in the shell's main column, which only
+// works if that column hands the page a height instead of sizing to it.
+export const handle = { fitViewport: true };
 
 export default function Home() {
-  const data = useLoaderData<typeof loader>();
-  if (data.osRedesign) return <HomeOS />;
-  return data.redesign ? <HomeRedesign /> : <HomeClassic />;
+  return <HomeOS />;
 }
 
 /* ------------------------------------------------------------------ */
-/* dali.os home (behind `os-redesign`). The design's front door: a       */
-/* time-of-day greeting, one wide search field, and the pages you were   */
-/* last in as cards. The only other surface is the attention banner for  */
-/* the tasks and invites still waiting on an answer.                     */
+/* Home. The design's front door: a time-of-day greeting, one wide       */
+/* search field, and the pages you were last in as cards. The only other */
+/* surface is the attention banner for tasks and invites still waiting   */
+/* on an answer.                                                         */
 /* ------------------------------------------------------------------ */
 
 function HomeOS() {
@@ -310,9 +172,11 @@ function HomeOS() {
       className={cn(
         "mx-auto flex w-full max-w-[750px] flex-col gap-12",
         quiet
-          ? // Cancel the shell's asymmetric top gutter so centering is against
-            // the iframe viewport, not the padded content box.
-            "-mt-8 min-h-dvh justify-center py-12 lg:-mt-[60px]"
+          ? // Fill the column the shell sized to the window (see the route's
+            // `fitViewport` handle) rather than claiming a viewport height of
+            // its own — that stacked under the top bar and the shell's bottom
+            // gutter, so the front door always scrolled by ~100px.
+            "flex-1 justify-center py-12"
           : "pt-6",
       )}
     >
@@ -330,17 +194,6 @@ function HomeOS() {
   );
 }
 
-/* Where a shortcut lives, as the design's small-caps caption under the title.
-   FavoritePage carries no breadcrumb, but its workspace is the same answer at
-   the altitude a caption wants. */
-const OS_WORKSPACE_CAPTION: Record<string, string> = {
-  Project: "Projects",
-  Lab: "Lab",
-  EducationOffering: "Education",
-  Member: "My space",
-  Route: "Navigation",
-};
-
 function RecentGrid({
   pages,
 }: {
@@ -348,7 +201,7 @@ function RecentGrid({
 }) {
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
-  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
+  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
 
   // A brand-new account: nothing starred, nothing opened. The search field
   // above is the only thing to do here, and a caption over an empty row of
@@ -375,7 +228,7 @@ function RecentGrid({
           leading cards out of reach once the row overflows). no-scrollbar hides
           the always-on bar (the row still scrolls by wheel/trackpad/drag). */}
       <div className="overflow-x-auto no-scrollbar">
-        <div className="mx-auto flex w-max gap-5">
+        <div className="mx-auto flex w-max gap-3">
           {shortcuts.map((p) => (
             <RecentCard key={p.id} page={p} onChanged={onChanged} />
           ))}
@@ -391,18 +244,15 @@ function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => 
     // Fixed width + no shrink: in a single scrolling row the cards must hold
     // their size rather than divide the container, so the row scrolls instead
     // of squeezing every card thinner as more are added.
-    <div className="group relative w-40 flex-shrink-0">
+    <div className="group relative w-32 flex-shrink-0">
       <a
         href={page.href}
-        className="flex h-full flex-col items-center gap-3 rounded-os-card bg-os-card p-4 text-center transition-colors hover:bg-os-card-hover"
+        className="flex h-full flex-col items-center gap-2 rounded-os-card bg-os-card p-3 text-center transition-colors hover:bg-os-card-hover"
       >
         <span className="flex items-center justify-center">
           <FavoriteIcon page={page} size="lg" />
         </span>
-        <span className="w-full truncate text-base text-foreground">{page.title || "Untitled"}</span>
-        <span className="w-full truncate text-xs font-semibold tracking-wide text-os-grey uppercase">
-          {OS_WORKSPACE_CAPTION[page.workspaceType] ?? page.workspaceType}
-        </span>
+        <span className="w-full truncate text-sm text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without
           hunting for it — while a favorite always shows its filled one. */}
@@ -425,65 +275,6 @@ function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => 
           )}
         </span>
       )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Redesigned home (behind `sidebar-redesign`, alongside the new left   */
-/* navigation): a search-first landing page — logo, the same indexed    */
-/* search the navbar runs, shortcuts to starred/recent pages, and the   */
-/* attention surfaces below. No general-calendar week panel.            */
-/* ------------------------------------------------------------------ */
-
-function HomeRedesign() {
-  const { user, notifications, tasks, myProjectTasks, education, pages } =
-    useLoaderData<typeof loader>();
-  const firstName = user.firstName || user.email.split("@")[0];
-
-  const compactBlocks = [
-    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
-    hasEducationContent(education) && <EducationPanel education={education} />,
-  ].filter(Boolean);
-
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
-      <div className="flex flex-col items-center gap-5 pt-12 sm:pt-20">
-        {/* The blue mark disappears against the dark page, so each theme gets
-            its own file rather than a filter. */}
-        <img src="/logo-blue.svg" alt="DALI Lab" className="h-20 w-auto sm:h-24 dark:hidden" />
-        <img
-          src="/logo-white.svg"
-          alt=""
-          aria-hidden
-          className="hidden h-20 w-auto sm:h-24 dark:block"
-        />
-        <p className="text-sm text-muted-foreground">Welcome back, {firstName}</p>
-        <HomeSearch />
-        <ShortcutTiles pages={pages} />
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <AttentionBanner tasks={tasks} notifications={notifications} />
-
-        {compactBlocks.length > 1 ? (
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-            {[0, 1].map((col) => (
-              <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
-                {compactBlocks
-                  .filter((_, i) => i % 2 === col)
-                  .map((block, i) => (
-                    <div key={i} className="min-w-0">
-                      {block}
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="min-w-0">{compactBlocks[0]}</div>
-        )}
-      </div>
     </div>
   );
 }
@@ -649,418 +440,6 @@ function HomeSearch() {
       )}
     </div>
   );
-}
-
-/* ------------------------------------------------------------------ */
-/* Shortcuts — starred pages first, then the ones you opened recently,  */
-/* as a tile row under the search box. Replaces the Favorites list      */
-/* panel on the redesigned home.                                        */
-/* ------------------------------------------------------------------ */
-
-/** Favorites then recents, sharing one row — same ceiling as HOME_PAGE_LIMIT. */
-const SHORTCUT_LIMIT = HOME_PAGE_LIMIT;
-
-function ShortcutTiles({
-  pages,
-}: {
-  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
-}) {
-  const revalidator = useRevalidator();
-  // Starring here re-sorts the row: an un-starred page drops back among the
-  // recents, and a starred one rises out of them.
-  const onChanged = () => revalidator.revalidate();
-  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
-
-  // Nothing starred and nothing opened yet — a brand-new account. Render
-  // nothing: the search box above is the only thing to do here, and a line of
-  // instructions under it just crowds that.
-  if (shortcuts.length === 0) return null;
-
-  // The row is one merged list, so name only the halves that survived the
-  // slice — captioning "recently visited" over nothing but favorites lies.
-  const shownFavorites = Math.min(pages.favorites.length, shortcuts.length);
-  const caption =
-    shownFavorites === 0
-      ? "Recently visited"
-      : shownFavorites === shortcuts.length
-        ? "Favorites"
-        : "Favorites & recently visited";
-
-  return (
-    // Wrapping row rather than a grid so a partial last row stays centered
-    // under the search box.
-    <div className="flex w-full max-w-xl flex-col items-center gap-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-        {caption}
-      </p>
-      <div className="flex w-full flex-wrap justify-center gap-1">
-        {shortcuts.map((p) => (
-          <ShortcutTile key={p.id} page={p} onChanged={onChanged} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ShortcutTile({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
-  return (
-    // Link + star are siblings: the star must not navigate.
-    <div className="group relative w-20">
-      <a
-        href={page.href}
-        className="flex flex-col items-center gap-1.5 rounded-lg px-1 py-3 transition-colors hover:bg-muted/50"
-      >
-        <span className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card shadow-brand-1">
-          <FavoriteIcon page={page} />
-        </span>
-        <span className="w-full truncate text-center text-[11px] text-foreground">
-          {page.title || "Untitled"}
-        </span>
-      </a>
-      {/* Recents show a hollow star on hover — a way to keep the page without
-          hunting for it — while a favorite always shows its filled one. */}
-      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
-        <span
-          className={`absolute right-0 top-1 ${
-            page.favorited ? "" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
-          }`}
-        >
-          {page.isRoute ? (
-            <FavoriteRouteButton
-              href={page.href}
-              label={page.title}
-              favorited={page.favorited}
-              onToggled={onChanged}
-              compact
-            />
-          ) : (
-            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Today's home, unchanged — what everyone sees with the flag off.      */
-/* ------------------------------------------------------------------ */
-
-function HomeClassic() {
-  const {
-    user,
-    notifications,
-    tasks,
-    myProjectTasks,
-    weekDays,
-    weekEvents,
-    weekOffset,
-    weekLabel,
-    timeZone,
-    education,
-    pages,
-  } = useLoaderData<typeof loader>();
-  const firstName = user.firstName || user.email.split("@")[0];
-
-  // Only the blocks that will actually render — see the grid below.
-  const compactBlocks = [
-    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
-    <FavoritesPanel pages={pages} />,
-    hasEducationContent(education) && <EducationPanel education={education} />,
-  ].filter(Boolean);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Welcome back, {firstName}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Here&apos;s what&apos;s happening in the lab.
-        </p>
-      </header>
-
-      <AttentionBanner tasks={tasks} notifications={notifications} />
-
-      {/* The compact blocks flow two-up on wide screens. Rather than a grid
-          (whose rows align across columns, so a short card gets pinned to the
-          bottom of a taller neighbour and leaves a gap), the blocks are dealt
-          round-robin into two independent columns that each pack their own
-          stack — a short card sits directly under the one above it. Each block
-          hides itself when empty, so the list is built from what will actually
-          render; a lone block takes the full width. */}
-      {compactBlocks.length > 1 ? (
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          {[0, 1].map((col) => (
-            <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
-              {compactBlocks
-                .filter((_, i) => i % 2 === col)
-                .map((block, i) => (
-                  <div key={i} className="min-w-0">
-                    {block}
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="min-w-0">{compactBlocks[0]}</div>
-      )}
-
-      <div className="flex flex-col gap-6">
-        <WeekCalendarPanel
-          days={weekDays}
-          events={weekEvents}
-          weekOffset={weekOffset}
-          weekLabel={weekLabel}
-          timeZone={timeZone}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Education — enrolled courses, next sessions, and open registration.  */
-/* Collapses to nothing when the member has no education activity, so    */
-/* the widget works for everyone (including non-students).               */
-/* ------------------------------------------------------------------ */
-
-// Whether the Education block has anything to say. Exported shape so the home
-// layout can count visible blocks without duplicating the rule.
-function hasEducationContent(e: EducationSummary): boolean {
-  return (
-    e.enrolledCount > 0 || e.openOfferings > 0 || e.pendingCount > 0 || e.upcoming.length > 0
-  );
-}
-
-function EducationPanel({ education }: { education: EducationSummary }) {
-  const { enrolledCount, openAssignments, openOfferings, pendingCount, upcoming } = education;
-  if (!hasEducationContent(education)) {
-    return null;
-  }
-  const blurb =
-    enrolledCount > 0
-      ? `You're enrolled in ${enrolledCount} course${enrolledCount === 1 ? "" : "s"}${
-          openAssignments > 0
-            ? ` — ${openAssignments} assignment${openAssignments === 1 ? "" : "s"} waiting on you`
-            : ""
-        }.`
-      : openOfferings > 0
-        ? `${openOfferings} workshop${openOfferings === 1 ? " or miniseries is" : "s and miniseries are"} open for registration.`
-        : "Workshops and miniseries are posted here each term.";
-  return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <GraduationCap className="w-4 h-4 text-accent-coral" />
-          Education
-        </h2>
-        <Link to="/education" className={buttonClasses("secondary", "sm")}>
-          {enrolledCount > 0 ? "My courses" : "Browse offerings"}
-        </Link>
-      </div>
-      <p className="text-sm text-muted-foreground">{blurb}</p>
-      {(openAssignments > 0 || pendingCount > 0) && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {openAssignments > 0 && (
-            <span className="inline-flex items-center rounded-full bg-accent-coral text-white px-2.5 py-1 text-xs font-semibold">
-              {openAssignments} assignment{openAssignments === 1 ? "" : "s"} due
-            </span>
-          )}
-          {pendingCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 text-xs font-semibold">
-              {pendingCount} application{pendingCount === 1 ? "" : "s"} pending
-            </span>
-          )}
-        </div>
-      )}
-      {upcoming.length > 0 && (
-        <ul className="flex flex-col gap-1.5 border-t border-border pt-3">
-          {upcoming.map((s) => (
-            <li key={s.id} className="text-xs">
-              <Link
-                to={`/education/${s.offeringId}/hub`}
-                className="font-medium text-foreground hover:underline"
-              >
-                {s.label}
-              </Link>
-              <span className="text-muted-foreground">
-                {" "}
-                · {s.when}
-                {s.location ? ` · ${s.location}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* My tasks — open project-board tasks assigned to the viewer, soonest  */
-/* deadline first. Each row deep-links to the task modal on its          */
-/* project board. Collapses to nothing when the viewer has none.         */
-/* ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ */
-/* Favorites — pages you starred, then the ones you opened most recently. */
-/* ------------------------------------------------------------------ */
-
-function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
-  return (
-    // Link + star are siblings: the star must not navigate.
-    <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
-      <a href={page.href} className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm">
-        <FavoriteIcon page={page} />
-        <span className="truncate text-foreground">{page.title || "Untitled"}</span>
-      </a>
-      {/* Recents show a hollow star on hover — a way to keep the page without
-          hunting for it — while a favorite always shows its filled one. */}
-      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
-        <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
-          {page.isRoute ? (
-            <FavoriteRouteButton
-              href={page.href}
-              label={page.title}
-              favorited={page.favorited}
-              onToggled={onChanged}
-              compact
-            />
-          ) : (
-            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function FavoritesPanel({
-  pages,
-}: {
-  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
-}) {
-  const revalidator = useRevalidator();
-  // Starring here re-sorts the panel: an un-starred page drops to Recent, and a
-  // starred one rises out of it.
-  const onChanged = () => revalidator.revalidate();
-  const { favorites, recents } = pages;
-  // Nothing starred and nothing opened yet — a brand-new account. Say what the
-  // panel is for rather than showing an empty box.
-  const empty = favorites.length === 0 && recents.length === 0;
-
-  return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
-        <Star className="w-4 h-4 text-accent-coral" />
-        Favorites
-      </h2>
-
-      {empty ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
-          Star a document to keep it here — recently opened pages show up too.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {favorites.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {favorites.map((p) => (
-                <PageRow key={p.id} page={p} onChanged={onChanged} />
-              ))}
-            </div>
-          )}
-
-          {recents.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {/* Only label the recents when pins sit above them; on its own the
-                  heading is noise. */}
-              {favorites.length > 0 && (
-                <span className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                  Recent
-                </span>
-              )}
-              {recents.map((p) => (
-                <PageRow key={p.id} page={p} onChanged={onChanged} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
-  if (tasks.length === 0) return null;
-  return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
-        <ListChecks className="w-4 h-4 text-accent-coral" />
-        My tasks
-      </h2>
-      <div className="flex flex-col gap-1">
-        {tasks.map((t) => {
-          const url = `/projects/${t.projectId}?tab=board&task=${t.id}`;
-          const overdue =
-            t.dueAt != null && new Date(t.dueAt).getTime() < Date.now();
-          return (
-            <a
-              key={t.id}
-              href={url}
-              onClick={(e) => openTaskLink(e, url, t.title)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors"
-            >
-              <span className="truncate text-foreground">{t.title}</span>
-              <span className="flex items-center gap-1 truncate text-xs text-muted-foreground flex-shrink-0 max-w-[30%]">
-                <ProjectIcon iconEmoji={t.projectIconEmoji} />
-                <span className="truncate">{t.projectName}</span>
-              </span>
-              <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-                {/* Low/Normal are the unremarkable default — only flag work
-                    that's High or Urgent, in the board's priority tones. */}
-                {(t.priority === "High" || t.priority === "Urgent") && (
-                  <span
-                    className={`text-[11px] ${
-                      t.priority === "Urgent"
-                        ? "text-accent-coral font-semibold"
-                        : "text-accent-coral"
-                    }`}
-                  >
-                    {t.priority}
-                  </span>
-                )}
-                {t.dueAt && (
-                  <span
-                    className={`text-[11px] px-1.5 py-0.5 rounded-md border ${
-                      overdue
-                        ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    Due {formatDuePill(t.dueAt)}
-                  </span>
-                )}
-              </span>
-            </a>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Short label for the due pill: "Mar 12" if it's this year, otherwise
-// "Mar 12, 2027" — mirrors the TaskBoard card pill.
-function formatDuePill(iso: string): string {
-  const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
 }
 
 /* ------------------------------------------------------------------ */

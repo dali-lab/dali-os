@@ -26,7 +26,6 @@ import {
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
 import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 
 // Borderless control for the Details property panel — the row supplies the
@@ -111,12 +110,11 @@ export function TaskModal({
 }) {
   const dialog = useDialog();
   const isCreate = !task;
-  const os = useFeatureFlag("os-redesign");
   // The design opens a detail modal as a record — labels over plain values,
   // no footer — and the pencil turns it into a form. Creating is always a
   // form; there is no record yet to read.
   const [editing, setEditing] = useState(false);
-  const readOnly = os && !isCreate && !editing;
+  const readOnly = !isCreate && !editing;
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [status, setStatus] = useState<TaskStatus>(
@@ -290,11 +288,13 @@ export function TaskModal({
     const currentDescription = (current.description ?? "").trim() || null;
     if (nextDescription !== currentDescription) patch.description = nextDescription;
     if (status !== current.status) patch.status = status;
-    // Compare the date the picker shows, not a rebuilt ISO. Reconstructing
-    // end-of-day / UTC-midnight from a local YYYY-MM-DD does not round-trip
-    // the stored timestamp, so an untouched deadline looked dirty.
+    // Compare the date the picker shows, not a rebuilt ISO — reconstructing
+    // the UTC-midnight timestamp from a YYYY-MM-DD round-trips the value, so an
+    // untouched deadline no longer looks dirty.
     const currentDueDate = current.dueAt ? dateInputValue(current.dueAt) : "";
-    if (dueDate !== currentDueDate) patch.dueAt = dueDate ? endOfDayIso(dueDate) : null;
+    if (dueDate !== currentDueDate) {
+      patch.dueAt = dueDate ? `${dueDate}T00:00:00.000Z` : null;
+    }
     const currentStartDate = current.startsAt ? dateInputValue(current.startsAt) : "";
     if (startDate !== currentStartDate) {
       patch.startsAt = startDate ? `${startDate}T00:00:00.000Z` : null;
@@ -437,7 +437,7 @@ export function TaskModal({
         title: trimmed,
         description: description.trim() ? description.trim() : null,
         status,
-        dueAt: dueDate ? endOfDayIso(dueDate) : null,
+        dueAt: dueDate ? `${dueDate}T00:00:00.000Z` : null,
         startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
@@ -707,23 +707,19 @@ export function TaskModal({
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto"
       containerClassName={cn(
         "w-full my-8 max-h-[85vh] flex flex-col",
-        os
-          ? "max-w-[560px] os-modal-card os-form !p-0"
-          : "max-w-4xl bg-card rounded-2xl shadow-brand-2",
+        "max-w-[560px] os-modal-card os-form !p-0",
       )}
     >
       <div
         className={cn(
           "flex items-start justify-between gap-3 flex-shrink-0",
-          os ? "px-6 pt-6 pb-0" : "px-5 sm:px-6 py-4 border-b border-border",
+          "px-6 pt-6 pb-0",
         )}
       >
         {/* The design names which of epic / story / task you have open, in
             that level's own colours, before the title. */}
-        {os && (
-          <span className="os-type-badge os-type-badge--task mt-1.5 flex-shrink-0">Task</span>
-        )}
-        {os && isCreate ? (
+        <span className="os-type-badge os-type-badge--task mt-1.5 flex-shrink-0">Task</span>
+        {isCreate ? (
           // Creating, the header names the dialog and the task's own name
           // moves into the first field below — which is where the design puts
           // it, and the only place a required mark can sit on it.
@@ -774,11 +770,7 @@ export function TaskModal({
           <button
             type="button"
             onClick={guardedClose}
-            className={
-              os
-                ? "os-icon-btn"
-                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-            }
+            className="os-icon-btn"
             aria-label="Close"
           >
             <X className="w-5 h-5" aria-hidden />
@@ -791,16 +783,14 @@ export function TaskModal({
       <div
         className={cn(
           "flex-1 min-h-0 overflow-y-auto",
-          os
-            ? // No column gap: a .os-field-group carries its own 20px bottom
-              // margin, and a gap here would space the paired fields twice.
-              "px-6 pb-6 pt-6"
-            : "flex flex-col gap-4 p-5 sm:p-6",
+          // No column gap: a .os-field-group carries its own 20px bottom
+          // margin, and a gap here would space the paired fields twice.
+          "px-6 pb-6 pt-6",
           readOnly && "os-form-readonly",
         )}
       >
-        <div className={cn("min-h-0", !os && "flex flex-col gap-4")}>
-        {os && isCreate && (
+        <div className="min-h-0">
+        {isCreate && (
           <div className="os-field-group">
             <label htmlFor="task-title-field" className="os-field-label">
               Title<span className="os-required-mark">*</span>
@@ -846,7 +836,6 @@ export function TaskModal({
 
         {!isCreate && (
           <ModalSection
-            os={os}
             bordered={false}
             className="mb-4 gap-1.5 text-xs"
             title={
@@ -915,7 +904,7 @@ export function TaskModal({
             question — the two ends of a span, domain with assignees — so the
             panel reads as a few decisions rather than a ladder of one-line
             rows, and fences the linked records off under their own heading. */}
-        <div className={cn(!os && "rounded-lg border border-border divide-y divide-border")}>
+        <div>
           <PropRow label="Status">
             <Select
               value={status}
@@ -926,7 +915,7 @@ export function TaskModal({
             />
           </PropRow>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Starts">
             <DateField
               mode="date"
@@ -957,7 +946,7 @@ export function TaskModal({
           </PropRow>
           </FieldPair>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Domain">
             <Select
               value={domainId}
@@ -975,20 +964,21 @@ export function TaskModal({
             <AssigneePicker
               all={options.members}
               selected={assigneeIds}
-              disabled={!canManage}
+              // Read-only as well as no-rights: a record you are only reading
+              // shows who is on the task, not an Edit link into a picker the
+              // readonly form has already made inert.
+              disabled={!canManage || readOnly}
               onChange={setAssigneeIds}
             />
           </PropRow>
           </FieldPair>
 
-          {os && (
-            <>
-              <div className="os-modal-divider" aria-hidden />
-              <h3 className="os-section-header">Links</h3>
-            </>
-          )}
+          <>
+            <div className="os-modal-divider" aria-hidden />
+            <h3 className="os-section-header">Links</h3>
+          </>
 
-          <FieldPair os={os}>
+          <FieldPair>
           <PropRow label="Epic">
             <Select
               value={epicId}
@@ -1002,37 +992,6 @@ export function TaskModal({
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
-          {!os && (
-          <PropRow label="Sprint" hint={sprintHint}>
-            <Tooltip
-              variant="rich"
-              content={
-                epicSprints.length === 0
-                  ? epicId
-                    ? "This epic has no sprints yet. Sprints are added from the Progress tab."
-                    : "Pick an epic first — sprints are scoped to an epic."
-                  : null
-              }
-            >
-              <span>
-                <Select
-                  value={sprintId}
-                  disabled={!canManage || epicSprints.length === 0}
-                  onChange={(value) => setSprintId(value)}
-                  placeholder="None"
-                  options={[
-                    { value: "", label: "None" },
-                    ...epicSprints.map((s) => ({
-                      value: s.id,
-                      label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
-                    })),
-                  ]}
-                  buttonClassName={PROP_CONTROL}
-                />
-              </span>
-            </Tooltip>
-          </PropRow>
-          )}
           </FieldPair>
 
           <PropRow label="User story" hint={storyHint}>
@@ -1064,7 +1023,7 @@ export function TaskModal({
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (
-          <ModalSection os={os} title="GitHub" className="gap-2">
+          <ModalSection title="GitHub" className="gap-2">
             <Checkbox
               label="Create GitHub issue"
               checked={githubEnabled}
@@ -1083,7 +1042,7 @@ export function TaskModal({
         )}
 
         {!isCreate && task && (github.url || (canManage && githubRepos.length > 0)) && (
-          <ModalSection os={os} title="GitHub" className="gap-2 text-xs">
+          <ModalSection title="GitHub" className="gap-2 text-xs">
             {github.url ? (
               <div className="flex items-center justify-between gap-2">
                 <a
@@ -1168,7 +1127,6 @@ export function TaskModal({
 
         {!isCreate && task && (canManage || artifacts.length > 0) && (
           <ModalSection
-            os={os}
             className="gap-2 text-xs"
             title={
               <>
@@ -1270,7 +1228,6 @@ export function TaskModal({
 
         {!isCreate && task && (
           <ModalSection
-            os={os}
             // os-live: commenting stays available on a read-only record.
             className="gap-3 os-live"
             title={
@@ -1441,19 +1398,14 @@ function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
-  const os = useFeatureFlag("os-redesign");
   return (
-    <label className={cn(os ? "os-field-group" : "flex flex-col gap-1 text-xs")}>
-      <span
-        className={cn(
-          os ? "os-field-label" : "text-muted-foreground font-medium uppercase tracking-wide",
-        )}
-      >
+    <label className="os-field-group">
+      <span className="os-field-label">
         {label}
       </span>
       {children}
       {hint && (
-        <span className={cn(os ? "os-field-hint" : "text-[11px] text-muted-foreground")}>
+        <span className="os-field-hint">
           {hint}
         </span>
       )}
@@ -1463,21 +1415,19 @@ function Field({
 
 // Two fields on one line (the design's .field-row). The classic panel doesn't
 // pair — its rows are ruled, so they have to stay direct children of it.
-function FieldPair({ os, children }: { os: boolean; children: React.ReactNode }) {
-  return os ? <div className="os-field-row">{children}</div> : <>{children}</>;
+function FieldPair({ children }: { children: React.ReactNode }) {
+  return <div className="os-field-row">{children}</div>;
 }
 
 // A block below the fields — links, attachments, comments. The design fences
 // each with a rule and names it in caps; the classic modal uses a hairline and
 // a quiet caption.
 function ModalSection({
-  os,
   title,
   className,
   bordered = true,
   children,
 }: {
-  os: boolean;
   title: React.ReactNode;
   className?: string;
   bordered?: boolean;
@@ -1485,16 +1435,9 @@ function ModalSection({
 }) {
   return (
     <>
-      {os && <div className="os-modal-divider" aria-hidden />}
-      <div className={cn(!os && bordered && "pt-2 border-t border-border")}>
-        <span
-          className={cn(
-            "block",
-            os
-              ? "os-section-header"
-              : "mb-2 text-xs text-muted-foreground font-medium uppercase tracking-wide",
-          )}
-        >
+      <div className="os-modal-divider" aria-hidden />
+      <div>
+        <span className={cn("block", "os-section-header")}>
           {title}
         </span>
         <div className={cn("flex flex-col", className)}>{children}</div>
@@ -1519,39 +1462,17 @@ function PropRow({
   children: React.ReactNode;
   align?: "center" | "start";
 }) {
-  const os = useFeatureFlag("os-redesign");
   const caption = (
     <>
       {label}
       {required && <span className="os-required-mark">*</span>}
     </>
   );
-  if (os) {
-    return (
-      <div className="os-field-group min-w-0">
-        <span className="os-field-label">{caption}</span>
-        <div className="min-w-0">{children}</div>
-        {hint && <span className="os-field-hint">{hint}</span>}
-      </div>
-    );
-  }
   return (
-    <div
-      className={`flex gap-3 px-3 py-2 ${
-        align === "start" ? "items-start" : "items-center"
-      }`}
-    >
-      <span
-        className={`w-24 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground ${
-          align === "start" ? "pt-1.5" : ""
-        }`}
-      >
-        {caption}
-      </span>
-      <div className="flex-1 min-w-0">
-        {children}
-        {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
-      </div>
+    <div className="os-field-group min-w-0">
+      <span className="os-field-label">{caption}</span>
+      <div className="min-w-0">{children}</div>
+      {hint && <span className="os-field-hint">{hint}</span>}
     </div>
   );
 }
@@ -1675,18 +1596,12 @@ function normalizeRepoForDisplay(input: string): string | null {
   return /^[^/\s]+\/[^/\s]+$/.test(s) ? s : null;
 }
 
+// Task startsAt/dueAt are date-only values stored as UTC midnight (see the
+// timeline's UTC-day convention in timeline-days.ts). Read the UTC calendar
+// date so the picker shows the same day the bar occupies — a local getDate()
+// would drift a day for viewers west of UTC.
 function dateInputValue(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function endOfDayIso(dateOnly: string): string {
-  const [y, m, d] = dateOnly.split("-").map(Number);
-  const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
-  return local.toISOString();
+  return new Date(iso).toISOString().slice(0, 10);
 }
 
 function formatCreatedAt(iso: string): string {

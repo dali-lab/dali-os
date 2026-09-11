@@ -59,6 +59,10 @@ interface LayoutOSProps {
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
   focusMode?: boolean
+  /** The routed page fills the shell's main column instead of growing past it
+   *  (see `handle.fitViewport`) — the shell is then bounded to the window and
+   *  the page scrolls inside its own panes. */
+  fitViewport?: boolean
   children?: React.ReactNode
 }
 
@@ -97,7 +101,12 @@ function railRowClass(active: boolean, collapsed: boolean) {
     collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
     active
       ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
-      : 'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+      : cn(
+          'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+          // Match the active state / sub-tabs: right-rounded hover, square on
+          // the left where the rail accent sits (not a bare rectangle).
+          !collapsed && 'rounded-r-os-item',
+        ),
     collapsed && active && 'bg-os-container text-foreground',
   )
 }
@@ -117,15 +126,16 @@ export function LayoutOS({
   isInstructor = false,
   favorites = [],
   focusMode = false,
+  fitViewport = false,
   children,
 }: LayoutOSProps) {
   const location = useLocation()
   const matches = useMatches()
   useRecordTablessHistory()
   const tabless = children !== undefined
-  // This shell always owns the sub-tabs in its rail, so the in-page pill row is
-  // gone whatever `sidebar-redesign` says — pass the redesigned-row rule flat.
-  const ownsSubnavRow = hasSubnavRow(matches, true)
+  // This shell owns the sub-tabs in its rail; only areaSubnav pages (calendar)
+  // render their own in-page row.
+  const ownsSubnavRow = hasSubnavRow(matches)
   useOsShellRoot(true)
 
   const {
@@ -406,7 +416,9 @@ export function LayoutOS({
     { url: '/help', label: 'Help', icon: HelpCircle },
   ]
 
-  const sidebarContent = (
+  // `collapsed` is passed as a parameter so the mobile drawer can render
+  // full labels (force false) while the desktop sidebar keeps its own state.
+  const renderSidebar = (collapsed: boolean) => (
     <div
       data-sidebar-scroll
       className="flex h-full flex-col justify-between overflow-y-auto px-5 py-6"
@@ -783,7 +795,19 @@ export function LayoutOS({
   const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
 
   return (
-    <div className="os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0">
+    <div
+      className={cn(
+        'os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0',
+        // `min-h-dvh` alone is a floor, so a page taller than the window still
+        // grows the document — every `min-h-0`/`flex-1` below here can only
+        // shrink against a *definite* height. A `fitViewport` page gets one, so
+        // its own scrollports do the scrolling instead of the window. Desktop
+        // only: below `md` — the same breakpoint this shell goes mobile at —
+        // those pages fall back to page scroll (the calendar's hour grid doesn't
+        // scroll internally there), and capping would clip it.
+        fitViewport && 'md:h-dvh md:overflow-hidden',
+      )}
+    >
       {!focusMode && (
         <aside
           className={cn(
@@ -791,7 +815,7 @@ export function LayoutOS({
             sidebarWidth,
           )}
         >
-          {sidebarContent}
+          {renderSidebar(collapsed)}
         </aside>
       )}
 
@@ -819,6 +843,15 @@ export function LayoutOS({
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="p-1.5 text-os-grey hover:text-foreground"
+            aria-label="Search (⌘K)"
+            title="Search (⌘K)"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
             {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
             className="relative p-1.5 text-os-grey hover:text-foreground"
             aria-label={`My Tasks — ${taskCount} open`}
@@ -836,7 +869,8 @@ export function LayoutOS({
         </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — force collapsed=false so the drawer always shows full
+          labels even when the desktop sidebar is in its icon-only rail state. */}
       {mobileNavOpen && (
         <>
           <div
@@ -848,7 +882,7 @@ export function LayoutOS({
             id="os-mobile-nav"
             className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
-            {sidebarContent}
+            {renderSidebar(false)}
           </aside>
         </>
       )}
@@ -856,10 +890,13 @@ export function LayoutOS({
       <main
         className={cn(
           'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
+          fitViewport && 'min-h-0',
           !focusMode && mainPad,
         )}
       >
-        {!focusMode && <div className="hidden md:block">{topBar}</div>}
+        {/* `shrink-0` so a bounded shell takes the height out of the page's
+            own scrollport rather than squashing the favourites bar. */}
+        {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
         <DesktopBanner />
         {tabless ? (
           <ShellGuideProvider>

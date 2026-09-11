@@ -133,7 +133,13 @@ export type ProfilePageData = {
     /** Null when the member isn't staffed this term: the credit is a
      *  requirement of being hired, so there's nothing to be compliant with. */
     ce: { termCode: string; credits: number; compliant: boolean } | null;
-    agreements: { signatureId: string; documentName: string; context: string; signedAt: string }[];
+    agreements: {
+      signatureId: string;
+      bindingId: string;
+      documentName: string;
+      context: string;
+      signedAt: string;
+    }[];
     /** This cycle's staffing forms for the member — the surface that used to
      *  live at /projects/my-staffing. Empty outside an open cycle. */
     staffingForms: MemberStaffingForm[];
@@ -465,7 +471,7 @@ export async function loadProfilePage({
   // this page already is — neither is something you're hired into, so neither
   // belongs here. Core titles and Domain Lead posts do, and they're listed by
   // their real names rather than a generic label.
-  const [coreTitles, domainLeadRows, instructorRows] = term
+  const [coreTitles, domainLeadRows, instructorRows, technigalaRows] = term
     ? await Promise.all([
         prisma.coreAssignment.findMany({
           where: { userId: targetId, termId: term.id },
@@ -479,8 +485,12 @@ export async function loadProfilePage({
           where: { userId: targetId, termId: term.id },
           select: { offering: { select: { title: true, type: true } } },
         }),
+        prisma.technigalaAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { id: true },
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
   const roleLabels = [
     ...coreTitles.map((c) => (c.leadTitle ? `Core — ${c.leadTitle}` : "Core")),
@@ -488,6 +498,8 @@ export async function loadProfilePage({
     // Named by what they teach: "Instructor" alone doesn't identify a post, and
     // a member can hold several in one term.
     ...instructorRows.map((i) => instructorRoleLabel(i.offering.type, i.offering.title)),
+    // A termly Technigala-support hire (one row per member per term).
+    ...(technigalaRows.length > 0 ? ["Technigala Support"] : []),
   ];
 
   const collabToken = parseSessionCookie(request);
@@ -533,6 +545,7 @@ export async function loadProfilePage({
           staffingForms,
           agreements: signed.map((d) => ({
             signatureId: d.signatureId,
+            bindingId: d.bindingId,
             documentName: d.documentName,
             context: d.context,
             signedAt: d.signedAt.toISOString(),

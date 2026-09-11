@@ -18,6 +18,7 @@ import {
   createClass,
   updateClass,
   removeClass,
+  refreshClass,
   parseDestination,
   toMemberClassDTO,
   buildClassDestinations,
@@ -43,12 +44,15 @@ import {
   getValidAccessTokenForLink,
   listCalendarsForLink,
   subscribeCalendarForLink,
+  respondToGoogleEventAsSelf,
+  NotAGuestError,
   type CalendarEvent,
 } from "~/lib/google-calendar";
 import {
   generalCalendarId,
   generalCalendarState,
 } from "~/lib/general-calendar";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -65,6 +69,8 @@ import type {
   ExternalEventDTO,
   EventAttendeeDTO,
   EventLinkDTO,
+  EventMeetingDTO,
+  RsvpStatus,
   LoaderData,
   EventBlock,
   GroupAvailDay,
@@ -84,7 +90,7 @@ import {
 // whichever calendar the event came from.
 const GOOGLE_RSVP_LABEL: Record<
   "accepted" | "declined" | "tentative" | "needsAction",
-  EventAttendeeDTO["status"]
+  RsvpStatus
 > = {
   accepted: "Accepted",
   declined: "Declined",
@@ -106,9 +112,68 @@ function externalAttendees(
 }
 function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
   return [
-    ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl }] : []),
-    ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink }] : []),
+    ...(meetingUrl ? [{ label: "Join video call", href: meetingUrl, kind: "video" as const }] : []),
+    ...(htmlLink ? [{ label: "Open in Google Calendar", href: htmlLink, kind: "source" as const }] : []),
   ];
+}
+
+/**
+ * The DALI meetings behind a set of Google events, keyed by the event id to
+ * attach them to. A meeting DALI created records the Google event it made in
+ * `externalEventId`; recurring series match on the master id, which every
+ * expanded instance carries — so each occurrence of a weekly team meeting finds
+ * the same meeting (and the same notes doc).
+ *
+ * Only meetings the viewer is part of are returned: seeing an event on a shared
+ * calendar isn't grounds for reaching its attendance page.
+ */
+async function meetingsForExternalEvents(
+  events: CalendarEvent[],
+  userId: string,
+  canMarkCoreMeeting: boolean,
+): Promise<Map<string, EventMeetingDTO>> {
+  const seriesIds = new Set<string>();
+  for (const e of events) {
+    if (e.eventId) seriesIds.add(e.eventId);
+    if (e.recurringEventId) seriesIds.add(e.recurringEventId);
+  }
+  if (seriesIds.size === 0) return new Map();
+  const meetings = await prisma.scheduledMeeting.findMany({
+    where: {
+      externalEventId: { in: [...seriesIds] },
+      status: { not: "Cancelled" },
+      OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }],
+    },
+    select: {
+      id: true,
+      externalEventId: true,
+      isCoreMeeting: true,
+      notePage: { select: { id: true } },
+      timeEntries: { where: { userId }, select: { id: true }, take: 1 },
+    },
+  });
+  const byExternalId = new Map<string, EventMeetingDTO>();
+  for (const m of meetings) {
+    if (!m.externalEventId) continue;
+    byExternalId.set(m.externalEventId, {
+      meetingId: m.id,
+      notePageId: m.notePage?.id ?? null,
+      onTimesheet: m.timeEntries.length > 0,
+      isCoreMeeting: m.isCoreMeeting,
+      canMarkCoreMeeting,
+    });
+  }
+  // Re-key onto the ids the events themselves carry, so an instance of a
+  // recurring meeting resolves through its master.
+  const byEventId = new Map<string, EventMeetingDTO>();
+  for (const e of events) {
+    if (!e.eventId) continue;
+    const hit =
+      byExternalId.get(e.eventId) ??
+      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
+    if (hit) byEventId.set(e.eventId, hit);
+  }
+  return byEventId;
 }
 
 /**
@@ -204,6 +269,13 @@ async function handleClassAction(
       return null;
     }
 
+    if (intent === "class-refresh") {
+      const classId = get("classId");
+      if (!classId) return Response.json({ error: "Missing class id" }, { status: 400 });
+      await refreshClass(userId, classId);
+      return null;
+    }
+
     // Resolve the allowed terms (current + upcoming) and validate the submitted termId.
     const termFilter = await resolveTermFilter(request, { default: "upcoming" });
     const allowedIds = termFilter.termIds ?? [];
@@ -234,7 +306,26 @@ async function handleClassAction(
       }
     }
 
-    const params = { userId, termId, title, location, periodCode, includeXHour, customMeetings, destination };
+    // Timetable-autofill provenance (all blank for a manually-entered class).
+    const offeringCrn = get("offeringCrn").trim() || null;
+    const courseSubject = get("courseSubject").trim() || null;
+    const courseNumber = get("courseNumber").trim() || null;
+    const courseSection = get("courseSection").trim() || null;
+
+    const params = {
+      userId,
+      termId,
+      title,
+      location,
+      periodCode,
+      includeXHour,
+      customMeetings,
+      destination,
+      offeringCrn,
+      subject: courseSubject,
+      courseNumber,
+      section: courseSection,
+    };
     if (intent === "class-add") {
       await createClass(params);
     } else if (intent === "class-update") {
@@ -283,6 +374,208 @@ function bareRrule(recurrence: string[]): string | null {
 
 type EventScope = "this" | "following" | "all";
 
+/** The validated "Count this as work" half of an event form. */
+type EventWorkLog = {
+  assignmentType: RoleInstance["assignmentType"];
+  roleRefId: string;
+  projectId: string | null;
+  note: string | null;
+};
+
+/** What an event save should do to the hours attached to it. "none" is the
+ *  default: silence about work means leave the log alone, so a save from a
+ *  client that wasn't showing the log (or a path that doesn't carry the fields
+ *  at all) can never quietly delete payroll data. Removing hours takes the
+ *  composer explicitly saying so via clearWork. */
+type EventWorkAction =
+  | { kind: "write"; log: EventWorkLog }
+  | { kind: "clear" }
+  | { kind: "none" };
+
+/**
+ * Read and validate the work fields off an event form.
+ *
+ * Called BEFORE the Google write on every path, so an unusable role fails the
+ * whole save rather than leaving an event behind with no hours attached to it.
+ */
+async function resolveEventWorkLog(
+  userId: string,
+  get: (k: string) => string,
+): Promise<{ error: Response } | { error?: undefined; work: EventWorkAction }> {
+  if (get("isWork") !== "1") {
+    return { work: get("clearWork") === "1" ? { kind: "clear" } : { kind: "none" } };
+  }
+  const assignmentType = get("assignmentType") || null;
+  const roleRefId = get("roleRefId") || null;
+  if (!assignmentType || !roleRefId) {
+    return { error: Response.json({ error: "Pick a role to log this time against." }, { status: 400 }) };
+  }
+  const resolved = await resolveRoleRef(
+    userId,
+    assignmentType as RoleInstance["assignmentType"],
+    roleRefId,
+  );
+  if (!resolved) {
+    return { error: Response.json({ error: "That role isn't yours to log against." }, { status: 400 }) };
+  }
+  return {
+    work: {
+      kind: "write",
+      log: {
+        assignmentType: assignmentType as RoleInstance["assignmentType"],
+        roleRefId,
+        projectId: resolved.projectId,
+        note: get("workNote").trim() || null,
+      },
+    },
+  };
+}
+
+/**
+ * Write — or clear — the TimeEntry linked to a calendar event. Keyed by
+ * (sourceEventId, userId), so re-saving an event retimes the log it already has
+ * instead of stacking a second one, and unticking the box deletes it while
+ * leaving the event itself alone.
+ *
+ * Linked entries are deliberately NOT mirrored to the DALI Timesheet calendar:
+ * the event is already on a real calendar, so a mirror would draw those hours a
+ * second time — the same rule add-time-entry applies to meeting-sourced rows.
+ */
+async function writeEventWorkLog(opts: {
+  userId: string;
+  eventId: string;
+  linkId: string;
+  title: string;
+  startIso: string;
+  endIso: string;
+  work: EventWorkAction;
+}): Promise<void> {
+  const { userId, eventId, work } = opts;
+  if (work.kind === "none") return;
+  if (work.kind === "clear") {
+    await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: eventId } });
+    return;
+  }
+  const { log } = work;
+  const startTime = new Date(opts.startIso);
+  const endTime = new Date(opts.endIso);
+  const common = {
+    date: startTime,
+    hours: (endTime.getTime() - startTime.getTime()) / 3_600_000,
+    assignmentType: log.assignmentType,
+    roleRefId: log.roleRefId,
+    projectId: log.projectId,
+    note: log.note ?? opts.title,
+    startTime,
+    endTime,
+    sourceCalendarLinkId: opts.linkId,
+  };
+  await prisma.timeEntry.upsert({
+    where: { sourceEventId_userId: { sourceEventId: eventId, userId } },
+    create: { userId, source: "Manual", sourceEventId: eventId, ...common },
+    update: common,
+  });
+}
+
+/** Keep a linked work log in step when its event is dragged or resized on the
+ *  grid: the logged hours ARE the event's hours, so they move with it. */
+async function retimeEventWorkLog(
+  userId: string,
+  eventId: string,
+  startIso: string,
+  endIso: string,
+): Promise<void> {
+  const startTime = new Date(startIso);
+  const endTime = new Date(endIso);
+  await prisma.timeEntry.updateMany({
+    where: { userId, sourceEventId: eventId },
+    data: {
+      date: startTime,
+      startTime,
+      endTime,
+      hours: (endTime.getTime() - startTime.getTime()) / 3_600_000,
+    },
+  });
+}
+
+/** Work can only hang off one concrete, timed occurrence. Repeats have no single
+ *  occurrence to key on and an all-day event has no range to measure, so the
+ *  composer hides the toggle for both — this backs that up server-side. */
+function workLogShapeError(recurrenceRule: string | null, allDay: boolean): Response | null {
+  if (recurrenceRule) {
+    return Response.json(
+      { error: "A repeating event can't be marked as work — log the hours on a single occurrence." },
+      { status: 400 },
+    );
+  }
+  if (allDay) {
+    return Response.json(
+      { error: "An all-day event can't be marked as work — give it a start and end time." },
+      { status: 400 },
+    );
+  }
+  return null;
+}
+
+const RSVP_RESPONSES = ["accepted", "declined", "tentative"] as const;
+type RsvpResponse = (typeof RSVP_RESPONSES)[number];
+const RSVP_ENUM: Record<RsvpResponse, "Accepted" | "Declined" | "Tentative"> = {
+  accepted: "Accepted",
+  declined: "Declined",
+  tentative: "Tentative",
+};
+
+/**
+ * Answer an invite from the calendar page. The write goes to Google on the
+ * viewer's own token, against their own copy of the event, so it works for any
+ * invite they can see — and Google is what the grid re-reads, so it stays the
+ * source of truth for the response.
+ *
+ * When the event is also a DALI meeting, the matching invite Notification is
+ * brought along: otherwise answering here would leave the same invite sitting
+ * unanswered in the task list.
+ */
+async function handleEventRsvp(opts: {
+  userId: string;
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  recurringEventId: string | null;
+  response: string;
+}): Promise<Response | null> {
+  const { userId, linkId, calendarId, eventId, recurringEventId } = opts;
+  if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
+  if (!RSVP_RESPONSES.includes(opts.response as RsvpResponse)) {
+    return Response.json({ error: "Unknown response" }, { status: 400 });
+  }
+  const response = opts.response as RsvpResponse;
+  try {
+    await respondToGoogleEventAsSelf({ linkId, calendarId, eventId, response });
+  } catch (err) {
+    if (err instanceof NotAGuestError) {
+      return Response.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+  // The series master is what a meeting records, so an instance answers for the
+  // meeting it belongs to.
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: {
+      externalEventId: { in: recurringEventId ? [eventId, recurringEventId] : [eventId] },
+    },
+    select: { id: true },
+  });
+  if (meeting) {
+    const { count } = await prisma.notification.updateMany({
+      where: { scheduledMeetingId: meeting.id, recipientUserId: userId },
+      data: { rsvp: RSVP_ENUM[response], rsvpAt: new Date(), readAt: new Date() },
+    });
+    // Converge the desktop badge rather than waiting for its sync backstop.
+    if (count > 0) publishNotificationChange([userId]);
+  }
+  return null;
+}
+
 // Create / edit / move / delete a Google Calendar event (calendar-unified
 // flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
@@ -309,6 +602,17 @@ async function handleEventAction(
     if (!linkId) return Response.json({ error: "Pick a calendar." }, { status: 400 });
     await assertLinkOwned(userId, linkId);
 
+    if (intent === "event-rsvp") {
+      return handleEventRsvp({
+        userId,
+        linkId,
+        calendarId,
+        eventId: get("eventId"),
+        recurringEventId,
+        response: get("response"),
+      });
+    }
+
     if (intent === "event-delete") {
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event" }, { status: 400 });
@@ -322,6 +626,9 @@ async function handleEventAction(
       } else {
         await deleteGoogleCalendarEvent({ linkId, calendarId, eventId }); // this occurrence
       }
+      // The hours were the event's hours — they go with it rather than being
+      // left behind as an entry pointing at an event that no longer exists.
+      await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: eventId } });
       return null;
     }
 
@@ -337,6 +644,7 @@ async function handleEventAction(
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
       await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
+      await retimeEventWorkLog(userId, eventId, startIso, endIso);
       return null;
     }
 
@@ -346,44 +654,20 @@ async function handleEventAction(
 
     if (intent === "event-create") {
       const recurrenceRule = get("recurrenceRule").trim() || null;
-      const isWork = get("isWork") === "1";
-      const assignmentType = get("assignmentType") || null;
-      const roleRefId = get("roleRefId") || null;
-      const workNote = get("workNote").trim() || null;
-      const loggingWork = isWork && Boolean(assignmentType) && Boolean(roleRefId);
-
-      // A "count this as work" block is a timesheet entry, not a personal event.
-      // Its single Google representation lives on the dedicated DALI Timesheet
-      // calendar (written by syncTimeEntryToGoogle), so we DON'T push it to the
-      // chosen destination — that's what kept the primary clean was for, and a
-      // second copy there is exactly the duplication we're removing. A plain
-      // event (no work) still lands on its destination calendar as before.
-      if (loggingWork) {
-        const resolved = await resolveRoleRef(userId, assignmentType as RoleInstance["assignmentType"], roleRefId!);
-        if (resolved) {
-          const startTime = new Date(startIso);
-          const endTime = new Date(endIso);
-          const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
-          const logged = await prisma.timeEntry.create({
-            data: {
-              userId,
-              source: "Manual",
-              date: startTime,
-              hours,
-              assignmentType: assignmentType as RoleInstance["assignmentType"],
-              roleRefId: roleRefId!,
-              projectId: resolved.projectId,
-              note: workNote ?? title,
-              startTime,
-              endTime,
-            },
-          });
-          await syncTimeEntryToGoogle(logged).catch(() => {});
-        }
-        return null;
+      // Resolved before the Google write: a role we can't resolve should fail
+      // the save outright, not leave an untracked event on the calendar.
+      const work = await resolveEventWorkLog(userId, get);
+      if (work.error) return work.error;
+      if (work.work.kind === "write") {
+        const shapeError = workLogShapeError(recurrenceRule, allDay);
+        if (shapeError) return shapeError;
       }
 
-      await createGoogleCalendarEvent({
+      // "Count this as work" ADDS hours to an event — it doesn't replace it.
+      // The event lands on the chosen destination either way; the linked entry
+      // rides along, and the grid draws that one block with a role accent
+      // rather than a second, overlapping logged-time block.
+      const created = await createGoogleCalendarEvent({
         linkId,
         calendarId,
         summary: title,
@@ -396,6 +680,15 @@ async function handleEventAction(
         timeZone,
         attendees: [],
       });
+      await writeEventWorkLog({
+        userId,
+        eventId: created.eventId,
+        linkId,
+        title,
+        startIso,
+        endIso,
+        work: work.work,
+      });
       return null;
     }
 
@@ -403,6 +696,16 @@ async function handleEventAction(
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
       const fields = { summary: title, description, location, allDay, timeZone };
+      // Same order as create: validate the work half before touching Google.
+      // A recurring edit can patch the master or split the series, so there's
+      // no single occurrence to key a log on — the composer hides the toggle
+      // for repeats, and those events are left out of the work write below.
+      const work = await resolveEventWorkLog(userId, get);
+      if (work.error) return work.error;
+      if (work.work.kind === "write" && !recurringEventId) {
+        const shapeError = workLogShapeError(null, allDay);
+        if (shapeError) return shapeError;
+      }
 
       if (recurringEventId && scope === "all") {
         // Whole series — patch the master (also moves its anchor time).
@@ -429,6 +732,9 @@ async function handleEventAction(
       } else {
         // This occurrence (or a plain single event).
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, ...fields });
+      }
+      if (!recurringEventId) {
+        await writeEventWorkLog({ userId, eventId, linkId, title, startIso, endIso, work: work.work });
       }
       return null;
     }
@@ -761,17 +1067,23 @@ export async function loadCalendarData(request: Request) {
   // on every view switch.
   const { start: fetchStart, end: fetchEnd } = fetchWindow(timezone, anchor);
 
-  // Rolling lower bound for time entries: keep ~8 weeks back from the visible
-  // week so the timesheet prefill form has ample recent entries to copy from,
-  // even when the user navigates a few weeks into the past or future.
+  // Rolling window for time entries: ~8 weeks either side of the visible week,
+  // so the timesheet prefill form has ample recent entries to copy from and a
+  // month view has headroom past the week's end.
+  //
+  // The window is bounded at BOTH ends on purpose. With only a lower bound, the
+  // `date desc` + take-200 below always returns the most recent 200 entries
+  // overall — so navigating back to an earlier week loaded today's entries and
+  // drew nothing on the grid, making past logged hours look lost.
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
+  const timeEntryUpperBound = new Date(weekEnd.getTime() + 8 * 7 * 86_400_000);
 
   // timeEntryRows fetched here (not in the earlier Promise.all) because they
-  // need weekStart for the date-window lower bound.
+  // need weekStart/weekEnd for the date window.
   const timeEntryRows = await prisma.timeEntry.findMany({
       where: {
         userId,
-        date: { gte: timeEntryLowerBound },
+        date: { gte: timeEntryLowerBound, lte: timeEntryUpperBound },
       },
       orderBy: { date: "desc" },
       take: 200,
@@ -779,6 +1091,7 @@ export async function loadCalendarData(request: Request) {
         id: true,
         source: true,
         scheduledMeetingId: true,
+        sourceEventId: true,
         assignmentType: true,
         roleRefId: true,
         projectId: true,
@@ -890,10 +1203,18 @@ export async function loadCalendarData(request: Request) {
   // (eventId/linkId/writable/allDay); the busy read is title/time only. Events
   // from the DALI Timesheet mirror calendar are dropped — the logged-time layer
   // already shows those hours, so keeping them would double every work block.
+  const crudEvents = crudEnabled
+    ? (externalRaw as CalendarEvent[]).filter(
+        (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
+      )
+    : [];
+  // One query for the whole window, not one per event.
+  const eventMeetings = crudEnabled
+    ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting)
+    : new Map<string, EventMeetingDTO>();
+
   const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? (externalRaw as CalendarEvent[])
-        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
-        .map((e) => ({
+    ? crudEvents.map((e) => ({
         startIso: e.startIso,
         endIso: e.endIso,
         title: e.title || "Busy",
@@ -909,6 +1230,8 @@ export async function loadCalendarData(request: Request) {
         organizerName: e.organizerName,
         attendees: externalAttendees(e.attendees),
         links: externalLinks(e.meetingUrl, e.htmlLink),
+        rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
+        meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
       }))
     : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
         startIso: e.start,
@@ -972,6 +1295,7 @@ export async function loadCalendarData(request: Request) {
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
+      sourceEventId: t.sourceEventId,
       manualBlockId: null,
       meetingNotePageId: t.meeting?.notePage?.id ?? null,
       assignmentType: t.assignmentType,

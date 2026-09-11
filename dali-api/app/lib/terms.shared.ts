@@ -73,3 +73,27 @@ export function nextTermCode(code: string): string {
   }
   return `${yy}${TERM_SEASON_ORDER[idx + 1]}`;
 }
+
+// Dartmouth registrar term codes are YYYYMM, where MM is the term's start month:
+// Winter=01, Spring=03, Summer(X)=06, Fall=09. Winter shares the calendar year
+// (26W ↔ 202601), so there is no academic-year off-by-one.
+type Season = (typeof TERM_SEASON_ORDER)[number];
+const DARTMOUTH_SEASON_MONTH: Record<Season, string> = { W: "01", S: "03", X: "06", F: "09" };
+const DARTMOUTH_MONTH_SEASON: Record<string, Season> = { "01": "W", "03": "S", "06": "X", "09": "F" };
+
+// "26F" -> "202609". Returns "" for an unrecognized DALI term code.
+export function dartmouthTermCode(code: string): string {
+  const match = /^(\d{2})([WSXF])$/.exec(code.trim().toUpperCase());
+  if (!match) return "";
+  const [, yy, season] = match;
+  return `20${yy}${DARTMOUTH_SEASON_MONTH[season as Season]}`;
+}
+
+// "202609" -> "26F". Returns "" if the code isn't a 20YY Dartmouth term month.
+export function daliTermCodeFromDartmouth(oracle: string): string {
+  const match = /^20(\d{2})(\d{2})$/.exec(oracle.trim());
+  if (!match) return "";
+  const [, yy, month] = match;
+  const season = DARTMOUTH_MONTH_SEASON[month];
+  return season ? `${yy}${season}` : "";
+}

@@ -87,6 +87,13 @@ export const EVENT_TYPES = {
     description: "When a meeting you were invited to is cancelled.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "class.schedule_changed": {
+    kind: "General",
+    area: "Meetings",
+    label: "Class schedule changes",
+    description: "When a class you added has a new time or room on the Dartmouth timetable.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "task.due_reminder": {
     kind: "General",
     area: "Tasks",
@@ -122,6 +129,14 @@ export const EVENT_TYPES = {
     area: "Tasks",
     label: "GitHub task updates",
     description: "When a linked GitHub issue closes or reopens one of your tasks.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "project.sprint_closed": {
+    kind: "General",
+    area: "Tasks",
+    label: "Sprint wrap-ups",
+    description:
+      "When a sprint on one of your projects ends — a summary of what got done and where unfinished tasks rolled to.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "collab.comment_reply": {

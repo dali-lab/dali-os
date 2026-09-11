@@ -88,8 +88,11 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     // shared DB by moving tasks between columns). The login cookie set by
     // loginAs is reused by page.request.
     const cardTitle = `E2E drag ${Date.now()}`;
+    // A non-Backlog task needs a deadline server-side (the create endpoint
+    // rejects dateless scheduled work), so give the Todo card a due date.
+    const dueAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const created = await page.request.post(`/api/projects/${PROJECT_ID}/tasks`, {
-      data: { title: cardTitle, status: 'Todo' },
+      data: { title: cardTitle, status: 'Todo', dueAt },
     });
     expect(created.ok()).toBe(true);
 

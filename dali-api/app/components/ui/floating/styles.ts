@@ -47,6 +47,8 @@ export const OS_FILTER_PILL_CLASS =
 export const FILTER_PILL_CLASS =
   "inline-flex items-center justify-between gap-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40";
 
-export function filterPillClass(os: boolean) {
-  return os ? OS_FILTER_PILL_CLASS : FILTER_PILL_CLASS;
+// The `os` arg is vestigial (the dali.os pill is the only one now); kept
+// optional so the remaining call sites compile until they drop it.
+export function filterPillClass(_os?: boolean) {
+  return OS_FILTER_PILL_CLASS;
 }

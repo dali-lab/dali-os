@@ -11,7 +11,9 @@
 //   - A BlockNote "thread" maps to a root DocComment (parentId = null).
 //   - BlockNote "comments" in a thread = the root DocComment + all its replies.
 //   - thread.id = root DocComment.id
-//   - thread.resolved = DocComment.resolvedAt !== null
+//   - Comments have no open/resolved state: BlockNote's ThreadData.resolved is
+//     pinned to false and the resolve actions are denied by the auth class, so
+//     every thread reads as one ongoing conversation.
 //   - Inline marks use anchor = { kind: "blocknote" } in the Postgres Json
 //     anchor column — no schema change, just a distinct marker so the rail can
 //     label/filter them and the old Yjs-position anchor path stays untouched.
@@ -51,7 +53,6 @@ interface ApiComment {
   authorPhotoUrl?: string | null;
   body: string; // JSON-stringified CommentBody OR plain text for legacy rows
   anchor: { kind?: string; from?: string; to?: string } | null;
-  resolved: boolean;
   createdAt: string;
   reactions?: ApiReaction[];
 }
@@ -245,8 +246,7 @@ export function apiCommentsToThreadMap(
         replies.length > 0 ? replies[replies.length - 1].createdAt : root.createdAt,
       ),
       comments: allComments,
-      resolved: root.resolved,
-      resolvedUpdatedAt: root.resolved ? new Date(root.createdAt) : undefined,
+      resolved: false,
       metadata: {},
     };
     map.set(root.id, thread);
@@ -254,9 +254,11 @@ export function apiCommentsToThreadMap(
   return map;
 }
 
-// ── DaliThreadStoreAuth — resolve gated, reactions allowed ──────────────────
+// ── DaliThreadStoreAuth — moderation gated, reactions allowed ───────────────
 //
-// canResolve / canUnresolve gate on the editor role (canEdit || Core).
+// Deleting someone else's comment (or a whole thread) is the editor role's
+// (canEdit || Core). Resolving is denied outright — a comment has no resolved
+// state to move it into, so BlockNote never offers the action.
 // Reactions are open to anyone with comment access (same as canAddComment).
 // canDeleteReaction is limited to the current user's own reactions.
 
@@ -275,8 +277,8 @@ export class DaliThreadStoreAuth extends ThreadStoreAuth {
     return comment.userId === this.userId || this.role === "editor";
   }
   canDeleteThread(_thread: ThreadData): boolean { return this.role === "editor"; }
-  canResolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
-  canUnresolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
+  canResolveThread(_thread: ThreadData): boolean { return false; }
+  canUnresolveThread(_thread: ThreadData): boolean { return false; }
 
   // Any viewer with comment access can add a reaction.
   canAddReaction(_comment: CommentData, _emoji?: string): boolean { return true; }
@@ -296,8 +298,9 @@ export interface DaliThreadStoreConfig {
   pageId: string;
   /** Whether the viewer can post new comments. */
   canComment: boolean;
-  /** Whether the viewer can resolve threads. */
-  canResolve: boolean;
+  /** Whether the viewer may delete other people's comments and whole threads
+   *  (the editor role: canEdit || Core). */
+  canModerate: boolean;
   /** Viewer's user id. */
   currentUserId: string;
   /** Optional polling interval in ms. 0 = off. Default 30 000. */
@@ -323,7 +326,7 @@ export class DaliThreadStore extends ThreadStore {
     super(
       new DaliThreadStoreAuth(
         config.currentUserId,
-        config.canResolve ? "editor" : "comment",
+        config.canModerate ? "editor" : "comment",
       ),
     );
     this.pageId = config.pageId;
@@ -595,26 +598,15 @@ export class DaliThreadStore extends ThreadStore {
     await this.refetch();
   }
 
-  async resolveThread(options: { threadId: string }): Promise<void> {
-    const res = await fetch(`/api/comments/${options.threadId}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "resolve" }),
-    });
-    if (!res.ok) throw new Error(`resolveThread failed: ${res.status}`);
-    await this.refetch();
+  // ThreadStore declares these; there is no resolved state to move a thread
+  // into, and the auth class denies both, so reaching either is a bug rather
+  // than a user action.
+  async resolveThread(): Promise<void> {
+    throw new Error("Comments have no resolved state");
   }
 
-  async unresolveThread(options: { threadId: string }): Promise<void> {
-    const res = await fetch(`/api/comments/${options.threadId}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "reopen" }),
-    });
-    if (!res.ok) throw new Error(`unresolveThread failed: ${res.status}`);
-    await this.refetch();
+  async unresolveThread(): Promise<void> {
+    throw new Error("Comments have no resolved state");
   }
 
   async addReaction(options: {
@@ -679,10 +671,10 @@ export class DaliThreadStore extends ThreadStore {
 // One DaliThreadStore per pageId is shared between:
 //   - DocEditorImpl (drives CommentsExtension + ThreadsSidebar)
 //   - useDocThreadCounts (bubble count on the Comments button)
-//   - DocCommentsPanel (open/resolved doc-level comment list)
+//   - DocCommentsPanel (doc-level comment list)
 //
 // All three must see the same in-memory thread map so that mutations from the
-// editor (create/add/resolve) update the count immediately instead of waiting
+// editor (create/add/delete) update the count immediately instead of waiting
 // for the next 30-second poll.  The registry lazily creates a store on first
 // access and cleans up when all subscribers unsubscribe.
 
@@ -703,7 +695,7 @@ export function getOrCreateStore(
       pageId,
       currentUserId: config?.currentUserId ?? "",
       canComment: config?.canComment ?? false,
-      canResolve: config?.canResolve ?? false,
+      canModerate: config?.canModerate ?? false,
       pollIntervalMs: config?.pollIntervalMs,
     });
     _storeRegistry.set(pageId, store);

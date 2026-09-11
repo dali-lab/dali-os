@@ -233,7 +233,7 @@ export function AddMemberFlow({
       {open && (
         <div
           className={cn(
-            "absolute right-0 mt-1 w-80 z-50 p-2",
+            "absolute right-0 mt-1 w-80 max-w-[calc(100vw-1rem)] z-50 p-2",
             os ? OS_SURFACE_CLASS : "bg-card border border-border rounded-md shadow-lg",
           )}
         >

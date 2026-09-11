@@ -6,6 +6,17 @@ import type { EventAttendeeDTO, TimeEntryDTO } from "~/calendar/lib/types";
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 export const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
+// The "Add event" capsule, shared by the Events page and the Core hub so the two
+// calendars open their create flow from the same control. Theme tokens rather
+// than the mockup's literals, so it inverts correctly in light mode: light gets
+// the dark pill by inverting the page; dark can't invert (that lands on white),
+// and the mockup's pill is a shade *darker* than the page there, so dark
+// overrides to a black plate with light ink.
+export const ADD_EVENT_BTN =
+  "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-extrabold " +
+  "bg-foreground text-background transition-[transform,background-color,opacity] hover:opacity-90 active:scale-[0.97] " +
+  "dark:bg-black/40 dark:text-foreground dark:hover:bg-black/25 dark:hover:opacity-100";
+
 // Classes-this-term blocks use the brand navy (every accent token is already
 // claimed by blocks/meetings/roles). Dark enough to carry white ink, distinct
 // from the coral/teal/green/pink/yellow the other layers use. Applied via the
@@ -30,18 +41,14 @@ export function availabilityTint(frac: number): string {
 // midnight). Every downstream bound derives from HOURS[0] / last+1.
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const HOUR_PX = 54;
-// When the grid scrolls internally, open it here (7 AM) instead of pinned to
-// midnight; the rest of the 24h day stays reachable by scrolling up/down.
-export const INITIAL_SCROLL_HOUR = 7;
+// When the grid scrolls internally it opens centred on this hour rather than
+// pinned to a start hour: on a short window only a slice of the day is visible,
+// and midday in the middle of it keeps morning and evening equally close. The
+// rest of the 24h day stays reachable by scrolling up/down.
+export const INITIAL_SCROLL_CENTER_HOUR = 12;
 // Grid is snapped/subdivided into 10-minute cells.
 export const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
 export const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
-
-export const RSVP_BADGE: Record<"Accepted" | "Declined" | "Tentative", string> = {
-  Accepted: "bg-green-100 text-green-800",
-  Declined: "bg-red-100 text-red-800",
-  Tentative: "bg-yellow-100 text-yellow-800",
-};
 
 export const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 

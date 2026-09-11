@@ -68,14 +68,14 @@ describe("list_comments", () => {
   });
 
   it("rejects doc target when caller lacks canComment access", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canComment: false, canView: false, canEdit: false, canResolve: false } as never);
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: false, canView: false, canEdit: false } as never);
     await expect(
       runListComments("u1", { targetType: "doc", targetId: "page1" }),
     ).rejects.toMatchObject({ name: "ListCommentsError", status: 403 });
   });
 
   it("returns comments for an authorized doc viewer", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canComment: true, canView: true, canEdit: false, canResolve: false } as never);
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: true, canView: true, canEdit: false } as never);
     mockPrisma.docComment.findMany.mockResolvedValue([
       {
         id: "c1",
@@ -83,7 +83,6 @@ describe("list_comments", () => {
         authorId: "u2",
         body: "Hello",
         anchor: null,
-        resolvedAt: null,
         createdAt: new Date("2026-01-01"),
         versionId: null,
         updatedAt: new Date("2026-01-01"),
@@ -93,7 +92,7 @@ describe("list_comments", () => {
 
     const out = await runListComments("u1", { targetType: "doc", targetId: "page1" });
     expect(out.comments).toHaveLength(1);
-    expect(out.comments[0]).toMatchObject({ id: "c1", body: "Hello", resolved: false });
+    expect(out.comments[0]).toMatchObject({ id: "c1", body: "Hello" });
   });
 
   it("rejects file target when caller is not Core or project member", async () => {
@@ -121,7 +120,7 @@ describe("manage_comment", () => {
   });
 
   it("rejects create when caller lacks access", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canComment: false, canView: false, canEdit: false, canResolve: false } as never);
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: false, canView: false, canEdit: false } as never);
     mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null });
 
     await expect(
@@ -155,7 +154,7 @@ describe("manage_comment", () => {
     mockPrisma.docComment.findUnique.mockResolvedValue(null);
 
     await expect(
-      runManageComment("u1", { action: "resolve", commentId: "missing" }),
+      runManageComment("u1", { action: "edit", commentId: "missing", body: "x" }),
     ).rejects.toMatchObject({ name: "ManageCommentError", status: 404 });
   });
 });

@@ -88,6 +88,7 @@ import { runSigningIssuance } from "~/jobs/signing-issuance.server";
 import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";
 import { runOutboundDrain } from "~/lib/outbound.server";
 import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
+import { runTimetableSync } from "~/jobs/timetable-sync.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -380,6 +381,32 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runSlackIdentitySync,
+  },
+  {
+    name: "timetable-sync",
+    description:
+      "Pre-syncs the Dartmouth public timetable into CourseOffering so the class composer can autofill title / period / location. One request per term fetches that term's whole catalog; each current/upcoming term is replaced atomically (adds, drops cancelled sections). Off by default — turn on with the classes feature.",
+    intervalMinutes: 360,
+    enabledByDefault: false,
+    settings: [
+      {
+        key: "maxTermsPerRun",
+        label: "Max terms synced per run",
+        unit: "",
+        min: 1,
+        max: 20,
+        default: 6,
+      },
+      {
+        key: "requestSpacingMs",
+        label: "Delay between term fetches",
+        unit: "ms",
+        min: 0,
+        max: 10000,
+        default: 1000,
+      },
+    ],
+    handler: runTimetableSync,
   },
 ];
 

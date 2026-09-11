@@ -1,8 +1,7 @@
 import { useSearchParams } from "react-router";
 import { termFilterOrder, type TermOption } from "~/lib/terms.shared";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Combobox, Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 
 // Term dropdown shared by every term-scoped surface — list filters (Projects
@@ -26,6 +25,10 @@ export function TermFilter({
   // Switchers replace history so the back button doesn't step through every
   // term you flicked past.
   replace = false,
+  // Type-to-filter instead of a plain dropdown. Opt-in: on a surface with a
+  // couple of terms the list is faster to scan than to type at, so only the
+  // places carrying a long term history ask for it.
+  searchable = false,
 }: {
   terms: TermOption[];
   selected: string;
@@ -33,26 +36,43 @@ export function TermFilter({
   includeAll?: boolean;
   includeUpcoming?: boolean;
   replace?: boolean;
+  searchable?: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const os = useFeatureFlag("os-redesign");
 
   const options: SelectOption<string>[] = termFilterOrder(terms, {
     includeAll,
     includeUpcoming,
   });
 
+  function apply(value: string) {
+    const next = new URLSearchParams(searchParams);
+    next.set("term", value);
+    setSearchParams(next, { replace });
+  }
+
+  const pill = buttonClassName ?? cn(filterPillClass(), "w-full sm:w-40");
+
+  if (searchable) {
+    return (
+      <Combobox
+        value={selected}
+        options={options}
+        ariaLabel="Filter by term"
+        placeholder="Term"
+        className={pill}
+        onChange={apply}
+      />
+    );
+  }
+
   return (
     <Select
       value={selected}
       options={options}
       ariaLabel="Filter by term"
-      buttonClassName={buttonClassName ?? cn(filterPillClass(os), "w-full sm:w-40")}
-      onChange={(value) => {
-        const next = new URLSearchParams(searchParams);
-        next.set("term", value);
-        setSearchParams(next, { replace });
-      }}
+      buttonClassName={pill}
+      onChange={apply}
     />
   );
 }

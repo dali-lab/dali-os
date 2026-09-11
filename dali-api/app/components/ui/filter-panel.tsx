@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "~/lib/cn";
+import { Toggle } from "./Toggle";
 import { OS_SURFACE_CLASS, filterPillClass } from "./floating/styles";
 
 /* The "Customize" panel: one toolbar pill that folds a page's slices into a
@@ -85,22 +86,94 @@ export function FilterSectionLabel({
   );
 }
 
-export function FilterGroup({
+/** Every row in a panel body labels itself the same way, so the panel reads
+ *  down one label column instead of a different label style per control. */
+function FilterLabel({
+  os,
+  hint,
+  children,
+}: {
+  os: boolean;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-xs",
+        os ? "text-os-grey" : "text-muted-foreground",
+      )}
+    >
+      {children}
+      {hint}
+    </span>
+  );
+}
+
+/** A labelled row whose control is arbitrary (a combobox, a stack of rows).
+ *  `hint` sits beside the label — an <InfoTip>, typically. */
+export function FilterField({
   label,
   os,
+  hint,
   children,
 }: {
   label: string;
   os: boolean;
+  hint?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}>
+      <FilterLabel os={os} hint={hint}>
         {label}
-      </span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      </FilterLabel>
+      {children}
     </div>
+  );
+}
+
+/** A labelled row of pills — the panel's default control. */
+export function FilterGroup({
+  label,
+  os,
+  hint,
+  children,
+}: {
+  label: string;
+  os: boolean;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <FilterField label={label} os={os} hint={hint}>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </FilterField>
+  );
+}
+
+/** A switch row. The label sits left of the switch, in the same type as every
+ *  other row's label, so a toggle doesn't break the panel's label column the
+ *  way a bare <Toggle> (label to the right of the switch, a size up) does. */
+export function FilterToggleRow({
+  label,
+  os,
+  checked,
+  onChange,
+}: {
+  label: ReactNode;
+  os: boolean;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Toggle
+      label={label}
+      className="w-full flex-row-reverse justify-between"
+      labelClassName={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+    />
   );
 }
 

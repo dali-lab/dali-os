@@ -3,7 +3,6 @@ import { useRevalidator } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
@@ -69,7 +68,6 @@ export function FinalizeModal({
   defaultSlackChannel?: string;
   defaultGithubSlug?: string;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const dialog = useDialog();
   const revalidator = useRevalidator();
   const [selected, setSelected] = useState<Set<Automation>>(
@@ -241,7 +239,7 @@ export function FinalizeModal({
       open={open}
       onClose={onClose}
       labelledBy="finalize-modal-title"
-      containerClassName={modalCardClass(os, "max-w-lg")}
+      containerClassName={modalCardClass("max-w-lg")}
       disableEscape={running}
     >
       <ModalHeader
@@ -298,7 +296,7 @@ export function FinalizeModal({
               key={a.id}
               className={cn(
                 "p-3 flex items-start gap-3",
-                os ? "rounded-os-item bg-os-well" : "border border-border rounded-md",
+                "rounded-os-item bg-os-well",
               )}
             >
               <Checkbox

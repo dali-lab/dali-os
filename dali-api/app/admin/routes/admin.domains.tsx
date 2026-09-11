@@ -16,7 +16,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { ChevronDown, Compass, Trash2, Plus, X } from "lucide-react";
+import { ChevronDown, Trash2, Plus, X } from "lucide-react";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -599,7 +599,7 @@ function DomainRowItem({
 
 export default function AdminConsoleDomains() {
   const { domains, members, viewerIsAdmin } = useLoaderData<typeof loader>();
-  const { os, pageTitle, panel } = useOsChrome();
+  const { pageTitle, panel } = useOsChrome();
   const createFetcher = useFetcher<{ error?: string } | null>();
   const [name, setName] = useState("");
   const isCreating = createFetcher.state !== "idle";
@@ -617,11 +617,6 @@ export default function AdminConsoleDomains() {
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          {!os && (
-            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
-              <Compass className="h-4.5 w-4.5" />
-            </span>
-          )}
           <div className="min-w-0">
             <h1 className={pageTitle}>Domains</h1>
           </div>
@@ -642,7 +637,7 @@ export default function AdminConsoleDomains() {
               placeholder="Add a domain — e.g. Design"
               className={cn(
                 "min-w-0 flex-1 border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-xs",
-                os ? "rounded-full" : "rounded-lg",
+                "rounded-full",
               )}
               disabled={isCreating}
             />
@@ -651,9 +646,7 @@ export default function AdminConsoleDomains() {
               disabled={isCreating || !name.trim()}
               className={cn(
                 "disabled:opacity-50",
-                os
-                  ? "os-add-btn"
-                  : "inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-coral/90",
+                "os-add-btn",
               )}
             >
               <Plus className="h-3.5 w-3.5" />

@@ -7,14 +7,10 @@ import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { hiringPills } from "~/hiring/components/hiringPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   listActiveWaitlistEntries,
   type WaitlistEntry,
 } from "~/hiring/lib/waitlist.server";
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Waitlists · Hiring · DALI OS" },
@@ -100,7 +96,6 @@ export default function WaitlistsPage() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav items={hiringPills({ ...pillRoles, active: "waitlists" })} />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Waitlists</h1>
         <span className="text-sm text-muted-foreground">
@@ -182,7 +177,8 @@ function DomainSection({
           {rows.length} on the waitlist
         </span>
       </header>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[560px]">
         <thead className="text-xs uppercase tracking-wider text-muted-foreground/80">
           <tr className="text-left">
             <th className="px-5 py-2 w-16">Rank</th>
@@ -198,6 +194,7 @@ function DomainSection({
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

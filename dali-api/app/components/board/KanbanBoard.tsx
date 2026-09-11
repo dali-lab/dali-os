@@ -2,7 +2,8 @@ import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCorners,
   pointerWithin,
   useDndContext,
@@ -20,7 +21,6 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 
 export type KanbanColumn<TCard> = {
@@ -138,7 +138,11 @@ export function KanbanBoard<TCard>({
   // starts and the click is suppressed. This replaces the bespoke
   // `wasDragging` click-suppression DelibsKanban used with native HTML5 drag.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: activationDistance } }),
+    // Mouse: distance-drag keeps desktop click vs drag disambiguation intact.
+    useSensor(MouseSensor, { activationConstraint: { distance: activationDistance } }),
+    // Touch: press-and-hold 200ms then allow 8px of tolerance so a gentle tap
+    // still fires onClick while a deliberate press starts the drag.
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -157,7 +161,9 @@ export function KanbanBoard<TCard>({
   }
 
   const containerClass =
-    layout === "grid" ? "grid gap-4" : "flex gap-3 overflow-x-auto pt-1 pb-3 px-0.5";
+    layout === "grid"
+      ? "grid gap-4"
+      : "flex flex-col gap-3 pt-1 pb-3 px-0.5 md:flex-row md:overflow-x-auto";
   const containerStyle: CSSProperties | undefined =
     layout === "grid"
       ? { gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }
@@ -228,7 +234,6 @@ function BoardColumn<TCard>({
   emptyLabel: ReactNode;
   dropPlaceholder: boolean;
 }) {
-  const os = useFeatureFlag("os-redesign");
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
   const cardIds = column.cards.map(getCardId);
 
@@ -253,11 +258,10 @@ function BoardColumn<TCard>({
   // own shape via `className`. The coral `isOver` ring is applied uniformly.
   const shellClass =
     column.className ??
-    (os
-      ? // 12px, not the 24px card corner: a column runs the height of the
-        // board, and the bigger radius reads as a bubble at that size.
-        "flex-shrink-0 w-64 border border-transparent rounded-os-item bg-os-card flex flex-col"
-      : "flex-shrink-0 w-64 border rounded-lg border-border bg-card flex flex-col");
+    // 12px, not the 24px card corner: a column runs the height of the
+    // board, and the bigger radius reads as a bubble at that size.
+    // w-full md:w-64 = stack single-column on mobile, fixed width at md+.
+    "flex-shrink-0 w-full md:w-64 border border-transparent rounded-os-item bg-os-card flex flex-col";
 
   // The dashed "it lands here" outline, spliced in at `dropIndex`. On an empty
   // column it stands in for the Empty label entirely, so a drop target that
@@ -266,12 +270,7 @@ function BoardColumn<TCard>({
     <div
       key="drop-placeholder"
       aria-hidden
-      className={cn(
-        "h-16 shrink-0 border-2 border-dashed",
-        os
-          ? "rounded-os-item border-os-accent/50 bg-os-accent/5"
-          : "rounded-md border-accent-coral/40 bg-accent-coral/5",
-      )}
+      className="h-16 shrink-0 border-2 border-dashed rounded-os-item border-os-accent/50 bg-os-accent/5"
     />
   );
 
@@ -283,10 +282,7 @@ function BoardColumn<TCard>({
             column.renderEmpty()
           ) : (
             <div
-              className={cn(
-                "text-muted-foreground italic text-center py-4",
-                os ? "text-sm" : "text-xs",
-              )}
+              className="text-muted-foreground italic text-center py-4 text-sm"
             >
               {emptyLabel}
             </div>
@@ -320,8 +316,7 @@ function BoardColumn<TCard>({
       data-testid="board-column"
       className={cn(
         shellClass,
-        (isOver || dropIndex >= 0) &&
-          (os ? "ring-2 ring-os-accent/50" : "ring-2 ring-accent-coral/40"),
+        (isOver || dropIndex >= 0) && "ring-2 ring-os-accent/50",
       )}
     >
       <div
@@ -339,16 +334,13 @@ function BoardColumn<TCard>({
             {/* The os type scale starts a step up from the brand shell's: a
                 column name is 16px there, its counts 12px, not 14/11. */}
             <div
-              className={cn(
-                "text-foreground truncate",
-                os ? "text-base font-medium" : "text-sm font-semibold",
-              )}
+              className="text-foreground truncate text-base font-medium"
               title={typeof column.title === "string" ? column.title : undefined}
             >
               {column.title}
             </div>
             {column.subtitle != null && (
-              <div className={cn("text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
+              <div className="text-muted-foreground text-xs">
                 {column.subtitle}
               </div>
             )}
@@ -356,10 +348,7 @@ function BoardColumn<TCard>({
         )}
         {column.headerExtra ?? (
           <div
-            className={cn(
-              "text-muted-foreground flex-shrink-0",
-              os ? "text-xs" : "text-[11px]",
-            )}
+            className="text-muted-foreground flex-shrink-0 text-xs"
           >
             {column.count ?? column.cards.length}
           </div>
@@ -459,7 +448,7 @@ function DraggableCardWrapper<TCard>({
     : {};
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className="dnd-touch-handle">
       {renderCard(card, { isDragging, dragHandleProps })}
     </div>
   );
@@ -496,7 +485,7 @@ function SortableCardWrapper<TCard>({
     : {};
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className="dnd-touch-handle">
       {renderCard(card, { isDragging, dragHandleProps })}
     </div>
   );

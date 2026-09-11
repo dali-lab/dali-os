@@ -213,7 +213,7 @@ export default function EmailSendersAdmin() {
   const [params] = useSearchParams();
   const justAuthorized = params.get("gmail_authorized") === "1";
   const gmailError = params.get("gmail_error");
-  const { os, pageTitle, cardPad } = useOsChrome();
+  const { pageTitle, cardPad } = useOsChrome();
 
   return (
     <div className="flex flex-col gap-4">
@@ -238,7 +238,7 @@ export default function EmailSendersAdmin() {
             key={s.purpose}
             className={cn(
               cardPad,
-              os ? "rounded-os-card bg-os-card" : "rounded-lg border border-border bg-card",
+              "rounded-os-card bg-os-card",
             )}
           >
             <div className="flex items-start justify-between gap-4">
@@ -270,7 +270,7 @@ export default function EmailSendersAdmin() {
               <div className="flex flex-shrink-0 items-center gap-2">
                 <a
                   href={`/admin/authorize-gmail?purpose=${s.purpose}`}
-                  className={os ? "os-btn-primary" : buttonClasses("primary", "sm")}
+                  className="os-btn-primary"
                 >
                   {s.sendAsEmail ? "Reconnect" : "Connect"}
                 </a>
@@ -293,7 +293,7 @@ export default function EmailSendersAdmin() {
                         { method: "post" },
                       );
                     }}
-                    className={os ? "os-btn-ghost" : buttonClasses("ghost", "sm")}
+                    className="os-btn-ghost"
                   >
                     Disable
                   </button>
