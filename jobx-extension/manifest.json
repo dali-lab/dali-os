@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DALI → JobX Timesheet Filler",
-  "version": "1.0.0",
-  "description": "Pre-fills the Dartmouth JobX timesheet from your DALI OS timesheet sections. Fills + saves each day; you review.",
+  "name": "DALI OS → JobX Timesheet",
+  "version": "1.1.0",
+  "description": "Fills your Dartmouth JobX timesheet from the hours you logged in DALI OS — pick a role and a pay period, review, fill.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://dartmouth.studentemployment.ngwebsolutions.com/*",
@@ -11,6 +11,9 @@
     "http://localhost:5173/*",
     "https://*.dali.dartmouth.edu/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://dartmouth.studentemployment.ngwebsolutions.com/*"],
@@ -18,11 +21,25 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon48.png"],
+      "matches": ["https://dartmouth.studentemployment.ngwebsolutions.com/*"]
+    }
+  ],
   "action": {
-    "default_title": "DALI → JobX Timesheet Filler",
-    "default_popup": "popup.html"
+    "default_title": "DALI OS → JobX Timesheet",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }

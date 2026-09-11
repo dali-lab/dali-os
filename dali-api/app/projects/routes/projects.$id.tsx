@@ -4159,6 +4159,15 @@ function ProjectDriveTab({
   // endpoint DocumentsBlock used, then revalidates so the badge updates.
   const togglePagePartnerVisible = useCallback(async (item: DriveItem, next: boolean) => {
     if (item.type !== "doc" && item.type !== "file") return;
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this item. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     const endpoint =
       item.type === "file"
         ? `/api/files/${item.id}/partner-visible`
@@ -4178,7 +4187,7 @@ function ProjectDriveTab({
     } catch {
       // Silently fail — the user can retry. The badge state is loader-authoritative.
     }
-  }, [revalidator]);
+  }, [dialog, revalidator]);
 
   const onNavigate = useCallback(
     (_scopeId: string | null, folderId: string | null) => {
@@ -4576,6 +4585,15 @@ function DocumentsBlock({
   // Documents list. Persisted via its own API route; the badge state comes
   // back through the loader.
   async function togglePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this document. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -4848,6 +4866,15 @@ function DocumentsBlock({
   }
 
   async function toggleFilePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this file. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {

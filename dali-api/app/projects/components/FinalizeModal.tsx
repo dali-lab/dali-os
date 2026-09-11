@@ -5,6 +5,7 @@ import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { useDialog } from "~/components/ui/dialog";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -67,6 +68,7 @@ export function FinalizeModal({
   defaultSlackChannel?: string;
   defaultGithubSlug?: string;
 }) {
+  const dialog = useDialog();
   const revalidator = useRevalidator();
   const [selected, setSelected] = useState<Set<Automation>>(
     () => new Set(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id)),
@@ -172,6 +174,24 @@ export function FinalizeModal({
 
   function unselectAll() {
     setSelected(new Set());
+  }
+
+  async function handleFinalize(ids: Automation[]) {
+    if (ids.length === 0) {
+      setError("Select at least one automation.");
+      return;
+    }
+    const stepLabels = ids
+      .map((id) => AUTOMATIONS.find((a) => a.id === id)?.label ?? id)
+      .join(", ");
+    const confirmed = await dialog.confirm({
+      title: `Finalize ${projectName}?`,
+      description: `This will run: ${stepLabels}. External systems (Slack, GitHub, Google Group) will be updated immediately.`,
+      confirmLabel: "Finalize",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
+    return run(ids);
   }
 
   async function run(ids: Automation[]) {
@@ -395,7 +415,7 @@ export function FinalizeModal({
             variant="primary"
             size="sm"
             disabled={running || savingFields || selected.size === 0}
-            onClick={() => run([...selected])}
+            onClick={() => void handleFinalize([...selected])}
           >
             {running
               ? "Running…"

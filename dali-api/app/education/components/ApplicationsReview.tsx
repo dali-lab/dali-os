@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ApplicationAnswers } from "./ApplicationAnswers";
 import type { Question } from "~/types";
 import { InfoTip, Tooltip } from "~/components/ui/floating";
@@ -137,6 +138,7 @@ function ApplicationDetail({
   statusChip: (status: string) => React.ReactNode;
   formatSubmitted: (at: string | Date | null) => string;
 }) {
+  const confirmSubmit = useConfirmSubmit();
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -171,7 +173,22 @@ function ApplicationDetail({
           Putting them above the notes asked for the verdict first. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
         {DECISIONS.filter((s) => s !== a.status).map((s) => (
-          <Form key={s} method="post">
+          <Form
+            key={s}
+            method="post"
+            onSubmit={confirmSubmit({
+              title:
+                s === "Approved"
+                  ? "Approve this applicant?"
+                  : s === "Waitlisted"
+                    ? "Move to waitlist?"
+                    : "Reject this applicant?",
+              description: "Emails the applicant their decision.",
+              confirmLabel:
+                s === "Approved" ? "Approve" : s === "Waitlisted" ? "Waitlist" : "Reject",
+              tone: s === "Rejected" ? "destructive" : undefined,
+            })}
+          >
             <input type="hidden" name="intent" value="decide-application" />
             <input type="hidden" name="applicationId" value={a.id} />
             <input type="hidden" name="status" value={s} />
