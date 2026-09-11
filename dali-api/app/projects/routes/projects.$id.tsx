@@ -41,6 +41,11 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
+import { loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
+import { listProjectInfraRequests } from "~/lib/infra/requests.server";
+import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -74,7 +79,6 @@ import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
   EpicSprintManager,
   type EditableEpic,
-  type EditableSprint,
 } from "../components/EpicSprintManager";
 import {
   resolveTermIdForDate,
@@ -88,7 +92,6 @@ import {
   computeProjectStatus,
   factsFingerprint,
   type ProjectWorkStatus,
-  type SprintPhase,
 } from "../lib/project-status";
 import { ProjectStatusBar } from "../components/ProjectStatusBar";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -402,19 +405,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           },
         },
       },
-      sprints: {
-        orderBy: { startsAt: "asc" },
-        select: {
-          id: true,
-          name: true,
-          startsAt: true,
-          endsAt: true,
-          status: true,
-          epicId: true,
-          // Edges where this sprint is the dependent (waits on another).
-          dependencies: { select: { dependsOnSprintId: true } },
-        },
-      },
       tasks: {
         // Archived tasks (auto-archived Done/Cancelled) drop off the board.
         // Safety bound: 1000 tasks is well above any real project; keeps the
@@ -432,7 +422,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           startsAt: true,
           epicId: true,
-          sprintId: true,
           storyId: true,
           checklist: true,
           githubIssueNumber: true,
@@ -726,7 +715,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // itself lives in ../lib/timeline-epics — the partner hub draws the same bars.
   const epics: TimelineEpic[] = buildTimelineEpics({
     epics: project.epics,
-    sprints: project.sprints,
     tasks: project.tasks.map((t) => ({
       id: t.id,
       storyId: t.storyId,
@@ -764,19 +752,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
-  const sprints: EditableSprint[] = project.sprints.map((s) => ({
-    id: s.id,
-    name: s.name,
-    startsAt: s.startsAt.toISOString(),
-    endsAt: s.endsAt.toISOString(),
-    status: s.status as EditableSprint["status"],
-    epicId: s.epicId,
-    dependsOn: s.dependencies.map((d) => d.dependsOnSprintId),
-  }));
-
   // Flat directed dependency edges (storyId waits on dependsOnStoryId), drawn
-  // as arrows between story bars on the timeline. Same shape as the sprint
-  // edges above, one tier down.
+  // as arrows between story bars on the timeline.
   const storyDependencies = project.epics.flatMap((e) =>
     e.stories.flatMap((st) =>
       st.dependencies.map((d) => ({
@@ -799,7 +776,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     epicId: t.epicId,
-    sprintId: t.sprintId,
     storyId: t.storyId,
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
@@ -904,29 +880,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     current !== null && plannedTerms.some((t) => t.id === current.id);
 
   // ─── Board term derivation ───────────────────────────────────────────────
-  // Term-ness on the board is derived, not stored: a sprint's term is the one
-  // its start date falls in (roll-forward through break weeks, mirroring
-  // currentTerm()), and an epic's term footprint is the union of its sprints'
-  // terms, the terms its effective span overlaps, and its explicit target
-  // term. Term.startDate/endDate stays the single source of truth, so a sprint
-  // can never drift out of sync with "its" term. `allTerms` is ascending here,
-  // which resolveTermIdForDate/termIdsInRange rely on.
-  const sprintTermId = new Map<string, string | null>();
-  for (const s of project.sprints) {
-    sprintTermId.set(s.id, resolveTermIdForDate(allTerms, s.startsAt));
-  }
-  // Effective epic span (explicit dates expanded by sprint union) is already
-  // computed as ISO strings on `epics`; index it for the range overlap.
+  // Term-ness on the board is derived, not stored: a task's term is the one its
+  // date falls in (roll-forward through break weeks, mirroring currentTerm()),
+  // and an epic's term footprint is the terms its effective span (widened to
+  // cover its stories/tasks by buildTimelineEpics) overlaps, plus its explicit
+  // target term. Term.startDate/endDate stays the single source of truth.
+  // `allTerms` is ascending here, which resolveTermIdForDate/termIdsInRange rely on.
   const epicSpanById = new Map(
     epics.map((e) => [e.id, { startsAt: e.startsAt, endsAt: e.endsAt }]),
   );
   const boardEpics = project.epics.map((e) => {
     const ids = new Set<string>();
-    for (const s of project.sprints) {
-      if (s.epicId !== e.id) continue;
-      const tid = sprintTermId.get(s.id);
-      if (tid) ids.add(tid);
-    }
     const span = epicSpanById.get(e.id);
     const start = span?.startsAt ? new Date(span.startsAt) : null;
     const end = span?.endsAt ? new Date(span.endsAt) : null;
@@ -934,13 +898,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (e.targetTermId) ids.add(e.targetTermId);
     return { id: e.id, title: e.title, termIds: [...ids] };
   });
-  // Term filter options: the project's planned terms plus any term a sprint
-  // actually resolves to (a sprint may land in a term not in the planned set).
+  // Term filter options: the project's planned terms plus any term a task
+  // actually lands in (a task may be dated in a term outside the planned set).
   const boardTermIds = new Set<string>();
   for (const t of plannedTerms) boardTermIds.add(t.id);
-  for (const tid of sprintTermId.values()) if (tid) boardTermIds.add(tid);
-  const boardTerms = allTerms
-    .filter((t) => boardTermIds.has(t.id))
+  for (const t of tasks) {
+    const d = t.dueAt ?? t.startsAt;
+    if (!d) continue;
+    const tid = resolveTermIdForDate(allTerms, new Date(d));
+    if (tid) boardTermIds.add(tid);
+  }
+  const boardTermList = allTerms.filter((t) => boardTermIds.has(t.id));
+  const boardTerms = [...boardTermList]
     .sort((a, b) => b.sortKey - a.sortKey)
     .map((t) => ({ id: t.id, code: t.code }));
   const boardCurrentTermId =
@@ -951,15 +920,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   //
   // Assignments accumulate term after term, so deduping across all of them
   // offered everyone who had ever been staffed here — including people who
-  // left the project terms ago. Scope to the current term's team instead, with
-  // two deliberate additions:
-  //   - a project not staffed this term falls back to its most recent staffed
-  //     term, so tasks on a finished project can still be reassigned rather
-  //     than facing an empty picker;
-  //   - anyone already assigned to one of this project's tasks stays listed.
-  //     The picker doubles as the un-assign control (TaskModal renders its
-  //     checkbox list from this set), so dropping them would strand the task
-  //     with an assignee nobody could remove.
+  // left the project terms ago. Scope to the current term's team instead,
+  // falling back to the most recent staffed term so tasks on a finished
+  // project can still be reassigned rather than facing an empty picker.
+  //
+  // A task carried over from an earlier term may still hold an assignee who has
+  // since rolled off. TaskModal folds that task's own assignees into its picker
+  // so they stay removable — which keeps the un-assign path working without
+  // widening this project-wide list back out to every past member.
   const currentTermAssignments = current
     ? project.assignments.filter((a) => a.termId === current.id)
     : [];
@@ -981,17 +949,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       memberMap.set(id, fullName(a.user));
     }
   }
-  for (const t of tasks) {
-    for (const a of t.assignees) {
-      if (!memberMap.has(a.id)) memberMap.set(a.id, a.name);
-    }
-  }
-  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
-  // Term spans anchor the fixed one-week sprint grid and label its bands
-  // (26FA, 26FB, …). Oldest first, the order the grid walks them. Both the
-  // timeline and the task modal read weeks off this same anchor, so it's built
-  // once here rather than twice.
-  const termSpans = [...plannedTerms]
+  // Term spans anchor the fixed one-week sprint grid (Sprint 1..N per term).
+  // Oldest first, the order the grid walks them; the same set as the board's
+  // term filter so every term option can populate the sprint picker. Both the
+  // timeline and the task board read sprints off this same anchor.
+  const termSpans = [...boardTermList]
     .sort((a, b) => a.sortKey - b.sortKey)
     .map((t) => ({
       code: t.code,
@@ -1004,20 +966,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
-    sprints: [...sprints]
-      .sort(
-        (a, b) =>
-          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
-          a.startsAt.localeCompare(b.startsAt),
-      )
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        epicId: s.epicId,
-        termId: sprintTermId.get(s.id) ?? null,
-        startsAt: s.startsAt,
-      })),
     epics: boardEpics,
     stories: project.epics.flatMap((e) =>
       e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
@@ -1132,28 +1080,51 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // Per-project infrastructure (Fly + Neon): config presence + cached inventory
+  // + the project's change requests. View is open to anyone who can see the
+  // project; config/requests are gated in the section by canEdit (core||staffed).
+  const [projectInfra, infraConfigRow, infraRequests] = await Promise.all([
+    loadProjectInfra(params.id),
+    prisma.project.findUnique({
+      where: { id: params.id },
+      select: {
+        flyOrgSlug: true,
+        neonOrgId: true,
+        infraEnabled: true,
+        flyReadTokenEnc: true,
+        flyWriteTokenEnc: true,
+      },
+    }),
+    canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+  ]);
+  const infra = {
+    config: {
+      flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
+      neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      infraEnabled: infraConfigRow?.infraEnabled ?? true,
+      hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
+      hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
+    },
+    view: projectInfra,
+    requests: infraRequests,
+  };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
-  // AI summary's freshness. Facts come from the same task/sprint rows the board
-  // already loaded, so the bar costs no extra query. aiTldrStale compares the
-  // current facts fingerprint against the one the cached summary was written
-  // from; the client regenerates when it differs (see ProjectStatusBar).
+  // AI summary's freshness. Facts come from the same task rows the board
+  // already loaded (the current sprint is derived from term spans), so the bar
+  // costs no extra query. aiTldrStale compares the current facts fingerprint
+  // against the one the cached summary was written from; the client regenerates
+  // when it differs (see ProjectStatusBar).
   const statusFacts = computeProjectStatus(
     {
       projectStatus: project.status as ProjectWorkStatus,
       tasks: project.tasks.map((t) => ({
         id: t.id,
         status: t.status as TaskStatus,
+        startsAt: t.startsAt,
         dueAt: t.dueAt,
-        sprintId: t.sprintId,
         activityAt: t.activityAt,
       })),
-      sprints: project.sprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        status: s.status as SprintPhase,
-      })),
+      terms: termSpans,
     },
     new Date(),
   );
@@ -1165,6 +1136,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     project.aiTldrInputHash !== factsFingerprint(statusFacts);
 
   return {
+    infra,
     project: {
       id: project.id,
       name: project.name,
@@ -1220,7 +1192,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     recentActivity,
     epics,
     editableEpics,
-    sprints,
     storyDependencies,
     timelineTerms: termSpans,
     tasks,
@@ -1354,9 +1325,37 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
+  }
+
+  // Cloud infra config (Fly org slug / Neon org id / encrypted Fly tokens /
+  // sweep toggle). Same core||staffed gate as the top of this action; tokens are
+  // write-only (blank leaves them unchanged).
+  if (intent === "infra-config") {
+    const data = buildInfraConfigUpdate({
+      flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
+      neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
+      infraEnabled: form.get("infraEnabled") != null,
+      flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
+      flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
+    });
+    await prisma.project.update({ where: { id: params.id }, data });
+    await logAuditEvent({
+      action: "infra.config",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: {
+        flyOrgSlug: data.flyOrgSlug ?? null,
+        neonOrgId: data.neonOrgId ?? null,
+        infraEnabled: data.infraEnabled ?? null,
+        setFlyReadToken: !!data.flyReadTokenEnc,
+        setFlyWriteToken: !!data.flyWriteTokenEnc,
+      },
+      request,
+    });
+    return { ok: true };
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -1438,6 +1437,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Lifecycle status — Active / Paused / Archived. Core-only (listed in
+  // SCOPE_INTENTS above); edited from Project settings and shown as the
+  // read-only pill in the hero.
+  if (intent === "status") {
+    const status = (form.get("status") as string | null) ?? "";
+    if (!STATUSES.includes(status as ProjectStatus)) {
+      return { error: "Invalid status." };
+    }
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { status: status as ProjectStatus },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -1611,13 +1625,16 @@ export default function ProjectDetail() {
     presencePhotoUrl,
     presenceSubtitle,
     projectDriveScope,
+    infra,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
+  // The action's success returns vary by intent (some redirect, infra-config
+  // returns { ok }), so narrow to the error-bearing shape for the page banner.
+  const actionError = actionData && "error" in actionData ? actionData.error : undefined;
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
   const showStatusBar = useFeatureFlag("project-status-bar");
-  const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -1735,9 +1752,6 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
-      // Sprint-view flag: promotes Sprint to a top-level board filter and opens
-      // the board on the current sprint. Off → the epic-nested sprint sub-filter.
-      sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={peopleOptions}
@@ -1792,9 +1806,9 @@ export default function ProjectDetail() {
       {/* Page-level action errors — above the tab content so a failed save
           (e.g. the header form) is visible from any tab. The settings modal
           keeps its own inline copy. */}
-      {actionData?.error && (
+      {actionError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionData.error}
+          {actionError}
         </div>
       )}
 
@@ -1822,6 +1836,7 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
+          infra={infra}
         />
       )}
 
@@ -1847,7 +1862,7 @@ export default function ProjectDetail() {
             allTermOptions={allTermOptions}
             domainScopeGrid={domainScopeGrid}
             canEdit={canEditScope}
-            actionError={actionData?.error}
+            actionError={actionError}
           />
           {canEditScope && <DriveFolderBindings processType="Project" processId={project.id} />}
           {canEditScope && (
@@ -1951,12 +1966,12 @@ function ProjectHeader({
   canEdit: boolean;
 }) {
   const submit = useSubmit();
-  // Name, status and icon each save the moment you change them — the hero has
-  // no edit mode and no pencil (which used to collide with the taskboard's
-  // Edit-task pencil). Only the name needs a transient draft while you type;
-  // status and icon read/write project state directly, so the fields never
-  // drift from the loader. Terms and roles are read-only here now — they live
-  // in Project settings (the gear), the one place that edits project scope.
+  // Name and icon each save the moment you change them — the hero has no edit
+  // mode and no pencil (which used to collide with the taskboard's Edit-task
+  // pencil). Only the name needs a transient draft while you type; icon
+  // read/writes project state directly, so the field never drifts from the
+  // loader. Status, terms and roles are read-only here now — they live in
+  // Project settings (the gear), the one place that edits project scope.
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
 
@@ -1970,20 +1985,21 @@ function ProjectHeader({
     if (!trimmed || trimmed === project.name) return;
     saveHeader({ name: trimmed });
   }
-  // One write path for all three fields: post the current project values with
-  // the one field being changed overridden, so a status flip doesn't blank the
-  // name and vice versa. iconEmoji goes through "in patch" because null (no
-  // icon) is a real value the ?? fallback would swallow.
+  // One write path for name + icon: post the current project values with the
+  // one field being changed overridden, so a rename doesn't blank the icon and
+  // vice versa. iconEmoji goes through "in patch" because null (no icon) is a
+  // real value the ?? fallback would swallow. Status is edited in Project
+  // settings now, but the `header` intent still validates it, so we carry the
+  // current value through unchanged.
   function saveHeader(patch: {
     name?: string;
-    status?: ProjectStatus;
     iconEmoji?: string | null;
   }) {
     submit(
       {
         intent: "header",
         name: patch.name ?? project.name,
-        status: patch.status ?? project.status,
+        status: project.status,
         iconEmoji: ("iconEmoji" in patch ? patch.iconEmoji : project.iconEmoji) ?? "",
       },
       { method: "post" },
@@ -2126,22 +2142,11 @@ function ProjectHeader({
           {project.name}
         </h1>
       )}
-      {canEdit ? (
-        <Select
-          value={project.status}
-          onChange={(v) => saveHeader({ status: v as ProjectStatus })}
-          ariaLabel="Project status"
-          options={STATUSES.map((s) => ({ value: s, label: s }))}
-          // The Select trigger adds its own flex layout; this just supplies the
-          // status plate's shape and colour so the dropdown reads as the badge.
-          buttonClassName={cn(
-            "rounded-full border transition-[filter] hover:brightness-95",
-            cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status]),
-          )}
-        />
-      ) : (
-        <StatusBadge status={project.status} />
-      )}
+      {/* Status is display-only in the hero — the pill still states the
+          project's lifecycle, but changing it lives in Project settings (the
+          gear) with the rest of the project's scope, so Core owns lifecycle
+          changes in one place. */}
+      <StatusBadge status={project.status} />
     </>
   );
 
@@ -2227,6 +2232,53 @@ function DescriptionSegment({
               </p>
             )}
           </div>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+// Status: the project's lifecycle plate (Active / Paused / Archived), edited
+// here in Project settings so Core owns lifecycle changes in one place; the
+// hero shows the same pill read-only.
+function StatusSegment({
+  status,
+  canEdit,
+}: {
+  status: ProjectStatus;
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Status"
+      canEdit={canEdit}
+      description="Active, Paused, or Archived — the lifecycle state shown as the pill beside the project name."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="status" />
+            <Select
+              name="status"
+              defaultValue={status}
+              ariaLabel="Project status"
+              options={STATUSES.map((s) => ({ value: s, label: s }))}
+              // The pill wears the current status's colour; the read view below
+              // uses the same plate, so editing reads as the same badge.
+              buttonClassName={cn(
+                "rounded-full border transition-[filter] hover:brightness-95",
+                cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[status]),
+              )}
+            />
+          </Form>
+        ) : (
+          <StatusBadge status={status} />
         )
       }
     </EditableSection>
@@ -3215,6 +3267,7 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
+  infra,
 }: {
   // The epics & sprints timeline, rendered at the top of the body. Passed in
   // as an element so Overview doesn't have to re-declare all of Planning's
@@ -3242,6 +3295,7 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
+  infra: LoaderData["infra"];
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
@@ -3360,6 +3414,17 @@ function OverviewTab({
         project={project}
         canEdit={canEdit}
         canEditFinance={canEditFinance}
+      />
+
+      {/* Cloud infrastructure (Fly + Neon): read-only inventory/usage for any
+          member; config + change-requests for staffed (core||isProjectMember).
+          Wears the shared EditableSection primitive (own section shell). */}
+      <ProjectInfraSection
+        projectId={project.id}
+        canEdit={canEdit}
+        config={infra.config}
+        view={infra.view}
+        requests={infra.requests}
       />
 
       {/* Team — read-only summary, separate from the editable details. */}
@@ -3574,6 +3639,8 @@ function ScopeTab({
           {actionError}
         </div>
       )}
+
+      <StatusSegment status={project.status} canEdit={canEdit} />
 
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
 

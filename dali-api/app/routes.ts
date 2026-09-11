@@ -81,6 +81,7 @@ export default [
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -384,6 +385,9 @@ export default [
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
+  route("api/infra/action", "admin/routes/api.infra.action.ts"),
+  route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
+  route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No
@@ -466,7 +470,7 @@ export default [
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
-  // Project epics & sprints
+  // Project epics & stories
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
   route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
@@ -476,8 +480,6 @@ export default [
   ),
   route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
   route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
-  route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),
-  route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
 
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),

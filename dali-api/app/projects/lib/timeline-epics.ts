@@ -26,12 +26,6 @@ export type TimelineEpicRow = {
   }[];
 };
 
-export type TimelineSprintRow = {
-  epicId: string | null;
-  startsAt: Date;
-  endsAt: Date;
-};
-
 // Span fields are always read (they place the story above them); the rest is
 // only read when `includeTasks`, so a caller that hides the task level can
 // select dates alone rather than joining assignees it will never draw.
@@ -53,10 +47,10 @@ export type TimelineTaskRow = {
 /**
  * Resolve every epic, story and task onto the day grid the timeline draws.
  *
- * Resolution is deliberately acyclic: epic *base* span (explicit dates, else
- * the union of its sprint dates) → story span (explicit, else the union of its
- * self-dated tasks, else the epic base) → task span (own dates, else the
- * story's) → epic *final* span (base widened to cover its stories).
+ * Resolution is deliberately acyclic: epic *base* span (explicit dates) → story
+ * span (explicit, else the union of its self-dated tasks, else the epic base) →
+ * task span (own dates, else the story's) → epic *final* span (base widened to
+ * cover its stories).
  *
  * `includeTasks: false` still runs the task pass — a story with no dates of its
  * own is placed by the tasks under it either way — but leaves the task arrays
@@ -66,12 +60,10 @@ export type TimelineTaskRow = {
  */
 export function buildTimelineEpics({
   epics,
-  sprints,
   tasks,
   includeTasks = true,
 }: {
   epics: TimelineEpicRow[];
-  sprints: TimelineSprintRow[];
   tasks: TimelineTaskRow[];
   includeTasks?: boolean;
 }): TimelineEpic[] {
@@ -84,16 +76,8 @@ export function buildTimelineEpics({
   }
 
   return epics.map((e) => {
-    const epicSprints = sprints.filter((s) => s.epicId === e.id);
-    const sprintStarts = epicSprints.map((s) => s.startsAt.getTime());
-    const sprintEnds = epicSprints.map((s) => s.endsAt.getTime());
-    const sprintStartMs = sprintStarts.length ? Math.min(...sprintStarts) : null;
-    const sprintEndMs = sprintEnds.length ? Math.max(...sprintEnds) : null;
-
-    let startMs = e.startsAt?.getTime() ?? sprintStartMs;
-    let endMs = e.endsAt?.getTime() ?? sprintEndMs;
-    if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
-    if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
+    let startMs = e.startsAt?.getTime() ?? null;
+    let endMs = e.endsAt?.getTime() ?? null;
 
     const stories: TimelineStory[] = [];
     for (const st of e.stories) {

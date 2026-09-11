@@ -110,6 +110,12 @@ export const FEATURE_FLAGS = [
       "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
   {
+    key: "infra-dashboard",
+    label: "Infrastructure dashboard",
+    description:
+      "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
+  },
+  {
     key: "drive-folder-bindings",
     label: "Drive folder bindings",
     description:
@@ -126,12 +132,6 @@ export const FEATURE_FLAGS = [
     label: "Project AI TL;DR",
     description:
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
-  },
-  {
-    key: "sprint-view",
-    label: "Sprint view",
-    description:
-      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
   },
   {
     key: "activities",

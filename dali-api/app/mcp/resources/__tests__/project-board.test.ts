@@ -12,7 +12,6 @@ import {
 
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
-  sprint: { findMany: ReturnType<typeof vi.fn> };
   task: {
     findMany: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
@@ -40,32 +39,34 @@ describe("project-board resource", () => {
     );
   });
 
-  it("groups tasks into sprint boards + backlog", async () => {
+  it("groups tasks into sprint boards + backlog by their dates", async () => {
+    // Term Jun 1 → Aug 1. Sprint 1 = Jun 1–7; a task due Jun 3 lands there.
+    // Grouping is by task date vs band range, independent of "today".
     mockPrisma.project.findUnique.mockResolvedValue({
       id: "p1",
       name: "Alpha",
       status: "Active",
+      projectTerms: [
+        {
+          term: {
+            code: "26X",
+            startDate: new Date("2026-06-01T00:00:00Z"),
+            endDate: new Date("2026-08-01T00:00:00Z"),
+            sortKey: 1,
+          },
+        },
+      ],
     });
-    mockPrisma.sprint.findMany.mockResolvedValue([
-      {
-        id: "s1",
-        name: "Sprint 1",
-        status: "Active",
-        startsAt: new Date("2026-06-01"),
-        endsAt: new Date("2026-06-14"),
-        epicId: null,
-      },
-    ]);
     mockPrisma.task.findMany.mockResolvedValue([
       {
         id: "t1",
         title: "A",
         status: "Todo",
         priority: "Normal",
-        sprintId: "s1",
+        startsAt: null,
+        dueAt: new Date("2026-06-03T00:00:00Z"), // Sprint 1
         epicId: null,
         position: 0,
-        dueAt: null,
         assignees: [{ user: { id: "u1", firstName: "A", lastName: "B" } }],
       },
       {
@@ -73,10 +74,10 @@ describe("project-board resource", () => {
         title: "B",
         status: "Todo",
         priority: "Normal",
-        sprintId: null,
+        startsAt: null,
+        dueAt: null, // undated → backlog
         epicId: null,
         position: 0,
-        dueAt: null,
         assignees: [],
       },
     ]);
@@ -84,8 +85,10 @@ describe("project-board resource", () => {
 
     const text = await readProjectBoardResource("p1");
     const data = JSON.parse(text);
-    expect(data.sprints[0].tasks.Todo).toHaveLength(1);
+    // Sprint 1 is the first band (Jun 1–7); the Jun 3 task lands in it.
+    expect(data.sprints[0].label).toBe("Sprint 1");
+    expect(data.sprints[0].tasks.Todo.map((c: { id: string }) => c.id)).toEqual(["t1"]);
     expect(data.backlog.openCount).toBe(1);
-    expect(data.backlog.tasks.Todo).toHaveLength(1);
+    expect(data.backlog.tasks.Todo.map((c: { id: string }) => c.id)).toEqual(["t2"]);
   });
 });

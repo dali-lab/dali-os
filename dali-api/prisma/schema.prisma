@@ -2757,6 +2757,17 @@ model Project {
   chartStringType String?
   chartString     String?
 
+  // ─── Cloud infrastructure (Fly.io + Neon) ───
+  // The lab runs one Fly org + one Neon org per project. These power the
+  // per-project Infrastructure section (view for any member) and the lab-wide
+  // Infrastructure console (Core/Admin actions). Fly tokens are AES-256-GCM
+  // encrypted at rest (app/lib/infra/crypto.server.ts). Null = not configured.
+  flyOrgSlug       String?
+  neonOrgId        String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
+  flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
+  flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
+  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
   // Deliberately NOT a hub/search filter — the hub still lists them.
@@ -2776,7 +2787,6 @@ model Project {
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
-  sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
   // Declared domains for the project — surfaced on the project detail page
@@ -2999,16 +3009,15 @@ model Epic {
   status           EpicStatus @default(Open)
   // Explicit timeline span. Nullable: an epic may be created before its
   // dates are known. When null, the timeline falls back to the min/max of
-  // the epic's sprint dates (see projects.$id loader).
+  // its stories' (and their tasks') dates (see buildTimelineEpics).
   startsAt         DateTime?
   endsAt           DateTime?
-  // Optional target term for cross-term epics that span multiple sprints.
+  // Optional target term for cross-term epics that span multiple terms.
   targetTermId     String?
   position         Int        @default(0)
 
   project Project     @relation(fields: [projectId], references: [id])
   tasks   Task[]
-  sprints Sprint[]
   stories UserStory[]
 
   createdAt DateTime @default(now())
@@ -3051,7 +3060,7 @@ model UserStory {
   epic  Epic   @relation(fields: [epicId], references: [id])
   tasks Task[]
 
-  // Timeline dependency edges, same two-sided shape as SprintDependency.
+  // Timeline dependency edges (a two-sided "must finish before" shape).
   // `dependencies` are rows where this story is the dependent (stories it
   // waits on); `blocking` are rows where it is the predecessor.
   dependencies UserStoryDependency[] @relation("UserStoryDependent")
@@ -3093,61 +3102,14 @@ enum UserStoryStatus {
   Done
 }
 
-model Sprint {
-  id        String       @id @default(cuid())
-  projectId String
-  // Optional epic this sprint belongs to. Null = standalone/cross-epic
-  // sprint. Tasks still carry their own epicId for cross-sprint grouping.
-  epicId    String?
-  name      String
-  startsAt  DateTime
-  endsAt    DateTime
-  // Sprint goal as collab doc. Retros live as collab pages in the project's
-  // page tree.
-  goalDocId String?
-  status    SprintStatus @default(Planned)
-
-  project Project @relation(fields: [projectId], references: [id])
-  epic    Epic?   @relation(fields: [epicId], references: [id])
-  tasks   Task[]
-
-  // Timeline dependency edges. `dependencies` are the rows where this sprint is
-  // the dependent (the sprints it waits on); `blocking` are rows where it is
-  // the predecessor (sprints that wait on it). Both sides are same-project —
-  // enforced in the API, not the schema.
-  dependencies SprintDependency[] @relation("SprintDependent")
-  blocking     SprintDependency[] @relation("SprintBlocker")
-
-  @@index([projectId, status])
-}
-
-// A directed "must finish before" edge between two sprints, drawn as an arrow
-// on the epics timeline. `sprintId` depends on (waits for) `dependsOnSprintId`.
-model SprintDependency {
-  id                String @id @default(cuid())
-  sprintId          String
-  dependsOnSprintId String
-
-  sprint          Sprint @relation("SprintDependent", fields: [sprintId], references: [id], onDelete: Cascade)
-  dependsOnSprint Sprint @relation("SprintBlocker", fields: [dependsOnSprintId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([sprintId, dependsOnSprintId])
-  @@index([dependsOnSprintId])
-}
-
-enum SprintStatus {
-  Planned
-  Active
-  Closed
-}
+// Sprints are not stored: a sprint is a computed term-anchored one-week band
+// (Sprint 1..N per term), derived from the project's terms — see
+// app/projects/lib/timeline-days.ts (sprintBands). A task belongs to a sprint
+// by its dates, not a stored FK.
 
 model Task {
   id        String  @id @default(cuid())
   projectId String
-  // Null sprintId = backlog.
-  sprintId  String?
   // Optional epic linkage for cross-sprint grouping.
   epicId    String?
   // Optional parent user story. Null = the task hangs directly off the epic
@@ -3162,8 +3124,9 @@ model Task {
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional timeline start. Pairs with dueAt to give the task a span on the
-  // project timeline; null falls back to the parent story/sprint start.
-  // Purely a planning field — it fires no reminders.
+  // project timeline (and, via those dates, which sprint week it lands in);
+  // null falls back to the parent story start. Purely a planning field — it
+  // fires no reminders.
   startsAt         DateTime?
   // Optional deadline. UTC instant; UI formats in local time. When set,
   // the task-due-reminders job notifies assignees 24h before and at the
@@ -3204,7 +3167,6 @@ model Task {
   githubIssueUrl    String?
 
   project   Project        @relation(fields: [projectId], references: [id])
-  sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
   story     UserStory?     @relation(fields: [storyId], references: [id])
   domain    Domain?        @relation(fields: [domainId], references: [id])
@@ -3220,7 +3182,7 @@ model Task {
   updatedAt   DateTime @updatedAt
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
-  @@index([projectId, sprintId])
+  @@index([projectId])
   @@index([storyId])
 }
 
@@ -4773,6 +4735,75 @@ enum ActivityStatus {
   Draft
   Published
   Archived
+// ─── Infrastructure Dashboard ────────────────────────────────────────────────
+
+// Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
+// / flyWriteTokenEnc / infraEnabled) — the lab runs one Fly org + one Neon org
+// per project. Fly tokens are AES-256-GCM encrypted at rest (app/lib/infra/
+// crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon personal key is
+// an env secret (INFRA_NEON_API_KEY). The tables below cache swept inventory /
+// usage and hold members' change requests, keyed by Project id (plain string,
+// AuditLog-style — no FK, so a project delete won't cascade; the sweep prunes).
+
+// One row per (project, provider) sweep — the latest wins for the current-state
+// render; older rows are a raw audit trail. Payload is the normalized inventory
+// (apps/machines/volumes for Fly; projects/branches/endpoints for Neon). Never
+// contains tokens or connection secrets.
+model InfraSnapshot {
+  id        String   @id @default(cuid())
+  fetchedAt DateTime @default(now())
+  projectId String
+  provider  String // "fly" | "neon"
+  payload   Json
+
+  @@index([projectId, provider, fetchedAt])
+}
+
+// Usage time-series for trend sparklines. No dollar values — raw provider
+// metrics only (Neon consumption + Fly Prometheus). This table is our long-term
+// record, since Fly's Prometheus retention is only ~15 days.
+model InfraUsageSample {
+  id        String   @id @default(cuid())
+  projectId String
+  provider  String // "fly" | "neon"
+  scopeType String // "fly-app" | "neon-project" | "neon-endpoint"
+  scopeId   String
+  scopeName String
+  metric    String // e.g. "compute_unit_seconds", "egress_bytes", "storage_bytes"
+  value     Float
+  at        DateTime
+
+  @@unique([provider, scopeType, scopeId, metric, at])
+  @@index([projectId, metric, at])
+}
+
+// A member-submitted request to change a project's infra: staffed members (and
+// Core) ASK; Core/Admin fulfill from the fleet console. v1 is fulfilled
+// manually — Core performs the change via the console actions, then marks it
+// resolved. userIds are free-form (AuditLog-style), not FKs.
+enum InfraRequestStatus {
+  Pending
+  Fulfilled
+  Rejected
+}
+
+model InfraRequest {
+  id                String             @id @default(cuid())
+  createdAt         DateTime           @default(now())
+  resolvedAt        DateTime?
+  projectId         String
+  requestedByUserId String
+  // Free-form, backed by the registry in app/lib/infra/request-kinds.ts (not an
+  // enum) so kinds broaden without a migration; submit validates against the pool.
+  kind              String
+  details           String
+  targetHint        String?
+  status            InfraRequestStatus @default(Pending)
+  resolutionNote    String?
+  resolvedByUserId  String?
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 // A composed announcement waiting for its send time. Payload + audience

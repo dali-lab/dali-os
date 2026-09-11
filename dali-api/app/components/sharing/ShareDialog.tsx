@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link2, Folder, User, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
@@ -251,13 +252,13 @@ export function ShareDialog({
 
       {/* Add people / groups */}
       <div className="flex flex-col gap-2.5 mb-6">
-        <input
+        <SearchInput
           ref={searchRef}
-          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Add people by name"
-          className="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          size="sm"
+          containerClassName="w-full"
         />
         {members.length > 0 && (
           <ul className="flex flex-col gap-0.5 border border-border rounded-md p-1">

@@ -23,7 +23,6 @@ import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
-export type SprintStatus = "Planned" | "Active" | "Closed";
 export type StoryStatus = "Todo" | "InProgress" | "Done";
 export type TaskStatus = "Todo" | "InProgress" | "Blocked" | "Done" | "Cancelled";
 

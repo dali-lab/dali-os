@@ -132,7 +132,6 @@ export async function loadPartnerProjectView(
     partnership,
     assignments,
     epicsRaw,
-    sprintRows,
     storyTaskRows,
     recentlyDone,
     pageRows,
@@ -184,12 +183,6 @@ export async function loadPartnerProjectView(
             },
           },
         },
-      }),
-      // Dates only — sprints are not a surface of their own here; an epic with
-      // no dates of its own is placed by the sprints under it.
-      prisma.sprint.findMany({
-        where: { projectId: project.id },
-        select: { epicId: true, startsAt: true, endsAt: true },
       }),
       // Dates only. Tasks never reach the partner — they're read here because a
       // story with no dates of its own is placed by the tasks under it, and a
@@ -252,7 +245,6 @@ export async function loadPartnerProjectView(
   // empty: partners see what's being built and when, not who is on which card.
   const timelineEpics = buildTimelineEpics({
     epics: epicsRaw,
-    sprints: sprintRows,
     tasks: storyTaskRows,
     includeTasks: false,
   });
