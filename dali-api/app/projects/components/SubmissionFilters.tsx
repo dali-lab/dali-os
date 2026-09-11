@@ -4,6 +4,7 @@
 // optional — the configurable database view filters by free text only.
 
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 type Domain = { id: string; name: string };
 
@@ -23,13 +24,13 @@ export function SubmissionFilters({
   const showDomain = !!domains && domains.length > 0 && !!onDomainChange;
   return (
     <div className="flex flex-col sm:flex-row gap-2">
-      <input
-        type="search"
+      <SearchInput
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder="Search by name or email"
         aria-label="Search submissions"
-        className="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+        size="sm"
+        containerClassName="flex-1"
       />
       {showDomain && (
         <Select
