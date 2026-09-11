@@ -6,7 +6,7 @@ import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, ChevronUp } from "lucide-react";
 import { createDomainChallengeForm } from "~/hiring/lib/application-form.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -32,6 +32,7 @@ import { formatVersionLabel } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
 import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -2003,17 +2004,14 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             </button>
           </div>
         )}
-        <div className="relative flex-1 min-w-[12rem] max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
-          <input
-            type="search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search applicants..."
-            aria-label="Search applicants by name"
-            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+        <SearchInput
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search applicants..."
+          aria-label="Search applicants by name"
+          size="sm"
+          containerClassName="flex-1 min-w-[12rem] max-w-xs"
+        />
         {(query || sortKey !== "none") && (
           <button
             type="button"

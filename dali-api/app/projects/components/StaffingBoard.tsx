@@ -698,19 +698,16 @@ export function StaffingBoard({
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
               aria-hidden
             />
             <input
-              type="text"
+              type="search"
               value={boardQuery}
               onChange={(e) => setBoardQuery(e.target.value)}
               placeholder="Search people, domains, application…"
               aria-label="Search the board"
-              className={cn(
-                "w-56 sm:w-72 text-sm pl-7 pr-7 py-1 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
-                os ? "rounded-os-item focus:ring-os-accent/40" : "rounded-md focus:ring-accent-coral/30",
-              )}
+              className="w-56 sm:w-72 text-sm pl-9 pr-8 py-1.5 border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
             {boardQuery && (
               <button

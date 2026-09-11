@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Eye, Landmark, Lock, Trash2, Users, X } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
@@ -193,13 +194,13 @@ export function NoteShareModal({
           </ul>
         )}
 
-        <input
+        <SearchInput
           ref={searchRef}
-          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search members by name"
-          className="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          size="sm"
+          containerClassName="w-full"
         />
 
         {members.length > 0 && (
