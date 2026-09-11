@@ -8,6 +8,7 @@ import { isValidTimezone } from "~/lib/timezone";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Tooltip } from "~/components/ui/floating";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {
   createPartnerInvite,
@@ -362,6 +363,11 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             {inviting && (
               <Form
                 method="post"
+                onSubmit={confirmSubmit({
+                  title: "Send teammate invite?",
+                  description: "This emails a join link to the address you entered.",
+                  confirmLabel: "Send invite",
+                })}
                 className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-xl p-4 mb-4"
               >
                 <input type="hidden" name="intent" value="invite" />
@@ -373,9 +379,11 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                   <label className={labelClass}>Role (optional)</label>
                   <input name="displayRole" className={inputClass} />
                 </div>
-                <button type="submit" disabled={submitting} className={saveClass}>
-                  Send invite
-                </button>
+                <Tooltip content="Emails a join link to this address">
+                  <button type="submit" disabled={submitting} className={saveClass}>
+                    Send invite
+                  </button>
+                </Tooltip>
               </Form>
             )}
 
@@ -442,7 +450,15 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                       Expires {new Date(inv.expiresAt).toLocaleDateString()}
                     </div>
                   </div>
-                  <Form method="post">
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: `Revoke invite for ${inv.email}?`,
+                      description: "Their invite link will stop working.",
+                      confirmLabel: "Revoke",
+                      tone: "destructive",
+                    })}
+                  >
                     <input type="hidden" name="intent" value="revoke-invite" />
                     <input type="hidden" name="inviteId" value={inv.id} />
                     <button

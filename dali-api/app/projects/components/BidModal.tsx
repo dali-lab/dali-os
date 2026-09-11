@@ -2,7 +2,6 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { BidField, Preference } from "../lib/staffing-board";
 
 type BoardProject = { id: string; name: string; iconEmoji?: string | null };
@@ -49,7 +48,6 @@ export function BidModal({
   canManage,
   onPlace,
 }: BidModalProps) {
-  const os = useFeatureFlag("os-redesign");
   const assigned = new Set(assignedProjectIds);
   const boardIds = new Set(boardProjects.map((p) => p.id));
   // A bid ranks a PROJECT, nothing more. Each row also carries a domain + level,
@@ -84,7 +82,7 @@ export function BidModal({
       open={open}
       onClose={onClose}
       labelledBy="bid-modal-title"
-      containerClassName={modalCardClass(os, "max-w-lg max-h-[85vh] overflow-y-auto")}
+      containerClassName={modalCardClass("max-w-lg max-h-[85vh] overflow-y-auto")}
     >
       <ModalHeader
         titleId="bid-modal-title"
@@ -114,14 +112,10 @@ export function BidModal({
                       key={p.projectId}
                       className={cn(
                         "border p-3",
-                        os ? "rounded-os-item" : "rounded-md",
+                        "rounded-os-item",
                         isAssigned
-                          ? os
-                            ? "border-os-accent/50 bg-os-accent/[0.07]"
-                            : "border-accent-coral bg-accent-coral/5"
-                          : os
-                            ? "border-transparent bg-os-well"
-                            : "border-border bg-background",
+                          ? "border-os-accent/50 bg-os-accent/[0.07]"
+                          : "border-transparent bg-os-well",
                       )}
                     >
                       <div className="flex items-baseline justify-between gap-2 flex-wrap">
@@ -132,7 +126,6 @@ export function BidModal({
                           isAssigned={isAssigned}
                           canPlace={canManage && boardIds.has(p.projectId)}
                           onPlace={() => onPlace(p.projectId)}
-                          os={os}
                         />
                       </div>
                       {p.notes && (
@@ -161,7 +154,7 @@ export function BidModal({
                       key={p.id}
                       className={cn(
                         "flex items-center justify-between gap-2 border px-3 py-2",
-                        os ? "rounded-os-item border-transparent bg-os-well" : "rounded-md border-border bg-background",
+                        "rounded-os-item border-transparent bg-os-well",
                       )}
                     >
                       <span className="flex items-center gap-1.5 min-w-0 text-sm text-foreground">
@@ -172,7 +165,6 @@ export function BidModal({
                         isAssigned={isAssigned}
                         canPlace
                         onPlace={() => onPlace(p.id)}
-                        os={os}
                       />
                     </li>
                   );
@@ -210,19 +202,17 @@ function PlaceControl({
   isAssigned,
   canPlace,
   onPlace,
-  os,
 }: {
   isAssigned: boolean;
   canPlace: boolean;
   onPlace: () => void;
-  os: boolean;
 }) {
   if (isAssigned) {
     return (
       <span
         className={cn(
           "flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium",
-          os ? "text-os-accent" : "text-accent-coral",
+          "text-os-accent",
         )}
       >
         ✓ Assigned here
@@ -236,9 +226,7 @@ function PlaceControl({
       onClick={onPlace}
       className={cn(
         "flex-shrink-0 text-xs font-medium px-2 py-1 rounded border transition-colors",
-        os
-          ? "border-os-accent/40 text-os-accent hover:bg-os-accent/10"
-          : "border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10",
+        "border-os-accent/40 text-os-accent hover:bg-os-accent/10",
       )}
     >
       Place here

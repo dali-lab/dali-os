@@ -46,8 +46,23 @@ export function buildGridDays(startIso: string, count: number): GridDay[] {
   });
 }
 
-/** Place one block into its day column, timezone-correct. Silently drops blocks
- *  that fall outside the visible `days`. Mirrors the legacy grids' `placeBlock`. */
+/** The real UTC instants bounding one grid column, in `timezone`. The next
+ *  day's midnight (not start + 24h) so DST days keep their true length. */
+function dayBoundsUtc(day: GridDay, timezone: string): { startMs: number; endMs: number } {
+  const d = day.dateUtc;
+  const next = new Date(d.getTime() + 86_400_000);
+  return {
+    startMs: zonedDayStartUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), timezone).getTime(),
+    endMs: zonedDayStartUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), timezone).getTime(),
+  };
+}
+
+/** Place one block into its day column(s), timezone-correct. A range that runs
+ *  past midnight is cut at the day boundary and continued in the next visible
+ *  column — otherwise an overnight event draws as one block that overflows the
+ *  bottom of the grid and stretches past the midnight line. Silently drops
+ *  blocks that fall outside the visible `days`. Mirrors the legacy grids'
+ *  `placeBlock`. */
 export function placeBlock(
   days: GridDay[],
   timezone: string,
@@ -56,21 +71,44 @@ export function placeBlock(
   block: Omit<EventBlock, "startHour" | "duration">,
   into: Record<number, EventBlock[]>,
 ): void {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const ymd = getZonedYMD(start, timezone);
-  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
-  const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
-  const duration = (end.getTime() - start.getTime()) / 3_600_000;
-  const dayIdx = days.findIndex(
-    (d) =>
-      d.dateUtc.getUTCFullYear() === ymd.year &&
-      d.dateUtc.getUTCMonth() + 1 === ymd.month &&
-      d.dateUtc.getUTCDate() === ymd.day,
-  );
-  if (dayIdx < 0) return;
-  if (!into[dayIdx]) into[dayIdx] = [];
-  into[dayIdx].push({ startHour, duration, ...block });
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  // A degenerate range (end <= start) still draws on the day it starts.
+  const rangeEnd = Math.max(end, start);
+
+  for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
+    const { startMs, endMs } = dayBoundsUtc(days[dayIdx], timezone);
+    const segStart = Math.max(start, startMs);
+    const segEnd = Math.min(rangeEnd, endMs);
+    if (segEnd < segStart) continue;
+    // Zero-length overlap is a real block only on the day the range starts on;
+    // elsewhere it just means the range touches this column's edge.
+    if (segEnd === segStart && !(start >= startMs && start < endMs)) continue;
+
+    const dayHours = (endMs - startMs) / 3_600_000;
+    const startHour = (segStart - startMs) / 3_600_000;
+    const duration = (segEnd - segStart) / 3_600_000;
+    const clipped = segStart > start || segEnd < end;
+
+    const placed: EventBlock = {
+      ...block,
+      startHour,
+      duration,
+      // The move/resize math maps block geometry straight back onto the event's
+      // real start/end, so a clipped segment can't be dragged.
+      ...(clipped ? { onMoveResize: undefined } : {}),
+    };
+    // Buffers hang outside the body, so they clip at the day edges too.
+    if (block.bufferBefore !== undefined) {
+      placed.bufferBefore = segStart > start ? 0 : Math.min(block.bufferBefore, startHour);
+    }
+    if (block.bufferAfter !== undefined) {
+      placed.bufferAfter = segEnd < end ? 0 : Math.min(block.bufferAfter, dayHours - startHour - duration);
+    }
+
+    if (!into[dayIdx]) into[dayIdx] = [];
+    into[dayIdx].push(placed);
+  }
 }
 
 /** Resolve an ISO range to grid coordinates ({dayIdx, startHour, endHour}) —
@@ -146,6 +184,20 @@ export function buildExternalLayer(
         links: e.links,
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
+        meeting: e.meeting,
+        // The RSVP control needs the event's identity to write back to Google;
+        // an event the viewer isn't a guest on carries no rsvp and gets none.
+        rsvp:
+          e.rsvp && e.eventId && e.linkId
+            ? {
+                via: "google" as const,
+                status: e.rsvp,
+                eventId: e.eventId,
+                linkId: e.linkId,
+                calendarId: e.calendarId ?? null,
+                recurringEventId: e.recurringEventId ?? null,
+              }
+            : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
         // Delete affordances in the detail popover and can be dragged.
@@ -175,13 +227,51 @@ export function buildAllDayItems(
     const start = new Date(e.startIso).getTime();
     const end = new Date(e.endIso).getTime(); // exclusive
     days.forEach((d, idx) => {
-      const dayMs = d.dateUtc.getTime();
+      // Compare civil dates, not raw instants: `dateUtc` is anchored at the
+      // viewer's *local* midnight (04:00Z in EDT), while an all-day event is
+      // stored at UTC midnight. Comparing those directly makes the event's start
+      // fall into the previous column, so e.g. Labor Day (Sep 7) bleeds onto Sun
+      // Sep 6. Re-anchoring the column to UTC midnight of its own date lines both
+      // sides up on the same civil calendar.
+      const dayMs = Date.UTC(d.dateUtc.getUTCFullYear(), d.dateUtc.getUTCMonth(), d.dateUtc.getUTCDate());
       const nextMs = dayMs + 86_400_000;
       // The day overlaps [start, end): the event covers this column.
       if (start < nextMs && end > dayMs) {
         (into[idx] ??= []).push(e);
       }
     });
+  }
+  return into;
+}
+
+/** All-day external events as EventBlocks, bucketed by day, for the month and
+ *  agenda views — those render everything through one merged EventBlock map and
+ *  have no all-day band, so without this they'd drop all-day events entirely. The
+ *  week/day grid instead shows them in its dedicated band (buildAllDayItems), so
+ *  this layer is merged only for month/agenda. Reuses the same civil-date
+ *  bucketing, so a single-day holiday sits on exactly one day. */
+export function buildAllDayLayer(
+  data: LoaderData,
+  days: GridDay[],
+  hiddenCalendarIds?: Set<string>,
+  onEdit?: (e: ExternalEventDTO, anchor?: DOMRect) => void,
+): Record<number, EventBlock[]> {
+  const into: Record<number, EventBlock[]> = {};
+  const items = buildAllDayItems(data, days, hiddenCalendarIds);
+  for (const [idx, evs] of Object.entries(items)) {
+    into[Number(idx)] = evs.map((e) => ({
+      // A nominal full-day span so it sorts to the top of the day (startHour 0)
+      // in both views, which key their ordering off startHour.
+      startHour: 0,
+      duration: 24,
+      allDay: true,
+      label: e.title,
+      className: e.color ? "" : EVENT_CORAL,
+      bgColor: e.color ?? undefined,
+      borderClassName: e.color ? undefined : "border-accent-coral-light",
+      location: e.location,
+      onEdit: onEdit && e.writable && e.eventId ? (anchor) => onEdit(e, anchor) : undefined,
+    }));
   }
   return into;
 }
@@ -217,6 +307,19 @@ export function buildLoggedSourceIndex(
     into.set(id, { color, hours: (prev?.hours ?? 0) + t.hours });
   }
   return { byMeeting, byEvent };
+}
+
+/** Timesheet view: the events that are *work* — the ones hours were logged
+ *  against, keyed by `buildLoggedSourceIndex().byEvent`. Feeding the layer
+ *  builders this narrowed data is what makes "View timesheet" a way of looking
+ *  at the grid rather than another overlay: an ordinary calendar event (a
+ *  class, an appointment, a meeting nobody logged) drops out of the grid and
+ *  the all-day band alike, and what's left is work. */
+export function workEventsOnly(data: LoaderData, byEvent: Map<string, LoggedAccent>): LoaderData {
+  return {
+    ...data,
+    externalEvents: data.externalEvents.filter((e) => e.eventId != null && byEvent.has(e.eventId)),
+  };
 }
 
 /** A time entry resolved to a concrete ISO range: its real times when set,

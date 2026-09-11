@@ -202,7 +202,7 @@
  * .bn-thread-mark       — text span produced by BlockNote's CommentMark
  * .bn-thread-mark-selected — added as a ProseMirror decoration when the thread
  *                            is the selectedThreadId in CommentsExtension state
- * [data-orphan="true"]  — set on the mark when its thread is deleted/resolved;
+ * [data-orphan="true"]  — set on the mark when its thread is deleted;
  *                          CommentsExtension manages this automatically on store
  *                          subscription updates.
  *
@@ -223,7 +223,7 @@
   background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 55%, transparent);
 }
 
-/* Orphaned marks: thread deleted or resolved and mark not yet removed.
+/* Orphaned marks: thread deleted and mark not yet removed.
  * Subtle gray-blue distinguishes "stale" from "active" without being alarming. */
 .dali-doc .bn-thread-mark[data-orphan="true"] {
   background-color: color-mix(in srgb, var(--color-muted-foreground, #94a3b8) 18%, transparent);
@@ -375,13 +375,13 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
 }
 
 /* Small text: BlockNote sizes headings and spacing in em, so one base
- * font-size scales the whole body (default is 16px). The title drops from
- * 40px to match. */
+ * font-size scales the whole body (default is 16px). The title drops from the
+ * shared os page-title size (36px) by the same proportion. */
 .doc-canvas--small .dali-doc .bn-editor {
   font-size: 14px;
 }
 .doc-canvas--small .doc-title {
-  font-size: 32px;
+  font-size: 30px;
 }
 
 /* Nesting guides: the shadcn theme draws a 1px vertical rule per nesting
@@ -448,11 +448,51 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
+/* A card with no reply composer under it ends at its last comment. BlockNote
+ * gives the comments section a bottom divider and full padding whether or not
+ * the composer is there, which left an empty band under the text that only
+ * made sense once you clicked and the reply box filled it. The card's own
+ * padding-block keeps the content off the edge. */
+.dali-doc-rail-container .bn-thread:not(:has(.bn-thread-composer)) .bn-thread-comments {
+  border-bottom-width: 0;
+  padding-bottom: 0;
+}
+
 /* Selected card: stronger border + shadow */
 .dali-doc-rail__card--selected .bn-thread {
   border-color: var(--color-accent-teal, #0d9488);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-teal, #0d9488) 20%, transparent),
               0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+/* The quoted document line BlockNote prints above a thread (Card `headerText`,
+ * its only italic direct child). The highlighted mark already says what the
+ * comment is about, and in the rail the card sits beside that very line — so
+ * repeating the text just pushed the conversation down. Our own cards pass no
+ * referenceText; ThreadsSidebar (the panel's inline section) sets it itself,
+ * which is why this is a rule rather than a prop. */
+.bn-root .bn-thread > .italic:first-child {
+  display: none;
+}
+
+/* One "add reaction" control per comment. BlockNote draws two once a comment
+ * has any reaction: the emoji button in the hover toolbar beside the body, and
+ * the "+" badge at the end of the reaction row. Keep the badge — it sits with
+ * the reactions it adds to — and drop the toolbar's copy. A comment with no
+ * reactions has no badge, so there the toolbar button stays and remains the
+ * only way to add the first one. It is the toolbar's first child: our
+ * ThreadStoreAuth allows reactions for everyone, and resolve is gone. */
+.bn-root .bn-thread-comment:has(.bn-comment-reactions) .bn-comment-actions > :first-child {
+  /* !important because the popover trigger carries an inline display:flex. */
+  display: none !important;
+}
+
+/* ...and the toolbar itself when that trigger was the only thing in it, so
+ * hiding the button doesn't leave an empty bordered box over the comment. */
+.bn-root
+  .bn-thread-comment:has(.bn-comment-reactions)
+  .bn-comment-actions:has(> :only-child) {
+  display: none !important;
 }
 
 /* Mark flash: temporary bright highlight when navigating to a mark from a

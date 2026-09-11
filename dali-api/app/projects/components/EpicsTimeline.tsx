@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronRight } from "lucide-react";
 import {
   DAY,
   dayOffset,
@@ -130,6 +130,16 @@ const MAX_BODY_H = "clamp(360px, 70vh, 880px)";
 // a min-height on the box alone would leave blank card under them.
 const MIN_GRID_H = 420;
 
+// Horizontal scroll speed, in px/ms, at or above which the view is treated as
+// thrown rather than steered — a hard trackpad flick or a shift-wheel spin, not
+// a reading-speed drag. Sampled per scroll event (≈16ms apart), so this is
+// about 100px a frame: a deliberate throw, well clear of the speeds an ordinary
+// two-finger scroll reaches.
+const FLICK_PX_PER_MS = 6;
+// Quiet time after the last scroll event before the spring-back fires; long
+// enough to sit out momentum scrolling, short enough not to feel like a lag.
+const SCROLL_SETTLE_MS = 180;
+
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
 const STORY_BOTTOM_PAD = 10;
@@ -205,10 +215,28 @@ export const LEVEL_COLOR: Record<Level, string> = {
 // in both modes. The variables live at the root rather than inside
 // `.os-shell`, because the partner portal draws this timeline in the brand
 // chrome.
-export const OS_LEVEL: Record<Level, { fill: string; ink: string; edge: string }> = {
-  epic: { fill: "var(--os-epic-fill)", ink: "var(--os-epic-ink)", edge: "var(--os-epic-edge)" },
-  story: { fill: "var(--os-story-fill)", ink: "var(--os-story-ink)", edge: "var(--os-story-edge)" },
-  task: { fill: "var(--os-task-fill)", ink: "var(--os-task-ink)", edge: "var(--os-task-edge)" },
+export const OS_LEVEL: Record<
+  Level,
+  { fill: string; ink: string; edge: string; title: string }
+> = {
+  epic: {
+    fill: "var(--os-epic-fill)",
+    ink: "var(--os-epic-ink)",
+    edge: "var(--os-epic-edge)",
+    title: "var(--os-epic-title)",
+  },
+  story: {
+    fill: "var(--os-story-fill)",
+    ink: "var(--os-story-ink)",
+    edge: "var(--os-story-edge)",
+    title: "var(--os-story-title)",
+  },
+  task: {
+    fill: "var(--os-task-fill)",
+    ink: "var(--os-task-ink)",
+    edge: "var(--os-task-edge)",
+    title: "var(--os-task-title)",
+  },
 };
 
 const LEVEL_PLURAL: Record<Level, string> = {
@@ -217,7 +245,7 @@ const LEVEL_PLURAL: Record<Level, string> = {
   task: "Tasks",
 };
 
-const EPIC_STATUS_LABEL: Record<EpicStatus, string> = {
+export const EPIC_STATUS_LABEL: Record<EpicStatus, string> = {
   Backlog: "Backlog",
   Open: "Open",
   InProgress: "In progress",
@@ -225,13 +253,13 @@ const EPIC_STATUS_LABEL: Record<EpicStatus, string> = {
   Cancelled: "Cancelled",
 };
 
-const STORY_STATUS_LABEL: Record<StoryStatus, string> = {
+export const STORY_STATUS_LABEL: Record<StoryStatus, string> = {
   Todo: "Not started",
   InProgress: "In progress",
   Done: "Done",
 };
 
-const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   Todo: "Not started",
   InProgress: "In progress",
   Blocked: "Blocked",
@@ -263,7 +291,7 @@ function isWeekend(t: number): boolean {
   return wd === 0 || wd === 6;
 }
 
-function rangeLabel(startIso: string, endIso: string): string {
+export function rangeLabel(startIso: string, endIso: string): string {
   return `${fmtDay(new Date(startIso))} – ${fmtDay(new Date(endIso))}`;
 }
 
@@ -383,13 +411,14 @@ function TimelineBarHover({
         visibility: pos ? "visible" : "hidden",
       }}
     >
-      {/* The title in the level's own ink with a redirect mark beside it, the
+      {/* The title in the level's own hue with a redirect mark beside it, the
           description, then one labelled row per fact — stacked, each fenced
-          off by a rule. */}
+          off by a rule. The colour is the level's on-card tone, not its on-bar
+          ink: printed on the card, that ink is chosen against the wrong ground. */}
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div
           className="os-record-name text-[13px] font-bold leading-snug tracking-[0.24px] break-words"
-          style={{ color: OS_LEVEL[kind].ink }}
+          style={{ color: OS_LEVEL[kind].title }}
         >
           {title}
         </div>
@@ -572,7 +601,6 @@ function HoverBar({
 
 export function EpicsTimeline({
   epics,
-  taskCounts,
   terms = [],
   storyDependencies = [],
   hiddenLevels,
@@ -587,7 +615,6 @@ export function EpicsTimeline({
   epics: TimelineEpic[];
   // Optional per-epic task progress keyed by epic id (Cancelled tasks
   // excluded), shown in the epic hover card.
-  taskCounts?: Record<string, { done: number; total: number }>;
   // Project terms, oldest first. Anchor and labels for the one-week sprint
   // grid; with none, the grid falls back to plain week-of labels.
   terms?: TimelineTerm[];
@@ -900,6 +927,9 @@ export function EpicsTimeline({
     bounds && today >= bounds.min && today <= bounds.max
       ? ((today - bounds.min) / DAY) * PX_PER_DAY
       : null;
+  // Through the middle of today's column so the body line and the header
+  // circle are one mark, not a hairline sitting on yesterday's edge.
+  const todayCenter = todayLeft != null ? todayLeft + PX_PER_DAY / 2 : null;
 
   // Only epics overlapping the visible day range are laid out, and they stack
   // from the top in start order — so scrolling sideways keeps the visible work
@@ -1058,24 +1088,39 @@ export function EpicsTimeline({
     return () => clearTimeout(id);
   }, [layout.height]);
 
-  const initialScroll = useMemo(() => {
-    if (!bounds) return 0;
-    const anchors: number[] = [];
-    if (todayLeft != null) anchors.push(todayLeft);
-    for (const e of epics) {
-      if (e.startsAt) anchors.push(dayOffset(e.startsAt, bounds.min) * PX_PER_DAY);
-    }
-    const anchor = anchors.length ? Math.min(...anchors) : 0;
-    return Math.max(anchor - 3 * PX_PER_DAY, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds]);
+  // Today is the timeline's home position. The scroll offset that parks it in
+  // the middle of the box depends on the box's own width, so it is measured
+  // rather than derived: `todayCenter` is a grid coordinate, this is a scroll
+  // one. Clamped to the scrollable range, so today sits off-centre only when
+  // the grid runs out of room either side of it.
+  const centerScrollLeft = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || todayCenter == null) return null;
+    const max = Math.max(el.scrollWidth - el.clientWidth, 0);
+    return Math.min(Math.max(todayCenter - el.clientWidth / 2, 0), max);
+  }, [todayCenter]);
 
+  // Set while a spring-back is in flight, so the programmatic scroll it emits
+  // isn't read back as a fresh flick.
+  const recenterRef = useRef<{ target: number; until: number } | null>(null);
+  const centerOnToday = useCallback(
+    (behavior: ScrollBehavior) => {
+      const el = scrollerRef.current;
+      const target = centerScrollLeft();
+      if (!el || target == null || Math.abs(el.scrollLeft - target) < 1) return;
+      recenterRef.current = { target, until: performance.now() + 700 };
+      el.scrollTo({ left: target, behavior });
+    },
+    [centerScrollLeft],
+  );
+
+  // Opening the timeline — first paint or a refresh — lands on today, and so
+  // does a shift in the grid's origin (`todayCenter` moves when an epic
+  // extends the padded date range, which would otherwise slide the view).
   useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollLeft = initialScroll;
-    }
+    centerOnToday("auto");
     measureView();
-  }, [initialScroll, measureView]);
+  }, [centerOnToday, measureView]);
 
   // Re-measure when the box itself resizes (sidebar collapse, window resize),
   // not just on scroll — the visible day range depends on clientWidth.
@@ -1087,8 +1132,62 @@ export function EpicsTimeline({
     return () => ro.disconnect();
   }, [measureView]);
 
+  // A flick *towards* today springs the view the rest of the way once it stops.
+  // Two things have to hold, because either alone catches scrolling that was
+  // meant: the throw has to run an order of magnitude faster than reading-speed
+  // scrolling ("thrown the view somewhere" rather than "walked out to a later
+  // sprint on purpose"), and it has to point at today — a hard flick out to a
+  // later sprint is a viewer going somewhere, and dragging them back from it is
+  // the thing that reads as the timeline fighting the scroll.
+  const lastSampleRef = useRef<{ x: number; t: number } | null>(null);
+  // Direction of the last fast movement: +1 scrolling right, -1 left, 0 none.
+  const flickDirRef = useRef<0 | 1 | -1>(0);
+  const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (settleRef.current) clearTimeout(settleRef.current);
+  }, []);
+
+  function trackFlick() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const now = performance.now();
+    const prev = lastSampleRef.current;
+    lastSampleRef.current = { x: el.scrollLeft, t: now };
+
+    const recenter = recenterRef.current;
+    if (recenter) {
+      if (Math.abs(el.scrollLeft - recenter.target) < 2 || now > recenter.until) {
+        recenterRef.current = null;
+      }
+      return;
+    }
+    // Vertical scrolling leaves scrollLeft alone, so it never reads as a flick.
+    if (prev && now > prev.t) {
+      const dx = el.scrollLeft - prev.x;
+      const velocity = Math.abs(dx) / (now - prev.t);
+      if (dx !== 0 && velocity >= FLICK_PX_PER_MS) flickDirRef.current = dx > 0 ? 1 : -1;
+    }
+
+    if (settleRef.current) clearTimeout(settleRef.current);
+    settleRef.current = setTimeout(() => {
+      const dir = flickDirRef.current;
+      flickDirRef.current = 0;
+      if (!dir) return;
+      // Dragging a bar can scroll the box; that scroll belongs to the drag.
+      if (dragRef.current) return;
+      const box = scrollerRef.current;
+      const target = centerScrollLeft();
+      if (!box || target == null) return;
+      // Only finish a throw that was already heading for today.
+      const toToday = target - box.scrollLeft;
+      if (Math.abs(toToday) < 1 || Math.sign(toToday) !== dir) return;
+      centerOnToday("smooth");
+    }, SCROLL_SETTLE_MS);
+  }
+
   const ticking = useRef(false);
   function handleScroll() {
+    trackFlick();
     if (ticking.current) return;
     ticking.current = true;
     requestAnimationFrame(() => {
@@ -1128,7 +1227,7 @@ export function EpicsTimeline({
                 setVisibleLevels((prev) => ({ ...prev, [lvl]: !prev[lvl] }))
               }
               className={cn(
-                "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-opacity",
+                "flex items-center gap-2 rounded-full border px-[18px] py-2.5 text-sm font-semibold transition-opacity",
                 on
                   ? "text-foreground"
                   : "border-os-container bg-os-well text-os-grey opacity-60",
@@ -1168,16 +1267,21 @@ export function EpicsTimeline({
       >
         {/* Scrolls in both axes. Giving the box a vertical scrollport is also
             what finally makes the header's `sticky top-0` bite — until now its
-            nearest scrollport was the page, so it never pinned. */}
+            nearest scrollport was the page, so it never pinned.
+
+            Snapping is `proximity` and x-only: scrolling back toward today
+            lands it in the middle of the box instead of stopping wherever the
+            flick ended, while a scroll that means to be somewhere else
+            (reading a month three sprints out) is left alone. */}
         <div
           ref={scrollerRef}
           data-timeline-scroller
           className="overflow-auto"
-          style={{ maxHeight: MAX_BODY_H }}
+          style={{ maxHeight: MAX_BODY_H, scrollSnapType: "x proximity" }}
           onScroll={handleScroll}
         >
           <div
-            className="relative bg-os-well"
+            className="relative bg-os-well min-w-[640px]"
             style={{ width: bounds ? bounds.width : "100%", height: gridHeight }}
           >
             {bounds && (
@@ -1209,19 +1313,19 @@ export function EpicsTimeline({
                   ))}
                 </div>
 
-                {/* Today. It used to be a hairline in the background layer,
-                    which put it under every bar and under the header — on a
-                    busy month you could not find the date you were standing on.
-                    It draws above the bars now (below the header, so the header
-                    still wins) and starts under the header rather than behind
-                    them. */}
-                {todayLeft != null && (
+                {/* Today in the body: the same accent as the header circle,
+                    through the middle of the day so it isn't a second mark
+                    hanging off yesterday. Below the sticky header. */}
+                {todayCenter != null && (
                   <div
-                    className="pointer-events-none absolute z-[25] w-0.5 -ml-px bg-os-accent/80"
+                    className="pointer-events-none absolute z-[25] w-0.5 -translate-x-1/2 bg-os-accent/80"
                     style={{
-                      left: todayLeft,
+                      left: todayCenter,
                       top: HEADER_ROWS * HEADER_ROW_H,
                       bottom: 0,
+                      // The line is the grid's snap point, so "back to today"
+                      // settles with today centred in the scroll box.
+                      scrollSnapAlign: "center",
                     }}
                     aria-hidden
                   />
@@ -1309,19 +1413,19 @@ export function EpicsTimeline({
                         </span>
                       </div>
                     ))}
+                    {/* The body line stops under the header, so the band used
+                        to cut today in half. Repeating the mark inside the
+                        sprint row — after the bands, so it paints over them —
+                        carries it through the header the day circle already
+                        marks. */}
+                    {todayCenter != null && (
+                      <div
+                        className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-os-accent"
+                        style={{ left: todayCenter }}
+                        aria-hidden
+                      />
+                    )}
                   </div>
-
-                  {/* Rides in the sticky header so the label stays put while
-                      the body scrolls, and hangs off its bottom edge onto the
-                      line below. */}
-                  {todayLeft != null && (
-                    <div
-                      className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-full bg-os-accent px-2 py-[3px] text-[10px] font-bold uppercase leading-none tracking-wide text-os-bg"
-                      style={{ left: todayLeft, top: HEADER_ROWS * HEADER_ROW_H - 8 }}
-                    >
-                      Today
-                    </div>
-                  )}
                 </div>
 
                 {/* Dependency arrows between story bars. z-20 lifts them above
@@ -1375,7 +1479,6 @@ export function EpicsTimeline({
                 {/* Bars, outermost first so nested levels paint on top. */}
                 {shown("epic") &&
                   layout.epicBars.map((b) => {
-                    const counts = taskCounts?.[b.epic.id];
                     return (
                       <HoverBar
                         key={b.epic.id}
@@ -1392,7 +1495,6 @@ export function EpicsTimeline({
                             barX("epic", b.left, b.width).width,
                           ),
                         }}
-                        draggable={editMode && Boolean(onReschedule)}
                         onDragStart={beginDrag("epic", b.epic.id)}
                         onResizeStart={(edge) => beginDrag("epic", b.epic.id, edge)}
                         title={b.epic.title}
@@ -1404,7 +1506,7 @@ export function EpicsTimeline({
                             value: rangeLabel(b.epic.startsAt!, b.epic.endsAt!),
                           },
                           // A hidden level is counted nowhere either — a card
-                          // reading "Tasks 0/0" on a surface with no task bars
+                          // reading "Stories 0" on a surface with no story bars
                           // is worse than no row at all.
                           ...(hidden("story")
                             ? []
@@ -1414,14 +1516,6 @@ export function EpicsTimeline({
                                   value: String(b.epic.stories.length),
                                 },
                               ]),
-                          ...(counts && !hidden("task")
-                            ? [
-                                {
-                                  label: "Tasks",
-                                  value: `${counts.done}/${counts.total} done`,
-                                },
-                              ]
-                            : []),
                         ]}
                         onClick={guardClick(
                           onEpicClick ? () => onEpicClick(b.epic.id) : undefined,
@@ -1462,7 +1556,6 @@ export function EpicsTimeline({
                             barX("story", b.left, b.width).width,
                           ),
                         }}
-                      draggable={editMode && Boolean(onReschedule)}
                       onDragStart={beginDrag("story", b.story.id)}
                       onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
                       title={b.story.title}
@@ -1520,7 +1613,6 @@ export function EpicsTimeline({
                           barX("task", b.left, b.width).width,
                         ),
                       }}
-                      draggable={editMode && Boolean(onReschedule)}
                       onDragStart={beginDrag("task", b.task.id)}
                       onResizeStart={(edge) => beginDrag("task", b.task.id, edge)}
                       title={b.task.title}
@@ -1591,26 +1683,102 @@ export function EpicsTimeline({
       </div>
 
       {unscheduled.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          Unscheduled:{" "}
-          {unscheduled.map((e, i) => (
-            <span key={e.id}>
-              {i > 0 && ", "}
+        <UnscheduledEpics
+          epics={unscheduled}
+          onEpicClick={onEpicClick}
+        />
+      )}
+    </div>
+  );
+}
+
+/* An epic with no dates can't be a bar, and a comma-separated run of names
+   under the grid gave it nothing but a title — you couldn't see what state it
+   was in or how much work already hung off it without opening each one. Same
+   rows the grid would have drawn, listed instead of placed. */
+function UnscheduledEpics({
+  epics,
+  onEpicClick,
+}: {
+  epics: TimelineEpic[];
+  onEpicClick?: (epicId: string) => void;
+}) {
+  // Folded on arrival: this is a backlog, not the view — the timeline above it
+  // is what the tab is for, and an open list of undated epics pushed the grid
+  // up the page. The count stays on the header so it reads without opening.
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          "flex w-full flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-os-hover",
+          open && "border-b border-border",
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 flex-shrink-0 text-os-grey transition-transform",
+            open && "rotate-90",
+          )}
+          aria-hidden
+        />
+        <span
+          className="h-2 w-2 flex-shrink-0 rounded-full"
+          style={{ background: OS_LEVEL.epic.edge }}
+          aria-hidden
+        />
+        <h3 className="text-sm font-semibold text-foreground">Unscheduled</h3>
+        <span className="rounded-full bg-os-well px-2 py-0.5 text-[11px] font-semibold tabular-nums text-os-grey">
+          {epics.length}
+        </span>
+        <p className="ml-auto text-xs text-os-muted">
+          Give one a start and end date and it lands on the grid.
+        </p>
+      </button>
+      {/* Capped so a backlog of undated epics can't push the board off the
+          page — the list scrolls inside the card, like the grid above it. */}
+      <ul hidden={!open} className="max-h-56 divide-y divide-border overflow-y-auto">
+        {epics.map((e) => {
+          const meta =
+            e.stories.length > 0
+              ? `${e.stories.length} ${e.stories.length === 1 ? "story" : "stories"}`
+              : null;
+          const row = (
+            <>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                {e.title}
+              </span>
+              {meta && (
+                <span className="hidden flex-shrink-0 text-xs text-os-grey sm:inline">
+                  {meta}
+                </span>
+              )}
+              <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
+                {EPIC_STATUS_LABEL[e.status]}
+              </span>
+            </>
+          );
+          return (
+            <li key={e.id}>
               {onEpicClick ? (
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
                   onClick={() => onEpicClick(e.id)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-os-hover"
                 >
-                  {e.title}
+                  {row}
                 </button>
               ) : (
-                e.title
+                <div className="flex w-full items-center gap-3 px-4 py-2.5">{row}</div>
               )}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

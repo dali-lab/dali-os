@@ -11,7 +11,7 @@ import { useNavigate, useRevalidator } from "react-router";
 import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
 import { DocEditor, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
-import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
+import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
@@ -22,6 +22,8 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { FindReplaceBar } from "./doc/find";
@@ -58,7 +60,6 @@ export function DocumentEditor({
   subtitle,
   canEdit,
   canComment,
-  canResolve,
   tags,
   allTags,
   iconEmoji: initialIcon = null,
@@ -84,7 +85,6 @@ export function DocumentEditor({
   subtitle?: string | null;
   canEdit: boolean;
   canComment: boolean;
-  canResolve: boolean;
   tags: DocTag[];
   allTags: DocTag[];
   iconEmoji?: string | null;
@@ -132,7 +132,6 @@ export function DocumentEditor({
   const pendingTitleRef = useRef(initialTitle);
   const titleFocusedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   // Optimistic: the star flips immediately and reverts if the write fails.
@@ -151,6 +150,11 @@ export function DocumentEditor({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const liveEditorRef = useRef<any>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
+  // The top bar's controls draw from the shared page chrome. Without this the
+  // document was the last surface still wearing the brand shell's dress — 6px
+  // corners, 14px glyphs and a coral "on" state — beside os pages that had all
+  // moved to the design's roomier pills and its accent.
+  const { actionBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
   // "Aa" page-typography menu (Notion's Style section): per-page font /
   // small-text / full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
@@ -240,7 +244,7 @@ export function DocumentEditor({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const { open: openThreadCount } = useDocThreadCounts(pageId);
+  const threadCount = useDocThreadCount(pageId);
 
   // ── Rail (wide-screen comments column) ───────────────────────────────────
   // canvasContainerRef: the flex row that holds the paper + rail.
@@ -267,11 +271,13 @@ export function DocumentEditor({
   // Comments live in the right-hand rail on a wide container and at the foot of
   // the document otherwise. The top-bar toggle hides both surfaces at once, for
   // readers who want the page without the margin chatter.
-  const hasComments = canComment || openThreadCount > 0;
+  // Google Docs' rule: the margin column is not part of the page until
+  // someone comments. With nothing to show, the rail, the foot panel and the
+  // top bar's toggle all stand down — a comment starts from the text itself
+  // (select → Comment), not from an empty column.
+  const hasComments = threadCount > 0;
   const [commentsOpen, setCommentsOpen] = useState(true);
   const railVisible = commentsOpen && containerWide && hasComments;
-
-  const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
 
   const RAIL_TARGET_ID = "doc-comments-rail";
 
@@ -492,7 +498,7 @@ export function DocumentEditor({
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
-    <div className="doc-topbar flex items-center gap-2 py-2 text-xs text-muted-foreground">
+    <div className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
       {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
       {editedLabel && (
         <span className="shrink-0">{editedLabel}</span>
@@ -513,17 +519,17 @@ export function DocumentEditor({
         >
           {syncState === "saving" && (
             <>
-              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+              <Loader2 className={cn(actionIcon, "animate-spin")} /> Saving…
             </>
           )}
           {syncState === "saved" && (
             <>
-              <Check className="w-3 h-3" /> Saved
+              <Check className={actionIcon} /> Saved
             </>
           )}
           {syncState === "offline" && (
             <>
-              <CloudOff className="w-3 h-3" /> Offline
+              <CloudOff className={actionIcon} /> Offline
             </>
           )}
         </span>
@@ -548,17 +554,13 @@ export function DocumentEditor({
               onClick={() => setTypoOpen((o) => !o)}
               aria-expanded={typoOpen}
               aria-label="Page typography"
-              className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
-                typoOpen
-                  ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              className={cn(actionBtn(typoOpen), "font-semibold")}
             >
               Aa
             </button>
           </Tooltip>
           {typoOpen && (
-            <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-border bg-card p-2 shadow-brand-2 text-sm">
+            <div className={cn("absolute right-0 z-30 mt-1 w-56 p-2 text-sm", popover)}>
               <div className="grid grid-cols-3 gap-1">
                 {(
                   [
@@ -572,11 +574,12 @@ export function DocumentEditor({
                     type="button"
                     onClick={() => void saveTypography({ ...typo, font: f.key })}
                     aria-pressed={typo.font === f.key}
-                    className={`rounded-md border px-1 py-1.5 text-center transition-colors ${
+                    className={cn(
+                      "rounded-md border px-1 py-1.5 text-center transition-colors",
                       typo.font === f.key
-                        ? "border-accent-coral/40 bg-accent-coral/10"
-                        : "border-border hover:bg-muted"
-                    }`}
+                        ? "border-os-accent/40 bg-os-accent/10"
+                        : "border-border hover:bg-muted",
+                    )}
                   >
                     <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
                       Ag
@@ -624,13 +627,9 @@ export function DocumentEditor({
             onClick={() => setCommentsOpen((o) => !o)}
             aria-pressed={commentsOpen}
             aria-label={commentsOpen ? "Hide comments" : "Show comments"}
-            className={`inline-flex items-center rounded-md border px-2 py-1 transition-colors ${
-              commentsOpen
-                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
+            className={actionBtn(commentsOpen)}
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <MessageSquare className={actionIcon} />
           </button>
         </Tooltip>
       )}
@@ -643,13 +642,9 @@ export function DocumentEditor({
           onClick={() => void toggleFavorite()}
           aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={favorited}
-          className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors ${
-            favorited
-              ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-          }`}
+          className={actionBtn(favorited)}
         >
-          <Star className={`h-3.5 w-3.5 ${favorited ? "fill-current" : ""}`} />
+          <Star className={cn(actionIcon, favorited && "fill-current")} />
         </button>
       </Tooltip>
 
@@ -661,9 +656,9 @@ export function DocumentEditor({
             type="button"
             onClick={() => setAccessOpen(true)}
             aria-label="Share"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={actionBtn()}
           >
-            <Users className="h-3.5 w-3.5" />
+            <Users className={actionIcon} />
             Share
           </button>
         </Tooltip>
@@ -677,12 +672,12 @@ export function DocumentEditor({
           aria-haspopup="true"
           aria-expanded={moreMenuOpen}
           aria-label="More options"
-          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={actionBtn(moreMenuOpen)}
         >
-          <MoreHorizontal className="h-3.5 w-3.5" />
+          <MoreHorizontal className={actionIcon} />
         </button>
         {moreMenuOpen && (
-          <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+          <div className={cn("absolute right-0 z-30 mt-1 w-52 p-1 text-sm", popover)}>
             <button
               type="button"
               onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
@@ -832,7 +827,7 @@ export function DocumentEditor({
                 The hover-reveal row is always reserved (h-6) so the title does
                 not shift when hovering; items appear with opacity transition. */}
             {canEdit && (
-              <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100">
+              <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 touch:opacity-100">
                 {!iconEmoji && (
                   <PageIconPicker
                     iconEmoji={null}
@@ -884,10 +879,13 @@ export function DocumentEditor({
                   }}
                   onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
                   onKeyDown={onTitleKeyDown}
-                  className="doc-title doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
+                  className={cn(
+                    pageTitle,
+                    "doc-title doc-title-editable min-w-0 flex-1 leading-tight outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
+                  )}
                 />
               ) : (
-                <h1 className="doc-title min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
+                <h1 className={cn(pageTitle, "doc-title min-w-0 flex-1 leading-tight select-text")}>
                   {initialTitle}
                 </h1>
               )}
@@ -982,14 +980,12 @@ export function DocumentEditor({
                   pageId,
                   currentUserId,
                   canComment,
-                  canResolve,
+                  canModerate: canEdit,
                   panelOpen: false,
                   panelTargetId: "doc-comments-dropdown",
-                  panelFilter: railVisible ? railFilter : panelFilter,
                   railVisible,
                   railTargetId: RAIL_TARGET_ID,
                   editorContentRef: paperCardRef as RefObject<HTMLElement | null>,
-                  onRailFilterChange: setRailFilter,
                   focusCommentId,
                 }}
                 findOpen={findOpen}
@@ -1048,10 +1044,8 @@ export function DocumentEditor({
           pageId={pageId}
           currentUserId={currentUserId}
           canComment={canComment}
-          canResolve={canResolve}
           open
           onClose={() => {}}
-          onFilterChange={setPanelFilter}
           variant="inline"
         />
       </div>
@@ -1123,7 +1117,7 @@ function TypographyToggle({
       <span>{label}</span>
       <span
         className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-accent-coral" : "bg-muted-foreground/30"
+          checked ? "bg-os-accent" : "bg-muted-foreground/30"
         }`}
       >
         <span

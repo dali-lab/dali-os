@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures';
+import { test } from './fixtures';
+import { assertNoHorizontalOverflow } from './helpers';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,17 +8,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Mobile UX audit. Loads every internal route at iPhone-class width (375x812),
- * screenshots full-page, and flags routes whose document or any iframe overflows
- * the viewport horizontally. Run with:
+ * Mobile UX audit @mobile. Loads every internal route under a Pixel 7 UA
+ * (Android / tabless shell), screenshots full-page, and flags routes whose
+ * document or any iframe overflows the viewport horizontally.
  *
- *   npx playwright test e2e/mobile-audit.spec.ts --project=chromium
+ * The mobile project in playwright.config.ts drives this spec:
+ *   npx playwright test --project=mobile-pixel7
+ *
+ * All overflow checks are SOFT (report-only). To make them blocking, change
+ * the `{ soft: true }` in the assertNoHorizontalOverflow call to
+ * `{ soft: false }` (or omit opts) after verifying the routes pass.
  *
  * Output: e2e/.mobile-audit/ — one PNG per route + report.json.
  */
 
 const OUTPUT_DIR = path.join(__dirname, '.mobile-audit');
-const VIEWPORT = { width: 375, height: 812 };
 
 // Admin account has access to every internal route. Detail pages with `:id`
 // parameters are intentionally omitted from this static list — they can be
@@ -25,6 +30,7 @@ const VIEWPORT = { width: 375, height: 812 };
 const AUDIT_USER = 'kiran.jones@dali.dartmouth.edu';
 
 const ROUTES: Array<{ path: string; label: string }> = [
+  // --- original 15 routes ---
   { path: '/', label: 'home' },
   { path: '/calendar', label: 'calendar' },
   { path: '/hiring/reviewer', label: 'hiring-reviewer' },
@@ -40,7 +46,21 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/projects/staffing', label: 'projects-staffing' },
   { path: '/members', label: 'members' },
   { path: '/partners', label: 'partners' },
+  // --- expanded routes ---
+  { path: '/drive', label: 'drive' },
+  { path: '/education', label: 'education' },
+  // "My Tasks" in the nav is the /notifications route (see routes.ts line 19)
+  { path: '/notifications', label: 'my-tasks' },
+  // /members is already in the list above; /people does not exist as a route —
+  // the canonical directory URL is /members.
+  { path: '/admin/jobs', label: 'admin-jobs' },
+  { path: '/admin/feature-flags', label: 'admin-feature-flags' },
+  { path: '/core', label: 'core' },
 ];
+
+// Routes considered but DROPPED (do not exist in app/routes.ts):
+//   /my-tasks  — the nav calls it "My Tasks" but the route is /notifications
+//   /people    — no such route; /members is the canonical member directory
 
 type Finding = {
   route: string;
@@ -50,8 +70,9 @@ type Finding = {
   iframeFindings: Array<{ title: string; scrollWidth: number; overflow: boolean }>;
 };
 
-test.describe('mobile audit @ 375x812', () => {
-  test.use({ viewport: VIEWPORT });
+test.describe('mobile audit @mobile', () => {
+  // Viewport is provided by the mobile-pixel7 project (375×812). No
+  // test.use({ viewport }) override here — keep it driven by the project.
 
   const findings: Finding[] = [];
 
@@ -83,16 +104,19 @@ test.describe('mobile audit @ 375x812', () => {
 
   for (const { path: routePath, label } of ROUTES) {
     test(`${label} (${routePath})`, async ({ page, loginAs }) => {
+      const viewportWidth = page.viewportSize()?.width ?? 375;
+
       await loginAs({ daliEmail: AUDIT_USER });
       await page.goto(routePath);
       await page.waitForLoadState('networkidle').catch(() => undefined);
       // Give iframes a beat to render their own content.
       await page.waitForTimeout(500);
 
+      // Collect raw measurements for the JSON report (independent of soft-assert).
       const outerScrollWidth = await page.evaluate(
         () => document.documentElement.scrollWidth,
       );
-      const outerOverflow = outerScrollWidth > VIEWPORT.width;
+      const outerOverflow = outerScrollWidth > viewportWidth + 1;
 
       const iframeFindings: Finding['iframeFindings'] = [];
       for (const frame of page.frames()) {
@@ -108,7 +132,7 @@ test.describe('mobile audit @ 375x812', () => {
           iframeFindings.push({
             title: title ?? '(untitled)',
             scrollWidth,
-            overflow: scrollWidth > VIEWPORT.width,
+            overflow: scrollWidth > viewportWidth + 1,
           });
         }
       }
@@ -126,11 +150,10 @@ test.describe('mobile audit @ 375x812', () => {
         iframeFindings,
       });
 
-      // Soft-assert: don't fail the test on overflow — we want full coverage
-      // and the JSON report. The summary in afterAll lists violations.
-      expect(outerScrollWidth, `outer doc scrollWidth on ${routePath}`).toBeLessThanOrEqual(
-        VIEWPORT.width + 1,
-      );
+      // REPORT-ONLY: soft assertions record violations without stopping the test.
+      // To make this blocking, change `{ soft: true }` to `{ soft: false }` (or
+      // remove opts entirely) once you've verified each route passes on a live DB.
+      await assertNoHorizontalOverflow(page, { soft: true, label });
     });
   }
 });

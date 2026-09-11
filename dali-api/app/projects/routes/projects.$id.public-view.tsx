@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
 import { Calendar, Globe, History, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
@@ -315,6 +316,28 @@ export default function ProjectPublicView() {
   const navigation = useNavigation();
   const saving = navigation.state !== "idle";
   const [historyOpen, setHistoryOpen] = useState(false);
+  const dialog = useDialog();
+  const [pendingStatus, setPendingStatus] = useState<string>(s?.status ?? "NotStarted");
+  const statusFormRef = useRef<HTMLFormElement>(null);
+  const publishConfirmedRef = useRef(false);
+
+  async function handleStatusSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (pendingStatus === "Published" && !publishConfirmedRef.current) {
+      e.preventDefault();
+      const confirmed = await dialog.confirm({
+        title: "Publish to dali.website?",
+        description:
+          "This makes the project publicly visible on dali.website. Anyone on the internet will be able to see it.",
+        confirmLabel: "Publish",
+        tone: "destructive",
+      });
+      if (!confirmed) return;
+      // Set flag so the re-submit bypasses this guard.
+      publishConfirmedRef.current = true;
+      statusFormRef.current?.requestSubmit();
+      publishConfirmedRef.current = false;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-6 w-full">
@@ -329,13 +352,14 @@ export default function ProjectPublicView() {
           </p>
         </div>
         {canPublish && (
-          <Form method="post" className="flex items-center gap-2">
+          <Form method="post" ref={statusFormRef} className="flex items-center gap-2" onSubmit={(e) => void handleStatusSubmit(e)}>
             <input type="hidden" name="intent" value="showcase-status" />
             <Select
               name="status"
               defaultValue={s?.status ?? "NotStarted"}
               options={STATUSES.map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
               buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              onChange={(v) => setPendingStatus(v)}
             />
             <button
               type="submit"

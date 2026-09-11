@@ -95,6 +95,7 @@ export const AUDIT_ACTIONS = [
   "note.delete",
   "lab-document.access",
   "page.general-access",
+  "page.folder-scope",
   "page.move-workspace",
   "page.pin",
   "project.showcase-status",
@@ -148,6 +149,9 @@ export const AUDIT_ACTIONS = [
   "infra.config",
   "infra.request.create",
   "infra.request.resolve",
+  // Payroll export: Technigala termly hire roster changes.
+  "payroll.technigala.add",
+  "payroll.technigala.remove",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

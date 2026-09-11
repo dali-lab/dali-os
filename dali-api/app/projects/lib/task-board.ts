@@ -91,7 +91,66 @@ export type BoardSprint = {
   // (see resolveTermIdForDate). Null when the Term table has no term at or
   // after the sprint's start. Powers the board's term filter.
   termId: string | null;
+  // ISO start timestamp — orders the sprint-view picker (upcoming ascending,
+  // past newest-first) so the sprint you most likely want is nearest the top.
+  startsAt: string;
 };
+
+// The board's sprint scope (the `sprint-view` filter, stored in `?sprint=`):
+// which sprint's work the board is showing. `all` is every task, `current` the
+// active sprint(s), `backlog` the unsprinted pool, or a concrete sprint id.
+// The extra `(string & {})` keeps the three literals in autocomplete while
+// still admitting any sprint id.
+export type SprintScope = "all" | "current" | "backlog" | (string & {});
+
+/** Ids of the sprints marked Active — the target of the `current` scope. */
+export function activeSprintIds(sprints: BoardSprint[]): string[] {
+  return sprints.filter((s) => s.status === "Active").map((s) => s.id);
+}
+
+/**
+ * The scope the board opens on when the URL names none: the current sprint if
+ * one is running (mirroring the term filter's "open on this term" default),
+ * else every task (a project with no active sprint shows its full board).
+ */
+export function defaultSprintScope(sprints: BoardSprint[]): SprintScope {
+  return activeSprintIds(sprints).length > 0 ? "current" : "all";
+}
+
+/**
+ * Resolve the effective scope from a raw `?sprint=` value: an explicit,
+ * still-valid value wins; anything stale (a deleted sprint id, or `current`
+ * with nothing active) falls back to the default.
+ */
+export function resolveSprintScope(
+  param: string | null,
+  sprints: BoardSprint[],
+): SprintScope {
+  const fallback = defaultSprintScope(sprints);
+  if (!param || param === "all" || param === "backlog") return param || fallback;
+  if (param === "current") {
+    return activeSprintIds(sprints).length > 0 ? "current" : fallback;
+  }
+  return sprints.some((s) => s.id === param) ? param : fallback;
+}
+
+/**
+ * Does a task fall in the selected scope? `all` matches everything; `current`
+ * matches the active sprint(s); `backlog` matches the unsprinted; a concrete id
+ * matches that one sprint.
+ */
+export function taskInSprintScope(
+  task: Pick<TaskCardModel, "sprintId">,
+  scope: SprintScope,
+  activeIds: readonly string[],
+): boolean {
+  if (scope === "all") return true;
+  if (scope === "backlog") return task.sprintId === null;
+  if (scope === "current") {
+    return task.sprintId !== null && activeIds.includes(task.sprintId);
+  }
+  return task.sprintId === scope;
+}
 
 export type BoardEpic = {
   id: string;

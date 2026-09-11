@@ -253,7 +253,7 @@ type RoleFilter = "all" | "admin" | "core";
 
 export default function AdminConsoleMembers() {
   const { members, domains, viewerIsAdmin } = useLoaderData<typeof loader>();
-  const { os, pageTitle, panel } = useOsChrome();
+  const { pageTitle, panel } = useOsChrome();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -280,13 +280,6 @@ export default function AdminConsoleMembers() {
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          {/* The os pages lead with the title alone; the brand shell keeps its
-              coral glyph plate. */}
-          {!os && (
-            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
-              <Users className="h-4.5 w-4.5" />
-            </span>
-          )}
           <div className="min-w-0">
             <h1 className={pageTitle}>Roles &amp; permissions</h1>
           </div>
@@ -309,9 +302,7 @@ export default function AdminConsoleMembers() {
                 type="button"
                 onClick={() => setRoleFilter(key)}
                 aria-pressed={active}
-                className={`inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-colors ${
-                  os ? "rounded-full" : "rounded-lg"
-                } ${
+                className={`inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-colors rounded-full ${
                   active
                     ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
                     : "border-border bg-card text-muted-foreground hover:bg-muted"
@@ -342,7 +333,7 @@ export default function AdminConsoleMembers() {
             onChange={(e) => setSearch(e.target.value)}
             className={cn(
               "w-full border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm sm:text-sm",
-              os ? "rounded-full" : "rounded-lg",
+              "rounded-full",
             )}
           />
         </div>

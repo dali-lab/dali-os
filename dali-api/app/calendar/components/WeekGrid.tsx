@@ -1,17 +1,22 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useFetcher } from "react-router";
-import { Building2, Wifi, Users, FileText, Pencil, Copy, Trash2 } from "lucide-react";
+import { Link, useFetcher, useRevalidator } from "react-router";
+import {
+  Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
+  Check, HelpCircle, X, Video, ExternalLink,
+} from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { RsvpButtons } from "~/components/RsvpButtons";
+import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd } from "~/lib/pay-period";
-import type { EventBlock, EventAttendeeDTO, EventLinkDTO, WhDay } from "~/calendar/lib/types";
+import type {
+  EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
+} from "~/calendar/lib/types";
 import {
-  HOURS, HOUR_PX, INITIAL_SCROLL_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
-  RSVP_BADGE, DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
+  HOURS, HOUR_PX, INITIAL_SCROLL_CENTER_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
+  DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
   formatHour, formatHourMinute, readableTextColor, computeEventLanes,
 } from "~/calendar/lib/event-block";
 import type { EventLane } from "~/calendar/lib/event-block";
@@ -43,6 +48,48 @@ export function useNow(intervalMs = 60_000): Date | null {
   return now;
 }
 
+// The three answers Google takes, in the order a calendar app offers them.
+// `response` is the wire value the RSVP action sends on to Google; `status` is
+// the label that comes back on the next read.
+const RSVP_CHOICES = [
+  { response: "accepted", status: "Accepted", label: "Going", icon: Check },
+  { response: "tentative", status: "Tentative", label: "Maybe", icon: HelpCircle },
+  { response: "declined", status: "Declined", label: "Can't go", icon: X },
+] as const satisfies readonly {
+  response: RsvpResponse;
+  status: RsvpStatus;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[];
+
+/** The wire vocabulary the RSVP routes take. */
+type RsvpResponse = "accepted" | "declined" | "tentative";
+
+const RSVP_FROM_RESPONSE = {
+  accepted: "Accepted",
+  tentative: "Tentative",
+  declined: "Declined",
+} as const satisfies Record<RsvpResponse, RsvpStatus>;
+
+/** One section of the detail card: an eyebrow label over its content. The
+ *  popover is a stack of these, so every block gets the same rhythm. */
+function DetailSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mt-3.5">
+      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-os-grey">
+        {label}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] }) {
   const [expanded, setExpanded] = useState(false);
   const accepted = attendees.filter((a) => a.status === "Accepted").length;
@@ -58,27 +105,24 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
     .join(" · ");
 
   return (
-    <div className="mt-2">
-      <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-        {attendees.length} {attendees.length === 1 ? "guest" : "guests"}
-      </div>
-      <div className="text-[10px] text-muted-foreground mb-1">{summary}</div>
-      <ul className="space-y-0.5">
+    <DetailSection label={`${attendees.length} ${attendees.length === 1 ? "guest" : "guests"}`}>
+      <p className="mb-2 text-[13px] text-os-grey">{summary}</p>
+      <ul className="space-y-1.5">
         {shown.map((a, i) => (
-          <li key={`${a.name}-${i}`} className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${ATTENDEE_DOT[a.status]}`} />
+          <li key={`${a.name}-${i}`} className="flex items-center gap-2 text-[13px]">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ATTENDEE_DOT[a.status]}`} />
             <Tooltip content={a.name}>
               <span
-                className={`truncate ${a.status === "Declined" ? "text-muted-foreground line-through" : "text-foreground"}`}
+                className={`truncate ${a.status === "Declined" ? "text-os-grey line-through" : "text-foreground"}`}
               >
                 {a.name}
               </span>
             </Tooltip>
             {a.organizer && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">organizer</span>
+              <span className="shrink-0 text-[11px] text-os-grey">organizer</span>
             )}
             {a.optional && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">optional</span>
+              <span className="shrink-0 text-[11px] text-os-grey">optional</span>
             )}
           </li>
         ))}
@@ -86,14 +130,109 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
       {attendees.length > GUESTS_COLLAPSED && (
         <button
           type="button"
-          onMouseDown={(ev) => ev.stopPropagation()}
+          onPointerDown={(ev) => ev.stopPropagation()}
           onClick={() => setExpanded((v) => !v)}
-          className="mt-1 text-[11px] font-medium text-accent-coral hover:underline"
+          className="mt-2 text-[13px] font-medium text-os-accent hover:underline"
         >
           {expanded ? "Show fewer" : `Show all ${attendees.length}`}
         </button>
       )}
-    </div>
+    </DetailSection>
+  );
+}
+
+/**
+ * Going / Maybe / Can't go. Both routes end at Google: a Google event is
+ * patched on the viewer's own copy through the calendar action, and a DALI
+ * meeting goes through its invite endpoint, which pushes the answer on with
+ * the organizer's link. Either way the next read shows what Google holds.
+ */
+export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const revalidator = useRevalidator();
+  // The notification route is a plain endpoint, not this page's action, so its
+  // in-flight state is tracked here rather than by a fetcher.
+  const [sending, setSending] = useState<RsvpResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Revalidation lands a beat after the write, so show the answer being sent —
+  // otherwise the pressed button visibly snaps back before settling.
+  const inFlight = sending ?? (fetcher.formData?.get("response") as RsvpResponse | null);
+  const status: RsvpStatus = inFlight ? RSVP_FROM_RESPONSE[inFlight] : rsvp.status;
+  const busy = sending !== null || fetcher.state !== "idle";
+
+  async function answer(response: RsvpResponse) {
+    setError(null);
+    if (rsvp.via === "google") {
+      fetcher.submit(
+        {
+          intent: "event-rsvp",
+          destination: `${rsvp.linkId}:${rsvp.calendarId ?? ""}`,
+          eventId: rsvp.eventId,
+          recurringEventId: rsvp.recurringEventId ?? "",
+          response,
+        },
+        { method: "post" },
+      );
+      return;
+    }
+    setSending(response);
+    try {
+      const res = await fetch(`/api/notifications/${rsvp.notificationId}/rsvp`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Failed to RSVP");
+        return;
+      }
+      if (json.gcalError) {
+        setError(`Recorded in DALI, but Google sync failed: ${json.gcalError}`);
+        return;
+      }
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSending(null);
+    }
+  }
+
+  return (
+    <DetailSection label="Going?">
+      <div className="flex flex-wrap gap-1.5">
+        {RSVP_CHOICES.map((choice) => {
+          const active = status === choice.status;
+          return (
+            <button
+              key={choice.response}
+              type="button"
+              disabled={busy}
+              onClick={() => answer(choice.response)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-60",
+                active
+                  ? "border-os-accent bg-os-accent/15 text-os-accent"
+                  : "border-os-container bg-os-well text-foreground hover:border-os-container-hi",
+              )}
+            >
+              <choice.icon className="h-3.5 w-3.5" />
+              {choice.label}
+            </button>
+          );
+        })}
+      </div>
+      {status === "Pending" && (
+        <p className="mt-1.5 text-[12px] text-os-grey">You haven&rsquo;t replied yet.</p>
+      )}
+      {(error ?? fetcher.data?.error) && (
+        <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
+      )}
+    </DetailSection>
   );
 }
 
@@ -108,6 +247,7 @@ export function CalendarEventDetailPopover({
   organizerName,
   attendees,
   links,
+  rsvp,
   onClose,
   footer,
 }: {
@@ -122,6 +262,8 @@ export function CalendarEventDetailPopover({
   organizerName?: string;
   attendees?: EventAttendeeDTO[];
   links?: EventLinkDTO[];
+  /** The viewer's own answer, when they're a guest — renders the RSVP control. */
+  rsvp?: EventRsvpTarget;
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -180,7 +322,7 @@ export function CalendarEventDetailPopover({
   if (!measured) {
     const a = anchorEl?.getBoundingClientRect();
     if (a) {
-      const CARD_W = 288;
+      const CARD_W = 352; // must match the card's w-[22rem]
       const gap = 8;
       const margin = 8;
       left =
@@ -192,12 +334,15 @@ export function CalendarEventDetailPopover({
     }
   }
 
+  const videoLink = links?.find((l) => l.kind === "video");
+  const otherLinks = links?.filter((l) => l !== videoLink) ?? [];
+
   return createPortal(
     <>
       {onClose && (
         <div
           className="fixed inset-0 z-40"
-          onMouseDown={onClose}
+          onPointerDown={onClose}
           onClick={(ev) => ev.stopPropagation()}
         />
       )}
@@ -209,8 +354,8 @@ export function CalendarEventDetailPopover({
         // calendar block that opened it — which would toggle the card shut on
         // every click inside it.
         onClick={(ev) => ev.stopPropagation()}
-        onMouseDown={(ev) => ev.stopPropagation()}
-        className="cal-surface fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md p-3 text-xs"
+        onPointerDown={(ev) => ev.stopPropagation()}
+        className="cal-surface fixed z-50 w-[22rem] max-h-[32rem] overflow-y-auto rounded-os-item p-4 text-sm"
         style={{
           left,
           top,
@@ -220,17 +365,22 @@ export function CalendarEventDetailPopover({
       >
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <div className="font-semibold text-sm text-foreground break-words">{title}</div>
-            <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+            <h3 className="font-heading text-[17px] font-semibold leading-snug text-foreground break-words">
+              {title}
+            </h3>
+            <p className="mt-1 text-[13px] text-os-grey">{timeRange}</p>
             {sourceLabel && (
-              <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+              <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-os-grey">
                 <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: accentColor || "var(--color-accent-coral)" }}
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: accentColor || "var(--color-os-accent)" }}
                   aria-hidden
                 />
                 <span className="truncate">{sourceLabel}</span>
-              </div>
+              </p>
+            )}
+            {organizerName && (
+              <p className="mt-1 text-[13px] text-os-grey">Organized by {organizerName}</p>
             )}
           </div>
           {onClose && (
@@ -238,50 +388,63 @@ export function CalendarEventDetailPopover({
               type="button"
               onClick={onClose}
               aria-label="Close event details"
-              className="-mt-0.5 -mr-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="-mt-1 -mr-1 shrink-0 rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
             >
-              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
-              </svg>
+              <X className="h-4 w-4" />
             </button>
           )}
         </div>
-        {organizerName && (
-          <div className="mt-1.5 text-muted-foreground">Organized by {organizerName}</div>
+
+        {videoLink && (
+          <a
+            href={videoLink.href}
+            target="_blank"
+            rel="noreferrer noopener"
+            onPointerDown={(ev) => ev.stopPropagation()}
+            className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-os-accent px-4 py-2 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
+          >
+            <Video className="h-4 w-4" />
+            {videoLink.label}
+          </a>
         )}
+
         {location && (
-          <div className="mt-2">
-            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-              Location
-            </div>
-            <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
-          </div>
+          <DetailSection label="Location">
+            <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">{location}</p>
+          </DetailSection>
         )}
-        {links && links.length > 0 && (
-          <div className="mt-2 flex flex-col items-start gap-1">
-            {links.map((l) => (
+
+        {rsvp && <EventRsvpControl rsvp={rsvp} />}
+
+        {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
+
+        {description && (
+          <DetailSection label="Description">
+            <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">
+              {description}
+            </p>
+          </DetailSection>
+        )}
+
+        {otherLinks.length > 0 && (
+          <div className="mt-3.5 flex flex-col items-start gap-1.5">
+            {otherLinks.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
-                target="_blank"
+                target={l.kind === "notes" ? undefined : "_blank"}
                 rel="noreferrer noopener"
-                onMouseDown={(ev) => ev.stopPropagation()}
-                className="font-medium text-accent-coral hover:underline break-all"
+                onPointerDown={(ev) => ev.stopPropagation()}
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-os-accent hover:underline break-all"
               >
-                {l.label} →
+                {l.kind === "notes" ? (
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                )}
+                {l.label}
               </a>
             ))}
-          </div>
-        )}
-        {attendees && attendees.length > 0 && (
-          <EventGuestList attendees={attendees} />
-        )}
-        {description && (
-          <div className="mt-2">
-            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-              Description
-            </div>
-            <div className="text-foreground whitespace-pre-wrap break-words">{description}</div>
           </div>
         )}
         {footer}
@@ -295,7 +458,7 @@ export function CalendarEventDetailPopover({
  *  than a control on the popover's raised dark surface, so these carry a filled
  *  ground of their own in both themes. */
 const popoverActionBtn =
-  "inline-flex items-center gap-1 rounded-md border border-border bg-muted/70 px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted";
+  "inline-flex items-center gap-1.5 rounded-full border border-os-container bg-os-well px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:border-os-container-hi";
 
 // Per-meeting toggles in the event detail popover: log the meeting on your own
 // timesheet, and (Core only) flag it as a Core meeting. Both write through the
@@ -315,7 +478,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
     : meeting.isCoreMeeting;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-md bg-muted/40 px-2.5 py-2 text-[11px]">
+    <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
       <Checkbox
         checked={onTimesheet}
         disabled={timesheetFetcher.state !== "idle"}
@@ -326,13 +489,13 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
               meetingId: meeting.meetingId,
               onTimesheet: String(ev.target.checked),
             },
-            { method: "post" },
+            { method: "post", action: meeting.actionPath },
           )
         }
         label="Add to timesheet"
       />
       {timesheetFetcher.data?.error && (
-        <p className="text-[11px] text-red-600">{timesheetFetcher.data.error}</p>
+        <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
       )}
       {meeting.canMarkCoreMeeting && (
         <>
@@ -346,13 +509,13 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
                   meetingId: meeting.meetingId,
                   isCoreMeeting: String(ev.target.checked),
                 },
-                { method: "post" },
+                { method: "post", action: meeting.actionPath },
               )
             }
             label="Core meeting"
           />
           {coreFetcher.data?.error && (
-            <p className="text-[11px] text-red-600">{coreFetcher.data.error}</p>
+            <p className="text-[12px] text-red-600">{coreFetcher.data.error}</p>
           )}
         </>
       )}
@@ -429,6 +592,9 @@ export function WeekGridEvent({
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
   const isMeeting = Boolean(e.meeting);
+  // An answered invite says so on the block itself, in place of the location —
+  // "Pending" is what every unanswered invite says, so it earns no room.
+  const answeredRsvp = e.rsvp && e.rsvp.status !== "Pending" ? e.rsvp.status : null;
   // Every block that carries anything worth reading opens the same persistent
   // popover on click, Google-Calendar style — hover was no good once the card
   // grew links and a guest list you have to be able to reach with the pointer.
@@ -437,7 +603,13 @@ export function WeekGridEvent({
     e.location || e.description || e.organizerName || e.attendees?.length || e.links?.length,
   );
   const opensDetail =
-    !e.onClick && (isMeeting || hasDetails || Boolean(e.onEdit) || Boolean(e.onDuplicate) || Boolean(e.onDelete));
+    !e.onClick &&
+    (isMeeting ||
+      hasDetails ||
+      Boolean(e.rsvp) ||
+      Boolean(e.onEdit) ||
+      Boolean(e.onDuplicate) ||
+      Boolean(e.onDelete));
   const clickable = Boolean(e.onClick) || opensDetail;
 
   // Overlap layout: a block sharing its time with others is narrowed into a
@@ -465,23 +637,23 @@ export function WeekGridEvent({
   }, []);
 
   const attachWindowListeners = useCallback((
-    onMove: (ev: MouseEvent) => void,
-    onUp: (ev: MouseEvent) => void,
+    onMove: (ev: PointerEvent) => void,
+    onUp: (ev: PointerEvent) => void,
   ) => {
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     const cleanup = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
     cleanupRef.current = cleanup;
     return cleanup;
   }, []);
 
-  // Body mousedown: starts a move drag.
-  const onBodyMouseDown = useCallback((ev: React.MouseEvent<HTMLElement>) => {
+  // Body pointerdown: starts a move drag. Pointer events fire for both mouse and touch.
+  const onBodyMouseDown = useCallback((ev: React.PointerEvent<HTMLElement>) => {
     if (!e.onMoveResize) return;
-    if (ev.button !== 0) return;
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
     ev.stopPropagation();
     ev.preventDefault();
 
@@ -506,7 +678,7 @@ export function WeekGridEvent({
       colWidth: colEl.getBoundingClientRect().width,
     };
 
-    const onMove = (mev: MouseEvent) => {
+    const onMove = (mev: PointerEvent) => {
       const ds = dragRef.current;
       if (!ds || ds.kind !== "move") return;
       // Engage after crossing 4px in EITHER axis so a click doesn't snap the block.
@@ -532,7 +704,7 @@ export function WeekGridEvent({
       }
     };
 
-    const onUp = (uev: MouseEvent) => {
+    const onUp = (uev: PointerEvent) => {
       const ds = dragRef.current;
       cleanupRef.current?.();
       dragRef.current = null;
@@ -562,10 +734,10 @@ export function WeekGridEvent({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay]);
 
-  // Handle mousedown: starts a resize drag (top = start edge, bottom = end edge).
-  const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.MouseEvent<HTMLElement>) => {
+  // Handle pointerdown: starts a resize drag (top = start edge, bottom = end edge).
+  const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.PointerEvent<HTMLElement>) => {
     if (!e.onMoveResize) return;
-    if (ev.button !== 0) return;
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
     ev.stopPropagation();
     ev.preventDefault();
 
@@ -587,7 +759,7 @@ export function WeekGridEvent({
       colEl,
     };
 
-    const onMove = (mev: MouseEvent) => {
+    const onMove = (mev: PointerEvent) => {
       const ds = dragRef.current;
       if (!ds || (ds.kind !== "resize-top" && ds.kind !== "resize-bottom")) return;
       const h = hourFromColY(mev.clientY, ds.colEl);
@@ -649,13 +821,13 @@ export function WeekGridEvent({
           ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
           : {}),
       }}
-      // Always swallow mousedown, even with no onClick. The day column starts
-      // a drag-to-create on any mousedown that reaches it, and its mouseup
+      // Always swallow pointerdown, even with no onClick. The day column starts
+      // a drag-to-create on any pointerdown that reaches it, and its pointerup
       // commits a selection even with zero movement — so without this, clicking
       // an existing block opens a bogus "New entry" popover on top of it.
       // Previously this was gated on `e.onClick`, which is why only the
       // clickable (Manual) blocks were protected.
-      onMouseDown={movable ? onBodyMouseDown : (ev) => ev.stopPropagation()}
+      onPointerDown={movable ? onBodyMouseDown : (ev) => ev.stopPropagation()}
       onClick={
         movable
           ? (ev) => {
@@ -690,8 +862,8 @@ export function WeekGridEvent({
       {/* Top resize handle — only for movable blocks */}
       {movable && (
         <div
-          onMouseDown={onHandleMouseDown("top")}
-          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          onPointerDown={onHandleMouseDown("top")}
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 dnd-touch-handle"
           aria-label="Adjust start time"
         />
       )}
@@ -726,22 +898,17 @@ export function WeekGridEvent({
             {e.loggedAccent && ` · logged ${formatLoggedHours(e.loggedAccent.hours)}`}
           </span>
         )}
-        {isMeeting && e.meeting?.rsvp && displayBodyHeight >= 50 && (
+        {displayBodyHeight >= 50 && (answeredRsvp ?? e.location) && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
-            {e.meeting.rsvp}
-          </span>
-        )}
-        {displayBodyHeight >= 50 && e.location && !isMeeting && (
-          <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
-            {e.location}
+            {answeredRsvp ?? e.location}
           </span>
         )}
       </div>
       {/* Bottom resize handle — only for movable blocks */}
       {movable && (
         <div
-          onMouseDown={onHandleMouseDown("bottom")}
-          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+          onPointerDown={onHandleMouseDown("bottom")}
+          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 dnd-touch-handle"
           aria-label="Adjust end time"
         />
       )}
@@ -757,53 +924,41 @@ export function WeekGridEvent({
           organizerName={e.organizerName}
           attendees={e.attendees}
           links={e.links}
+          rsvp={e.rsvp}
           onClose={() => {
             setConfirmDelete(false);
             setDetailOpen(false);
           }}
           footer={
-            e.meeting ? (
-              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
-                <div className="flex items-center gap-2">
-                  <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
-                    Your RSVP
-                  </span>
-                  {e.meeting.rsvp ? (
-                    <span
-                      className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded ${RSVP_BADGE[e.meeting.rsvp]}`}
-                    >
-                      {e.meeting.rsvp}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground">No response yet</span>
-                  )}
-                </div>
-                <RsvpButtons
-                  notificationId={e.meeting.notificationId}
-                  onResponded={() => setDetailOpen(false)}
-                />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Link
-                    to={`/calendar/meeting/${e.meeting.meetingId}`}
-                    className={popoverActionBtn}
-                  >
-                    <Users className="h-3 w-3 text-muted-foreground" /> Details &amp; attendance
-                  </Link>
-                  {e.meeting.notePageId && (
+            <>
+              {e.meeting && (
+                <div
+                  className="mt-3.5 border-t border-os-container pt-3"
+                  onPointerDown={(ev) => ev.stopPropagation()}
+                >
+                  <div className="flex flex-wrap gap-2">
                     <Link
-                      to={`/documents/${e.meeting.notePageId}`}
+                      to={`/calendar/meeting/${e.meeting.meetingId}`}
                       className={popoverActionBtn}
                     >
-                      <FileText className="h-3 w-3 text-muted-foreground" /> Note
+                      <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
                     </Link>
-                  )}
+                    {e.meeting.notePageId && (
+                      <Link
+                        to={`/documents/${e.meeting.notePageId}`}
+                        className={popoverActionBtn}
+                      >
+                        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting notes
+                      </Link>
+                    )}
+                  </div>
+                  <MeetingDetailToggles meeting={e.meeting} />
                 </div>
-                <MeetingDetailToggles meeting={e.meeting} />
-              </div>
-            ) : e.onEdit || e.onDuplicate || e.onDelete ? (
+              )}
+              {(e.onEdit || e.onDuplicate || e.onDelete) && (
               <div
-                className="mt-2 flex items-center gap-1 border-t border-border pt-2"
-                onMouseDown={(ev) => ev.stopPropagation()}
+                className="mt-3.5 flex items-center gap-1.5 border-t border-os-container pt-3"
+                onPointerDown={(ev) => ev.stopPropagation()}
               >
                 {e.onEdit && (
                   <button
@@ -813,9 +968,9 @@ export function WeekGridEvent({
                       setDetailOpen(false);
                       e.onEdit?.(anchor);
                     }}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                    className={popoverActionBtn}
                   >
-                    <Pencil className="h-3 w-3 text-muted-foreground" /> Edit
+                    <Pencil className="h-3.5 w-3.5 text-os-grey" /> Edit
                   </button>
                 )}
                 {e.onDuplicate && (
@@ -826,9 +981,9 @@ export function WeekGridEvent({
                       setDetailOpen(false);
                       e.onDuplicate?.(anchor);
                     }}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                    className={popoverActionBtn}
                   >
-                    <Copy className="h-3 w-3 text-muted-foreground" /> Duplicate
+                    <Copy className="h-3.5 w-3.5 text-os-grey" /> Duplicate
                   </button>
                 )}
                 {e.onDelete && (
@@ -842,9 +997,9 @@ export function WeekGridEvent({
                           setDetailOpen(false);
                           e.onDelete?.();
                         }}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                        className={cn(popoverActionBtn, "text-red-600 hover:border-red-300")}
                       >
-                        <Trash2 className="h-3 w-3" /> Delete…
+                        <Trash2 className="h-3.5 w-3.5" /> Delete…
                       </button>
                     ) : confirmDelete ? (
                       <button
@@ -854,7 +1009,7 @@ export function WeekGridEvent({
                           setDetailOpen(false);
                           e.onDelete?.();
                         }}
-                        className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-red-700"
                       >
                         Confirm delete
                       </button>
@@ -862,15 +1017,16 @@ export function WeekGridEvent({
                       <button
                         type="button"
                         onClick={() => setConfirmDelete(true)}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                        className={cn(popoverActionBtn, "text-red-600 hover:border-red-300")}
                       >
-                        <Trash2 className="h-3 w-3" /> Delete
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
                       </button>
                     )}
                   </div>
                 )}
               </div>
-            ) : null
+              )}
+            </>
           }
         />
       )}
@@ -1056,7 +1212,12 @@ export function WeekGrid({
     (el: HTMLDivElement | null) => {
       scrollElRef.current = el;
       if (fillAndScroll && el && !didInitScroll.current) {
-        el.scrollTop = INITIAL_SCROLL_HOUR * HOUR_PX;
+        // Centre midday in whatever height the grid actually got, rather than
+        // parking a fixed hour at the top: on a short window that put the whole
+        // afternoon below the fold. Reading clientHeight here forces layout, so
+        // it's the real scrollport height; clamped, so a tall window that fits
+        // the full day still opens at midnight.
+        el.scrollTop = Math.max(0, INITIAL_SCROLL_CENTER_HOUR * HOUR_PX - el.clientHeight / 2);
         didInitScroll.current = true;
       }
       if (el) measureScrollbar();
@@ -1081,9 +1242,9 @@ export function WeekGrid({
     return Math.max(MIN_HOUR, Math.min(MAX_HOUR, snapped));
   };
 
-  const onDayMouseDown = (dayIdx: number) => (e: React.MouseEvent<HTMLDivElement>) => {
+  const onDayMouseDown = (dayIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (!onDayPointerSelect) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     // While a selection's editor is open, freeze the grid: a new drag would
     // move the committed selection out from under the open form. (The popover
     // itself lives in a body portal, so its clicks never reach a column — this
@@ -1095,12 +1256,12 @@ export function WeekGrid({
     e.preventDefault();
   };
 
-  // Window-level mousemove + mouseup so the drag keeps tracking even when the
-  // cursor leaves the original column.
+  // Window-level pointermove + pointerup so the drag keeps tracking even when the
+  // pointer leaves the original column. Pointer events fire for both mouse and touch.
   useEffect(() => {
     if (!drag || !onDayPointerSelect) return;
     const col = columnRefs.current[drag.dayIdx];
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       setDrag((prev) =>
@@ -1122,11 +1283,11 @@ export function WeekGrid({
       onDayPointerSelect(drag.dayIdx, start, end, anchorRect);
       setDrag(null);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [drag, onDayPointerSelect, MAX_HOUR, clickDurationHours]);
 
@@ -1134,9 +1295,9 @@ export function WeekGrid({
   // moving edge follows the cursor (snapped, clamped, never crossing the fixed
   // edge); onSelectionResize streams the new range up so the popover form and
   // the block stay in sync live.
-  const startResize = (edge: "start" | "end") => (e: React.MouseEvent) => {
+  const startResize = (edge: "start" | "end") => (e: React.PointerEvent) => {
     if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     setResize({ edge, fixed: edge === "start" ? selection.endHour : selection.startHour });
@@ -1145,7 +1306,7 @@ export function WeekGrid({
   useEffect(() => {
     if (!resize || !selection || !onSelectionResize) return;
     const col = columnRefs.current[selection.dayIdx];
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       const h = hourFromY(e.clientY - rect.top);
@@ -1159,20 +1320,20 @@ export function WeekGrid({
       }
     };
     const onUp = () => setResize(null);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [resize, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
   // Moving the committed selection up/down as a whole. Duration is preserved:
   // the range slides, and is clamped so neither edge leaves the visible day
   // rather than being squashed at the boundary.
-  const startMove = (e: React.MouseEvent) => {
+  const startMove = (e: React.PointerEvent) => {
     if (!selection || !onSelectionResize) return;
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const col = columnRefs.current[selection.dayIdx];
@@ -1188,7 +1349,7 @@ export function WeekGrid({
   useEffect(() => {
     if (!move || !selection || !onSelectionResize) return;
     const col = columnRefs.current[selection.dayIdx];
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
       if (!col) return;
       const rect = col.getBoundingClientRect();
       const pointerHour = hourFromY(e.clientY - rect.top);
@@ -1199,11 +1360,11 @@ export function WeekGrid({
       onSelectionResize(start, start + move.duration);
     };
     const onUp = () => setMove(null);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [move, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
@@ -1213,7 +1374,7 @@ export function WeekGrid({
     Object.values(allDayByDay).some((blocks) => blocks.length > 0);
 
   return (
-    <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    <div className={`relative min-w-[640px] ${fillAndScroll ? "md:flex md:flex-col md:flex-1 md:min-h-0" : ""}`}>
     {/* Weekday header. Its own row above the grid (and above the all-day band,
         which is what puts the band under the dates the way Google's week view
         reads). Sitting outside the scroll container is also what keeps it in
@@ -1336,7 +1497,7 @@ export function WeekGrid({
         // scrollbar-gutter: stable keeps this container's own width steady when
         // the scrollbar toggles; the all-day band above matches its columns to
         // ours by measuring our real scrollbar width (see measureScrollbar).
-        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden lg:[scrollbar-gutter:stable]" : ""
+        fillAndScroll ? "md:flex-1 md:min-h-0 md:items-start md:overflow-y-auto md:overflow-x-hidden md:[scrollbar-gutter:stable]" : ""
       }`}
     >
       {/* Hour axis */}
@@ -1365,9 +1526,9 @@ export function WeekGrid({
             ref={(el) => {
               columnRefs.current[idx] = el;
             }}
-            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair" : ""}`}
+            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair dnd-touch-handle" : ""}`}
             style={{ height: HOURS.length * HOUR_PX }}
-            onMouseDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
+            onPointerDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
           >
             {HOURS.map((_, i) => (
               <Fragment key={i}>
@@ -1468,7 +1629,7 @@ export function WeekGrid({
                   ref={setAnchorEl}
                   // Body drag moves the whole block; the edge handles below
                   // resize it (they stopPropagation so they win over this).
-                  onMouseDown={resizable ? startMove : undefined}
+                  onPointerDown={resizable ? startMove : undefined}
                   className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
                     resizable ? (move ? "cursor-grabbing" : "cursor-grab") : "pointer-events-none"
                   }`}
@@ -1486,16 +1647,16 @@ export function WeekGrid({
                     <>
                       {/* Top handle */}
                       <div
-                        onMouseDown={startResize("start")}
-                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        onPointerDown={startResize("start")}
+                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust start time"
                       >
                         <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
                       </div>
                       {/* Bottom handle */}
                       <div
-                        onMouseDown={startResize("end")}
-                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        onPointerDown={startResize("end")}
+                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust end time"
                       >
                         <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
@@ -1550,14 +1711,14 @@ export function SelectionPopoverPortal({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
-  // Dismiss on a genuine outside click. We can't use a full-viewport backdrop
+  // Dismiss on a genuine outside click/tap. We can't use a full-viewport backdrop
   // for this: the selection block (with its resize handles) lives in the grid
-  // *under* this portal, so a covering backdrop would swallow handle mousedowns
+  // *under* this portal, so a covering backdrop would swallow handle pointerdowns
   // and dismiss the selection the instant the user grabs a handle. Instead,
-  // listen at the document and ignore mousedowns that land inside the popover
+  // listen at the document and ignore pointerdowns that land inside the popover
   // card or the anchored selection block (so resizing it works).
   useEffect(() => {
-    const onDocMouseDown = (e: MouseEvent) => {
+    const onDocPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
@@ -1576,8 +1737,8 @@ export function SelectionPopoverPortal({
       onDismiss();
     };
     // Capture phase so we see the event even if something stops propagation.
-    document.addEventListener("mousedown", onDocMouseDown, true);
-    return () => document.removeEventListener("mousedown", onDocMouseDown, true);
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
   }, [anchorEl, onDismiss]);
 
   useLayoutEffect(() => {
@@ -1657,7 +1818,7 @@ export function SelectionPopoverPortal({
       data-calendar-popover
       className="fixed z-50"
       style={{ left, top }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {children}
     </div>,

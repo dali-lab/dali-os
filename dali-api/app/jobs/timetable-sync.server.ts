@@ -14,6 +14,7 @@ import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { dartmouthTermCode, daliTermCodeFromDartmouth } from "~/lib/terms.shared";
 import { fetchTermCatalog } from "~/lib/dartmouth-timetable.server";
+import { toOfferingRow } from "~/lib/timetable-cache.server";
 import { formatCourseLocation } from "~/calendar/lib/class-format";
 import { notify } from "~/lib/notify.server";
 
@@ -121,26 +122,7 @@ export async function runTimetableSync(ctx: JobContext): Promise<JobResult> {
         byCrn.set(c.crn, c);
       }
 
-      const rows = [...byCrn.values()].map((c) => ({
-        termId: term.id,
-        oracleTerm: oracleCode,
-        crn: c.crn,
-        subject: c.subject,
-        number: c.number,
-        section: c.section,
-        title: c.title,
-        periodCode: c.periodCode || null,
-        periodText: c.periodText || null,
-        building: c.building || null,
-        room: c.room || null,
-        instructor: c.instructor || null,
-        crosslist: c.crosslist || null,
-        distributive: c.distributive || null,
-        enrollLimit: c.enrollLimit,
-        enrollCurrent: c.enrollCurrent,
-        searchText: `${c.subject} ${c.number} ${c.title}`.toLowerCase(),
-        syncedAt: ctx.now,
-      }));
+      const rows = [...byCrn.values()].map((c) => toOfferingRow(term.id, oracleCode, c, ctx.now));
 
       // An empty parse means a bad fetch / format drift — keep the old rows.
       if (rows.length === 0) {

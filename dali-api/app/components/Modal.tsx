@@ -2,7 +2,6 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { modalCardClass } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -63,8 +62,7 @@ export function Modal({
   className = "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto",
   containerClassName,
 }: ModalProps) {
-  const os = useFeatureFlag("os-redesign");
-  const container = containerClassName ?? modalCardClass(os, "max-w-md");
+  const container = containerClassName ?? modalCardClass("max-w-md");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -161,21 +159,17 @@ export function ModalHeader({
   actions,
   className = "",
 }: ModalHeaderProps) {
-  const os = useFeatureFlag("os-redesign");
   return (
-    <div className={cn("flex items-start justify-between gap-4", os ? "mb-6" : "mb-4", className)}>
+    <div className={cn("flex items-start justify-between gap-4", "mb-6", className)}>
       <div className="min-w-0">
         <h2
           id={titleId}
-          className={cn(
-            "font-heading text-foreground",
-            os ? "text-xl font-medium" : "text-lg font-bold",
-          )}
+          className={cn("font-heading text-foreground", "text-xl font-medium")}
         >
           {title}
         </h2>
         {subtitle && (
-          <p className={cn("text-muted-foreground", os ? "mt-1 text-sm" : "mt-0.5 text-xs")}>
+          <p className={cn("text-muted-foreground", "mt-1 text-sm")}>
             {subtitle}
           </p>
         )}
@@ -187,11 +181,7 @@ export function ModalHeader({
             type="button"
             onClick={onClose}
             aria-label={closeLabel}
-            className={
-              os
-                ? "os-icon-btn"
-                : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-            }
+            className="os-icon-btn"
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
@@ -215,15 +205,12 @@ export function ModalFooter({
   children,
   className = "",
 }: ModalFooterProps) {
-  const os = useFeatureFlag("os-redesign");
   return (
     <div className={cn("mt-6 flex items-center justify-end gap-2", className)}>
       <button
         type="button"
         onClick={onCancel}
-        className={
-          os ? "os-btn-ghost" : "px-3 py-1.5 text-sm rounded-lg text-foreground/80 hover:bg-muted"
-        }
+        className="os-btn-ghost"
       >
         {cancelLabel}
       </button>

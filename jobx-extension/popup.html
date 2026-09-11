@@ -2,32 +2,126 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<title>DALI OS → JobX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Plus+Jakarta+Sans:wght@700&display=swap" />
 <style>
-  body { font: 13px/1.5 system-ui, sans-serif; width: 300px; margin: 0; padding: 14px; color: #1a1a1a; }
-  h1 { font-size: 14px; margin: 0 0 8px; }
-  label { font-weight: 600; display: block; margin: 10px 0 3px; }
-  input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font: inherit; }
-  .hint { color: #666; font-size: 12px; margin-top: 4px; }
-  button { margin-top: 12px; width: 100%; background: #00693e; color: #fff; border: none; border-radius: 6px; padding: 8px; font: 600 13px system-ui; cursor: pointer; }
-  .ok { color: #15803d; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  /* dali.os palette — mirrors dali-api/app/app.css (light: html.light, dark: the os ramp). */
+  :root {
+    --bg: #e9eef3; --card: #ffffff; --well: #eaeff5; --container: #ccd7e2; --container-hi: #a9b9c9;
+    --accent: #0f6e7d; --accent-hover: #0b5964; --accent-ink: #ffffff; --accent-tint: #dcecf0;
+    --grey: #4d5c69; --muted: #78899a; --fg: #13293a; --green: #0f7a4d; --amber: #8f5400;
+    --r-card: 24px; --r-item: 12px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #282830; --card: #2b2b36; --well: #26262f; --container: #3f3f48; --container-hi: #54545f;
+      --accent: #a8d3de; --accent-hover: #bfe1e9; --accent-ink: #13293a; --accent-tint: #2f3d44;
+      --grey: #bababa; --muted: #6a6a73; --fg: #ffffff; --green: #9fe0a8; --amber: #f2b84b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    width: 340px; margin: 0; padding: 14px; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { display: flex; align-items: center; gap: 10px; padding: 2px 4px 12px; }
+  header img { width: 32px; height: 32px; border-radius: 50%; }
+  .logo {
+    font-family: "Plus Jakarta Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
+    font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em; line-height: 1;
+  }
+  .sub { color: var(--grey); font-weight: 600; font-size: 12px; }
+  .card { background: var(--card); border-radius: var(--r-card); padding: 16px 18px; }
+  .card + .card { margin-top: 10px; }
+  .status { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--container-hi); flex: none; }
+  .dot.ok { background: var(--green); }
+  .dot.warn { background: var(--amber); }
+  .status-text { flex: 1; min-width: 0; }
+  .status-text strong { display: block; }
+  .status-text span { color: var(--grey); font-size: 12px; overflow-wrap: anywhere; }
+  .btn {
+    display: inline-block; border: 0; border-radius: var(--r-item); padding: 8px 12px;
+    background: var(--accent); color: var(--accent-ink); font: 700 12px/1 inherit; font-family: inherit;
+    cursor: pointer; text-decoration: none; white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  h2 { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 10px; }
+  ol { margin: 0; padding: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 10px; }
+  li { counter-increment: step; display: grid; grid-template-columns: 22px 1fr; gap: 10px; color: var(--grey); }
+  li::before {
+    content: counter(step); width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent-tint); color: var(--accent); font-weight: 700; font-size: 12px;
+    display: grid; place-items: center;
+  }
+  li strong { color: var(--fg); }
+  details summary {
+    cursor: pointer; list-style: none; color: var(--grey); font-weight: 700; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: "▾"; transition: transform 120ms; }
+  details[open] summary::after { transform: rotate(180deg); }
+  label { display: block; font-weight: 700; margin: 12px 0 6px; }
+  select, input {
+    width: 100%; font: inherit; color: var(--fg); background: var(--well);
+    border: 1px solid transparent; border-radius: var(--r-item); padding: 9px 11px;
+  }
+  select:hover, input:hover { border-color: var(--container-hi); }
+  select:focus-visible, input:focus-visible, .btn:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  [hidden] { display: none !important; }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; min-height: 17px; }
 </style>
 </head>
 <body>
-<h1>DALI → JobX settings</h1>
-<p class="hint">On a JobX <em>Manage Time Sheet</em> page, click the green “Fill from DALI”
-button. It pulls your finalized period from DALI (you must be logged into DALI in this
-browser) and fills the form. It never submits — you click Save.</p>
+<header>
+  <img src="icons/icon48.png" alt="" />
+  <div>
+    <div class="logo">dali.os</div>
+    <div class="sub">JobX timesheet filler</div>
+  </div>
+</header>
 
-<label for="base">DALI base URL</label>
-<input id="base" placeholder="http://localhost:3001" />
-<p class="hint">Required. Local dev: http://localhost:3001 — prod: https://os.dali.dartmouth.edu</p>
+<section class="card status" aria-live="polite">
+  <span class="dot" id="dot"></span>
+  <div class="status-text">
+    <strong id="status-title">Checking DALI OS…</strong>
+    <span id="status-detail"></span>
+  </div>
+  <a class="btn" id="signin" href="#" target="_blank" rel="noopener" hidden>Sign in</a>
+</section>
 
-<label for="period">Period id (optional)</label>
-<input id="period" placeholder="current" />
-<p class="hint">Blank = the current finalized period.</p>
+<section class="card">
+  <h2>How it works</h2>
+  <ol>
+    <li><span>Log your hours on the <strong>Timesheet</strong> tab in DALI OS.</span></li>
+    <li><span>Open <strong>Manage Time Sheet</strong> in JobX for the pay period.</span></li>
+    <li><span>Click <strong>Fill from DALI</strong>, pick your role and pay period, review, and fill. You submit in JobX yourself.</span></li>
+  </ol>
+</section>
 
-<button id="save">Save</button>
-<div class="ok" id="status"></div>
+<section class="card">
+  <details id="advanced">
+    <summary>DALI OS server</summary>
+    <label for="server">Server</label>
+    <select id="server">
+      <option value="https://os.dali.dartmouth.edu">Production — os.dali.dartmouth.edu</option>
+      <option value="https://os-staging.dali.dartmouth.edu">Staging — os-staging.dali.dartmouth.edu</option>
+      <option value="http://localhost:3001">Local — localhost:3001</option>
+      <option value="custom">Custom…</option>
+    </select>
+    <input id="custom" type="url" placeholder="https://…" hidden />
+    <p class="hint" id="saved"></p>
+  </details>
+</section>
 
 <script src="popup.js"></script>
 </body>

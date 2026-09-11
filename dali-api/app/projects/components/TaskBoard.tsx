@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
-import { Toggle } from "~/components/ui/Toggle";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
   Archive,
   Bell,
   CalendarDays,
   CheckSquare,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Link2,
@@ -24,10 +25,12 @@ import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import {
   FilterCountBadge,
+  FilterField,
   FilterGroup,
   FilterPill,
   FilterResetButton,
   FilterSectionLabel,
+  FilterToggleRow,
   customizeButtonClass,
   filterPanelClass,
 } from "~/components/ui/filter-panel";
@@ -45,7 +48,13 @@ import {
   taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
+  activeSprintIds,
+  defaultSprintScope,
+  resolveSprintScope,
+  taskInSprintScope,
+  type SprintScope,
 } from "../lib/task-board";
+import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
@@ -65,6 +74,10 @@ type Props = {
   // Bumped by an outside control (the timeline's Add ▸ Task) to open the
   // create form. A counter rather than a boolean so repeated adds each fire.
   createNonce?: number;
+  // `sprint-view` flag. On → Sprint is a top-level board filter (current / any
+  // past sprint / backlog) that opens the board on the current sprint and
+  // supersedes the term filter while set. Off → the epic-nested sprint sub-filter.
+  sprintFilterEnabled?: boolean;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
@@ -80,6 +93,14 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
+
+// How each sprint status reads in the sprint-view picker — "Upcoming" and
+// "Past" are friendlier than the raw Planned/Closed enum for a filter list.
+const SPRINT_WORD: Record<"Active" | "Planned" | "Closed", string> = {
+  Active: "Active",
+  Planned: "Upcoming",
+  Closed: "Past",
+};
 // Each status owns a hue. The column header wears it as a solid bar and the
 // card carries it on its left edge, so a card still reads as belonging to its
 // column once it's dragged out of one. Brand palette, not the reference's —
@@ -172,6 +193,7 @@ export function TaskBoard({
   currentUserId,
   currentUserName,
   createNonce = 0,
+  sprintFilterEnabled = false,
   filterPeopleIds = [],
   peopleOptions = [],
   onPeopleChange,
@@ -180,6 +202,7 @@ export function TaskBoard({
   // adopted whenever it changes and no save is in flight, so teammate edits,
   // GitHub webhook updates, and sprint rollovers appear without a manual
   // reload; our own mutations trigger a revalidation below to close the loop.
+  const dialog = useDialog();
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
@@ -266,6 +289,15 @@ export function TaskBoard({
   // (the weekly job still uses the idle-day threshold lab-wide).
   const runArchive = useCallback(async () => {
     if (archiving) return;
+    const archivable = tasks.filter((t) => t.status === "Done" || t.status === "Cancelled");
+    const count = archivable.length;
+    const confirmed = await dialog.confirm({
+      title: "Archive Done & Cancelled tasks?",
+      description: `This will immediately archive ${count} task${count === 1 ? "" : "s"} (Done and Cancelled). Archived tasks are hidden from the board but not deleted.`,
+      confirmLabel: "Archive",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
     setArchiving(true);
     setError(null);
     try {
@@ -280,7 +312,7 @@ export function TaskBoard({
     } finally {
       setArchiving(false);
     }
-  }, [archiving, projectId, refresh, setError]);
+  }, [archiving, dialog, projectId, refresh, setError, tasks]);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
   // and other external links can deep-link straight to a task. The sprint
@@ -317,6 +349,22 @@ export function TaskBoard({
     return m;
   }, [options.sprints]);
 
+  // Sprint-view scope (flag-gated). The board opens on the current sprint when
+  // one is running (defaultScope), and picking any sprint or the backlog
+  // supersedes the term filter — a sprint already names its slice of time, so
+  // the term control hides while a sprint scope is active to avoid an empty
+  // term∩sprint intersection.
+  const activeIds = useMemo(() => activeSprintIds(options.sprints), [options.sprints]);
+  const defaultScope = useMemo(
+    () => defaultSprintScope(options.sprints),
+    [options.sprints],
+  );
+  const sprintScope: SprintScope = sprintFilterEnabled
+    ? resolveSprintScope(sprintFilter, options.sprints)
+    : "all";
+  const sprintScopeActive = sprintFilterEnabled && sprintScope !== "all";
+  const sprintDeviates = sprintFilterEnabled && sprintScope !== defaultScope;
+
   const setParam = useCallback(
     (key: string, value: string | null) => {
       setSearchParams(
@@ -332,6 +380,8 @@ export function TaskBoard({
     [setSearchParams],
   );
   // Picking an epic resets the sprint sub-filter (its sprints are epic-scoped).
+  // With sprint-view on, Sprint is a top-level scope independent of epic, so
+  // it's left untouched.
   const setEpicFilter = useCallback(
     (value: string | null) => {
       setSearchParams(
@@ -339,13 +389,13 @@ export function TaskBoard({
           const next = new URLSearchParams(prev);
           if (value) next.set("epic", value);
           else next.delete("epic");
-          next.delete("sprint");
+          if (!sprintFilterEnabled) next.delete("sprint");
           return next;
         },
         { replace: true, preventScrollReset: true },
       );
     },
-    [setSearchParams],
+    [setSearchParams, sprintFilterEnabled],
   );
   // Changing term drops the sprint sub-filter (a sprint from another term
   // would otherwise leave the board empty) — the epic filter stays put; its
@@ -401,8 +451,15 @@ export function TaskBoard({
     let ts = tasks;
     if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
     else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
-    if (sprintFilter) ts = ts.filter((t) => t.sprintId === sprintFilter);
-    if (effectiveTerm !== ALL_TERMS) {
+    if (sprintFilterEnabled) {
+      ts = ts.filter((t) => taskInSprintScope(t, sprintScope, activeIds));
+    } else if (sprintFilter) {
+      ts = ts.filter((t) => t.sprintId === sprintFilter);
+    }
+    // A concrete sprint scope already fixes the slice of time, so the term
+    // filter steps aside (its control is hidden too) — ANDing them would only
+    // ever empty the board.
+    if (!sprintScopeActive && effectiveTerm !== ALL_TERMS) {
       ts = ts.filter((t) =>
         // Backlog (no sprint) is term-less — always visible so it stays the
         // pool you plan the term from. A sprinted task shows only if its
@@ -425,6 +482,10 @@ export function TaskBoard({
     tasks,
     epicFilter,
     sprintFilter,
+    sprintFilterEnabled,
+    sprintScope,
+    sprintScopeActive,
+    activeIds,
     effectiveTerm,
     sprintTermById,
     onlyMine,
@@ -710,7 +771,7 @@ export function TaskBoard({
       // `text-foreground` on its title slot, which would otherwise win over
       // the colour inherited from the header.
       title: <span style={{ color: accent.ink }}>{label}</span>,
-      className: cn(shell, "w-64"),
+      className: cn(shell, "w-full md:w-64"),
       headerClassName: cn(
         "flex items-center justify-between gap-2 px-3 py-2",
         roundedTop,
@@ -786,14 +847,14 @@ export function TaskBoard({
   const showEpicFilter = visibleEpics.length > 0;
 
   // What the Customize badge counts: every active slice bar the search box,
-  // which has its own visible field. The term filter counts only when it isn't
-  // sitting on its default (this term, or All when the project doesn't run it).
+  // which has its own visible field. The term and sprint filters count only
+  // when they aren't sitting on their default (this term / the current sprint).
   const defaultTerm = options.currentTermId ?? ALL_TERMS;
   const activeFilterCount =
     (epicFilter ? 1 : 0) +
-    (sprintFilter ? 1 : 0) +
+    (sprintFilterEnabled ? (sprintDeviates ? 1 : 0) : sprintFilter ? 1 : 0) +
     (onlyMine ? 1 : 0) +
-    (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
+    (termFilterEnabled && !sprintScopeActive && effectiveTerm !== defaultTerm ? 1 : 0);
 
   // Option lists for the two comboboxes. `null` is the "no filter" row in
   // both, and leads so it's the first thing an empty query offers.
@@ -812,6 +873,36 @@ export function TaskBoard({
     ],
     [epicSprints],
   );
+
+  // Sprints for the sprint-view picker, ordered so the one you most likely want
+  // sits near the top: Active first, then Upcoming (soonest ascending), then
+  // Past (newest first).
+  const orderedSprintsForPicker = useMemo(() => {
+    const rank = { Active: 0, Planned: 1, Closed: 2 } as const;
+    return [...options.sprints].sort((a, b) => {
+      if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+      const dir = a.status === "Planned" ? 1 : -1; // upcoming ascending; active/past newest-first
+      return dir * a.startsAt.localeCompare(b.startsAt);
+    });
+  }, [options.sprints]);
+
+  // The sprint-view combobox. Its default scope is the neutral (`null`) row, so
+  // sitting on the default reads as "no filter" and doesn't light the Customize
+  // badge — the same convention the term filter uses for the current term.
+  const sprintScopeOptions: ComboOption[] = useMemo(() => {
+    const opts: ComboOption[] = [
+      { value: null, label: defaultScope === "current" ? "Current sprint" : "All sprints" },
+    ];
+    if (defaultScope !== "all") opts.push({ value: "all", label: "All sprints" });
+    if (defaultScope !== "current" && activeIds.length > 0) {
+      opts.push({ value: "current", label: "Current sprint" });
+    }
+    opts.push({ value: "backlog", label: "Backlog (no sprint)" });
+    for (const s of orderedSprintsForPicker) {
+      opts.push({ value: s.id, label: `${s.name} · ${SPRINT_WORD[s.status]}` });
+    }
+    return opts;
+  }, [defaultScope, activeIds, orderedSprintsForPicker]);
 
   const resetFilters = useCallback(() => {
     setSearchParams(
@@ -878,35 +969,62 @@ export function TaskBoard({
                   )}
                 </div>
 
-                {termFilterEnabled && (
-                  <div className="flex flex-col gap-1.5">
-                    <span className={cn("text-xs inline-flex items-center gap-1", os ? "text-os-grey" : "text-muted-foreground")}>
-                      Term
+                {/* Sprint-view: the board's primary time scope. Leads the panel
+                    and, while set, hides the Term filter (a sprint already names
+                    its slice of time). The default scope is the neutral row. */}
+                {sprintFilterEnabled && options.sprints.length > 0 && (
+                  <FilterCombobox
+                    id="taskboard-sprint-scope"
+                    label="Sprint"
+                    ariaLabel="Filter board by sprint"
+                    placeholder="Search sprints…"
+                    os={os}
+                    options={sprintScopeOptions}
+                    value={sprintScope === defaultScope ? null : sprintScope}
+                    onChange={(next) => setParam("sprint", next)}
+                  />
+                )}
+
+                {termFilterEnabled && !sprintScopeActive && (
+                  <FilterGroup
+                    label="Term"
+                    os={os}
+                    hint={
                       <InfoTip
                         content="Term code format: last two digits of the year + S (spring), F (fall), or X (summer). E.g. 26F = Fall 2026."
                         placement="right"
                       />
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {termFilterOrder(
-                        options.terms.map((t) => ({
-                          id: t.id,
-                          code: t.code,
-                          isCurrent: t.id === options.currentTermId,
-                        })),
-                      ).map((opt) => (
-                        <FilterPill
-                          key={opt.value}
-                          os={os}
-                          selected={effectiveTerm === opt.value}
-                          onClick={() => setTermFilter(opt.value)}
-                        >
-                          {opt.label}
-                        </FilterPill>
-                      ))}
-                    </div>
-                  </div>
+                    }
+                  >
+                    {termFilterOrder(
+                      options.terms.map((t) => ({
+                        id: t.id,
+                        code: t.code,
+                        isCurrent: t.id === options.currentTermId,
+                      })),
+                    ).map((opt) => (
+                      <FilterPill
+                        key={opt.value}
+                        os={os}
+                        selected={effectiveTerm === opt.value}
+                        onClick={() => setTermFilter(opt.value)}
+                      >
+                        {opt.label}
+                      </FilterPill>
+                    ))}
+                  </FilterGroup>
                 )}
+
+                {/* A slice, so it wears the same pills as Term rather than a
+                    switch — switches in this panel mean Layout. */}
+                <FilterGroup label="Assignee" os={os}>
+                  <FilterPill os={os} selected={!onlyMine} onClick={() => setParam("mine", null)}>
+                    Anyone
+                  </FilterPill>
+                  <FilterPill os={os} selected={onlyMine} onClick={() => setParam("mine", "1")}>
+                    Only me
+                  </FilterPill>
+                </FilterGroup>
 
                 {showEpicFilter && (
                   <FilterCombobox
@@ -921,7 +1039,7 @@ export function TaskBoard({
                   />
                 )}
 
-                {epicSprints.length > 0 && (
+                {!sprintFilterEnabled && epicSprints.length > 0 && (
                   <FilterCombobox
                     id="taskboard-sprint-options"
                     label="Sprint"
@@ -933,12 +1051,6 @@ export function TaskBoard({
                     onChange={(next) => setParam("sprint", next)}
                   />
                 )}
-
-                <Toggle
-                  label="Only my tasks"
-                  checked={onlyMine}
-                  onChange={(e) => setParam("mine", e.target.checked ? "1" : null)}
-                />
               </section>
 
               <section
@@ -948,8 +1060,9 @@ export function TaskBoard({
                 )}
               >
                 <FilterSectionLabel os={os}>Layout</FilterSectionLabel>
-                <Toggle
+                <FilterToggleRow
                   label="Hide empty Backlog / Cancelled"
+                  os={os}
                   checked={hideEmptyCols}
                   onChange={toggleHideEmpty}
                 />
@@ -993,7 +1106,10 @@ export function TaskBoard({
                 onSelect={() => void runArchive()}
                 disabled={archiving}
               >
-                {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                <span className="flex items-center gap-1.5">
+                  {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                  <InfoTip content="Immediately hides all Done and Cancelled tasks from the board. Archived tasks are not deleted." />
+                </span>
               </MenuItem>
               <MenuItem
                 icon={<Archive className="h-4 w-4" aria-hidden />}
@@ -1147,9 +1263,12 @@ function FilterCombobox({
     close();
   };
 
+  // A set filter wears the pills' selected dress, so a slice that's on reads
+  // the same whether it was picked from a pill row or typed into a field.
+  const active = value !== null;
+
   return (
     <div
-      className="flex flex-col gap-1.5"
       // Blur is scoped to the whole control, not the input: closing on the
       // input's own blur meant a press anywhere in the list — its padding, the
       // gap between rows, the scrollbar — tore the list down mid-click, which
@@ -1158,55 +1277,97 @@ function FilterCombobox({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) close();
       }}
     >
-      <span className={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}>
-        {label}
-      </span>
-      <div>
-        <input
-          type="text"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={id}
-          aria-autocomplete="list"
-          aria-label={ariaLabel}
-          aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
-          value={open ? query : selectedLabel}
-          placeholder={placeholder}
-          // Opened by an actual press, not by focus: the panel moves focus to
-          // its first control when it opens, and opening on focus meant the
-          // list unfurled on its own the moment you hit Customize.
-          onMouseDown={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              if (!open) return setOpen(true);
-              setActiveIndex((i) => {
-                const n = matches.length;
-                if (n === 0) return 0;
-                return e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
-              });
-            } else if (e.key === "Enter") {
-              if (!open || !matches[activeIndex]) return;
-              e.preventDefault();
-              commit(matches[activeIndex].value);
-            } else if (e.key === "Escape" && open) {
-              // Close the list, not the whole Customize panel behind it.
-              e.preventDefault();
-              e.stopPropagation();
-              close();
-            }
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          className={cn(
-            "w-full rounded-full border px-3 py-1.5 text-xs transition-colors focus:outline-none",
-            os
-              ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
-              : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+      <FilterField label={label} os={os}>
+        <div className="relative">
+          <input
+            type="text"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={id}
+            aria-autocomplete="list"
+            aria-label={ariaLabel}
+            aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
+            value={open ? query : selectedLabel}
+            placeholder={placeholder}
+            // Opened by an actual press, not by focus: the panel moves focus to
+            // its first control when it opens, and opening on focus meant the
+            // list unfurled on its own the moment you hit Customize.
+            onMouseDown={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                if (!open) return setOpen(true);
+                setActiveIndex((i) => {
+                  const n = matches.length;
+                  if (n === 0) return 0;
+                  return e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+                });
+              } else if (e.key === "Enter") {
+                if (!open || !matches[activeIndex]) return;
+                e.preventDefault();
+                commit(matches[activeIndex].value);
+              } else if (e.key === "Escape" && open) {
+                // Close the list, not the whole Customize panel behind it.
+                e.preventDefault();
+                e.stopPropagation();
+                close();
+              }
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            className={cn(
+              "w-full rounded-full border py-1.5 pl-3 pr-8 text-xs transition-colors focus:outline-none",
+              os
+                ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
+                : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+              !open &&
+                active &&
+                (os
+                  ? "border-os-accent bg-os-accent/15 text-os-accent"
+                  : "border-accent-coral bg-accent-coral/10 text-accent-coral"),
+            )}
+          />
+          {/* Without an end affordance the field reads as a text input someone
+              pre-filled with "All epics" — nothing said it opens a list. A set
+              filter swaps it for a clear, so getting back to "all" doesn't mean
+              opening the list to hunt for that row. */}
+          {active && !open ? (
+            <button
+              type="button"
+              aria-label={`Clear ${label.toLowerCase()} filter`}
+              onClick={() => commit(null)}
+              className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors",
+                os ? "text-os-accent hover:bg-os-accent/20" : "text-accent-coral hover:bg-accent-coral/20",
+              )}
+            >
+              <X className="h-3 w-3" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden
+              // Keep focus on the input, so the control's blur-close doesn't
+              // fire between this press and the list rendering.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen((v) => !v);
+              }}
+              className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2",
+                os ? "text-os-muted" : "text-muted-foreground",
+              )}
+            >
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+                aria-hidden
+              />
+            </button>
           )}
-        />
+        </div>
         {open && (
           <ul
             id={id}
@@ -1215,7 +1376,7 @@ function FilterCombobox({
             // and re-focus between mousedown and click is exactly the flicker.
             onMouseDown={(e) => e.preventDefault()}
             className={cn(
-              "mt-1 max-h-40 w-full overflow-y-auto rounded-lg border p-1",
+              "max-h-40 w-full overflow-y-auto rounded-lg border p-1",
               os ? "border-os-container bg-os-well" : "border-border bg-background",
             )}
           >
@@ -1250,7 +1411,7 @@ function FilterCombobox({
             ))}
           </ul>
         )}
-      </div>
+      </FilterField>
     </div>
   );
 }
@@ -1305,7 +1466,7 @@ function ArchivedTasksModal({
       onClose={onClose}
       labelledBy="archived-tasks-title"
       containerClassName={cn(
-        modalCardClass(os, "max-w-xl max-h-[80vh]"),
+        modalCardClass("max-w-xl max-h-[80vh]"),
         "flex flex-col",
       )}
     >
@@ -1400,11 +1561,14 @@ function TaskCard({
   onOpen: () => void;
 }) {
   const { os } = useOsChrome();
+  // dueAt is a date-only value (UTC midnight of the due day). A task is overdue
+  // once the viewer's local calendar day is past that day — not the instant it
+  // is stored at, which would flip overdue at the viewer's local midnight.
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
     card.status !== "Cancelled" &&
-    new Date(card.dueAt).getTime() < Date.now();
+    localTodayUtcDay() > utcDayOf(card.dueAt);
 
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
@@ -1599,12 +1763,16 @@ function formatSince(iso: string): string {
 }
 
 // Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".
+// Task dates are date-only (UTC midnight), so the label reads them in UTC — the
+// same convention as the timeline's day labels — to avoid a west-of-UTC viewer
+// seeing the previous day.
 function formatDuePill(iso: string): string {
   const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear();
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
     ...(sameYear ? {} : { year: "numeric" }),
   });
 }

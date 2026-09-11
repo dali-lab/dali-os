@@ -6,6 +6,7 @@
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { Play } from "lucide-react";
 import type { Route } from "./+types/admin.jobs";
 import { adminHandle } from "~/admin/adminNav";
@@ -99,6 +100,7 @@ function JobRow({ job }: { job: JobView }) {
   const runFetcher = useFetcher();
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const busy =
     toggleFetcher.state !== "idle" ||
     runFetcher.state !== "idle" ||
@@ -239,7 +241,13 @@ function JobRow({ job }: { job: JobView }) {
           <button
             type="button"
             disabled={busy}
-            onClick={() =>
+            onClick={async () => {
+              const ok = await dialog.confirm({
+                title: `Run ${job.name} now?`,
+                description: "This executes the job immediately. Some jobs (digests, reminders, scheduled announcements) may email or Slack members right away.",
+                confirmLabel: "Run now",
+              });
+              if (!ok) return;
               runFetcher.submit(
                 { action: "run" },
                 {
@@ -247,8 +255,8 @@ function JobRow({ job }: { job: JobView }) {
                   action: `/api/jobs/${job.name}`,
                   encType: "application/json",
                 },
-              )
-            }
+              );
+            }}
             className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
           >
             <Play className="h-3 w-3" />

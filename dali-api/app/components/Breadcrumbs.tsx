@@ -43,10 +43,9 @@ export type Crumb = {
 type Handle = {
   breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
   breadcrumbTrail?: (data: unknown) => Crumb[] | null | undefined
-  areaPills?: boolean
-  /** Same contract as `areaPills`, for a page whose switcher row renders under
-   *  either shell (Partners' Organizations / Applications pill) — the row names
-   *  both destinations, so a trail above it only repeats where you are. */
+  /** Suppress the trail entirely on a page whose own switcher row already names
+   *  its destinations (Partners' Organizations / Applications pill) — a trail
+   *  above it would only repeat where you are. */
   hideBreadcrumbs?: boolean
   headerAction?: (data: unknown) => ReactNode
   // A page opts into a documentation guide by declaring a stable docKey (and an
@@ -239,23 +238,7 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  const redesign = useFeatureFlag('sidebar-redesign')
-
-  // Wayfinding contract with AreaPillNav: exactly one row per page. Landing
-  // pages carry a pill row (the active pill marks the location, the Hub pill
-  // carries the way back up) and flag it via handle.areaPills, which
-  // suppresses the trail here. Detail pages have no pills, so breadcrumbs
-  // are their trail back.
-  //
-  // Under the sidebar redesign AreaPillNav renders nothing, so there is no
-  // pill row to defer to and the trail has to come back — otherwise the
-  // layout's header row is left holding the Guide button and nothing else,
-  // which reads as a button stranded above the page.
-  if (!redesign && matches.some((m) => (m as { handle?: Handle }).handle?.areaPills)) {
-    return null
-  }
-
-  // The same contract without the flag, for a row that renders either way.
+  // A page can suppress the trail entirely via handle.hideBreadcrumbs.
   if (matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)) {
     return null
   }
@@ -359,23 +342,26 @@ export function Breadcrumbs() {
           aria-label="Breadcrumb"
           className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
         >
-          {crumbs.map((c, i) => (
-            <span key={i} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
-              {c.icon}
-              {c.siblings ? (
-                <CrumbSwitcher label={c.label} siblings={c.siblings} />
-              ) : c.to ? (
-                <Link to={c.to} className="hover:text-foreground transition-colors">
-                  {c.label}
-                </Link>
-              ) : (
-                <span className="text-foreground font-medium">{c.label}</span>
-              )}
-            </span>
-          ))}
+          {crumbs.map((c, i) => {
+            const leaf = i === crumbs.length - 1
+            return (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+                {c.icon}
+                {c.siblings ? (
+                  <CrumbSwitcher label={c.label} siblings={c.siblings} />
+                ) : c.to ? (
+                  <Link to={c.to} className="hover:text-foreground transition-colors">
+                    {c.label}
+                  </Link>
+                ) : (
+                  <span className="text-foreground font-medium">{c.label}</span>
+                )}
+                {favoriteRoute && leaf && <FavoriteRouteButton inline />}
+              </span>
+            )
+          })}
         </nav>
-        {favoriteRoute && <FavoriteRouteButton inline />}
       </div>
       {action}
     </div>

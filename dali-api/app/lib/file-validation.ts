@@ -1,3 +1,5 @@
+import { getExtension } from "./file-type";
+
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export const MAX_UPLOAD_LABEL = "10 MB";
@@ -35,12 +37,6 @@ export function isBlockedUpload(fileName: string, contentType: string): boolean 
     BLOCKED_UPLOAD_TYPES.has(contentType.toLowerCase()) ||
     (ext !== "" && BLOCKED_UPLOAD_EXTENSIONS.has(ext))
   );
-}
-
-function getExtension(name: string): string {
-  const idx = name.lastIndexOf(".");
-  if (idx < 0) return "";
-  return name.slice(idx).toLowerCase();
 }
 
 export function fileMatchesAccept(

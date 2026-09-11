@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
 import {
@@ -10,6 +10,8 @@ import {
 import {
   type MeetingNoteLocation,
   type MeetingNoteState,
+  CORE_NOTE_FOLDER_LABEL,
+  CORE_NOTE_LABEL,
   emptyMeetingNote,
 } from "~/calendar/components/meeting-note";
 
@@ -21,6 +23,8 @@ import {
 export {
   type MeetingNoteLocation,
   type MeetingNoteState,
+  CORE_NOTE_FOLDER_LABEL,
+  CORE_NOTE_LABEL,
   emptyMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
@@ -57,16 +61,34 @@ type MoveDestination = {
 
 export function MeetingNoteFields({
   note,
-  myProjects,
+  myProjects = [],
   fieldClass,
   labelClass,
+  core = false,
 }: {
   note: MeetingNoteController;
-  myProjects: { id: string; name: string }[];
+  /** Not read in `core` mode — a Core note has no project to file under. */
+  myProjects?: { id: string; name: string }[];
   fieldClass: string;
   labelClass: string;
+  /** The meeting is a Core meeting: the note belongs to Core, not to a project,
+   *  so the About picker collapses to a fixed "Core" instead of offering the
+   *  organizer's projects. */
+  core?: boolean;
 }) {
   const { state } = note;
+
+  // Core has no project to file under, so drop any project the organizer (or the
+  // group prefill) had chosen and name the note for Core. Only fills an empty
+  // name — a name they typed themselves survives the toggle.
+  useEffect(() => {
+    if (!core) return;
+    note.setAbout("");
+    note.setLocation(null);
+    if (state.label.trim() === "") note.setLabel(CORE_NOTE_LABEL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [core]);
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const [drives, setDrives] = useState<PickerDrive[]>([]);
   const [folders, setFolders] = useState<PickerFolder[]>([]);
@@ -115,18 +137,24 @@ export function MeetingNoteFields({
   return (
     <div className="pl-6 space-y-3">
       <div>
-        <label htmlFor="meeting-about" className={labelClass}>
-          About
-        </label>
-        <Select
-          value={state.about}
-          onChange={(v) => note.setAbout(v)}
-          options={[
-            { value: "", label: "General (no project)" },
-            ...myProjects.map((p) => ({ value: p.id, label: p.name })),
-          ]}
-          buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-        />
+        <span className={labelClass}>About</span>
+        {core ? (
+          // One answer, so it reads as a fact rather than a control the
+          // organizer has to make a choice in.
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+            Core
+          </p>
+        ) : (
+          <Select
+            value={state.about}
+            onChange={(v) => note.setAbout(v)}
+            options={[
+              { value: "", label: "General (no project)" },
+              ...myProjects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+          />
+        )}
       </div>
 
       {isProject ? (
@@ -165,18 +193,26 @@ export function MeetingNoteFields({
           </div>
           <div>
             <span className={labelClass}>Save note to</span>
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
-                {locationLabel}
-              </span>
-              <button
-                type="button"
-                onClick={() => void openPicker()}
-                className="shrink-0 rounded-md border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
-              >
-                Change…
-              </button>
-            </div>
+            {core ? (
+              // Core files its notes the way a project does — always its own
+              // meeting-notes folder — so there's no destination to choose.
+              <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+                {CORE_NOTE_FOLDER_LABEL}
+              </p>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                  {locationLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void openPicker()}
+                  className="shrink-0 rounded-md border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+                >
+                  Change…
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

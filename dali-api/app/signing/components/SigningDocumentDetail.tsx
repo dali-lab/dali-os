@@ -13,6 +13,7 @@ import {
   Archive,
   PenLine,
   Trash2,
+  Send,
 } from "lucide-react";
 import {
   DocEditor,
@@ -298,6 +299,10 @@ export function SigningDocumentDetail() {
   const selectedVersion =
     document.versions.find((v) => v.id === selectedVersionId) ?? null;
 
+  // Derive which version ids are currently bound ("in force") from the binding
+  // data already loaded — no additional server call needed.
+  const inForceVersionIds = new Set(document.bindings.map((b) => b.version.id));
+
   // Seed content for the collab room: the latest saved version body. When the
   // room is brand-new (no CollabDocument row yet), CollabDocInner seeds from
   // this after the provider syncs. On subsequent opens, the room already has
@@ -346,17 +351,24 @@ export function SigningDocumentDetail() {
                   : "border-border bg-card hover:bg-muted/40 text-foreground"
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">v{v.versionNumber}</span>
-                {v.publishedAt ? (
-                  <span className="text-xs text-green-600 inline-flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> published
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                    <Circle className="w-3 h-3" /> draft
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {inForceVersionIds.has(v.id) && (
+                    <span className="text-xs text-accent-coral font-medium inline-flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> In force
+                    </span>
+                  )}
+                  {v.publishedAt ? (
+                    <span className="text-xs text-green-600 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> published
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Circle className="w-3 h-3" /> draft
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -616,20 +628,63 @@ export function SigningDocumentDetail() {
                     </button>
                   </Form>
                 )}
-                {selectedVersion.publishedAt && (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="activate" />
-                    <input type="hidden" name="versionId" value={selectedVersion.id} />
-                    <Tooltip content="Bind this version: send sign requests to everyone in the configured audience and start tracking completion." variant="rich">
-                      <button
-                        type="submit"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
-                      >
-                        <Zap className="w-4 h-4" /> Put in force
-                      </button>
-                    </Tooltip>
-                  </Form>
-                )}
+                {selectedVersion.publishedAt && (() => {
+                  const alreadyInForce = inForceVersionIds.has(selectedVersion.id);
+                  if (alreadyInForce) {
+                    // This version is already bound — show its state and offer a
+                    // targeted re-send to whoever hasn't signed yet (same activate
+                    // intent; the server skips already-signed members).
+                    return (
+                      <>
+                        <Tooltip content="This version is already in force. Signatories are tracked in the panel below." variant="rich">
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-accent-coral bg-accent-coral/10 border border-accent-coral/30 cursor-default select-none">
+                            <Zap className="w-4 h-4" /> In force
+                          </span>
+                        </Tooltip>
+                        <Form
+                          method="post"
+                          onSubmit={confirmSubmit({
+                            title: "Re-send sign requests to unsigned members?",
+                            description: `A sign request will be sent to everyone in the configured audience who has not yet signed this version.`,
+                            confirmLabel: "Re-send",
+                          })}
+                        >
+                          <input type="hidden" name="intent" value="activate" />
+                          <input type="hidden" name="versionId" value={selectedVersion.id} />
+                          <Tooltip content="Send a sign request to everyone in the audience who hasn't signed yet — already-signed members are skipped." variant="rich">
+                            <button
+                              type="submit"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-foreground/70 bg-card border border-border hover:bg-muted/50"
+                            >
+                              <Send className="w-4 h-4" /> Re-send to unsigned
+                            </button>
+                          </Tooltip>
+                        </Form>
+                      </>
+                    );
+                  }
+                  return (
+                    <Form
+                      method="post"
+                      onSubmit={confirmSubmit({
+                        title: "Put in force & send sign requests?",
+                        description: `"${document.name}" will be put in force and a sign request will be sent to everyone in the configured audience.`,
+                        confirmLabel: "Send",
+                      })}
+                    >
+                      <input type="hidden" name="intent" value="activate" />
+                      <input type="hidden" name="versionId" value={selectedVersion.id} />
+                      <Tooltip content="Bind this version: send sign requests to everyone in the configured audience and start tracking completion." variant="rich">
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
+                        >
+                          <Zap className="w-4 h-4" /> Put in force
+                        </button>
+                      </Tooltip>
+                    </Form>
+                  );
+                })()}
                 {isEditableDraft(selectedVersion) && (
                   <Form
                     method="post"

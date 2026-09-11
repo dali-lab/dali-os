@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Link2, User, Users, X } from "lucide-react";
+import { Link2, Folder, User, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -21,10 +23,15 @@ type Share = {
   label: string;
   memberCount?: number;
 };
+type ScopeKind = "Private" | "Lab" | "Group";
 type Context = {
   linkAccess: LinkAccess;
   linkPermission: Permission;
   workspaceType: string;
+  kind: string;
+  scopeKind: ScopeKind | null;
+  scopeGroupId: string | null;
+  scopePermission: Permission | null;
   owner: { id: string; name: string; isYou: boolean } | null;
   partnerVisible: boolean;
   hasActivePartner: boolean;
@@ -55,6 +62,15 @@ const LAB_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
 ];
 
+// Folder-level access (the Google-Drive "share this folder" control). "" = the
+// folder inherits from its parent / space default. Group reveals a group picker.
+const FOLDER_SCOPE_OPTIONS: SelectOption<string>[] = [
+  { value: "", label: "Inherit from parent", description: "Same access as the folder it lives in, or the space default." },
+  { value: "Private", label: "Only people you add", description: "Only you and the people/groups above." },
+  { value: "Lab", label: "Everyone in the lab", description: "Any lab member can open it and everything inside." },
+  { value: "Group", label: "A group…", description: "Everyone in a specific group (e.g. Core, a project team)." },
+];
+
 function baseAccessLine(ctx: Context): string {
   switch (ctx.workspaceType) {
     case "Lab":
@@ -72,6 +88,22 @@ function baseAccessLine(ctx: Context): string {
     default:
       return "";
   }
+}
+
+// Map the raw share-route context payload into the dialog's Context shape.
+function toContext(c: any, fallbackWorkspaceType: string): Context {
+  return {
+    linkAccess: c.linkAccess,
+    linkPermission: c.linkPermission,
+    workspaceType: c.page?.workspaceType ?? fallbackWorkspaceType,
+    kind: c.page?.kind ?? "FreeForm",
+    scopeKind: c.scopeKind ?? null,
+    scopeGroupId: c.scopeGroupId ?? null,
+    scopePermission: c.scopePermission ?? null,
+    owner: c.owner ?? null,
+    partnerVisible: !!c.partnerVisible,
+    hasActivePartner: !!c.hasActivePartner,
+  };
 }
 
 export function ShareDialog({
@@ -94,6 +126,8 @@ export function ShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const dialog = useDialog();
+  const foldersEnabled = useFeatureFlag("drive-folder-bindings");
 
   async function post(body: Record<string, string>): Promise<any> {
     const form = new FormData();
@@ -117,14 +151,7 @@ export function ShareDialog({
         return;
       }
       if (d.context) {
-        setCtx({
-          linkAccess: d.context.linkAccess,
-          linkPermission: d.context.linkPermission,
-          workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
-          owner: d.context.owner ?? null,
-          partnerVisible: !!d.context.partnerVisible,
-          hasActivePartner: !!d.context.hasActivePartner,
-        });
+        setCtx(toContext(d.context, page.workspaceType));
       }
       setShares(d.shares ?? []);
     });
@@ -162,14 +189,7 @@ export function ShareDialog({
   async function refresh() {
     const d = await post({ intent: "state" });
     if (d.context) {
-      setCtx({
-        linkAccess: d.context.linkAccess,
-        linkPermission: d.context.linkPermission,
-        workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
-        owner: d.context.owner ?? null,
-        partnerVisible: !!d.context.partnerVisible,
-        hasActivePartner: !!d.context.hasActivePartner,
-      });
+      setCtx(toContext(d.context, page.workspaceType));
     }
     setShares(d.shares ?? []);
   }
@@ -386,7 +406,33 @@ export function ShareDialog({
               disabled={busy || !ctx}
               ariaLabel="General access audience"
               buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
-              onChange={(linkAccess) => {
+              onChange={async (linkAccess) => {
+                // Only confirm when moving to a broader audience; downgrades to
+                // Restricted need no confirmation.
+                if (linkAccess === "Public") {
+                  const ok = await dialog.confirm({
+                    title: "Make this document public?",
+                    description:
+                      "Anyone on the internet will be able to read it — no account required. They won't be able to edit or comment.",
+                    confirmLabel: "Make public",
+                    tone: "destructive",
+                  });
+                  if (!ok) return;
+                } else if (
+                  linkAccess === "LabMembers" &&
+                  (ctx?.workspaceType === "Member" || ctx?.workspaceType === "Project")
+                ) {
+                  const label = isLab ? "Everyone in the lab" : "Anyone in the lab";
+                  const ok = await dialog.confirm({
+                    title: `Share with ${label}?`,
+                    description: isLab
+                      ? "Every lab member will be able to open this document."
+                      : "Any lab member with the link will be able to view this document.",
+                    confirmLabel: "Share",
+                    tone: "destructive",
+                  });
+                  if (!ok) return;
+                }
                 // Public can only be view-only (no identity to attribute writes).
                 // "Everyone in the lab" defaults to edit — the historical lab-wide
                 // default — but stays adjustable via the role dropdown.
@@ -422,6 +468,60 @@ export function ShareDialog({
           )}
         </div>
       </div>
+
+      {/* Folder access — the Google-Drive "share this folder" control. Only for
+          folders, and only when the bindings feature is on. Sets the folder's
+          governing scope, which everything inside inherits. */}
+      {foldersEnabled && ctx?.kind === "Folder" && (
+        <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
+          <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
+            Folder access
+            <InfoTip content="Who can open this folder and everything inside it. Inherited by all documents and subfolders (they can still be shared individually above). 'A group' shares with a whole team, e.g. Core." />
+          </h3>
+          <div className="flex items-start gap-3 rounded-md border border-border px-3 py-3">
+            <Folder className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              <Select
+                value={ctx.scopeKind ?? ""}
+                options={FOLDER_SCOPE_OPTIONS}
+                disabled={busy || !ctx}
+                ariaLabel="Folder access"
+                buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
+                onChange={(scopeKind) =>
+                  void run(
+                    scopeKind === "Group"
+                      ? {
+                          intent: "folder-scope",
+                          scopeKind: "Group",
+                          scopeGroupId: ctx.scopeGroupId ?? groups[0]?.id ?? "",
+                        }
+                      : { intent: "folder-scope", scopeKind },
+                    refresh,
+                  )
+                }
+              />
+              <span className="text-xs text-muted-foreground">
+                {FOLDER_SCOPE_OPTIONS.find((o) => o.value === (ctx.scopeKind ?? ""))?.description}
+              </span>
+              {ctx.scopeKind === "Group" && (
+                <Select
+                  value={ctx.scopeGroupId ?? ""}
+                  options={groups.map((g) => ({ value: g.id, label: g.label }))}
+                  disabled={busy || groups.length === 0}
+                  ariaLabel="Group to share the folder with"
+                  buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
+                  onChange={(scopeGroupId) =>
+                    void run(
+                      { intent: "folder-scope", scopeKind: "Group", scopeGroupId },
+                      refresh,
+                    )
+                  }
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Partners — a project's partner-portal audience, kept distinct from the
           lab "General access" above (share-with-people vs external org). */}

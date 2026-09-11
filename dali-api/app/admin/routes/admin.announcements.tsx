@@ -6,6 +6,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -16,7 +17,6 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
-  Megaphone,
   Search,
   Users,
   UserRound,
@@ -128,7 +128,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function AnnouncementsPage() {
   const { members, groups, publishedForms, scheduled, viewerIsAdmin } =
     useLoaderData<typeof loader>();
-  const { os, pageTitle, card, cardPad } = useOsChrome();
+  const { pageTitle, card, cardPad } = useOsChrome();
 
   // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
   // affordance opens this composer with the bound form + whole-lab audience
@@ -165,6 +165,7 @@ export default function AnnouncementsPage() {
     | null
   >(null);
   const revalidator = useRevalidator();
+  const dialog = useDialog();
 
   // Auto-dismiss the success confirmation after a few seconds; errors stay
   // until the next send attempt.
@@ -217,6 +218,26 @@ export default function AnnouncementsPage() {
   const canSend = title.trim().length > 0 && !sending && hasAudience;
 
   async function send() {
+    // Build a summary of who will receive this and which channels fire.
+    const recipientDesc = allMembers
+      ? `${members.length} lab member${members.length === 1 ? "" : "s"} (whole lab)`
+      : [
+          pickedGroups.size > 0 && `${pickedGroups.size} group${pickedGroups.size === 1 ? "" : "s"}`,
+          pickedUsers.size > 0 && `${pickedUsers.size} ${pickedUsers.size === 1 ? "person" : "people"}`,
+        ]
+          .filter(Boolean)
+          .join(" + ");
+    const channels = ["in-app", "email", ccDartmouth && "Dartmouth email", "Slack DM"]
+      .filter(Boolean)
+      .join(", ");
+    const action = scheduling ? "Schedule" : "Send";
+    const confirmed = await dialog.confirm({
+      title: `${action} announcement to ${recipientDesc}?`,
+      description: `Channels: ${channels}. This is irreversible — recipients will be notified immediately${scheduling ? " at the scheduled time" : ""}.`,
+      confirmLabel: action,
+    });
+    if (!confirmed) return;
+
     setResult(null);
     setSending(true);
     try {
@@ -280,7 +301,6 @@ export default function AnnouncementsPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-5 max-w-3xl">
       <header className="flex items-start gap-3">
-        {!os && <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />}
         <h1 className={pageTitle}>Announcements</h1>
       </header>
 
@@ -585,9 +605,7 @@ export default function AnnouncementsPage() {
           disabled={!canSend}
           className={cn(
             "disabled:opacity-60 disabled:cursor-not-allowed",
-            os
-              ? "os-btn-primary"
-              : "px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors",
+            "os-btn-primary",
           )}
         >
           {sending ? (scheduling ? "Scheduling…" : "Sending…") : scheduling ? "Schedule" : "Send"}
