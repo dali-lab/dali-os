@@ -30,7 +30,6 @@ const BLOCKERS: { label: string; count: (projectId: string) => Promise<number> }
   { label: "budget notes", count: (projectId) => prisma.budgetNote.count({ where: { projectId } }) },
   { label: "staffing assignments", count: (projectId) => prisma.projectAssignment.count({ where: { projectId } }) },
   { label: "epics", count: (projectId) => prisma.epic.count({ where: { projectId } }) },
-  { label: "sprints", count: (projectId) => prisma.sprint.count({ where: { projectId } }) },
   { label: "tasks", count: (projectId) => prisma.task.count({ where: { projectId } }) },
   { label: "scheduled meetings", count: (projectId) => prisma.scheduledMeeting.count({ where: { projectId } }) },
   { label: "mentorship pairs", count: (projectId) => prisma.mentorshipPair.count({ where: { projectId } }) },

@@ -223,7 +223,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "sprint-lifecycle",
     description:
-      "Activates Planned sprints at their start date. Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
+      "Posts a per-sprint wrap-up (done/total of the tasks due in it) to each project's members and Slack channel the day after a sprint — a term-anchored one-week band — ends. Sprints are computed from the project's terms, so nothing is activated or closed; the dedupKey makes the wrap-up fire once.",
     intervalMinutes: 60,
     handler: runSprintLifecycle,
   },

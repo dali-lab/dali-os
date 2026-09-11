@@ -38,10 +38,6 @@ const MANAGE_PROJECT_TEMPLATE_DEF = {
         type: "boolean",
         description: "capture: also carry the project's Overview page as a starting doc (default false).",
       },
-      startDate: {
-        type: "string",
-        description: "instantiate: ISO date to rebase sprint timelines onto (default today).",
-      },
       initialTermId: { type: "string", description: "instantiate: optional first term for the new project." },
       partnerOrgId: { type: "string", description: "instantiate: optional partner org to link." },
     },
@@ -83,15 +79,10 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
     }
 
     case "instantiate": {
-      const startDate = args.startDate ? new Date(args.startDate as string) : undefined;
-      if (startDate && Number.isNaN(startDate.getTime())) {
-        throw new McpInvalidError("startDate is not a valid date");
-      }
       return instantiateProjectTemplate({
         templateId: args.templateId as string,
         name: args.name as string,
         createdBy: ctx.user.id,
-        startDate,
         initialTermId: (args.initialTermId as string | undefined) || null,
         partnerOrgId: (args.partnerOrgId as string | undefined) || null,
       });

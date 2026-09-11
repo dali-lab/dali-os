@@ -1,34 +1,9 @@
-// Tests for the six faceted manage_* tools.
+// Tests for the faceted manage_* tools.
 // Mocks all underlying modules so we can assert routing without a DB.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ─── Stub the underlying tool modules ────────────────────────────────────────
-
-vi.mock("../../create-sprint", () => ({
-  CREATE_SPRINT_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["projectId", "name", "startsAt", "endsAt"] },
-  },
-  runCreateSprint: vi.fn(),
-}));
-vi.mock("../../update-sprint", () => ({
-  UPDATE_SPRINT_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["sprintId"] },
-  },
-  runUpdateSprint: vi.fn(),
-}));
-vi.mock("../../set-sprint-status", () => ({
-  SET_SPRINT_STATUS_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["sprintId", "status"] },
-  },
-  runSetSprintStatus: vi.fn(),
-}));
-vi.mock("../../delete-sprint", () => ({
-  DELETE_SPRINT_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["sprintId"] },
-  },
-  runDeleteSprint: vi.fn(),
-}));
 
 vi.mock("../../create-epic", () => ({
   CREATE_EPIC_TOOL: {
@@ -108,16 +83,10 @@ vi.mock("../../document-curation", () => ({
 
 // ─── Import faceted tools AFTER mocks ────────────────────────────────────────
 
-import { MANAGE_SPRINT_TOOL } from "../manage-sprint";
 import { MANAGE_EPIC_TOOL } from "../manage-epic";
 import { MANAGE_STORY_TOOL } from "../manage-story";
 import { MANAGE_TIME_ENTRY_TOOL } from "../manage-time-entry";
 import { MANAGE_DOCUMENT_SHARING_TOOL } from "../manage-document-sharing";
-
-import { runCreateSprint } from "../../create-sprint";
-import { runUpdateSprint } from "../../update-sprint";
-import { runSetSprintStatus } from "../../set-sprint-status";
-import { runDeleteSprint } from "../../delete-sprint";
 
 import { runCreateEpic } from "../../create-epic";
 import { runUpdateEpic } from "../../update-epic";
@@ -153,73 +122,6 @@ const ctx = {
 };
 
 beforeEach(() => vi.clearAllMocks());
-
-// ─── manage_sprint ────────────────────────────────────────────────────────────
-
-describe("manage_sprint", () => {
-  it("advertises mcp:write scope", () => {
-    expect(MANAGE_SPRINT_TOOL.def.requiredScope).toBe("mcp:write");
-  });
-
-  it("unknown action throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_SPRINT_TOOL.run(ctx, { action: "explode" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-
-  it("create routes to runCreateSprint with userId and stripped args", async () => {
-    vi.mocked(runCreateSprint).mockResolvedValue({ id: "s1" } as any);
-    await MANAGE_SPRINT_TOOL.run(ctx, {
-      action: "create",
-      projectId: "p1",
-      name: "Sprint 1",
-      startsAt: "2026-06-01",
-      endsAt: "2026-06-14",
-    });
-    expect(runCreateSprint).toHaveBeenCalledWith("user-1", {
-      projectId: "p1",
-      name: "Sprint 1",
-      startsAt: "2026-06-01",
-      endsAt: "2026-06-14",
-    });
-  });
-
-  it("update routes to runUpdateSprint", async () => {
-    vi.mocked(runUpdateSprint).mockResolvedValue({ ok: true, sprintId: "s1" } as any);
-    await MANAGE_SPRINT_TOOL.run(ctx, { action: "update", sprintId: "s1", name: "New Name" });
-    expect(runUpdateSprint).toHaveBeenCalledWith("user-1", { sprintId: "s1", name: "New Name" });
-  });
-
-  it("set_status routes to runSetSprintStatus", async () => {
-    vi.mocked(runSetSprintStatus).mockResolvedValue({
-      ok: true,
-      sprintId: "s1",
-      previousStatus: "Planned",
-      newStatus: "Active",
-    } as any);
-    await MANAGE_SPRINT_TOOL.run(ctx, { action: "set_status", sprintId: "s1", status: "Active" });
-    expect(runSetSprintStatus).toHaveBeenCalledWith("user-1", { sprintId: "s1", status: "Active" });
-  });
-
-  it("delete routes to runDeleteSprint", async () => {
-    vi.mocked(runDeleteSprint).mockResolvedValue({ ok: true, sprintId: "s1" } as any);
-    await MANAGE_SPRINT_TOOL.run(ctx, { action: "delete", sprintId: "s1" });
-    expect(runDeleteSprint).toHaveBeenCalledWith("user-1", { sprintId: "s1" });
-  });
-
-  it("create missing required field throws McpInvalidError", async () => {
-    // Missing name, startsAt, endsAt
-    await expect(
-      MANAGE_SPRINT_TOOL.run(ctx, { action: "create", projectId: "p1" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-
-  it("set_status missing status throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_SPRINT_TOOL.run(ctx, { action: "set_status", sprintId: "s1" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-});
 
 // ─── manage_epic ─────────────────────────────────────────────────────────────
 

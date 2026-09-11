@@ -43,7 +43,7 @@ export const SPRINT_PLANNING_PROMPT: PromptDefinition = {
             "- **Candidate tasks** — 8–15 cards from the backlog, prioritized; for each: title, suggested assignee(s), domain, why it belongs.",
             "- **Risks** — anything that would block the sprint (unassigned domain, blocked dependency, stale info).",
             "",
-            "Do NOT call `create_sprint` or `update_task` yet — produce the plan as a markdown proposal for the user to review.",
+            "Sprints are fixed one-week bands (a task lands in a sprint by its dates), so scheduling a task into the sprint means setting its dates. Do NOT call `update_task` yet — produce the plan as a markdown proposal for the user to review.",
           ].join("\n"),
         },
       },

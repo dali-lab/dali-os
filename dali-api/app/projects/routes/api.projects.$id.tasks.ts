@@ -9,8 +9,8 @@ import { fullName } from "~/lib/display";
 
 // POST /api/projects/:id/tasks
 //
-// Create a task on a project. Body: { title, status?, sprintId?, epicId?,
-// storyId?, startsAt? }.
+// Create a task on a project. Body: { title, status?, epicId?, storyId?,
+// startsAt? }. A task's sprint is derived from its dates, not stored.
 // status defaults to "Todo"; position is appended after the current max in
 // the target column so the new card lands last. Mirrors the project-edit
 // permission model (isCore === Admin || Core).
@@ -19,7 +19,6 @@ type Body = {
   title: string;
   description?: string | null;
   status?: string;
-  sprintId?: string | null;
   epicId?: string | null;
   // Parent user story. Must belong to this project.
   storyId?: string | null;
@@ -38,7 +37,6 @@ function isBody(x: unknown): x is Body {
   if (typeof o.title !== "string") return false;
   if (o.description != null && typeof o.description !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
   if (o.storyId != null && typeof o.storyId !== "string") return false;
   if (o.startsAt != null && typeof o.startsAt !== "string") return false;
@@ -161,20 +159,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
   }
 
-  // A sprint/epic id must belong to this project — a foreign id would let a
+  // An epic/story id must belong to this project — a foreign id would let a
   // member of one project file tasks onto another project's board.
-  if (body.sprintId != null) {
-    const sprint = await prisma.sprint.findUnique({
-      where: { id: body.sprintId },
-      select: { projectId: true },
-    });
-    if (!sprint || sprint.projectId !== params.id) {
-      return withCors(
-        request,
-        Response.json({ error: "Sprint is not part of this project" }, { status: 400 }),
-      );
-    }
-  }
   // A story pins its epic (UserStory.epicId is required), so the two are never
   // set independently: a story derives the epic; only a story-less task takes a
   // free-standing epic. This keeps task.storyId and task.epicId from diverging
@@ -242,7 +228,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       description,
       status,
       position,
-      sprintId: body.sprintId ?? null,
       epicId,
       storyId,
       dueAt,
