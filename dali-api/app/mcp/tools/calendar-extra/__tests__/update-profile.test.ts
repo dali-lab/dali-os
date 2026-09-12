@@ -21,12 +21,8 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 vi.mock("~/lib/db");
-vi.mock("~/lib/timezone-preference.server", () => ({
-  syncAvailabilityTimezone: vi.fn().mockResolvedValue(undefined),
-}));
 
 import { prisma } from "~/lib/db";
-import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import {
   runUpdateProfile,
   UPDATE_PROFILE_DEF,
@@ -67,7 +63,7 @@ describe("update_profile", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError", message: "That handle is already taken" });
   });
 
-  it("updates fields and calls syncAvailabilityTimezone when timezone changes", async () => {
+  it("updates fields including the display timezone", async () => {
     mockPrisma.user.update.mockResolvedValue({});
     const out = await runUpdateProfile("u1", {
       firstName: "Alice",
@@ -88,7 +84,6 @@ describe("update_profile", () => {
         data: expect.objectContaining({ firstName: "Alice", timeZone: "America/New_York" }),
       }),
     );
-    expect(syncAvailabilityTimezone).toHaveBeenCalledWith("u1", "America/New_York");
   });
 
   it("returns empty updated when no fields provided", async () => {
