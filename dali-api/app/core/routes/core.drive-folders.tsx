@@ -1,11 +1,11 @@
 // Core ▸ Drive folders — the management surface for the lab-wide "Core
 // governance" folder bindings (see app/lib/bindings.server.ts). Each Core
-// process slot — Agreements, Email templates, Education templates, Rubrics,
-// Application templates, Hiring forms — points at a NORMAL Drive folder that
-// receives that artifact type's auto-filed items. This is the Core equivalent
-// of the per-project / per-offering "Drive folders" settings sections; it's the
-// only place to repoint, create, or clear the Core bindings (they used to be
-// invisible systemKey scaffolding with no UI at all).
+// process slot — Meeting notes, Agreements, Email templates, Education templates
+// — points at a NORMAL Drive folder that receives that artifact type's auto-filed
+// items. (Hiring artifacts have their own peer surface at /hiring/drive-folders.)
+// This is the Core equivalent of the per-project / per-offering "Drive folders"
+// settings sections; it's the only place to repoint, create, or clear the Core
+// bindings (they used to be invisible systemKey scaffolding with no UI at all).
 //
 // Access/sharing of a bound folder is a separate control — open the folder in
 // Drive and use Share. These folders default to a Core-group scope when created.
@@ -38,9 +38,10 @@ export default function CoreDriveFoldersPage() {
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-lg font-semibold text-gray-900">Drive folders</h1>
       <p className="mt-1 text-sm text-gray-500">
-        Where Core auto-files shared lab artifacts — agreements, templates, rubrics, and hiring
-        forms. Point each at any Drive folder, or let DALI create one. These are normal folders:
-        rename, move, or share them like anything else in Drive.
+        Where Core auto-files shared lab artifacts — meeting notes, agreements, and templates.
+        Point each at any Drive folder, or let DALI create one. These are normal folders: rename,
+        move, or share them like anything else in Drive. (Hiring artifacts live under Hiring ▸
+        Drive folders.)
       </p>
       <DriveFolderBindings processType="Core" processId={processId} className="mt-6" />
     </div>

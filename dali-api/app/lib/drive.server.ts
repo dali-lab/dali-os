@@ -569,10 +569,11 @@ async function loadAgreements(
 }
 
 /** Load rubrics. Only called when the caller passes `canManageAgreements: true`
- *  (= real isCore) — rubrics are Core-only artifacts that live in the Core
- *  "rubrics" bound folder. Placed-only (unplaced ones aren't filed yet).
+ *  (= real isCore) — rubrics live in the Hiring singleton's "rubrics" bound
+ *  folder, which is Core-group-scoped (Core-only access). Placed-only (unplaced
+ *  ones aren't filed yet); they surface in the Hiring drive space.
  *
- *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for hiring. */
+ *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for the hiring team. */
 async function loadRubrics(
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {

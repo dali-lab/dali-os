@@ -23,7 +23,7 @@ vi.mock("~/lib/bindings.server", () => ({
   // Folder placement is a side effect; stub the binding folder so the form
   // create just records folderPageId.
   ensureProcessFolder: vi.fn().mockResolvedValue("hiring-folder"),
-  CORE_PROCESS_ID: "core",
+  HIRING_PROCESS_ID: "hiring",
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([{ value: "p1", label: "Project 1" }]),
@@ -90,13 +90,13 @@ describe("loadHiringForm", () => {
 });
 
 describe("ensureHiringTemplate", () => {
-  it("reuses the existing template in the Core application-templates folder", async () => {
+  it("reuses the existing template in the Hiring application-templates folder", async () => {
     mockPrisma.form.findFirst.mockResolvedValue({ id: "tmpl", versions: [{ id: "tv" }] });
 
     const id = await ensureHiringTemplate("actor");
     expect(id).toBe("tmpl");
     expect(ensureProcessFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ processType: "Core", purpose: "application-templates" }),
+      expect.objectContaining({ processType: "HiringCycle", purpose: "application-templates" }),
     );
     expect(mockPrisma.form.create).not.toHaveBeenCalled();
   });

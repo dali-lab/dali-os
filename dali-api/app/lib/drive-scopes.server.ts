@@ -7,6 +7,7 @@ import type { DriveItem } from "~/lib/drive.server";
 import { prisma } from "~/lib/db";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
+import { HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { RoleFlags } from "~/lib/nav-areas";
 
 // Tag each doc/folder item with whether the viewer has favorited it (drives the
@@ -84,8 +85,8 @@ type WorkspaceOut = {
 /**
  * Load all DriveScopes for the Browse lens. Registry-driven: iterates
  * `visibleDriveSpaces(roleFlags)` and dispatches on each space's backing
- * strategy. My Drive, General (Lab-wide), Projects, Education, Core (Core
- * members), and Hiring (hiring team) each materialise per their strategy.
+ * strategy. My Drive, General (Lab-wide), Projects, Education, Core, and Hiring
+ * (the Core-only shared hiring folder set) each materialise per their strategy.
  *
  * The form-placement de-dup rule is preserved:
  *   - A form with folderPageId in scope X stays only in scope X.
@@ -115,8 +116,8 @@ export async function loadDriveScopes({
   request: Request;
 }): Promise<DriveTreeScope[]> {
   // Build the minimal RoleFlags needed by the drive-spaces gates. The registry
-  // gates only read `isCore` (the Hiring space folded into Core); the other
-  // fields default to false (safe: we'd only under-show spaces, never over-show).
+  // gates only read `isCore` (both the Core and Hiring spaces are Core-only); the
+  // other fields default to false (safe: we'd only under-show, never over-show).
   const roleFlags: RoleFlags = {
     isCore,
     hasHiringAccess: false,
@@ -132,8 +133,10 @@ export async function loadDriveScopes({
   const spaces = visibleDriveSpaces(roleFlags);
 
   // The Core space is a virtual filter over Core-group-scoped folders (no
-  // system root any more). Only build it when the viewer can see it.
+  // system root any more). The Hiring space is a virtual filter over the Hiring
+  // singleton's bound folders. Only build each when the viewer can see it.
   const needsCore = spaces.some((s) => s.key === "core");
+  const needsHiring = spaces.some((s) => s.key === "hiring");
 
   const [favIds, linkedProcessMap] = await Promise.all([
     favoritePageIds(userSub),
@@ -203,43 +206,78 @@ export async function loadDriveScopes({
     ]);
   }
 
-  // Carve out the Core subtree from the Lab load (same logic as legacy).
+  // Carve the Core + Hiring subtrees out of the Lab load. Both are ordinary Lab
+  // folders shared with the Core group (scopeKind=Group), so a non-Core viewer
+  // never sees them in labItems — nothing leaks. The Hiring space is the subset
+  // bound to the Hiring singleton; the Core space is everything else Core-scoped.
   let coreItems: DriveItem[] = [];
+  let hiringItems: DriveItem[] = [];
   let labVisibleItems = labItems;
   let coreFolderIds = new Set<string>();
-  if (needsCore) {
-    // Core folders are ordinary Lab folders shared with the Core group
-    // (scopeKind=Group). Only Core members can see them (getPageAccess), so for a
-    // non-Core viewer they're already absent from labItems — nothing leaks. Carve
-    // each Core-scoped folder's subtree out of the Lab load into the Core space.
+  let hiringFolderIds = new Set<string>();
+  if (needsCore || needsHiring) {
     const coreGroup = await prisma.groupDefinition.findUnique({
       where: { systemKey: "core" },
       select: { id: true },
     });
-    const coreRootIds = coreGroup
+    const coreRootIds =
+      needsCore && coreGroup
+        ? (
+            await prisma.page.findMany({
+              where: {
+                workspaceType: "Lab",
+                workspaceId: null,
+                scopeKind: "Group",
+                scopeGroupId: coreGroup.id,
+                archivedAt: null,
+              },
+              select: { id: true },
+            })
+          ).map((p) => p.id)
+        : [];
+    // Hiring roots are whatever folders the Hiring singleton's slots bind to —
+    // keyed off the BINDING, not the scope, so re-sharing a folder can't eject it.
+    const hiringRootIds = needsHiring
       ? (
-          await prisma.page.findMany({
+          await prisma.processFolderBinding.findMany({
             where: {
-              workspaceType: "Lab",
-              workspaceId: null,
-              scopeKind: "Group",
-              scopeGroupId: coreGroup.id,
-              archivedAt: null,
+              processType: "HiringCycle",
+              processId: HIRING_PROCESS_ID,
+              folderPageId: { not: null },
             },
-            select: { id: true },
+            select: { folderPageId: true },
           })
-        ).map((p) => p.id)
+        ).flatMap((b) => (b.folderPageId ? [b.folderPageId] : []))
       : [];
+
+    const inHiring = new Set<string>();
+    for (const rootId of hiringRootIds) {
+      if (!labItems.some((it) => it.id === rootId)) continue;
+      inHiring.add(rootId);
+      for (const id of subtreeIds(labItems, rootId)) inHiring.add(id);
+    }
     const inCore = new Set<string>();
     for (const rootId of coreRootIds) {
       if (!labItems.some((it) => it.id === rootId)) continue;
       inCore.add(rootId);
       for (const id of subtreeIds(labItems, rootId)) inCore.add(id);
     }
+    // A Hiring subtree belongs to the Hiring space, never the Core space (the
+    // hiring folders are Core-scoped, so they'd otherwise land in both).
+    for (const id of inHiring) inCore.delete(id);
+
+    if (inHiring.size > 0) {
+      hiringItems = labItems.filter((it) => inHiring.has(it.id));
+      hiringFolderIds = new Set(hiringItems.filter((i) => i.type === "folder").map((i) => i.id));
+    }
     if (inCore.size > 0) {
       coreItems = labItems.filter((it) => inCore.has(it.id));
-      labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
       coreFolderIds = new Set(coreItems.filter((i) => i.type === "folder").map((i) => i.id));
+    }
+    // Remove BOTH carved sets from the lab-visible items in one pass.
+    const carved = new Set<string>([...inCore, ...inHiring]);
+    if (carved.size > 0) {
+      labVisibleItems = labItems.filter((it) => !carved.has(it.id));
     }
   }
 
@@ -275,9 +313,10 @@ export async function loadDriveScopes({
     });
   }
 
-  // Core forms live inside Core-scoped folders and carry a real parentFolderId
-  // (in coreFolderIds), so no root-lift is needed.
+  // Core + Hiring forms live inside their scoped folders and carry a real
+  // parentFolderId (in coreFolderIds / hiringFolderIds), so no root-lift needed.
   const coreForms = pickScopeForms(coreFolderIds, false, isCore);
+  const hiringForms = pickScopeForms(hiringFolderIds, false, isCore);
   // Lab forms use the un-widened canViewForms gate (same as legacy).
   const labForms = pickScopeForms(labFolderIds, true, canViewForms);
   const projectForms = projectItemArrays.map((_, i) =>
@@ -290,6 +329,7 @@ export async function loadDriveScopes({
 
   // Compose final item lists.
   const finalCoreItems = [...coreItems, ...coreForms];
+  const finalHiringItems = [...hiringItems, ...hiringForms];
   const filteredLab = [...labVisibleItems, ...labForms, ...orphanForms];
   const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
@@ -329,6 +369,16 @@ export async function loadDriveScopes({
             iconEmoji: null,
             items: tagFavorites(finalCoreItems, favIds),
             // Only Core members can see this space.
+            scopeAudience: "Core only",
+          });
+        } else if (space.key === "hiring") {
+          // The Hiring space is a view over the Hiring singleton's bound folders
+          // (rubrics, application templates, hiring forms). Core-only.
+          result.push({
+            id: "hiring",
+            label: "Hiring",
+            iconEmoji: null,
+            items: tagFavorites(finalHiringItems, favIds),
             scopeAudience: "Core only",
           });
         }
@@ -421,10 +471,6 @@ export async function loadDriveScopes({
             scopeAudience: "Enrolled members",
           });
         }
-        break;
-
-      // virtual-filter: deferred to Wave 4; skip.
-      case "virtual-filter":
         break;
     }
   }

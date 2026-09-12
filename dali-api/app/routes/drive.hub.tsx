@@ -59,6 +59,7 @@ export const handle = {
     if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
     if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
     if (scope === "core") return { key: "drive.core", title: "Core Drive" };
+    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
     return { key: "drive.project", title: "Project Drive" };
   },
 };
@@ -1041,10 +1042,10 @@ export default function DriveHub() {
 
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
-  // into the Core drive (the hiring artifacts folded into Core live there).
+  // into the Hiring drive space (the shared hiring folder set).
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
-  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "core" : null);
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
   const currentFolderId = searchParams.get("folder");
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.

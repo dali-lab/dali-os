@@ -49,6 +49,7 @@ describe("DRIVE_SPACES registry", () => {
       "projects",
       "education",
       "core",
+      "hiring",
     ]);
   });
 
@@ -89,22 +90,23 @@ describe("visibleDriveSpaces", () => {
     expect(keys).toContain("education");
   });
 
-  it("hides core from a plain member (and there is no hiring space)", () => {
+  it("hides both the core and hiring spaces from a plain member (both Core-gated)", () => {
     const keys = visibleDriveSpaces(NOBODY).map((s) => s.key);
     expect(keys).not.toContain("core");
     expect(keys).not.toContain("hiring");
   });
 
-  it("shows all spaces (including core) to a Core member", () => {
+  it("shows all spaces (including core and hiring) to a Core member", () => {
     const keys = visibleDriveSpaces(CORE).map((s) => s.key);
     expect(keys).toContain("mine");
     expect(keys).toContain("lab");
     expect(keys).toContain("projects");
     expect(keys).toContain("education");
     expect(keys).toContain("core");
+    expect(keys).toContain("hiring");
   });
 
-  it("does not show a Core space to a hiring-only member (hiring folded into Core)", () => {
+  it("hides core and hiring from a hiring-only member (both are Core-only)", () => {
     const keys = visibleDriveSpaces(HIRING_ONLY).map((s) => s.key);
     expect(keys).not.toContain("core");
     expect(keys).not.toContain("hiring");

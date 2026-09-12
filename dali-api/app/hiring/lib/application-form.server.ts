@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
+import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -51,8 +51,8 @@ function defaultQuestions(): Question[] {
  */
 export async function ensureHiringTemplate(actorId: string): Promise<string> {
   const folderPageId = await ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
+    processType: "HiringCycle",
+    processId: HIRING_PROCESS_ID,
     purpose: "application-templates",
     createdById: actorId,
   });
@@ -126,8 +126,8 @@ export async function createCycleApplicationForm(
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
   const folderPageId = await ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
+    processType: "HiringCycle",
+    processId: HIRING_PROCESS_ID,
     purpose: "hiring-forms",
     createdById: actorId,
   });
@@ -180,8 +180,8 @@ export async function createDomainChallengeForm(
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
   const folderPageId = await ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
+    processType: "HiringCycle",
+    processId: HIRING_PROCESS_ID,
     purpose: "hiring-forms",
     createdById: actorId,
   });

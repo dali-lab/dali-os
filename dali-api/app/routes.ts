@@ -45,10 +45,13 @@ export default [
     // Accepted-applicant provisioning board (DALI email, Slack, Figma,
     // profile form) — Core-only, same sensitivity tier as the lead dashboard.
     route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
-    // Library — challenges, rubrics, and confidentiality agreements behind one
-    // page with pills. The list views are consolidated here; the detail pages
-    // keep their original paths.
+    // Library — an embedded view of the Hiring drive space (rubrics, application
+    // templates, challenge/application forms). Reuses the unified Drive hub; the
+    // detail pages (rubrics, agreements) keep their original paths.
     route("hiring/library", "hiring/routes/library.tsx"),
+    // Config surface for the Hiring folder set (repoint / create / clear the
+    // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
+    route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
     route("hiring/emails", "hiring/routes/email-templates.tsx"),
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),

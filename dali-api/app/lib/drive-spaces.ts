@@ -104,9 +104,20 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     label: "Core",
     icon: Shield,
     // A view over Core-group-scoped folders (ordinary folders shared with the
-    // Core group), not a system-owned scoped root. Hiring folds in here too.
+    // Core group), not a system-owned scoped root.
     backing: "virtual-filter",
     groupQuery: "core",
+    gate: (r) => r.isCore,
+  },
+  {
+    key: "hiring",
+    label: "Hiring",
+    icon: Briefcase,
+    // A view over the Hiring singleton's bound folders (see FOLDER_SLOTS for
+    // HiringCycle / HIRING_PROCESS_ID). Keyed off the BINDING, not the folder's
+    // share scope, so re-sharing a folder never ejects it from this space. The
+    // folders default to Core-group scope, so this space is Core-only.
+    backing: "virtual-filter",
     gate: (r) => r.isCore,
   },
 ];
