@@ -19,6 +19,7 @@ export type OfferingCardData = {
   id: string;
   type: "Miniseries" | "Workshop";
   title: string;
+  iconEmoji?: string | null;
   status: "Draft" | "Published" | "Archived";
   capacity: number;
   requiresReview: boolean;
