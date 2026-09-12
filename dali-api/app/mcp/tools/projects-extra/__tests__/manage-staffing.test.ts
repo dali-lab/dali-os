@@ -15,7 +15,7 @@ vi.mock("~/lib/db", () => ({
       upsert: vi.fn(),
       deleteMany: vi.fn(),
     },
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findFirst: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", async (orig) => {
@@ -25,9 +25,11 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/projects/lib/staffing-events.server", () => ({
   publishCycleChange: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { prisma } from "~/lib/db";
 import { canManageStaffing } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { runManageStaffing, MANAGE_STAFFING_TOOL } from "~/mcp/tools/projects-extra/manage-staffing";
 
 const mockPrisma = prisma as unknown as {
@@ -44,7 +46,7 @@ const mockPrisma = prisma as unknown as {
     upsert: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
-  user: { findUnique: ReturnType<typeof vi.fn> };
+  user: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -71,7 +73,7 @@ describe("manage_staffing", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("set_mentor_role upserts StaffingMentorRole", async () => {
+  it("set_mentor_role upserts StaffingMentorRole and audit-logs (A8)", async () => {
     vi.mocked(canManageStaffing).mockResolvedValue(true);
     mockPrisma.staffingMentorRole.upsert.mockResolvedValue({});
     const out = await runManageStaffing("u1", {
@@ -82,11 +84,14 @@ describe("manage_staffing", () => {
     });
     expect(out).toMatchObject({ ok: true });
     expect(mockPrisma.staffingMentorRole.upsert).toHaveBeenCalled();
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "staffing.mentorRole.set", targetId: "u2" }),
+    );
   });
 
-  it("add_board_member upserts StaffingBoardMember", async () => {
+  it("add_board_member upserts StaffingBoardMember for a DALI member (A4)", async () => {
     vi.mocked(canManageStaffing).mockResolvedValue(true);
-    mockPrisma.user.findUnique.mockResolvedValue({ id: "u2" });
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "u2" });
     mockPrisma.staffingBoardMember.upsert.mockResolvedValue({});
     const out = await runManageStaffing("u1", {
       action: "add_board_member",
@@ -94,6 +99,12 @@ describe("manage_staffing", () => {
       userId: "u2",
     });
     expect(out).toMatchObject({ ok: true });
+    // Must query with the daliMember guard, not a bare findUnique.
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "u2", daliMember: { isNot: null } }),
+      }),
+    );
     expect(mockPrisma.staffingBoardMember.upsert).toHaveBeenCalled();
   });
 
@@ -111,11 +122,12 @@ describe("manage_staffing", () => {
     });
   });
 
-  it("add_board_member throws when user not found", async () => {
+  it("add_board_member rejects a non-DALI-member user (A4)", async () => {
     vi.mocked(canManageStaffing).mockResolvedValue(true);
-    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.findFirst.mockResolvedValue(null);
     await expect(
       runManageStaffing("u1", { action: "add_board_member", cycleId: "c1", userId: "u-nope" }),
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(mockPrisma.staffingBoardMember.upsert).not.toHaveBeenCalled();
   });
 });

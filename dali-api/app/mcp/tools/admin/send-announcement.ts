@@ -12,14 +12,25 @@ import type { NotificationKind } from "~/generated/prisma/client";
 export const SEND_ANNOUNCEMENT_TOOL = {
   name: "send_announcement",
   description:
-    "Send (or schedule) a lab-wide announcement. Pick at least one audience source: allMembers, groupIds, or userIds. Supply sendAt (ISO datetime) to schedule for a future time instead of sending immediately. Requires Core.",
+    "Send (or schedule) a lab-wide announcement. Pick at least one audience source: allMembers, groupIds, or userIds. Supply sendAt (ISO datetime) to schedule for a future time instead of sending immediately. Use cancel_scheduled to cancel a pending scheduled announcement. Requires Core.",
   inputSchema: {
     type: "object" as const,
     properties: {
+      action: {
+        type: "string",
+        enum: ["send", "cancel_scheduled"],
+        description:
+          "send — send or schedule an announcement (default); cancel_scheduled — cancel a pending scheduled announcement by id.",
+      },
+      scheduledAnnouncementId: {
+        type: "string",
+        description:
+          "Required for cancel_scheduled: the id of the pending scheduled announcement to cancel.",
+      },
       title: {
         type: "string",
         maxLength: 200,
-        description: "Announcement title (required).",
+        description: "Announcement title (required for send).",
       },
       body: {
         type: "string",
@@ -68,14 +79,16 @@ export const SEND_ANNOUNCEMENT_TOOL = {
         description: "Individual user IDs to include in the recipient set.",
       },
     },
-    required: ["title"],
+    required: [],
     additionalProperties: false,
   },
   requiredScope: "mcp:admin" as const,
 };
 
 type Input = {
-  title: string;
+  action?: string;
+  scheduledAnnouncementId?: string;
+  title?: string;
   body?: string;
   link?: string;
   kind?: NotificationKind;
@@ -92,6 +105,24 @@ export async function runSendAnnouncement(callerId: string, input: Input) {
   if (!(await isCore(callerId))) {
     throw new McpForbiddenError("Only Core leads can send announcements.");
   }
+
+  if (input.action === "cancel_scheduled") {
+    if (!input.scheduledAnnouncementId) {
+      throw new McpInvalidError("scheduledAnnouncementId is required for cancel_scheduled.");
+    }
+    const result = await prisma.scheduledAnnouncement.updateMany({
+      where: { id: input.scheduledAnnouncementId, sentAt: null, canceledAt: null },
+      data: { canceledAt: new Date() },
+    });
+    if (result.count === 0)
+      throw new McpNotFoundError("Scheduled announcement not found or already sent/canceled.");
+    return { ok: true, canceled: true };
+  }
+
+  if (!input.title) {
+    throw new McpInvalidError("title is required for send.");
+  }
+  const title = input.title;
 
   const groupIds = input.groupIds ?? [];
   const userIds = input.userIds ?? [];
@@ -118,7 +149,7 @@ export async function runSendAnnouncement(callerId: string, input: Input) {
     const scheduled = await prisma.scheduledAnnouncement.create({
       data: {
         createdByUserId: callerId,
-        title: input.title,
+        title,
         body: input.body ?? null,
         link: input.link ?? null,
         kind: input.kind ?? "General",
@@ -138,7 +169,7 @@ export async function runSendAnnouncement(callerId: string, input: Input) {
   // Immediate send path.
   const result = await sendAnnouncement({
     createdByUserId: callerId,
-    title: input.title,
+    title,
     body: input.body ?? null,
     link: input.link ?? null,
     kind: input.kind ?? null,

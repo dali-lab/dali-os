@@ -3,13 +3,13 @@
 // Mirrors the spirit of update_task_status — self-service is allowed.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 
 export const ADD_TASK_COMMENT_TOOL = {
   name: "add_task_comment",
   description:
-    "Append a comment to a project task. Allowed for the task's assignees and for Core members.",
+    "Append a comment to a project task. Allowed for anyone with project edit access (Core or staffed on the project — the same gate the web comment box uses) and, as self-service, the task's own assignees.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -37,12 +37,17 @@ export async function runAddTaskComment(callerId: string, input: Input) {
 
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
-    select: { id: true, assignees: { select: { userId: true } } },
+    select: { id: true, projectId: true, assignees: { select: { userId: true } } },
   });
   if (!task) throw new AddTaskCommentError("Task not found", 404);
 
+  // Match the web comment gate (requireProjectEditAccess): Core or anyone
+  // staffed on the project. Plus the task's own assignees for self-service
+  // (same extension as update_task_status). The tool used to be assignee-or-
+  // Core, which was narrower than the web — a project member could move/rename
+  // a task but not comment on it.
   const isAssignee = task.assignees.some((a) => a.userId === callerId);
-  if (!isAssignee && !(await isCore(callerId))) {
+  if (!isAssignee && !(await canEditProject(callerId, task.projectId))) {
     throw new AddTaskCommentError("Forbidden", 403);
   }
 

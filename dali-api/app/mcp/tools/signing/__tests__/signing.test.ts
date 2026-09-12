@@ -213,8 +213,9 @@ describe("scopes", () => {
   it("get_signed_document requires mcp:read", () => {
     expect(GET_SIGNED_DOCUMENT_TOOL.requiredScope).toBe("mcp:read");
   });
-  it("list_agreement_signatures requires mcp:read", () => {
-    expect(LIST_AGREEMENT_SIGNATURES_TOOL.requiredScope).toBe("mcp:read");
+  it("list_agreement_signatures requires mcp:admin", () => {
+    // Core-only at runtime — the scope tag matches the gate (A9).
+    expect(LIST_AGREEMENT_SIGNATURES_TOOL.requiredScope).toBe("mcp:admin");
   });
   it("sign_document requires mcp:write", () => {
     expect(SIGN_DOCUMENT_TOOL.requiredScope).toBe("mcp:write");

@@ -8,12 +8,23 @@ vi.mock("~/lib/db", () => ({
     },
     emailTemplateVersion: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
     },
     dALIMember: {
       findUnique: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
   },
+}));
+vi.mock("~/lib/email", () => ({
+  renderEmail: vi.fn().mockReturnValue({ subject: "Test Subject", html: "<p>Hello</p>" }),
+}));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn().mockResolvedValue({ id: "out-1" }),
+  drainNow: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
@@ -25,6 +36,8 @@ vi.mock("~/lib/bindings.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { renderEmail } from "~/lib/email";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import {
   runManageEmailTemplate,
   MANAGE_EMAIL_TEMPLATE_TOOL,
@@ -38,9 +51,11 @@ const mockPrisma = prisma as unknown as {
   };
   emailTemplateVersion: {
     findFirst: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
   dALIMember: { findUnique: ReturnType<typeof vi.fn> };
+  user: { findUnique: ReturnType<typeof vi.fn> };
 };
 
 function makeCtx(userId = "u-core"): McpCtx {
@@ -187,6 +202,69 @@ describe("manage_email_template", () => {
           templateId: "tmpl-1",
           subject: "Oops",
         }),
+      ).rejects.toMatchObject({ name: "McpForbiddenError", status: 403 });
+    });
+  });
+
+  describe("action: send_test", () => {
+    beforeEach(() => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.emailTemplateVersion.findUnique.mockResolvedValue({
+        subject: "Hello {{firstName}}",
+        body: "<p>Welcome to {{domain}}!</p>",
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        firstName: "Core",
+        daliEmail: "core@dali.dartmouth.edu",
+      });
+      vi.mocked(enqueueOutbound).mockResolvedValue({ id: "out-1" } as any);
+      vi.mocked(drainNow).mockResolvedValue(undefined as any);
+      vi.mocked(renderEmail).mockReturnValue({ subject: "Hello Core", html: "<p>Welcome!</p>" });
+    });
+
+    it("sends a test email to caller's DALI address and returns ok+sentTo", async () => {
+      const out = await runManageEmailTemplate(makeCtx(), {
+        action: "send_test",
+        versionId: "ver-1",
+      });
+      expect(out).toEqual({ ok: true, sentTo: "core@dali.dartmouth.edu" });
+      expect(mockPrisma.emailTemplateVersion.findUnique).toHaveBeenCalledWith({
+        where: { id: "ver-1" },
+        select: { subject: true, body: true },
+      });
+      expect(enqueueOutbound).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: "core@dali.dartmouth.edu",
+          eventType: "admin.test_email",
+        }),
+      );
+      expect(drainNow).toHaveBeenCalledWith(["out-1"]);
+    });
+
+    it("throws McpNotFoundError when the version does not exist", async () => {
+      mockPrisma.emailTemplateVersion.findUnique.mockResolvedValue(null);
+      await expect(
+        runManageEmailTemplate(makeCtx(), { action: "send_test", versionId: "ver-gone" }),
+      ).rejects.toMatchObject({ name: "McpNotFoundError", status: 404 });
+    });
+
+    it("throws McpInvalidError when caller has no DALI email", async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ firstName: "Core", daliEmail: null });
+      await expect(
+        runManageEmailTemplate(makeCtx(), { action: "send_test", versionId: "ver-1" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
+    });
+
+    it("throws McpInvalidError when versionId is missing", async () => {
+      await expect(
+        runManageEmailTemplate(makeCtx(), { action: "send_test" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
+    });
+
+    it("throws McpForbiddenError when caller is not Core", async () => {
+      vi.mocked(isCore).mockResolvedValue(false);
+      await expect(
+        runManageEmailTemplate(makeCtx(), { action: "send_test", versionId: "ver-1" }),
       ).rejects.toMatchObject({ name: "McpForbiddenError", status: 403 });
     });
   });
