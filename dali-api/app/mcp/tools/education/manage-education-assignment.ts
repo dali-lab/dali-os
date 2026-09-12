@@ -47,8 +47,9 @@ export const MANAGE_EDUCATION_ASSIGNMENT_TOOL = {
       },
       submissionType: {
         type: "string",
-        enum: ["Text", "File", "Mixed"],
-        description: "How students submit. Required for create.",
+        enum: ["Text", "File", "Mixed", "Link", "Doc", "Complete"],
+        description:
+          "How students submit: Text (rich text), File (upload), Mixed (both), Link (URL), Doc (collab doc), Complete (mark-done, no artifact). Required for create.",
       },
       sessionId: {
         type: "string",

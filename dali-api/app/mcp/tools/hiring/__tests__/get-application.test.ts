@@ -162,4 +162,61 @@ describe("get_application", () => {
       interviews: [],
     });
   });
+
+  it("blinds the applicant on an anonymized Standard cycle before release (A1)", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      ...fakeDa,
+      application: {
+        ...fakeDa.application,
+        applicationCycle: {
+          id: "cy1",
+          generalRubricVersionId: null,
+          cycleType: "Standard",
+          anonymizeReview: true,
+        },
+      },
+      decisions: [], // no Released decision → still blinded
+    });
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+    });
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
+    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
+    // anonLabelMapForCycle (real) reads prisma.application.findMany.
+    (prisma as any).application.findMany.mockResolvedValue([{ id: "app1" }]);
+
+    const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
+    expect(result.application.applicant.firstName).toBe("Applicant 1");
+    expect(result.application.applicant.lastName).toBe("");
+  });
+
+  it("does NOT blind once a decision is Released (A1)", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      ...fakeDa,
+      application: {
+        ...fakeDa.application,
+        applicationCycle: {
+          id: "cy1",
+          generalRubricVersionId: null,
+          cycleType: "Standard",
+          anonymizeReview: true,
+        },
+      },
+      decisions: [{ stage: "Released" }],
+    });
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+    });
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
+    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
+
+    const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
+    expect(result.application.applicant.firstName).toBe("Alice");
+  });
 });

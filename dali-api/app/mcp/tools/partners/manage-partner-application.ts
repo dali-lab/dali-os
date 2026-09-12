@@ -21,6 +21,7 @@ import {
   setApplicationFormBinding,
   clearApplicationFormBinding,
 } from "~/partners/lib/application-form.server";
+import { setApplicationStatus } from "~/partners/lib/partner-activity.server";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -185,16 +186,18 @@ export async function runManagePartnerApplication(
         `Invalid status '${status}'. Valid values: ${PARTNER_APPLICATION_STATUSES.join(", ")}`,
       );
     }
-    try {
-      await prisma.partnerApplication.update({
-        where: { id: input.applicationId as string },
-        data: { status },
-      });
-    } catch (e) {
-      if ((e as { code?: string })?.code === "P2025") {
-        throw new McpNotFoundError(`Partner application ${input.applicationId} not found`);
-      }
-      throw e;
+    // Route through setApplicationStatus so a StatusChanged PartnerActivity row
+    // is written (mirrors api.partner-applications.$id.status.ts + the web
+    // status intent). A bare prisma.update leaves the application timeline with
+    // no record of who changed the status or when. Note: transactional CRM
+    // side effects (partner-facing accept/reject/etc. emails) stay web-only.
+    const prev = await setApplicationStatus(prisma, {
+      applicationId: input.applicationId as string,
+      to: status,
+      actorUserId: callerId,
+    });
+    if (prev === null) {
+      throw new McpNotFoundError(`Partner application ${input.applicationId} not found`);
     }
     return { ok: true };
   }

@@ -154,6 +154,40 @@ describe("set_staffing_assignment", () => {
     expect(mockPrisma.staffingAssignment.create).not.toHaveBeenCalled();
   });
 
+  it("deletes the canonical ProjectAssignment when leaving a project (A3 roster leak)", async () => {
+    mockPrisma.staffingAssignment.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.projectAssignment.deleteMany.mockResolvedValue({ count: 1 });
+    // Drag to Unassigned FROM a specific project: projectId null + fromProjectId.
+    await runSetStaffingAssignment(ME, {
+      cycleId: "cyc-1",
+      userId: "u1",
+      projectId: null,
+      fromProjectId: "p-old",
+    });
+    // Confirmed rows on the source project are Declined...
+    expect(mockPrisma.staffingAssignment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ projectId: "p-old", status: "Confirmed" }),
+        data: { status: "Declined" },
+      }),
+    );
+    // ...AND the canonical roster row is removed (payroll/jobx/profile), keyed
+    // by term — this is the leak the web fixed in PR #1533.
+    expect(mockPrisma.projectAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", projectId: "p-old", termId: "term-1" },
+    });
+  });
+
+  it("does NOT touch ProjectAssignment on a plain add-to-second-project (no fromProjectId)", async () => {
+    await runSetStaffingAssignment(ME, {
+      cycleId: "cyc-1",
+      userId: "u1",
+      projectId: "p1",
+      domains: [{ domainId: "d1", level: "P2" }],
+    });
+    expect(mockPrisma.projectAssignment.deleteMany).not.toHaveBeenCalled();
+  });
+
   it("requires domains when assigning to a project", async () => {
     await expect(
       runSetStaffingAssignment(ME, { cycleId: "cyc-1", userId: "u1", projectId: "p1" }),
