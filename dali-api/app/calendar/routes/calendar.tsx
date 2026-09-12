@@ -9,7 +9,9 @@ import {
   Trash2,
   CalendarDays,
   CalendarPlus,
+  Clock3,
   Search,
+  Settings,
   X,
 } from "lucide-react";
 import { fullName } from "~/lib/display";
@@ -50,7 +52,6 @@ import type {
   GroupAvailDay,
   PerUserFree,
   GroupAvailResponse,
-  CalendarView,
 } from "~/calendar/lib/types";
 import {
   ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
@@ -88,9 +89,8 @@ import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
-import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
-import { AvailabilityView } from "~/calendar/components/AvailabilityView";
+import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { useIsMobile } from "~/hooks/useIsMobile";
 
@@ -164,45 +164,6 @@ export function shouldRevalidate({
   return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
 }
 
-/** The shell both of the calendar's settings dialogs wear — Calendars and
- *  Availability — so they read as one surface with two bodies. Only the width
- *  varies, and only because the bodies do. */
-function SettingsDialog({
-  title,
-  width = "max-w-3xl",
-  onClose,
-  children,
-}: {
-  title: string;
-  width?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div role="dialog" aria-modal="true" aria-label={title} className={cn("w-full rounded-xl cal-surface p-6", width)}>
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
   return <CalendarScreen data={data} />;
@@ -216,7 +177,6 @@ export default function CalendarPage() {
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
-const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
@@ -235,7 +195,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [mode, setMode] = useState<"browse" | "meeting">(() =>
     searchParams.get("tab") === "schedule" ? "meeting" : "browse",
   );
-  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Per-role colours for logged time, persisted like the hidden-calendar set.
   const [roleColors, setRoleColors] = useState<Record<string, string>>(() => {
@@ -276,7 +236,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       /* ignore */
     }
   }, [layers]);
-  const toggleLayer = (key: keyof LayerVisibility) => setLayers((p) => ({ ...p, [key]: !p[key] }));
+  const setLayer = (key: keyof LayerVisibility, value: boolean) =>
+    setLayers((p) => (p[key] === value ? p : { ...p, [key]: value }));
 
   const [excludedRoleKeys, setExcludedRoleKeys] = useState<Set<string>>(new Set());
   const toggleRoleKey = (key: string) =>
@@ -324,7 +285,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     setCreateModalUsers(userIds);
     setCreateModalOpen(true);
   };
-  const [calendarsOpen, setCalendarsOpen] = useState(false);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
   // Anchored popover that replaced the old settings modal: working-hours edit
@@ -705,16 +665,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
   const iconToolBtn =
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
-  // The two settings dialogs open from the same pill, tinted by what they are:
-  // Availability is a status colour, Calendars the os accent. One builder so
-  // they can't drift into two different-looking controls.
-  const settingsPill = (tone: "green" | "accent") =>
-    cn(
-      "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-bold transition-colors",
-      tone === "green"
-        ? "border-os-green/35 bg-os-green/10 text-os-green hover:bg-os-green/20"
-        : "border-os-accent/35 bg-os-accent/10 text-os-accent hover:bg-os-accent/20",
-    );
+  // Calendars, classes and working hours are all "how this page is set up",
+  // so they share one pill and one dialog rather than a row of them.
+  const settingsPill =
+    "inline-flex items-center gap-2 rounded-full border border-os-accent/35 bg-os-accent/10 px-4 py-2 text-[13px] font-bold text-os-accent transition-colors hover:bg-os-accent/20";
 
   return (
     <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
@@ -744,40 +698,38 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           {mode === "browse" && (
             <>
 
-              <div className="inline-flex rounded-lg bg-muted p-0.5">
-                {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
+              {/* What the grid *is*, where the view switcher used to sit. The
+                  view (month/week/day/agenda) moved to the rail, above the
+                  mini-month, since both answer "which dates am I looking at". */}
+              <div className="inline-flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Grid mode">
+                {([false, true] as const).map((logged) => (
                   <button
-                    key={v}
+                    key={String(logged)}
                     type="button"
-                    onClick={() => changeView(v)}
+                    role="tab"
+                    aria-selected={layers.logged === logged}
+                    onClick={() => setLayer("logged", logged)}
                     className={cn(
-                      "rounded-md px-3 py-1 text-sm font-medium transition-colors",
-                      v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                      layers.logged === logged
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {VIEW_LABELS[v]}
+                    {logged ? <Clock3 className="h-3.5 w-3.5" /> : <CalendarDays className="h-3.5 w-3.5" />}
+                    {logged ? "Timesheet" : "Calendar"}
                   </button>
                 ))}
               </div>
 
               <button
                 type="button"
-                onClick={() => setCalendarsOpen(true)}
-                className={settingsPill("accent")}
-                title="Connect and manage calendars"
+                onClick={() => setSettingsOpen(true)}
+                className={settingsPill}
+                title="Calendars, classes and working hours"
               >
-                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
-                Calendars
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAvailabilityOpen(true)}
-                className={settingsPill("green")}
-                title="Classes and working hours"
-              >
-                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
-                Availability
+                <Settings className="h-3.5 w-3.5" />
+                Settings
               </button>
 
               <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
@@ -807,7 +759,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             hiddenCals={hiddenCals}
             toggleHiddenCal={toggleHiddenCal}
             layers={layers}
-            onToggleTimesheet={() => toggleLayer("logged")}
+            view={view}
+            onChangeView={changeView}
             myRoles={data.myRoles}
             roleColors={roleColors}
             roleHours={roleHours}
@@ -951,23 +904,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           }}
         />
       )}
-      {calendarsOpen &&
-        createPortal(
-          /* Wider than Availability: its rows carry a name plus three toggle
-             columns, where Availability stacks full-width cards. Same shell
-             either way — width follows the body, the dress doesn't. */
-          <SettingsDialog title="Calendars" width="max-w-5xl" onClose={() => setCalendarsOpen(false)}>
-            <CalendarsPanel data={data} hiddenCals={hiddenCals} toggleHiddenCal={toggleHiddenCal} />
-          </SettingsDialog>,
-          document.body,
-        )}
-      {availabilityOpen &&
-        createPortal(
-          <SettingsDialog title="Availability" onClose={() => setAvailabilityOpen(false)}>
-            <AvailabilityView data={data} />
-          </SettingsDialog>,
-          document.body,
-        )}
+      {settingsOpen && (
+        <CalendarSettingsModal
+          data={data}
+          hiddenCals={hiddenCals}
+          toggleHiddenCal={toggleHiddenCal}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {createModalOpen && (
         <CreateEventModal
           data={data}
