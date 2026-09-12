@@ -20,6 +20,7 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 // areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
 // switcher itself under either shell — a full-width underline row above the
@@ -235,12 +236,11 @@ export default function PartnersOrganizations() {
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
         <TablessHistoryNavInline />
         <SegmentedTabButtons label="Partners" items={areaTabs} />
-        <input
-          type="search"
+        <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by organization name"
-          className="flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 max-w-[420px] px-5 py-2.5 rounded-full bg-card"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">

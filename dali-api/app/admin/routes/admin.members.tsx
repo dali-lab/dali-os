@@ -12,6 +12,7 @@ import { coreCycleTermIds } from "~/lib/core-cycle";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Users, Shield, Briefcase, Crown, Compass } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -325,16 +326,12 @@ export default function AdminConsoleMembers() {
           <label htmlFor="member-search" className="sr-only">
             Search members by name or email
           </label>
-          <input
+          <SearchInput
             id="member-search"
-            type="search"
             placeholder="Search by name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className={cn(
-              "w-full border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm sm:text-sm",
-              "rounded-full",
-            )}
+            containerClassName="w-full sm:max-w-sm"
           />
         </div>
       </header>

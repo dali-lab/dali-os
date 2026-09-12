@@ -28,6 +28,10 @@ import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
+import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
+import { ACTIVITIES_FLAG } from '~/lib/activities'
+import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
+import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import type { Route } from './+types/layout'
@@ -197,6 +201,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
+  // Activities (specs/activities.md): the time-boxed "mode" layer, gated on its
+  // own flag. Resolved with the current path so the overlay payload only carries
+  // THIS route's codes — the answers for other routes never reach the client.
+  const activeActivities = flags[ACTIVITIES_FLAG]
+    ? await timed(request, 'activities', () =>
+        resolveActiveActivitiesForUser(
+          auth.user.sub,
+          roles,
+          new Date(),
+          new URL(request.url).pathname,
+        ),
+      )
+    : []
+
   // Per-user display timezone, threaded to every descendant via
   // useUserTimeZone() so client formatting matches the server (hydration-safe).
   // `explicit` distinguishes "never set" (→ silent auto-detect) from "set to
@@ -215,7 +233,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -226,6 +244,8 @@ const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/api/tour',
   '/api/timezone',
   '/onboarding',
+  // Submitting a code updates the shell bar's progress label.
+  '/api/activities',
   '/api/hiring/cycles',
   '/logout',
   '/members',
@@ -244,7 +264,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -476,6 +496,10 @@ export default function AppLayoutRoute() {
           <Outlet />
         </PageDocOutlet>
       </div>
+      {/* On-page activity codes for the current route. Inside pageContent so in
+          tab mode they render within the page's iframe (where the page lives),
+          not in the outer shell. */}
+      <ActivityOverlay />
     </div>
   )
 
@@ -484,6 +508,7 @@ export default function AppLayoutRoute() {
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
+        <ActivitiesProvider activities={activeActivities}>
         <PageDocProvider>
           <div
             className={cn(
@@ -501,6 +526,7 @@ export default function AppLayoutRoute() {
             {pageContent}
           </div>
         </PageDocProvider>
+        </ActivitiesProvider>
       </FeatureFlagsProvider>
     )
   }
@@ -511,6 +537,7 @@ export default function AppLayoutRoute() {
 
   return (
     <FeatureFlagsProvider flags={flags}>
+      <ActivitiesProvider activities={activeActivities}>
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
@@ -525,6 +552,7 @@ export default function AppLayoutRoute() {
       {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
+      </ActivitiesProvider>
     </FeatureFlagsProvider>
   )
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { page: { findUnique: vi.fn() } },
+  prisma: { page: { findUnique: vi.fn() }, groupDefinition: { findUnique: vi.fn() } },
 }));
 
 vi.mock("../pageAccess.server", () => ({
@@ -14,16 +14,20 @@ import { driveFolderCrumbs } from "../drive-crumbs.server";
 
 const mockPrisma = prisma as any;
 
-// A tiny Drive tree: a doc parented under "sub", itself under the Core root.
-//   Core (drive:core-root) ▸ Subfolder(sub) ▸ <doc>
+// A tiny Drive tree: a doc parented under "sub", itself under the Core-scoped
+// folder (scopeKind=Group on the core group).
+//   Core (scoped folder) ▸ Subfolder(sub) ▸ <doc>
 const TREE: Record<string, any> = {
-  sub: { id: "sub", title: "Subfolder", iconEmoji: null, parentPageId: "core-root", systemKey: null },
+  sub: { id: "sub", title: "Subfolder", iconEmoji: null, parentPageId: "core-root" },
   "core-root": {
     id: "core-root",
     title: "Core",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: "drive:core-root",
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    workspaceType: "Lab",
+    archivedAt: null,
   },
   // A plain Lab folder (no scope) directly under the Lab drive root.
   labfolder: {
@@ -31,7 +35,6 @@ const TREE: Record<string, any> = {
     title: "Team Notes",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
   },
   // Folders in the non-Lab workspaces — the scope comes from workspaceType.
   projfolder: {
@@ -39,7 +42,6 @@ const TREE: Record<string, any> = {
     title: "Sprint Docs",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Project",
     archivedAt: null,
   },
@@ -48,7 +50,6 @@ const TREE: Record<string, any> = {
     title: "Forms",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "EducationOffering",
     archivedAt: null,
   },
@@ -57,7 +58,6 @@ const TREE: Record<string, any> = {
     title: "Private Notes",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Member",
     archivedAt: null,
   },
@@ -67,7 +67,6 @@ const TREE: Record<string, any> = {
     title: "Old Stuff",
     iconEmoji: null,
     parentPageId: null,
-    systemKey: null,
     workspaceType: "Lab",
     archivedAt: new Date("2026-01-01"),
   },
@@ -81,6 +80,8 @@ beforeEach(() => {
   mockPrisma.page.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
     Promise.resolve(TREE[where.id] ?? null),
   );
+  // Core scope is detected via a folder's scopeKind=Group on the core group.
+  mockPrisma.groupDefinition.findUnique.mockResolvedValue({ id: "core-grp" });
 });
 
 describe("driveFolderCrumbs access filtering", () => {
@@ -101,7 +102,11 @@ describe("driveFolderCrumbs access filtering", () => {
     const crumbs = await driveFolderCrumbs("sub", "core-member");
 
     expect(crumbs.scope).toBe("core");
-    expect(crumbs.folders).toEqual([{ id: "sub", title: "Subfolder", iconEmoji: null }]);
+    // The Core-scoped folder is now an ordinary crumb (not a hidden system root).
+    expect(crumbs.folders).toEqual([
+      { id: "core-root", title: "Core", iconEmoji: null },
+      { id: "sub", title: "Subfolder", iconEmoji: null },
+    ]);
   });
 
   it("keeps ordinary Lab folder crumbs the viewer can view", async () => {

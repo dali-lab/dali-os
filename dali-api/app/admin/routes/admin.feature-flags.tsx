@@ -7,6 +7,7 @@
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.feature-flags";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -18,6 +19,7 @@ import { fullName } from "~/lib/display";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
 import { listFlagsForAdmin, type AdminFlagView } from "~/lib/feature-flags.server";
 import { buttonClasses } from "~/components/ui/Button";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("feature-flags");
@@ -65,6 +67,7 @@ type Member = { id: string; name: string; email: string | null };
 function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] }) {
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const busy = saveFetcher.state !== "idle";
 
   const [enabled, setEnabled] = useState(flag.enabled);
@@ -104,7 +107,20 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
     );
   }
 
-  function save() {
+  async function save() {
+    // Confirm when the save would newly turn "everyone" on — this makes the
+    // flag active for every user, which can be a large-scale change.
+    const everyoneNewlyOn = everyone && !flag.everyone;
+    if (everyoneNewlyOn) {
+      const memberCount = members.length;
+      const countLabel = memberCount > 0 ? ` (${memberCount} users)` : "";
+      const ok = await dialog.confirm({
+        title: `Enable ${flag.label} for everyone${countLabel}?`,
+        description: `This turns on "${flag.key}" for all users regardless of role or individual targeting.`,
+        confirmLabel: "Enable for everyone",
+      });
+      if (!ok) return;
+    }
     saveFetcher.submit(
       { enabled, everyone, roles, userIds, note: flag.note, variant },
       {
@@ -249,13 +265,13 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
             </div>
           )}
           <div className="relative mt-1.5 max-w-sm">
-            <input
-              type="text"
+            <SearchInput
+              size="sm"
               value={search}
               disabled={!enabled}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Add a person by name or email…"
-              className="w-full rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm disabled:opacity-50"
+              containerClassName="w-full"
             />
             {matches.length > 0 && (
               <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg">
@@ -286,7 +302,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
         <button
           type="button"
           disabled={busy || !dirty}
-          onClick={save}
+          onClick={() => void save()}
           className={buttonClasses("primary", "sm")}
         >
           {busy ? "Saving…" : "Save"}

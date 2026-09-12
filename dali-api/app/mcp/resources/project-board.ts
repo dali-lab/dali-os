@@ -1,17 +1,22 @@
 // MCP resource `dali://projects/{projectId}/board` — full board snapshot for
-// a project: every sprint (active first), the tasks under each sprint grouped
-// by status column, plus the project's backlog count. Lets a client cache one
-// payload instead of looping through list_sprints/list_my_tasks. Read-only.
+// a project: every sprint (the term-anchored one-week bands, current first),
+// the tasks under each sprint grouped by status column, plus the project's
+// backlog (undated tasks). Sprints are computed from the project's terms — a
+// task belongs to the sprint its date falls in. Lets a client cache one payload
+// instead of looping through list_sprints/list_my_tasks. Read-only.
 
 import { prisma } from "~/lib/db";
 import { TASK_STATUSES, type TaskStatus } from "~/projects/lib/task-board";
+import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
 import { fullName } from "~/lib/display";
+
+const SPRINT_STEP = SPRINT_DAYS * DAY;
 
 export const PROJECT_BOARD_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/board",
   name: "Project board",
   description:
-    "A project's full sprint board: every sprint with its tasks grouped by status (Todo, InProgress, InReview, Done, Cancelled). One round-trip; sized to one project.",
+    "A project's full sprint board: every sprint (term-anchored week) with its tasks grouped by status (Todo, InProgress, InReview, Done, Cancelled), plus the undated backlog. One round-trip; sized to one project.",
   mimeType: "application/json",
   requiredScope: "mcp:read" as const,
 };
@@ -33,23 +38,20 @@ export class ProjectBoardNotFoundError extends Error {
 export async function readProjectBoardResource(projectId: string): Promise<string> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, name: true, status: true },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      projectTerms: {
+        select: {
+          term: { select: { code: true, startDate: true, endDate: true, sortKey: true } },
+        },
+      },
+    },
   });
   if (!project) throw new ProjectBoardNotFoundError(projectId);
 
-  const [sprints, tasks, backlogCount] = await Promise.all([
-    prisma.sprint.findMany({
-      where: { projectId },
-      orderBy: [{ status: "asc" }, { startsAt: "desc" }],
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        startsAt: true,
-        endsAt: true,
-        epicId: true,
-      },
-    }),
+  const [tasks, backlogCount] = await Promise.all([
     prisma.task.findMany({
       where: { projectId },
       orderBy: [{ status: "asc" }, { position: "asc" }],
@@ -58,10 +60,10 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
         title: true,
         status: true,
         priority: true,
-        sprintId: true,
+        startsAt: true,
+        dueAt: true,
         epicId: true,
         position: true,
-        dueAt: true,
         assignees: {
           select: {
             user: { select: { id: true, firstName: true, lastName: true } },
@@ -70,7 +72,12 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
       },
     }),
     prisma.task.count({
-      where: { projectId, sprintId: null, status: { notIn: ["Done", "Cancelled"] } },
+      where: {
+        projectId,
+        startsAt: null,
+        dueAt: null,
+        status: { notIn: ["Done", "Cancelled"] },
+      },
     }),
   ]);
 
@@ -90,7 +97,30 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
     ) as Record<TaskStatus, Card[]>;
   }
 
-  const sprintBoards = new Map<string, Record<TaskStatus, Card[]>>();
+  // The term-anchored sprint bands (Sprint 1..N per term), oldest term first.
+  const today = localTodayUtcDay(new Date());
+  const bands: {
+    key: number;
+    end: number;
+    term: string;
+    label: string;
+    phase: "past" | "current" | "upcoming";
+  }[] = [];
+  for (const { term: t } of project.projectTerms.sort(
+    (a, b) => a.term.sortKey - b.term.sortKey,
+  )) {
+    const start = utcDayOf(t.startDate.toISOString());
+    const end = utcDayOf(t.endDate.toISOString());
+    let n = 0;
+    for (let key = start; key <= end; key += SPRINT_STEP, n++) {
+      const bandEnd = Math.min(key + SPRINT_STEP - DAY, end);
+      const phase =
+        today >= key && today <= bandEnd ? "current" : today > bandEnd ? "past" : "upcoming";
+      bands.push({ key, end: bandEnd, term: t.code, label: `Sprint ${n + 1}`, phase });
+    }
+  }
+
+  const sprintBoards = new Map<number, Record<TaskStatus, Card[]>>();
   const backlog = emptyBoard();
 
   for (const t of tasks) {
@@ -106,9 +136,13 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
         name: fullName(a.user),
       })),
     };
-    if (t.sprintId) {
-      if (!sprintBoards.has(t.sprintId)) sprintBoards.set(t.sprintId, emptyBoard());
-      sprintBoards.get(t.sprintId)![t.status].push(card);
+    // A task belongs to the sprint its anchor date (due, else start) falls in.
+    const anchor = t.dueAt ?? t.startsAt;
+    const day = anchor ? utcDayOf(anchor.toISOString()) : null;
+    const band = day === null ? undefined : bands.find((b) => day >= b.key && day <= b.end);
+    if (band) {
+      if (!sprintBoards.has(band.key)) sprintBoards.set(band.key, emptyBoard());
+      sprintBoards.get(band.key)![t.status].push(card);
     } else {
       backlog[t.status].push(card);
     }
@@ -121,14 +155,13 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
         name: project.name,
         status: project.status,
       },
-      sprints: sprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        startsAt: s.startsAt.toISOString(),
-        endsAt: s.endsAt.toISOString(),
-        epicId: s.epicId,
-        tasks: sprintBoards.get(s.id) ?? emptyBoard(),
+      sprints: bands.map((b) => ({
+        term: b.term,
+        label: b.label,
+        phase: b.phase,
+        startsAt: new Date(b.key).toISOString(),
+        endsAt: new Date(b.end + DAY).toISOString(),
+        tasks: sprintBoards.get(b.key) ?? emptyBoard(),
       })),
       backlog: {
         openCount: backlogCount,

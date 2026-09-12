@@ -14,7 +14,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { ensureCoreDriveRoot } from "~/lib/pages";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 import type {
   SigningGateScope,
   SigningAudience,
@@ -107,6 +107,14 @@ export async function action({ request }: Route.ActionArgs) {
     const audience = formData.get("audience") as SigningAudience;
     const cadence = formData.get("cadence") as SigningCadence;
 
+    // File the new agreement into the Core Agreements binding folder up front so
+    // its Drive breadcrumb resolves immediately. Best-effort — never block create.
+    const folderPageId = await ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "agreements",
+      createdById: auth.user.sub,
+    }).catch(() => null);
     const doc = await prisma.signingDocument.create({
       data: {
         name,
@@ -114,12 +122,9 @@ export async function action({ request }: Route.ActionArgs) {
         gateScope: SCOPES.includes(gateScope) ? gateScope : "None",
         audience: AUDIENCES.includes(audience) ? audience : "Manual",
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
+        folderPageId,
       },
     });
-    // File the new agreement into Core ▸ Agreements immediately (it's created
-    // unplaced) so its Drive breadcrumb resolves without waiting for the next
-    // Core-drive visit. Idempotent + best-effort — never block creation.
-    await ensureCoreDriveRoot(auth.user.sub).catch(() => null);
     // Land on the Drive-namespaced route so the browser opens the agreement in
     // the Drive rather than the admin URL.
     return redirect(`/documents/agreement/${doc.id}`);

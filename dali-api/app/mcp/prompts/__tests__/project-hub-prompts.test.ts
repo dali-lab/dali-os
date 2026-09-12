@@ -28,7 +28,7 @@ describe("project hub prompts", () => {
     expect(msgs[0].content.text).toContain("dali://projects/p1/board");
   });
 
-  it("retro falls back to 'most recent' wording when sprintId is omitted", () => {
+  it("retro falls back to 'most recent' wording when sprint is omitted", () => {
     const msgs = RETRO_PROMPT.build({ projectId: "p1" });
     expect(msgs[0].content.text).toContain("most recent");
   });

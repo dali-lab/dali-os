@@ -1,4 +1,4 @@
-// MCP `update_task` — edit fields on a task (title/priority/dueAt/sprintId/
+// MCP `update_task` — edit fields on a task (title/priority/dueAt/
 // epicId/storyId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core or project
 // member). Use `update_task_status` for status changes (it has special
 // column-rebalance semantics).
@@ -14,7 +14,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const UPDATE_TASK_TOOL = {
   name: "update_task",
   description:
-    "Edit fields on a project task (title, priority, due date, sprint, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
+    "Edit fields on a project task (title, priority, due date, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A task's sprint is derived from its dates. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -24,10 +24,6 @@ export const UPDATE_TASK_TOOL = {
       dueAt: {
         type: "string",
         description: "ISO timestamp. Empty string clears.",
-      },
-      sprintId: {
-        type: "string",
-        description: "Sprint to move task into. Empty string = backlog.",
       },
       epicId: {
         type: "string",
@@ -59,7 +55,6 @@ type Input = {
   title?: string;
   priority?: Priority;
   dueAt?: string;
-  sprintId?: string;
   epicId?: string;
   storyId?: string;
   domainId?: string;
@@ -95,7 +90,6 @@ export async function runUpdateTask(callerId: string, input: Input) {
     title?: string;
     priority?: Priority;
     dueAt?: Date | null;
-    sprintId?: string | null;
     epicId?: string | null;
     storyId?: string | null;
     domainId?: string | null;
@@ -117,23 +111,9 @@ export async function runUpdateTask(callerId: string, input: Input) {
       data.dueAt = d;
     }
   }
-  // Sprint/epic reassignments are validated against the task's own project so
+  // Epic/story reassignments are validated against the task's own project so
   // one project's editor can't attach the task to another project's board
   // (matches the web PATCH route's guard).
-  if (input.sprintId !== undefined) {
-    if (input.sprintId === "") {
-      data.sprintId = null;
-    } else {
-      const sprint = await prisma.sprint.findUnique({
-        where: { id: input.sprintId },
-        select: { projectId: true },
-      });
-      if (!sprint || sprint.projectId !== task.projectId) {
-        throw new UpdateTaskError("Sprint is not part of this project", 400);
-      }
-      data.sprintId = input.sprintId;
-    }
-  }
   // Epic and story reconcile together, never independently: a story pins its
   // epic (UserStory.epicId is required). An explicit story wins and sets the
   // epic; a bare epic change drops a now-orphaned story so the two can't
@@ -208,7 +188,6 @@ export async function runUpdateTask(callerId: string, input: Input) {
     wantsAssignees ||
     "priority" in data ||
     "dueAt" in data ||
-    "sprintId" in data ||
     "epicId" in data ||
     "domainId" in data;
   if (task.githubIssueNumber !== null && syncableChanged) {

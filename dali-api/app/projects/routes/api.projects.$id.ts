@@ -30,7 +30,6 @@ const BLOCKERS: { label: string; count: (projectId: string) => Promise<number> }
   { label: "budget notes", count: (projectId) => prisma.budgetNote.count({ where: { projectId } }) },
   { label: "staffing assignments", count: (projectId) => prisma.projectAssignment.count({ where: { projectId } }) },
   { label: "epics", count: (projectId) => prisma.epic.count({ where: { projectId } }) },
-  { label: "sprints", count: (projectId) => prisma.sprint.count({ where: { projectId } }) },
   { label: "tasks", count: (projectId) => prisma.task.count({ where: { projectId } }) },
   { label: "scheduled meetings", count: (projectId) => prisma.scheduledMeeting.count({ where: { projectId } }) },
   { label: "mentorship pairs", count: (projectId) => prisma.mentorshipPair.count({ where: { projectId } }) },
@@ -76,19 +75,30 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   // The "Team meeting notes" / "Partner meeting notes" folders (see
   // ensureMeetingNotesFolder in ~/lib/pages.ts) are backfilled on every project
-  // page view and can't be archived (api.documents.$id.ts refuses systemKey
-  // pages), so without this they'd count as permanent, un-clearable "documents"
-  // and block deletion forever. They're empty Folder-kind containers, not
-  // authored content, so exclude and clean them up the same way as overview/PRD.
-  const meetingNotesFolders = await prisma.page.findMany({
-    where: {
-      workspaceType: "Project",
-      workspaceId: projectId,
-      kind: "Folder",
-      systemKey: { not: null },
-    },
-    select: { id: true, contentDocId: true },
+  // page view, so without this they'd count as permanent, un-clearable
+  // "documents" and block deletion forever. They're empty Folder-kind
+  // containers, not authored content — find them via the project's folder
+  // bindings (they're ordinary folders now, no systemKey marker), scoped to the
+  // project's own workspace so a rebound folder living elsewhere isn't swept up,
+  // and exclude + clean them up the same way as overview/PRD.
+  const projectBindings = await prisma.processFolderBinding.findMany({
+    where: { processType: "Project", processId: projectId, folderPageId: { not: null } },
+    select: { folderPageId: true },
   });
+  const boundFolderIds = projectBindings
+    .map((b) => b.folderPageId)
+    .filter((id): id is string => id !== null);
+  const meetingNotesFolders = boundFolderIds.length
+    ? await prisma.page.findMany({
+        where: {
+          workspaceType: "Project",
+          workspaceId: projectId,
+          kind: "Folder",
+          id: { in: boundFolderIds },
+        },
+        select: { id: true, contentDocId: true },
+      })
+    : [];
   const excludedPageIds = [...systemPageIds, ...meetingNotesFolders.map((p) => p.id)];
   const authoredPages = await prisma.page.count({
     where: {

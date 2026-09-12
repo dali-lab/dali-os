@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { Link, useSearchParams, useRevalidator } from "react-router";
 import { TermFilter } from "~/components/TermFilter";
 import type { TermOption } from "~/lib/terms.shared";
@@ -25,6 +26,7 @@ import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
+import { FinalizeAllModal } from "./FinalizeAllModal";
 import { AddMemberFlow } from "./AddMemberFlow";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
@@ -97,6 +99,8 @@ export function StaffingBoard({
   const [openBid, setOpenBid] = useState<{ userId: string; columnKey: string } | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
+  // Whether the "Finalize all" (whole-cycle) modal is open.
+  const [finalizeAllOpen, setFinalizeAllOpen] = useState(false);
 
   // Per-card mentor/mentee role overrides for this cycle (userId → isMentor).
   // A member's role defaults to their level (P3 → mentor); an override flips it.
@@ -694,19 +698,16 @@ export function StaffingBoard({
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none"
               aria-hidden
             />
             <input
-              type="text"
+              type="search"
               value={boardQuery}
               onChange={(e) => setBoardQuery(e.target.value)}
               placeholder="Search people, domains, application…"
               aria-label="Search the board"
-              className={cn(
-                "w-56 sm:w-72 text-sm pl-7 pr-7 py-1 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
-                os ? "rounded-os-item focus:ring-os-accent/40" : "rounded-md focus:ring-accent-coral/30",
-              )}
+              className="w-56 sm:w-72 text-sm pl-9 pr-8 py-1.5 border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
             {boardQuery && (
               <button
@@ -736,6 +737,17 @@ export function StaffingBoard({
               onStaffToProject={(userId, projectId) => void addMemberToProject(userId, projectId)}
               onExternalMentorAdded={() => loadExternalMentorsRef.current()}
             />
+          )}
+          {canManage && projects.length > 0 && (
+            <Tooltip
+              variant="rich"
+              content="Finalize every project on the board at once. Defaults to propagating assignments only; opt into Slack/GitHub/email per run."
+            >
+              <Button variant="secondary" size="sm" onClick={() => setFinalizeAllOpen(true)}>
+                <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
+                Finalize all
+              </Button>
+            </Tooltip>
           )}
           <DomainFilter
             domains={domains}
@@ -889,6 +901,15 @@ export function StaffingBoard({
         />
       )}
 
+      {finalizeAllOpen && (
+        <FinalizeAllModal
+          open={true}
+          onClose={() => setFinalizeAllOpen(false)}
+          cycleId={cycleId}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+        />
+      )}
+
     </div>
   );
 }
@@ -936,6 +957,7 @@ function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termC
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
   const { os } = useOsChrome();
+  const dialog = useDialog();
   const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -948,6 +970,13 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
 
   async function run() {
     if (!channel.trim()) return;
+    const name = channel.trim();
+    const confirmed = await dialog.confirm({
+      title: `Create #${name}?`,
+      description: `This creates #${name} on Slack and invites all Core members, Admins, and everyone staffed on a project this term. This cannot be undone from here.`,
+      confirmLabel: "Create + invite",
+    });
+    if (!confirmed) return;
     setRunning(true);
     setResult(null);
     try {
@@ -1011,15 +1040,17 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
               : "rounded-md focus:ring-accent-coral/30",
           )}
         />
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={running || !channel.trim()}
-          onClick={run}
-          className="whitespace-nowrap"
-        >
-          {running ? "Creating…" : "Create + invite"}
-        </Button>
+        <Tooltip content="Creates the Slack channel and invites all Core, Admins, and everyone staffed this term">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running || !channel.trim()}
+            onClick={run}
+            className="whitespace-nowrap"
+          >
+            {running ? "Creating…" : "Create + invite"}
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

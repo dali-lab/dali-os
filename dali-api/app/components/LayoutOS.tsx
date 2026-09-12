@@ -24,6 +24,7 @@ import { userInitials } from '~/lib/display'
 import { TabWorkspace } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
@@ -101,7 +102,12 @@ function railRowClass(active: boolean, collapsed: boolean) {
     collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
     active
       ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
-      : 'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+      : cn(
+          'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
+          // Match the active state / sub-tabs: right-rounded hover, square on
+          // the left where the rail accent sits (not a bare rectangle).
+          !collapsed && 'rounded-r-os-item',
+        ),
     collapsed && active && 'bg-os-container text-foreground',
   )
 }
@@ -893,6 +899,7 @@ export function LayoutOS({
             own scrollport rather than squashing the favourites bar. */}
         {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
         <DesktopBanner />
+        <ActivityLauncher />
         {tabless ? (
           <ShellGuideProvider>
             <div className="flex min-h-0 flex-1 flex-col">

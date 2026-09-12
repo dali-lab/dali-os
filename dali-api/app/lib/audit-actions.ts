@@ -36,6 +36,11 @@ export const AUDIT_ACTIONS = [
   "jobs.toggle",
   "jobs.run",
   "feature-flags.update",
+  "activities.create",
+  "activities.update",
+  "activities.status",
+  "activities.clone",
+  "activities.delete",
   "staffing.assign",
   "staffing.finalize",
   "staffing.term_channel",
@@ -133,6 +138,25 @@ export const AUDIT_ACTIONS = [
   "education.form-binding.set",
   // Drive unified tree (Wave 3): placement move for files and forms.
   "drive.item.move",
+  // Infrastructure dashboard (Fly.io + Neon admin console). Destructive and
+  // provisioning actions carry their specifics in metadata (kind, resource ids,
+  // before/after) — never tokens or connection secrets.
+  "infra.project.save",
+  "infra.project.delete",
+  "infra.refresh",
+  "infra.fly.action",
+  "infra.fly.destroy",
+  "infra.neon.endpoint",
+  "infra.neon.quota",
+  "infra.neon.project.create",
+  "infra.neon.destroy",
+  "infra.reap",
+  "infra.config",
+  "infra.request.create",
+  "infra.request.resolve",
+  // Payroll export: Technigala termly hire roster changes.
+  "payroll.technigala.add",
+  "payroll.technigala.remove",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

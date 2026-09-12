@@ -13,27 +13,27 @@ export const RETRO_PROMPT: PromptDefinition = {
       required: true,
     },
     {
-      name: "sprintId",
-      description: "Sprint.id to retro. If omitted, retro the most recent Active or Closed sprint.",
+      name: "sprint",
+      description:
+        "Sprint label to retro, e.g. \"Sprint 3\". If omitted, retro the most recently ended sprint.",
       required: false,
     },
   ],
   build(args) {
     const projectId = args.projectId;
-    const sprintHint = args.sprintId
-      ? `for sprint ${args.sprintId}`
-      : "for the most recent sprint (find it via list_sprints and pick the latest Active or Closed one)";
+    const sprintHint = args.sprint
+      ? `for ${args.sprint}`
+      : "for the most recent sprint (find it via list_sprints and pick the latest past sprint)";
     return [
       {
         role: "user",
         content: {
           type: "text",
           text: [
-            `Draft a retrospective ${sprintHint} on project ${projectId}. Use the dalios MCP tools:`,
+            `Draft a retrospective ${sprintHint} on project ${projectId}. Sprints are fixed one-week bands (Sprint 1..N per term); a task belongs to a sprint by its dates. Use the dalios MCP tools:`,
             "",
-            `1. Call \`list_sprints\` with projectId="${projectId}" to find the target sprint if not given.`,
-            `2. Call \`list_my_tasks\` (filter by status to include Done/Cancelled) and use \`get_project_overview\` to find tasks in that sprint by id.`,
-            `3. Read resource \`dali://projects/${projectId}/board\` for the full task snapshot.`,
+            `1. Call \`list_sprints\` with projectId="${projectId}" to see the sprint calendar and pick the target sprint's date range.`,
+            `2. Read resource \`dali://projects/${projectId}/board\` for the full task snapshot grouped by sprint.`,
             "",
             "Then write a retrospective with:",
             "",

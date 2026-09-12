@@ -1,6 +1,7 @@
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.domains";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -15,6 +16,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { ChevronDown, Trash2, Plus, X } from "lucide-react";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -291,13 +293,13 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
               <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
               <div className="absolute left-0 z-20 mt-1 w-64 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
                 <div className="p-2 border-b border-border">
-                  <input
-                    type="text"
+                  <SearchInput
+                    size="sm"
                     autoFocus
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    containerClassName="w-full"
                   />
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
@@ -395,29 +397,44 @@ function RemoveEligibilityButton({ eligibilityId }: { eligibilityId: string }) {
 
 function AddEligibilityForm({
   domainId,
+  domainName,
   member,
   onAdded,
 }: {
   domainId: string;
+  domainName: string;
   member: Member;
   onAdded: () => void;
 }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
+
+  async function assign(level: Level) {
+    const name = memberLabel(member);
+    const ok = await dialog.confirm({
+      title: `Assign ${name} as ${level} in ${domainName}?`,
+      description: "The member will be notified of their new domain eligibility.",
+      confirmLabel: `Assign ${level}`,
+    });
+    if (!ok) return;
+    fetcher.submit(
+      { intent: "add-eligibility", userId: member.id, domainId, level },
+      { method: "post" },
+    );
+    onAdded();
+  }
+
   return (
-    <fetcher.Form method="post" onSubmit={onAdded} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50">
-      <input type="hidden" name="intent" value="add-eligibility" />
-      <input type="hidden" name="userId" value={member.id} />
-      <input type="hidden" name="domainId" value={domainId} />
-      <button type="submit" className="text-left flex-1 text-sm text-foreground/80" name="level" value="P1">
+    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50">
+      <span className="text-left flex-1 text-sm text-foreground/80">
         {memberLabel(member)}
-      </button>
+      </span>
       <div className="flex gap-1">
         {ALLOWED_LEVELS.map((l) => (
-          <Tooltip key={l} content={`Assign ${l}`}>
+          <Tooltip key={l} content={`Assign ${l} — notifies member`}>
             <button
-              type="submit"
-              name="level"
-              value={l}
+              type="button"
+              onClick={() => void assign(l)}
               className={`px-1.5 py-0.5 text-[10px] font-bold leading-none rounded border border-border hover:bg-muted/50 ${LEVEL_BADGE[l]}`}
             >
               {l}
@@ -425,7 +442,7 @@ function AddEligibilityForm({
           </Tooltip>
         ))}
       </div>
-    </fetcher.Form>
+    </div>
   );
 }
 
@@ -474,13 +491,13 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
               <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
               <div className="absolute left-0 z-20 mt-1 w-80 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
                 <div className="p-2 border-b border-border">
-                  <input
-                    type="text"
+                  <SearchInput
+                    size="sm"
                     autoFocus
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    containerClassName="w-full"
                   />
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
@@ -491,6 +508,7 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
                       <AddEligibilityForm
                         key={member.id}
                         domainId={domain.id}
+                        domainName={domain.name}
                         member={member}
                         onAdded={() => { setOpen(false); setSearch(""); }}
                       />
@@ -516,6 +534,7 @@ function DomainRowItem({
   viewerIsAdmin: boolean;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
+  const dialog = useDialog();
   const inUseBy = describeDomainUsage(domain._count);
   const inUse = inUseBy.length > 0;
   const isDeleting = fetcher.state !== "idle";
@@ -542,29 +561,38 @@ function DomainRowItem({
         )}
       </div>
       {viewerIsAdmin && (
-        <fetcher.Form method="post">
-          <input type="hidden" name="intent" value="delete-domain" />
-          <input type="hidden" name="domainId" value={domain.id} />
-          <Tooltip
-            content={
-              inUse
-                ? `Cannot delete — in use by ${inUseBy.join(", ")}. Remove all references first.`
-                : "Delete domain"
-            }
-            variant={inUse ? "rich" : "label"}
-          >
-            <span>
-              <button
-                type="submit"
-                disabled={inUse || isDeleting}
-                aria-label="Delete"
-                className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </span>
-          </Tooltip>
-        </fetcher.Form>
+        <Tooltip
+          content={
+            inUse
+              ? `Cannot delete — in use by ${inUseBy.join(", ")}. Remove all references first.`
+              : "Delete domain"
+          }
+          variant={inUse ? "rich" : "label"}
+        >
+          <span>
+            <button
+              type="button"
+              disabled={inUse || isDeleting}
+              aria-label="Delete"
+              onClick={async () => {
+                const ok = await dialog.confirm({
+                  title: `Delete domain "${domain.name}"?`,
+                  description: "This permanently removes the domain and cannot be undone.",
+                  tone: "destructive",
+                  confirmLabel: "Delete domain",
+                });
+                if (!ok) return;
+                fetcher.submit(
+                  { intent: "delete-domain", domainId: domain.id },
+                  { method: "post" },
+                );
+              }}
+              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </span>
+        </Tooltip>
       )}
     </li>
   );

@@ -45,10 +45,13 @@ export default [
     // Accepted-applicant provisioning board (DALI email, Slack, Figma,
     // profile form) — Core-only, same sensitivity tier as the lead dashboard.
     route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
-    // Library — challenges, rubrics, and confidentiality agreements behind one
-    // page with pills. The list views are consolidated here; the detail pages
-    // keep their original paths.
+    // Library — an embedded view of the Hiring drive space (rubrics, application
+    // templates, challenge/application forms). Reuses the unified Drive hub; the
+    // detail pages (rubrics, agreements) keep their original paths.
     route("hiring/library", "hiring/routes/library.tsx"),
+    // Config surface for the Hiring folder set (repoint / create / clear the
+    // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
+    route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
     route("hiring/emails", "hiring/routes/email-templates.tsx"),
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
@@ -75,10 +78,13 @@ export default [
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/activities", "admin/routes/admin.activities.tsx"),
+    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -105,6 +111,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/attendance", "core/routes/core.attendance.tsx"),
+    route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
@@ -349,6 +356,15 @@ export default [
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
 
+  // Activities (specs/activities.md): the time-boxed "mode" layer — the
+  // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
+  // activity modal (progress + leaderboard on GET; code submit on POST); the
+  // modal floats over whatever page the member is exploring, so there is no
+  // navigable surface page. Authored in Admin → Activities.
+  route("api/activities/:id", "routes/api.activities.$id.ts"),
+  // Live push for the surface modal (leaderboard/progress) — see §7.6.
+  route("api/activities/:id/stream", "routes/api.activities.$id.stream.ts"),
+
   // Domain & member management API
   route("api/domains", "admin/routes/api.domains.ts"),
   route("api/domains/:domainId", "admin/routes/api.domains.$domainId.ts"),
@@ -373,6 +389,9 @@ export default [
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
+  route("api/infra/action", "admin/routes/api.infra.action.ts"),
+  route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
+  route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No
@@ -425,6 +444,7 @@ export default [
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+  route("api/staffing/finalize-all", "projects/routes/api.staffing.finalize-all.ts"),
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
   route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
@@ -454,7 +474,7 @@ export default [
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
-  // Project epics & sprints
+  // Project epics & stories
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
   route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
@@ -464,8 +484,6 @@ export default [
   ),
   route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
   route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
-  route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),
-  route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
 
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
