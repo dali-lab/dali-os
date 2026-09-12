@@ -25,6 +25,7 @@ const mockPrisma = prisma as unknown as {
     count: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
+  processFolderBinding: { findMany: ReturnType<typeof vi.fn> };
   timeEntry: { count: ReturnType<typeof vi.fn> };
   budgetEntry: { count: ReturnType<typeof vi.fn> };
   budgetNote: { count: ReturnType<typeof vi.fn> };
@@ -79,6 +80,14 @@ beforeEach(() => {
     findMany: vi.fn().mockResolvedValue(MEETING_NOTES_FOLDERS),
     count: vi.fn().mockResolvedValue(0),
     deleteMany: vi.fn().mockReturnValue("page-delete-op"),
+  };
+  // The meeting-notes folders are found via the project's folder bindings now
+  // (no systemKey) — point them at the same two folder ids the page query returns.
+  mockPrisma.processFolderBinding = {
+    findMany: vi.fn().mockResolvedValue([
+      { folderPageId: "page-team-notes" },
+      { folderPageId: "page-partner-notes" },
+    ]),
   };
   for (const model of [
     "timeEntry",

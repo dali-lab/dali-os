@@ -6,7 +6,6 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -128,7 +127,6 @@ export function ShareDialog({
   const [copied, setCopied] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const dialog = useDialog();
-  const foldersEnabled = useFeatureFlag("drive-folder-bindings");
 
   async function post(body: Record<string, string>): Promise<any> {
     const form = new FormData();
@@ -471,9 +469,9 @@ export function ShareDialog({
       </div>
 
       {/* Folder access — the Google-Drive "share this folder" control. Only for
-          folders, and only when the bindings feature is on. Sets the folder's
-          governing scope, which everything inside inherits. */}
-      {foldersEnabled && ctx?.kind === "Folder" && (
+          folders. Sets the folder's governing scope, which everything inside
+          inherits. */}
+      {ctx?.kind === "Folder" && (
         <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
           <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
             Folder access

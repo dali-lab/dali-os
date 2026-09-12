@@ -745,11 +745,6 @@ export default function DomainLeadDashboard() {
                           <span>Waiting on hiring lead to set the cycle rubric — reviewer assignment is blocked until it's set.</span>
                         </div>
                       )}
-                      <div className="mt-2">
-                        <Link to="/hiring/library?tab=rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                          All Rubrics →
-                        </Link>
-                      </div>
                     </Section>
                   ) : (
                     <Section
@@ -776,11 +771,6 @@ export default function DomainLeadDashboard() {
                             <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
                           </div>
                         )}
-                        <div className="mt-2">
-                          <Link to="/hiring/library?tab=rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            All Rubrics →
-                          </Link>
-                        </div>
                       </div>
                     </Section>
                   )}

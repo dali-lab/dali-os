@@ -541,7 +541,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         title: true,
         kind: true,
         parentPageId: true,
-        systemKey: true,
         partnerVisible: true,
         publicVisible: true,
         pinnedAt: true,
@@ -663,7 +662,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     id: d.id,
     title: d.title,
     kind: d.kind,
-    isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
     publicVisible: d.publicVisible,
     pinned: d.pinnedAt !== null,
@@ -4013,7 +4011,7 @@ function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ct
           {doc.pinned ? "Unpin" : "Pin to top"}
         </Menu.Item>
       )}
-      {ctx.canEdit && !doc.isSystem && (
+      {ctx.canEdit && (
         <Menu.Item
           icon={<FolderInput className="w-3.5 h-3.5" />}
           onSelect={() => ctx.setMoveDoc({ id: doc.id, title: doc.title })}
@@ -5274,11 +5272,6 @@ function DocumentsBlock({
                     )}
                     <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
                     <span className="truncate">{doc.title}</span>
-                    {doc.isSystem && (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
-                        Default
-                      </span>
-                    )}
                   </button>
                   {canEdit && (
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -5304,22 +5297,20 @@ function DocumentsBlock({
                           <Upload className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      {!doc.isSystem && (
-                        <button
-                          type="button"
-                          disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
-                          title={
-                            doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
-                              ? "Move or delete the items inside this folder first"
-                              : "Delete folder"
-                          }
-                          aria-label="Delete folder"
-                          onClick={() => void deleteDocument(doc.id, doc.title)}
-                          className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
+                        title={
+                          doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
+                            ? "Move or delete the items inside this folder first"
+                            : "Delete folder"
+                        }
+                        aria-label="Delete folder"
+                        onClick={() => void deleteDocument(doc.id, doc.title)}
+                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>

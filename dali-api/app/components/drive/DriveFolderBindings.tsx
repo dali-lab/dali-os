@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useFetcher } from "react-router";
 import { Select } from "~/components/ui/floating/Select";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Folder, ExternalLink, Plus, X, AlertTriangle } from "lucide-react";
 
 // The "Drive folders" settings section: lists a process's folder bindings (see
@@ -39,20 +38,16 @@ export function DriveFolderBindings({
   processId?: string;
   className?: string;
 }) {
-  const enabled = useFeatureFlag("drive-folder-bindings");
   const data = useFetcher<LoaderData>();
   const mut = useFetcher<{ ok?: boolean; error?: string }>();
 
   // Load on mount, and reload after each successful mutation so rows reflect the
-  // new binding immediately. Skips entirely while the flag is off.
+  // new binding immediately.
   useEffect(() => {
-    if (!enabled) return;
     const params = new URLSearchParams({ processType, processId });
     data.load(`/api/folder-bindings?${params.toString()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, processType, processId, mut.data]);
-
-  if (!enabled) return null;
+  }, [processType, processId, mut.data]);
 
   const submit = (payload: Record<string, unknown>) =>
     mut.submit(

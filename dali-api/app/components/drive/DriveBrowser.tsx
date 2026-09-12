@@ -1,7 +1,7 @@
 // DriveBrowser — Miller-column (Finder-style) browser for the unified Drive.
 //
 // PRIMARY VIEW: Miller columns — a horizontally-scrolling row of columns.
-//   Column 0 = scope list (My Drive, Lab, Core, Hiring, Projects).
+//   Column 0 = scope list (My Drive, Lab, Core, Projects).
 //   Each scope/folder click opens a new column to the right.
 //   Selecting a leaf shows an action toolbar above the columns.
 //
@@ -53,7 +53,6 @@ import {
   User,
   Users,
   Shield,
-  Briefcase,
   HardDrive,
   Search,
   X,
@@ -359,7 +358,6 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
   }`;
   if (scope.id === "mine") return <User className={`${cls} text-muted-foreground`} />;
   if (scope.id === "core") return <Shield className={`${cls} text-accent-coral/80`} />;
-  if (scope.id === "hiring") return <Briefcase className={`${cls} text-accent-coral/80`} />;
   if (scope.id === "lab") return <Users className={`${cls} text-muted-foreground`} />;
   // Synthetic group scopes use a folder icon (no emoji on the group itself).
   if (scope.id === "projects" || scope.id === "education") return <Folder className={`${cls} text-accent-coral/80`} />;
@@ -375,18 +373,13 @@ function itemMenuItems(
   onToggleFavorite?: (item: DriveItem) => void,
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void,
 ): ReactNode {
-  // Signal ①: system-managed folders (systemKey set) hide Delete/Rename entirely.
-  // The gate extends the existing type-based canMove gate at lines 258-260.
-  const isSystemManaged = item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
-  const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
+  // Folders are ordinary (no systemKey scaffolding) — rename/move/delete are
+  // always allowed by this gate.
+  const canRename = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement";
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
-  // allowed); agreements and rubrics remain placement-locked. System-managed
-  // folders (systemKey) are auto-filed and stay put — matching the drag gate.
-  const canMove =
-    !isSystemManaged &&
-    item.type !== "agreement" &&
-    item.type !== "rubric";
-  const canDelete = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
+  // allowed); agreements and rubrics remain placement-locked.
+  const canMove = item.type !== "agreement" && item.type !== "rubric";
+  const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
   const canFavorite = item.type === "doc" || item.type === "folder";
   // Sharing via PageShare works for Page-backed items only (doc and folder).
   // Files, forms, agreements, rubrics, email templates have separate or no
@@ -647,7 +640,7 @@ export function DriveBrowser({
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
         const wt =
-          !scope || scope.id === "lab" || scope.id === "core" || scope.id === "hiring"
+          !scope || scope.id === "lab" || scope.id === "core"
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
@@ -1346,13 +1339,7 @@ export function DriveBrowser({
   }
   const detailActions = detailScopeId ? getInternalScopeActions(detailScopeId) : null;
 
-  // Signal ①: system-managed folders hide Delete/Rename.
-  const detailIsSystemManaged =
-    !!detailItem &&
-    detailItem.type === "folder" &&
-    !!(detailItem as { systemKey?: string | null }).systemKey;
   const canItemRename =
-    !detailIsSystemManaged &&
     !!detailItem &&
     (detailItem.type === "folder" ||
       detailItem.type === "doc" ||
@@ -1363,7 +1350,6 @@ export function DriveBrowser({
   const canItemMove =
     !!detailItem && detailItem.type !== "agreement" && detailItem.type !== "rubric";
   const canItemDelete =
-    !detailIsSystemManaged &&
     !!detailItem &&
     (detailItem.type === "folder" ||
       detailItem.type === "doc" ||
@@ -1423,13 +1409,7 @@ export function DriveBrowser({
   // The columns view keeps its own selected-leaf surface (LeafPreviewColumn) at
   // the end of the trail, so it derives its capabilities from `selectedLeaf`
   // rather than the view-agnostic `detailItem` above.
-  // Signal ①: system-managed leaf folders hide Delete/Rename in the preview too.
-  const leafIsSystemManaged =
-    !!selectedLeaf &&
-    selectedLeaf.type === "folder" &&
-    !!(selectedLeaf as { systemKey?: string | null }).systemKey;
   const canLeafRename =
-    !leafIsSystemManaged &&
     selectedLeaf &&
     (selectedLeaf.type === "folder" ||
       selectedLeaf.type === "doc" ||
@@ -1441,7 +1421,6 @@ export function DriveBrowser({
     selectedLeaf.type !== "agreement" &&
     selectedLeaf.type !== "rubric";
   const canLeafDelete =
-    !leafIsSystemManaged &&
     selectedLeaf &&
     (selectedLeaf.type === "folder" ||
       selectedLeaf.type === "doc" ||
@@ -2399,12 +2378,11 @@ function ColumnScopeRow({
 }) {
   const t = useDriveText();
   const isCore = scope.id === "core";
-  const isHiring = scope.id === "hiring";
   // Synthetic group scopes ("projects"/"education") are not valid drop targets —
   // dropping on the group row is ambiguous (which project?). Only individual
   // project folders inside the group accept drops via the normal folder-drop path.
   const isGroupScope = scope.id === "projects" || scope.id === "education";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
   const label =
     scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
 
@@ -2483,13 +2461,10 @@ function ColumnItemRow({
   const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
-  // Signal ①: system-managed folders (systemKey set) are also non-draggable.
-  const isSystemManaged =
-    isFolder && !!(item as { systemKey?: string | null }).systemKey;
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || isSystemManaged || !scopeId,
+    disabled: isManaged || !scopeId,
   });
   // Folders in a column accept drops, the same way the list/grid rows do —
   // dragging into a folder is the gesture this view is shaped around, and
@@ -2533,18 +2508,6 @@ function ColumnItemRow({
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
-      )}
-      {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders.
-          Reuses the PageRow opacity-reveal pattern from home.tsx:797. */}
-      {isSystemManaged && (
-        <Tooltip
-          content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
-          variant="rich"
-        >
-          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            Managed
-          </span>
-        </Tooltip>
       )}
       {/* Partner-visible badge: teal handshake shown when this doc/file is
           shared with the project's partner org. Mirrors the badge used in
@@ -2992,9 +2955,8 @@ function ScopeList({
     <div className="flex flex-col divide-y divide-border/50" data-testid="drive-listing">
       {scopes.map((scope) => {
         const isCore = scope.id === "core";
-        const isHiring = scope.id === "hiring";
         const isGroupScope = scope.id === "projects" || scope.id === "education";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div
@@ -3177,13 +3139,10 @@ function ListRow({
   const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
-  // Signal ①: system-managed folders are also non-draggable.
-  const isSystemManaged =
-    isFolder && !!(item as { systemKey?: string | null }).systemKey;
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || isSystemManaged,
+    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
@@ -3225,17 +3184,6 @@ function ListRow({
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
           <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
-        )}
-        {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders. */}
-        {isSystemManaged && (
-          <Tooltip
-            content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
-            variant="rich"
-          >
-            <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-              Managed
-            </span>
-          </Tooltip>
         )}
         {/* Partner-visible badge: teal handshake when shared with the project's partner. */}
         {(item.type === "doc" || item.type === "file") &&
@@ -3298,13 +3246,10 @@ function GridTile({
   const t = useDriveText();
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
-  // Signal ①: system-managed folders are also non-draggable.
-  const isSystemManaged =
-    isFolder && !!(item as { systemKey?: string | null }).systemKey;
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || isSystemManaged,
+    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
@@ -3368,19 +3313,6 @@ function GridTile({
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
-      )}
-      {/* Signal ①: "Managed" chip on hover for system-keyed folders. */}
-      {isSystemManaged && (
-        <Tooltip
-          content="This folder is managed by the system. Rename and delete are unavailable to keep internal processes consistent."
-          variant="rich"
-        >
-          <span
-            className={`shrink-0 rounded-sm bg-muted px-1.5 py-0.5 ${t.badge} font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
-          >
-            Managed
-          </span>
-        </Tooltip>
       )}
     </div>
   );
