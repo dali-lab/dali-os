@@ -313,9 +313,12 @@ function CalendarSidebarContent({
 
   return (
     <>
-      <ViewSwitcher view={view} onChangeView={onChangeView} />
-
-      <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
+      {/* One group, not two: the rail's gap-5 plus MiniMonth's own p-2 left the
+          switcher floating well clear of the month it belongs to. */}
+      <div className="flex flex-col gap-1">
+        <ViewSwitcher view={view} onChangeView={onChangeView} />
+        <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
+      </div>
 
       {/* Scheduling someone is a calendar act — in timesheet mode the rail is
           about hours already worked, so the search box only gets in the way. */}
