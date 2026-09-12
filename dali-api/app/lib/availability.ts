@@ -205,7 +205,7 @@ const DEFAULT_BUFFER_MIN = 15;
  * Pulls UserAvailabilitySettings, WorkingHoursDay segments, ManualBlock rows
  * (incl. RRULE expansion), and external Google Calendar busy events.
  *
- * `fallbackTimezone` is used only if the user has no UserAvailabilitySettings row.
+ * `fallbackTimezone` is used only if the user has no display zone (User.timeZone).
  */
 export async function computeUserFreeBusy(
   userId: string,
@@ -229,9 +229,9 @@ export async function computeUserFreeBusy(
   //   • Any persisted rows         → feature is ON → trust the saved segments
   //     verbatim (including enabled weekend days). Days the user never saved a
   //     row for stay unavailable, matching what they see in the editor.
-  // Prefer the availability-settings zone (working hours depend on it); with no
-  // settings row, use the user's own display zone before the caller's fallback.
-  const timezone = pickUserTimezone(settings?.timezone, userRow?.timeZone, fallbackTimezone);
+  // Interpret the user's day in their own display zone (User.timeZone); with no
+  // stored zone, use the caller's fallback (e.g. the requester's zone).
+  const timezone = pickUserTimezone(userRow?.timeZone, fallbackTimezone);
   const hasPersisted = whRows.length > 0;
   const workingHours: WorkingHoursDayInput[] = hasPersisted
     ? whRows.map((r) => ({
