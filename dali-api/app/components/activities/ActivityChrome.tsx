@@ -19,9 +19,8 @@ export function ActivityOverlay() {
     <>
       {activities.map((a) => {
         if (a.overlay == null) return null;
-        const mech = mechanicClient(a.kind);
-        if (!mech) return null;
-        const Overlay = mech.Overlay;
+        const Overlay = mechanicClient(a.kind)?.Overlay;
+        if (!Overlay) return null;
         return (
           <Overlay key={a.id} activityId={a.id} name={a.name} overlay={a.overlay} />
         );

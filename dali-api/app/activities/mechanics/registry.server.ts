@@ -1,6 +1,6 @@
 // Server-side mechanic registry (specs/activities.md §5). Keyed by Activity.kind.
-// Holds the behavior a mechanic needs server-side: config validation, the
-// route-filtered overlay payload, the member action handler, and the
+// Holds the behavior a mechanic needs server-side: config validation, an
+// optional on-page overlay payload, the member action handler, and the
 // progress/results computation. The mirrored CLIENT registry (registry.ts)
 // holds the React pieces. Keep the two apart — importing a server handler into
 // a client module crashes the client bundle.
@@ -26,8 +26,12 @@ export type MechanicServer = {
   kind: string;
   /** Validate + normalize config on write; throws on invalid input. */
   parseConfig(input: unknown): unknown;
-  /** Route-filtered, safe-to-send overlay payload (never leaks other routes). */
-  overlayPayload(activity: Activity, pathname: string): unknown;
+  /**
+   * Optional safe-to-send payload for the mechanic's on-page overlay on this
+   * path. Omit — or return null — for mechanics that render nothing on the page
+   * itself (the scavenger hunt lives entirely in its modal).
+   */
+  overlayPayload?(activity: Activity, pathname: string): unknown;
   /** Handle a member action on the activity surface. */
   onAction(args: {
     activity: Activity;
