@@ -59,7 +59,6 @@ async function loadProjectPage(pageId: string) {
       workspaceType: true,
       workspaceId: true,
       archivedAt: true,
-      systemKey: true,
       partnerVisible: true,
       publicVisible: true,
       pinnedAt: true,
@@ -101,8 +100,6 @@ export type DocumentSharingOut = {
     publicVisible: boolean;
     pinned: boolean;
     archived: boolean;
-    /** System pages (auto-created folders, the public write-up) can't be deleted. */
-    system: boolean;
   }[];
   files: {
     id: string;
@@ -138,7 +135,6 @@ export async function runListDocumentSharing(
         publicVisible: true,
         pinnedAt: true,
         archivedAt: true,
-        systemKey: true,
       },
     }),
     prisma.projectFile.findMany({
@@ -163,7 +159,6 @@ export async function runListDocumentSharing(
       publicVisible: p.publicVisible,
       pinned: p.pinnedAt !== null,
       archived: p.archivedAt !== null,
-      system: p.systemKey !== null,
     })),
     files: files.map((f) => ({
       id: f.id,
@@ -289,11 +284,6 @@ export async function runDeleteProjectDocument(
   const page = await loadProjectPage(input.pageId);
   await requireProjectEdit(callerId, page.workspaceId!);
 
-  if (page.systemKey !== null) {
-    throw new CurationInvalidError(
-      "This is a system document (an auto-created folder or the public write-up) and can't be deleted",
-    );
-  }
   const childCount = await prisma.page.count({ where: { parentPageId: input.pageId } });
   if (childCount > 0) {
     throw new CurationInvalidError(

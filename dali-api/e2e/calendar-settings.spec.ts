@@ -16,9 +16,10 @@ test.describe('calendar settings', () => {
 
   test('Add Google Account link is present and points at OAuth start', async ({ page }) => {
     await page.goto('/calendar?embed=1');
-    // Linked accounts live in the Calendars dialog, opened from the "Calendars"
-    // pill in the page toolbar (it used to be a gear in the sidebar rail).
-    await page.getByRole('button', { name: 'Calendars' }).click();
+    // Linked accounts live in the Calendars section of the one Settings dialog,
+    // opened from the "Settings" pill in the page toolbar. Calendars is the
+    // section it opens on, so no nav click is needed.
+    await page.getByRole('button', { name: 'Settings' }).click();
     const link = page.getByRole('link', { name: /Add account/i });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', '/oauth/calendar/google/start');

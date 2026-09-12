@@ -11,6 +11,7 @@ import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 import {
   requireForAction,
   McpNotFoundError,
@@ -149,6 +150,12 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     const cadence = args.cadence as SigningCadence;
 
     const resolvedAudience = AUDIENCES.includes(audience) ? audience : "Manual";
+    const folderPageId = await ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "agreements",
+      createdById: ctx.user.id,
+    }).catch(() => null);
     const doc = await prisma.signingDocument.create({
       data: {
         name,
@@ -157,6 +164,7 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
         audience: resolvedAudience,
         audienceGroupId: resolveAudienceGroupId(resolvedAudience, args.audienceGroupId) ?? null,
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
+        folderPageId,
       },
       select: { id: true },
     });

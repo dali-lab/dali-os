@@ -27,7 +27,7 @@ async function checkConnection() {
     signinEl.href = res.base;
     signinEl.hidden = false;
   } else {
-    setStatus("warn", "Can't reach DALI OS", res ? res.error : "The extension didn't respond.");
+    setStatus("warn", "Can't use this server", res ? res.error : "The extension didn't respond.");
   }
 }
 

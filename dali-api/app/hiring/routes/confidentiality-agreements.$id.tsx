@@ -13,14 +13,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export const handle = {
-  // The Library owns confidentiality agreements (list at
-  // /hiring/library?tab=agreements); the bare prefix has no page.
+  // Agreements live in Core now (the Core Agreements folder + the /core/agreements
+  // compliance console); the bare hiring prefix has no page.
   breadcrumbTrail: (data: unknown) => {
     const name = (data as { agreement?: { name?: string } } | undefined)
       ?.agreement?.name;
     return [
       { label: "Hiring", to: "/hiring" },
-      { label: "Confidentiality", to: "/hiring/library?tab=agreements" },
+      { label: "Agreements", to: "/core/agreements" },
       { label: name || "Agreement" },
     ];
   },
