@@ -116,12 +116,6 @@ export const FEATURE_FLAGS = [
       "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
   },
   {
-    key: "drive-folder-bindings",
-    label: "Drive folder bindings",
-    description:
-      "Replaces the hidden systemKey Drive scaffolding with editable process→folder bindings. Each project / education offering / hiring cycle / Core governance area points at NORMAL Drive folders (renameable, movable, shareable) for its auto-filed items (meeting notes, forms, agreements, …), configured in that process's settings. Ships off; without it the legacy systemKey folders remain.",
-  },
-  {
     key: "project-status-bar",
     label: "Project status bar",
     description:

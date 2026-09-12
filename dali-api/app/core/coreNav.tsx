@@ -60,6 +60,7 @@ const STANDALONE_LABELS: Record<string, string> = {
   roles: "Roles & Permissions",
   domains: "Domains",
   agreements: "Agreements",
+  "drive-folders": "Drive folders",
 };
 
 export const CORE_ATTENDANCE_ICON = ClipboardCheck;

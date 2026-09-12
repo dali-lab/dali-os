@@ -10,6 +10,7 @@ import {
   Files,
   FileSignature,
   FileText,
+  FolderCog,
   FolderKanban,
   Gavel,
   Globe,
@@ -178,7 +179,10 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // The Hiring drive space (rubrics, templates, forms) is Core-only, so the
+      // Library (its embedded view) and its Drive-folders config are Core/Admin.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
+      { label: "Drive folders", href: "/hiring/drive-folders", icon: FolderCog, gate: (r) => r.isCore },
     ],
   },
   {
@@ -255,6 +259,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Agreements left Admin's Documents cluster; it is lab process, not
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
+      { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
       { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },
@@ -275,7 +280,10 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // The Hiring drive space (rubrics, templates, forms) is Core-only, so the
+      // Library (its embedded view) and its Drive-folders config are Core/Admin.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
+      { label: "Drive folders", href: "/hiring/drive-folders", icon: FolderCog, gate: (r) => r.isCore },
     ],
   },
   {

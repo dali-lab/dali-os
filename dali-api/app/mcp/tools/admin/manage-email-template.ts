@@ -11,6 +11,7 @@ import {
   requireForAction,
 } from "./errors";
 import type { McpCtx } from "../../registry";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 
 export const MANAGE_EMAIL_TEMPLATE_TOOL = {
   name: "manage_email_template",
@@ -74,8 +75,14 @@ export async function runManageEmailTemplate(ctx: McpCtx, args: Input) {
   });
 
   if (action === "create") {
+    const folderPageId = await ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "email-templates",
+      createdById: callerId,
+    }).catch(() => null);
     const template = await prisma.emailTemplate.create({
-      data: { name: args.name! },
+      data: { name: args.name!, folderPageId },
     });
     return template;
   }

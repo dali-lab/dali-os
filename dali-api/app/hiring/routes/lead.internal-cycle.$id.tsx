@@ -926,7 +926,7 @@ function GeneralRubricSection({
           buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
         <Link
-          to="/hiring/library?tab=rubrics"
+          to="/hiring/library"
           className="text-xs font-medium text-blue-700 hover:underline"
         >
           Manage rubrics →

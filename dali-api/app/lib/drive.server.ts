@@ -51,13 +51,6 @@ export type DriveItem =
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
       /**
-       * Signal ①: the `Page.systemKey` of this folder when it is a system-managed
-       * container (e.g. `"drive:core:agreements"`, `"drive:core:templates"`). When
-       * set, the Drive UI hides Delete/Rename and shows a "Managed" hover chip.
-       * Populated in Wave 2 from the Lab page query; null/undefined elsewhere.
-       */
-      systemKey?: string | null;
-      /**
        * Signal ②: process that owns or binds this item (derived at load time in
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
@@ -212,8 +205,6 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       parentPageId: true,
       iconEmoji: true,
       updatedAt: true,
-      // Signal ①: systemKey identifies system-managed folders (Agreements, Templates, etc.)
-      systemKey: true,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -247,9 +238,6 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
-            // Signal ①: pass systemKey through so the UI can show the Managed chip
-            // and hide destructive actions for system-keyed folders.
-            systemKey: row.systemKey ?? null,
           }
         : {
             type: "doc",
@@ -560,9 +548,9 @@ async function loadAgreements(
   _linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    // Placed-only: agreements live under the Core ▸ Agreements area (filed by
-    // ensureCoreDriveRoot). An unplaced row would be a brand-new one awaiting
-    // adoption on the next Core drive visit — don't float it at the Lab root.
+    // Placed-only: agreements live in the Core "agreements" bound folder (see
+    // bindings.server.ts). An unplaced row would be one whose folder was cleared
+    // and not yet re-filed — don't float it at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true, gateScope: true },
@@ -581,10 +569,11 @@ async function loadAgreements(
 }
 
 /** Load rubrics. Only called when the caller passes `canManageAgreements: true`
- *  (= real isCore) — rubrics are Core-only artifacts that live under the Core
- *  drive's Rubrics folder. Placed-only (unplaced ones are awaiting adoption).
+ *  (= real isCore) — rubrics live in the Hiring singleton's "rubrics" bound
+ *  folder, which is Core-group-scoped (Core-only access). Placed-only (unplaced
+ *  ones aren't filed yet); they surface in the Hiring drive space.
  *
- *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for hiring. */
+ *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for the hiring team. */
 async function loadRubrics(
   linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
@@ -607,9 +596,9 @@ async function loadRubrics(
 
 /** Load email templates. Only called when the caller passes
  *  `canManageEmailTemplates: true` (= real isCore, NOT the hiring-widened gate)
- *  — email templates are global, Core-only artifacts that live under the Core
- *  drive's Templates area. Templates are filed into that subtree by
- *  `ensureCoreDriveRoot`; the Core-subtree split routes them into the Core scope.
+ *  — email templates are global, Core-only artifacts that live in the Core
+ *  "email-templates" bound folder. Templates file into that folder via the
+ *  binding; the Core-subtree split routes them into the Core scope.
  *
  *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
  *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
