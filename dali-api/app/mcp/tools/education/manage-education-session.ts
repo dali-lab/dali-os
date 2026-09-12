@@ -1,9 +1,11 @@
-// MCP tool: manage_education_session — add, update, delete, or bulk-generate
-// sessions for an education offering. All mutations route through
-// runOfferingAction (same FormData dispatcher as the HTTP routes).
+// MCP tool: manage_education_session — add, update, delete, bulk-generate, or
+// toggle the self-check-in window for sessions on an education offering. All
+// mutations route through runOfferingAction or session-checkin.server.ts
+// (same paths as the HTTP routes).
 // Access: instructor or Core (isOfferingManager). Scope: mcp:write.
 
 import { runOfferingAction } from "~/education/lib/offerings.server";
+import { setSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import {
   requireForAction,
@@ -17,13 +19,13 @@ import {
 export const MANAGE_EDUCATION_SESSION_TOOL = {
   name: "manage_education_session",
   description:
-    "Add, update, delete, or bulk-generate sessions for an education offering. Actions: add · update · delete · generate_series. generate_series has two modes: weekday mode (weekdays + startDate + startTime [+ endTime] + weeks) fills every matching class day in date order, or interval mode (startDatetime + count [+ intervalDays]). Sessions are always renumbered chronologically. Instructor or Core only.",
+    "Add, update, delete, bulk-generate, or toggle the self-check-in QR window for sessions on an education offering. Actions: add · update · delete · generate_series · set_check_in_open. generate_series has two modes: weekday mode (weekdays + startDate + startTime [+ endTime] + weeks) fills every matching class day in date order, or interval mode (startDatetime + count [+ intervalDays]). Sessions are always renumbered chronologically. Instructor or Core only.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["add", "update", "delete", "generate_series"],
+        enum: ["add", "update", "delete", "generate_series", "set_check_in_open"],
       },
       offeringId: { type: "string", minLength: 1 },
       sessionId: {
@@ -79,6 +81,11 @@ export const MANAGE_EDUCATION_SESSION_TOOL = {
         type: "number",
         description: "generate_series interval mode: days between sessions (max 30, default 7).",
       },
+      open: {
+        type: "boolean",
+        description:
+          "set_check_in_open: true to open the QR check-in window, false to close it.",
+      },
     },
     required: ["action", "offeringId"],
     additionalProperties: false,
@@ -104,6 +111,7 @@ type Args = {
   startDatetime?: string;
   count?: number;
   intervalDays?: number;
+  open?: boolean;
 };
 
 export async function runManageEducationSession(ctx: McpCtx, args: Args) {
@@ -113,10 +121,27 @@ export async function runManageEducationSession(ctx: McpCtx, args: Args) {
     delete: ["sessionId"],
     // generate_series validates its two modes server-side (weekday vs interval).
     generate_series: [],
+    set_check_in_open: ["sessionId"],
   });
 
   if (!(await isOfferingManager(ctx.user.id, args.offeringId))) {
     throw new McpForbiddenError();
+  }
+
+  // set_check_in_open bypasses runOfferingAction and calls the checkin server fn
+  // directly (the set-session-check-in intent in the manage route does the same).
+  if (args.action === "set_check_in_open") {
+    const result = await setSessionCheckInOpen({
+      offeringId: args.offeringId,
+      sessionId: args.sessionId!,
+      open: args.open ?? false,
+      actorId: ctx.user.id,
+    });
+    if ("error" in result) {
+      if (result.status === 404) throw new McpNotFoundError(result.error);
+      throw new McpInvalidError(result.error);
+    }
+    return { ok: true, id: args.sessionId ?? null };
   }
 
   const intentMap: Record<string, string> = {

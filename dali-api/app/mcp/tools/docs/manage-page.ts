@@ -1,5 +1,5 @@
 // MCP `manage_page` — faceted page management tool.
-// Actions: pin · move · duplicate · favorite · set_template.
+// Actions: pin · move · duplicate · favorite · set_template · typography.
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
@@ -17,13 +17,13 @@ import type { Prisma } from "~/generated/prisma/client";
 export const MANAGE_PAGE_TOOL_DEF = {
   name: "manage_page",
   description:
-    "Manage a page: pin/unpin, move/reorder, duplicate, favorite/unfavorite, or toggle template status. Permissions mirror the web (pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access).",
+    "Manage a page: pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["pin", "move", "duplicate", "favorite", "set_template"],
+        enum: ["pin", "move", "duplicate", "favorite", "set_template", "typography"],
       },
       pageId: { type: "string", minLength: 1, description: "Required for all actions." },
       // pin
@@ -48,6 +48,15 @@ export const MANAGE_PAGE_TOOL_DEF = {
       favorited: { type: "boolean", description: "For 'favorite': true to add, false to remove." },
       // set_template
       isTemplate: { type: "boolean", description: "For 'set_template'." },
+      // typography
+      font: {
+        type: "string",
+        enum: ["default", "serif", "mono"],
+        description: "For 'typography': page font family.",
+      },
+      smallText: { type: "boolean", description: "For 'typography': reduce text size." },
+      fullWidth: { type: "boolean", description: "For 'typography': expand to full container width." },
+      nestingGuides: { type: "boolean", description: "For 'typography': show nesting indentation guides." },
     },
     required: ["action", "pageId"],
     additionalProperties: false,
@@ -68,10 +77,11 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   duplicate: [],
   favorite: ["favorited"],
   set_template: ["isTemplate"],
+  typography: ["font", "smallText", "fullWidth"],
 };
 
 type ManagePageInput = {
-  action: "pin" | "move" | "duplicate" | "favorite" | "set_template";
+  action: "pin" | "move" | "duplicate" | "favorite" | "set_template" | "typography";
   pageId: string;
   pinned?: boolean;
   parentPageId?: string | null;
@@ -80,6 +90,10 @@ type ManagePageInput = {
   workspaceId?: string;
   favorited?: boolean;
   isTemplate?: boolean;
+  font?: "default" | "serif" | "mono";
+  smallText?: boolean;
+  fullWidth?: boolean;
+  nestingGuides?: boolean;
 };
 
 export async function runManagePage(callerId: string, input: ManagePageInput) {
@@ -118,6 +132,36 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
     });
     if (!access.canEdit) throw new ManagePageError("Permission denied", 403);
     await prisma.page.update({ where: { id: input.pageId }, data: { isTemplate: input.isTemplate! } });
+    return { ok: true };
+  }
+
+  if (input.action === "typography") {
+    const page = await prisma.page.findUnique({
+      where: { id: input.pageId },
+      select: { id: true, workspaceType: true, workspaceId: true, archivedAt: true, kind: true },
+    });
+    if (!page || page.archivedAt !== null) throw new ManagePageError("Page not found", 404);
+    if (page.kind !== "FreeForm") {
+      throw new ManagePageError("Only FreeForm pages have typography settings", 400);
+    }
+    const access = await getPageAccess(callerId, {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      archivedAt: page.archivedAt,
+    });
+    if (!access.canEdit) throw new ManagePageError("Permission denied", 403);
+    await prisma.page.update({
+      where: { id: input.pageId },
+      data: {
+        typography: {
+          font: input.font!,
+          smallText: input.smallText!,
+          fullWidth: input.fullWidth!,
+          nestingGuides: input.nestingGuides ?? false,
+        },
+      },
+    });
     return { ok: true };
   }
 

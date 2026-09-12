@@ -1,15 +1,32 @@
 // MCP `get_member_profile` — single-member drill-down. Returns identity,
-// domain eligibility, current-term roles, and basic profile fields. Personal
-// (non-Dartmouth) email is exposed ONLY when the caller is requesting their
-// own profile. Requires the `mcp:read` scope.
+// domain eligibility, current-term roles, and profile fields. Gating:
+//
+//   Any authenticated member: all fields the web /members/:id shows publicly —
+//     name, daliEmail, dartmouthEmail, pronouns, classYear, major, hometown,
+//     linkedinUrl, githubUsername, personalSite, handle, photoUrl (resolved),
+//     tier, domains, currentTermRoles, projectAssignments (current term),
+//     achievements.
+//
+//   Self only: personalEmail, netId, phoneNumber, birthday, dietaryRestrictions,
+//     timezone, bioDocId.
+//
+//   Self or Core/Admin: education profile (attended, taught, CE credits).
+//
+// Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
-import { currentTerm, isAdminViaEnv } from "~/lib/roles";
+import { currentTerm, isAdminViaEnv, isCore } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { achievementsForMember } from "~/members/lib/achievements.server";
+import { getEducationProfile } from "~/education/lib/engagement.server";
 
 export const GET_MEMBER_PROFILE_TOOL = {
   name: "get_member_profile",
   description:
-    "Get a single member's profile. personalEmail is included only when the caller asks for their own profile.",
+    "Get a single member's profile. Publicly visible fields (name, email, domains, roles, projects, achievements) are " +
+    "returned for any member. Private fields (personalEmail, netId, phone, birthday, dietary, timezone, bioDocId) are " +
+    "returned only when looking up your own profile. Education profile (attended courses, taught, CE credits) is returned " +
+    "for self or Core/Admin callers.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -55,7 +72,14 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
       major: true,
       hometown: true,
       linkedinUrl: true,
+      githubUsername: true,
       personalSite: true,
+      handle: true,
+      photoUrl: true,
+      timeZone: true,
+      phoneNumber: true,
+      birthday: true,
+      dietaryRestrictions: true,
       daliMember: { select: { id: true, createdAt: true } },
       adminMembership: { select: { id: true } },
       coreAssignments: termId
@@ -81,6 +105,25 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
           domain: { select: { id: true, displayName: true } },
         },
       },
+      // Current-term project assignments — shown publicly on the web profile.
+      projectAssignments: termId
+        ? {
+            where: { termId },
+            select: {
+              id: true,
+              level: true,
+              project: { select: { id: true, name: true, iconEmoji: true } },
+              domain: { select: { name: true } },
+            },
+          }
+        : {
+            select: {
+              id: true,
+              level: true,
+              project: { select: { id: true, name: true, iconEmoji: true } },
+              domain: { select: { name: true } },
+            },
+          },
     },
   });
 
@@ -123,15 +166,29 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
     });
   }
 
+  // Education profile: self or Core/Admin caller.
+  const callerIsCore = isSelf || (await isCore(callerId));
+  const [photoUrlResolved, achievements, education] = await Promise.all([
+    resolvePhotoUrl(user.photoUrl),
+    achievementsForMember(input.memberId),
+    callerIsCore ? getEducationProfile(input.memberId) : Promise.resolve(null),
+  ]);
+
   return {
     id: user.id,
     firstName: user.firstName,
     lastName: user.lastName,
     daliEmail: user.daliEmail,
-    netId: user.netId,
     dartmouthEmail: user.dartmouthEmail,
-    // Privacy: personalEmail only returned to the user themselves.
-    personalEmail: isSelf ? user.personalEmail : null,
+    pronouns: user.pronouns,
+    classYear: user.classYear,
+    major: user.major,
+    hometown: user.hometown,
+    linkedinUrl: user.linkedinUrl,
+    githubUsername: user.githubUsername,
+    personalSite: user.personalSite,
+    handle: user.handle,
+    photoUrl: photoUrlResolved,
     tier,
     domains: user.domainEligibilities.map((e) => ({
       id: e.domain.id,
@@ -139,13 +196,51 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
       eligibility: e.level,
     })),
     currentTermRoles,
-    bioDocId: user.bioDocId,
-    classYear: user.classYear,
-    pronouns: user.pronouns,
-    major: user.major,
-    hometown: user.hometown,
-    linkedinUrl: user.linkedinUrl,
-    personalSite: user.personalSite,
+    projectAssignments: user.projectAssignments.map((a) => ({
+      id: a.id,
+      level: a.level,
+      project: a.project,
+      domain: { name: a.domain.name },
+    })),
+    achievements: achievements.map((a) => ({
+      key: a.key,
+      title: a.title,
+      description: a.description,
+      earned: a.earned,
+    })),
     joinedAt: user.daliMember.createdAt.toISOString(),
+    // ── Self-only private fields ───────────────────────────────────────────
+    netId: isSelf ? user.netId : null,
+    personalEmail: isSelf ? user.personalEmail : null,
+    phoneNumber: isSelf ? user.phoneNumber : null,
+    birthday: isSelf
+      ? user.birthday
+        ? user.birthday instanceof Date
+          ? user.birthday.toISOString()
+          : user.birthday
+        : null
+      : null,
+    dietaryRestrictions: isSelf ? user.dietaryRestrictions : null,
+    timezone: isSelf ? user.timeZone : null,
+    bioDocId: isSelf ? user.bioDocId : null,
+    // ── Self or Core/Admin ─────────────────────────────────────────────────
+    education: education
+      ? {
+          attended: education.attended.map((o) => ({
+            offeringId: o.offeringId,
+            title: o.title,
+            type: o.type,
+            startsAt: o.startsAt ? o.startsAt.toISOString() : null,
+            endsAt: o.endsAt ? o.endsAt.toISOString() : null,
+            status: o.status,
+            attendance: o.attendance,
+            certificateIssuedAt: o.certificateIssuedAt
+              ? o.certificateIssuedAt.toISOString()
+              : null,
+          })),
+          taught: education.taught,
+          ceCredits: education.ceCredits,
+        }
+      : null,
   };
 }

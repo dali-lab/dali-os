@@ -163,3 +163,22 @@ SSE streams (notifications/comments/staffing/activities); GitHub webhook; CSV/PD
 **Phase 3 — New-surface coverage.** Activities layer, infrastructure read-only (C6), AI-usage/analytics reads. Reviewer/admin hiring read-gaps (coverage detail, rosters, pipeline, rubric) optional within the existing D2 read model. **No member-facing hiring, no staffing self-service (C1, C2).**
 
 Faceting stays the pattern: extend `manage_*(action)` tools rather than adding many discrete tools. Reuse the web's extracted server fns; where logic is inline in an action, extract a shared fn first (benefits both surfaces).
+
+---
+
+## As-built (2026-09-12) — Phases 0–3 all shipped on `feat/mcp-parity`
+
+Full suite green: **0 `app/` typecheck errors, 4464 unit tests pass**. All new tools are registry entries in their area's `index.ts` (a new `personal` area module was added for cross-cutting member tools); no legacy-switch or `mcp.ts` edits. ~43 new tool files + 32 new test files.
+
+- **Phase 0** — the 12 faithfulness fixes above (2 P0 security/roster fixes + audit-log/enum/gate corrections).
+- **Phase 1/2 member + role-scoped writes:**
+  - Projects: `update_task` +description/+startsAt, `create_task` +startsAt, `update_story` +7 fields, `provision_epic_description_doc`, `archive_done_tasks`, `list_archived_tasks`, `manage_project_file` (rename/add_version), `get_project_file` (signed URLs).
+  - Education: `submit_assignment`, `check_in_to_session`, `grade_submission`, `get_certificate`, `read_education_page`, `manage_offering_materials`, `post_education_announcement`, `read_education_discussion`, `list_ce_compliance`/`grant_ce_credit`/`remind_ce_noncompliant`; `manage_education_session` +set_check_in_open; `manage_education_offering` +duplicate/+external-instructor/+set_form_binding/+set_decision_email.
+  - Calendar: `schedule_meeting` +Group/projectId/meetingType/attendanceMode/isCoreMeeting/organizerCalendarId, `mark_meeting_attendance`, `get_meeting`, `search_calendar`, `manage_class`, `search_timetable_courses`, `scan_attendee`, `manage_calendar_link`.
+  - Docs/Drive: `set_page_content` extended to Lab + personal-note bodies (collab pipeline), `manage_page` +typography, `name_collab_version`, `list_page_templates`, `list_drive_trash`/`manage_drive_trash`, `move_drive_item`, `upload_drive_file`.
+  - Signing: `get_binding_to_sign`, `list_my_signed_documents`, `list_agreements`, `get_signed_document_admin`, `issue_term_agreements`; `manage_agreement` +delete_version/+archive/+remind.
+  - Partners: `manage_partner_application` +update_title/assign_meeter/save_eval/save_acceptance/add_note/expectedChallenges, `manage_partner_meeting`, `get_partner_sow`, deeper `get_partner_application`. (Partner-facing emails intentionally NOT exposed per C4.)
+  - Personal: `mark_notification_read` +all/unread/dismiss, `list_my_notifications` +history/filters, `update_profile` +10 fields, `get_member_profile` deepened, `list_members`, `complete_onboarding_tour`, `set_activity_visibility`.
+- **Phase 3 admin/new-surface:** `manage_job` +list, `list_announcements` + cancel_scheduled, `manage_email_template` +send_test, `manage_email_sender`, `list_outbound_messages`/`manage_outbound_message`, `manage_activity` (Activities layer), `list_ai_usage`, `get_attendance_overview`, `list_infrastructure` (read-only).
+
+**Collab-body tools** (flagged, go through the collab pipeline / clone rule): `set_page_content` (Lab + notes), `provision_epic_description_doc`, education Doc-mode submissions + `manage_offering_materials`. `manage_partner_application.expectedChallenges` writes a plain paragraph block via direct update (documented caveat — not the CRDT). **Confirmed exclusions unchanged** (hiring, payroll, role grants, domain create/delete, streams/exports, partner emails, PageShare grants).

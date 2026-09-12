@@ -27,6 +27,34 @@ import {
   UPDATE_PROFILE_DEF,
   runUpdateProfile,
 } from "./update-profile";
+import {
+  MARK_MEETING_ATTENDANCE_DEF,
+  runMarkMeetingAttendance,
+} from "./mark-meeting-attendance";
+import {
+  GET_MEETING_DEF,
+  runGetMeeting,
+} from "./get-meeting";
+import {
+  SEARCH_CALENDAR_DEF,
+  runSearchCalendar,
+} from "./search-calendar";
+import {
+  MANAGE_CLASS_DEF,
+  runManageClass,
+} from "./manage-class";
+import {
+  SEARCH_TIMETABLE_COURSES_DEF,
+  runSearchTimetableCourses,
+} from "./search-timetable-courses";
+import {
+  SCAN_ATTENDEE_DEF,
+  runScanAttendee,
+} from "./scan-attendee";
+import {
+  MANAGE_CALENDAR_LINK_DEF,
+  runManageCalendarLink,
+} from "./manage-calendar-link";
 
 export const CALENDAR_TOOLS: McpTool[] = [
   {
@@ -58,5 +86,40 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: UPDATE_PROFILE_DEF,
     run: (ctx, args) =>
       runUpdateProfile(ctx.user.id, args as { firstName?: string; lastName?: string; pronouns?: string; handle?: string; timezone?: string; photoUrl?: string }),
+  },
+  {
+    def: MARK_MEETING_ATTENDANCE_DEF,
+    run: (ctx, args) =>
+      runMarkMeetingAttendance(ctx.user.id, args as { meetingId: string; userId: string; present: boolean }),
+  },
+  {
+    def: GET_MEETING_DEF,
+    run: (ctx, args) =>
+      runGetMeeting(ctx.user.id, args as { meetingId: string }),
+  },
+  {
+    def: SEARCH_CALENDAR_DEF,
+    run: (ctx, args) =>
+      runSearchCalendar(ctx.user.id, args as { q: string; scope?: "near" | "all"; rangeStart?: string; rangeEnd?: string }),
+  },
+  {
+    def: MANAGE_CLASS_DEF,
+    run: (ctx, args) =>
+      runManageClass(ctx.user.id, args as Parameters<typeof runManageClass>[1]),
+  },
+  {
+    def: SEARCH_TIMETABLE_COURSES_DEF,
+    run: (ctx, args) =>
+      runSearchTimetableCourses(ctx.user.id, args as { termId: string; q: string }),
+  },
+  {
+    def: SCAN_ATTENDEE_DEF,
+    run: (ctx, args) =>
+      runScanAttendee(ctx.user.id, args as { meetingId: string; memberToken: string }),
+  },
+  {
+    def: MANAGE_CALENDAR_LINK_DEF,
+    run: (ctx, args) =>
+      runManageCalendarLink(ctx.user.id, args as Parameters<typeof runManageCalendarLink>[1]),
   },
 ];
