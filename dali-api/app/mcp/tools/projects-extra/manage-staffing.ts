@@ -15,6 +15,7 @@
 
 import { prisma } from "~/lib/db";
 import { canManageStaffing } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction } from "./errors";
 import { publishCycleChange } from "~/projects/lib/staffing-events.server";
 
@@ -89,7 +90,19 @@ export async function runManageStaffing(
     await prisma.staffingMentorRole.upsert({
       where: { staffingCycleId_userId: { staffingCycleId: input.cycleId, userId: input.userId! } },
       update: { isMentor: input.isMentor! },
-      create: { staffingCycleId: input.cycleId, userId: input.userId!, isMentor: input.isMentor! },
+      create: {
+        staffingCycleId: input.cycleId,
+        userId: input.userId!,
+        isMentor: input.isMentor!,
+        createdById: callerId,
+      },
+    });
+    // Mirror api.staffing.mentor-role.ts — the board write is audit-logged.
+    await logAuditEvent({
+      action: "staffing.mentorRole.set",
+      userId: callerId,
+      targetId: input.userId!,
+      metadata: { cycleId: input.cycleId, isMentor: input.isMentor! },
     });
     await publishCycleChange(input.cycleId);
     return { ok: true };
@@ -144,15 +157,17 @@ export async function runManageStaffing(
 
   // ── add_board_member ─────────────────────────────────────────────────────────
   if (input.action === "add_board_member") {
-    const user = await prisma.user.findUnique({
-      where: { id: input.userId! },
+    // Must be a real DALI member — mirrors api.staffing.board-member.ts. The
+    // board is the staff-able pool, so a non-member user id can't be placed.
+    const user = await prisma.user.findFirst({
+      where: { id: input.userId!, daliMember: { isNot: null } },
       select: { id: true },
     });
-    if (!user) throw new McpNotFoundError("User not found.");
+    if (!user) throw new McpInvalidError("User is not a DALI member.");
     await prisma.staffingBoardMember.upsert({
       where: { userId_staffingCycleId: { userId: input.userId!, staffingCycleId: input.cycleId } },
       update: {},
-      create: { userId: input.userId!, staffingCycleId: input.cycleId },
+      create: { userId: input.userId!, staffingCycleId: input.cycleId, addedById: callerId },
     });
     await publishCycleChange(input.cycleId);
     return { ok: true };

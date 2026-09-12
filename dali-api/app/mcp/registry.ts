@@ -85,6 +85,7 @@ import { FORMS_TOOLS } from "./tools/forms";
 import { ADMIN_TOOLS } from "./tools/admin";
 import { PROJECTS_EXTRA_TOOLS } from "./tools/projects-extra";
 import { FACETED_TOOLS } from "./tools/faceted";
+import { PERSONAL_TOOLS } from "./tools/personal";
 
 export const REGISTRY_TOOLS: McpTool[] = [
   ...HIRING_TOOLS,
@@ -98,6 +99,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...ADMIN_TOOLS,
   ...PROJECTS_EXTRA_TOOLS,
   ...FACETED_TOOLS,
+  ...PERSONAL_TOOLS,
 ];
 
 const BY_NAME = new Map<string, McpTool>(REGISTRY_TOOLS.map((t) => [t.def.name, t]));

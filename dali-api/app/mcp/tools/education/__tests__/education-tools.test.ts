@@ -233,8 +233,10 @@ describe("scopes", () => {
   it("upsert_education_student_note requires mcp:write", () => {
     expect(UPSERT_EDUCATION_STUDENT_NOTE_TOOL.requiredScope).toBe("mcp:write");
   });
-  it("close_out_education_offering requires mcp:admin", () => {
-    expect(CLOSE_OUT_EDUCATION_OFFERING_TOOL.requiredScope).toBe("mcp:admin");
+  it("close_out_education_offering requires mcp:write", () => {
+    // Web gate is isOfferingManager (instructor or Core) — mcp:write, not
+    // mcp:admin, so an instructor who owns the offering can close it (A12).
+    expect(CLOSE_OUT_EDUCATION_OFFERING_TOOL.requiredScope).toBe("mcp:write");
   });
 });
 

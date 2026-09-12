@@ -2,7 +2,7 @@
 // Access: Core only (mirrors the api.waitlist.ts loader).
 // Optionally scoped to a single cycle via `cycleId`.
 
-import { isCore } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
 import { listActiveWaitlistEntries } from "~/hiring/lib/waitlist.server";
 import { McpForbiddenError } from "../../registry";
 
@@ -28,10 +28,15 @@ export const LIST_WAITLIST_TOOL = {
 type Input = { cycleId?: string };
 
 export async function runListWaitlist(userId: string, input: Input): Promise<unknown> {
-  if (!(await isCore(userId))) {
+  const roles = await getUserRoles(userId);
+  if (!roles.isCore) {
     throw new McpForbiddenError("Core access required to view the waitlist");
   }
 
   const entries = await listActiveWaitlistEntries({ cycleId: input.cycleId });
-  return entries;
+  // Core-cycle waitlisters are current lab members — Admin-only (mirrors the
+  // waitlists.tsx loader). Hide them from non-admin Core members.
+  return roles.isAdmin
+    ? entries
+    : entries.filter((e) => e.cycle.cycleType !== "Core");
 }

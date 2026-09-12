@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     form: { findUnique: vi.fn() },
-    scheduledAnnouncement: { create: vi.fn() },
+    scheduledAnnouncement: { create: vi.fn(), updateMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", () => ({
@@ -20,7 +20,10 @@ import { runSendAnnouncement, SEND_ANNOUNCEMENT_TOOL } from "~/mcp/tools/admin/s
 
 const mockPrisma = prisma as unknown as {
   form: { findUnique: ReturnType<typeof vi.fn> };
-  scheduledAnnouncement: { create: ReturnType<typeof vi.fn> };
+  scheduledAnnouncement: {
+    create: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
 };
 
 beforeEach(() => {
@@ -137,5 +140,58 @@ describe("send_announcement", () => {
         sendAt,
       }),
     ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
+  });
+
+  it("throws McpInvalidError when title is omitted for send action", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runSendAnnouncement("u-core", { allMembers: true }),
+    ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
+  });
+
+  describe("action: cancel_scheduled", () => {
+    it("cancels a pending scheduled announcement and returns ok+canceled", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.scheduledAnnouncement.updateMany.mockResolvedValue({ count: 1 });
+
+      const out = await runSendAnnouncement("u-core", {
+        action: "cancel_scheduled",
+        scheduledAnnouncementId: "sa-abc",
+      });
+      expect(out).toEqual({ ok: true, canceled: true });
+      expect(mockPrisma.scheduledAnnouncement.updateMany).toHaveBeenCalledWith({
+        where: { id: "sa-abc", sentAt: null, canceledAt: null },
+        data: { canceledAt: expect.any(Date) },
+      });
+    });
+
+    it("throws McpNotFoundError when no matching pending row exists (already sent/canceled)", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.scheduledAnnouncement.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        runSendAnnouncement("u-core", {
+          action: "cancel_scheduled",
+          scheduledAnnouncementId: "sa-gone",
+        }),
+      ).rejects.toMatchObject({ name: "McpNotFoundError", status: 404 });
+    });
+
+    it("throws McpInvalidError when scheduledAnnouncementId is omitted", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      await expect(
+        runSendAnnouncement("u-core", { action: "cancel_scheduled" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
+    });
+
+    it("throws McpForbiddenError when caller is not Core", async () => {
+      vi.mocked(isCore).mockResolvedValue(false);
+      await expect(
+        runSendAnnouncement("u-nobody", {
+          action: "cancel_scheduled",
+          scheduledAnnouncementId: "sa-1",
+        }),
+      ).rejects.toMatchObject({ name: "McpForbiddenError", status: 403 });
+    });
   });
 });
