@@ -534,11 +534,22 @@
 
   function render() {
     if (!ui) return;
-    const dock = h("div", { class: "dock" },
+    const build = () => h("div", { class: "dock" },
       state.toast && h("div", { class: "toast" + (state.toast.isError ? " error" : ""), role: "status" }, state.toast.text),
       state.open && !state.plan && renderPanel(),
       state.plan ? renderProgress() : renderLauncher(),
     );
+    let dock;
+    try {
+      dock = build();
+    } catch (err) {
+      // Never leave the panel frozen on "Loading…" — fall back to the error
+      // state, which renders without touching the payload.
+      console.error("[DALI → JobX]", err);
+      state.data = null;
+      state.error = "Something went wrong showing your hours. Try again, or refresh this page.";
+      dock = build();
+    }
     ui.replaceChildren(dock);
   }
 
