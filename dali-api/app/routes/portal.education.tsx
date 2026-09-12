@@ -5,7 +5,9 @@ import { redirectToLogin } from "~/lib/login-next";
 import { listCatalog } from "~/education/lib/offerings.server";
 import { getStudentDashboard } from "~/education/lib/lms.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
+import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = () => [
@@ -27,6 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function PortalEducation() {
   const { offerings, dashboard } = useLoaderData<typeof loader>();
+  const redesign = useFeatureFlag("education-redesign-v2");
   const tz = useUserTimeZone();
   // Enrolled courses show in the dashboard's "My courses"; the list below is
   // offerings still open to apply to or RSVP for.
@@ -57,35 +60,42 @@ export default function PortalEducation() {
         }}
       />
 
-      <section>
-        {hasCourses && (
-          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            All offerings
-          </h2>
-        )}
-        {openOfferings.length === 0 ? (
-          <div className="bg-card border border-border rounded-lg p-8 text-center">
-            <p className="font-heading font-semibold text-dark-blue">
-              Nothing scheduled right now
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Check back soon — new miniseries and workshops are posted here
-              each term.
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {openOfferings.map((o) => (
-              <OfferingCard
-                key={o.id}
-                offering={o}
-                myStatus={o.myStatus}
-                to={`/portal/education/${o.id}`}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {redesign ? (
+        <OfferingCatalog
+          offerings={offerings}
+          to={(id) => `/portal/education/${id}`}
+        />
+      ) : (
+        <section>
+          {hasCourses && (
+            <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              All offerings
+            </h2>
+          )}
+          {openOfferings.length === 0 ? (
+            <div className="bg-card border border-border rounded-lg p-8 text-center">
+              <p className="font-heading font-semibold text-dark-blue">
+                Nothing scheduled right now
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Check back soon — new miniseries and workshops are posted here
+                each term.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {openOfferings.map((o) => (
+                <OfferingCard
+                  key={o.id}
+                  offering={o}
+                  myStatus={o.myStatus}
+                  to={`/portal/education/${o.id}`}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
+import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 
 type Values = {
   type?: "Miniseries" | "Workshop";
   title?: string;
+  iconEmoji?: string | null;
   capacity?: number;
   registrationOpensAt?: string | Date;
   registrationClosesAt?: string | Date;
@@ -43,6 +45,9 @@ export function OfferingFields({
     values.type ?? "Workshop",
   );
   const isMiniseries = selectedType === "Miniseries";
+  // The catalog-card icon. Held in state and posted as a hidden field, since
+  // ProjectIconPicker is a controlled popover (no native input of its own).
+  const [iconEmoji, setIconEmoji] = useState<string | null>(values.iconEmoji ?? null);
 
   return (
     <>
@@ -87,17 +92,31 @@ export function OfferingFields({
         </label>
       </div>
 
-      <label className="block">
-        <span className={LABEL}>Title</span>
-        <input
-          type="text"
-          name="title"
-          required
-          defaultValue={values.title ?? ""}
-          placeholder="e.g. Full-Stack Miniseries 26F"
-          className={INPUT}
-        />
-      </label>
+      <div className="flex items-end gap-3">
+        <div className="block">
+          <span className={LABEL}>
+            <span className="inline-flex items-center gap-1">
+              Icon
+              <InfoTip content="An emoji shown on the offering's catalog card. Optional — cards fall back to the title's first letter." />
+            </span>
+          </span>
+          <div className="mt-1 flex h-[38px] items-center">
+            <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
+          </div>
+          <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
+        </div>
+        <label className="block flex-1">
+          <span className={LABEL}>Title</span>
+          <input
+            type="text"
+            name="title"
+            required
+            defaultValue={values.title ?? ""}
+            placeholder="e.g. Full-Stack Miniseries 26F"
+            className={INPUT}
+          />
+        </label>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
