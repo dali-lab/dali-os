@@ -253,7 +253,7 @@ function ViewSwitcher({
   onChangeView: (v: CalendarView) => void;
 }) {
   return (
-    <div className="inline-flex w-full rounded-lg bg-muted p-0.5" role="tablist" aria-label="Calendar view">
+    <div className="mx-2 flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Calendar view">
       {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
         <button
           key={v}
