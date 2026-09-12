@@ -6,7 +6,6 @@
 import { prisma } from "~/lib/db";
 import { normalizeHandle } from "~/lib/handle";
 import { isValidTimezone } from "~/lib/timezone";
-import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { McpInvalidError } from "../../registry";
 
 export const UPDATE_PROFILE_DEF = {
@@ -119,11 +118,6 @@ export async function runUpdateProfile(userId: string, input: Input) {
       throw new McpInvalidError("A unique constraint was violated");
     }
     throw e;
-  }
-
-  // Keep the calendar/working-hours zone in step with the display zone.
-  if (typeof data.timeZone === "string") {
-    await syncAvailabilityTimezone(userId, data.timeZone);
   }
 
   return { ok: true, updated };
