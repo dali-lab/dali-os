@@ -321,36 +321,41 @@ function CalendarSidebarContent({
           about hours already worked, so the search box only gets in the way. */}
       {!layers.logged && <MeetWith users={data.users} onPick={onMeetWith} />}
 
-      <div className="flex flex-col gap-1">
-        <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          My calendars
-        </h2>
-        {links.length === 0 ? (
-          <p className="px-1 text-xs text-muted-foreground">
-            No calendars linked yet.
-          </p>
-        ) : (
-          links.map((link) => (
-            <AccountGroup
-              key={link.id}
-              link={link}
-              hiddenCals={hiddenCals}
-              toggleHiddenCal={toggleHiddenCal}
-            />
-          ))
-        )}
-        {/* Nudge to add the shared DALI General Calendar, below the member's own
-            calendars because it's the odd one out — a calendar they don't have
-            yet. `data.calendarLinks` unfiltered, not the `enabled` subset above:
-            the loader derived "missing" from every link, so filtering here would
-            hide the prompt from someone whose only Google account is disabled
-            while the state still says they need it. */}
-        {data.generalCalendar === "missing" && (
-          <div className="px-1 pt-1">
-            <GeneralCalendarPrompt links={data.calendarLinks} />
-          </div>
-        )}
-      </div>
+      {/* Which calendars to draw is a question about events. In timesheet
+          mode the grid draws logged hours, so the whole group goes with
+          Meet with rather than sitting there inert. */}
+      {!layers.logged && (
+        <div className="flex flex-col gap-1">
+          <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            My calendars
+          </h2>
+          {links.length === 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">
+              No calendars linked yet.
+            </p>
+          ) : (
+            links.map((link) => (
+              <AccountGroup
+                key={link.id}
+                link={link}
+                hiddenCals={hiddenCals}
+                toggleHiddenCal={toggleHiddenCal}
+              />
+            ))
+          )}
+          {/* Nudge to add the shared DALI General Calendar, below the member's own
+              calendars because it's the odd one out — a calendar they don't have
+              yet. `data.calendarLinks` unfiltered, not the `enabled` subset above:
+              the loader derived "missing" from every link, so filtering here would
+              hide the prompt from someone whose only Google account is disabled
+              while the state still says they need it. */}
+          {data.generalCalendar === "missing" && (
+            <div className="px-1 pt-1">
+              <GeneralCalendarPrompt links={data.calendarLinks} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Timesheet is a way of *looking* at the grid, not a calendar to overlay,
           so the mode itself lives in the header beside the date. What's left
