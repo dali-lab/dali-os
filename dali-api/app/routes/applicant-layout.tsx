@@ -5,6 +5,10 @@ import { redirectToLogin } from "~/lib/login-next";
 import { userInitials } from "~/lib/display";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { getUserRoles } from "~/lib/roles";
+import { resolveFeatureFlags } from "~/lib/feature-flags.server";
+import type { FeatureFlagMap } from "~/lib/feature-flags";
+import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 
@@ -17,14 +21,22 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { id: auth.user.sub },
     select: { photoUrl: true },
   });
-  const avatarUrl = await resolvePhotoUrl(me?.photoUrl);
-  return { user: auth.user, avatarUrl };
+  // Feature flags for the portal: the member shell resolves these in its own
+  // layout, but the applicant portal is a separate layout — without this, every
+  // /portal/* page reads flags as off (useFeatureFlag falls back to false).
+  const roles = await getUserRoles(auth.user.sub);
+  const [avatarUrl, flags] = await Promise.all([
+    resolvePhotoUrl(me?.photoUrl),
+    resolveFeatureFlags(auth.user.sub, roles),
+  ]);
+  return { user: auth.user, avatarUrl, flags };
 }
 
 export default function ApplicantLayout() {
-  const { user, avatarUrl } = useLoaderData<typeof loader>() as {
+  const { user, avatarUrl, flags } = useLoaderData<typeof loader>() as {
     user: { sub: string; email: string; type: string; firstName?: string; lastName?: string };
     avatarUrl: string | null;
+    flags: FeatureFlagMap;
   };
 
   const displayName = user.firstName
@@ -65,7 +77,9 @@ export default function ApplicantLayout() {
 
       {/* Content */}
       <div className="pt-16">
-        <Outlet />
+        <FeatureFlagsProvider flags={flags}>
+          <Outlet />
+        </FeatureFlagsProvider>
       </div>
     </div>
   );
