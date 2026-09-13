@@ -8,6 +8,11 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/github-slug", () => ({
   githubTeamSlug: (s: string) => s.toLowerCase().replace(/\s+/g, "-"),
 }));
+// Promote now routes the status flip through setApplicationStatus (logs a
+// StatusChanged activity). Mock it so the tx doesn't need the activity plumbing.
+vi.mock("~/partners/lib/partner-activity.server", () => ({
+  setApplicationStatus: vi.fn().mockResolvedValue("Inquiry"),
+}));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
 vi.mock("~/mcp/registry", () => {
@@ -39,6 +44,7 @@ vi.mock("~/mcp/registry", () => {
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { setApplicationStatus } from "~/partners/lib/partner-activity.server";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
@@ -116,6 +122,17 @@ describe("promote_partner_application", () => {
 
     const out = await runPromotePartnerApplication("u1", { applicationId: "app-1" });
     expect(out).toMatchObject({ projectId: "proj-new", name: "AI Health Tool", alreadyExisted: false });
+    // A5: promotion is logged via setApplicationStatus (from → Promoted) rather
+    // than a bare inline update, so the application timeline records it.
+    expect(setApplicationStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        applicationId: "app-1",
+        to: "Promoted",
+        actorUserId: "u1",
+        data: expect.objectContaining({ resultingProjectId: "proj-new" }),
+      }),
+    );
   });
 
   it("promotes without terms or domains when none provided", async () => {

@@ -19,6 +19,10 @@ export const CREATE_TASK_TOOL = {
     properties: {
       projectId: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1, maxLength: 500 },
+      description: {
+        type: "string",
+        description: "Optional plain-text / Markdown description.",
+      },
       status: {
         type: "string",
         enum: TASK_STATUSES as unknown as string[],
@@ -32,6 +36,11 @@ export const CREATE_TASK_TOOL = {
           "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
       },
       domainId: { type: "string", description: "Optional domain chip." },
+      startsAt: {
+        type: "string",
+        description:
+          "Timeline start (ISO timestamp, planning only). Empty string or omitted = no start.",
+      },
       dueAt: {
         type: "string",
         description: "ISO timestamp. Empty string or omitted = no deadline.",
@@ -56,11 +65,13 @@ export const CREATE_TASK_TOOL = {
 type Input = {
   projectId: string;
   title: string;
+  description?: string;
   status?: string;
   priority?: Priority;
   epicId?: string;
   storyId?: string;
   domainId?: string;
+  startsAt?: string;
   dueAt?: string;
   assigneeUserIds?: string[];
   mirrorToGithubRepo?: string;
@@ -117,6 +128,15 @@ export async function runCreateTask(callerId: string, input: Input) {
     }
   }
 
+  let startsAt: Date | null = null;
+  if (input.startsAt && input.startsAt !== "") {
+    const d = new Date(input.startsAt);
+    if (!Number.isFinite(d.getTime())) {
+      throw new CreateTaskError("Invalid startsAt", 400);
+    }
+    startsAt = d;
+  }
+
   let dueAt: Date | null = null;
   if (input.dueAt && input.dueAt !== "") {
     const d = new Date(input.dueAt);
@@ -149,17 +169,21 @@ export async function runCreateTask(callerId: string, input: Input) {
   });
   const position = last ? last.position + 1 : 0;
 
+  const description = input.description?.trim() ?? "";
+
   const task = await prisma.$transaction(async (tx) => {
     const created = await tx.task.create({
       data: {
         projectId: input.projectId,
         title,
+        description: description === "" ? null : description,
         status,
         position,
         priority: input.priority ?? "Normal",
         epicId,
         storyId,
         domainId: input.domainId && input.domainId !== "" ? input.domainId : null,
+        startsAt,
         dueAt,
         createdById: callerId,
       },

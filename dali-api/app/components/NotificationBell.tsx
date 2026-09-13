@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
+import type { AttentionNotification } from "~/components/AttentionPanel";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -21,11 +22,21 @@ export type OpenTask = {
   // not mark it read. Optional so a stale payload falls back to the old
   // behavior; the server refuses the read either way.
   hasAction?: boolean;
+  // Deadline chip on the task card (ISO). Meeting tasks carry the occurrence
+  // start; announcements an admin-set due date.
+  dueAt?: string | null;
+  // Self-clearing form todo: clears on submit, so it carries a confirmed
+  // Dismiss instead of a plain "mark read" (see isSelfClearingFormTodo).
+  formTodo?: boolean;
 };
 
 type Polled = {
   taskCount: number;
   tasks: OpenTask[];
+  // The notification feed itself. The bell's panel renders these alongside the
+  // tasks (meeting invites awaiting an RSVP, anything unread that isn't a
+  // task), so one poll backs the badge, the list and the panel.
+  items: AttentionNotification[];
 };
 
 // Polls /api/notifications once and returns the open-task count and the
@@ -35,6 +46,7 @@ function usePolledCounts(): Polled {
   const [state, setState] = useState<Polled>({
     taskCount: 0,
     tasks: [],
+    items: [],
   });
   const { revalidate } = useRevalidator();
   // Stable ref so the once-mounted SSE listener always calls the latest
@@ -51,6 +63,7 @@ function usePolledCounts(): Polled {
         const json = (await res.json()) as {
           taskCount?: number;
           tasks?: OpenTask[];
+          items?: AttentionNotification[];
         };
         if (cancelled) return;
         const tasks = Array.isArray(json.tasks) ? json.tasks : [];
@@ -58,6 +71,7 @@ function usePolledCounts(): Polled {
           taskCount:
             typeof json.taskCount === "number" ? json.taskCount : tasks.length,
           tasks,
+          items: Array.isArray(json.items) ? json.items : [],
         });
       } catch {
         // Polling errors are benign; we'll try again next tick.
@@ -100,4 +114,14 @@ export function useOpenTaskCount(): number {
 // linking to that todo's own target.
 export function useOpenTasks(): OpenTask[] {
   return usePolledCounts().tasks;
+}
+
+// Everything the bell's attention panel renders: the open tasks plus the
+// notification feed behind them, from a single poll.
+export function useAttentionFeed(): {
+  tasks: OpenTask[];
+  items: AttentionNotification[];
+} {
+  const { tasks, items } = usePolledCounts();
+  return { tasks, items };
 }

@@ -20,6 +20,10 @@ import {
   runGetPartnerApplication,
 } from "./get-partner-application";
 import {
+  GET_PARTNER_SOW_TOOL,
+  runGetPartnerSow,
+} from "./get-partner-sow";
+import {
   MANAGE_PARTNER_ORG_TOOL,
   runManagePartnerOrg,
 } from "./manage-partner-org";
@@ -31,6 +35,10 @@ import {
   MANAGE_PARTNER_APPLICATION_TOOL,
   runManagePartnerApplication,
 } from "./manage-partner-application";
+import {
+  MANAGE_PARTNER_MEETING_TOOL,
+  runManagePartnerMeeting,
+} from "./manage-partner-meeting";
 import {
   MANAGE_PARTNER_PROJECT_LINK_TOOL,
   runManagePartnerProjectLink,
@@ -67,6 +75,14 @@ export const PARTNERS_TOOLS: McpTool[] = [
       ),
   },
   {
+    def: GET_PARTNER_SOW_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runGetPartnerSow(
+        ctx.user.id,
+        args as Parameters<typeof runGetPartnerSow>[1],
+      ),
+  },
+  {
     def: MANAGE_PARTNER_ORG_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerOrg(ctx.user.id, args),
   },
@@ -77,6 +93,10 @@ export const PARTNERS_TOOLS: McpTool[] = [
   {
     def: MANAGE_PARTNER_APPLICATION_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerApplication(ctx.user.id, args),
+  },
+  {
+    def: MANAGE_PARTNER_MEETING_TOOL,
+    run: (ctx: McpCtx, args) => runManagePartnerMeeting(ctx.user.id, args),
   },
   {
     def: MANAGE_PARTNER_PROJECT_LINK_TOOL,

@@ -271,7 +271,9 @@ describe("pages + files tools", () => {
     await expect(
       runSetPageContent("u1", { pageId: "pg1", markdown: "x" }),
     ).rejects.toMatchObject({ status: 403 });
-    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
+    // set_page_content now gates via getPageAccess (covers Lab + note pages
+    // too), which resolves project membership with an optional term arg.
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1", undefined);
   });
 
   it("set_page_content allows non-Core members staffed on the project (web parity)", async () => {
