@@ -63,7 +63,7 @@ export async function resolveActiveActivitiesForUser(
   for (const a of rows) {
     if (!(await isAssigned(a, userId, roles))) continue;
     const mech = mechanicServer(a.kind);
-    const overlay = mech ? mech.overlayPayload(a, pathname) : null;
+    const overlay = mech?.overlayPayload?.(a, pathname) ?? null;
     // Only the mechanics that summarize need the member's events; fetch them
     // lazily so a non-summarizing mechanic (or none) costs no extra query.
     let progressLabel: string | null = null;
