@@ -10,8 +10,9 @@ export default function HelpNotificationsPage() {
     <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Notifications</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        DALI OS tells you about things that need your attention in two
-        places: the Tasks group in the sidebar and your Home inbox.
+        DALI OS collects everything that needs your attention behind the
+        bell in the top bar: click it for your open tasks and anything
+        unread, each with the buttons to deal with it.
       </p>
 
       <section className="mt-6">
@@ -19,16 +20,18 @@ export default function HelpNotificationsPage() {
         <p className="mt-2 text-sm text-foreground">
           A <em>task</em> is something we want you to act on: an interview
           to confirm, a form to fill, a meeting invite to RSVP to. Tasks show
-          up in the sidebar with a count badge and stay there until they're
+          up in the bell's count badge and stay there until they're
           resolved.
         </p>
         <p className="mt-2 text-sm text-foreground">
           A regular notification is just a heads-up — a project update, a
-          system announcement, a meeting reminder. These collect on{" "}
-          <Link to="/" className="text-accent-teal hover:underline">
-            Home
-          </Link>{" "}
-          and mark themselves read when you've seen them.
+          system announcement, a meeting reminder. These collect in the same
+          panel and mark themselves read when you've seen them; the full
+          history lives on{" "}
+          <Link to="/notifications" className="text-accent-teal hover:underline">
+            My Tasks
+          </Link>
+          .
         </p>
       </section>
 
@@ -48,10 +51,10 @@ export default function HelpNotificationsPage() {
         <h2 className="text-lg font-semibold">Reminders</h2>
         <p className="mt-2 text-sm text-foreground">
           For meetings and time-sensitive tasks, DALI OS sends a reminder
-          ahead of the deadline. Reminders disappear from the Tasks group
-          automatically once the underlying assignment is no longer active
-          (the meeting is cancelled, the interview is reassigned, etc.) so
-          you don't have to clean up after a state change.
+          ahead of the deadline. Reminders clear themselves once they've
+          gone by, or once the underlying assignment is no longer active (the
+          meeting is cancelled, the interview is reassigned, etc.), so you
+          don't have to clean up after a state change.
         </p>
       </section>
 

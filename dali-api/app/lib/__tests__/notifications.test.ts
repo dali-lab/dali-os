@@ -5,6 +5,7 @@ vi.mock("~/lib/db");
 import { prisma } from "~/lib/db";
 import {
   listMyNotifications,
+  listRetiredMeetingPingIds,
   liveMeetingPingClauses,
   NOT_CANCELLED_MEETING,
 } from "~/lib/notifications";
@@ -125,5 +126,44 @@ describe("listMyNotifications", () => {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
+  });
+});
+
+describe("listRetiredMeetingPingIds", () => {
+  // The stale-unread rows the feed hides: the second query re-asks for the
+  // candidates through the live clauses, so whatever it omits is what the feed
+  // dropped — that difference is what the desktop shell retires.
+  it("returns the candidates the live clauses drop", async () => {
+    mockPrisma.notification.findMany
+      .mockResolvedValueOnce([{ id: "past-reminder" }, { id: "live-invite" }])
+      .mockResolvedValueOnce([{ id: "live-invite" }]);
+
+    expect(await listRetiredMeetingPingIds("user-1")).toEqual(["past-reminder"]);
+
+    const [candidates, live] = mockPrisma.notification.findMany.mock.calls;
+    // Candidates: unread, meeting-backed, within the lookback window.
+    expect(candidates[0].where).toEqual({
+      recipientUserId: "user-1",
+      readAt: null,
+      scheduledMeetingId: { not: null },
+      createdAt: { gte: new Date(NOW.getTime() - 30 * 24 * 3_600_000) },
+    });
+    expect(live[0].where).toEqual({
+      id: { in: ["past-reminder", "live-invite"] },
+      AND: [NOT_CANCELLED, ...LIVE()],
+    });
+  });
+
+  it("returns nothing — and skips the second query — with no candidates", async () => {
+    mockPrisma.notification.findMany.mockResolvedValueOnce([]);
+    expect(await listRetiredMeetingPingIds("user-1")).toEqual([]);
+    expect(mockPrisma.notification.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns nothing when every candidate is still live", async () => {
+    mockPrisma.notification.findMany
+      .mockResolvedValueOnce([{ id: "a" }, { id: "b" }])
+      .mockResolvedValueOnce([{ id: "a" }, { id: "b" }]);
+    expect(await listRetiredMeetingPingIds("user-1")).toEqual([]);
   });
 });
