@@ -26,6 +26,7 @@ import {
   type ComposerState,
 } from "~/calendar/components/composer";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
+import { useActionErrorToast } from "~/lib/useActionErrorToast";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
@@ -316,6 +317,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     if (prevMoveState.current !== "idle" && eventMoveFetcher.state === "idle") setDragOverride(null);
     prevMoveState.current = eventMoveFetcher.state;
   }, [eventMoveFetcher.state]);
+  // A failed drag-move/delete reverts to the old position; without this the
+  // revert is silent (looks like the drag just didn't take).
+  useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
+    fallback: "Couldn't update the event. Please try again.",
+  });
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
   // UTC-midnight anchored, so their calendar date reads off the UTC fields.

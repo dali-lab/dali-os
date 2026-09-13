@@ -76,7 +76,9 @@ pub fn run() {
             // by watching the first navigation.
             if keychain::get_token().is_some() {
                 app.state::<AppState>().set_auth(AuthState::Authenticated);
-                window::show_main(&handle);
+                // Splash → app, or the offline page if the origin is unreachable
+                // (rather than a blank webview on a cold start with no network).
+                window::start_main(&handle);
                 poller::spawn(handle.clone());
             } else {
                 app.state::<AppState>().set_auth(AuthState::Unpaired);
