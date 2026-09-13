@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -40,6 +40,16 @@ pub struct AppState {
     pub recent_notifs: Mutex<Vec<RecentNotif>>,
     // Webview zoom factor (View → Zoom). In-memory; resets to 1.0 on restart.
     pub zoom: Mutex<f64>,
+    // Remote-load tracking, so a failed/hung load of the prod origin can fall
+    // back to the bundled offline page instead of a blank webview.
+    // `main_load_gen` is bumped each time a load is armed; `main_loaded_gen`
+    // catches up to it when a prod page actually finishes loading. A watchdog
+    // that armed at gen N treats "loaded_gen < N" as "still not loaded".
+    pub main_load_gen: AtomicU64,
+    pub main_loaded_gen: AtomicU64,
+    // Whether the main window has been shown to the user yet (gates the
+    // cold-start splash → app / offline reveal, and is idempotent).
+    pub main_revealed: AtomicBool,
 }
 
 impl AppState {
@@ -51,7 +61,38 @@ impl AppState {
             seen_notifs: Mutex::new(HashSet::new()),
             recent_notifs: Mutex::new(Vec::new()),
             zoom: Mutex::new(1.0),
+            main_load_gen: AtomicU64::new(0),
+            main_loaded_gen: AtomicU64::new(0),
+            main_revealed: AtomicBool::new(false),
         }
+    }
+
+    /// Arm a new load attempt; returns its generation. A watchdog spawned for
+    /// this generation compares it against `loaded_since` after its timeout.
+    pub fn arm_load(&self) -> u64 {
+        self.main_load_gen.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// A prod page finished loading — catch `main_loaded_gen` up to the latest
+    /// armed generation so any pending watchdog sees the load.
+    pub fn mark_loaded(&self) {
+        self.main_loaded_gen
+            .store(self.main_load_gen.load(Ordering::SeqCst), Ordering::SeqCst);
+    }
+
+    /// Has a prod page finished loading at or after generation `gen`?
+    pub fn loaded_since(&self, gen: u64) -> bool {
+        self.main_loaded_gen.load(Ordering::SeqCst) >= gen
+    }
+
+    /// Mark the main window as shown; returns the previous value so callers can
+    /// run reveal side effects (hide splash, focus) exactly once.
+    pub fn mark_revealed(&self) -> bool {
+        self.main_revealed.swap(true, Ordering::SeqCst)
+    }
+
+    pub fn is_revealed(&self) -> bool {
+        self.main_revealed.load(Ordering::SeqCst)
     }
 
     pub fn set_auth(&self, next: AuthState) {
