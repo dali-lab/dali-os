@@ -13,6 +13,12 @@ import { prisma } from "~/lib/db";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
+import {
+  isApplicantBlinded,
+  anonLabelMapForCycle,
+  blindUser,
+  anonLabel,
+} from "~/hiring/lib/anonymization.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_APPLICATION_TOOL = {
@@ -47,7 +53,12 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
           user: { select: { firstName: true, lastName: true } },
           applicationFormVersion: { select: { questions: true } },
           applicationCycle: {
-            select: { id: true, generalRubricVersionId: true, cycleType: true },
+            select: {
+              id: true,
+              generalRubricVersionId: true,
+              cycleType: true,
+              anonymizeReview: true,
+            },
           },
         },
       },
@@ -192,7 +203,20 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
       id: da.application.id,
       answers: da.application.answers,
       generalQuestions: da.application.applicationFormVersion?.questions ?? [],
-      applicant: da.application.user,
+      // Blind review (mirrors api.domain-applications.$id.full-context.ts): on
+      // Standard cycles with anonymizeReview on, the applicant is anonymized
+      // until a decision is Released for them. Without this, MCP leaks the real
+      // applicant identity to reviewers the web keeps blinded.
+      applicant: isApplicantBlinded(
+        da.application.applicationCycle,
+        da.decisions.some((d) => d.stage === "Released"),
+      )
+        ? blindUser(
+            da.application.user,
+            (await anonLabelMapForCycle(cycleId)).get(da.application.id) ??
+              anonLabel(1),
+          )
+        : da.application.user,
     },
     reviews: da.reviews,
     decisions: da.decisions,

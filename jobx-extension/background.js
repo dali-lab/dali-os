@@ -32,11 +32,22 @@ async function fetchExport(params) {
     return { ok: false, base, signedOut: true, error: "You're not signed in to DALI OS." };
   }
   if (!res.ok) return { ok: false, base, error: `DALI OS returned an error (${res.status}).` };
+  let data;
   try {
-    return { ok: true, base, data: await res.json() };
+    data = await res.json();
   } catch {
     return { ok: false, base, error: "DALI OS sent a response the extension couldn't read." };
   }
+  // A server still on the pre-pay-period export (no `periods`) answers 200
+  // with a shape the panel can't render; say so rather than crash on it.
+  if (!data || !Array.isArray(data.availableHires) || !Array.isArray(data.periods)) {
+    return {
+      ok: false,
+      base,
+      error: `${new URL(base).host} is running an older DALI OS without pay-period support. Update the server, or pick another in the extension's popup.`,
+    };
+  }
+  return { ok: true, base, data };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

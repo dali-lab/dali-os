@@ -3,11 +3,11 @@
 // (~/collab/write.ts): markdown → BlockNote blocks → Yjs "blocknote"
 // fragment, applied via a Hocuspocus direct connection so open editors sync
 // live and a version snapshot is kept (the previous body stays restorable
-// from Version history). Gate mirrors web project-edit access: Core, or
-// staffed on the page's project.
+// from Version history). Gate mirrors the web's getPageAccess canEdit check
+// — works for Project, Lab, and personal-note (Member) workspace pages.
 
 import { prisma } from "~/lib/db";
-import { canEditProject } from "./access";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
@@ -18,7 +18,7 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 export const SET_PAGE_CONTENT_TOOL = {
   name: "set_page_content",
   description:
-    "Replace a project page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Requires Core or being staffed on the project.",
+    "Replace a page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). Works for Project, Lab, and personal-note (Member) workspace pages. OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Requires edit access on the page (Core, staffed on the project, or page owner).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -57,17 +57,33 @@ export async function runSetPageContent(callerId: string, input: Input) {
     },
   });
   if (!page) throw new SetPageContentError("Page not found", 404);
-  if (page.workspaceType !== "Project" || !page.workspaceId) {
-    throw new SetPageContentError("Only project workspace pages can be written via MCP", 400);
+
+  // Only the workspace types that carry a FreeForm body are valid targets.
+  if (
+    page.workspaceType !== "Project" &&
+    page.workspaceType !== "Lab" &&
+    page.workspaceType !== "Member"
+  ) {
+    throw new SetPageContentError("Page workspace type does not support content editing", 400);
   }
-  if (!(await canEditProject(callerId, page.workspaceId))) {
-    throw new SetPageContentError("Forbidden", 403);
-  }
+
   if (page.kind !== "FreeForm") {
     throw new SetPageContentError(`${page.kind} pages have no editable body`, 400);
   }
   if (page.archivedAt) {
     throw new SetPageContentError("Page is archived — unarchive it first (update_page)", 400);
+  }
+
+  // Use getPageAccess — the same gate as the web — so Project/Lab/Member
+  // pages all get the correct permission check without reimplementing it.
+  const access = await getPageAccess(callerId, {
+    id: page.id,
+    workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
+    archivedAt: page.archivedAt,
+  });
+  if (!access.canEdit) {
+    throw new SetPageContentError("Forbidden", 403);
   }
 
   let blocks;
