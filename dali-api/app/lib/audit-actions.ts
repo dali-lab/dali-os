@@ -14,6 +14,9 @@ export const AUDIT_ACTIONS = [
   "pairing.cancel",
   "pairing.consume",
   "pairing.handoff",
+  // Desktop shell self-update. The download/install is client↔S3 (off-server),
+  // so the app reports a completed install back to land it in the audit trail.
+  "desktop.update",
   "role.change",
   "decision.finalize",
   "decision.release",
