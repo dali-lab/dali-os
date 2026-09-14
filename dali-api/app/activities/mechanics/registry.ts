@@ -10,7 +10,7 @@ import { scavengerHuntClient } from "./scavenger-hunt";
 export type OverlayProps = {
   activityId: string;
   name: string;
-  overlay: unknown; // the server's route-filtered payload
+  overlay: unknown; // the server's safe-to-send payload for this path
 };
 
 export type SurfaceProps = {
@@ -35,7 +35,8 @@ export type AdminEditorProps = {
 
 export type MechanicClient = {
   kind: string;
-  Overlay: ComponentType<OverlayProps>;
+  /** Omitted by mechanics with nothing to render on the page itself. */
+  Overlay?: ComponentType<OverlayProps>;
   Surface: ComponentType<SurfaceProps>;
   AdminEditor: ComponentType<AdminEditorProps>;
   defaultConfig: () => unknown;

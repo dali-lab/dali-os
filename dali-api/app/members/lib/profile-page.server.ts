@@ -47,7 +47,6 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
-import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -762,11 +761,6 @@ export async function runProfileAction({
       };
     }
     throw e;
-  }
-
-  // Keep the calendar/working-hours zone in step with the display zone.
-  if (typeof data.timeZone === "string") {
-    await syncAvailabilityTimezone(targetId, data.timeZone);
   }
 
   return redirect(redirectPathFor(request, targetId));

@@ -18,6 +18,7 @@ vi.mock("~/lib/notifications", async (importOriginal) => ({
   // desktop/urgent derivation it adds.
   ...(await importOriginal<typeof import("~/lib/notifications")>()),
   listMyNotifications: vi.fn(),
+  listRetiredMeetingPingIds: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
@@ -27,7 +28,10 @@ import {
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
-import { listMyNotifications } from "~/lib/notifications";
+import {
+  listMyNotifications,
+  listRetiredMeetingPingIds,
+} from "~/lib/notifications";
 import { loader, action } from "~/routes/api.notifications";
 
 const USER_ID = "user-1";
@@ -48,6 +52,7 @@ beforeEach(() => {
   vi.mocked(listOpenTasks).mockResolvedValue([
     { id: "t1", title: "Do it", link: "/x" },
   ] as any);
+  vi.mocked(listRetiredMeetingPingIds).mockResolvedValue(["stale-1"]);
   vi.mocked(listNotificationHistory).mockResolvedValue({
     items: [{ id: "h1" }],
     nextCursor: null,
@@ -73,6 +78,9 @@ describe("GET /api/notifications", () => {
       unreadCount: 2,
       taskCount: 1,
       tasks: [{ id: "t1", title: "Do it", link: "/x" }],
+      // Stale-unread rows the feed hid: the desktop shell retires the banners
+      // it already delivered for them.
+      retiredIds: ["stale-1"],
     });
     expect(listNotificationHistory).not.toHaveBeenCalled();
   });

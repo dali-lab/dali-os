@@ -24,17 +24,20 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, getUserRoles: vi.fn() };
 });
 vi.mock("~/hiring/lib/waitlist.server", () => ({
   listActiveWaitlistEntries: vi.fn(),
 }));
 
-import { isCore } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
 import { listActiveWaitlistEntries } from "~/hiring/lib/waitlist.server";
 import { LIST_WAITLIST_TOOL, runListWaitlist } from "../list-waitlist";
 
 beforeEach(() => vi.clearAllMocks());
+
+const roles = (over: Partial<{ isCore: boolean; isAdmin: boolean }>) =>
+  ({ isCore: false, isAdmin: false, ...over }) as Awaited<ReturnType<typeof getUserRoles>>;
 
 const fakeEntry = {
   domainApplicationId: "da1",
@@ -56,13 +59,13 @@ describe("list_waitlist", () => {
   });
 
   it("throws forbidden for non-Core callers", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: false }));
     await expect(runListWaitlist("u1", {})).rejects.toMatchObject({ status: 403 });
     expect(listActiveWaitlistEntries).not.toHaveBeenCalled();
   });
 
   it("returns waitlist entries for Core callers", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true }));
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry]);
 
     const result = await runListWaitlist("u1", {}) as any[];
@@ -72,10 +75,29 @@ describe("list_waitlist", () => {
   });
 
   it("passes cycleId filter when provided", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true }));
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([]);
 
     await runListWaitlist("u1", { cycleId: "cy1" });
     expect(listActiveWaitlistEntries).toHaveBeenCalledWith({ cycleId: "cy1" });
+  });
+
+  it("hides Core-cycle waitlisters from non-Admin Core members (A2)", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true, isAdmin: false }));
+    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, cycleType: "Core" } };
+    vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
+
+    const result = (await runListWaitlist("u1", {})) as any[];
+    expect(result).toHaveLength(1);
+    expect(result[0].cycle.cycleType).toBe("Standard");
+  });
+
+  it("shows Core-cycle waitlisters to Admins (A2)", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true, isAdmin: true }));
+    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, cycleType: "Core" } };
+    vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
+
+    const result = (await runListWaitlist("u1", {})) as any[];
+    expect(result).toHaveLength(2);
   });
 });

@@ -58,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       (LOOKBACK_PERIODS * PAY_PERIOD_DAYS + 1) * DAY_MS,
   );
 
-  const [entries, settings, userRow] = await Promise.all([
+  const [entries, userRow] = await Promise.all([
     prisma.timeEntry.findMany({
       where: { userId, date: { gte: windowStart } },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
@@ -73,13 +73,11 @@ export async function loader({ request }: Route.LoaderArgs) {
         roleRefId: true,
       },
     }),
-    prisma.userAvailabilitySettings.findUnique({ where: { userId }, select: { timezone: true } }),
     prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
   ]);
 
-  // Working hours are interpreted in the availability-settings zone when set;
-  // otherwise fall back to the user's own display zone rather than a hardcoded ET.
-  const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
+  // Pay periods bucket by day in the user's display zone (User.timeZone).
+  const timezone = resolveUserTimeZone(userRow);
   const currentPeriod = payPeriodFor(
     timeEntryDayUtc({ date: now.toISOString(), startTime: now.toISOString() }, timezone),
   );

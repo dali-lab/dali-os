@@ -43,7 +43,6 @@ export type HuntCode = {
   id: string;
   value: string; // what the member types
   label: string; // shown when found / clue name
-  location: string; // route the code element renders on, e.g. "/projects"
   points: number;
   hint?: string; // optional nudge toward where this code hides
 };
@@ -74,26 +73,6 @@ export type HuntConfig = {
   instructionsUrl?: string; // informal link to the Drive clue doc, if any
   hintPolicy?: HuntHintPolicy;
 };
-
-// ─── Route normalization (pure) ──────────────────────────────────────────────
-// A code's `location` is matched against the current path by exact string, so a
-// stray space, a missing leading slash, or a trailing slash silently kept the
-// clue from ever showing. Normalize both sides: trim, drop any query/hash if a
-// full URL was pasted, force a single leading slash, strip a trailing slash.
-
-export function normalizeRoute(input: string | null | undefined): string {
-  const t = (input ?? "").trim();
-  if (!t) return "";
-  let p = t.split(/[?#]/)[0];
-  if (!p.startsWith("/")) p = `/${p}`;
-  if (p.length > 1) p = p.replace(/\/+$/, "");
-  return p;
-}
-
-export function routesMatch(codeLocation: string, pathname: string): boolean {
-  const a = normalizeRoute(codeLocation);
-  return a !== "" && a === normalizeRoute(pathname);
-}
 
 // ─── Hint visibility (pure) ──────────────────────────────────────────────────
 // Given the policy and whether this member already revealed the hint, decide
@@ -163,9 +142,9 @@ export function matchesAudienceRoles(
 
 // ─── The lightweight shape plumbed to the client via the provider ────────────
 // One entry per activity live for THIS user right now. `overlay` is the
-// mechanic's route-filtered, safe-to-send payload for the current path (null
-// when the mechanic renders nothing on this route), computed server-side so the
-// answers for other routes never reach the client.
+// mechanic's safe-to-send on-page payload for the current path (null when the
+// mechanic renders nothing here), computed server-side so nothing the member
+// shouldn't see yet reaches the client.
 
 export type ActiveActivity = {
   id: string;

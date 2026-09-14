@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
-import { jobByName } from "~/jobs/registry";
+import { jobByName, JOBS, resolveJobSettings } from "~/jobs/registry";
 import type { JobDefinition } from "~/jobs/registry";
 import { runJob } from "~/jobs/runner.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -20,14 +20,15 @@ export const MANAGE_JOB_TOOL = {
   name: "manage_job",
   description:
     "Enable/disable/configure or immediately trigger a background job. " +
-    "Actions: set_config · run. Core leads only.",
+    "Actions: list · set_config · run. Core leads only.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["set_config", "run"],
-        description: "set_config — patch enabled/interval/settings; run — trigger immediately.",
+        enum: ["list", "set_config", "run"],
+        description:
+          "list — enumerate all jobs with their current state; set_config — patch enabled/interval/settings; run — trigger immediately.",
       },
       name: {
         type: "string",
@@ -75,6 +76,26 @@ function validateSettings(def: JobDefinition, settings: Record<string, unknown>)
 export async function runManageJob(ctx: McpCtx, args: Args) {
   if (!(await isCore(ctx.user.id))) {
     throw new McpForbiddenError("Only Core leads can manage jobs.");
+  }
+
+  if (args.action === "list") {
+    const rows = await prisma.scheduledJob.findMany();
+    const rowByName = new Map(rows.map((r) => [r.name, r]));
+    const jobs = JOBS.map((def) => {
+      const row = rowByName.get(def.name);
+      return {
+        name: def.name,
+        description: def.description,
+        intervalMinutes: row?.intervalMinutes ?? def.intervalMinutes,
+        settings: resolveJobSettings(def, row?.settings),
+        enabled: row?.enabled ?? true,
+        nextRunAt: row?.nextRunAt?.toISOString() ?? null,
+        lastRunAt: row?.lastRunAt?.toISOString() ?? null,
+        lastStatus: row?.lastStatus ?? null,
+        lastError: row?.lastError ?? null,
+      };
+    });
+    return { jobs };
   }
 
   requireForAction(args.action, args as Record<string, unknown>, {

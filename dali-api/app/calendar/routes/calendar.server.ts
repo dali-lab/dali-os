@@ -920,7 +920,6 @@ export async function loadCalendarData(request: Request) {
       prisma.userAvailabilitySettings.findUnique({
         where: { userId },
         select: {
-          timezone: true,
           defaultEventBufferMin: true,
           timesheetGoogleSync: true,
           timesheetCalendarId: true,
@@ -993,9 +992,10 @@ export async function loadCalendarData(request: Request) {
     : [];
   const allUsers = [...users, ...extraGroupMembers];
 
-  // Working hours are interpreted in the availability-settings zone when set;
-  // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
-  const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
+  // The whole calendar renders in the user's display zone (User.timeZone) —
+  // the single source of truth shared with the rest of the app. Working hours
+  // are stored as wall-clock minutes and drawn literally, so they follow it.
+  const timezone = resolveUserTimeZone(userRow);
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
   // The dedicated DALI Timesheet Google calendar (when the mirror is enabled).
   // Filtered out of both the linked-calendar list and the external event read

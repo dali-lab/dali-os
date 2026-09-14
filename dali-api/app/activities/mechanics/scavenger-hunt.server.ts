@@ -1,16 +1,15 @@
 // Scavenger-hunt mechanic — server half (specs/activities.md §8). Validates the
-// hunt config, filters codes to the current route for the overlay, records a
-// dedup'd ActivityEvent when a member submits a correct code or reveals a hint,
-// and derives progress + the leaderboard from the event stream.
+// hunt config, records a dedup'd ActivityEvent when a member submits a correct
+// code or reveals a hint, and derives progress + the leaderboard from the event
+// stream. Codes are submitted from the activity modal, which is reachable from
+// any page — nothing about a hunt is tied to a route.
 
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import type { Activity } from "~/generated/prisma/client";
 import {
   DEFAULT_HINT_POLICY,
-  normalizeRoute,
   resolveHintState,
-  routesMatch,
   type HuntConfig,
   type HuntHintPolicy,
 } from "~/lib/activities";
@@ -20,9 +19,6 @@ const HuntCodeSchema = z.object({
   id: z.string().min(1),
   value: z.string().min(1).max(120),
   label: z.string().max(200).default(""),
-  // Normalized on save so the stored route matches how the current path arrives
-  // (leading slash, no trailing slash) — see normalizeRoute.
-  location: z.string().max(300).default("").transform(normalizeRoute),
   points: z.number().int().min(0).max(1000).default(1),
   hint: z.string().max(500).default(""),
 });
@@ -116,14 +112,6 @@ export const scavengerHuntServer: MechanicServer = {
     return HuntConfigSchema.parse(input);
   },
 
-  overlayPayload(activity, pathname) {
-    const cfg = readConfig(activity);
-    const codes = cfg.codes
-      .filter((c) => routesMatch(c.location, pathname))
-      .map((c) => ({ id: c.id, value: c.value, label: c.label }));
-    return codes.length ? { codes } : null;
-  },
-
   async onAction({ activity, userId, input }) {
     // Two actions share this handler: revealing a hint and submitting a code.
     if (typeof input.reveal === "string" && input.reveal.trim()) {
@@ -192,25 +180,38 @@ export const scavengerHuntServer: MechanicServer = {
       userEvents.filter((e) => e.type === "hint_revealed").map((e) => e.refId),
     );
 
-    // Hints for codes that carry one and aren't found yet. The text is included
-    // only when the policy permits showing it now, so points/delay hold on the
-    // server — the client can't reveal early by reading the payload.
-    const hints = cfg.codes
-      .filter((c) => c.hint && !foundIds.has(c.id))
-      .map((c) => {
-        const st = resolveHintState(policy, {
-          revealed: revealedIds.has(c.id),
-          nowMs,
-          startsAtMs,
-        });
+    // One row per code for the checklist under the progress bar: the label
+    // (never the code value), whether this member has found it, and — for a
+    // code they haven't found that carries a hint — the hint state. The hint
+    // text is included only when the policy permits showing it now, so
+    // points/delay hold on the server; the client can't reveal early by reading
+    // the payload.
+    const clues = cfg.codes.map((c, i) => {
+      const found = foundIds.has(c.id);
+      if (found || !c.hint) {
         return {
           id: c.id,
-          label: c.label,
-          hint: st.show ? c.hint ?? "" : null,
-          cost: st.cost,
-          unlocksAt: st.unlocksAt,
+          label: c.label || `Clue ${i + 1}`,
+          found,
+          hint: null,
+          cost: null,
+          unlocksAt: null,
         };
+      }
+      const st = resolveHintState(policy, {
+        revealed: revealedIds.has(c.id),
+        nowMs,
+        startsAtMs,
       });
+      return {
+        id: c.id,
+        label: c.label || `Clue ${i + 1}`,
+        found,
+        hint: st.show ? c.hint : null,
+        cost: st.cost,
+        unlocksAt: st.unlocksAt,
+      };
+    });
 
     const progress = {
       total,
@@ -220,7 +221,7 @@ export const scavengerHuntServer: MechanicServer = {
       // Safe to send: just the clue-doc link, not any code values.
       instructionsUrl: cfg.instructionsUrl ?? null,
       hintMode: policy.mode,
-      hints,
+      clues,
     };
 
     // Leaderboard visibility is enforced here: "core" hides it from non-Core

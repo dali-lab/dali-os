@@ -19,6 +19,7 @@ export type OfferingCardData = {
   id: string;
   type: "Miniseries" | "Workshop";
   title: string;
+  iconEmoji?: string | null;
   status: "Draft" | "Published" | "Archived";
   capacity: number;
   requiresReview: boolean;
@@ -115,7 +116,9 @@ export function MyStatusChip({ status }: { status: string | null }) {
   );
 }
 
-export function registrationWindowLabel(
+// The registration window on its own, for callers that already label the field
+// ("Registration: open until Mar 3"). Prefixing it there would stutter.
+export function registrationWindowValue(
   o: {
     registrationOpensAt: string | Date;
     registrationClosesAt: string | Date;
@@ -125,9 +128,22 @@ export function registrationWindowLabel(
   const now = new Date();
   const opens = new Date(o.registrationOpensAt);
   const closes = new Date(o.registrationClosesAt);
-  if (now < opens) return `Registration opens ${formatDateShort(opens, tz)}`;
-  if (now > closes) return "Registration closed";
-  return `Registration open until ${formatDateShort(closes, tz)}`;
+  if (now < opens) return `Opens ${formatDateShort(opens, tz)}`;
+  if (now > closes) return "Closed";
+  return `Open until ${formatDateShort(closes, tz)}`;
+}
+
+// The same window as a standalone sentence, for prose contexts (the offering
+// detail pages, the admin card) that carry no separate field label.
+export function registrationWindowLabel(
+  o: {
+    registrationOpensAt: string | Date;
+    registrationClosesAt: string | Date;
+  },
+  tz: string = APPLICATION_TZ,
+): string {
+  const value = registrationWindowValue(o, tz);
+  return `Registration ${value.charAt(0).toLowerCase()}${value.slice(1)}`;
 }
 
 export function OfferingCard({

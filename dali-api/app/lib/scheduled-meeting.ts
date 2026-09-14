@@ -8,7 +8,7 @@ import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
-import { pickUserTimezone } from "~/lib/timezone";
+import { resolveUserTimeZone } from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
 import {
   createProjectPage,
@@ -270,16 +270,10 @@ export async function createScheduledMeeting(
       const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
       // A recurring insert must name the zone its RRULE expands in — anchor it
       // to the organizer's so weekly slots hold their wall-clock time.
-      const [organizerSettings, organizerUser] = await Promise.all([
-        prisma.userAvailabilitySettings.findUnique({
-          where: { userId: input.organizerId },
-          select: { timezone: true },
-        }),
-        prisma.user.findUnique({
-          where: { id: input.organizerId },
-          select: { timeZone: true },
-        }),
-      ]);
+      const organizerUser = await prisma.user.findUnique({
+        where: { id: input.organizerId },
+        select: { timeZone: true },
+      });
       try {
         const result = await createGoogleCalendarEvent({
           linkId: organizerLink.id,
@@ -287,7 +281,7 @@ export async function createScheduledMeeting(
           startIso: startDate.toISOString(),
           endIso: endDate.toISOString(),
           recurrenceRule: input.recurrenceRule ?? null,
-          timeZone: pickUserTimezone(organizerSettings?.timezone, organizerUser?.timeZone),
+          timeZone: resolveUserTimeZone(organizerUser),
           attendees,
           addMeet: input.addMeet ?? false,
           // Google refuses an insert into a calendar the account can't write,

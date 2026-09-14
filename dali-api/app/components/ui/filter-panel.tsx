@@ -177,16 +177,32 @@ export function FilterToggleRow({
   );
 }
 
+// "sm" is the dense in-panel pill (filter panels, dropdowns, table toolbars);
+// "md" matches <SearchInput size="md"> line for line, for the pills that sit
+// beside one as a single filter bar.
+const PILL_SIZES = {
+  sm: "px-2.5 py-1 text-xs",
+  md: "px-4 py-2.5 text-sm",
+} as const;
+
 export function FilterPill({
   os,
   selected,
   onClick,
   children,
+  size = "sm",
+  tone = "coral",
 }: {
   os: boolean;
   selected: boolean;
   onClick: () => void;
   children: ReactNode;
+  size?: keyof typeof PILL_SIZES;
+  /** Selected-state accent outside the os shell. "blue" is the os accent —
+   *  the same blue the member shell marks a selection with — which resolves
+   *  globally (html.light / .dark), not only inside `.os-shell`, so the portal
+   *  can use it too. */
+  tone?: "coral" | "blue";
 }) {
   return (
     <button
@@ -194,11 +210,23 @@ export function FilterPill({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        "max-w-full truncate rounded-full border px-2.5 py-1 text-xs transition-colors",
+        "max-w-full truncate rounded-full border transition-colors",
+        PILL_SIZES[size],
+        // At md the unselected pill sits on the card surface so the row reads
+        // as one control set with the search field next to it.
+        size === "md" && !selected && !os && "bg-card",
         selected
           ? os
             ? "border-os-accent bg-os-accent/15 text-os-accent"
-            : "border-accent-coral bg-accent-coral/10 text-accent-coral"
+            : tone === "blue"
+              // Filled, not tinted: at md the pills sit beside a search field
+              // on the same card surface, where a coloured outline alone reads
+              // as just another bordered control. text-background inverts with
+              // the theme, which matters here — the os accent is a deep teal on
+              // paper and a pale cyan in dark, so a fixed ink would fail on one
+              // of them.
+              ? "border-os-accent bg-os-accent font-medium text-background"
+              : "border-accent-coral bg-accent-coral/10 text-accent-coral"
           : os
             ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground"
             : "border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground",

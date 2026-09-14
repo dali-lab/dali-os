@@ -31,16 +31,15 @@ export function isValidTimezone(tz: unknown): tz is string {
 }
 
 /**
- * Effective scheduling zone for a user. The calendar/working-hours zone wins —
- * working hours are stored relative to it — then the user's display zone, then
- * the lab default.
+ * Effective scheduling zone for a user: their display zone (`User.timeZone`,
+ * the single source of truth — see resolveUserTimeZone), falling back to the
+ * caller-supplied zone, then the lab default. Working hours are stored as
+ * wall-clock minutes and render literally, so there is no separate anchor zone.
  */
 export function pickUserTimezone(
-  settingsTimezone: string | null | undefined,
   displayTimezone: string | null | undefined,
   fallback: string = APPLICATION_TZ,
 ): string {
-  if (isValidTimezone(settingsTimezone)) return settingsTimezone;
   if (isValidTimezone(displayTimezone)) return displayTimezone;
   return fallback;
 }

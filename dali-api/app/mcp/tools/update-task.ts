@@ -1,7 +1,10 @@
-// MCP `update_task` — edit fields on a task (title/priority/dueAt/
-// epicId/storyId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core or project
-// member). Use `update_task_status` for status changes (it has special
-// column-rebalance semantics).
+// MCP `update_task` — edit fields on a task (title/description/priority/
+// startsAt/dueAt/epicId/storyId/domainId/assignees). Mirrors api.tasks.$id
+// PATCH (Core or project member). Use `update_task_status` for status changes
+// (it has special column-rebalance semantics).
+//
+// description: plain-text Markdown stored on the Task.description column.
+// startsAt: timeline start (planning only — fires no reminders).
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
@@ -14,13 +17,23 @@ type Priority = (typeof PRIORITIES)[number];
 export const UPDATE_TASK_TOOL = {
   name: "update_task",
   description:
-    "Edit fields on a project task (title, priority, due date, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A task's sprint is derived from its dates. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
+    "Edit fields on a project task (title, description, priority, start/due dates, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A task's sprint is derived from its dates. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
   inputSchema: {
     type: "object" as const,
     properties: {
       taskId: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1, maxLength: 500 },
+      description: {
+        type: "string",
+        description:
+          "Plain-text / Markdown description. Empty string clears.",
+      },
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
+      startsAt: {
+        type: "string",
+        description:
+          "Timeline start (ISO timestamp, planning only). Empty string clears.",
+      },
       dueAt: {
         type: "string",
         description: "ISO timestamp. Empty string clears.",
@@ -53,7 +66,9 @@ export const UPDATE_TASK_TOOL = {
 type Input = {
   taskId: string;
   title?: string;
+  description?: string;
   priority?: Priority;
+  startsAt?: string;
   dueAt?: string;
   epicId?: string;
   storyId?: string;
@@ -88,7 +103,9 @@ export async function runUpdateTask(callerId: string, input: Input) {
 
   const data: {
     title?: string;
+    description?: string | null;
     priority?: Priority;
+    startsAt?: Date | null;
     dueAt?: Date | null;
     epicId?: string | null;
     storyId?: string | null;
@@ -100,7 +117,21 @@ export async function runUpdateTask(callerId: string, input: Input) {
     if (!trimmed) throw new UpdateTaskError("Title is required", 400);
     data.title = trimmed;
   }
+  if (input.description !== undefined) {
+    const trimmed = input.description.trim();
+    data.description = trimmed === "" ? null : trimmed;
+  }
   if (input.priority !== undefined) data.priority = input.priority;
+  if (input.startsAt !== undefined) {
+    if (input.startsAt === "") data.startsAt = null;
+    else {
+      const d = new Date(input.startsAt);
+      if (!Number.isFinite(d.getTime())) {
+        throw new UpdateTaskError("Invalid startsAt", 400);
+      }
+      data.startsAt = d;
+    }
+  }
   if (input.dueAt !== undefined) {
     if (input.dueAt === "") data.dueAt = null;
     else {
@@ -180,11 +211,11 @@ export async function runUpdateTask(callerId: string, input: Input) {
     }
   });
 
-  // Re-sync when the title, assignees, or any body-rendered field changes
-  // (see buildIssueBody in github-task-sync). This tool doesn't edit the
-  // description, so that field isn't checked here.
+  // Re-sync when the title, description, assignees, or any body-rendered field
+  // changes (see buildIssueBody in github-task-sync).
   const syncableChanged =
     "title" in data ||
+    "description" in data ||
     wantsAssignees ||
     "priority" in data ||
     "dueAt" in data ||
