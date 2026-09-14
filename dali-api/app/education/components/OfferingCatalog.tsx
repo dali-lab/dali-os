@@ -174,11 +174,14 @@ export function OfferingCatalog({
   );
 
   // Selecting a card opens the detail pane beside the grid instead of
-  // navigating. A selection that the current search/filter has hidden is
-  // dropped, so the pane never describes a card you can no longer see.
+  // navigating. Resolved against every offering rather than the filtered
+  // `shown`: a type filter or search term that hides the selected card must not
+  // take the pane down with it. Deriving it from `shown` closed the pane when
+  // you switched filters and then *reopened* it when you switched back, since
+  // selectedId was still set — the pane appeared to come back from the dead.
+  // The pane closes when it is closed, and only then.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected =
-    [...shown, ...past].find((o) => o.id === selectedId) ?? null;
+  const selected = offerings.find((o) => o.id === selectedId) ?? null;
 
   return (
     <section className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
