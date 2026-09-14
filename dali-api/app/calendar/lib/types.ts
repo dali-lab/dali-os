@@ -193,6 +193,10 @@ export type EventMeetingDTO = {
   isCoreMeeting: boolean;
   /** Core only — hides the "Core meeting" checkbox for everyone else. */
   canMarkCoreMeeting: boolean;
+  /** Whether the viewer (organizer or Core) may add a notes doc to a meeting
+   *  that doesn't have one yet — gates the popover's "Add meeting notes"
+   *  affordance. Moot once `notePageId` is set. */
+  canAddNote: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */

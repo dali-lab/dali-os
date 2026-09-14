@@ -53,6 +53,7 @@ import {
   generalCalendarState,
 } from "~/lib/general-calendar";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
+import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -146,6 +147,7 @@ async function meetingsForExternalEvents(
     },
     select: {
       id: true,
+      organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
       notePage: { select: { id: true } },
@@ -161,6 +163,9 @@ async function meetingsForExternalEvents(
       onTimesheet: m.timeEntries.length > 0,
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
+      // Adding notes after the fact is the organizer's or Core's call — the same
+      // authority attachMeetingNote re-checks server-side.
+      canAddNote: m.organizerId === userId || canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -880,6 +885,27 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
+    case "add-meeting-note": {
+      // noteLocation is a nested object, so it rides across as a JSON string
+      // (same pattern as seed-working-hours' `days`).
+      let noteLocation: unknown = undefined;
+      const locRaw = get("noteLocation");
+      if (locRaw) {
+        try {
+          noteLocation = JSON.parse(locRaw);
+        } catch {
+          // Leave undefined; the note falls back to its default destination.
+        }
+      }
+      return {
+        intent,
+        meetingId: get("meetingId"),
+        meetingType: get("meetingType"),
+        meetingTypeLabel: get("meetingTypeLabel") || undefined,
+        projectId: get("projectId") || undefined,
+        noteLocation,
+      };
+    }
     case "set-timesheet-sync":
       return { intent, enabled: asBool(get("enabled")) };
     default:
@@ -1721,6 +1747,21 @@ export async function submitCalendarAction(request: Request) {
         data: { isCoreMeeting: input.isCoreMeeting },
       });
       return null;
+    }
+
+    case "add-meeting-note": {
+      const result = await attachMeetingNote({
+        meetingId: input.meetingId,
+        actorId: userId,
+        meetingType: input.meetingType,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+        projectId: input.projectId ?? null,
+        noteLocation: input.noteLocation ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true, notePageId: result.notePageId });
     }
   }
 }
