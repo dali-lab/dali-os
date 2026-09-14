@@ -99,6 +99,9 @@ export async function runManageMentorshipPair(
         projectId: input.projectId!,
         termId: input.termId!,
         domainId: input.domainId!,
+        // Hand-created via MCP — mark manual so it survives a staffing
+        // re-finalize (mirrors api.mentorship.pairs.ts).
+        manual: true,
       },
       select: { id: true },
     });

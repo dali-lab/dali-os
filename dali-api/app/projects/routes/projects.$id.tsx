@@ -1928,6 +1928,7 @@ export default function ProjectDetail() {
           <ProjectMentorshipTab
             projectId={project.id}
             currentTermId={currentTerm?.id ?? null}
+            isCore={canEditAssignmentLevel}
           />
         )}
       </div>

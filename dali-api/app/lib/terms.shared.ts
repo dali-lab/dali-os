@@ -97,3 +97,22 @@ export function daliTermCodeFromDartmouth(oracle: string): string {
   const season = DARTMOUTH_MONTH_SEASON[month];
   return season ? `${yy}${season}` : "";
 }
+
+// The Dartmouth break/interim leading INTO a term of the given season — how the
+// mentorship hub names "now" when the lab is between terms. Written to read
+// mid-sentence ("It's currently Winterim." / "It's currently spring break.").
+// Keyed by the upcoming term's season because that's the break's destination:
+// the long December gap before Winter is Winterim, the March gap before Spring
+// is spring break, and so on.
+export function interimLabel(upcomingSeason: Season): string {
+  switch (upcomingSeason) {
+    case "W":
+      return "Winterim";
+    case "S":
+      return "spring break";
+    case "X":
+      return "summer interim";
+    case "F":
+      return "fall interim";
+  }
+}
