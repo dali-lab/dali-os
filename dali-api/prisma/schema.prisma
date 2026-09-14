@@ -2348,7 +2348,6 @@ model Term {
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
   technigalaAssignments TechnigalaAssignment[]
-  educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
@@ -3350,11 +3349,6 @@ model EducationOffering {
   // education identity if not set.
   calendarEmail        String?
 
-  // The term this offering runs in — derived server-side from the first
-  // session's date; null until sessions are added.
-  termId               String?
-  term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
-
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
   // always see the latest FormVersion. Null only transiently (offering
@@ -3381,8 +3375,6 @@ model EducationOffering {
   formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
-
-  @@index([termId])
 }
 
 enum OfferingType {

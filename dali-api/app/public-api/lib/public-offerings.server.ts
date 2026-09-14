@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { termCodeForDate, termWindows, type TermWindow } from "~/lib/terms";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
@@ -32,7 +33,9 @@ export type PublicOffering = {
   name: string;
   description: string;
   type: string; // lowercased offering type: "miniseries" | "workshop"
-  term: string | null; // term code (e.g. "26F"), null if outside any term
+  // Term code (e.g. "26F"), derived from the start date; null when the run
+  // starts outside every term window.
+  term: string | null;
   startDate: PublicOfferingDate;
   endDate: PublicOfferingDate;
   sessions: PublicOfferingSession[];
@@ -52,7 +55,7 @@ export type OfferingsFilter = {
   scope?: OfferingScope; // defaults to "upcoming"; ignored when from/to are set
   from?: Date; // calendar window lower bound (interval overlap)
   to?: Date; // calendar window upper bound (interval overlap)
-  term?: string; // term code (e.g. "26F"); limits to offerings in that term
+  term?: string; // term code (e.g. "26F"); limits to offerings starting in that term's date window
   type?: "Miniseries" | "Workshop"; // limits to one offering type (DB enum)
 };
 
@@ -89,41 +92,61 @@ function toDateParts(d: Date): PublicOfferingDate {
   };
 }
 
-type OfferingWhere = {
-  status: "Published";
-  term?: { code: string };
-  type?: "Miniseries" | "Workshop";
-  startsAt?: { gt?: Date; lte?: Date };
+type DateClause = {
+  startsAt?: { gt?: Date; gte?: Date; lte?: Date };
   endsAt?: { lt?: Date; gte?: Date };
 };
 
-function buildWhere(filter: OfferingsFilter, now: Date): OfferingWhere {
+type OfferingWhere = {
+  status: "Published";
+  type?: "Miniseries" | "Workshop";
+  AND?: DateClause[];
+};
+
+/**
+ * `termWindow` is the resolved date window for `filter.term` (the caller looks
+ * it up — a term is a date range here, not a stored relation). Date clauses go
+ * in an AND array rather than one merged object so a term window and a
+ * scope/calendar bound can both constrain `startsAt` without overwriting each
+ * other.
+ */
+function buildWhere(
+  filter: OfferingsFilter,
+  now: Date,
+  termWindow: TermWindow | null,
+): OfferingWhere {
   const where: OfferingWhere = { status: "Published" };
   // Term and type compose with the date filters below (independent ANDs, e.g.
   // term=26F&type=workshop&scope=past).
-  if (filter.term) where.term = { code: filter.term };
   if (filter.type) where.type = filter.type;
+
+  const and: DateClause[] = [];
+  // "In term 26F" = the run starts inside 26F's window, the same rule that
+  // used to set the offering's termId column.
+  if (termWindow) {
+    and.push({ startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } });
+  }
 
   // An explicit calendar window wins over scope: return every offering whose
   // run overlaps [from, to]. Either bound may be omitted (open-ended window).
   if (filter.from || filter.to) {
-    if (filter.to) where.startsAt = { lte: filter.to };
-    if (filter.from) where.endsAt = { gte: filter.from };
-    return where;
+    if (filter.to) and.push({ startsAt: { lte: filter.to } });
+    if (filter.from) and.push({ endsAt: { gte: filter.from } });
+  } else {
+    // A term implies "the whole term" unless the caller narrows it; without a
+    // term the default is the upcoming feed.
+    switch (filter.scope ?? (filter.term ? "all" : "upcoming")) {
+      case "upcoming":
+        and.push({ startsAt: { gt: now } }); // hasn't started yet
+        break;
+      case "past":
+        and.push({ endsAt: { lt: now } }); // already ended
+        break;
+      case "all":
+        break; // whole published catalog
+    }
   }
-
-  // A term implies "the whole term" unless the caller narrows it; without a
-  // term the default is the upcoming feed.
-  switch (filter.scope ?? (filter.term ? "all" : "upcoming")) {
-    case "upcoming":
-      where.startsAt = { gt: now }; // hasn't started yet
-      break;
-    case "past":
-      where.endsAt = { lt: now }; // already ended
-      break;
-    case "all":
-      break; // whole published catalog
-  }
+  if (and.length > 0) where.AND = and;
   return where;
 }
 
@@ -169,8 +192,16 @@ export async function listPublicOfferings(
   filter: OfferingsFilter = {},
   now: Date = new Date(),
 ): Promise<PublicOffering[]> {
+  const windows = await termWindows();
+  // An unseeded/unknown term code matches nothing, as the old relation filter
+  // on a nonexistent code did.
+  const termWindow = filter.term
+    ? (windows.find((w) => w.code === filter.term) ?? null)
+    : null;
+  if (filter.term && !termWindow) return [];
+
   const rows = await prisma.educationOffering.findMany({
-    where: buildWhere(filter, now),
+    where: buildWhere(filter, now, termWindow),
     // Published offerings always have sessions (publish gate), so startsAt is
     // non-null here — a plain ascending sort is sufficient.
     orderBy: { startsAt: "asc" },
@@ -184,7 +215,6 @@ export async function listPublicOfferings(
       endsAt: true,
       registrationOpensAt: true,
       registrationClosesAt: true,
-      term: { select: { code: true } },
       sessions: {
         orderBy: { sequence: "asc" },
         select: { sequence: true, title: true, location: true, datetime: true },
@@ -206,7 +236,7 @@ export async function listPublicOfferings(
         description,
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
-        term: o.term?.code ?? null,
+        term: termCodeForDate(windows, o.startsAt!),
         // Published offerings always have sessions, so startsAt/endsAt are
         // guaranteed non-null by the publish gate.
         startDate: toDateParts(o.startsAt!),

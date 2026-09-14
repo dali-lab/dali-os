@@ -138,23 +138,33 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Education workspaces. Access rule mirrors pageAccess.server: Core sees all
   // offerings; non-Core sees offerings where they are an instructor (any term)
-  // OR have an Approved application. When a specific term is selected, the
-  // offering's own termId is used for scoping (not the instructor-assignment
-  // term) because offerings now carry a DERIVED termId from their sessions.
+  // OR have an Approved application. Offerings don't store a term — one belongs
+  // to the selected term when its run starts inside that term's date window —
+  // so the term gate is a date range on `startsAt`, not the instructor-
+  // assignment term.
+  const termWindow = termId
+    ? await prisma.term.findUnique({
+        where: { id: termId },
+        select: { startDate: true, endDate: true },
+      })
+    : null;
+  const startsInTerm = termWindow
+    ? { startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } }
+    : {};
   const approvedOrInstructor = roles.isCore
-    ? // Core sees all offerings; filter by the offering's own termId when a
-      // specific term is selected, or show all when "all terms" is chosen.
+    ? // Core sees all offerings; gate on the term window when a specific term
+      // is selected, or show all when "all terms" is chosen.
       await prisma.educationOffering.findMany({
-        where: termId ? { termId } : undefined,
+        where: termWindow ? startsInTerm : undefined,
         orderBy: { title: "asc" },
         select: { id: true, title: true },
       })
     : // Non-Core: instructor on the offering (any term) OR Approved application.
-      // When a specific term is selected, ALSO require offering.termId matches.
+      // When a specific term is selected, ALSO require the run to start in it.
       await prisma.educationOffering.findMany({
         where: {
           AND: [
-            termId ? { termId } : {},
+            startsInTerm,
             {
               OR: [
                 { instructors: { some: { userId: auth.user.sub } } },
