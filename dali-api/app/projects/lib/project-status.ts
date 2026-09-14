@@ -6,7 +6,7 @@
 // without a DB. The AI-TLDR route runs the SAME function to build its prompt
 // facts, so the summary and the chips can never disagree.
 
-import { currentSprintBand, type TaskStatus, type Priority } from "./task-board";
+import { currentSprintBand, TASK_STATUS_LABELS, type TaskStatus, type Priority } from "./task-board";
 import type { TimelineTermSpan } from "./timeline-days";
 
 export type ProjectWorkStatus = "Active" | "Paused" | "Archived";
@@ -36,6 +36,10 @@ export interface StatusTaskInput {
 export interface ActiveSprintFacts {
   /** The sprint's positional label, e.g. "Sprint 3". */
   label: string;
+  /** ISO string of the sprint's first day (UTC midnight). Drives the window the
+   *  hover tooltip shows; not in the fingerprint (label + endsAt already move
+   *  together with it). */
+  startsAt: string;
   /** ISO string. The bar formats it; the fingerprint keys off it. */
   endsAt: string;
   /** Whole days until endsAt (ceil); negative once the sprint is overdue. */
@@ -107,6 +111,7 @@ export function computeProjectStatus(
   const activeSprint: ActiveSprintFacts | null = band
     ? {
         label: band.label,
+        startsAt: new Date(band.key).toISOString(),
         endsAt: new Date(band.end + DAY_MS).toISOString(),
         daysRemaining: Math.ceil((band.end + DAY_MS - nowMs) / DAY_MS),
       }
@@ -232,5 +237,91 @@ export function buildTldrDetail(tasks: TldrTaskInput[], now: Date): TldrDetail {
     highOpen,
     unscheduledHighPriority,
     teamSize: assignees.size,
+  };
+}
+
+// ── Status-bar hover detail ───────────────────────────────────────────────────
+// The chips show counts; each chip's hover tooltip needs the *named* tasks
+// behind its count so a reader can see WHY — which tasks are overdue/stalled,
+// what's left on the board. Pure + capped; the projects.$id loader is its only
+// caller. Kept separate from computeProjectStatus so the AI fingerprint (which
+// keys off the counts, not the titles) is unaffected by this presentational
+// layer.
+
+export interface BreakdownTaskInput extends StatusTaskInput {
+  title: string;
+  priority: Priority;
+}
+
+export interface StatusBreakdown {
+  /** Non-empty task buckets in display order (Done → Backlog), the breakdown
+   *  behind the done/total progress bar. Cancelled is omitted — it's excluded
+   *  from the total too. */
+  byStatus: { status: TaskStatus; label: string; count: number }[];
+  /** Most-overdue first. */
+  overdue: { title: string; priority: Priority; daysOver: number }[];
+  /** Highest-priority first, then title. */
+  unscheduled: { title: string; priority: Priority }[];
+  /** Longest-stalled first. */
+  stale: { title: string; daysStale: number }[];
+  inReview: string[];
+}
+
+// How many named tasks a tooltip lists before collapsing the rest to "+N more".
+export const BREAKDOWN_CAP = 6;
+
+// Progress-bar tooltip order: what's finished first, then work in flight, then
+// what hasn't started.
+const PROGRESS_ORDER: readonly TaskStatus[] = ["Done", "InReview", "InProgress", "Todo", "Backlog"];
+
+const PRIORITY_RANK: Record<Priority, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+
+export function computeStatusBreakdown(tasks: BreakdownTaskInput[], now: Date): StatusBreakdown {
+  const nowMs = now.getTime();
+  const staleBefore = nowMs - STALE_DAYS * DAY_MS;
+
+  const counts = new Map<TaskStatus, number>();
+  const overdue: StatusBreakdown["overdue"] = [];
+  const unscheduled: StatusBreakdown["unscheduled"] = [];
+  const stale: StatusBreakdown["stale"] = [];
+  const inReview: string[] = [];
+
+  for (const t of tasks) {
+    counts.set(t.status, (counts.get(t.status) ?? 0) + 1);
+    const closed = CLOSED.includes(t.status);
+    if (!closed && t.dueAt != null && ms(t.dueAt) < nowMs) {
+      overdue.push({
+        title: t.title,
+        priority: t.priority,
+        daysOver: Math.floor((nowMs - ms(t.dueAt)) / DAY_MS),
+      });
+    }
+    if (t.startsAt == null && t.dueAt == null && SCHEDULABLE.includes(t.status)) {
+      unscheduled.push({ title: t.title, priority: t.priority });
+    }
+    if (t.status === "InProgress" && ms(t.activityAt) < staleBefore) {
+      stale.push({ title: t.title, daysStale: Math.floor((nowMs - ms(t.activityAt)) / DAY_MS) });
+    }
+    if (t.status === "InReview") inReview.push(t.title);
+  }
+
+  overdue.sort((a, b) => b.daysOver - a.daysOver);
+  unscheduled.sort(
+    (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.title.localeCompare(b.title),
+  );
+  stale.sort((a, b) => b.daysStale - a.daysStale);
+
+  const byStatus = PROGRESS_ORDER.map((status) => ({
+    status,
+    label: TASK_STATUS_LABELS[status],
+    count: counts.get(status) ?? 0,
+  })).filter((s) => s.count > 0);
+
+  return {
+    byStatus,
+    overdue: overdue.slice(0, BREAKDOWN_CAP),
+    unscheduled: unscheduled.slice(0, BREAKDOWN_CAP),
+    stale: stale.slice(0, BREAKDOWN_CAP),
+    inReview: inReview.slice(0, BREAKDOWN_CAP),
   };
 }
