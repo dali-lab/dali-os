@@ -28,6 +28,7 @@
     "@blocknote/react": "0.52.1",
     "@blocknote/server-util": "0.52.1",
     "@blocknote/shadcn": "0.52.1",
+    "@blocknote/xl-multi-column": "0.52.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@floating-ui/react": "^0.27.20",

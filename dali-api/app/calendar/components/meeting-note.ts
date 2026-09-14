@@ -9,6 +9,11 @@
 //     Drive location the organizer can write to (default: Lab-wide).
 // Type is derived from the project choice, so the old illegal combos ("Other + a
 // project", "Team + no project") are unreachable.
+//
+// A Core meeting is a third shape of the same "General" case: Core isn't a
+// project, so its note has no project to file under and no Team/Partner
+// distinction to draw. The About question has one answer there, so the picker
+// collapses to a fixed "Core" — see the `core` prop on MeetingNoteFields.
 
 export type MeetingNoteLocation = {
   workspaceType: "Lab" | "Project";
@@ -28,6 +33,16 @@ export type MeetingNoteState = {
   /** General note destination; null → Lab-wide top level (the default/fallback). */
   location: MeetingNoteLocation | null;
 };
+
+/** Default name for a Core meeting's note. Core notes take the General path
+ *  (meetingType "Other"), which needs a label, so this keeps the field valid
+ *  from the moment the Core toggle goes on. */
+export const CORE_NOTE_LABEL = "Core meeting";
+
+/** Where a Core note is filed, for the read-only destination row. Mirrors
+ *  ensureCoreMeetingNotesFolder's placement (the Core drive's "Meeting notes"
+ *  folder) — the server does the actual filing, so no location is ever sent. */
+export const CORE_NOTE_FOLDER_LABEL = "Core / Meeting notes";
 
 export const emptyMeetingNote: MeetingNoteState = {
   enabled: false,

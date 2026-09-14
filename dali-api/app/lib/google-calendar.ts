@@ -999,6 +999,43 @@ export async function getGoogleEvent(opts: {
 
 type AttendeeResponse = "accepted" | "declined" | "tentative" | "needsAction";
 
+type RawAttendee = {
+  email: string;
+  responseStatus?: AttendeeResponse;
+  displayName?: string;
+  self?: boolean;
+};
+
+/** Read an event's attendee list, hand it to `revise`, and write the result
+ *  back. Google replaces the whole array on update rather than merging, so
+ *  every RSVP write is a read-modify-write of the full list. */
+async function rewriteAttendees(
+  opts: { linkId: string; calendarId?: string; eventId: string },
+  revise: (attendees: RawAttendee[]) => RawAttendee[],
+): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`;
+  const getRes = await fetch(eventUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!getRes.ok) {
+    const detail = await extractGoogleErrorDetail(getRes);
+    throw new Error(`Google events.get failed (${getRes.status}): ${detail}`);
+  }
+  const event = (await getRes.json()) as { attendees?: RawAttendee[] };
+  const patchRes = await fetch(`${eventUrl}?sendUpdates=all`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ attendees: revise(event.attendees ?? []) }),
+  });
+  if (!patchRes.ok) {
+    const detail = await extractGoogleErrorDetail(patchRes);
+    throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
+  }
+}
+
 export async function updateGoogleAttendeeRsvp(opts: {
   linkId: string;
   calendarId?: string;
@@ -1006,44 +1043,46 @@ export async function updateGoogleAttendeeRsvp(opts: {
   attendeeEmail: string;
   response: AttendeeResponse;
 }): Promise<void> {
-  const token = await getValidAccessTokenForLink(opts.linkId);
-  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
-  // Fetch the event so we can patch the attendees array (Google requires the
-  // full list on update, identified by email).
-  const getRes = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!getRes.ok) {
-    const detail = await extractGoogleErrorDetail(getRes);
-    throw new Error(`Google events.get failed (${getRes.status}): ${detail}`);
-  }
-  const event = (await getRes.json()) as {
-    attendees?: { email: string; responseStatus?: AttendeeResponse; displayName?: string }[];
-  };
-  const attendees = (event.attendees ?? []).map((a) =>
-    a.email.toLowerCase() === opts.attendeeEmail.toLowerCase()
-      ? { ...a, responseStatus: opts.response }
-      : a,
-  );
-  // Ensure the attendee exists in the list (caller may be a participant the
-  // organizer added without us having seen this email yet).
-  if (!attendees.some((a) => a.email.toLowerCase() === opts.attendeeEmail.toLowerCase())) {
-    attendees.push({ email: opts.attendeeEmail, responseStatus: opts.response });
-  }
-  const patchRes = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=all`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ attendees }),
-    },
-  );
-  if (!patchRes.ok) {
-    const detail = await extractGoogleErrorDetail(patchRes);
-    throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
+  const matches = (a: RawAttendee) =>
+    a.email.toLowerCase() === opts.attendeeEmail.toLowerCase();
+  await rewriteAttendees(opts, (attendees) => {
+    const next = attendees.map((a) => (matches(a) ? { ...a, responseStatus: opts.response } : a));
+    // Ensure the attendee exists in the list (caller may be a participant the
+    // organizer added without us having seen this email yet).
+    if (!next.some(matches)) next.push({ email: opts.attendeeEmail, responseStatus: opts.response });
+    return next;
+  });
+}
+
+/** RSVP as the account that owns `linkId`, on that account's own copy of the
+ *  event — the calendar page's Going / Maybe / Can't go. Unlike
+ *  `updateGoogleAttendeeRsvp` (organizer's token, attendee named by email),
+ *  this answers for whoever Google marks `self`, so it works on any invite the
+ *  viewer can see, not just meetings DALI created. */
+export async function respondToGoogleEventAsSelf(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  response: AttendeeResponse;
+}): Promise<void> {
+  let found = false;
+  await rewriteAttendees(opts, (attendees) => {
+    const next = attendees.map((a) => {
+      if (!a.self) return a;
+      found = true;
+      return { ...a, responseStatus: opts.response };
+    });
+    if (!found) throw new NotAGuestError();
+    return next;
+  });
+}
+
+/** Thrown when the viewer isn't on the event's guest list, so there is no
+ *  response of theirs to record. Distinguished from a transport failure so the
+ *  action can answer 400 rather than 500. */
+export class NotAGuestError extends Error {
+  constructor() {
+    super("You're not a guest on this event, so there's nothing to respond to.");
+    this.name = "NotAGuestError";
   }
 }

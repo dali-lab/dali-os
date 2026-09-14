@@ -1,5 +1,6 @@
 // "/" menu contents, trimmed to the app's command set: text, h1–h3, lists,
-// todo, quote, code, divider, toggle, callout, table (+ image when enabled).
+// todo, quote, code, divider, toggle, callout, table, columns (+ image when
+// enabled).
 //
 // BlockNote's defaults are schema-driven (an item only appears if its block is
 // registered), so most gating already happened in buildSchema. The allowlist
@@ -11,7 +12,8 @@
 
 import { filterSuggestionItems, getPageBreakSlashMenuItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
 import { getDefaultReactSlashMenuItems } from "@blocknote/react";
-import { Globe } from "lucide-react";
+import { getMultiColumnSlashMenuItems } from "@blocknote/xl-multi-column";
+import { Columns2, Globe } from "lucide-react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
 import type { Features } from "../features";
@@ -66,6 +68,21 @@ function calloutItem(editor: DocEditorInstance): KeyedItem {
   };
 }
 
+// "Two columns" / "Three columns" from @blocknote/xl-multi-column. Its items
+// ship no `key` and carry their own dictionary's group label, so both are
+// normalized here: a key so ALLOWED_KEYS-style filtering stays possible, and
+// the app's own resolved group label so insertItemIntoGroup lands them in the
+// existing "Basic blocks" run instead of opening a second group header.
+function columnItems(editor: DocEditorInstance): KeyedItem[] {
+  const group = (editor.dictionary.slash_menu.paragraph as { group: string }).group;
+  return getMultiColumnSlashMenuItems(editor).map((item, i) => ({
+    ...item,
+    key: i === 0 ? "two_columns" : "three_columns",
+    group,
+    icon: <Columns2 size={18} aria-hidden />,
+  }));
+}
+
 function embedItem(editor: DocEditorInstance): KeyedItem {
   return {
     key: "embed",
@@ -90,6 +107,9 @@ export function getDocSlashMenuItems(
     (item) => item.key !== undefined && ALLOWED_KEYS.has(item.key),
   );
   let items = defaults;
+  if (features.columns) {
+    for (const item of columnItems(editor)) items = insertItemIntoGroup(items, item);
+  }
   if (features.richBlocks) {
     items = insertItemIntoGroup(items, calloutItem(editor));
     items = insertItemIntoGroup(items, embedItem(editor));

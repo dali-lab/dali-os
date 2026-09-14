@@ -11,7 +11,7 @@ import { useNavigate, useRevalidator } from "react-router";
 import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
 import { DocEditor, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
-import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
+import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
@@ -60,7 +60,6 @@ export function DocumentEditor({
   subtitle,
   canEdit,
   canComment,
-  canResolve,
   tags,
   allTags,
   iconEmoji: initialIcon = null,
@@ -86,7 +85,6 @@ export function DocumentEditor({
   subtitle?: string | null;
   canEdit: boolean;
   canComment: boolean;
-  canResolve: boolean;
   tags: DocTag[];
   allTags: DocTag[];
   iconEmoji?: string | null;
@@ -134,7 +132,6 @@ export function DocumentEditor({
   const pendingTitleRef = useRef(initialTitle);
   const titleFocusedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   // Optimistic: the star flips immediately and reverts if the write fails.
@@ -157,7 +154,7 @@ export function DocumentEditor({
   // document was the last surface still wearing the brand shell's dress — 6px
   // corners, 14px glyphs and a coral "on" state — beside os pages that had all
   // moved to the design's roomier pills and its accent.
-  const { actionBtn, actionIcon, popover } = useOsChrome();
+  const { actionBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
   // "Aa" page-typography menu (Notion's Style section): per-page font /
   // small-text / full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
@@ -247,7 +244,7 @@ export function DocumentEditor({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const { open: openThreadCount } = useDocThreadCounts(pageId);
+  const threadCount = useDocThreadCount(pageId);
 
   // ── Rail (wide-screen comments column) ───────────────────────────────────
   // canvasContainerRef: the flex row that holds the paper + rail.
@@ -274,11 +271,13 @@ export function DocumentEditor({
   // Comments live in the right-hand rail on a wide container and at the foot of
   // the document otherwise. The top-bar toggle hides both surfaces at once, for
   // readers who want the page without the margin chatter.
-  const hasComments = canComment || openThreadCount > 0;
+  // Google Docs' rule: the margin column is not part of the page until
+  // someone comments. With nothing to show, the rail, the foot panel and the
+  // top bar's toggle all stand down — a comment starts from the text itself
+  // (select → Comment), not from an empty column.
+  const hasComments = threadCount > 0;
   const [commentsOpen, setCommentsOpen] = useState(true);
   const railVisible = commentsOpen && containerWide && hasComments;
-
-  const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
 
   const RAIL_TARGET_ID = "doc-comments-rail";
 
@@ -499,7 +498,7 @@ export function DocumentEditor({
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
-    <div className="doc-topbar flex items-center gap-2 py-2 text-xs text-muted-foreground">
+    <div className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
       {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
       {editedLabel && (
         <span className="shrink-0">{editedLabel}</span>
@@ -520,17 +519,17 @@ export function DocumentEditor({
         >
           {syncState === "saving" && (
             <>
-              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+              <Loader2 className={cn(actionIcon, "animate-spin")} /> Saving…
             </>
           )}
           {syncState === "saved" && (
             <>
-              <Check className="w-3 h-3" /> Saved
+              <Check className={actionIcon} /> Saved
             </>
           )}
           {syncState === "offline" && (
             <>
-              <CloudOff className="w-3 h-3" /> Offline
+              <CloudOff className={actionIcon} /> Offline
             </>
           )}
         </span>
@@ -880,10 +879,13 @@ export function DocumentEditor({
                   }}
                   onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
                   onKeyDown={onTitleKeyDown}
-                  className="doc-title doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
+                  className={cn(
+                    pageTitle,
+                    "doc-title doc-title-editable min-w-0 flex-1 leading-tight outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
+                  )}
                 />
               ) : (
-                <h1 className="doc-title min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
+                <h1 className={cn(pageTitle, "doc-title min-w-0 flex-1 leading-tight select-text")}>
                   {initialTitle}
                 </h1>
               )}
@@ -978,14 +980,12 @@ export function DocumentEditor({
                   pageId,
                   currentUserId,
                   canComment,
-                  canResolve,
+                  canModerate: canEdit,
                   panelOpen: false,
                   panelTargetId: "doc-comments-dropdown",
-                  panelFilter: railVisible ? railFilter : panelFilter,
                   railVisible,
                   railTargetId: RAIL_TARGET_ID,
                   editorContentRef: paperCardRef as RefObject<HTMLElement | null>,
-                  onRailFilterChange: setRailFilter,
                   focusCommentId,
                 }}
                 findOpen={findOpen}
@@ -1044,10 +1044,8 @@ export function DocumentEditor({
           pageId={pageId}
           currentUserId={currentUserId}
           canComment={canComment}
-          canResolve={canResolve}
           open
           onClose={() => {}}
-          onFilterChange={setPanelFilter}
           variant="inline"
         />
       </div>

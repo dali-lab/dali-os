@@ -1,14 +1,14 @@
 // Project templates: capture a project's structure into a reusable blueprint,
 // and instantiate a new project from one. The blueprint is stored as JSON on
 // ProjectTemplate (no live FK back to the source project). We deliberately do
-// NOT clone collab docs (epic/task descriptionDocId, sprint goalDocId) — those
-// are left blank for the new project to author; only plain-text descriptions and
-// checklists carry over.
+// NOT clone collab docs (epic/task descriptionDocId) — those are left blank for
+// the new project to author; only plain-text descriptions and checklists carry
+// over. Sprints are the computed term grid, not stored rows, so they aren't
+// captured; instantiated tasks land in the backlog until they're dated.
 
 import { prisma } from "~/lib/db";
 import type {
   EpicStatus,
-  SprintStatus,
   TaskStatus,
   Priority,
   UserStoryStatus,
@@ -20,10 +20,8 @@ import { ensureProjectGroup } from "~/lib/groups";
 import { duplicatePage } from "~/lib/page-copy.server";
 
 // ─── Blueprint shape (version 1) ─────────────────────────────────────────────
-// Refs (`e0`, `s0`, …) are blueprint-local ids used to wire tasks→sprint/epic
-// and sprints→epic without leaking real cuids. Sprint dates are day-offsets
-// from the earliest sprint start, rebased onto the chosen start date on
-// instantiate.
+// Refs (`e0`, …) are blueprint-local ids used to wire tasks→epic without leaking
+// real cuids.
 
 export const PROJECT_BLUEPRINT_VERSION = 1;
 
@@ -45,15 +43,6 @@ export interface BlueprintEpic {
   stories: BlueprintStory[];
 }
 
-export interface BlueprintSprint {
-  ref: string;
-  name: string;
-  startOffsetDays: number;
-  endOffsetDays: number;
-  epicRef: string | null;
-  status: SprintStatus;
-}
-
 export interface BlueprintTask {
   title: string;
   description: string | null;
@@ -61,7 +50,6 @@ export interface BlueprintTask {
   priority: Priority;
   checklist: unknown;
   epicRef: string | null;
-  sprintRef: string | null;
   // Domains are lab-global, so the id carries over verbatim.
   domainId: string | null;
 }
@@ -69,23 +57,18 @@ export interface BlueprintTask {
 export interface ProjectBlueprint {
   version: number;
   epics: BlueprintEpic[];
-  sprints: BlueprintSprint[];
   tasks: BlueprintTask[];
 }
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const daysBetween = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / DAY_MS);
 
 // ─── Capture ─────────────────────────────────────────────────────────────────
 
 export async function captureProjectBlueprint(projectId: string): Promise<ProjectBlueprint> {
-  const [epics, sprints, tasks] = await Promise.all([
+  const [epics, tasks] = await Promise.all([
     prisma.epic.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
       include: { stories: { orderBy: { position: "asc" } } },
     }),
-    prisma.sprint.findMany({ where: { projectId }, orderBy: { startsAt: "asc" } }),
     prisma.task.findMany({
       where: { projectId, archivedAt: null },
       orderBy: [{ status: "asc" }, { position: "asc" }],
@@ -94,11 +77,6 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
 
   const epicRefById = new Map<string, string>();
   epics.forEach((e, i) => epicRefById.set(e.id, `e${i}`));
-  const sprintRefById = new Map<string, string>();
-  sprints.forEach((s, i) => sprintRefById.set(s.id, `s${i}`));
-
-  // Rebase sprint dates onto day-offsets from the earliest sprint start.
-  const anchor = sprints.length > 0 ? sprints[0].startsAt : new Date(0);
 
   return {
     version: PROJECT_BLUEPRINT_VERSION,
@@ -117,14 +95,6 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
         priority: s.priority,
       })),
     })),
-    sprints: sprints.map((s) => ({
-      ref: sprintRefById.get(s.id)!,
-      name: s.name,
-      startOffsetDays: daysBetween(anchor, s.startsAt),
-      endOffsetDays: daysBetween(anchor, s.endsAt),
-      epicRef: s.epicId ? (epicRefById.get(s.epicId) ?? null) : null,
-      status: s.status,
-    })),
     tasks: tasks.map((t) => ({
       title: t.title,
       description: t.description,
@@ -132,7 +102,6 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
       priority: t.priority,
       checklist: t.checklist ?? null,
       epicRef: t.epicId ? (epicRefById.get(t.epicId) ?? null) : null,
-      sprintRef: t.sprintId ? (sprintRefById.get(t.sprintId) ?? null) : null,
       domainId: t.domainId,
     })),
   };
@@ -173,7 +142,6 @@ export async function instantiateProjectTemplate(input: {
   templateId: string;
   name: string;
   createdBy: string;
-  startDate?: Date;
   initialTermId?: string | null;
   partnerOrgId?: string | null;
 }): Promise<{ id: string }> {
@@ -183,7 +151,6 @@ export async function instantiateProjectTemplate(input: {
 
   const name = input.name.trim();
   if (!name) throw new Error("A project name is required");
-  const start = input.startDate ?? new Date();
 
   // Create the project shell (mirrors projects.hub create action), then rebuild
   // its structure in a single transaction so a mid-way failure leaves nothing.
@@ -200,7 +167,7 @@ export async function instantiateProjectTemplate(input: {
   });
 
   await prisma.$transaction(async (tx) => {
-    // Epics first, so sprints/tasks can point at them.
+    // Epics first, so tasks can point at them.
     const epicIdByRef = new Map<string, string>();
     for (const [i, e] of blueprint.epics.entries()) {
       const epic = await tx.epic.create({
@@ -228,25 +195,9 @@ export async function instantiateProjectTemplate(input: {
       epicIdByRef.set(e.ref, epic.id);
     }
 
-    // Sprints, rebasing offsets onto the chosen start date.
-    const sprintIdByRef = new Map<string, string>();
-    for (const s of blueprint.sprints) {
-      const sprint = await tx.sprint.create({
-        data: {
-          projectId: project.id,
-          name: s.name,
-          startsAt: new Date(start.getTime() + s.startOffsetDays * DAY_MS),
-          endsAt: new Date(start.getTime() + s.endOffsetDays * DAY_MS),
-          status: s.status,
-          epicId: s.epicRef ? (epicIdByRef.get(s.epicRef) ?? null) : null,
-        },
-        select: { id: true },
-      });
-      sprintIdByRef.set(s.ref, sprint.id);
-    }
-
-    // Tasks, remapping epic/sprint refs; checklist JSON carries verbatim.
-    // Position is per (status) column, in blueprint order.
+    // Tasks, remapping epic refs; checklist JSON carries verbatim. Position is
+    // per (status) column, in blueprint order. Tasks land undated (backlog) —
+    // their sprint is derived from dates the new project will set.
     const posByStatus = new Map<string, number>();
     for (const t of blueprint.tasks) {
       const pos = posByStatus.get(t.status) ?? 0;
@@ -261,7 +212,6 @@ export async function instantiateProjectTemplate(input: {
           position: pos,
           checklist: (t.checklist ?? undefined) as object | undefined,
           epicId: t.epicRef ? (epicIdByRef.get(t.epicRef) ?? null) : null,
-          sprintId: t.sprintRef ? (sprintIdByRef.get(t.sprintRef) ?? null) : null,
           domainId: t.domainId,
           createdById: input.createdBy,
         },

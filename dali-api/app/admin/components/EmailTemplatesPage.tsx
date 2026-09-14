@@ -16,23 +16,16 @@ export function EmailTemplatesPage() {
   const { templates, isAdmin } = useLoaderData<typeof loader>()
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
-  const { os, pageTitle, card } = useOsChrome()
+  const { pageTitle, card } = useOsChrome()
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <h1 className={pageTitle}>Email Templates</h1>
-        {os ? (
-          <button type="button" className="os-add-btn" onClick={() => setShowModal(true)}>
+        <button type="button" className="os-add-btn" onClick={() => setShowModal(true)}>
             <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
             New Template
           </button>
-        ) : (
-          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-            <Plus className="w-4 h-4" />
-            New Template
-          </Button>
-        )}
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
@@ -44,9 +37,7 @@ export function EmailTemplatesPage() {
               to={`/admin/email-templates/${template.id}`}
               className={cn(
                 'group block p-6',
-                os
-                  ? 'rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover'
-                  : 'bg-card rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow',
+                'rounded-os-card bg-os-card transition-colors hover:bg-os-card-hover',
               )}
             >
               <div className="flex items-start justify-between">
@@ -54,9 +45,7 @@ export function EmailTemplatesPage() {
                   <div
                     className={cn(
                       'p-2 shrink-0',
-                      os
-                        ? 'rounded-os-item bg-os-container text-os-accent'
-                        : 'rounded-lg bg-blue-100 text-blue-600',
+                      'rounded-os-item bg-os-container text-os-accent',
                     )}
                   >
                     <Mail className="w-6 h-6" />
@@ -65,7 +54,7 @@ export function EmailTemplatesPage() {
                     <h3
                       className={cn(
                         'font-bold text-foreground transition-colors truncate',
-                        os ? 'group-hover:text-os-accent' : 'group-hover:text-blue-600',
+                        'group-hover:text-os-accent',
                       )}
                     >
                       {template.name}
@@ -85,7 +74,7 @@ export function EmailTemplatesPage() {
                 <ChevronRight
                   className={cn(
                     'w-5 h-5 text-muted-foreground/70 shrink-0',
-                    os ? 'group-hover:text-os-accent' : 'group-hover:text-blue-500',
+                    'group-hover:text-os-accent',
                   )}
                 />
               </div>

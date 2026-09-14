@@ -15,8 +15,9 @@ import {
 // headless browser, so it runs under `npm ci --omit=dev` on the Alpine
 // runtime. Covers the full document schema (headings, lists, check lists,
 // quote, code, divider, images-as-placeholders, toggles, callouts, tables,
-// marks, links, mentions, signing fields, variables); unknown blocks degrade
-// to their text so content is never dropped.
+// marks, links, mentions, signing fields, variables; columns flatten to
+// stacked blocks); unknown blocks degrade to their text so content is never
+// dropped.
 
 type Run = { text: string; bold?: boolean; italic?: boolean; underline?: boolean; link?: string };
 
@@ -306,6 +307,15 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         doc.text(cells.join("   |   "));
       }
       doc.moveDown(0.5);
+      break;
+    }
+    case "columnList":
+    case "column": {
+      // pdfkit has no flow-around layout, so columns are flattened: each
+      // column's blocks render in document order, full width, one after the
+      // other. Explicit rather than left to the `default` arm below so the
+      // degradation is a decision and not an accident of the fallthrough.
+      renderChildren(doc, block);
       break;
     }
     default:

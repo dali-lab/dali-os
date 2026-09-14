@@ -57,7 +57,7 @@ function rows(
 }
 
 const allowAll = () =>
-  mockAccess.mockResolvedValue({ canView: true, canEdit: true, canComment: true, canResolve: true });
+  mockAccess.mockResolvedValue({ canView: true, canEdit: true, canComment: true });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -109,7 +109,6 @@ describe("listFavoritesAndRecents", () => {
       canView: p.id !== "revoked",
       canEdit: false,
       canComment: false,
-      canResolve: false,
     }));
     const { recents } = await listFavoritesAndRecents(USER);
     expect(recents.map((p) => p.id)).toEqual(["visible", "also-visible"]);
@@ -122,7 +121,6 @@ describe("listFavoritesAndRecents", () => {
       canView: p.id !== "bad",
       canEdit: false,
       canComment: false,
-      canResolve: false,
     }));
     const { recents } = await listFavoritesAndRecents(USER);
     expect(recents.map((p) => p.id)).toEqual(["r1", "r2", "r3", "r4", "r5"]);

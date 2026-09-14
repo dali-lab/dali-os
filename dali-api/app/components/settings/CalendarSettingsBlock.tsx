@@ -11,6 +11,8 @@ import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { CalendarDays, ChevronDown, ChevronRight, ExternalLink, Plus, Trash2 } from "lucide-react";
 import type { CalendarLinkDTO } from "~/lib/settings-page.server";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Tooltip } from "~/components/ui/floating";
 
 const CALENDAR_ACTION = "/settings/calendar";
 
@@ -75,6 +77,7 @@ export function CalendarSettingsBlock({
 // more (those live in CalendarsPanel on the Calendar page).
 function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
   const removeFetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
 
@@ -96,16 +99,28 @@ function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
             <span className="shrink-0 text-[11px] text-red-700">Sync error</span>
           )}
         </button>
-        <removeFetcher.Form method="post" action={CALENDAR_ACTION}>
+        <removeFetcher.Form
+          method="post"
+          action={CALENDAR_ACTION}
+          onSubmit={confirmSubmit({
+            title: `Disconnect ${link.externalEmail}?`,
+            description:
+              "Removes its events, availability, and any calendars you create there.",
+            tone: "destructive",
+            confirmLabel: "Disconnect",
+          })}
+        >
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
-          <button
-            type="submit"
-            aria-label={`Remove ${link.externalEmail}`}
-            className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip content={`Disconnect ${link.externalEmail}`}>
+            <button
+              type="submit"
+              aria-label={`Disconnect ${link.externalEmail}`}
+              className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
         </removeFetcher.Form>
       </div>
 

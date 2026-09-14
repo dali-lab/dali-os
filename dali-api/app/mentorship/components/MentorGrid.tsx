@@ -52,7 +52,7 @@ export function MentorGrid({
   heading?: string;
   edit?: MentorGridEdit;
 }) {
-  const { os, panel, panelPad, heading: headingClass } = useOsChrome();
+  const { panel, panelPad, heading: headingClass } = useOsChrome();
   return (
     <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
       <h2 className={headingClass}>
@@ -61,7 +61,7 @@ export function MentorGrid({
             <Avatar
               photoUrl={group.mentor.photoUrl}
               name={fullName(group.mentor)}
-              size={os ? "xs" : "sm"}
+              size="xs"
               userId={group.mentor.id}
             />
             {fullName(group.mentor)}
@@ -81,9 +81,7 @@ export function MentorGrid({
                   className={cn(
                     "w-9 text-center text-[11px] font-medium pb-1",
                     w === currentWeek
-                      ? os
-                        ? "text-os-accent"
-                        : "text-accent-coral"
+                      ? "text-os-accent"
                       : "text-muted-foreground",
                   )}
                 >

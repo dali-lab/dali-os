@@ -402,7 +402,6 @@ export function PageDocPage({
               targetId={data.doc.id}
               currentUserId={data.currentUserId}
               canComment
-              canResolve={data.maintainer?.id === data.currentUserId}
               mentionPath={path}
               focusCommentId={focusCommentId}
             />

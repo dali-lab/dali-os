@@ -163,12 +163,62 @@ export type TimeEntryDTO = {
 /** One invitee row in an event's detail popover, from either source. */
 export type EventAttendeeDTO = {
   name: string;
-  status: "Accepted" | "Declined" | "Tentative" | "Pending";
+  status: RsvpStatus;
   organizer?: boolean;
   optional?: boolean;
 };
 
-export type EventLinkDTO = { label: string; href: string };
+/** An outbound link on an event's detail popover. `kind` decides how it is
+ *  drawn — the join link is the card's primary action, the rest are quiet rows —
+ *  so the popover doesn't have to recognise links by their label text. */
+export type EventLinkDTO = {
+  label: string;
+  href: string;
+  kind?: "video" | "notes" | "source";
+};
+
+/** The viewer's own answer to an invite, in the vocabulary the popover shows.
+ *  "Pending" is Google's needsAction — invited, hasn't replied. */
+export type RsvpStatus = "Accepted" | "Declined" | "Tentative" | "Pending";
+
+/** The DALI meeting behind a Google event, matched on ScheduledMeeting
+ *  .externalEventId. Carries what the detail popover offers beyond the Google
+ *  event itself: the meeting page, its notes doc, and the two per-viewer
+ *  toggles. */
+export type EventMeetingDTO = {
+  meetingId: string;
+  notePageId: string | null;
+  /** Whether the viewer already has a TimeEntry for this meeting. */
+  onTimesheet: boolean;
+  isCoreMeeting: boolean;
+  /** Core only — hides the "Core meeting" checkbox for everyone else. */
+  canMarkCoreMeeting: boolean;
+  /** Route the toggles post to. Unset means the current route, which is right
+   *  on the calendar page; a page that shows the same popover without owning
+   *  the calendar action (the Core hub) names "/calendar" here. */
+  actionPath?: string;
+};
+
+/**
+ * How the viewer answers this invite. Google events on the calendar page
+ * answer through Google directly (`google`), against their own copy of the
+ * event. A DALI meeting drawn from the database — the Core calendar — has no
+ * such copy to hand, so it answers through its invite notification
+ * (`notification`), whose endpoint pushes the same answer on to Google using
+ * the organizer's link.
+ */
+export type EventRsvpTarget =
+  | {
+      via: "google";
+      status: RsvpStatus;
+      eventId: string;
+      linkId: string;
+      calendarId: string | null;
+      /** Master id when this is one instance of a series — a DALI meeting
+       *  records the master, so the mirror back to its invite needs it. */
+      recurringEventId: string | null;
+    }
+  | { via: "notification"; status: RsvpStatus; notificationId: string };
 
 /** One external (Google/Outlook) event for display, from events.list. Carries
  *  CRUD identity (eventId/linkId/writable) behind the calendar-unified flag
@@ -208,6 +258,12 @@ export type ExternalEventDTO = {
   attendees?: EventAttendeeDTO[];
   /** { label, href } pairs for the detail popover (Meet link, Google page). */
   links?: EventLinkDTO[];
+  /** The viewer's own response, when they're a guest on this event. Undefined
+   *  means they aren't invited (their own event, or a calendar they only
+   *  watch), and the popover offers no RSVP. */
+  rsvp?: RsvpStatus;
+  /** Set when this Google event is a DALI meeting. */
+  meeting?: EventMeetingDTO;
 };
 
 export type LoaderData = {
@@ -329,21 +385,12 @@ export type EventBlock = {
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
    *  top of it. `color` is a CSS colour (the role palette's `dot`). */
   loggedAccent?: { color: string; hours: number };
-  /** When set, the block is a meeting invite: clicking opens a persistent
-   *  popover with Accept/Maybe/Decline (RSVP lives on the invite Notification,
-   *  so notificationId targets the RSVP endpoint). */
-  meeting?: {
-    notificationId: string;
-    /** ScheduledMeeting id — target of the timesheet / Core-meeting toggles. */
-    meetingId: string;
-    rsvp: "Accepted" | "Declined" | "Tentative" | null;
-    notePageId: string | null;
-    /** Whether the viewer already has a TimeEntry for this meeting. */
-    onTimesheet: boolean;
-    isCoreMeeting: boolean;
-    /** Core only — hides the "Core meeting" checkbox for everyone else. */
-    canMarkCoreMeeting: boolean;
-  };
+  /** Set when this block is a DALI meeting: the detail popover adds its
+   *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
+  meeting?: EventMeetingDTO;
+  /** Set when the viewer is a guest: the detail popover offers Going / Maybe /
+   *  Can't go. Carries the identity the write needs — see EventRsvpTarget. */
+  rsvp?: EventRsvpTarget;
 };
 
 // Group availability (POST /api/calendar/group-availability) — shared by the

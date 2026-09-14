@@ -14,7 +14,7 @@
 // changes are required to the route's action handlers.
 
 import { useState, type ReactNode } from "react";
-import { Check, Loader2, Pencil, X } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 
@@ -52,7 +52,7 @@ export function EditableSection({
    *  its content under dali.os. */
   className?: string;
 }) {
-  const { os, sectionShell, sectionTitle } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
   const [editing, setEditing] = useState(false);
   // Bumped on Cancel so child inputs (which read defaultValue) remount and
   // pick up the original values again instead of keeping the user's typing.
@@ -81,15 +81,8 @@ export function EditableSection({
           {/* The os design titles a section in plain text — the glyph belongs
               to its eyebrow-labelled settings panels, not here. */}
           <h2
-            className={
-              os
-                ? sectionTitle
-                : icon
-                  ? "inline-flex items-center gap-2 font-heading font-semibold text-foreground"
-                  : "text-sm font-semibold text-foreground"
-            }
+            className={sectionTitle}
           >
-            {!os && icon}
             {title}
           </h2>
           {description && (
@@ -104,57 +97,43 @@ export function EditableSection({
               <>
                 {/* The os design labels its buttons — a bare glyph pair reads
                     as toolbar chrome next to a 19px section title. */}
-                <Tooltip content="Cancel" disabled={os}>
+                <Tooltip content="Cancel" disabled={true}>
                   <button
                     type="button"
                     onClick={cancel}
                     disabled={busy}
                     aria-label="Cancel"
-                    className={
-                      os
-                        ? "inline-flex items-center rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground disabled:opacity-60"
-                        : "inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-60"
-                    }
+                    className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground disabled:opacity-60"
                   >
-                    {os ? "Cancel" : <X className="w-3.5 h-3.5" />}
+                    Cancel
                   </button>
                 </Tooltip>
-                <Tooltip content="Save changes" disabled={os}>
+                <Tooltip content="Save changes" disabled={true}>
                   <button
                     type="button"
                     onClick={() => void save()}
                     disabled={busy}
                     aria-label="Save changes"
-                    className={
-                      os
-                        ? "inline-flex items-center gap-1.5 rounded-full bg-os-accent px-4 py-1.5 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover disabled:opacity-60"
-                        : "inline-flex items-center justify-center p-1.5 rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
-                    }
+                    className="inline-flex items-center gap-1.5 rounded-full bg-os-accent px-4 py-1.5 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover disabled:opacity-60"
                   >
                     {busy ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : os ? (
-                      "Save"
                     ) : (
-                      <Check className="w-3.5 h-3.5" />
+                      "Save"
                     )}
                   </button>
                 </Tooltip>
               </>
             ) : (
-              <Tooltip content={`Edit ${title}`} disabled={os}>
+              <Tooltip content={`Edit ${title}`} disabled={true}>
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
                   aria-label={`Edit ${title}`}
-                  className={
-                    os
-                      ? "inline-flex items-center gap-1.5 rounded-full border border-os-container px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
-                      : "inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-os-container px-3.5 py-1.5 text-[13px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                  {os && "Edit"}
+                  Edit
                 </button>
               </Tooltip>
             )}

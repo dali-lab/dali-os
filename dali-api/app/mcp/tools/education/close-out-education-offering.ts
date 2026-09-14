@@ -1,6 +1,10 @@
 // MCP tool: close_out_education_offering — issue completion certificates, grant
 // instructor CE credits, and send close-out emails for an offering. Idempotent.
-// Instructor or Core only. Scope: mcp:admin.
+// Instructor or Core only (isOfferingManager). Scope: mcp:write — the web gate
+// is isOfferingManager (an instructor who owns the offering can close it), so
+// mcp:admin (Core/Admin-only at consent) would wrongly block a non-Core
+// instructor. The runtime isOfferingManager check is the real gate; the
+// outbound blast is fenced by idempotency + the preview action.
 
 import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
 import { isOfferingManager } from "~/education/lib/access.server";
@@ -24,7 +28,7 @@ export const CLOSE_OUT_EDUCATION_OFFERING_TOOL = {
     required: ["offeringId"],
     additionalProperties: false,
   },
-  requiredScope: "mcp:admin" as const,
+  requiredScope: "mcp:write" as const,
 };
 
 type Input = {

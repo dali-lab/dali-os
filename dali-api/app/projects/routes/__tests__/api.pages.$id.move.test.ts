@@ -47,7 +47,6 @@ function labPage(over: Record<string, unknown> = {}) {
     kind: "FreeForm",
     archivedAt: null,
     createdById: "u1",
-    systemKey: null,
     partnerVisible: false,
     publicVisible: false,
     projectAsOverview: null,
@@ -131,15 +130,6 @@ describe("POST /api/pages/:id/move", () => {
     vi.mocked(isCore).mockResolvedValue(false);
     const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projA" });
     expect(res.status).toBe(403);
-  });
-
-  it("400 when moving a system folder cross-workspace", async () => {
-    m.page.findUnique.mockResolvedValue(
-      projectPage({ kind: "Folder", systemKey: "project:projA:team-meeting-notes" }),
-    );
-    vi.mocked(isLabMember).mockResolvedValue(true);
-    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
-    expect(res.status).toBe(400);
   });
 
   it("400 when moving the Overview/PRD doc out of its project", async () => {

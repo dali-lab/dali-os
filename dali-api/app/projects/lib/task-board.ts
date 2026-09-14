@@ -2,7 +2,14 @@
 // staffing-board.ts: route loaders pass plain data in, the component renders
 // the board the helper builds, and persistence goes through an /api route.
 
-import type { TimelineTermSpan } from "./timeline-days";
+import {
+  DAY,
+  SPRINT_DAYS,
+  utcDayOf,
+  localTodayUtcDay,
+  type SprintBand,
+  type TimelineTermSpan,
+} from "./timeline-days";
 
 export const TASK_STATUSES = [
   "Backlog",
@@ -42,7 +49,6 @@ export type TaskCardModel = {
   // project timeline. Planning-only — it fires no reminders.
   startsAt: string | null;
   epicId: string | null;
-  sprintId: string | null;
   // Optional parent user story. Drives the timeline's task-inside-story
   // nesting; null hangs the task directly off its epic/sprint.
   storyId: string | null;
@@ -80,76 +86,145 @@ export type TaskCardModel = {
   hasUnread: boolean;
 };
 
-export type BoardSprint = {
-  id: string;
-  name: string;
-  status: "Planned" | "Active" | "Closed";
-  // The epic this sprint belongs to (null = standalone). Powers the modal's
-  // cascading Epic → Sprint picker: pick an epic, then only its sprints show.
-  epicId: string | null;
-  // The Term this sprint falls in, resolved from its start date by the loader
-  // (see resolveTermIdForDate). Null when the Term table has no term at or
-  // after the sprint's start. Powers the board's term filter.
-  termId: string | null;
-  // ISO start timestamp — orders the sprint-view picker (upcoming ascending,
-  // past newest-first) so the sprint you most likely want is nearest the top.
-  startsAt: string;
-};
-
-// The board's sprint scope (the `sprint-view` filter, stored in `?sprint=`):
-// which sprint's work the board is showing. `all` is every task, `current` the
-// active sprint(s), `backlog` the unsprinted pool, or a concrete sprint id.
-// The extra `(string & {})` keeps the three literals in autocomplete while
-// still admitting any sprint id.
+// The board's sprint scope (the sprint filter, stored in `?sprint=`): which
+// sprint's work the board is showing. `all` is every task, `current` the sprint
+// containing today, `backlog` the undated pool, or a concrete sprint key (the
+// band's UTC-midnight start, stringified). Sprints are the term-anchored 7-day
+// bands the timeline draws — not stored rows. The extra `(string & {})` keeps
+// the three literals in autocomplete while still admitting any band key.
 export type SprintScope = "all" | "current" | "backlog" | (string & {});
 
-/** Ids of the sprints marked Active — the target of the `current` scope. */
-export function activeSprintIds(sprints: BoardSprint[]): string[] {
-  return sprints.filter((s) => s.status === "Active").map((s) => s.id);
+const SPRINT_STEP = SPRINT_DAYS * DAY;
+
+/** The UTC-day window [start, end] of the term containing `day`, or null. */
+function termWindowContaining(
+  terms: TimelineTermSpan[],
+  day: number,
+): { start: number; end: number } | null {
+  for (const t of terms) {
+    const start = utcDayOf(t.startsAt);
+    const end = utcDayOf(t.endsAt);
+    if (day >= start && day <= end) return { start, end };
+  }
+  return null;
+}
+
+/**
+ * The sprint band containing `now`: the term-anchored 7-day band, numbered from
+ * 1 off its term's start (a ten-week term gives Sprint 1..10). Null when today
+ * falls outside every term (a break week) — the board then has no "current"
+ * sprint rather than surfacing an out-of-term band.
+ */
+export function currentSprintBand(
+  terms: TimelineTermSpan[],
+  now: Date,
+): SprintBand | null {
+  const today = localTodayUtcDay(now);
+  const term = termWindowContaining(terms, today);
+  if (!term) return null;
+  const n = Math.floor((today - term.start) / SPRINT_STEP);
+  const key = term.start + n * SPRINT_STEP;
+  const end = Math.min(key + SPRINT_STEP - DAY, term.end);
+  return { key, end, label: `Sprint ${n + 1}` };
+}
+
+/** The [start, end] UTC days a task's dates cover, or null when undated. */
+function taskSpanDays(task: {
+  startsAt: string | null;
+  dueAt: string | null;
+}): { start: number; end: number } | null {
+  const startIso = task.startsAt ?? task.dueAt;
+  const endIso = task.dueAt ?? task.startsAt;
+  if (!startIso || !endIso) return null;
+  return { start: utcDayOf(startIso), end: utcDayOf(endIso) };
 }
 
 /**
  * The scope the board opens on when the URL names none: the current sprint if
  * one is running (mirroring the term filter's "open on this term" default),
- * else every task (a project with no active sprint shows its full board).
+ * else every task.
  */
-export function defaultSprintScope(sprints: BoardSprint[]): SprintScope {
-  return activeSprintIds(sprints).length > 0 ? "current" : "all";
+export function defaultSprintScope(
+  terms: TimelineTermSpan[],
+  now: Date,
+): SprintScope {
+  return currentSprintBand(terms, now) ? "current" : "all";
 }
 
 /**
  * Resolve the effective scope from a raw `?sprint=` value: an explicit,
- * still-valid value wins; anything stale (a deleted sprint id, or `current`
- * with nothing active) falls back to the default.
+ * still-valid value wins; anything stale (`current` with nothing running, or a
+ * band key that isn't a term-aligned sprint start) falls back to the default.
  */
 export function resolveSprintScope(
   param: string | null,
-  sprints: BoardSprint[],
+  terms: TimelineTermSpan[],
+  now: Date,
 ): SprintScope {
-  const fallback = defaultSprintScope(sprints);
+  const fallback = defaultSprintScope(terms, now);
   if (!param || param === "all" || param === "backlog") return param || fallback;
   if (param === "current") {
-    return activeSprintIds(sprints).length > 0 ? "current" : fallback;
+    return currentSprintBand(terms, now) ? "current" : fallback;
   }
-  return sprints.some((s) => s.id === param) ? param : fallback;
+  const key = Number(param);
+  if (!Number.isFinite(key)) return fallback;
+  const term = termWindowContaining(terms, key);
+  return term && (key - term.start) % SPRINT_STEP === 0 ? param : fallback;
 }
 
 /**
  * Does a task fall in the selected scope? `all` matches everything; `current`
- * matches the active sprint(s); `backlog` matches the unsprinted; a concrete id
- * matches that one sprint.
+ * the sprint containing today; `backlog` the undated; a concrete band key any
+ * task whose date span overlaps that 7-day band — the same rule the timeline
+ * uses to place task bars, so board and timeline agree.
  */
 export function taskInSprintScope(
-  task: Pick<TaskCardModel, "sprintId">,
+  task: { startsAt: string | null; dueAt: string | null },
   scope: SprintScope,
-  activeIds: readonly string[],
+  terms: TimelineTermSpan[],
+  now: Date,
 ): boolean {
   if (scope === "all") return true;
-  if (scope === "backlog") return task.sprintId === null;
-  if (scope === "current") {
-    return task.sprintId !== null && activeIds.includes(task.sprintId);
+  const span = taskSpanDays(task);
+  if (scope === "backlog") return span === null;
+  if (span === null) return false;
+  const key =
+    scope === "current" ? currentSprintBand(terms, now)?.key ?? null : Number(scope);
+  if (key === null || !Number.isFinite(key)) return false;
+  return span.start <= key + SPRINT_STEP - DAY && span.end >= key;
+}
+
+/**
+ * The sprint-filter picker options for the selected term's sprints
+ * (`Sprint 1..N · Current|Past|Upcoming`), current-first, then upcoming
+ * ascending, then past newest-first. Empty when no specific term is selected —
+ * the picker is disabled while the board shows all terms, since sprint numbers
+ * reset per term and a flat list would be ambiguous.
+ */
+export function sprintPickerOptions(
+  terms: TimelineTermSpan[],
+  selectedTermCode: string | null,
+  now: Date,
+): { value: string; label: string }[] {
+  if (!selectedTermCode) return [];
+  const term = terms.find((t) => t.code === selectedTermCode);
+  if (!term) return [];
+  const start = utcDayOf(term.startsAt);
+  const end = utcDayOf(term.endsAt);
+  const today = localTodayUtcDay(now);
+  const bands: { key: number; label: string; phase: string; rank: number }[] = [];
+  let n = 0;
+  for (let key = start; key <= end; key += SPRINT_STEP, n++) {
+    const bandEnd = Math.min(key + SPRINT_STEP - DAY, end);
+    const phase =
+      today >= key && today <= bandEnd ? "Current" : today > bandEnd ? "Past" : "Upcoming";
+    const rank = phase === "Current" ? 0 : phase === "Upcoming" ? 1 : 2;
+    bands.push({ key, label: `Sprint ${n + 1}`, phase, rank });
   }
-  return task.sprintId === scope;
+  bands.sort((a, z) =>
+    a.rank !== z.rank ? a.rank - z.rank : a.rank === 2 ? z.key - a.key : a.key - z.key,
+  );
+  return bands.map((b) => ({ value: String(b.key), label: `${b.label} · ${b.phase}` }));
 }
 
 export type BoardEpic = {
@@ -169,9 +244,6 @@ export type TaskBoardOptions = {
   // Project.repoUrls — surfaced in the TaskModal's "Create GitHub issue"
   // picker. Empty array hides the picker entirely.
   repoUrls: string[];
-  // The project's sprints/epics: the board's sprint filter pills and the
-  // modal's sprint/epic pickers. Sprints ordered Active → Planned → Closed.
-  sprints: BoardSprint[];
   // Term spans, oldest first — the same anchor the timeline's fixed one-week
   // sprint grid uses. The modal derives which weeks a task lands in from its
   // dates against this rather than asking anyone to pick a sprint.

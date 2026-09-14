@@ -1,12 +1,14 @@
 // MCP `get_project_overview` — read-only drill-down on a Project. Returns the
-// project's identity fields, current-term roster, active sprint, current
-// epic (if any), and task-status counts. Read access mirrors the project
-// detail page: any authenticated DALI OS member can load it. Requires the
-// `mcp:read` scope.
+// project's identity fields, current-term roster, current sprint (the
+// term-anchored week containing today), current epic (if any), and task-status
+// counts. Read access mirrors the project detail page: any authenticated DALI
+// OS member can load it. Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { fullName } from "~/lib/display";
+import { currentSprintBand } from "~/projects/lib/task-board";
+import { DAY } from "~/projects/lib/timeline-days";
 
 export const GET_PROJECT_OVERVIEW_TOOL = {
   name: "get_project_overview",
@@ -52,7 +54,11 @@ export async function runGetProjectOverview(input: Input) {
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
-        select: { term: { select: { code: true, sortKey: true } } },
+        select: {
+          term: {
+            select: { code: true, sortKey: true, startDate: true, endDate: true },
+          },
+        },
       },
       partners: {
         select: { partnerOrg: { select: { id: true, name: true } } },
@@ -61,7 +67,7 @@ export async function runGetProjectOverview(input: Input) {
   });
   if (!project) throw new ProjectNotFoundError(input.projectId);
 
-  const [currentAssignments, activeSprint, openEpic, taskCounts] = await Promise.all([
+  const [currentAssignments, openEpic, taskCounts] = await Promise.all([
     termId
       ? prisma.projectAssignment.findMany({
           where: { projectId: input.projectId, termId },
@@ -72,11 +78,6 @@ export async function runGetProjectOverview(input: Input) {
           },
         })
       : Promise.resolve([]),
-    prisma.sprint.findFirst({
-      where: { projectId: input.projectId, status: "Active" },
-      orderBy: { startsAt: "desc" },
-      select: { id: true, name: true, startsAt: true, endsAt: true },
-    }),
     prisma.epic.findFirst({
       where: {
         projectId: input.projectId,
@@ -101,10 +102,26 @@ export async function runGetProjectOverview(input: Input) {
   };
   for (const row of taskCounts) taskCountByStatus[row.status] = row._count._all;
 
-  const termCodes = project.projectTerms
+  const sortedTerms = project.projectTerms
     .map((pt) => pt.term)
-    .sort((a, b) => a.sortKey - b.sortKey)
-    .map((t) => t.code);
+    .sort((a, b) => a.sortKey - b.sortKey);
+  const termCodes = sortedTerms.map((t) => t.code);
+
+  // Current sprint: the term-anchored 7-day band containing today (Sprint 1..N
+  // per term), the same grid the board and timeline draw. Null on a break week.
+  const termSpans = sortedTerms.map((t) => ({
+    code: t.code,
+    startsAt: t.startDate.toISOString(),
+    endsAt: t.endDate.toISOString(),
+  }));
+  const band = currentSprintBand(termSpans, new Date());
+  const activeSprint = band
+    ? {
+        label: band.label,
+        startsAt: new Date(band.key).toISOString(),
+        endsAt: new Date(band.end + DAY).toISOString(),
+      }
+    : null;
 
   return {
     id: project.id,
@@ -126,14 +143,7 @@ export async function runGetProjectOverview(input: Input) {
       domain: a.domain.displayName,
       level: a.level,
     })),
-    activeSprint: activeSprint
-      ? {
-          id: activeSprint.id,
-          name: activeSprint.name,
-          startsAt: activeSprint.startsAt.toISOString(),
-          endsAt: activeSprint.endsAt.toISOString(),
-        }
-      : null,
+    activeSprint,
     currentEpic: openEpic
       ? {
           id: openEpic.id,

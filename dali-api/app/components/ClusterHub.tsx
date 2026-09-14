@@ -8,10 +8,10 @@ import { cn } from "~/lib/cn";
 // carry their destination's name and nothing else — a hub is a set of doors,
 // and a sentence under each one restates the label it sits below.
 export function ClusterHub({ cluster }: { cluster: NavCluster | undefined }) {
-  const { os, pageTitle, card, cardPad, heading, headingIcon } = useOsChrome();
+  const { pageTitle, card, cardPad, heading, headingIcon } = useOsChrome();
   if (!cluster) return null;
   return (
-    <div className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
+    <div className={cn("flex flex-col", "gap-6")}>
       <header>
         <h1 className={pageTitle}>{cluster.label}</h1>
       </header>
@@ -23,9 +23,7 @@ export function ClusterHub({ cluster }: { cluster: NavCluster | undefined }) {
             className={cn(
               card,
               cardPad,
-              os
-                ? "transition-colors hover:bg-os-card-hover"
-                : "hover:border-accent-coral/60 hover:shadow-brand-2 transition-all",
+              "transition-colors hover:bg-os-card-hover",
             )}
           >
             <div className="flex items-center gap-2">

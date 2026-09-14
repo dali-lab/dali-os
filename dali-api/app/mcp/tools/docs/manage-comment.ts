@@ -1,5 +1,6 @@
 // MCP `manage_comment` — faceted tool for comment CRUD + reactions.
-// Actions: create · edit · resolve · reopen · react · unreact · delete.
+// Actions: create · edit · react · unreact · delete. Comments carry no
+// open/resolved state, so there is nothing to mark done.
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
@@ -11,13 +12,13 @@ import type { McpCtx, McpTool } from "~/mcp/registry";
 export const MANAGE_COMMENT_TOOL_DEF = {
   name: "manage_comment",
   description:
-    "Create, edit, resolve, reopen, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; resolve/reopen requires edit-level or Core; deleting a file comment requires Core.",
+    "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "edit", "resolve", "reopen", "react", "unreact", "delete"],
+        enum: ["create", "edit", "react", "unreact", "delete"],
       },
       // For create
       targetType: {
@@ -34,7 +35,7 @@ export const MANAGE_COMMENT_TOOL_DEF = {
         description: "For 'create' on doc targets: Yjs anchor range.",
       },
       versionId: { type: "string", description: "For 'create' on file targets: pin to a file version." },
-      // For edit/resolve/reopen/react/unreact/delete
+      // For edit/react/unreact/delete
       commentId: { type: "string", description: "Required for all actions except 'create'." },
       emoji: { type: "string", maxLength: 64, description: "Required for 'react'/'unreact'." },
     },
@@ -56,15 +57,13 @@ export class ManageCommentError extends Error {
 const ACTION_REQUIRED: Record<string, string[]> = {
   create: ["targetType", "targetId", "body"],
   edit: ["commentId", "body"],
-  resolve: ["commentId"],
-  reopen: ["commentId"],
   react: ["commentId", "emoji"],
   unreact: ["commentId", "emoji"],
   delete: ["commentId"],
 };
 
 type ManageCommentInput = {
-  action: "create" | "edit" | "resolve" | "reopen" | "react" | "unreact" | "delete";
+  action: "create" | "edit" | "react" | "unreact" | "delete";
   targetType?: CommentTarget;
   targetId?: string;
   body?: string;
@@ -220,30 +219,7 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
     return { ok: true };
   }
 
-  // resolve / reopen
-  if (comment.targetType === "pagedoc") {
-    const pageDoc = await prisma.pageDoc.findUnique({
-      where: { id: comment.targetId },
-      select: { maintainerId: true },
-    });
-    // pagedoc: maintainer or Core may resolve/reopen
-    if (!pageDoc || (pageDoc.maintainerId !== callerId && !core)) {
-      throw new ManageCommentError("Forbidden", 403);
-    }
-  } else if (comment.targetType === "doc") {
-    const access = await getPageAccess(callerId, comment.targetId);
-    if (!access.canResolve) throw new ManageCommentError("Forbidden", 403);
-  } else {
-    // file
-    if (!core) throw new ManageCommentError("Forbidden", 403);
-  }
-
-  await prisma.docComment.update({
-    where: { id: comment.id },
-    data: { resolvedAt: input.action === "resolve" ? new Date() : null },
-  });
-  if (comment.targetType === "doc") publishCommentChange(comment.targetId);
-  return { ok: true };
+  throw new ManageCommentError(`Unknown action: ${input.action}`, 400);
 }
 
 export const MANAGE_COMMENT: McpTool = {

@@ -43,10 +43,9 @@ export type Crumb = {
 type Handle = {
   breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
   breadcrumbTrail?: (data: unknown) => Crumb[] | null | undefined
-  areaPills?: boolean
-  /** Same contract as `areaPills`, for a page whose switcher row renders under
-   *  either shell (Partners' Organizations / Applications pill) — the row names
-   *  both destinations, so a trail above it only repeats where you are. */
+  /** Suppress the trail entirely on a page whose own switcher row already names
+   *  its destinations (Partners' Organizations / Applications pill) — a trail
+   *  above it would only repeat where you are. */
   hideBreadcrumbs?: boolean
   headerAction?: (data: unknown) => ReactNode
   // A page opts into a documentation guide by declaring a stable docKey (and an

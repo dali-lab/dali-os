@@ -1,7 +1,8 @@
-// MCP resource `dali://projects/{projectId}/backlog` — every task on a project
-// that isn't yet in a sprint. The project board resource includes a count but
-// not the cards themselves; backlog is exposed separately because it can be
-// large and a client may only need it when planning the next sprint.
+// MCP resource `dali://projects/{projectId}/backlog` — every undated task on a
+// project (no start or due date, so it isn't in any sprint yet). The project
+// board resource includes a count but not the cards themselves; backlog is
+// exposed separately because it can be large and a client may only need it when
+// planning the next sprint.
 
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
@@ -10,7 +11,7 @@ export const PROJECT_BACKLOG_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/backlog",
   name: "Project backlog",
   description:
-    "Every task on a project without a sprint assignment (sprintId = null), excluding Done/Cancelled. Use this when planning the next sprint.",
+    "Every undated task on a project (no start or due date, so unscheduled into any sprint), excluding Done/Cancelled. Use this when planning the next sprint.",
   mimeType: "application/json",
   requiredScope: "mcp:read" as const,
 };
@@ -39,7 +40,8 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
   const tasks = await prisma.task.findMany({
     where: {
       projectId,
-      sprintId: null,
+      startsAt: null,
+      dueAt: null,
       status: { notIn: ["Done", "Cancelled"] },
     },
     orderBy: [{ priority: "desc" }, { createdAt: "asc" }],

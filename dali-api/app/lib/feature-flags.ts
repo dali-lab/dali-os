@@ -110,10 +110,10 @@ export const FEATURE_FLAGS = [
       "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
   {
-    key: "drive-folder-bindings",
-    label: "Drive folder bindings",
+    key: "infra-dashboard",
+    label: "Infrastructure dashboard",
     description:
-      "Replaces the hidden systemKey Drive scaffolding with editable process→folder bindings. Each project / education offering / hiring cycle / Core governance area points at NORMAL Drive folders (renameable, movable, shareable) for its auto-filed items (meeting notes, forms, agreements, …), configured in that process's settings. Ships off; without it the legacy systemKey folders remain.",
+      "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
   },
   {
     key: "project-status-bar",
@@ -134,10 +134,16 @@ export const FEATURE_FLAGS = [
       "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
   },
   {
-    key: "sprint-view",
-    label: "Sprint view",
+    key: "activities",
+    label: "Activities",
     description:
-      "Promotes Sprint to a top-level filter on the project task board: view the current sprint, any past sprint, or the backlog in one click. Opens the board on the current sprint when one is running, and hides the term filter while a sprint is selected. Ships off; without it the board keeps the epic-nested sprint sub-filter.",
+      "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a top-bar bar, its on-page codes, and a surface modal (submit + progress + leaderboard) that floats over whatever page they're on; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+  },
+  {
+    key: "education-redesign-v2",
+    label: "Education redesign",
+    description:
+      "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

@@ -13,7 +13,7 @@
 // reads comments.panelOpen + comments.panelTargetId to drive the portal.
 
 import { useEffect, useRef, useState, useSyncExternalStore, useCallback } from "react";
-import { Check, RotateCcw, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { Avatar } from "~/components/ui/Avatar";
 import { CommentComposer } from "~/components/collab/CommentComposer";
@@ -27,7 +27,6 @@ export interface DocCommentsPanelProps {
   pageId: string;
   currentUserId: string;
   canComment: boolean;
-  canResolve: boolean;
   open: boolean;
   onClose: () => void;
   /** DOM id of the div inside the panel where ThreadsSidebar should portal. */
@@ -36,9 +35,6 @@ export interface DocCommentsPanelProps {
    *  at the foot of the document, which is where comments live on narrow
    *  screens now that there's no button to open them from. */
   variant?: "dropdown" | "inline";
-  /** Called when the Open/Resolved tab changes so the editor's ThreadsSidebar
-   * portal can mirror the same filter (Fix 4). */
-  onFilterChange?: (filter: "open" | "resolved") => void;
 }
 
 // ── useDocThreadCounts ───────────────────────────────────────────────────────
@@ -48,7 +44,7 @@ export interface DocCommentsPanelProps {
 // hook, DocEditorImpl's CommentsExtension store, and DocCommentsPanel all read
 // from the same in-memory thread map — mutations update the count immediately.
 
-export function useDocThreadCounts(pageId: string): { open: number; resolved: number } {
+export function useDocThreadCount(pageId: string): number {
   const store = getOrCreateStore(pageId);
 
   const subscribe = useCallback(
@@ -59,13 +55,7 @@ export function useDocThreadCounts(pageId: string): { open: number; resolved: nu
 
   const threads = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  let open = 0;
-  let resolved = 0;
-  for (const t of threads.values()) {
-    if (t.resolved) resolved++;
-    else open++;
-  }
-  return { open, resolved };
+  return threads.size;
 }
 
 // ── Doc-level comment types (fetched independently) ─────────────────────────
@@ -79,7 +69,6 @@ interface ApiComment {
   body: string;
   bodyJson?: BodySegment[] | null;
   anchor: { kind?: string; from?: string; to?: string } | null;
-  resolved: boolean;
   createdAt: string;
 }
 
@@ -98,20 +87,12 @@ export function DocCommentsPanel({
   pageId,
   currentUserId,
   canComment,
-  canResolve,
   open,
   onClose,
   targetId = "doc-comments-threads-sidebar",
-  onFilterChange,
   variant = "dropdown",
 }: DocCommentsPanelProps) {
   const inline = variant === "inline";
-  const [filter, setFilter] = useState<"open" | "resolved">("open");
-
-  function handleFilterChange(next: "open" | "resolved") {
-    setFilter(next);
-    onFilterChange?.(next);
-  }
 
   // Doc-level comments (anchor = null): independent fetch, not in ThreadStore.
   const [docComments, setDocComments] = useState<ApiComment[]>([]);
@@ -187,15 +168,13 @@ export function DocCommentsPanel({
     }
   }
 
-  async function mutateComment(id: string, method: "POST" | "DELETE", intent?: "resolve" | "reopen") {
+  async function deleteComment(id: string) {
     setBusy(true);
     setPostErr(null);
     try {
       const res = await fetch(`/api/comments/${id}`, {
-        method,
+        method: "DELETE",
         credentials: "include",
-        headers: intent ? { "Content-Type": "application/json" } : undefined,
-        body: intent ? JSON.stringify({ intent }) : undefined,
       });
       if (!res.ok) throw new Error("Failed");
       await fetchDocComments();
@@ -209,29 +188,6 @@ export function DocCommentsPanel({
   if (!open) return null;
 
   const docRoots = docComments.filter((c) => c.parentId === null);
-  const visibleDocRoots = docRoots.filter((c) =>
-    filter === "resolved" ? c.resolved : !c.resolved,
-  );
-  const openCount = docRoots.filter((c) => !c.resolved).length;
-
-  const filterToggle = (
-    <div className="flex items-center gap-3 text-[11px]">
-      {(["open", "resolved"] as const).map((f) => (
-        <button
-          key={f}
-          type="button"
-          onClick={() => handleFilterChange(f)}
-          className={
-            filter === f
-              ? "font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }
-        >
-          {f === "open" ? `Open${openCount > 0 ? ` (${openCount})` : ""}` : "Resolved"}
-        </button>
-      ))}
-    </div>
-  );
 
   return (
     <div
@@ -250,7 +206,9 @@ export function DocCommentsPanel({
         }`}
       >
         <h3 className="text-xs font-medium text-muted-foreground">Comments</h3>
-        {filterToggle}
+        {docRoots.length > 0 && (
+          <span className="text-[11px] text-muted-foreground">{docRoots.length}</span>
+        )}
       </div>
 
       {fetchErr && (
@@ -263,7 +221,7 @@ export function DocCommentsPanel({
 
       {/* Composer sits right under the header, the same place it does on every
           other comment surface. */}
-      {canComment && filter === "open" && (
+      {canComment && (
         <div className={`shrink-0 ${inline ? "" : "px-3 pt-1 pb-2"}`}>
           <CommentComposer
             currentUserId={currentUserId}
@@ -280,7 +238,7 @@ export function DocCommentsPanel({
 
       <div className={inline ? "" : "flex-1 overflow-y-auto min-h-0"}>
         {/* ── Inline threads section ───────────────────────────────────── */}
-        {/* DocEditorImpl portals <ThreadsSidebar filter=… /> into this div
+        {/* DocEditorImpl portals <ThreadsSidebar /> into this div
             when panelOpen is true. The div carries bn-root + bn-shadcn so
             BlockNote's component-tree styles apply without the full BlockNoteView
             wrapper duplicating in the DOM.
@@ -301,21 +259,19 @@ export function DocCommentsPanel({
         )}
 
         {/* ── Doc-level threads section ────────────────────────────────── */}
-        {visibleDocRoots.length > 0 && (
+        {docRoots.length > 0 && (
           <div className={inline ? "" : "px-3 pb-3"}>
             {!inline && (
               <p className="mb-1.5 mt-3 text-[11px] text-muted-foreground">Document</p>
             )}
             <ul className="flex flex-col">
-              {visibleDocRoots.map((root) => {
+              {docRoots.map((root) => {
                 const replies = docComments.filter((c) => c.parentId === root.id);
                 return (
                   <li
                     key={root.id}
                     data-comment-id={root.id}
-                    className={`group border-b border-border/60 py-3 text-sm last:border-b-0 ${
-                      root.resolved ? "opacity-60" : ""
-                    }`}
+                    className="group border-b border-border/60 py-3 text-sm last:border-b-0"
                   >
                     <CommentHead comment={root} />
                     <div className="mt-1 pl-7 leading-relaxed text-foreground">
@@ -365,27 +321,11 @@ export function DocCommentsPanel({
                             Reply
                           </button>
                         )}
-                        {canResolve && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              mutateComment(root.id, "POST", root.resolved ? "reopen" : "resolve")
-                            }
-                            className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
-                          >
-                            {root.resolved ? (
-                              <><RotateCcw className="h-3 w-3" /> Reopen</>
-                            ) : (
-                              <><Check className="h-3 w-3" /> Resolve</>
-                            )}
-                          </button>
-                        )}
                         {root.authorId === currentUserId && (
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => mutateComment(root.id, "DELETE")}
+                            onClick={() => deleteComment(root.id)}
                             className="flex items-center gap-0.5 text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="h-3 w-3" /> Delete

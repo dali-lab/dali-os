@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { Handshake, FileText, PencilLine, Trash2 } from "lucide-react";
+import { ChevronRight, Handshake, PencilLine, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDialog } from "~/components/ui/dialog";
@@ -24,28 +24,28 @@ type Pair = {
   term: { id: string; code: string };
 };
 
-type NoteRow = {
-  id: string;
-  weekOf: string;
-  mentor: Person;
-  mentee: Person;
-  project: { id: string; name: string };
-  domain: { id: string; code: string; displayName: string };
-};
-
 type PairsResponse = { pairs: Pair[] };
-type NotesResponse = { notes: NoteRow[] };
 
 function fullName(u: Person) {
   return `${u.firstName} ${u.lastName}`.trim();
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+// A pairing's notes live in the mentorship hub's weekly grid, so a row links
+// there pre-filtered to that pairing: project + domain + term narrow the grid,
+// and the mentee's name in the hub's people search keeps just their row.
+function notesHref(
+  projectId: string,
+  domainId: string,
+  termId: string | null,
+  mentee: Person,
+) {
+  const params = new URLSearchParams({
+    projectId,
+    domainId,
+    q: fullName(mentee),
   });
+  if (termId) params.set("termId", termId);
+  return `/mentorship/browse?${params.toString()}`;
 }
 
 interface Props {
@@ -56,15 +56,14 @@ interface Props {
 }
 
 // Mentorship view on a project page. Lists confirmed pairings for the current
-// term (auto-derived from ProjectAssignment by staffing finalize) and the
-// project's recent notes. Visible to lab mentors + Core only — gated
-// server-side via the project loader's canViewMentorshipTab. With the
-// mentorship-manage flag, Core can hand-add / reassign / remove pairs here;
-// those edits are tagged manual and survive a staffing re-finalize.
+// term (auto-derived from ProjectAssignment by staffing finalize); each row
+// links to that pairing's notes in the mentorship hub. Visible to lab mentors +
+// Core only — gated server-side via the project loader's canViewMentorshipTab.
+// With the mentorship-manage flag, Core can hand-add / reassign / remove pairs
+// here; those edits are tagged manual and survive a staffing re-finalize.
 export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props) {
-  const { os, panel, panelPad, heading, headingIcon } = useOsChrome();
+  const { panel, panelPad, heading, headingIcon } = useOsChrome();
   const pairsFetcher = useFetcher<PairsResponse>();
-  const notesFetcher = useFetcher<NotesResponse>();
   const [loaded, setLoaded] = useState(false);
 
   const pairsUrl = currentTermId
@@ -74,7 +73,6 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
   useEffect(() => {
     if (loaded) return;
     pairsFetcher.load(pairsUrl);
-    notesFetcher.load(`/api/mentorship/notes?projectId=${projectId}`);
     setLoaded(true);
     // Loaders are idempotent; intentionally one-shot per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,7 +92,6 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
   const { addPair, reassign, removePair, busy } = usePairMutations(reloadPairs);
 
   const pairs = pairsFetcher.data?.pairs ?? [];
-  const notes = notesFetcher.data?.notes ?? [];
 
   // Group pairs by domain → mentee → pairs[] (pair ids kept for editing).
   const grouped = useMemo(() => {
@@ -140,13 +137,7 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     }
   }
 
-  const editToggleClass = editing
-    ? os
-      ? "os-btn-primary"
-      : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm"
-    : os
-      ? "os-edit-btn"
-      : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted";
+  const editToggleClass = editing ? "os-btn-primary" : "os-edit-btn";
 
   return (
     <div className="flex flex-col gap-4">
@@ -236,17 +227,26 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
                         </div>
                       </li>
                     ) : (
-                      <li
-                        key={mentee.id}
-                        className="py-2 flex items-center justify-between text-sm"
-                      >
-                        <span className="font-medium text-foreground">
-                          {fullName(mentee)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          Mentor:{" "}
-                          {menteePairs.map((p) => fullName(p.mentor)).join(", ")}
-                        </span>
+                      <li key={mentee.id}>
+                        <Link
+                          to={notesHref(
+                            projectId,
+                            domain.id,
+                            currentTermId,
+                            mentee,
+                          )}
+                          title={`Open ${fullName(mentee)}'s mentorship notes`}
+                          className="group -mx-2 flex items-center justify-between gap-3 rounded-os-item px-2 py-2 text-sm transition-colors hover:bg-os-container"
+                        >
+                          <span className="font-medium text-foreground">
+                            {fullName(mentee)}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-muted-foreground group-hover:text-foreground">
+                            Mentor:{" "}
+                            {menteePairs.map((p) => fullName(p.mentor)).join(", ")}
+                            <ChevronRight className="h-4 w-4" aria-hidden />
+                          </span>
+                        </Link>
                       </li>
                     ),
                   )}
@@ -254,52 +254,6 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
               </div>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
-        <div className="flex items-center justify-between">
-          <h2 className={heading}>
-            <FileText className={headingIcon} aria-hidden />
-            Recent notes
-          </h2>
-          <Link
-            to={`/mentorship/browse?projectId=${projectId}`}
-            className="text-sm text-accent-coral hover:underline"
-          >
-            Browse all
-          </Link>
-        </div>
-        {notesFetcher.state !== "idle" && notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No notes written for this project yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {notes.slice(0, 10).map((n) => (
-              <li
-                key={n.id}
-                className="py-2 flex items-center justify-between gap-3"
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground">
-                    {fullName(n.mentor)} → {fullName(n.mentee)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {n.domain.code} · week of {fmt(n.weekOf)}
-                  </span>
-                </div>
-                <Link
-                  to={`/mentorship/notes/${n.id}`}
-                  className="text-sm text-accent-coral hover:underline"
-                >
-                  Open
-                </Link>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
     </div>

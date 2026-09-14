@@ -23,12 +23,12 @@ import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { SearchInput } from "~/components/ui/SearchInput";
 import {
   ClipboardCheck,
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Search,
   Trash2,
   UserCheck,
   UserX,
@@ -251,7 +251,7 @@ function sortEvents(events: AttendanceEvent[], sort: SortKey): AttendanceEvent[]
 
 export default function AdminAttendancePage() {
   const { terms, selected, viewerIsAdmin, events } = useLoaderData<typeof loader>();
-  const { os, pageTitle, panel } = useOsChrome();
+  const { pageTitle, panel } = useOsChrome();
   const tz = useUserTimeZone();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date-desc");
@@ -281,12 +281,7 @@ export default function AdminAttendancePage() {
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          {!os && (
-            <p className="text-[11px] uppercase tracking-[0.14em] text-accent-coral font-medium">
-              Self check-in
-            </p>
-          )}
-          <h1 className={cn(pageTitle, !os && "mt-0.5")}>Attendance</h1>
+          <h1 className={pageTitle}>Attendance</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="attendance-sort">
@@ -297,26 +292,20 @@ export default function AdminAttendancePage() {
             value={sort}
             onChange={(v) => setSort(v as SortKey)}
             options={SORT_OPTIONS}
-            buttonClassName={cn(filterPillClass(os), "sm:w-48")}
+            buttonClassName={cn(filterPillClass(), "sm:w-48")}
           />
           <TermFilter terms={terms} selected={selected} />
         </div>
       </header>
 
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by event, organizer, project, or attendee…"
-          aria-label="Search attendance events"
-          className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </div>
+      <SearchInput
+        size="sm"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by event, organizer, project, or attendee…"
+        aria-label="Search attendance events"
+        containerClassName="w-full"
+      />
 
       {events.length === 0 ? (
         <div className={cn(panel, "p-10 text-center")}>

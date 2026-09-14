@@ -11,5 +11,5 @@ export {
   getOrCreateStore,
 } from "./DaliThreadStore";
 export type { DaliThreadStoreConfig } from "./DaliThreadStore";
-export { DocCommentsPanel, useDocThreadCounts } from "./DocCommentsPanel";
+export { DocCommentsPanel, useDocThreadCount } from "./DocCommentsPanel";
 export { RichCommentBody } from "./RichCommentBody";

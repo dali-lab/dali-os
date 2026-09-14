@@ -13,6 +13,7 @@ import { toDatetimeLocal } from "./OfferingFields";
 import { DateField } from "~/components/ui/DateField";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { uploadFileToS3 } from "~/lib/upload-client";
+import { useActionErrorToast } from "~/lib/useActionErrorToast";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
 // Assignments (CRUD + inline collab instructions), Announcements (composer).
@@ -93,6 +94,14 @@ export function ManageMaterials({
   const moveFetcher = useFetcher();
   // Session-change fetcher for per-row session select.
   const sessionFetcher = useFetcher();
+  // Both settle silently on failure (the item just snaps back) — surface the
+  // reason instead.
+  useActionErrorToast(moveFetcher.data as { error?: string } | undefined, {
+    fallback: "Couldn't move that item. Please try again.",
+  });
+  useActionErrorToast(sessionFetcher.data as { error?: string } | undefined, {
+    fallback: "Couldn't update the session. Please try again.",
+  });
   const [dragged, setDragged] = useState<{ id: string; kind: "page" | "file" } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
 

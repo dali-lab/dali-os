@@ -9,6 +9,7 @@ import {
   buildCoreRows,
   buildInstructorRows,
   buildPayrollRows,
+  buildTechnigalaRows,
   pickDefaultTermId,
   rowsToCsv,
 } from "~/admin/lib/payroll-export";
@@ -67,17 +68,25 @@ export async function loader({ request }: Route.LoaderArgs) {
   const domainIds = parseCsvParam(url.searchParams.get("domain"));
   const levels = parseLevels(url.searchParams.get("level"));
 
-  // Core + Instructor rows are included for the user-ids the admin checked on
-  // the page (passed via ?core= / ?instructor=), independent of the filter.
+  // Core + Instructor + Technigala rows are included for the user-ids the admin
+  // checked on the page (passed via ?core= / ?instructor= / ?technigala=),
+  // independent of the project filter.
   const coreIds = parseIdList(url.searchParams.get("core"));
   const instructorIds = parseIdList(url.searchParams.get("instructor"));
+  const technigalaIds = parseIdList(url.searchParams.get("technigala"));
 
-  const [projectRows, coreRows, instructorRows] = await Promise.all([
+  const [projectRows, coreRows, instructorRows, technigalaRows] = await Promise.all([
     buildPayrollRows(selectedTerm.id, { domainIds, levels }),
     buildCoreRows(selectedTerm.id, coreIds),
     buildInstructorRows(selectedTerm.id, instructorIds),
+    buildTechnigalaRows(selectedTerm.id, technigalaIds),
   ]);
-  const csv = rowsToCsv([...projectRows, ...coreRows, ...instructorRows]);
+  const csv = rowsToCsv([
+    ...projectRows,
+    ...coreRows,
+    ...instructorRows,
+    ...technigalaRows,
+  ]);
   // Sortable ISO date stamp for the filename (distinct from the MMDDYY hire
   // dates inside the CSV).
   const fileStamp = new Date().toISOString().slice(0, 10);

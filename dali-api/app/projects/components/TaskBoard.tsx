@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDialog } from "~/components/ui/dialog";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -47,11 +48,14 @@ import {
   taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
-  activeSprintIds,
+  currentSprintBand,
   defaultSprintScope,
   resolveSprintScope,
   taskInSprintScope,
+  sprintPickerOptions,
+  resolveTermIdForDate,
   type SprintScope,
+  type TermWindow,
 } from "../lib/task-board";
 import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
 import { SearchInput } from "~/components/ui/SearchInput";
@@ -73,10 +77,6 @@ type Props = {
   // Bumped by an outside control (the timeline's Add ▸ Task) to open the
   // create form. A counter rather than a boolean so repeated adds each fire.
   createNonce?: number;
-  // `sprint-view` flag. On → Sprint is a top-level board filter (current / any
-  // past sprint / backlog) that opens the board on the current sprint and
-  // supersedes the term filter while set. Off → the epic-nested sprint sub-filter.
-  sprintFilterEnabled?: boolean;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
@@ -93,13 +93,6 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
 
-// How each sprint status reads in the sprint-view picker — "Upcoming" and
-// "Past" are friendlier than the raw Planned/Closed enum for a filter list.
-const SPRINT_WORD: Record<"Active" | "Planned" | "Closed", string> = {
-  Active: "Active",
-  Planned: "Upcoming",
-  Closed: "Past",
-};
 // Each status owns a hue. The column header wears it as a solid bar and the
 // card carries it on its left edge, so a card still reads as belonging to its
 // column once it's dragged out of one. Brand palette, not the reference's —
@@ -192,7 +185,6 @@ export function TaskBoard({
   currentUserId,
   currentUserName,
   createNonce = 0,
-  sprintFilterEnabled = false,
   filterPeopleIds = [],
   peopleOptions = [],
   onPeopleChange,
@@ -201,6 +193,7 @@ export function TaskBoard({
   // adopted whenever it changes and no save is in flight, so teammate edits,
   // GitHub webhook updates, and sprint rollovers appear without a manual
   // reload; our own mutations trigger a revalidation below to close the loop.
+  const dialog = useDialog();
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
@@ -287,6 +280,15 @@ export function TaskBoard({
   // (the weekly job still uses the idle-day threshold lab-wide).
   const runArchive = useCallback(async () => {
     if (archiving) return;
+    const archivable = tasks.filter((t) => t.status === "Done" || t.status === "Cancelled");
+    const count = archivable.length;
+    const confirmed = await dialog.confirm({
+      title: "Archive Done & Cancelled tasks?",
+      description: `This will immediately archive ${count} task${count === 1 ? "" : "s"} (Done and Cancelled). Archived tasks are hidden from the board but not deleted.`,
+      confirmLabel: "Archive",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
     setArchiving(true);
     setError(null);
     try {
@@ -301,7 +303,7 @@ export function TaskBoard({
     } finally {
       setArchiving(false);
     }
-  }, [archiving, projectId, refresh, setError]);
+  }, [archiving, dialog, projectId, refresh, setError, tasks]);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
   // and other external links can deep-link straight to a task. The sprint
@@ -332,27 +334,42 @@ export function TaskBoard({
     return options.currentTermId ?? ALL_TERMS;
   }, [termFilterEnabled, termParam, options.terms, options.currentTermId]);
 
-  const sprintTermById = useMemo(() => {
-    const m = new Map<string, string | null>();
-    for (const s of options.sprints) m.set(s.id, s.termId);
-    return m;
-  }, [options.sprints]);
-
-  // Sprint-view scope (flag-gated). The board opens on the current sprint when
-  // one is running (defaultScope), and picking any sprint or the backlog
-  // supersedes the term filter — a sprint already names its slice of time, so
-  // the term control hides while a sprint scope is active to avoid an empty
-  // term∩sprint intersection.
-  const activeIds = useMemo(() => activeSprintIds(options.sprints), [options.sprints]);
-  const defaultScope = useMemo(
-    () => defaultSprintScope(options.sprints),
-    [options.sprints],
+  // Term windows keyed by id — used to resolve a task's term from its own dates
+  // (a task's sprint, and therefore its term, is derived, not stored).
+  const termWindows = useMemo<TermWindow[]>(
+    () =>
+      options.termSpans.map((s) => ({
+        id: options.terms.find((t) => t.code === s.code)?.id ?? s.code,
+        startDate: new Date(s.startsAt),
+        endDate: new Date(s.endsAt),
+      })),
+    [options.termSpans, options.terms],
   );
-  const sprintScope: SprintScope = sprintFilterEnabled
-    ? resolveSprintScope(sprintFilter, options.sprints)
-    : "all";
-  const sprintScopeActive = sprintFilterEnabled && sprintScope !== "all";
-  const sprintDeviates = sprintFilterEnabled && sprintScope !== defaultScope;
+
+  // Stable "now" for the computed sprint grid; sprints are the term-anchored
+  // 7-day bands the timeline draws (see task-board.ts).
+  const now = useMemo(() => new Date(), []);
+
+  // Sprint is a drill-down under Term (sprint numbers reset each term): it only
+  // applies once a specific term is chosen, and lists that term's sprints. The
+  // board opens on the current sprint when the current term is showing.
+  const sprintEnabled = effectiveTerm !== ALL_TERMS;
+  const selectedTermCode = useMemo(
+    () => (sprintEnabled ? options.terms.find((t) => t.id === effectiveTerm)?.code ?? null : null),
+    [sprintEnabled, options.terms, effectiveTerm],
+  );
+  const termHasToday =
+    sprintEnabled &&
+    effectiveTerm === options.currentTermId &&
+    currentSprintBand(options.termSpans, now) !== null;
+  const defaultScope: SprintScope = termHasToday ? "current" : "all";
+  const sprintScope: SprintScope = useMemo(() => {
+    if (!sprintEnabled) return "all";
+    const resolved = resolveSprintScope(sprintFilter, options.termSpans, now);
+    // `current` is today's sprint, which lives in the current term only.
+    return resolved === "current" && !termHasToday ? defaultScope : resolved;
+  }, [sprintEnabled, sprintFilter, options.termSpans, now, termHasToday, defaultScope]);
+  const sprintDeviates = sprintEnabled && sprintScope !== defaultScope;
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -368,9 +385,8 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
-  // Picking an epic resets the sprint sub-filter (its sprints are epic-scoped).
-  // With sprint-view on, Sprint is a top-level scope independent of epic, so
-  // it's left untouched.
+  // Sprint is a top-level scope independent of epic, so picking an epic leaves
+  // it untouched.
   const setEpicFilter = useCallback(
     (value: string | null) => {
       setSearchParams(
@@ -378,17 +394,17 @@ export function TaskBoard({
           const next = new URLSearchParams(prev);
           if (value) next.set("epic", value);
           else next.delete("epic");
-          if (!sprintFilterEnabled) next.delete("sprint");
           return next;
         },
         { replace: true, preventScrollReset: true },
       );
     },
-    [setSearchParams, sprintFilterEnabled],
+    [setSearchParams],
   );
-  // Changing term drops the sprint sub-filter (a sprint from another term
-  // would otherwise leave the board empty) — the epic filter stays put; its
-  // pill is kept visible below even when pruned so it can still be cleared.
+  // Changing term drops the sprint filter (sprint numbers reset per term, and a
+  // sprint from another term would leave the board empty) — the epic filter
+  // stays put; its pill is kept visible below even when pruned so it can still
+  // be cleared.
   const setTermFilter = useCallback(
     (value: string) => {
       setSearchParams(
@@ -408,21 +424,6 @@ export function TaskBoard({
     [setParam],
   );
 
-  // Sprint sub-filter only applies within a concrete epic; its options are that
-  // epic's sprints, scoped to the selected term so the sub-pills never offer a
-  // sprint that the term filter would then hide.
-  const epicSprints = useMemo(
-    () =>
-      epicFilter && epicFilter !== NO_EPIC
-        ? options.sprints.filter(
-            (s) =>
-              s.epicId === epicFilter &&
-              (effectiveTerm === ALL_TERMS || s.termId === effectiveTerm),
-          )
-        : [],
-    [options.sprints, epicFilter, effectiveTerm],
-  );
-
   // Epic pills for the selected term: an epic shows only if it has work in the
   // term (its termIds cover it). The currently-selected epic is always kept so
   // it stays deselectable even when it has nothing in this term.
@@ -440,23 +441,16 @@ export function TaskBoard({
     let ts = tasks;
     if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
     else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
-    if (sprintFilterEnabled) {
-      ts = ts.filter((t) => taskInSprintScope(t, sprintScope, activeIds));
-    } else if (sprintFilter) {
-      ts = ts.filter((t) => t.sprintId === sprintFilter);
+    if (sprintScope !== "all") {
+      ts = ts.filter((t) => taskInSprintScope(t, sprintScope, options.termSpans, now));
     }
-    // A concrete sprint scope already fixes the slice of time, so the term
-    // filter steps aside (its control is hidden too) — ANDing them would only
-    // ever empty the board.
-    if (!sprintScopeActive && effectiveTerm !== ALL_TERMS) {
-      ts = ts.filter((t) =>
-        // Backlog (no sprint) is term-less — always visible so it stays the
-        // pool you plan the term from. A sprinted task shows only if its
-        // sprint resolves to the selected term.
-        t.sprintId === null
-          ? true
-          : sprintTermById.get(t.sprintId) === effectiveTerm,
-      );
+    if (effectiveTerm !== ALL_TERMS) {
+      ts = ts.filter((t) => {
+        // A task's term comes from its own dates. Undated (backlog) work is
+        // term-less — always visible so it stays the pool you plan from.
+        const d = t.dueAt ?? t.startsAt;
+        return d === null ? true : resolveTermIdForDate(termWindows, new Date(d)) === effectiveTerm;
+      });
     }
     if (onlyMine) {
       ts = ts.filter((t) => t.assignees.some((a) => a.id === currentUserId));
@@ -470,13 +464,11 @@ export function TaskBoard({
   }, [
     tasks,
     epicFilter,
-    sprintFilter,
-    sprintFilterEnabled,
     sprintScope,
-    sprintScopeActive,
-    activeIds,
+    options.termSpans,
+    now,
     effectiveTerm,
-    sprintTermById,
+    termWindows,
     onlyMine,
     currentUserId,
     filterPeopleIds,
@@ -526,7 +518,6 @@ export function TaskBoard({
           if ("title" in patch) body.title = patch.title;
           if ("description" in patch) body.description = patch.description;
           if ("status" in patch) body.status = patch.status;
-          if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
           if ("epicId" in patch) body.epicId = patch.epicId ?? null;
           if ("checklist" in patch) body.checklist = patch.checklist ?? null;
           const res = await fetch(`/api/tasks/${taskId}`, {
@@ -606,8 +597,8 @@ export function TaskBoard({
   }
 
   // Create from the modal. The POST endpoint applies title/status/dates/
-  // sprint/epic/story; domain/assignees are applied with a follow-up
-  // PATCH via the same optimistic path the card edits use.
+  // epic/story; domain/assignees are applied with a follow-up PATCH via the
+  // same optimistic path the card edits use.
   async function handleCreate(values: NewTaskValues) {
     setError(null);
     const res = await fetch(`/api/projects/${projectId}/tasks`, {
@@ -620,7 +611,6 @@ export function TaskBoard({
         status: values.status,
         dueAt: values.dueAt,
         startsAt: values.startsAt,
-        sprintId: values.sprintId,
         epicId: values.epicId,
         storyId: values.storyId,
         ...(values.github ? { github: values.github } : {}),
@@ -656,7 +646,6 @@ export function TaskBoard({
         dueAt: values.dueAt,
         startsAt: values.startsAt,
         epicId: values.epicId,
-        sprintId: values.sprintId,
         storyId: values.storyId,
         checklist: values.checklist ?? null,
         assignees,
@@ -841,9 +830,9 @@ export function TaskBoard({
   const defaultTerm = options.currentTermId ?? ALL_TERMS;
   const activeFilterCount =
     (epicFilter ? 1 : 0) +
-    (sprintFilterEnabled ? (sprintDeviates ? 1 : 0) : sprintFilter ? 1 : 0) +
+    (sprintDeviates ? 1 : 0) +
     (onlyMine ? 1 : 0) +
-    (termFilterEnabled && !sprintScopeActive && effectiveTerm !== defaultTerm ? 1 : 0);
+    (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
 
   // Option lists for the two comboboxes. `null` is the "no filter" row in
   // both, and leads so it's the first thing an empty query offers.
@@ -855,43 +844,25 @@ export function TaskBoard({
     ],
     [visibleEpics],
   );
-  const sprintOptions: ComboOption[] = useMemo(
-    () => [
-      { value: null, label: "All sprints" },
-      ...epicSprints.map((sp) => ({ value: sp.id as string | null, label: sp.name })),
-    ],
-    [epicSprints],
-  );
-
-  // Sprints for the sprint-view picker, ordered so the one you most likely want
-  // sits near the top: Active first, then Upcoming (soonest ascending), then
-  // Past (newest first).
-  const orderedSprintsForPicker = useMemo(() => {
-    const rank = { Active: 0, Planned: 1, Closed: 2 } as const;
-    return [...options.sprints].sort((a, b) => {
-      if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
-      const dir = a.status === "Planned" ? 1 : -1; // upcoming ascending; active/past newest-first
-      return dir * a.startsAt.localeCompare(b.startsAt);
-    });
-  }, [options.sprints]);
-
-  // The sprint-view combobox. Its default scope is the neutral (`null`) row, so
-  // sitting on the default reads as "no filter" and doesn't light the Customize
-  // badge — the same convention the term filter uses for the current term.
+  // The sprint combobox lists the selected term's computed sprints
+  // (`Sprint N · Current|Past|Upcoming`, current-first). Its default scope is
+  // the neutral (`null`) row, so sitting on the default reads as "no filter"
+  // and doesn't light the Customize badge — the same convention the term filter
+  // uses for the current term.
   const sprintScopeOptions: ComboOption[] = useMemo(() => {
     const opts: ComboOption[] = [
       { value: null, label: defaultScope === "current" ? "Current sprint" : "All sprints" },
     ];
     if (defaultScope !== "all") opts.push({ value: "all", label: "All sprints" });
-    if (defaultScope !== "current" && activeIds.length > 0) {
+    if (defaultScope !== "current" && termHasToday) {
       opts.push({ value: "current", label: "Current sprint" });
     }
     opts.push({ value: "backlog", label: "Backlog (no sprint)" });
-    for (const s of orderedSprintsForPicker) {
-      opts.push({ value: s.id, label: `${s.name} · ${SPRINT_WORD[s.status]}` });
+    for (const o of sprintPickerOptions(options.termSpans, selectedTermCode, now)) {
+      opts.push({ value: o.value, label: o.label });
     }
     return opts;
-  }, [defaultScope, activeIds, orderedSprintsForPicker]);
+  }, [defaultScope, termHasToday, options.termSpans, selectedTermCode, now]);
 
   const resetFilters = useCallback(() => {
     setSearchParams(
@@ -958,23 +929,25 @@ export function TaskBoard({
                   )}
                 </div>
 
-                {/* Sprint-view: the board's primary time scope. Leads the panel
-                    and, while set, hides the Term filter (a sprint already names
-                    its slice of time). The default scope is the neutral row. */}
-                {sprintFilterEnabled && options.sprints.length > 0 && (
+                {/* Sprint: a drill-down under Term. Sprint numbers reset per
+                    term, so it's disabled on "All terms" and lists the selected
+                    term's sprints once one is chosen. The default scope is the
+                    neutral row. */}
+                {termFilterEnabled && (
                   <FilterCombobox
                     id="taskboard-sprint-scope"
                     label="Sprint"
                     ariaLabel="Filter board by sprint"
-                    placeholder="Search sprints…"
+                    placeholder={sprintEnabled ? "Search sprints…" : "Select a term first"}
                     os={os}
                     options={sprintScopeOptions}
                     value={sprintScope === defaultScope ? null : sprintScope}
                     onChange={(next) => setParam("sprint", next)}
+                    disabled={!sprintEnabled}
                   />
                 )}
 
-                {termFilterEnabled && !sprintScopeActive && (
+                {termFilterEnabled && (
                   <FilterGroup
                     label="Term"
                     os={os}
@@ -1025,19 +998,6 @@ export function TaskBoard({
                     options={epicOptions}
                     value={epicFilter}
                     onChange={setEpicFilter}
-                  />
-                )}
-
-                {!sprintFilterEnabled && epicSprints.length > 0 && (
-                  <FilterCombobox
-                    id="taskboard-sprint-options"
-                    label="Sprint"
-                    ariaLabel="Filter board by sprint"
-                    placeholder="Search sprints…"
-                    os={os}
-                    options={sprintOptions}
-                    value={sprintFilter}
-                    onChange={(next) => setParam("sprint", next)}
                   />
                 )}
               </section>
@@ -1095,7 +1055,10 @@ export function TaskBoard({
                 onSelect={() => void runArchive()}
                 disabled={archiving}
               >
-                {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                <span className="flex items-center gap-1.5">
+                  {archiving ? "Archiving…" : "Archive Done & Cancelled"}
+                  <InfoTip content="Immediately hides all Done and Cancelled tasks from the board. Archived tasks are not deleted." />
+                </span>
               </MenuItem>
               <MenuItem
                 icon={<Archive className="h-4 w-4" aria-hidden />}
@@ -1213,6 +1176,7 @@ function FilterCombobox({
   placeholder,
   ariaLabel,
   id,
+  disabled = false,
 }: {
   label: string;
   os: boolean;
@@ -1223,6 +1187,8 @@ function FilterCombobox({
   ariaLabel: string;
   /** Unique per mounted combobox — the listbox and its rows are keyed off it. */
   id: string;
+  /** Greyed + non-interactive (e.g. Sprint before a term is chosen). */
+  disabled?: boolean;
 }) {
   const selectedLabel = options.find((o) => o.value === value)?.label ?? options[0]?.label ?? "";
 
@@ -1273,7 +1239,8 @@ function FilterCombobox({
             aria-autocomplete="list"
             aria-label={ariaLabel}
             aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined}
-            value={open ? query : selectedLabel}
+            disabled={disabled}
+            value={disabled ? "" : open ? query : selectedLabel}
             placeholder={placeholder}
             // Opened by an actual press, not by focus: the panel moves focus to
             // its first control when it opens, and opening on focus meant the
@@ -1308,6 +1275,7 @@ function FilterCombobox({
               os
                 ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
                 : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+              disabled && "cursor-not-allowed opacity-50",
               !open &&
                 active &&
                 (os
@@ -1336,11 +1304,12 @@ function FilterCombobox({
               type="button"
               tabIndex={-1}
               aria-hidden
+              disabled={disabled}
               // Keep focus on the input, so the control's blur-close doesn't
               // fire between this press and the list rendering.
               onMouseDown={(e) => {
                 e.preventDefault();
-                setOpen((v) => !v);
+                if (!disabled) setOpen((v) => !v);
               }}
               className={cn(
                 "absolute right-2 top-1/2 -translate-y-1/2",

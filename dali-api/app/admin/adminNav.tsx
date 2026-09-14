@@ -2,10 +2,12 @@ import {
   Activity,
   BarChart3,
   Clock,
+  Compass,
   Flag,
   Mail,
   Receipt,
   SendHorizonal,
+  Server,
   Sparkles,
 } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
@@ -100,11 +102,27 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         description: "Background job status and controls — digests, reminders, scheduled sends.",
       },
       {
+        key: "infrastructure",
+        label: "Infrastructure",
+        to: "/admin/infrastructure",
+        icon: Server,
+        description:
+          "Fly.io + Neon fleet across all lab projects — inventory, usage, scaling, limits, provisioning, and cleanup.",
+      },
+      {
         key: "feature-flags",
         label: "Feature Flags",
         to: "/admin/feature-flags",
         icon: Flag,
         description: "Roll features out gradually — target everyone, specific roles, or named users.",
+      },
+      {
+        key: "activities",
+        label: "Activities",
+        to: "/admin/activities",
+        icon: Compass,
+        description:
+          "Time-boxed onboarding activities and site modes — author and run the onboarding scavenger hunt (distinct from the Activity audit log).",
       },
       {
         key: "email-senders",

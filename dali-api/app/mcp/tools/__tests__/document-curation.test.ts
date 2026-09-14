@@ -32,7 +32,6 @@ const PAGE = {
   workspaceType: "Project",
   workspaceId: PID,
   archivedAt: null,
-  systemKey: null,
   partnerVisible: false,
   publicVisible: false,
   pinnedAt: null,
@@ -64,7 +63,6 @@ describe("list_document_sharing", () => {
         publicVisible: false,
         pinnedAt: new Date(),
         archivedAt: null,
-        systemKey: null,
       },
       {
         id: "pg-2",
@@ -74,7 +72,6 @@ describe("list_document_sharing", () => {
         publicVisible: false,
         pinnedAt: null,
         archivedAt: null,
-        systemKey: "project:p:team-meeting-notes",
       },
     ]);
     mockPrisma.projectFile.findMany.mockResolvedValue([
@@ -88,8 +85,8 @@ describe("list_document_sharing", () => {
     ]);
 
     const out = await runListDocumentSharing(ME, { projectId: PID });
-    expect(out.pages[0]).toMatchObject({ partnerVisible: true, pinned: true, system: false });
-    expect(out.pages[1]).toMatchObject({ system: true });
+    expect(out.pages[0]).toMatchObject({ partnerVisible: true, pinned: true });
+    expect(out.pages[1]).toMatchObject({ kind: "Folder" });
     expect(out.files[0]).toMatchObject({ partnerVisible: true, fileName: "spec.pdf" });
     expect(mockPrisma.page.findMany.mock.calls[0][0].where).toMatchObject({ archivedAt: null });
   });
@@ -170,15 +167,6 @@ describe("delete_project_document", () => {
       where: { name: "doc:pg-1:body" },
     });
     expect(mockPrisma.page.delete).toHaveBeenCalled();
-  });
-
-  it("refuses system documents", async () => {
-    // Auto-created folders and the public write-up are ensure-created; deleting
-    // them would just make the next ensure call recreate them.
-    mockPrisma.page.findUnique.mockResolvedValue({ ...PAGE, systemKey: "project:p:public-writeup" });
-    await expect(runDeleteProjectDocument(ME, { pageId: "pg-1" })).rejects.toThrow(
-      /system document/,
-    );
   });
 
   it("refuses a folder that still holds documents", async () => {

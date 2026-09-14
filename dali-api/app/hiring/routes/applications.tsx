@@ -1,16 +1,12 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import { Search } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { hiringPills } from "~/hiring/components/hiringPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
-
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -238,14 +234,9 @@ export default function ApplicationsDatabase() {
     });
   }, [rows, domainId, status, query]);
 
-  const areaPills = (
-    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "applications" })} />
-  );
-
   if (data.gate === "empty") {
     return (
       <div className="flex flex-col gap-4">
-        {areaPills}
         <Header />
         <p className="text-sm text-muted-foreground">
           {data.isCore
@@ -262,7 +253,6 @@ export default function ApplicationsDatabase() {
 
   return (
     <div className="flex flex-col gap-4">
-      {areaPills}
       <Header />
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -309,17 +299,14 @@ export default function ApplicationsDatabase() {
           ]}
           buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
-        <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or email"
-            aria-label="Search applicants by name or email"
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </div>
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name or email"
+          aria-label="Search applicants by name or email"
+          size="sm"
+          containerClassName="w-full sm:ml-auto sm:w-64 min-w-[12rem]"
+        />
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">

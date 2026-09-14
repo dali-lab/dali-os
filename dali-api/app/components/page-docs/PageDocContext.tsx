@@ -13,7 +13,6 @@ import { useLocation, useMatches, useSearchParams } from "react-router";
 import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { hasSubnavRow } from "~/lib/nav-areas";
 import { Tooltip } from "~/components/ui/floating";
 
 const PageDocPage = lazy(() =>

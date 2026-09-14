@@ -32,8 +32,6 @@ type Body = {
   priority?: Priority;
   // Null clears the domain.
   domainId?: string | null;
-  // Null moves the task to the backlog. Must belong to the task's project.
-  sprintId?: string | null;
   // Null unlinks the epic. Must belong to the task's project.
   epicId?: string | null;
   // Null unlinks the parent user story. Must belong to the task's project.
@@ -72,8 +70,6 @@ function isBody(x: unknown): x is Body {
   ) {
     return false;
   }
-  if (o.sprintId !== undefined && o.sprintId !== null && typeof o.sprintId !== "string")
-    return false;
   if (o.epicId !== undefined && o.epicId !== null && typeof o.epicId !== "string")
     return false;
   if (o.checklist !== undefined && o.checklist !== null && !Array.isArray(o.checklist))
@@ -145,7 +141,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     description?: string | null;
     priority?: Priority;
     domainId?: string | null;
-    sprintId?: string | null;
     epicId?: string | null;
     storyId?: string | null;
     checklist?: ChecklistItem[] | typeof Prisma.JsonNull;
@@ -184,24 +179,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if ("domainId" in body) {
     data.domainId = body.domainId ?? null;
   }
-  // Sprint/epic assignments are validated against the task's own project so
-  // one project's member can't attach tasks to another project's board.
-  if ("sprintId" in body) {
-    const sprintId = body.sprintId ?? null;
-    if (sprintId !== null) {
-      const sprint = await prisma.sprint.findUnique({
-        where: { id: sprintId },
-        select: { projectId: true },
-      });
-      if (!sprint || sprint.projectId !== task.projectId) {
-        return withCors(
-          request,
-          Response.json({ error: "Sprint is not part of this project" }, { status: 400 }),
-        );
-      }
-    }
-    data.sprintId = sprintId;
-  }
+  // Epic/story assignments are validated against the task's own project so one
+  // project's member can't attach tasks to another project's board.
   // Epic and story are reconciled together, never independently: a story pins
   // its epic (UserStory.epicId is required). An explicit story wins and sets
   // the epic; a bare epic change drops a now-orphaned story so task.epicId and
@@ -321,7 +300,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     "priority" in body ||
     "dueAt" in body ||
     "domainId" in body ||
-    "sprintId" in body ||
     "epicId" in body;
   if (task.githubIssueNumber !== null && syncableChanged) {
     void syncIssueForTask(params.id).catch((err) =>

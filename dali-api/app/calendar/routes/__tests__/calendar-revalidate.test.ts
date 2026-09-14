@@ -32,8 +32,18 @@ describe("calendar shouldRevalidate", () => {
     expect(check({ current: "?view=week&anchor=2026-09-06", next: "?view=month&anchor=2026-09-06" })).toBe(false);
   });
 
-  it("skips the loader when nothing at all changed", () => {
-    expect(check({ current: "?view=week", next: "?view=week" })).toBe(false);
+  // The counterpart to the mutation case below: a hand-rolled `fetch()` write
+  // (the timesheet's add/edit/delete, and this page's several /api writes) is
+  // invisible to the router, so the `revalidator.revalidate()` that follows it
+  // arrives with no formMethod and an unchanged URL. Skipping that left the
+  // entry in Postgres and off the grid. A view switch always changes a param,
+  // so an identical URL is never the case this guard exists to skip.
+  it("reloads when the URL is unchanged — an explicit revalidate", () => {
+    expect(check({ current: "?view=week", next: "?view=week" })).toBe(true);
+  });
+
+  it("skips a param-only change even with no form method", () => {
+    expect(check({ current: "?view=week&doc=abc", next: "?view=week" })).toBe(false);
   });
 
   it("reloads when the anchor moves to another week", () => {

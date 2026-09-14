@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Trash2, RotateCcw } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { CommentComposer } from "~/components/collab/CommentComposer";
 import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
@@ -16,7 +16,6 @@ export type Comment = {
   /** Legacy Yjs anchor {from, to}, BlockNote inline marker {kind:"blocknote"},
    *  or null for doc/file-level threads. */
   anchor: { from: string; to: string } | { kind: "blocknote" } | null;
-  resolved: boolean;
   createdAt: string;
   // File comments: the ProjectFileVersion current when the comment was
   // written. Null on doc/pagedoc comments and pre-pinning file comments.
@@ -27,9 +26,8 @@ type Thread = { root: Comment; replies: Comment[] };
 
 // Mutation callbacks for a single thread, handed to the host (via
 // registerRefresh) so an inline popover anchored at the highlighted text can
-// resolve/delete/reply without duplicating this rail's fetch + mutate logic.
+// delete/reply without duplicating this rail's fetch + mutate logic.
 export type ThreadActions = {
-  resolve: (id: string, resolved: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
   reply: (parentId: string, body: string) => Promise<boolean>;
 };
@@ -111,7 +109,6 @@ export function CommentsRail({
   targetId,
   currentUserId,
   canComment,
-  canResolve = true,
   // Inline-comment hooks. Provided only by the document editor.
   pendingAnchor,
   onClearPendingAnchor,
@@ -127,9 +124,6 @@ export function CommentsRail({
   targetId: string;
   currentUserId: string;
   canComment: boolean;
-  /** Whether this viewer may resolve/reopen threads. Defaults to true for
-   * document/file hosts; page-doc FAQs restrict this to their maintainer. */
-  canResolve?: boolean;
   pendingAnchor?: { from: string; to: string } | null;
   // For page-doc FAQ comments: the current page path, sent so @-mention
   // notifications can deep-link back to the guide (with ?doc=1).
@@ -160,7 +154,6 @@ export function CommentsRail({
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
-  const [showResolved, setShowResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -188,8 +181,7 @@ export function CommentsRail({
       () => void refresh(),
       () => comments,
       {
-        resolve: (id, resolved) => mutate(id, "POST", resolved ? "resolve" : "reopen"),
-        remove: (id) => mutate(id, "DELETE"),
+        remove: (id) => remove(id),
         reply: (parentId, body) => post(body, parentId, null),
       },
     );
@@ -197,17 +189,14 @@ export function CommentsRail({
   }, [comments]);
 
   // Scroll to + flash the comment from a mention notification (?comment=<id>),
-  // once. If it lives in a resolved thread, reveal resolved first.
+  // once.
   useEffect(() => {
     if (!focusCommentId || comments.length === 0) return;
     if (focusedRef.current === focusCommentId) return;
     const target = comments.find((c) => c.id === focusCommentId);
     if (!target) return; // not on this target's list
     focusedRef.current = focusCommentId;
-    const rootId = target.parentId ?? target.id;
-    const root = comments.find((c) => c.id === rootId);
-    if (root?.resolved) setShowResolved(true);
-    // Let the (possibly resolved-revealing) re-render commit before scrolling.
+    // Let the render commit before scrolling.
     setTimeout(() => {
       const el = containerRef.current?.querySelector<HTMLElement>(
         `[data-comment-id="${focusCommentId}"]`,
@@ -261,15 +250,13 @@ export function CommentsRail({
     }
   }
 
-  async function mutate(id: string, method: "POST" | "DELETE", intent?: "resolve" | "reopen") {
+  async function remove(id: string) {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/comments/${id}`, {
-        method,
+        method: "DELETE",
         credentials: "include",
-        headers: intent ? { "Content-Type": "application/json" } : undefined,
-        body: intent ? JSON.stringify({ intent }) : undefined,
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -288,21 +275,13 @@ export function CommentsRail({
     root,
     replies: comments.filter((c) => c.parentId === root.id),
   }));
-  const visible = threads.filter((t) => showResolved || !t.root.resolved);
-  const resolvedCount = threads.filter((t) => t.root.resolved).length;
 
   return (
     <div ref={containerRef} className="flex flex-col gap-2 text-sm">
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-medium text-muted-foreground">Comments</h3>
-        {resolvedCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowResolved((v) => !v)}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            {showResolved ? "Hide resolved" : `Show resolved (${resolvedCount})`}
-          </button>
+        {threads.length > 0 && (
+          <span className="text-[11px] text-muted-foreground">{threads.length}</span>
         )}
       </div>
 
@@ -352,17 +331,15 @@ export function CommentsRail({
         </div>
       )}
 
-      {visible.length > 0 && (
+      {threads.length > 0 && (
         <ul className="flex flex-col">
-          {visible.map((t) => {
+          {threads.map((t) => {
             const jumpable = isJumpable(t.root, onFocusAnchor, onFocusInlineThread);
             return (
               <li
                 key={t.root.id}
                 data-comment-id={t.root.id}
-                className={`group border-b border-border/60 py-3 last:border-b-0 ${
-                  t.root.resolved ? "opacity-60" : ""
-                }`}
+                className="group border-b border-border/60 py-3 last:border-b-0"
               >
                 <button
                   type="button"
@@ -421,25 +398,11 @@ export function CommentsRail({
                         Reply
                       </button>
                     )}
-                    {canComment && canResolve && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => mutate(t.root.id, "POST", t.root.resolved ? "reopen" : "resolve")}
-                        className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
-                      >
-                        {t.root.resolved ? (
-                          <><RotateCcw className="h-3 w-3" /> Reopen</>
-                        ) : (
-                          <><Check className="h-3 w-3" /> Resolve</>
-                        )}
-                      </button>
-                    )}
                     {canComment && t.root.authorId === currentUserId && (
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => mutate(t.root.id, "DELETE")}
+                        onClick={() => remove(t.root.id)}
                         className="flex items-center gap-0.5 text-muted-foreground hover:text-destructive"
                       >
                         <Trash2 className="h-3 w-3" /> Delete

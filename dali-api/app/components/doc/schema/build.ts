@@ -24,6 +24,7 @@ import {
   defaultInlineContentSpecs,
 } from "@blocknote/core";
 import { codeBlockOptions } from "@blocknote/code-block";
+import { withMultiColumn } from "@blocknote/xl-multi-column";
 import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
 import { EmbedSpec } from "./embed";
@@ -99,7 +100,14 @@ export function buildSchema(features: Features = {}) {
     for (const key of Object.keys(signingInlineSpecs)) delete inline[key];
   }
 
-  return BlockNoteSchema.create({ blockSpecs, inlineContentSpecs });
+  // columnList/column arrive through withMultiColumn rather than a blockSpecs
+  // entry: it also registers the ProseMirror nodes that the resize handles and
+  // the edge-drop handler hang off, which a bare spec wouldn't. Both variants
+  // are built so the STATIC type stays the extended superset (see TYPE NOTE)
+  // while `features.columns` picks which one is actually returned.
+  const base = BlockNoteSchema.create({ blockSpecs, inlineContentSpecs });
+  const withColumns = withMultiColumn(base);
+  return features.columns ? withColumns : (base as unknown as typeof withColumns);
 }
 
 export type DocSchema = ReturnType<typeof buildSchema>;

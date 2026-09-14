@@ -19,13 +19,16 @@ export const CREATE_TASK_TOOL = {
     properties: {
       projectId: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1, maxLength: 500 },
+      description: {
+        type: "string",
+        description: "Optional plain-text / Markdown description.",
+      },
       status: {
         type: "string",
         enum: TASK_STATUSES as unknown as string[],
         description: "Defaults to 'Todo'.",
       },
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      sprintId: { type: "string", description: "Omit or empty string for backlog." },
       epicId: { type: "string", description: "Optional epic linkage." },
       storyId: {
         type: "string",
@@ -33,6 +36,11 @@ export const CREATE_TASK_TOOL = {
           "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
       },
       domainId: { type: "string", description: "Optional domain chip." },
+      startsAt: {
+        type: "string",
+        description:
+          "Timeline start (ISO timestamp, planning only). Empty string or omitted = no start.",
+      },
       dueAt: {
         type: "string",
         description: "ISO timestamp. Empty string or omitted = no deadline.",
@@ -57,12 +65,13 @@ export const CREATE_TASK_TOOL = {
 type Input = {
   projectId: string;
   title: string;
+  description?: string;
   status?: string;
   priority?: Priority;
-  sprintId?: string;
   epicId?: string;
   storyId?: string;
   domainId?: string;
+  startsAt?: string;
   dueAt?: string;
   assigneeUserIds?: string[];
   mirrorToGithubRepo?: string;
@@ -92,18 +101,9 @@ export async function runCreateTask(callerId: string, input: Input) {
   });
   if (!project) throw new CreateTaskError("Project not found", 404);
 
-  // A sprint/epic id must belong to this project — a foreign id would let a
+  // An epic/story id must belong to this project — a foreign id would let a
   // member of one project file tasks onto another project's board (matches the
   // web create route's guard).
-  if (input.sprintId && input.sprintId !== "") {
-    const sprint = await prisma.sprint.findUnique({
-      where: { id: input.sprintId },
-      select: { projectId: true },
-    });
-    if (!sprint || sprint.projectId !== input.projectId) {
-      throw new CreateTaskError("Sprint is not part of this project", 400);
-    }
-  }
   // A story pins its epic (UserStory.epicId is required), so the two are never
   // set independently: a story derives the epic; only a story-less task takes a
   // free-standing epic (matches the web create route).
@@ -126,6 +126,15 @@ export async function runCreateTask(callerId: string, input: Input) {
     if (!epic || epic.projectId !== input.projectId) {
       throw new CreateTaskError("Epic is not part of this project", 400);
     }
+  }
+
+  let startsAt: Date | null = null;
+  if (input.startsAt && input.startsAt !== "") {
+    const d = new Date(input.startsAt);
+    if (!Number.isFinite(d.getTime())) {
+      throw new CreateTaskError("Invalid startsAt", 400);
+    }
+    startsAt = d;
   }
 
   let dueAt: Date | null = null;
@@ -160,18 +169,21 @@ export async function runCreateTask(callerId: string, input: Input) {
   });
   const position = last ? last.position + 1 : 0;
 
+  const description = input.description?.trim() ?? "";
+
   const task = await prisma.$transaction(async (tx) => {
     const created = await tx.task.create({
       data: {
         projectId: input.projectId,
         title,
+        description: description === "" ? null : description,
         status,
         position,
         priority: input.priority ?? "Normal",
-        sprintId: input.sprintId && input.sprintId !== "" ? input.sprintId : null,
         epicId,
         storyId,
         domainId: input.domainId && input.domainId !== "" ? input.domainId : null,
+        startsAt,
         dueAt,
         createdById: callerId,
       },

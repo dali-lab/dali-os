@@ -26,6 +26,8 @@ const {
   fetchBusyEvents,
   buildEncryptedTokens,
   createGoogleCalendarEvent,
+  respondToGoogleEventAsSelf,
+  NotAGuestError,
 } = await import("~/lib/google-calendar");
 
 function mockFetchOnce(body: unknown, ok = true, status = 200) {
@@ -466,6 +468,58 @@ describe("createGoogleCalendarEvent", () => {
     expect(body.conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
     expect(body.conferenceData.createRequest.requestId).toMatch(/^dali-/);
     expect(result.meetUrl).toBe("https://meet.google.com/abc-defg-hij");
+  });
+});
+
+describe("respondToGoogleEventAsSelf", () => {
+  function mockValidToken() {
+    prismaMock.userCalendarLink.findUnique.mockResolvedValueOnce({
+      oauthTokens: encryptedTokens({
+        accessToken: "good",
+        refreshToken: "r1",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+  }
+
+  it("answers for the self attendee and leaves everyone else's response alone", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchSequence([
+      {
+        attendees: [
+          { email: "lead@dali.dartmouth.edu", responseStatus: "accepted", organizer: true },
+          { email: "me@dali.dartmouth.edu", self: true, responseStatus: "needsAction" },
+        ],
+      },
+      {},
+    ]);
+    await respondToGoogleEventAsSelf({
+      linkId: "link1",
+      calendarId: "primary",
+      eventId: "evt1",
+      response: "declined",
+    });
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1];
+    expect(patchInit.method).toBe("PATCH");
+    // Guests hear about the answer, the way they would from Google's own UI.
+    expect(String(patchUrl)).toContain("sendUpdates=all");
+    expect(JSON.parse(patchInit.body as string).attendees).toEqual([
+      { email: "lead@dali.dartmouth.edu", responseStatus: "accepted", organizer: true },
+      { email: "me@dali.dartmouth.edu", self: true, responseStatus: "declined" },
+    ]);
+  });
+
+  it("refuses to write when the viewer isn't on the guest list", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchSequence([
+      { attendees: [{ email: "someone@dali.dartmouth.edu", responseStatus: "accepted" }] },
+      {},
+    ]);
+    await expect(
+      respondToGoogleEventAsSelf({ linkId: "link1", eventId: "evt1", response: "accepted" }),
+    ).rejects.toBeInstanceOf(NotAGuestError);
+    // Read only — nothing was patched.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

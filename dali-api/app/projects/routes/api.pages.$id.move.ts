@@ -59,7 +59,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       kind: true,
       archivedAt: true,
       createdById: true,
-      systemKey: true,
       partnerVisible: true,
       publicVisible: true,
       projectAsOverview: { select: { id: true } },
@@ -133,9 +132,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "A document can't be moved into itself" }, { status: 400 }));
   }
   if (!sameWorkspace) {
-    if (page.systemKey) {
-      return withCors(request, Response.json({ error: "This default folder can't be moved to another workspace" }, { status: 400 }));
-    }
     if (page.projectAsOverview || page.projectAsPRD) {
       return withCors(request, Response.json({ error: "The Overview and PRD docs can't be moved out of their project" }, { status: 400 }));
     }

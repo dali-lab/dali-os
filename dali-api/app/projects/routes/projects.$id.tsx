@@ -16,6 +16,15 @@ import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
+import { DomainChips } from "~/components/DomainChips";
+import {
+  DetailEditRow,
+  DetailRow,
+  HeroClusterLabel,
+  OS_DETAIL_CARD,
+  OS_DETAIL_ICON,
+  OsTabBar,
+} from "~/components/os-page";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -32,6 +41,11 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
+import { loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
+import { listProjectInfraRequests } from "~/lib/infra/requests.server";
+import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -65,7 +79,6 @@ import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
   EpicSprintManager,
   type EditableEpic,
-  type EditableSprint,
 } from "../components/EpicSprintManager";
 import {
   resolveTermIdForDate,
@@ -79,7 +92,6 @@ import {
   computeProjectStatus,
   factsFingerprint,
   type ProjectWorkStatus,
-  type SprintPhase,
 } from "../lib/project-status";
 import { ProjectStatusBar } from "../components/ProjectStatusBar";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -393,19 +405,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           },
         },
       },
-      sprints: {
-        orderBy: { startsAt: "asc" },
-        select: {
-          id: true,
-          name: true,
-          startsAt: true,
-          endsAt: true,
-          status: true,
-          epicId: true,
-          // Edges where this sprint is the dependent (waits on another).
-          dependencies: { select: { dependsOnSprintId: true } },
-        },
-      },
       tasks: {
         // Archived tasks (auto-archived Done/Cancelled) drop off the board.
         // Safety bound: 1000 tasks is well above any real project; keeps the
@@ -423,7 +422,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           startsAt: true,
           epicId: true,
-          sprintId: true,
           storyId: true,
           checklist: true,
           githubIssueNumber: true,
@@ -543,7 +541,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         title: true,
         kind: true,
         parentPageId: true,
-        systemKey: true,
         partnerVisible: true,
         publicVisible: true,
         pinnedAt: true,
@@ -665,7 +662,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     id: d.id,
     title: d.title,
     kind: d.kind,
-    isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
     publicVisible: d.publicVisible,
     pinned: d.pinnedAt !== null,
@@ -717,7 +713,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // itself lives in ../lib/timeline-epics — the partner hub draws the same bars.
   const epics: TimelineEpic[] = buildTimelineEpics({
     epics: project.epics,
-    sprints: project.sprints,
     tasks: project.tasks.map((t) => ({
       id: t.id,
       storyId: t.storyId,
@@ -755,19 +750,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
-  const sprints: EditableSprint[] = project.sprints.map((s) => ({
-    id: s.id,
-    name: s.name,
-    startsAt: s.startsAt.toISOString(),
-    endsAt: s.endsAt.toISOString(),
-    status: s.status as EditableSprint["status"],
-    epicId: s.epicId,
-    dependsOn: s.dependencies.map((d) => d.dependsOnSprintId),
-  }));
-
   // Flat directed dependency edges (storyId waits on dependsOnStoryId), drawn
-  // as arrows between story bars on the timeline. Same shape as the sprint
-  // edges above, one tier down.
+  // as arrows between story bars on the timeline.
   const storyDependencies = project.epics.flatMap((e) =>
     e.stories.flatMap((st) =>
       st.dependencies.map((d) => ({
@@ -790,7 +774,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     epicId: t.epicId,
-    sprintId: t.sprintId,
     storyId: t.storyId,
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
@@ -816,16 +799,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       return !!viewedAt && t.activityAt > viewedAt;
     })(),
   }));
-
-  // Per-epic task progress for the epic list rows + timeline tooltips.
-  // Cancelled tasks don't count toward either side.
-  const taskCountsByEpic: Record<string, { done: number; total: number }> = {};
-  for (const t of project.tasks) {
-    if (!t.epicId || t.status === "Cancelled") continue;
-    const counts = (taskCountsByEpic[t.epicId] ??= { done: 0, total: 0 });
-    counts.total += 1;
-    if (t.status === "Done") counts.done += 1;
-  }
 
   // Team grouped by term, newest term first. Current = highest sortKey.
   // Levels are read-only here — Core edits them from the member's profile
@@ -905,29 +878,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     current !== null && plannedTerms.some((t) => t.id === current.id);
 
   // ─── Board term derivation ───────────────────────────────────────────────
-  // Term-ness on the board is derived, not stored: a sprint's term is the one
-  // its start date falls in (roll-forward through break weeks, mirroring
-  // currentTerm()), and an epic's term footprint is the union of its sprints'
-  // terms, the terms its effective span overlaps, and its explicit target
-  // term. Term.startDate/endDate stays the single source of truth, so a sprint
-  // can never drift out of sync with "its" term. `allTerms` is ascending here,
-  // which resolveTermIdForDate/termIdsInRange rely on.
-  const sprintTermId = new Map<string, string | null>();
-  for (const s of project.sprints) {
-    sprintTermId.set(s.id, resolveTermIdForDate(allTerms, s.startsAt));
-  }
-  // Effective epic span (explicit dates expanded by sprint union) is already
-  // computed as ISO strings on `epics`; index it for the range overlap.
+  // Term-ness on the board is derived, not stored: a task's term is the one its
+  // date falls in (roll-forward through break weeks, mirroring currentTerm()),
+  // and an epic's term footprint is the terms its effective span (widened to
+  // cover its stories/tasks by buildTimelineEpics) overlaps, plus its explicit
+  // target term. Term.startDate/endDate stays the single source of truth.
+  // `allTerms` is ascending here, which resolveTermIdForDate/termIdsInRange rely on.
   const epicSpanById = new Map(
     epics.map((e) => [e.id, { startsAt: e.startsAt, endsAt: e.endsAt }]),
   );
   const boardEpics = project.epics.map((e) => {
     const ids = new Set<string>();
-    for (const s of project.sprints) {
-      if (s.epicId !== e.id) continue;
-      const tid = sprintTermId.get(s.id);
-      if (tid) ids.add(tid);
-    }
     const span = epicSpanById.get(e.id);
     const start = span?.startsAt ? new Date(span.startsAt) : null;
     const end = span?.endsAt ? new Date(span.endsAt) : null;
@@ -935,13 +896,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (e.targetTermId) ids.add(e.targetTermId);
     return { id: e.id, title: e.title, termIds: [...ids] };
   });
-  // Term filter options: the project's planned terms plus any term a sprint
-  // actually resolves to (a sprint may land in a term not in the planned set).
+  // Term filter options: the project's planned terms plus any term a task
+  // actually lands in (a task may be dated in a term outside the planned set).
   const boardTermIds = new Set<string>();
   for (const t of plannedTerms) boardTermIds.add(t.id);
-  for (const tid of sprintTermId.values()) if (tid) boardTermIds.add(tid);
-  const boardTerms = allTerms
-    .filter((t) => boardTermIds.has(t.id))
+  for (const t of tasks) {
+    const d = t.dueAt ?? t.startsAt;
+    if (!d) continue;
+    const tid = resolveTermIdForDate(allTerms, new Date(d));
+    if (tid) boardTermIds.add(tid);
+  }
+  const boardTermList = allTerms.filter((t) => boardTermIds.has(t.id));
+  const boardTerms = [...boardTermList]
     .sort((a, b) => b.sortKey - a.sortKey)
     .map((t) => ({ id: t.id, code: t.code }));
   const boardCurrentTermId =
@@ -952,15 +918,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   //
   // Assignments accumulate term after term, so deduping across all of them
   // offered everyone who had ever been staffed here — including people who
-  // left the project terms ago. Scope to the current term's team instead, with
-  // two deliberate additions:
-  //   - a project not staffed this term falls back to its most recent staffed
-  //     term, so tasks on a finished project can still be reassigned rather
-  //     than facing an empty picker;
-  //   - anyone already assigned to one of this project's tasks stays listed.
-  //     The picker doubles as the un-assign control (TaskModal renders its
-  //     checkbox list from this set), so dropping them would strand the task
-  //     with an assignee nobody could remove.
+  // left the project terms ago. Scope to the current term's team instead,
+  // falling back to the most recent staffed term so tasks on a finished
+  // project can still be reassigned rather than facing an empty picker.
+  //
+  // A task carried over from an earlier term may still hold an assignee who has
+  // since rolled off. TaskModal folds that task's own assignees into its picker
+  // so they stay removable — which keeps the un-assign path working without
+  // widening this project-wide list back out to every past member.
   const currentTermAssignments = current
     ? project.assignments.filter((a) => a.termId === current.id)
     : [];
@@ -982,17 +947,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       memberMap.set(id, fullName(a.user));
     }
   }
-  for (const t of tasks) {
-    for (const a of t.assignees) {
-      if (!memberMap.has(a.id)) memberMap.set(a.id, a.name);
-    }
-  }
-  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
-  // Term spans anchor the fixed one-week sprint grid and label its bands
-  // (26FA, 26FB, …). Oldest first, the order the grid walks them. Both the
-  // timeline and the task modal read weeks off this same anchor, so it's built
-  // once here rather than twice.
-  const termSpans = [...plannedTerms]
+  // Term spans anchor the fixed one-week sprint grid (Sprint 1..N per term).
+  // Oldest first, the order the grid walks them; the same set as the board's
+  // term filter so every term option can populate the sprint picker. Both the
+  // timeline and the task board read sprints off this same anchor.
+  const termSpans = [...boardTermList]
     .sort((a, b) => a.sortKey - b.sortKey)
     .map((t) => ({
       code: t.code,
@@ -1005,20 +964,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
-    sprints: [...sprints]
-      .sort(
-        (a, b) =>
-          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
-          a.startsAt.localeCompare(b.startsAt),
-      )
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        epicId: s.epicId,
-        termId: sprintTermId.get(s.id) ?? null,
-        startsAt: s.startsAt,
-      })),
     epics: boardEpics,
     stories: project.epics.flatMap((e) =>
       e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
@@ -1133,28 +1078,51 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
+  // Per-project infrastructure (Fly + Neon): config presence + cached inventory
+  // + the project's change requests. View is open to anyone who can see the
+  // project; config/requests are gated in the section by canEdit (core||staffed).
+  const [projectInfra, infraConfigRow, infraRequests] = await Promise.all([
+    loadProjectInfra(params.id),
+    prisma.project.findUnique({
+      where: { id: params.id },
+      select: {
+        flyOrgSlug: true,
+        neonOrgId: true,
+        infraEnabled: true,
+        flyReadTokenEnc: true,
+        flyWriteTokenEnc: true,
+      },
+    }),
+    canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+  ]);
+  const infra = {
+    config: {
+      flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
+      neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      infraEnabled: infraConfigRow?.infraEnabled ?? true,
+      hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
+      hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
+    },
+    view: projectInfra,
+    requests: infraRequests,
+  };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
-  // AI summary's freshness. Facts come from the same task/sprint rows the board
-  // already loaded, so the bar costs no extra query. aiTldrStale compares the
-  // current facts fingerprint against the one the cached summary was written
-  // from; the client regenerates when it differs (see ProjectStatusBar).
+  // AI summary's freshness. Facts come from the same task rows the board
+  // already loaded (the current sprint is derived from term spans), so the bar
+  // costs no extra query. aiTldrStale compares the current facts fingerprint
+  // against the one the cached summary was written from; the client regenerates
+  // when it differs (see ProjectStatusBar).
   const statusFacts = computeProjectStatus(
     {
       projectStatus: project.status as ProjectWorkStatus,
       tasks: project.tasks.map((t) => ({
         id: t.id,
         status: t.status as TaskStatus,
+        startsAt: t.startsAt,
         dueAt: t.dueAt,
-        sprintId: t.sprintId,
         activityAt: t.activityAt,
       })),
-      sprints: project.sprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        status: s.status as SprintPhase,
-      })),
+      terms: termSpans,
     },
     new Date(),
   );
@@ -1166,6 +1134,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     project.aiTldrInputHash !== factsFingerprint(statusFacts);
 
   return {
+    infra,
     project: {
       id: project.id,
       name: project.name,
@@ -1221,12 +1190,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     recentActivity,
     epics,
     editableEpics,
-    sprints,
     storyDependencies,
     timelineTerms: termSpans,
     tasks,
     boardOptions,
-    taskCountsByEpic,
     statusFacts,
     aiTldr: project.aiTldr,
     aiTldrGeneratedAt: project.aiTldrGeneratedAt
@@ -1356,9 +1323,37 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
+  }
+
+  // Cloud infra config (Fly org slug / Neon org id / encrypted Fly tokens /
+  // sweep toggle). Same core||staffed gate as the top of this action; tokens are
+  // write-only (blank leaves them unchanged).
+  if (intent === "infra-config") {
+    const data = buildInfraConfigUpdate({
+      flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
+      neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
+      infraEnabled: form.get("infraEnabled") != null,
+      flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
+      flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
+    });
+    await prisma.project.update({ where: { id: params.id }, data });
+    await logAuditEvent({
+      action: "infra.config",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: {
+        flyOrgSlug: data.flyOrgSlug ?? null,
+        neonOrgId: data.neonOrgId ?? null,
+        infraEnabled: data.infraEnabled ?? null,
+        setFlyReadToken: !!data.flyReadTokenEnc,
+        setFlyWriteToken: !!data.flyWriteTokenEnc,
+      },
+      request,
+    });
+    return { ok: true };
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -1440,6 +1435,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Lifecycle status — Active / Paused / Archived. Core-only (listed in
+  // SCOPE_INTENTS above); edited from Project settings and shown as the
+  // read-only pill in the hero.
+  if (intent === "status") {
+    const status = (form.get("status") as string | null) ?? "";
+    if (!STATUSES.includes(status as ProjectStatus)) {
+      return { error: "Invalid status." };
+    }
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { status: status as ProjectStatus },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -1591,7 +1601,6 @@ export default function ProjectDetail() {
     timelineTerms,
     tasks,
     boardOptions,
-    taskCountsByEpic,
     statusFacts,
     aiTldr,
     aiTldrStale,
@@ -1614,19 +1623,25 @@ export default function ProjectDetail() {
     presencePhotoUrl,
     presenceSubtitle,
     projectDriveScope,
+    infra,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
+  // The action's success returns vary by intent (some redirect, infra-config
+  // returns { ok }), so narrow to the error-bearing shape for the page banner.
+  const actionError = actionData && "error" in actionData ? actionData.error : undefined;
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
-  // The dali.os dress for this page: the taller hero, the terms/roles clusters
-  // beside the title, and the filled tab plates. Same tabs, same permissions.
-  const os = true;
   const showStatusBar = useFeatureFlag("project-status-bar");
-  const sprintFilterEnabled = useFeatureFlag("sprint-view");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+
+  // Per-epic term footprint, indexed for the planning list's term filter.
+  const epicTermIds = useMemo(
+    () => Object.fromEntries(boardOptions.epics.map((e) => [e.id, e.termIds])),
+    [boardOptions.epics],
+  );
 
   // Board people filter — narrows the task board to the chosen people. Lives in
   // the URL (?people=<id,id>) like the board's other filters, so a person-sliced
@@ -1661,18 +1676,12 @@ export default function ProjectDetail() {
   // render an empty body (valid tab, but its content branch is gated) — treat
   // it as invalid and fall back to the default.
   const resolveTab = (): Tab | OsTab => {
-    const want = os
-      ? isOsTab(tabParam)
-        ? tabParam
-        : isTab(tabParam)
-          ? CLASSIC_TO_OS[tabParam]
-          : "progress"
+    const want = isOsTab(tabParam)
+      ? tabParam
       : isTab(tabParam)
-        ? tabParam
-        : isOsTab(tabParam)
-          ? OS_TO_CLASSIC[tabParam]
-          : "overview";
-    if (want === "mentorship" && !canViewMentorshipTab) return os ? "progress" : "overview";
+        ? CLASSIC_TO_OS[tabParam]
+        : "progress";
+    if (want === "mentorship" && !canViewMentorshipTab) return "progress";
     return want;
   };
   const tab = resolveTab();
@@ -1683,7 +1692,7 @@ export default function ProjectDetail() {
     closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
-        prev.set("tab", os ? "progress" : "board");
+        prev.set("tab", "progress");
         prev.set("task", taskId);
         return prev;
       },
@@ -1719,14 +1728,17 @@ export default function ProjectDetail() {
       storyDependencies={storyDependencies}
       timelineTerms={timelineTerms}
       terms={plannedTerms}
-      taskCountsByEpic={taskCountsByEpic}
+      // The list view's term filter reads the same per-epic term footprint the
+      // board's does, rather than deriving a second one from the same dates.
+      epicTermIds={epicTermIds}
+      currentTermId={boardOptions.currentTermId}
       canEdit={canEdit}
       collabToken={collabToken}
       userName={userName}
       onTaskClick={openTaskFromTimeline}
       // Only on the os Progress tab, where the board is on this same surface
       // for the created task to appear in.
-      onAddTask={os ? () => setTaskCreateNonce((n) => n + 1) : undefined}
+      onAddTask={() => setTaskCreateNonce((n) => n + 1)}
     />
   );
   const board = (
@@ -1738,13 +1750,10 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createNonce={taskCreateNonce}
-      // Sprint-view flag: promotes Sprint to a top-level board filter and opens
-      // the board on the current sprint. Off → the epic-nested sprint sub-filter.
-      sprintFilterEnabled={sprintFilterEnabled}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
-      peopleOptions={os ? peopleOptions : []}
-      filterPeopleIds={os ? selectedPeopleIds : []}
+      peopleOptions={peopleOptions}
+      filterPeopleIds={selectedPeopleIds}
       onPeopleChange={setSelectedPeopleIds}
     />
   );
@@ -1754,7 +1763,7 @@ export default function ProjectDetail() {
     // same as the task board and the partner/public views. The design's 1020px
     // figure was measured on a narrower shell than this one, and capping here
     // left every uncapped block on the page hanging past the right edge.
-    <div className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
+    <div className={cn("flex flex-col", "gap-6")}>
       <PresenceBar className="self-end" />
 
       {/* Overview header — always on top, not behind a tab */}
@@ -1762,67 +1771,42 @@ export default function ProjectDetail() {
         project={project}
         partnerNames={partnerNames}
         canEdit={canEdit}
-        os={os}
       />
 
       {/* Tab bar. Each section now owns its own edit button — there's no
           page-level edit mode left to clear when switching tabs. */}
-      <div
-        className={cn(
-          "flex items-center border-b border-border",
-          os ? "gap-2" : "gap-1",
-        )}
-      >
-        {(os ? OS_TABS : TABS)
-          .filter((t) => t !== "mentorship" || canViewMentorshipTab)
-          .map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={
-              os
-                ? cn(
-                    // The design marks the open tab with a filled, top-rounded
-                    // plate that meets the rule below it, not an underline.
-                    "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
-                    tab === t
-                      ? "bg-os-container text-foreground"
-                      : "text-os-grey hover:text-foreground",
-                  )
-                : `px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                    tab === t
-                      ? "border-accent-coral text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`
-            }
-          >
-            {os ? OS_TAB_LABELS[t as OsTab] : TAB_LABELS[t as Tab]}
-          </button>
-        ))}
-        {/* Scope/challenge config lives behind this gear, visible only to
-            Core/Admin/Staff. */}
-        {canViewScope && (
-          <Tooltip content="Project settings" className="ml-auto -mb-px">
-            <button
-              type="button"
-              onClick={() => setScopeSettingsOpen(true)}
-              aria-label="Project settings"
-              className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              title="Project settings & challenges"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          </Tooltip>
-        )}
-      </div>
+      <OsTabBar
+        ariaLabel="Project sections"
+        tabs={OS_TABS.filter(
+          (t) => t !== "mentorship" || canViewMentorshipTab,
+        ).map((t) => ({ key: t, label: OS_TAB_LABELS[t] }))}
+        active={tab as OsTab}
+        onSelect={setTab}
+        trailing={
+          // Scope/challenge config lives behind this gear, visible only to
+          // Core/Admin/Staff.
+          canViewScope ? (
+            <Tooltip content="Project settings" className="ml-auto -mb-px">
+              <button
+                type="button"
+                onClick={() => setScopeSettingsOpen(true)}
+                aria-label="Project settings"
+                className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                title="Project settings & challenges"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          ) : null
+        }
+      />
 
       {/* Page-level action errors — above the tab content so a failed save
           (e.g. the header form) is visible from any tab. The settings modal
           keeps its own inline copy. */}
-      {actionData?.error && (
+      {actionError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionData.error}
+          {actionError}
         </div>
       )}
 
@@ -1830,9 +1814,9 @@ export default function ProjectDetail() {
         <OverviewTab
           // Under the os tabs the timeline is the Progress tab's own content,
           // so Project details renders without it.
-          planning={os ? null : planningNode}
-          showMeetings={!os}
-          showDocuments={!os}
+          planning={null}
+          showMeetings={false}
+          showDocuments={false}
           project={project}
           teams={teams}
           documents={documents}
@@ -1850,6 +1834,7 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
+          infra={infra}
         />
       )}
 
@@ -1875,7 +1860,7 @@ export default function ProjectDetail() {
             allTermOptions={allTermOptions}
             domainScopeGrid={domainScopeGrid}
             canEdit={canEditScope}
-            actionError={actionData?.error}
+            actionError={actionError}
           />
           {canEditScope && <DriveFolderBindings processType="Project" processId={project.id} />}
           {canEditScope && (
@@ -1899,7 +1884,7 @@ export default function ProjectDetail() {
           space every tab pays for whether or not it needs it. A quarter of the
           viewport is enough to keep the scroll range alive without the page
           ending in a void. */}
-      <div className={cn("flex flex-col", os ? "gap-6 min-h-[25vh]" : "gap-4")}>
+      <div className={cn("flex flex-col", "gap-6 min-h-[25vh]")}>
         {/* Progress (os): the timeline and the board are one surface — the plan
             above, the work under it — rather than two tabs you flip between to
             answer one question. */}
@@ -1974,20 +1959,18 @@ function ProjectHeader({
   project,
   partnerNames,
   canEdit,
-  os = false,
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
-  os?: boolean;
 }) {
   const submit = useSubmit();
-  // Name, status and icon each save the moment you change them — the hero has
-  // no edit mode and no pencil (which used to collide with the taskboard's
-  // Edit-task pencil). Only the name needs a transient draft while you type;
-  // status and icon read/write project state directly, so the fields never
-  // drift from the loader. Terms and roles are read-only here now — they live
-  // in Project settings (the gear), the one place that edits project scope.
+  // Name and icon each save the moment you change them — the hero has no edit
+  // mode and no pencil (which used to collide with the taskboard's Edit-task
+  // pencil). Only the name needs a transient draft while you type; icon
+  // read/writes project state directly, so the field never drifts from the
+  // loader. Status, terms and roles are read-only here now — they live in
+  // Project settings (the gear), the one place that edits project scope.
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
 
@@ -2001,20 +1984,21 @@ function ProjectHeader({
     if (!trimmed || trimmed === project.name) return;
     saveHeader({ name: trimmed });
   }
-  // One write path for all three fields: post the current project values with
-  // the one field being changed overridden, so a status flip doesn't blank the
-  // name and vice versa. iconEmoji goes through "in patch" because null (no
-  // icon) is a real value the ?? fallback would swallow.
+  // One write path for name + icon: post the current project values with the
+  // one field being changed overridden, so a rename doesn't blank the icon and
+  // vice versa. iconEmoji goes through "in patch" because null (no icon) is a
+  // real value the ?? fallback would swallow. Status is edited in Project
+  // settings now, but the `header` intent still validates it, so we carry the
+  // current value through unchanged.
   function saveHeader(patch: {
     name?: string;
-    status?: ProjectStatus;
     iconEmoji?: string | null;
   }) {
     submit(
       {
         intent: "header",
         name: patch.name ?? project.name,
-        status: patch.status ?? project.status,
+        status: project.status,
         iconEmoji: ("iconEmoji" in patch ? patch.iconEmoji : project.iconEmoji) ?? "",
       },
       { method: "post" },
@@ -2076,26 +2060,9 @@ function ProjectHeader({
           // colours as a declared one.
           <DomainChips
             items={project.domains.length > 0 ? project.domains : project.derivedDomains}
-            os
           />
         )}
       </HeroClusterLabel>
-    </div>
-  );
-
-  // Classic keeps a header Schedule-meeting button; under os this folds into
-  // the Progress toolbar's New ▸ Meeting. There is no header edit button any
-  // more — name, status and icon edit in place, and project scope lives behind
-  // the settings gear.
-  const editControls = os ? null : (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <Link
-        to={`/calendar?tab=schedule&project=${project.id}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-      >
-        <CalendarPlus className="w-4 h-4" />
-        Schedule meeting
-      </Link>
     </div>
   );
 
@@ -2105,7 +2072,7 @@ function ProjectHeader({
   // can't edit gets the same three elements, read-only.
   const nameClasses = cn(
     "font-heading text-foreground",
-    os ? "text-[32px] font-medium" : "text-2xl font-bold",
+    "text-[32px] font-medium",
   );
   const titleCluster = (
     <>
@@ -2119,7 +2086,7 @@ function ProjectHeader({
           onChange={(v) => saveHeader({ iconEmoji: v })}
         />
       ) : (
-        <ProjectIcon iconEmoji={project.iconEmoji} size={os ? "inherit" : "lg"} />
+        <ProjectIcon iconEmoji={project.iconEmoji} size="inherit" />
       )}
       {canEdit && editingName ? (
         <input
@@ -2140,13 +2107,11 @@ function ProjectHeader({
           autoFocus
           // Sized to the name it holds so the title doesn't jump to a box of
           // some other width the moment you click it.
-          style={os ? { width: `${Math.max(nameDraft.length, 8) + 1}ch` } : undefined}
+          style={{ width: `${Math.max(nameDraft.length, 8) + 1}ch` }}
           className={cn(
             nameClasses,
             "bg-transparent max-w-full focus:outline-none",
-            os
-              ? "border-b border-os-container-hi focus:border-os-accent"
-              : "px-2 py-1 border border-border rounded-md bg-background focus:ring-2 focus:ring-accent-coral/30",
+            "border-b border-os-container-hi focus:border-os-accent",
           )}
         />
       ) : (
@@ -2176,87 +2141,46 @@ function ProjectHeader({
           {project.name}
         </h1>
       )}
-      {canEdit ? (
-        <Select
-          value={project.status}
-          onChange={(v) => saveHeader({ status: v as ProjectStatus })}
-          ariaLabel="Project status"
-          options={STATUSES.map((s) => ({ value: s, label: s }))}
-          // The Select trigger adds its own flex layout; this just supplies the
-          // status plate's shape and colour so the dropdown reads as the badge.
-          buttonClassName={cn(
-            "rounded-full border transition-[filter] hover:brightness-95",
-            os
-              ? cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[project.status])
-              : cn("px-2 py-0.5 text-[11px] font-medium", STATUS_PILL_CLASSIC[project.status]),
-          )}
-        />
-      ) : (
-        <StatusBadge status={project.status} os={os} />
-      )}
+      {/* Status is display-only in the hero — the pill still states the
+          project's lifecycle, but changing it lives in Project settings (the
+          gear) with the rest of the project's scope, so Core owns lifecycle
+          changes in one place. */}
+      <StatusBadge status={project.status} />
     </>
   );
 
   return (
-    <header className={cn("flex flex-col", os ? "gap-6" : "gap-4")}>
+    <header className={cn("flex flex-col", "gap-6")}>
       <ProjectImageBanner
         projectId={project.id}
         projectName={project.name}
         initialPreviewUrl={project.imageUrlResolved}
         canEdit={canEdit}
-        frameClassName={os ? "h-[275px] rounded-os-card" : undefined}
+        frameClassName="h-[275px] rounded-os-card"
       />
       <div className="min-w-0 flex-1">
         {/* The edit control is its own column at the far right, outside the
             row that wraps: while it rode along with the tag clusters it got
             pushed onto a line of its own under Roles as soon as they filled
             the row, and opening the editor re-flowed the clusters with it. */}
-        <div className={cn("flex items-start justify-between", os ? "gap-4" : "gap-3")}>
+        <div className={cn("flex items-start justify-between", "gap-4")}>
           <div
             className={cn(
               "min-w-0 flex-1",
-              os && "flex flex-wrap items-center justify-between gap-x-6 gap-y-4",
+              "flex flex-wrap items-center justify-between gap-x-6 gap-y-4",
             )}
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">{titleCluster}</div>
-
-              {/* Domains sit on their own row under the title. Sharing the
-                  title's wrapped flex row meant they trailed off the end of the
-                  name and broke to an arbitrary place as it grew. */}
-              {!os &&
-                (project.domains.length > 0 ? (
-                  <div className="mt-1.5">
-                    <DomainChips items={project.domains} />
-                  </div>
-                ) : project.derivedDomains.length > 0 ? (
-                  <div className="mt-1.5">
-                    <DomainChips items={project.derivedDomains} muted />
-                  </div>
-                ) : null)}
             </div>
 
             {/* os: the design's hero-meta row — title left, the term and role
                 clusters right, both inside the wrapping column. */}
-            {os && osTagGroup}
+            {osTagGroup}
           </div>
-          {editControls}
         </div>
-        {!os && subtitle}
       </div>
     </header>
-  );
-}
-
-/* The label a hero cluster wears (TERMS, ROLES) with its contents beside it. */
-function HeroClusterLabel({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-xs font-semibold tracking-widest text-os-grey uppercase">
-        {label}
-      </span>
-      {children}
-    </div>
   );
 }
 
@@ -2269,7 +2193,7 @@ function DescriptionSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const { os, panel } = useOsChrome();
+  const { panel } = useOsChrome();
 
   return (
     <EditableSection
@@ -2285,7 +2209,7 @@ function DescriptionSegment({
           <Form
             method="post"
             ref={formRef}
-            className={cn("flex flex-col gap-1.5", os && cn(panel, "os-form p-5"))}
+            className={cn("flex flex-col gap-1.5", cn(panel, "os-form p-5"))}
           >
             <input type="hidden" name="intent" value="description" />
             <textarea
@@ -2293,16 +2217,12 @@ function DescriptionSegment({
               rows={6}
               defaultValue={description ?? ""}
               placeholder="Add a short description… (Markdown supported)"
-              className={
-                os
-                  ? "w-full resize-y"
-                  : "px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              }
+              className="w-full resize-y"
               autoFocus
             />
           </Form>
         ) : (
-          <div className={os ? cn(panel, "p-5") : undefined}>
+          <div className={cn(panel, "p-5")}>
             {description ? (
               <Markdown>{description}</Markdown>
             ) : (
@@ -2311,6 +2231,53 @@ function DescriptionSegment({
               </p>
             )}
           </div>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+// Status: the project's lifecycle plate (Active / Paused / Archived), edited
+// here in Project settings so Core owns lifecycle changes in one place; the
+// hero shows the same pill read-only.
+function StatusSegment({
+  status,
+  canEdit,
+}: {
+  status: ProjectStatus;
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Status"
+      canEdit={canEdit}
+      description="Active, Paused, or Archived — the lifecycle state shown as the pill beside the project name."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="status" />
+            <Select
+              name="status"
+              defaultValue={status}
+              ariaLabel="Project status"
+              options={STATUSES.map((s) => ({ value: s, label: s }))}
+              // The pill wears the current status's colour; the read view below
+              // uses the same plate, so editing reads as the same badge.
+              buttonClassName={cn(
+                "rounded-full border transition-[filter] hover:brightness-95",
+                cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[status]),
+              )}
+            />
+          </Form>
+        ) : (
+          <StatusBadge status={status} />
         )
       }
     </EditableSection>
@@ -2617,28 +2584,6 @@ function TermsChipsEditor({
 // Calendar email + image URL + term count + repo URLs. One form posting
 // intent=details with the full field set, so the action handler stays
 // unchanged. Section-level Save submits; Cancel reverts via the wrapper.
-// One label/value row of the os Project-details read view: a muted label with
-// its glyph on the left, the value right-aligned.
-function DetailRow({
-  icon,
-  label,
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-os-container py-3 last:border-0">
-      <span className="flex items-center gap-2.5 text-sm text-os-grey">
-        {icon}
-        {label}
-      </span>
-      <div className="min-w-0 text-right text-sm text-foreground">{children}</div>
-    </div>
-  );
-}
-
 // The os read view of Project details: a compact icon/label row list with the
 // less-common fields folded behind "Additional details". The edit form is
 // unchanged — this only replaces the read layout under the os tab set.
@@ -2652,10 +2597,10 @@ function DetailsReadOs({
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
   const dash = <span className="text-os-muted">—</span>;
-  const ic = "h-[17px] w-[17px] text-os-grey";
+  const ic = OS_DETAIL_ICON;
 
   return (
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       <DetailRow icon={<Mail className={ic} />} label="Calendar email">
         {project.calendarEmail ? (
           <a
@@ -2772,33 +2717,6 @@ function DetailsReadOs({
   );
 }
 
-/* The same row, with a field where the value was. Stacks on a narrow screen so
-   an input never has to share a line with its own label. */
-function DetailEditRow({
-  icon,
-  label,
-  hint,
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2.5 text-sm text-os-grey">
-          {icon}
-          {label}
-        </span>
-        {hint && <span className="pl-[27px] text-xs text-os-muted">{hint}</span>}
-      </span>
-      <div className="w-full sm:max-w-[24rem]">{children}</div>
-    </div>
-  );
-}
-
 /* Project details in edit mode: the read view's own card and rows, with each
    value swapped for its field. Every field the `details` intent writes is
    rendered — that write replaces the whole set, so a field left out of the
@@ -2811,11 +2729,11 @@ function DetailsEditOs({
   project: LoaderData["project"];
   canEditFinance: boolean;
 }) {
-  const ic = "h-[17px] w-[17px] text-os-grey";
+  const ic = OS_DETAIL_ICON;
   const field = "w-full";
 
   return (
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       <DetailEditRow icon={<Mail className={ic} />} label="Calendar email">
         <input
           name="calendarEmail"
@@ -2931,7 +2849,6 @@ function DetailsSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const os = true;
 
   return (
     <EditableSection
@@ -2941,226 +2858,15 @@ function DetailsSegment({
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
       {({ editing }) =>
-        os ? (
-          editing ? (
-            <Form method="post" ref={formRef} className="os-form w-full">
-              <input type="hidden" name="intent" value="details" />
-              <DetailsEditOs project={project} canEditFinance={canEditFinance} />
-            </Form>
-          ) : (
-            <DetailsReadOs project={project} canEditFinance={canEditFinance} />
-          )
+        editing ? (
+          <Form method="post" ref={formRef} className="os-form w-full">
+            <input type="hidden" name="intent" value="details" />
+            <DetailsEditOs project={project} canEditFinance={canEditFinance} />
+          </Form>
         ) : (
-        <Form method="post" ref={formRef} className="flex flex-col gap-4 w-full">
-          <input type="hidden" name="intent" value="details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Calendar email</span>
-              {editing ? (
-                <input
-                  name="calendarEmail"
-                  type="email"
-                  defaultValue={project.calendarEmail ?? ""}
-                  placeholder="projectname@dali.dartmouth.edu"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.calendarEmail ?? "—"}
-                </span>
-              )}
-            </label>
-
-            {/* Team email group — provisioned by the staffing "Create team email
-                group" automation; read-only here (not lead-editable). */}
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Team email group</span>
-              <span className="px-2 py-1.5 text-sm">
-                {project.teamGroupEmail ? (
-                  <a
-                    href={`mailto:${project.teamGroupEmail}`}
-                    className="text-accent-coral hover:underline break-all"
-                  >
-                    {project.teamGroupEmail}
-                  </a>
-                ) : (
-                  <span className="text-muted-foreground">
-                    Not created yet — run staffing finalize.
-                  </span>
-                )}
-              </span>
-            </label>
-
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">GitHub team</span>
-              {editing ? (
-                <input
-                  name="githubTeamSlug"
-                  type="text"
-                  defaultValue={project.githubTeamSlug ?? ""}
-                  placeholder="project-team-name"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.githubTeamSlug ?? "—"}
-                </span>
-              )}
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Slack channel</span>
-              {editing ? (
-                <input
-                  name="slackChannelName"
-                  type="text"
-                  defaultValue={project.slackChannelName ?? ""}
-                  placeholder="project-name"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : project.slackChannelName && project.slackChannelId ? (
-                // Only the channel *id* resolves reliably in Slack's
-                // app_redirect; a bare name renders as plain text below.
-                <a
-                  href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
-                >
-                  {project.slackChannelName}
-                </a>
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.slackChannelName ?? "—"}
-                </span>
-              )}
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                Terms required (planned span)
-              </span>
-              {editing ? (
-                <input
-                  name="termCount"
-                  type="number"
-                  min={1}
-                  defaultValue={project.termCount}
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.termCount}{" "}
-                  {project.termCount === 1 ? "term" : "terms"}
-                </span>
-              )}
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              Repositories (one URL per line)
-            </span>
-            {editing ? (
-              <textarea
-                name="repoUrls"
-                rows={3}
-                defaultValue={project.repoUrls.join("\n")}
-                placeholder="https://github.com/dali-lab/…"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-              />
-            ) : project.repoUrls.length > 0 ? (
-              <ul className="flex flex-col gap-1 px-2 py-1.5">
-                {project.repoUrls.map((url) => (
-                  <li key={url}>
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm text-accent-coral hover:underline break-all"
-                    >
-                      {url}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-muted-foreground">
-                —
-              </span>
-            )}
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Deployment</span>
-            {editing ? (
-              <input
-                name="deploymentUrl"
-                type="url"
-                defaultValue={project.deploymentUrl ?? ""}
-                placeholder="https://projectname.fly.dev"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-              />
-            ) : project.deploymentUrl ? (
-              <a
-                href={project.deploymentUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
-              >
-                {project.deploymentUrl}
-              </a>
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
-            )}
-          </label>
-
-          {/* Payroll chart string — surfaced and editable only to Core (action
-              handler enforces the same gate). Read-only to project members. */}
-          {canEditFinance && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
-              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-                <span className="text-muted-foreground font-medium">
-                  Payroll
-                </span>
-              </label>
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Chart string type</span>
-                {editing ? (
-                  <input
-                    name="chartStringType"
-                    type="text"
-                    defaultValue={project.chartStringType ?? ""}
-                    placeholder="e.g. Grant, Department"
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                ) : (
-                  <span className="px-2 py-1.5 text-sm text-foreground">
-                    {project.chartStringType ?? "—"}
-                  </span>
-                )}
-              </label>
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Full chart string</span>
-                {editing ? (
-                  <input
-                    name="chartString"
-                    type="text"
-                    defaultValue={project.chartString ?? ""}
-                    placeholder="full GL chart string"
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-                  />
-                ) : (
-                  <span className="px-2 py-1.5 text-sm text-foreground font-mono break-all">
-                    {project.chartString ?? "—"}
-                  </span>
-                )}
-              </label>
-            </div>
-          )}
-        </Form>
-      )}
+          <DetailsReadOs project={project} canEditFinance={canEditFinance} />
+        )
+      }
     </EditableSection>
   );
 }
@@ -3276,121 +2982,17 @@ function DomainScopesSegment({
   );
 }
 
-// The design gives each role its own tinted chip. The four hues it drew were
-// matched by name against a handful of short keys and everything else fell to
-// a hash across those same four — so with the real catalog (17 domains, whose
-// labels are "Fullstack Dev", "UI/UX Design", "Product Management"…) every
-// lookup missed and three unrelated domains routinely came out the same
-// colour. Each catalog domain now names its own hue, so a role reads
-// identically on the header, the team cards, and anywhere else it appears.
-const OS_ROLE_CHIPS = {
-  amber: "bg-[#3d3a26] text-[#e8dd9a]",
-  teal: "bg-[#1f3a37] text-[#8fd6cb]",
-  violet: "bg-[#31284a] text-[#c3aef2]",
-  pink: "bg-[#3f2530] text-[#f2a8bd]",
-  blue: "bg-[#1e3348] text-[#a2d2fd]",
-  green: "bg-[#263a29] text-[#a6dda6]",
-  orange: "bg-[#43301f] text-[#f0b98a]",
-  magenta: "bg-[#3d2440] text-[#e2a6ee]",
-  slate: "bg-[#2b3340] text-[#aec4de]",
-  cyan: "bg-[#193a3f] text-[#8fd4e0]",
-  red: "bg-[#3f2424] text-[#f0a5a5]",
-  lime: "bg-[#333d1f] text-[#cfe08a]",
-  indigo: "bg-[#2a2c4d] text-[#b0b4f0]",
-  sand: "bg-[#3a3128] text-[#ddc3a3]",
-} as const;
-
-// Matched as a prefix of the domain's normalised name, so a domain's catalog
-// label, its legacy name and its code all land on one hue — the header reads
-// `displayName` ("Fullstack Dev") while a team card reads `name`
-// ("Fullstack"), and the two have to agree. Longest first: "production" would
-// otherwise be swallowed by "product".
-const OS_ROLE_STEMS: [string, keyof typeof OS_ROLE_CHIPS][] = [
-  ["threedmodeling", "green"],
-  ["3dmodeling", "green"],
-  ["videography", "cyan"],
-  ["photography", "red"],
-  ["digitalarts", "sand"],
-  ["engineering", "slate"],
-  ["production", "lime"],
-  ["fullstack", "teal"],
-  ["animation", "orange"],
-  ["graphics", "magenta"],
-  ["product", "violet"],
-  ["writing", "indigo"],
-  ["design", "pink"],
-  ["arvr", "blue"],
-  ["uiux", "pink"],
-  ["data", "amber"],
-  ["dev", "teal"],
-  ["pm", "violet"],
-  ["ux", "pink"],
-];
-
-// An unlisted domain still gets a stable colour without anyone editing the
-// table above — off the whole ring now, not off four slots.
-const OS_ROLE_CHIP_RING = Object.values(OS_ROLE_CHIPS);
-
-function osRoleChipClass(name: string): string {
-  const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-  for (const [stem, hue] of OS_ROLE_STEMS) {
-    if (key.startsWith(stem)) return OS_ROLE_CHIPS[hue];
-  }
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 997;
-  return OS_ROLE_CHIP_RING[hash % OS_ROLE_CHIP_RING.length];
-}
-
-function DomainChips({
-  items,
-  muted = false,
-  os = false,
-}: {
-  items: { id: string; name: string }[];
-  muted?: boolean;
-  os?: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((d) => (
-        <span
-          key={d.id}
-          className={
-            os
-              ? cn(
-                  "inline-flex items-center rounded-full px-3.5 py-[5px] text-[13px] font-semibold",
-                  muted ? "bg-os-container text-os-grey" : osRoleChipClass(d.name),
-                )
-              : `inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
-                  muted
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-blue-50 text-blue-700 border border-blue-100"
-                }`
-          }
-        >
-          {d.name}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function StatusBadge({
   status,
-  os = false,
 }: {
   status: (typeof STATUSES)[number];
-  os?: boolean;
 }) {
   // The design's status tag — the same plate the project cards wear over their
   // cover, so a project reads the same in the grid and on its own page.
   return (
     <span
-      className={
-        os
-          ? `rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`
-          : `text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_PILL_CLASSIC[status]}`
-      }
+      className={`rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`}
     >
       {status}
     </span>
@@ -3404,12 +3006,10 @@ function TeamTermGroup({
   team,
   canEdit,
   currentTermCode,
-  os,
 }: {
   team: LoaderData["teams"][number];
   canEdit: boolean;
   currentTermCode: string | null;
-  os: boolean;
 }) {
   return (
     <div>
@@ -3423,68 +3023,42 @@ function TeamTermGroup({
           </span>
         )}
       </div>
-      {os ? (
-        // The design's member cards: avatar, name, and the role as plain text.
-        // The level itself is not shown — P1/P2/P3 is an internal ladder, and
-        // the only part of it this page needs to say is who mentors each
-        // domain, which is the domain's P3.
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {team.members.map((m) => (
-            <div
-              key={m.assignmentId}
-              className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
-            >
-              <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">
-                  {m.name}
-                </div>
-                <div className="truncate text-[12px] text-os-muted">
-                  {m.domain}
-                </div>
+      {/* The design's member cards: avatar, name, and the role as plain text.
+          The level itself is not shown — P1/P2/P3 is an internal ladder, and
+          the only part of it this page needs to say is who mentors each
+          domain, which is the domain's P3. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {team.members.map((m) => (
+          <div
+            key={m.assignmentId}
+            className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
+          >
+            <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-foreground">
+                {m.name}
               </div>
-              {m.level === "P3" &&
-                (canEdit ? (
-                  <Link
-                    to={`/members/${m.userId}#project-assignments`}
-                    title={`Change ${m.name}'s level on their profile`}
-                    className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
-                  >
-                    Mentor
-                  </Link>
-                ) : (
-                  <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
-                    Mentor
-                  </span>
-                ))}
+              <div className="truncate text-[12px] text-os-muted">
+                {m.domain}
+              </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {team.members.map((m) => (
-            <span
-              key={m.assignmentId}
-              className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
-            >
-              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
-              {m.name}
-              <span className="text-muted-foreground">· {m.domain}</span>
-              {canEdit ? (
+            {m.level === "P3" &&
+              (canEdit ? (
                 <Link
                   to={`/members/${m.userId}#project-assignments`}
                   title={`Change ${m.name}'s level on their profile`}
-                  className="text-muted-foreground hover:text-foreground hover:underline underline-offset-2 rounded transition-colors"
+                  className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
                 >
-                  {m.level}
+                  Mentor
                 </Link>
               ) : (
-                <span className="text-muted-foreground">{m.level}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
+                <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
+                  Mentor
+                </span>
+              ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3499,19 +3073,15 @@ function TeamSection({
   currentTermCode: string | null;
 }) {
   const [showPrevious, setShowPrevious] = useState(false);
-  const { os, sectionTitle } = useOsChrome();
+  const { sectionTitle } = useOsChrome();
   // teams is pre-sorted newest term first by the loader, so the head is the
   // roster the page is about and the tail is history.
   const [currentTeam, ...previousTeams] = teams;
 
   return (
     <div className="flex flex-col gap-2">
-      <h2
-        className={
-          os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-        }
-      >
-        {!os && <Users className="w-4 h-4" />} Team
+      <h2 className={sectionTitle}>
+        Team
       </h2>
       {teams.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No team assignments yet.</p>
@@ -3521,7 +3091,6 @@ function TeamSection({
             team={currentTeam}
             canEdit={canEdit}
             currentTermCode={currentTermCode}
-            os={os}
           />
 
           {/* Past terms live in a folder rather than in the roster: a project
@@ -3533,11 +3102,7 @@ function TeamSection({
                 type="button"
                 onClick={() => setShowPrevious((v) => !v)}
                 aria-expanded={showPrevious}
-                className={
-                  os
-                    ? "flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
-                    : "flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                }
+                className="flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
               >
                 {showPrevious ? (
                   <ChevronDown className="h-4 w-4 flex-shrink-0" />
@@ -3557,7 +3122,6 @@ function TeamSection({
                     team={team}
                     canEdit={canEdit}
                     currentTermCode={currentTermCode}
-                    os={os}
                   />
                 ))}
             </div>
@@ -3702,6 +3266,7 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
+  infra,
 }: {
   // The epics & sprints timeline, rendered at the top of the body. Passed in
   // as an element so Overview doesn't have to re-declare all of Planning's
@@ -3729,12 +3294,13 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
+  infra: LoaderData["infra"];
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
   // Under dali.os a section is a title over its content, not a box around it —
   // so the cards these sections hold stop showing a second border inside a first.
-  const { os, sectionShell, sectionTitle, panel } = useOsChrome();
+  const { sectionShell, sectionTitle, panel } = useOsChrome();
 
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
@@ -3775,7 +3341,7 @@ function OverviewTab({
         (currentChallenges.length > 0 || futureChallengeGroups.length > 0) && (
           <section className={sectionShell}>
             <div className="flex items-center justify-between">
-              <h3 className={os ? sectionTitle : "text-sm font-semibold text-foreground"}>
+              <h3 className={sectionTitle}>
                 Challenge{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   · {currentTerm.code}
@@ -3795,7 +3361,7 @@ function OverviewTab({
             </div>
             {/* The body takes the surface under os; the section around it is
                 only a title, so this is the one card here. */}
-            <div className={os ? cn(panel, "p-4") : undefined}>
+            <div className={cn(panel, "p-4")}>
               {currentChallenges.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {currentChallenges.map((c) => (
@@ -3849,6 +3415,17 @@ function OverviewTab({
         canEditFinance={canEditFinance}
       />
 
+      {/* Cloud infrastructure (Fly + Neon): read-only inventory/usage for any
+          member; config + change-requests for staffed (core||isProjectMember).
+          Wears the shared EditableSection primitive (own section shell). */}
+      <ProjectInfraSection
+        projectId={project.id}
+        canEdit={canEdit}
+        config={infra.config}
+        view={infra.view}
+        requests={infra.requests}
+      />
+
       {/* Team — read-only summary, separate from the editable details. */}
       <section className={sectionShell}>
         <TeamSection
@@ -3882,14 +3459,10 @@ function OverviewTab({
           returns an empty list otherwise). Read-only. */}
       {canEdit && recentActivity.length > 0 && (
         <section className={sectionShell}>
-          <h2
-            className={
-              os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-            }
-          >
-            {!os && <History className="w-4 h-4" />} Recent activity
+          <h2 className={sectionTitle}>
+            Recent activity
           </h2>
-          <ul className={cn("flex flex-col gap-2", os && cn(panel, "p-4"))}>
+          <ul className={cn("flex flex-col gap-2", cn(panel, "p-4"))}>
             {recentActivity.map((a) => (
               <li key={a.id} className="text-xs text-muted-foreground">
                 <span className="text-foreground font-medium">{a.actorName}</span>{" "}
@@ -4066,6 +3639,8 @@ function ScopeTab({
         </div>
       )}
 
+      <StatusSegment status={project.status} canEdit={canEdit} />
+
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
 
       {/* Declared domains — editable; if none declared the derived set from
@@ -4196,7 +3771,7 @@ function PartnersContactsOs({
     // The design's partner directory: one surface, a row per contact. The
     // section around it carries no border of its own, so this is where the
     // list gets its ground.
-    <div className="rounded-os-card bg-os-card px-5">
+    <div className={OS_DETAIL_CARD}>
       {contacts.length === 0 ? (
         <p className="py-4 text-sm text-os-muted italic">No partner contacts yet.</p>
       ) : (
@@ -4323,17 +3898,13 @@ function PartnersSection({
   const confirmSubmit = useConfirmSubmit();
   const [linking, setLinking] = useState(false);
   const tz = useUserTimeZone();
-  const { os, sectionShell, sectionTitle } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
 
   return (
     <section className={sectionShell}>
       <div className="flex items-center justify-between">
-        <h2
-          className={
-            os ? sectionTitle : "text-sm font-semibold text-foreground flex items-center gap-2"
-          }
-        >
-          {!os && <Handshake className="w-4 h-4" />} Partners
+        <h2 className={sectionTitle}>
+          Partners
         </h2>
         {canManage && linkablePartnerOrgs.length > 0 && (
           <button
@@ -4368,118 +3939,12 @@ function PartnersSection({
         </Form>
       )}
 
-      {os ? (
-        <PartnersContactsOs
-          partners={partners}
-          canManage={canManage}
-          tz={tz}
-          confirmSubmit={confirmSubmit}
-        />
-      ) : partners.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">
-          No partner organizations linked.
-        </p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {partners.map((p) => (
-            <div key={p.id} className="py-2.5 flex items-center gap-3">
-              {p.org.logoUrl ? (
-                <img
-                  src={p.org.logoUrl}
-                  alt=""
-                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {p.org.name.slice(0, 1)}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {canManage ? (
-                    <Link
-                      to={`/partners/${p.org.id}`}
-                      className="text-sm font-medium text-foreground hover:underline leading-none"
-                    >
-                      {p.org.name}
-                    </Link>
-                  ) : (
-                    <span className="text-sm font-medium text-foreground leading-none">
-                      {p.org.name}
-                    </span>
-                  )}
-                  {/* Partnership lifecycle at a glance: ended partnerships keep
-                      their record (partner-end), active ones show their start. */}
-                  {p.endedAt ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
-                      Ended {formatDateShort(p.endedAt, tz)}
-                    </span>
-                  ) : p.active && p.startedAt ? (
-                    <span className="text-xs text-muted-foreground">
-                      since {formatDateShort(p.startedAt, tz)}
-                    </span>
-                  ) : null}
-                </div>
-                {p.org.contacts.length > 0 && (
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {p.org.contacts
-                      .map((c) => (c.displayRole ? `${c.name} (${c.displayRole})` : c.name))
-                      .join(", ")}
-                  </div>
-                )}
-              </div>
-              {canManage && !p.endedAt && (
-                <Form
-                  method="post"
-                  onSubmit={confirmSubmit({
-                    title: `End the partnership with ${p.org.name}?`,
-                    description:
-                      "The record and its dates are kept — this only marks the partnership as ended today.",
-                    confirmLabel: "End partnership",
-                    tone: "destructive",
-                  })}
-                >
-                  <input type="hidden" name="intent" value="partner-end" />
-                  <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip content="End partnership (keeps the record)">
-                    <button
-                      type="submit"
-                      aria-label="End partnership"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 flex-shrink-0"
-                    >
-                      <CalendarX className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </Form>
-              )}
-              {canManage && (
-                <Form
-                  method="post"
-                  onSubmit={confirmSubmit({
-                    title: `Unlink ${p.org.name}?`,
-                    description:
-                      'This erases the partnership record entirely — use "End partnership" instead to keep the history.',
-                    confirmLabel: "Unlink",
-                    tone: "destructive",
-                  })}
-                >
-                  <input type="hidden" name="intent" value="partner-unlink" />
-                  <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip content="Unlink organization (erases the record)">
-                    <button
-                      type="submit"
-                      aria-label="Unlink organization"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10 flex-shrink-0"
-                    >
-                      <Unlink className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </Form>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <PartnersContactsOs
+        partners={partners}
+        canManage={canManage}
+        tz={tz}
+        confirmSubmit={confirmSubmit}
+      />
     </section>
   );
 }
@@ -4547,7 +4012,7 @@ function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ct
           {doc.pinned ? "Unpin" : "Pin to top"}
         </Menu.Item>
       )}
-      {ctx.canEdit && !doc.isSystem && (
+      {ctx.canEdit && (
         <Menu.Item
           icon={<FolderInput className="w-3.5 h-3.5" />}
           onSelect={() => ctx.setMoveDoc({ id: doc.id, title: doc.title })}
@@ -4707,7 +4172,6 @@ function ProjectDriveTab({
   const navigate = useNavigate();
   const dialog = useDialog();
   const toast = useToast();
-  const os = true;
   const [search, setSearch] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");
@@ -4761,6 +4225,15 @@ function ProjectDriveTab({
   // endpoint DocumentsBlock used, then revalidates so the badge updates.
   const togglePagePartnerVisible = useCallback(async (item: DriveItem, next: boolean) => {
     if (item.type !== "doc" && item.type !== "file") return;
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this item. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     const endpoint =
       item.type === "file"
         ? `/api/files/${item.id}/partner-visible`
@@ -4780,7 +4253,7 @@ function ProjectDriveTab({
     } catch {
       // Silently fail — the user can retry. The badge state is loader-authoritative.
     }
-  }, [revalidator]);
+  }, [dialog, revalidator]);
 
   const onNavigate = useCallback(
     (_scopeId: string | null, folderId: string | null) => {
@@ -5015,7 +4488,22 @@ function ProjectDriveTab({
     </div>
   );
 
-  const newMenu = canEdit ? (
+  // The same New pill the unified Drive wears — this tab is the same browser,
+  // and a smaller square button here read as a different app's control sitting
+  // in Drive's toolbar. Without edit rights it greys out in place rather than
+  // leaving a hole for the controls beside it to slide into.
+  const newMenu = !canEdit ? (
+    <button
+      type="button"
+      disabled
+      data-testid={`drive-new-menu-${scopeId}-disabled`}
+      title="You don't have edit access to this project"
+      className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg opacity-40 cursor-not-allowed"
+    >
+      <Plus className="w-4 h-4" /> New
+      <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+    </button>
+  ) : (
     <Menu
       align="right"
       ariaLabel="New in this project"
@@ -5023,7 +4511,7 @@ function ProjectDriveTab({
         <button
           type="button"
           data-testid={`drive-new-menu-${scopeId}`}
-          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -5041,7 +4529,7 @@ function ProjectDriveTab({
         <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload file"}</span>
       </Menu.Item>
     </Menu>
-  ) : undefined;
+  );
 
   return (
     <>
@@ -5163,6 +4651,15 @@ function DocumentsBlock({
   // Documents list. Persisted via its own API route; the badge state comes
   // back through the loader.
   async function togglePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this document. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -5435,6 +4932,15 @@ function DocumentsBlock({
   }
 
   async function toggleFilePartnerVisible(id: string, next: boolean) {
+    if (next) {
+      const confirmed = await dialog.confirm({
+        title: "Share with partner?",
+        description:
+          "Partner organization members will be able to view this file. This takes effect immediately.",
+        confirmLabel: "Share",
+      });
+      if (!confirmed) return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -5767,11 +5273,6 @@ function DocumentsBlock({
                     )}
                     <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
                     <span className="truncate">{doc.title}</span>
-                    {doc.isSystem && (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
-                        Default
-                      </span>
-                    )}
                   </button>
                   {canEdit && (
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -5797,22 +5298,20 @@ function DocumentsBlock({
                           <Upload className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      {!doc.isSystem && (
-                        <button
-                          type="button"
-                          disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
-                          title={
-                            doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
-                              ? "Move or delete the items inside this folder first"
-                              : "Delete folder"
-                          }
-                          aria-label="Delete folder"
-                          onClick={() => void deleteDocument(doc.id, doc.title)}
-                          className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
+                        title={
+                          doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
+                            ? "Move or delete the items inside this folder first"
+                            : "Delete folder"
+                        }
+                        aria-label="Delete folder"
+                        onClick={() => void deleteDocument(doc.id, doc.title)}
+                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -5864,7 +5363,8 @@ function PlanningTab({
   storyDependencies,
   timelineTerms,
   terms,
-  taskCountsByEpic,
+  epicTermIds,
+  currentTermId,
   canEdit,
   collabToken,
   userName,
@@ -5877,7 +5377,8 @@ function PlanningTab({
   storyDependencies: StoryDependencyEdge[];
   timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
-  taskCountsByEpic: Record<string, { done: number; total: number }>;
+  epicTermIds: Record<string, string[]>;
+  currentTermId: string | null;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
@@ -5890,13 +5391,14 @@ function PlanningTab({
         projectId={projectId}
         epics={editableEpics}
         terms={terms}
-        taskCounts={taskCountsByEpic}
         canManage={canEdit}
         collabToken={collabToken}
         userName={userName}
         timelineEpics={epics}
         storyDependencies={storyDependencies}
         timelineTerms={timelineTerms}
+        epicTermIds={epicTermIds}
+        currentTermId={currentTermId}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
       />

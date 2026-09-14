@@ -201,6 +201,7 @@ function shapeOffering(o: {
   id: string;
   type: OfferingType;
   title: string;
+  iconEmoji: string | null;
   status: OfferingStatus;
   capacity: number;
   requiresReview: boolean;
@@ -220,6 +221,7 @@ function shapeOffering(o: {
     id: o.id,
     type: o.type,
     title: o.title,
+    iconEmoji: o.iconEmoji,
     status: o.status,
     capacity: o.capacity,
     requiresReview: o.requiresReview,
@@ -488,6 +490,7 @@ export async function runOfferingAction(
       data: {
         type,
         title,
+        iconEmoji: String(formData.get("iconEmoji") ?? "").trim() || null,
         capacity,
         registrationOpensAt: dates.registrationOpensAt,
         registrationClosesAt: dates.registrationClosesAt,
@@ -649,6 +652,7 @@ export async function runOfferingAction(
         where: { id: offeringId },
         data: {
           title,
+          iconEmoji: String(formData.get("iconEmoji") ?? "").trim() || null,
           capacity,
           registrationOpensAt,
           registrationClosesAt,

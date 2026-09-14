@@ -6,7 +6,6 @@
 //
 // Approved decisions:
 //   canComment = canView   (anyone who can read the doc can comment)
-//   canResolve = canEdit || Core
 //
 // Meeting-note pages: the loader admits archived meeting-note pages so
 // attendees can still reach the check-in/attendance surface. We do NOT
@@ -28,7 +27,6 @@ export interface PageAccessResult {
   canView: boolean;
   canEdit: boolean;
   canComment: boolean;
-  canResolve: boolean;
 }
 
 export interface PageShape {
@@ -52,9 +50,8 @@ const DENIED: PageAccessResult = {
   canView: false,
   canEdit: false,
   canComment: false,
-  canResolve: false,
 };
-const FULL: PageAccessResult = { canView: true, canEdit: true, canComment: true, canResolve: true };
+const FULL: PageAccessResult = { canView: true, canEdit: true, canComment: true };
 // Role-based read access (lab member on a project doc, public-visible note viewer,
 // etc.): may read and comment but not edit. Matches the pre-tier rule that anyone
 // who can see a doc can comment on it.
@@ -62,19 +59,18 @@ const VIEW_COMMENT: PageAccessResult = {
   canView: true,
   canEdit: false,
   canComment: true,
-  canResolve: false,
 };
 
 /** The access a named share / general-access tier confers, on its own. */
 function permToAccess(level: SharePermission): PageAccessResult {
   switch (level) {
     case "View":
-      return { canView: true, canEdit: false, canComment: false, canResolve: false };
+      return { canView: true, canEdit: false, canComment: false };
     case "Comment":
-      return { canView: true, canEdit: false, canComment: true, canResolve: false };
+      return { canView: true, canEdit: false, canComment: true };
     case "Edit":
     case "FullAccess":
-      return { canView: true, canEdit: true, canComment: true, canResolve: true };
+      return { canView: true, canEdit: true, canComment: true };
   }
 }
 
@@ -84,7 +80,6 @@ function merge(a: PageAccessResult, b: PageAccessResult): PageAccessResult {
     canView: a.canView || b.canView,
     canEdit: a.canEdit || b.canEdit,
     canComment: a.canComment || b.canComment,
-    canResolve: a.canResolve || b.canResolve,
   };
 }
 

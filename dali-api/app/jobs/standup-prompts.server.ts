@@ -6,7 +6,7 @@
 import { prisma } from "~/lib/db";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { shouldRunDigest, weekdayInZone } from "~/lib/notification-digest.server";
-import { jobChannelPostAllowed } from "~/jobs/sprint-lifecycle.server";
+import { jobChannelPostAllowed } from "~/jobs/job-slack";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

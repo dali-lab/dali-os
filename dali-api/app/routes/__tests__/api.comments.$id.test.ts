@@ -72,7 +72,6 @@ beforeEach(() => {
     canView: true,
     canEdit: true,
     canComment: true,
-    canResolve: true,
   });
 });
 
@@ -148,83 +147,20 @@ describe("set-anchor intent", () => {
   });
 });
 
-// ── resolve / reopen on doc ──────────────────────────────────────────────────
-describe("resolve/reopen on doc", () => {
-  it("allows resolve when canResolve=true", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({
-      canView: true,
-      canEdit: true,
-      canComment: true,
-      canResolve: true,
-    });
-    const res = (await post("resolve", OTHER_ID)) as Response;
-    expect(res.status).toBe(200);
-    expect(getPageAccess).toHaveBeenCalledWith(OTHER_ID, PAGE_ID);
-  });
-
-  it("denies resolve when canResolve=false (viewer-only)", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({
-      canView: true,
-      canEdit: false,
-      canComment: true,
-      canResolve: false,
-    });
-    const res = (await post("resolve", OTHER_ID)) as Response;
-    expect(res.status).toBe(403);
-  });
-
-  it("allows Core to resolve even without direct canResolve (Core check in getPageAccess)", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(getPageAccess).mockResolvedValue({
-      canView: true,
-      canEdit: true,
-      canComment: true,
-      canResolve: true,
-    });
-    const res = (await post("resolve", "core-user")) as Response;
-    expect(res.status).toBe(200);
-  });
-});
-
-// ── resolve on file (Core only) ─────────────────────────────────────────────
-describe("resolve/reopen on file", () => {
-  beforeEach(() => {
-    mockPrisma.docComment.findUnique.mockResolvedValue(
-      baseComment({ targetType: "file", targetId: "file-1" }),
-    );
-  });
-
-  it("allows Core to resolve file comments", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    const res = (await post("resolve", "core-user")) as Response;
-    expect(res.status).toBe(200);
-  });
-
-  it("denies non-Core from resolving file comments", async () => {
+// ── retired intents ─────────────────────────────────────────────────────────
+// Comments have no open/resolved state, so "resolve"/"reopen" are no longer
+// intents this route knows about.
+describe("resolve/reopen intents are gone", () => {
+  it("rejects a resolve intent as unknown", async () => {
     const res = (await post("resolve", AUTHOR_ID)) as Response;
-    expect(res.status).toBe(403);
-  });
-});
-
-// ── resolve on pagedoc (maintainer only) ────────────────────────────────────
-describe("resolve/reopen on pagedoc", () => {
-  const MAINTAINER = "maintainer-1";
-
-  beforeEach(() => {
-    mockPrisma.docComment.findUnique.mockResolvedValue(
-      baseComment({ targetType: "pagedoc", targetId: "pd-1" }),
-    );
-    mockPrisma.pageDoc.findUnique.mockResolvedValue({ maintainerId: MAINTAINER });
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
   });
 
-  it("allows the maintainer to resolve", async () => {
-    const res = (await post("resolve", MAINTAINER)) as Response;
-    expect(res.status).toBe(200);
-  });
-
-  it("denies non-maintainer", async () => {
-    const res = (await post("resolve", OTHER_ID)) as Response;
-    expect(res.status).toBe(403);
+  it("rejects a reopen intent as unknown", async () => {
+    const res = (await post("reopen", AUTHOR_ID)) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
   });
 });
 
@@ -282,7 +218,6 @@ describe("react intent", () => {
       canView: true,
       canEdit: false,
       canComment: true,
-      canResolve: false,
     });
     mockPrismaTyped.docCommentReaction.upsert.mockResolvedValue({});
   });
@@ -308,7 +243,6 @@ describe("react intent", () => {
       canView: true,
       canEdit: false,
       canComment: false,
-      canResolve: false,
     });
     const res = (await post("react", OTHER_ID, { emoji: "👍" })) as Response;
     expect(res.status).toBe(403);
@@ -332,7 +266,6 @@ describe("unreact intent", () => {
       canView: true,
       canEdit: false,
       canComment: true,
-      canResolve: false,
     });
     mockPrismaTyped.docCommentReaction.deleteMany.mockResolvedValue({ count: 1 });
   });

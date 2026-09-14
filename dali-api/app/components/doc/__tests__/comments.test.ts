@@ -17,7 +17,6 @@ function makeComment(overrides: {
   id: string;
   parentId?: string | null;
   body?: string;
-  resolved?: boolean;
   anchor?: object | null;
   createdAt?: string;
 }) {
@@ -29,7 +28,6 @@ function makeComment(overrides: {
     authorPhotoUrl: null,
     body: overrides.body ?? JSON.stringify([{ type: "paragraph", content: [{ type: "text", text: "hi" }] }]),
     anchor: overrides.anchor !== undefined ? overrides.anchor : blocknoteAnchor,
-    resolved: overrides.resolved ?? false,
     createdAt: overrides.createdAt ?? "2026-07-31T12:00:00.000Z",
   };
 }
@@ -127,10 +125,10 @@ describe("apiCommentsToThreadMap", () => {
     expect(map.size).toBe(0);
   });
 
-  it("marks resolved threads correctly", () => {
-    const comments = [makeComment({ id: "res1", resolved: true })];
+  it("never marks a thread resolved — comments have no resolved state", () => {
+    const comments = [makeComment({ id: "c1" })];
     const map = apiCommentsToThreadMap(comments);
-    expect(map.get("res1")!.resolved).toBe(true);
+    expect(map.get("c1")!.resolved).toBe(false);
   });
 
   it("handles empty input", () => {
@@ -189,8 +187,8 @@ describe("DaliThreadStoreAuth", () => {
     it("cannot update others comment", () => expect(auth.canUpdateComment(makeCommentData("u-other"))).toBe(false));
     it("can delete any comment", () => expect(auth.canDeleteComment(makeCommentData("u-other"))).toBe(true));
     it("can delete any thread", () => expect(auth.canDeleteThread(makeThreadData())).toBe(true));
-    it("can resolve threads", () => expect(auth.canResolveThread(makeThreadData())).toBe(true));
-    it("can unresolve threads", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(true));
+    it("cannot resolve threads", () => expect(auth.canResolveThread(makeThreadData())).toBe(false));
+    it("cannot unresolve threads", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(false));
     it("can add reactions", () => {
       expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(true);
     });
@@ -208,9 +206,9 @@ describe("DaliThreadStoreAuth", () => {
     it("cannot delete others comment", () => expect(auth.canDeleteComment(makeCommentData("u-other"))).toBe(false));
     it("can delete own comment", () => expect(auth.canDeleteComment(makeCommentData("u-me"))).toBe(true));
     it("cannot delete thread", () => expect(auth.canDeleteThread(makeThreadData())).toBe(false));
-    // canResolve / canUnresolve are gated by role now (only "editor" role)
-    it("cannot resolve thread (comment role)", () => expect(auth.canResolveThread(makeThreadData())).toBe(false));
-    it("cannot unresolve thread (comment role)", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(false));
+    // Resolving is denied for every role — there is no resolved state.
+    it("cannot resolve thread", () => expect(auth.canResolveThread(makeThreadData())).toBe(false));
+    it("cannot unresolve thread", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(false));
     it("can add reactions", () => expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(true));
     it("cannot delete reactions without an emoji arg", () => expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false));
   });

@@ -30,14 +30,11 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "intent-to-work" as const;
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intent to Work · DALI OS" },
@@ -287,7 +284,6 @@ function Loaded({
     { gate: "ok" }
   >;
 }) {
-  const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -353,7 +349,7 @@ function Loaded({
       <div
         className={cn(
           "overflow-hidden",
-          os ? "rounded-os-card bg-os-card" : "bg-card border border-border rounded-lg",
+          "rounded-os-card bg-os-card",
         )}
       >
         {data.noFormConnected ? (
@@ -390,10 +386,9 @@ function Header({
   onOpenSettings?: () => void;
   settingsLabel?: string;
 }) {
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   return (
     <>
-    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "intent" })} />
     <header className="flex items-start justify-between gap-3">
       <h1 className={pageTitle}>Intent to Work</h1>
       {onOpenSettings && (
@@ -402,9 +397,7 @@ function Header({
           onClick={onOpenSettings}
           className={cn(
             "shrink-0",
-            os
-              ? "os-edit-btn"
-              : "px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted",
+            "os-edit-btn",
           )}
         >
           {settingsLabel ?? "Advanced settings"}

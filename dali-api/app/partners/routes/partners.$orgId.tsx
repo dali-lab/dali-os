@@ -569,6 +569,11 @@ export default function PartnerOrgDetail() {
         {inviting && canEdit && (
           <Form
             method="post"
+            onSubmit={confirmSubmit({
+              title: "Send partner invite?",
+              description: "This emails a join link to the address you entered.",
+              confirmLabel: "Send invite",
+            })}
             className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3"
           >
             <input type="hidden" name="intent" value="invite" />
@@ -584,12 +589,14 @@ export default function PartnerOrgDetail() {
               </label>
               <input name="displayRole" placeholder="e.g. CTO" className={inputClass} />
             </div>
-            <button
-              type="submit"
-              className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
-            >
-              Send invite
-            </button>
+            <Tooltip content="Emails a join link to this address">
+              <button
+                type="submit"
+                className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+              >
+                Send invite
+              </button>
+            </Tooltip>
           </Form>
         )}
 
@@ -699,7 +706,15 @@ export default function PartnerOrgDetail() {
                   </div>
                 </div>
                 {canEdit && (
-                  <Form method="post">
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: `Revoke invite for ${inv.email}?`,
+                      description: "Their invite link will stop working.",
+                      confirmLabel: "Revoke",
+                      tone: "destructive",
+                    })}
+                  >
                     <input type="hidden" name="intent" value="revoke-invite" />
                     <input type="hidden" name="inviteId" value={inv.id} />
                     <button

@@ -2,10 +2,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/lib/pages", () => ({
+  createProjectPage: vi.fn(async () => ({ id: "page-project" })),
+  createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
+  ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
+  ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
+}));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createLabMeetingPage, ensureCoreMeetingNotesFolder } from "~/lib/pages";
+import { cancelScheduledMeeting, createScheduledMeeting } from "~/lib/scheduled-meeting";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -158,5 +165,62 @@ describe("cancelScheduledMeeting", () => {
     expect(res).toEqual({ ok: true, alreadyCancelled: true });
     expect(mockPrisma.scheduledMeeting.update).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
+  });
+});
+
+describe("createScheduledMeeting — where a note is filed", () => {
+  const mockPage = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
+  const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
+
+  const base = {
+    organizerId: "org-1",
+    organizerEmail: "org@dali.dartmouth.edu",
+    title: "Core sync",
+    durationMinutes: 60,
+    scope: { type: "None" } as const,
+    startTime: "2026-09-10T15:00:00.000Z",
+    meetingType: "Other" as const,
+    meetingTypeLabel: "Core meeting",
+  };
+
+  beforeEach(() => {
+    mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
+    mockPage.meetingAttendance.createMany.mockResolvedValue({});
+  });
+
+  it("files a Core meeting's note in Core's own folder, ignoring a chosen location", async () => {
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: true,
+      // Even an explicit destination doesn't move a Core note — Core's folder
+      // is where it belongs, the way a project's note belongs to its project.
+      noteLocation: { workspaceType: "Project", workspaceId: "proj-9", parentPageId: null },
+    });
+
+    expect(coreFolder).toHaveBeenCalledWith("org-1");
+    expect(labPage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentPageId: "folder-core", restricted: true }),
+    );
+  });
+
+  it("falls back to the Lab root when Core has no drive yet", async () => {
+    coreFolder.mockResolvedValueOnce(null);
+
+    await createScheduledMeeting({ ...base, isCoreMeeting: true });
+
+    expect(labPage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentPageId: null, restricted: false }),
+    );
+  });
+
+  it("leaves a non-Core General note on the chosen-location path", async () => {
+    await createScheduledMeeting({ ...base, isCoreMeeting: false });
+
+    expect(coreFolder).not.toHaveBeenCalled();
+    expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: null }));
   });
 });

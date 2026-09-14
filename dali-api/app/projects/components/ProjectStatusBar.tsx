@@ -131,7 +131,7 @@ export function ProjectStatusBar({
                 icon={CalendarClock}
                 tone={facts.activeSprint.daysRemaining < 0 ? "attention" : "neutral"}
               >
-                {facts.activeSprint.name} · {sprintDeadline(facts.activeSprint.daysRemaining)}
+                {facts.activeSprint.label} · {sprintDeadline(facts.activeSprint.daysRemaining)}
               </Chip>
             ) : null}
 

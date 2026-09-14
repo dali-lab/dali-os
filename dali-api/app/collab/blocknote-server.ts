@@ -21,6 +21,7 @@ import {
   defaultStyleSpecs,
 } from "@blocknote/core";
 import { ServerBlockNoteEditor } from "@blocknote/server-util";
+import { withMultiColumn } from "@blocknote/xl-multi-column";
 import { randomUUID } from "node:crypto";
 import type * as Y from "yjs";
 import {
@@ -176,7 +177,13 @@ const embedSpec = createBlockSpec(embedConfig, {
 // defaultBlockSpecs includes file and video (and audio, which the app never
 // uses but keeping it in the server schema is harmless — it ensures blocks
 // authored by external tools are preserved, not stripped on server read).
-export const serverSchema = BlockNoteSchema.create({
+// withMultiColumn is applied UNCONDITIONALLY here, unlike the client's
+// feature-gated buildSchema: the server schema is the superset every read goes
+// through, and a column block missing from it would be stripped out of any
+// document the server touches (export, version history, sync-back). The column
+// specs are built with the core createBlockSpecFromTiptapNode — no React — so
+// they are safe under the jsdom conversions below.
+export const serverSchema = withMultiColumn(BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
@@ -186,7 +193,7 @@ export const serverSchema = BlockNoteSchema.create({
     variable: variableSpec,
   },
   styleSpecs: { ...defaultStyleSpecs },
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Singleton editor + a serialization lock. The async conversions install a

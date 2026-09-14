@@ -8,9 +8,14 @@ import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
-import { pickUserTimezone } from "~/lib/timezone";
+import { resolveUserTimeZone } from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
-import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import {
+  createProjectPage,
+  createLabMeetingPage,
+  ensureMeetingNotesFolder,
+  ensureCoreMeetingNotesFolder,
+} from "~/lib/pages";
 import { isCore } from "~/lib/roles";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
@@ -83,6 +88,8 @@ export type CreateScheduledMeetingInput = {
   startTime?: string | null;
   recurrenceRule?: string | null;
   organizerCalendarLinkId?: string | null;
+  /** A calendar inside that link. Omitted = the account's primary calendar. */
+  organizerCalendarId?: string | null;
   // Meeting-note fields. When both are set, a "<label> meeting note (<date>)"
   // Page is auto-created under the project's shared documents, and a
   // MeetingAttendance row is fanned out per participant (including the
@@ -107,7 +114,9 @@ export type CreateScheduledMeetingInput = {
   // lives on the note when present, otherwise on /calendar/check-in/:id).
   attendanceMode?: AttendanceMode;
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
-  // for checking the setter is Core; this layer just persists the flag.
+  // for checking the setter is Core; this layer just persists the flag. It also
+  // decides where a project-less note is filed: Core's own meeting-notes folder
+  // rather than the organizer's chosen `noteLocation`.
   isCoreMeeting?: boolean;
   // Mint a Google Meet link for the meeting. Only takes effect when the meeting
   // is actually pushed to the organizer's linked Google calendar (a start time,
@@ -261,16 +270,10 @@ export async function createScheduledMeeting(
       const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
       // A recurring insert must name the zone its RRULE expands in — anchor it
       // to the organizer's so weekly slots hold their wall-clock time.
-      const [organizerSettings, organizerUser] = await Promise.all([
-        prisma.userAvailabilitySettings.findUnique({
-          where: { userId: input.organizerId },
-          select: { timezone: true },
-        }),
-        prisma.user.findUnique({
-          where: { id: input.organizerId },
-          select: { timeZone: true },
-        }),
-      ]);
+      const organizerUser = await prisma.user.findUnique({
+        where: { id: input.organizerId },
+        select: { timeZone: true },
+      });
       try {
         const result = await createGoogleCalendarEvent({
           linkId: organizerLink.id,
@@ -278,9 +281,13 @@ export async function createScheduledMeeting(
           startIso: startDate.toISOString(),
           endIso: endDate.toISOString(),
           recurrenceRule: input.recurrenceRule ?? null,
-          timeZone: pickUserTimezone(organizerSettings?.timezone, organizerUser?.timeZone),
+          timeZone: resolveUserTimeZone(organizerUser),
           attendees,
           addMeet: input.addMeet ?? false,
+          // Google refuses an insert into a calendar the account can't write,
+          // so an unusable id here fails the invite rather than silently
+          // filing it somewhere else — the picker only offers writable ones.
+          calendarId: input.organizerCalendarId ?? undefined,
         });
         externalEventId = result.eventId;
         meetingUrl = result.meetUrl;
@@ -337,6 +344,23 @@ export async function createScheduledMeeting(
         createdById: input.organizerId,
         meetingNoteId: meeting.id,
         parentPageId,
+      });
+      notePageId = page.id;
+    } else if (input.isCoreMeeting) {
+      // A Core meeting's note belongs to Core, the way a project meeting's note
+      // belongs to its project: always Core's own meeting-notes folder, never a
+      // location the organizer picked. The folder is Core-scoped, so the note is
+      // Core-only without depending on its own link access.
+      if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+      const coreFolderId = await ensureCoreMeetingNotesFolder(input.organizerId);
+      const page = await createLabMeetingPage({
+        title,
+        createdById: input.organizerId,
+        meetingNoteId: meeting.id,
+        // Null only when the Core group isn't seeded yet — the note lands at the
+        // Lab root rather than not existing at all.
+        parentPageId: coreFolderId,
+        restricted: coreFolderId !== null,
       });
       notePageId = page.id;
     } else {

@@ -10,6 +10,7 @@ import {
   Files,
   FileSignature,
   FileText,
+  FolderCog,
   FolderKanban,
   Gavel,
   Globe,
@@ -178,7 +179,10 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // The Hiring drive space (rubrics, templates, forms) is Core-only, so the
+      // Library (its embedded view) and its Drive-folders config are Core/Admin.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
+      { label: "Drive folders", href: "/hiring/drive-folders", icon: FolderCog, gate: (r) => r.isCore },
     ],
   },
   {
@@ -255,6 +259,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Agreements left Admin's Documents cluster; it is lab process, not
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
+      { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
       { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },
@@ -275,7 +280,10 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
       { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
-      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+      // The Hiring drive space (rubrics, templates, forms) is Core-only, so the
+      // Library (its embedded view) and its Drive-folders config are Core/Admin.
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isAdmin },
+      { label: "Drive folders", href: "/hiring/drive-folders", icon: FolderCog, gate: (r) => r.isCore },
     ],
   },
   {
@@ -459,26 +467,17 @@ export function isPinnedActive(
 }
 
 /**
- * Does this page render its own horizontal nav row?
- *
- * Two independent signals, and the difference between them is where this kept
- * going wrong:
- *  - `areaSubnav` (e.g. calendar) renders its row unconditionally.
- *  - `areaPills` renders one only when the sidebar redesign is OFF; with the
- *    redesign on AreaPillNav returns null and there is no row at all.
- *
- * Anything that stands down "because the page has its own row" — the tabless
- * history arrows, the layout's flush top padding — has to ask this, or it
- * either doubles the row (areaSubnav read as no-row) or hides itself for a row
- * that isn't there (areaPills under the redesign).
+ * Does this page render its own horizontal nav row? Only `areaSubnav` pages
+ * (e.g. calendar) do — the dali.os shell owns every other area's sub-navigation
+ * from the sidebar. Anything that stands down "because the page has its own
+ * row" (the tabless history arrows) asks this so it doesn't double the row.
  */
 export function hasSubnavRow(
   matches: readonly { handle?: unknown }[],
-  redesign: boolean,
 ): boolean {
   return matches.some((m) => {
-    const h = m.handle as { areaSubnav?: boolean; areaPills?: boolean } | undefined;
-    return Boolean(h?.areaSubnav || (!redesign && h?.areaPills));
+    const h = m.handle as { areaSubnav?: boolean } | undefined;
+    return Boolean(h?.areaSubnav);
   });
 }
 

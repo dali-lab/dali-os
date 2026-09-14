@@ -634,6 +634,16 @@ export async function ensureCoreGroup() {
   });
 }
 
+/** Whether a group is the Core system group — the one whose meetings are on the
+ *  Core hub calendar by construction (see coreCalendarMeetingWhere). */
+export async function isCoreGroup(groupId: string): Promise<boolean> {
+  const group = await prisma.groupDefinition.findUnique({
+    where: { id: groupId },
+    select: { systemKey: true },
+  });
+  return group?.systemKey === "core";
+}
+
 export async function ensureHiringGroup() {
   await prisma.groupDefinition.upsert({
     where: { systemKey: "hiring" },

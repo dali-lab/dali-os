@@ -61,26 +61,10 @@ describe("DRIVE_SPACES registry", () => {
     }
   });
 
-  it("lab-scoped-root spaces carry both systemKey and groupQuery", () => {
-    const scoped = DRIVE_SPACES.filter((s) => s.backing === "lab-scoped-root");
-    expect(scoped.length).toBeGreaterThan(0);
-    for (const s of scoped) {
-      expect(s.systemKey, `${s.key} missing systemKey`).toBeTruthy();
-      expect(s.groupQuery, `${s.key} missing groupQuery`).toBeTruthy();
-    }
-  });
-
-  // systemKeys match the EXISTING ensure*DriveRoot roots (rekey deferred, spec §15).
-  it("core space uses the existing drive:core-root systemKey", () => {
+  it("core is a virtual-filter space scoped to the core group", () => {
     const core = DRIVE_SPACES.find((s) => s.key === "core") as DriveSpaceDef;
-    expect(core.systemKey).toBe("drive:core-root");
+    expect(core.backing).toBe("virtual-filter");
     expect(core.groupQuery).toBe("core");
-  });
-
-  it("hiring space uses the existing drive:hiring-root systemKey", () => {
-    const hiring = DRIVE_SPACES.find((s) => s.key === "hiring") as DriveSpaceDef;
-    expect(hiring.systemKey).toBe("drive:hiring-root");
-    expect(hiring.groupQuery).toBe("hiring");
   });
 
   it("mine and lab have no gate (always visible)", () => {
@@ -106,7 +90,7 @@ describe("visibleDriveSpaces", () => {
     expect(keys).toContain("education");
   });
 
-  it("hides core and hiring from a plain member", () => {
+  it("hides both the core and hiring spaces from a plain member (both Core-gated)", () => {
     const keys = visibleDriveSpaces(NOBODY).map((s) => s.key);
     expect(keys).not.toContain("core");
     expect(keys).not.toContain("hiring");
@@ -122,14 +106,9 @@ describe("visibleDriveSpaces", () => {
     expect(keys).toContain("hiring");
   });
 
-  it("shows hiring (but not core) to a hiring-only member", () => {
-    const keys = visibleDriveSpaces(HIRING_ONLY).map((s) => s.key);
-    expect(keys).toContain("hiring");
-    expect(keys).not.toContain("core");
-  });
-
-  it("hides core from a hiring-only member", () => {
+  it("hides core and hiring from a hiring-only member (both are Core-only)", () => {
     const keys = visibleDriveSpaces(HIRING_ONLY).map((s) => s.key);
     expect(keys).not.toContain("core");
+    expect(keys).not.toContain("hiring");
   });
 });

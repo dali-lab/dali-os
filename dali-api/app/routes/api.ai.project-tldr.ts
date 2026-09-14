@@ -23,7 +23,6 @@ import {
   buildTldrDetail,
   type ProjectStatusFacts,
   type ProjectWorkStatus,
-  type SprintPhase,
   type TldrTaskInput,
   type TldrDetail,
 } from "~/projects/lib/project-status";
@@ -77,7 +76,7 @@ function secondsToUtcMidnight(): number {
 // only let it paraphrase the chips.
 function factsToPrompt(name: string, f: ProjectStatusFacts, d: TldrDetail): string {
   const sprint = f.activeSprint
-    ? `${f.activeSprint.name}, ${
+    ? `${f.activeSprint.label}, ${
         f.activeSprint.daysRemaining >= 0
           ? `${f.activeSprint.daysRemaining} day(s) left`
           : `${-f.activeSprint.daysRemaining} day(s) overdue`
@@ -170,14 +169,16 @@ export async function action({ request }: Route.ActionArgs) {
           title: true,
           status: true,
           priority: true,
+          startsAt: true,
           dueAt: true,
-          sprintId: true,
           activityAt: true,
           assignees: { select: { userId: true } },
         },
       },
-      sprints: {
-        select: { id: true, name: true, startsAt: true, endsAt: true, status: true },
+      projectTerms: {
+        select: {
+          term: { select: { code: true, startDate: true, endDate: true, sortKey: true } },
+        },
       },
     },
   });
@@ -191,23 +192,23 @@ export async function action({ request }: Route.ActionArgs) {
     title: t.title,
     status: t.status as TaskStatus,
     priority: t.priority as Priority,
+    startsAt: t.startsAt,
     dueAt: t.dueAt,
-    sprintId: t.sprintId,
     activityAt: t.activityAt,
     assigneeIds: t.assignees.map((a) => a.userId),
   }));
+  // Term spans (oldest first) anchor the computed sprint grid the current-sprint
+  // fact is read off — the same grid the timeline and board use.
+  const terms = project.projectTerms
+    .map((pt) => pt.term)
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map((t) => ({
+      code: t.code,
+      startsAt: t.startDate.toISOString(),
+      endsAt: t.endDate.toISOString(),
+    }));
   const facts = computeProjectStatus(
-    {
-      projectStatus: project.status as ProjectWorkStatus,
-      tasks,
-      sprints: project.sprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        status: s.status as SprintPhase,
-      })),
-    },
+    { projectStatus: project.status as ProjectWorkStatus, tasks, terms },
     now,
   );
   const detail = buildTldrDetail(tasks, now);

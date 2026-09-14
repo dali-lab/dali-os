@@ -1,4 +1,4 @@
-import { redirect, Link, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
@@ -16,6 +16,7 @@ import {
   Tag as TagIcon,
   Trash2,
   RotateCcw,
+  MoreHorizontal,
   X,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
@@ -111,27 +112,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
-  // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
-  // + cycle reviewers/interviewers) so the scope shows for exactly the people
-  // the Hiring root is scoped to.
-  const [hiringReviewer, termFilter] = await Promise.all([
-    roles.isCore || roles.isDomainLead || roles.isInterviewer
-      ? null // already qualifies; skip the DB hit
-      : await prisma.cycleReviewer.findFirst({
-          where: { userId: auth.user.sub },
-          select: { id: true },
-        }),
-    resolveTermFilter(request),
-  ]);
-  const hasHiringAccess =
-    roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
+  const termFilter = await resolveTermFilter(request);
 
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
   // they're staffed on, scoped to the selected term. `?term=` scopes which
   // project (and Education) drives appear, exactly as it scopes the projects
   // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
-  // General / Core / Hiring are never term-filtered.
+  // General / Core are never term-filtered.
   const termId = termFilter.isAll ? null : termFilter.termId;
   const rawProjects = await prisma.project.findMany({
     where: {
@@ -191,7 +179,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
-    hasHiringAccess,
     request,
   });
 
@@ -473,7 +460,7 @@ type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-grou
 // "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
   if (id === "mine") return "mine";
-  if (id === "lab" || id === "core" || id === "hiring") return "lab";
+  if (id === "lab" || id === "core") return "lab";
   if (id === "projects") return "projects-group";
   if (id === "education") return "education-group";
   return "project";
@@ -483,7 +470,6 @@ function scopeKindOf(id: string): ScopeKind {
 // the mover knows a move re-scopes visibility.
 function scopeAudience(scopeId: string): string {
   if (scopeId === "core") return "Core only";
-  if (scopeId === "hiring") return "the hiring team";
   if (scopeId === "lab") return "everyone in the lab";
   // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
   if (scopeId === "projects") return "the project team";
@@ -1056,7 +1042,7 @@ export default function DriveHub() {
 
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
-  // into the Hiring drive so the hiring team lands on their artifacts.
+  // into the Hiring drive space (the shared hiring folder set).
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
   const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
@@ -1159,9 +1145,9 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  // Email templates are Drive-managed (rename/move/delete permitted); agreements
-  // and rubrics remain placement-locked (kind-folders).
-  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric"]);
+  // Every artifact now lives in an ordinary (binding) folder, so nothing is
+  // placement-locked — agreements/rubrics/email-templates move like any file.
+  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {
@@ -1469,7 +1455,7 @@ export default function DriveHub() {
   const uploadTarget: UploadTarget = useMemo(() => {
     if (!currentScope) return { scope: { kind: "Lab" } };
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core" || currentScope.id === "hiring")
+    if (currentScope.id === "lab" || currentScope.id === "core")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
       // Resolve the project from the current folder to target the upload correctly.
@@ -1598,7 +1584,7 @@ export default function DriveHub() {
           General / Core / Hiring are never term-bound. */}
       {terms.length > 0 && (
         <div data-testid="drive-term-filter">
-          <TermFilter terms={terms} selected={selectedTerm} />
+          <TermFilter terms={terms} selected={selectedTerm} searchable />
         </div>
       )}
       {/* Multi-select tag filter. Shown only when the lab has tags — otherwise
@@ -1618,7 +1604,10 @@ export default function DriveHub() {
     </>
   );
 
-  const newMenuNode =
+  // New is a fixture of the toolbar: at the drive chooser, where there is no
+  // scope to create into, it greys out in place rather than leaving a hole that
+  // shifts every control beside it once a drive is opened.
+  const toolbarActions =
     currentScope && currentActions ? (
       <NewMenu
         scope={currentScope}
@@ -1630,29 +1619,50 @@ export default function DriveHub() {
         onTemplate={() => setTemplatePickerOpen(true)}
         currentFolderId={currentFolderId}
       />
-    ) : null;
-
-  // Toolbar actions: the Templates gallery link + Trash button + scope New menu.
-  const toolbarActions = (
-    <>
-      <Link
-        to="/drive/templates"
-        className="shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors rounded-full bg-card px-5 py-2.5"
-      >
-        <LayoutTemplate className="w-3.5 h-3.5" />
-        Templates
-      </Link>
+    ) : (
       <button
         type="button"
-        data-testid="drive-trash-button"
-        onClick={() => setTrashOpen(true)}
-        className="shrink-0 inline-flex items-center gap-1.5 border border-border text-sm text-foreground hover:bg-muted/40 transition-colors rounded-full bg-card px-5 py-2.5"
+        disabled
+        data-testid="drive-new-menu-disabled"
+        title="Open a drive to create something"
+        className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold rounded-full px-5 py-2.5 text-sm opacity-40 cursor-not-allowed"
       >
-        <Trash2 className="w-3.5 h-3.5" />
-        Trash
+        <Plus className="w-4 h-4" /> New
+        <ChevronDown className="w-3.5 h-3.5 opacity-80" />
       </button>
-      {newMenuNode}
-    </>
+    );
+
+  // Templates and Trash are places you visit occasionally, not per-file
+  // actions — they sit behind the toolbar's overflow menu rather than spending
+  // two full-width pills on the row Drive's actual controls need.
+  const overflowMenu = (
+    <Menu
+      align="right"
+      ariaLabel="More Drive actions"
+      trigger={
+        <button
+          type="button"
+          data-testid="drive-more-menu"
+          aria-label="More Drive actions"
+          className="shrink-0 inline-flex items-center justify-center rounded-full border border-border bg-card px-3.5 py-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      }
+    >
+      <Menu.Item
+        icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+        onSelect={() => navigate("/drive/templates")}
+      >
+        <span data-testid="drive-templates-link">Templates</span>
+      </Menu.Item>
+      <Menu.Item
+        icon={<Trash2 className="w-3.5 h-3.5" />}
+        onSelect={() => setTrashOpen(true)}
+      >
+        <span data-testid="drive-trash-button">Trash</span>
+      </Menu.Item>
+    </Menu>
   );
 
   return (
@@ -1667,8 +1677,24 @@ export default function DriveHub() {
           other screen. The breadcrumb stays — it's navigation, and it carries
           the scope and folder the title can't. */}
       <header className="flex items-start justify-between gap-3 flex-wrap">
+        {/* Inside a drive the title doubles as the way back out to the drive
+            chooser — the Finder move of clicking the window's own title to step
+            out of the volume. The breadcrumb starts at the drive itself, so
+            without this a top-level folder listing had no click path back. */}
         <h1 className="font-heading text-4xl font-medium text-foreground">
-          {isHiringLibrary ? "Library" : "Drive"}
+          {effectiveScopeId && !isHiringLibrary ? (
+            <button
+              type="button"
+              data-testid="drive-title-root"
+              title="All drives"
+              onClick={() => onNavigate(null, null)}
+              className="transition-colors hover:text-os-accent"
+            >
+              Drive
+            </button>
+          ) : (
+            (isHiringLibrary ? "Library" : "Drive")
+          )}
         </h1>
       </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
@@ -1691,6 +1717,7 @@ export default function DriveHub() {
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
+        overflowMenu={overflowMenu}
         tagChips={tagChips}
         tagFilter={tagFilter}
       />

@@ -1,27 +1,32 @@
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
   useFetcher,
   useLocation,
   useNavigation,
+  useSearchParams,
   useSubmit,
 } from "react-router";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
-  Briefcase as BriefcaseIcon,
-  FolderKanban,
+  AtSign,
+  Cake,
+  Clock,
+  Fingerprint,
   Github,
   Globe,
   GraduationCap,
   Linkedin,
   LogOut,
   Mail,
+  MapPin,
   MessageSquare,
+  Phone,
   Plus,
-  Shield,
   Smartphone,
   User as UserIcon,
+  Utensils,
   Wallet,
   X,
 } from "lucide-react";
@@ -31,6 +36,17 @@ import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
+import { DomainChips } from "~/components/DomainChips";
+import {
+  DetailEditRow,
+  DetailRow,
+  HeroClusterLabel,
+  OS_DETAIL_CARD,
+  OS_DETAIL_ICON,
+  OsTabBar,
+} from "~/components/os-page";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { PersonalNotesRail } from "./PersonalNotesRail";
 import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
@@ -47,6 +63,25 @@ import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
 import { formatLastActive } from "~/lib/presence";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
 import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
+
+// A member reads as a project does: the same hero (the photo as this page's
+// icon, the name at 32px, its labelled clusters to the right), the same tab
+// strip, and the same sections — a title on the page ground with its content on
+// one card under it. See app/components/os-page.tsx for the shared parts.
+
+const TABS = ["profile", "activity", "drive", "mentorship"] as const;
+type Tab = (typeof TABS)[number];
+
+const TAB_LABELS: Record<Tab, string> = {
+  profile: "Profile",
+  activity: "Activity",
+  drive: "Drive",
+  mentorship: "Mentorship",
+};
+
+function isTab(x: string | null): x is Tab {
+  return (TABS as readonly string[]).includes(x ?? "");
+}
 
 export function MemberProfileView({
   data,
@@ -111,20 +146,40 @@ export function MemberProfileView({
     }
   }, [navigation.state, actionError]);
 
-
   const hasEducation =
     !!data.education &&
     (data.education.attended.length > 0 ||
       data.education.taught.length > 0 ||
       data.education.ceCredits.length > 0);
 
-  // Flat, card-stacked layout (no left nav, no collapsible chrome) — matches
-  // the partner org detail page: an unboxed identity header up top, then each
-  // section as its own bordered card. Name/pronouns edit inside Personal's
-  // own form (see PersonalSection's showIdentitySummary) rather than a
-  // separate Account card, so there's a single Edit control on this page.
-  // This page is the only place identity is edited — /settings used to carry a
-  // duplicate Account tab and no longer does.
+  // Tabs live in the URL (?tab=) like the project page's, so a tab is a link
+  // worth sending and switching one keeps your place on the page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const wantTab = isTab(tabParam) ? tabParam : "profile";
+  const tab: Tab =
+    wantTab === "mentorship" && !mentorshipPanel ? "profile" : wantTab;
+  const setTab = (next: Tab) => {
+    if (next === tab) return;
+    setSearchParams(
+      (prev) => {
+        prev.set("tab", next);
+        return prev;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  };
+
+  // The project hub deep-links to a member's assignments (#project-assignments)
+  // to change a level, and those now live under Activity. Done in an effect
+  // rather than in the tab resolution above because the server never sees a
+  // hash — reading it during render would mismatch on hydration.
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === "#project-assignments") setTab("activity");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.hash]);
+
   // Notes open in the normal document editor. Inside the TabWorkspace iframe
   // that means asking the shell for a side-by-side pane, same as the project
   // page does for its documents; standalone it's a plain navigation.
@@ -163,9 +218,41 @@ export function MemberProfileView({
     !!member.birthday && isBirthdayToday(new Date(member.birthday), new Date());
 
   const page = (
-    <div className="w-full flex flex-col xl:flex-row xl:items-start gap-6">
-      <div className="max-w-4xl w-full flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PresenceBar className="self-end" />
+
+      <MemberHeader
+        member={member}
+        photoUrlResolved={photoUrlResolved}
+        canEdit={canEdit}
+        isStaff={isStaff}
+        isAlumni={isAlumni}
+        termCode={termCode}
+        presenceState={presence?.state ?? null}
+        presenceLabel={presenceLabel}
+        showNewBadge={showNewBadge}
+        showBirthday={showBirthday}
+      />
+
+      <OsTabBar
+        ariaLabel="Profile sections"
+        tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map(
+          (t) => ({ key: t, label: TAB_LABELS[t] }),
+        )}
+        active={tab}
+        onSelect={setTab}
+        trailing={
+          isSelf ? (
+            <a
+              href="/logout"
+              className="ml-auto -mb-px inline-flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-os-grey transition-colors hover:text-foreground"
+            >
+              <LogOut className="w-4 h-4" />
+              Log out
+            </a>
+          ) : null
+        }
+      />
 
       {actionError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -173,132 +260,68 @@ export function MemberProfileView({
         </div>
       )}
 
-      <div className="flex items-center gap-4">
-        <ProfilePhotoAvatar
-          userId={member.id}
-          name={`${member.firstName} ${member.lastName}`}
-          initialPreviewUrl={photoUrlResolved}
-          canEdit={canEdit}
-        />
-        <div className="min-w-0">
-          <p className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
-            <span>
-              {member.firstName} {member.lastName}
-            </span>
-            {showNewBadge && <NewBadge />}
-            {showBirthday && <BirthdayBadge />}
-          </p>
-          {member.handle && (
-            <p className="text-sm text-accent-coral">@{member.handle}</p>
-          )}
-          {presenceLabel && (
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Tooltip
-                content={
-                  presence?.state === "active"
-                    ? "Active now — seen within the last minute."
-                    : "Recently active — last seen more than a minute ago."
-                }
-                variant="rich"
-              >
-                <span
-                  aria-hidden
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    presence?.state === "active"
-                      ? "bg-accent-green"
-                      : "border border-accent-yellow bg-background"
-                  }`}
-                />
-              </Tooltip>
-              {presenceLabel}
-            </p>
-          )}
-          {(isStaff || isAlumni || member.gradProgram) && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {isStaff && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-teal/15 text-accent-teal">
-                  Staff
-                </span>
-              )}
-              {isAlumni && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
-                  Alumni
-                </span>
-              )}
-              {/* accent-green is an illustration tint, not an ink — as a label
-                  on its own wash it was the faintest of the three pills. Keep
-                  the tint, set the text in foreground. */}
-              {member.gradProgram && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-green/15 text-foreground">
-                  {member.gradProgram}
-                </span>
-              )}
-            </div>
-          )}
-          {isSelf && (
-            <a
-              href="/logout"
-              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Log out
-            </a>
-          )}
-        </div>
-      </div>
+      {/* One well for every tab, with a floor under it so a short tab doesn't
+          collapse the page under your scroll offset — same as the project
+          page's tab body. */}
+      <div className="flex flex-col gap-6 min-h-[25vh]">
+        {tab === "profile" && (
+          <>
+            <PersonalSection member={member} canEdit={canEdit} />
 
-      <PersonalSection
-        member={member}
-        canEdit={canEdit}
-        roleLabels={roleLabels}
-        showIdentitySummary
-      />
+            <DomainsSection
+              roleLabels={roleLabels}
+              eligibilities={member.domainEligibilities}
+              allDomains={allDomains}
+              canManage={canManageEligibility}
+              allowedLevels={allowedLevels}
+            />
 
-      <DomainsSection
-        roleLabels={roleLabels}
-        eligibilities={member.domainEligibilities}
-        allDomains={allDomains}
-        canManage={canManageEligibility}
-        allowedLevels={allowedLevels}
-      />
+            <ComplianceBlock compliance={compliance} isSelf={isSelf} />
 
-      <ActivitySection
-        isSelf={isSelf}
-        termCode={termCode}
-        projectAssignments={projectAssignments}
-        pendingReviews={pendingReviews}
-        showReviewsRow={showReviewsRow}
-        canEditLevel={canManageEligibility}
-      />
+            {(wallet || (canRevokeWalletPass && !isSelf)) && (
+              <WalletSection
+                wallet={wallet}
+                isSelf={isSelf}
+                canRevoke={canRevokeWalletPass}
+              />
+            )}
+          </>
+        )}
 
-      {(wallet || (canRevokeWalletPass && !isSelf)) && (
-        <WalletSection wallet={wallet} isSelf={isSelf} canRevoke={canRevokeWalletPass} />
-      )}
+        {tab === "activity" && (
+          <>
+            <ActivitySection
+              isSelf={isSelf}
+              termCode={termCode}
+              projectAssignments={projectAssignments}
+              pendingReviews={pendingReviews}
+              showReviewsRow={showReviewsRow}
+              canEditLevel={canManageEligibility}
+            />
 
-      {hasEducation && data.education && (
-        <EducationSection education={data.education} />
-      )}
+            <AchievementsBlock achievements={achievements} />
 
-      {mentorshipPanel && (
-        <MentorshipPanel data={mentorshipPanel} memberId={member.id} />
-      )}
-      </div>
+            {hasEducation && data.education && (
+              <EducationSection education={data.education} />
+            )}
+          </>
+        )}
 
-      {/* Right rail. Below xl it stacks under the profile rather than
-          squeezing both columns; sticky above it so the notes stay reachable
-          while scrolling a long profile. */}
-      <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6 flex flex-col gap-6">
-        <AchievementsBlock achievements={achievements} />
-        <ComplianceBlock compliance={compliance} isSelf={isSelf} />
-        <PersonalNotesRail
-          ownerId={member.id}
-          ownerFirstName={member.firstName}
-          isSelf={isSelf}
-          notes={notes}
-          sharedWithMe={sharedWithMe}
-          favoriteIds={favoriteIds}
-          onOpenNote={openNote}
-        />
+        {tab === "drive" && (
+          <PersonalNotesRail
+            ownerId={member.id}
+            ownerFirstName={member.firstName}
+            isSelf={isSelf}
+            notes={notes}
+            sharedWithMe={sharedWithMe}
+            favoriteIds={favoriteIds}
+            onOpenNote={openNote}
+          />
+        )}
+
+        {tab === "mentorship" && mentorshipPanel && (
+          <MentorshipPanel data={mentorshipPanel} memberId={member.id} />
+        )}
       </div>
     </div>
   );
@@ -319,305 +342,479 @@ export function MemberProfileView({
   );
 }
 
-// ─── Sections ───────────────────────────────────────────────────────────────
+// ─── Hero ───────────────────────────────────────────────────────────────────
 
-export function AccountSettingsSection({
+const HERO_PILL =
+  "inline-flex items-center rounded-full px-3 py-[5px] text-[13px] font-semibold";
+
+function MemberHeader({
   member,
-  roleLabels,
+  photoUrlResolved,
   canEdit,
-  formAction,
-  embedded,
-  showIdentitySummary = true,
+  isStaff,
+  isAlumni,
+  termCode,
+  presenceState,
+  presenceLabel,
+  showNewBadge,
+  showBirthday,
 }: {
   member: ProfileMember;
-  roleLabels: string[];
+  photoUrlResolved: string | null;
   canEdit: boolean;
-  formAction?: string;
-  /** When true, omit section chrome (used inside Settings page blocks). */
-  embedded?: boolean;
-  /**
-   * Major/class year (editable) + Roles/Emails (read-only) live here by
-   * default — the /settings page has nowhere else to put them. The member
-   * detail / profile view turns this off and shows them in Personal instead
-   * (see PersonalSection's own showIdentitySummary), leaving Account just
-   * name + pronouns.
-   */
-  showIdentitySummary?: boolean;
+  isStaff: boolean;
+  isAlumni: boolean;
+  termCode: string | null;
+  presenceState: string | null;
+  presenceLabel: string | null;
+  showNewBadge: boolean;
+  showBirthday: boolean;
+}) {
+  return (
+    // No cover band: a member has a portrait, not a banner image, so the photo
+    // stands where a project's icon does — inline with the title — rather than
+    // in a strip of its own with nothing else to hold.
+    <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-5">
+      <div className="flex min-w-0 items-center gap-5">
+        <ProfilePhotoAvatar
+          userId={member.id}
+          name={`${member.firstName} ${member.lastName}`}
+          initialPreviewUrl={photoUrlResolved}
+          canEdit={canEdit}
+        />
+
+        <div className="min-w-0 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-heading text-[32px] font-medium text-foreground">
+              {member.firstName} {member.lastName}
+            </h1>
+            {member.handle && (
+              <span className={cn(HERO_PILL, "bg-os-container text-os-grey")}>
+                @{member.handle}
+              </span>
+            )}
+            {member.pronouns && (
+              <span className="text-[13px] text-os-muted">{member.pronouns}</span>
+            )}
+          </div>
+
+          {(isStaff || isAlumni || member.gradProgram || showNewBadge || showBirthday) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {isStaff && (
+                <span className={cn(HERO_PILL, "bg-os-accent/15 text-os-accent")}>
+                  Staff
+                </span>
+              )}
+              {isAlumni && (
+                <span className={cn(HERO_PILL, "bg-os-container text-os-grey")}>
+                  Alumni
+                </span>
+              )}
+              {member.gradProgram && (
+                <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
+                  {member.gradProgram}
+                </span>
+              )}
+              {showNewBadge && <NewBadge />}
+              {showBirthday && <BirthdayBadge />}
+            </div>
+          )}
+
+          {presenceLabel && (
+            <p className="flex items-center gap-1.5 text-xs text-os-grey">
+              <Tooltip
+                content={
+                  presenceState === "active"
+                    ? "Active now — seen within the last minute."
+                    : "Recently active — last seen more than a minute ago."
+                }
+                variant="rich"
+              >
+                <span
+                  aria-hidden
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    presenceState === "active"
+                      ? "bg-accent-green"
+                      : "border border-accent-yellow bg-background"
+                  }`}
+                />
+              </Tooltip>
+              {presenceLabel}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* The design's hero-meta clusters, as the project page draws them. */}
+      <div className="flex flex-wrap items-center gap-6">
+        <HeroClusterLabel label="Term">
+          {termCode ? (
+            <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
+              {termCode}
+            </span>
+          ) : (
+            <span className="text-[13px] text-os-muted">No term</span>
+          )}
+        </HeroClusterLabel>
+
+        <HeroClusterLabel label="Roles">
+          {member.domainEligibilities.length === 0 ? (
+            <span className="text-[13px] text-os-muted">No roles yet</span>
+          ) : (
+            <DomainChips
+              items={member.domainEligibilities.map((e) => ({
+                id: e.domain.id,
+                name: e.domain.displayName,
+              }))}
+            />
+          )}
+        </HeroClusterLabel>
+      </div>
+    </header>
+  );
+}
+
+// ─── Sections ───────────────────────────────────────────────────────────────
+
+/** A read-only section: its title on the page ground, its body on one card. */
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  /** A control or note beside the title (a link, a permission caveat). */
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  const { sectionShell, sectionTitle } = useOsChrome();
+  return (
+    <section className={sectionShell}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className={sectionTitle}>{title}</h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A sub-heading inside a section's card, above a list. */
+function SubHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-widest text-os-grey">
+      {children}
+    </h3>
+  );
+}
+
+/** A row in one of those lists — a link or a fact, on the card's well. */
+const LIST_ROW =
+  "flex items-center justify-between gap-2 rounded-os-item bg-os-well px-3 py-2";
+
+function PersonalSection({
+  member,
+  canEdit,
+}: {
+  member: ProfileMember;
+  canEdit: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const emails = memberEmails(member);
+  const { formClass } = useOsChrome();
 
   return (
     <EditableSection
-      title={embedded ? "" : "Account"}
-      icon={embedded ? undefined : <Shield className="w-4 h-4 text-accent-coral" />}
+      title="Personal"
       canEdit={canEdit}
-      className={
-        embedded
-          ? "flex flex-col gap-3"
-          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      }
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
     >
       {({ editing }) => (
-        <Form method="post" ref={formRef} action={formAction} className="flex flex-col gap-3">
+        <Form
+          method="post"
+          ref={formRef}
+          className={cn("w-full", editing && formClass)}
+        >
           <input type="hidden" name="intent" value="profile" />
-          {/* Persist personal-section fields when saving identity edits. */}
-          <HiddenProfileFields
-            member={member}
-            skip={showIdentitySummary ? ACCOUNT_FIELDS : ACCOUNT_FIELDS_BASE}
-          />
           {editing ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FieldInput
-                name="firstName"
-                label="First name"
-                defaultValue={member.firstName}
-                required
-              />
-              <FieldInput
-                name="lastName"
-                label="Last name"
-                defaultValue={member.lastName}
-                required
-              />
-              <FieldInput
-                name="pronouns"
-                label="Pronouns"
-                defaultValue={member.pronouns ?? ""}
-              />
-              {showIdentitySummary && (
-                <>
-                  <FieldInput
-                    name="major"
-                    label="Major"
-                    defaultValue={member.major ?? ""}
-                  />
-                  <FieldInput
-                    name="classYear"
-                    label="Class year"
-                    type="number"
-                    defaultValue={member.classYear?.toString() ?? ""}
-                  />
-                </>
-              )}
-            </div>
-          ) : showIdentitySummary ? (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-              <Detail label="Major" value={member.major} />
-              <Detail
-                label="Class year"
-                value={member.classYear?.toString() ?? null}
-              />
-              <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground mb-1">Roles</dt>
-                <dd className="flex flex-wrap gap-1.5">
-                  {roleLabels.length === 0 ? (
-                    <span className="text-sm text-foreground">—</span>
-                  ) : (
-                    roleLabels.map((r) => (
-                      <span
-                        key={r}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-coral/15 text-accent-coral"
-                      >
-                        {r}
-                      </span>
-                    ))
-                  )}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground mb-1">Emails</dt>
-                <dd className="flex flex-col gap-0.5">
-                  {emails.length === 0 ? (
-                    <span className="text-sm text-foreground">—</span>
-                  ) : (
-                    emails.map((e) => (
-                      <span
-                        key={e}
-                        className="inline-flex items-center gap-1.5 text-sm text-foreground"
-                      >
-                        <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                        {e}
-                      </span>
-                    ))
-                  )}
-                </dd>
-              </div>
-            </dl>
-          ) : null}
+            <PersonalEdit member={member} />
+          ) : (
+            <PersonalRead member={member} />
+          )}
         </Form>
       )}
     </EditableSection>
   );
 }
 
-function PersonalSection({
-  member,
-  canEdit,
-  embedded,
-  roleLabels,
-  showIdentitySummary = false,
-}: {
-  member: ProfileMember;
-  canEdit: boolean;
-  embedded?: boolean;
-  /** Only needed when showIdentitySummary is true. */
-  roleLabels?: string[];
-  /**
-   * Renders Major/class year (editable) + Roles/Emails (read-only) at the
-   * top of this section — moved here from Account on the member detail /
-   * profile view. See AccountSettingsSection's own showIdentitySummary.
-   */
-  showIdentitySummary?: boolean;
-}) {
-  const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const emails = showIdentitySummary ? memberEmails(member) : [];
+// The read view: the same hairlined facts card the project page states its
+// details in. Every field shows, empty ones as a dash, so the shape of the
+// section doesn't change with how much a member has filled in.
+function PersonalRead({ member }: { member: ProfileMember }) {
+  const ic = OS_DETAIL_ICON;
+  const dash = <span className="text-os-muted">—</span>;
+  const emails = memberEmails(member);
 
   return (
-    <EditableSection
-      title={embedded ? "" : "Personal"}
-      icon={
-        embedded ? undefined : <UserIcon className="w-4 h-4 text-accent-coral" />
-      }
-      canEdit={canEdit}
-      className={
-        embedded
-          ? "flex flex-col gap-3"
-          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      }
-      onSave={() => {
-        if (formRef.current) submit(formRef.current);
-      }}
-    >
-      {({ editing }) => (
-        <Form method="post" ref={formRef} className="flex flex-col gap-3">
-          <input type="hidden" name="intent" value="profile" />
-          <HiddenProfileFields
-            member={member}
-            skip={showIdentitySummary ? PERSONAL_FIELDS_WITH_IDENTITY : PERSONAL_FIELDS}
-          />
-          {editing ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {showIdentitySummary && (
-                <>
-                  <FieldInput
-                    name="firstName"
-                    label="First name"
-                    defaultValue={member.firstName}
-                    required
-                  />
-                  <FieldInput
-                    name="lastName"
-                    label="Last name"
-                    defaultValue={member.lastName}
-                    required
-                  />
-                  <FieldInput
-                    name="pronouns"
-                    label="Pronouns"
-                    defaultValue={member.pronouns ?? ""}
-                  />
-                  {/* Handle sits with the identity fields here so its edit
-                      position matches where it reads in view mode (just under
-                      the name), not buried among contact fields. */}
-                  <FieldInput
-                    name="handle"
-                    label="Handle (for @mentions)"
-                    defaultValue={member.handle ?? ""}
-                  />
-                  <FieldInput
-                    name="major"
-                    label="Major"
-                    defaultValue={member.major ?? ""}
-                  />
-                  <FieldInput
-                    name="classYear"
-                    label="Class year"
-                    type="number"
-                    defaultValue={member.classYear?.toString() ?? ""}
-                  />
-                </>
-              )}
-              <FieldInput
-                name="hometown"
-                label="Hometown"
-                defaultValue={member.hometown ?? ""}
-              />
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Birthday</span>
-                <DateField
-                  mode="date"
-                  name="birthday"
-                  defaultValue={birthdayInputValue(member.birthday)}
-                  ariaLabel="Birthday"
-                />
-              </label>
-              <FieldInput
-                name="phoneNumber"
-                label="Phone"
-                type="tel"
-                defaultValue={member.phoneNumber ?? ""}
-              />
-              <FieldInput
-                name="netId"
-                label="NetID"
-                defaultValue={member.netId ?? ""}
-              />
-              <FieldInput
-                name="personalEmail"
-                label="Personal email"
-                type="email"
-                defaultValue={member.personalEmail ?? ""}
-              />
-              <TimeZoneField
-                name="timeZone"
-                label="Time zone"
-                defaultValue={member.timeZone ?? ""}
-              />
-              <FieldInput
-                name="githubUsername"
-                label="GitHub username"
-                defaultValue={member.githubUsername ?? ""}
-              />
-              <FieldInput
-                name="linkedinUrl"
-                label="LinkedIn URL"
-                defaultValue={member.linkedinUrl ?? ""}
-              />
-              <FieldInput
-                name="personalSite"
-                label="Personal site"
-                defaultValue={member.personalSite ?? ""}
-              />
-              <div className="sm:col-span-2">
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-muted-foreground">
-                    Dietary restrictions
-                  </span>
-                  <textarea
-                    name="dietaryRestrictions"
-                    rows={2}
-                    defaultValue={member.dietaryRestrictions ?? ""}
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                </label>
-              </div>
-            </div>
-          ) : (
-            <ProfileDetails
-              member={member}
-              emails={emails}
-              showIdentitySummary={showIdentitySummary}
-            />
-          )}
-        </Form>
-      )}
-    </EditableSection>
+    <div className={OS_DETAIL_CARD}>
+      <DetailRow icon={<AtSign className={ic} />} label="Handle">
+        {member.handle ? `@${member.handle}` : dash}
+      </DetailRow>
+
+      <DetailRow icon={<GraduationCap className={ic} />} label="Major">
+        {member.major ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<GraduationCap className={ic} />} label="Class year">
+        {member.classYear?.toString() ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<MapPin className={ic} />} label="Hometown">
+        {member.hometown ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Cake className={ic} />} label="Birthday">
+        {formatBirthday(member.birthday) ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Clock className={ic} />} label="Time zone">
+        {member.timeZone ? formatZoneLabel(member.timeZone) : dash}
+      </DetailRow>
+
+      <DetailRow icon={<Phone className={ic} />} label="Phone">
+        {member.phoneNumber ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
+        {member.netId ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Mail className={ic} />} label="Emails">
+        {emails.length === 0 ? (
+          dash
+        ) : (
+          <span className="flex flex-col items-end gap-0.5">
+            {emails.map((e) => (
+              <span key={e} className="break-all">
+                {e}
+              </span>
+            ))}
+          </span>
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Utensils className={ic} />} label="Dietary restrictions">
+        {member.dietaryRestrictions ?? dash}
+      </DetailRow>
+
+      <DetailRow icon={<Github className={ic} />} label="GitHub">
+        {member.githubUsername ? (
+          <a
+            href={`https://github.com/${member.githubUsername}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-os-accent hover:underline break-all"
+          >
+            {member.githubUsername}
+          </a>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Linkedin className={ic} />} label="LinkedIn">
+        {member.linkedinUrl ? (
+          <a
+            href={member.linkedinUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-os-accent hover:underline break-all"
+          >
+            {member.linkedinUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+          </a>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Globe className={ic} />} label="Personal site">
+        {member.personalSite ? (
+          <a
+            href={member.personalSite}
+            target="_blank"
+            rel="noreferrer"
+            className="text-os-accent hover:underline break-all"
+          >
+            {member.personalSite.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+          </a>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+    </div>
+  );
+}
+
+// The same card and rows with a field where each value was. Every field the
+// `profile` intent writes is rendered — that write replaces the whole set, so
+// a field left out of the form would be cleared rather than kept.
+function PersonalEdit({ member }: { member: ProfileMember }) {
+  const ic = OS_DETAIL_ICON;
+  const field = "w-full";
+
+  return (
+    <div className={OS_DETAIL_CARD}>
+      <DetailEditRow icon={<UserIcon className={ic} />} label="First name">
+        <input
+          name="firstName"
+          type="text"
+          defaultValue={member.firstName}
+          required
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<UserIcon className={ic} />} label="Last name">
+        <input
+          name="lastName"
+          type="text"
+          defaultValue={member.lastName}
+          required
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
+        <input
+          name="pronouns"
+          type="text"
+          defaultValue={member.pronouns ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<AtSign className={ic} />}
+        label="Handle"
+        hint="How people @mention you"
+      >
+        <input
+          name="handle"
+          type="text"
+          defaultValue={member.handle ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<GraduationCap className={ic} />} label="Major">
+        <input
+          name="major"
+          type="text"
+          defaultValue={member.major ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<GraduationCap className={ic} />} label="Class year">
+        <input
+          name="classYear"
+          type="number"
+          defaultValue={member.classYear?.toString() ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<MapPin className={ic} />} label="Hometown">
+        <input
+          name="hometown"
+          type="text"
+          defaultValue={member.hometown ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
+        <DateField
+          mode="date"
+          name="birthday"
+          defaultValue={birthdayInputValue(member.birthday)}
+          ariaLabel="Birthday"
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Clock className={ic} />} label="Time zone">
+        <TimeZoneField name="timeZone" defaultValue={member.timeZone ?? ""} />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Phone className={ic} />} label="Phone">
+        <input
+          name="phoneNumber"
+          type="text"
+          inputMode="tel"
+          defaultValue={member.phoneNumber ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Fingerprint className={ic} />} label="NetID">
+        <input
+          name="netId"
+          type="text"
+          defaultValue={member.netId ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Mail className={ic} />} label="Personal email">
+        <input
+          name="personalEmail"
+          type="email"
+          defaultValue={member.personalEmail ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Github className={ic} />} label="GitHub username">
+        <input
+          name="githubUsername"
+          type="text"
+          defaultValue={member.githubUsername ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Linkedin className={ic} />} label="LinkedIn URL">
+        <input
+          name="linkedinUrl"
+          type="url"
+          defaultValue={member.linkedinUrl ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow icon={<Globe className={ic} />} label="Personal site">
+        <input
+          name="personalSite"
+          type="url"
+          defaultValue={member.personalSite ?? ""}
+          className={field}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<Utensils className={ic} />}
+        label="Dietary restrictions"
+      >
+        <textarea
+          name="dietaryRestrictions"
+          rows={2}
+          defaultValue={member.dietaryRestrictions ?? ""}
+          className={cn(field, "resize-y")}
+        />
+      </DetailEditRow>
+    </div>
   );
 }
 
@@ -630,6 +827,7 @@ function WalletSection({
   isSelf: boolean;
   canRevoke: boolean;
 }) {
+  const { panel } = useOsChrome();
   const revokeFetcher = useFetcher<{ error?: string } | null>();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
@@ -657,92 +855,92 @@ function WalletSection({
   }
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-1">
-        <Wallet className="w-4 h-4 text-muted-foreground" aria-hidden />
-        <h2 className="font-heading font-semibold text-foreground">Membership pass</h2>
-      </div>
-      <p className="text-sm text-muted-foreground mb-3">
-        {isSelf
-          ? "Add your DALI pass to your phone's wallet, then show it at a meeting to check in — no sign-in needed."
-          : "Reset this member's wallet pass to revoke a lost or shared one — they'll re-add it to get a working pass."}
-      </p>
-
-      {wallet && (wallet.apple || wallet.google) && (
-        <div className="flex flex-wrap gap-2">
-          {wallet.apple && (
-            <a
-              href="/api/wallet/apple/pass"
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors"
-            >
-              <Wallet className="w-4 h-4" aria-hidden />
-              Add to Apple Wallet
-            </a>
-          )}
-          {wallet.google && (
-            <button
-              type="button"
-              onClick={() => void addToGoogle()}
-              disabled={googleBusy}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors disabled:opacity-50"
-            >
-              <Smartphone className="w-4 h-4" aria-hidden />
-              {googleBusy ? "Opening…" : "Add to Google Wallet"}
-            </button>
-          )}
-        </div>
-      )}
-      {wallet && !wallet.apple && !wallet.google && (
-        <p className="text-xs text-muted-foreground">
-          Wallet passes aren't configured on this server yet.
+    <Section title="Membership pass">
+      <div className={cn(panel, "p-5 flex flex-col gap-3")}>
+        <p className="text-sm text-os-grey">
+          {isSelf
+            ? "Add your DALI pass to your phone's wallet, then show it at a meeting to check in — no sign-in needed."
+            : "Reset this member's wallet pass to revoke a lost or shared one — they'll re-add it to get a working pass."}
         </p>
-      )}
-      {googleError && <p className="text-xs text-red-700 mt-2">{googleError}</p>}
 
-      {canRevoke && (
-        <div className="mt-3 pt-3 border-t border-border">
-          {confirmRevoke ? (
-            <revokeFetcher.Form
-              method="post"
-              onSubmit={() => setConfirmRevoke(false)}
-              className="flex items-center gap-2 flex-wrap"
-            >
-              <input type="hidden" name="intent" value="revoke-wallet-pass" />
-              <span className="text-sm text-foreground">
-                {isSelf
-                  ? "Reset your pass? Your current one stops working until you re-add it."
-                  : "Revoke this member's pass? Their current one stops working."}
-              </span>
-              <button
-                type="submit"
-                disabled={revoking}
-                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+        {wallet && (wallet.apple || wallet.google) && (
+          <div className="flex flex-wrap gap-2">
+            {wallet.apple && (
+              <a
+                href="/api/wallet/apple/pass"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-os-item bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors"
               >
-                {revoking ? "Resetting…" : isSelf ? "Reset pass" : "Revoke pass"}
-              </button>
+                <Wallet className="w-4 h-4" aria-hidden />
+                Add to Apple Wallet
+              </a>
+            )}
+            {wallet.google && (
               <button
                 type="button"
-                onClick={() => setConfirmRevoke(false)}
-                className="px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+                onClick={() => void addToGoogle()}
+                disabled={googleBusy}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-os-item bg-black text-white text-sm font-medium hover:bg-black/85 transition-colors disabled:opacity-50"
               >
-                Cancel
+                <Smartphone className="w-4 h-4" aria-hidden />
+                {googleBusy ? "Opening…" : "Add to Google Wallet"}
               </button>
-            </revokeFetcher.Form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmRevoke(true)}
-              className="text-sm text-red-700 hover:underline"
-            >
-              {isSelf ? "Reset my wallet pass" : "Revoke wallet pass"}
-            </button>
-          )}
-          {revokeFetcher.data?.error && (
-            <p className="text-xs text-red-700 mt-2">{revokeFetcher.data.error}</p>
-          )}
-        </div>
-      )}
-    </section>
+            )}
+          </div>
+        )}
+        {wallet && !wallet.apple && !wallet.google && (
+          <p className="text-xs text-os-muted">
+            Wallet passes aren't configured on this server yet.
+          </p>
+        )}
+        {googleError && <p className="text-xs text-destructive">{googleError}</p>}
+
+        {canRevoke && (
+          <div className="pt-3 border-t border-os-container">
+            {confirmRevoke ? (
+              <revokeFetcher.Form
+                method="post"
+                onSubmit={() => setConfirmRevoke(false)}
+                className="flex items-center gap-2 flex-wrap"
+              >
+                <input type="hidden" name="intent" value="revoke-wallet-pass" />
+                <span className="text-sm text-foreground">
+                  {isSelf
+                    ? "Reset your pass? Your current one stops working until you re-add it."
+                    : "Revoke this member's pass? Their current one stops working."}
+                </span>
+                <button
+                  type="submit"
+                  disabled={revoking}
+                  className="px-3 py-1.5 rounded-full bg-destructive text-white text-[13px] font-semibold hover:brightness-95 disabled:opacity-50"
+                >
+                  {revoking ? "Resetting…" : isSelf ? "Reset pass" : "Revoke pass"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRevoke(false)}
+                  className="px-3.5 py-1.5 rounded-full text-[13px] font-semibold text-os-grey hover:bg-os-container hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </revokeFetcher.Form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmRevoke(true)}
+                className="text-sm text-destructive hover:underline"
+              >
+                {isSelf ? "Reset my wallet pass" : "Revoke wallet pass"}
+              </button>
+            )}
+            {revokeFetcher.data?.error && (
+              <p className="text-xs text-destructive mt-2">
+                {revokeFetcher.data.error}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -753,7 +951,6 @@ function ActivitySection({
   pendingReviews,
   showReviewsRow,
   canEditLevel,
-  embedded,
 }: {
   isSelf: boolean;
   termCode: string | null;
@@ -763,8 +960,8 @@ function ActivitySection({
   /** Core viewers get the inline P1/P2/P3 editor on each project row — this is
    *  where assignment levels are changed now that the project hub links here. */
   canEditLevel: boolean;
-  embedded?: boolean;
 }) {
+  const { panel, sectionShell, sectionTitle } = useOsChrome();
   // The project hub deep-links to this card (#project-assignments) to change a
   // level. Scroll it into view and flash it so the target is obvious.
   const location = useLocation();
@@ -786,38 +983,30 @@ function ActivitySection({
   }, [location.hash]);
 
   return (
-    <div
-      id="project-assignments"
-      ref={cardRef}
-      className={`${
-        embedded
-          ? "flex flex-col gap-3"
-          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      } ${
-        highlight
-          ? "ring-2 ring-accent-coral ring-offset-2 ring-offset-background transition-shadow"
-          : "transition-shadow"
-      }`}
-    >
-      {!embedded && (
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <FolderKanban className="w-4 h-4 text-accent-coral" />
-          {isSelf ? "My activity" : "Activity"}
-          {termCode && (
-            <span className="text-xs font-normal text-muted-foreground">
-              · {termCode}
-            </span>
-          )}
-        </h2>
-      )}
+    <section id="project-assignments" ref={cardRef} className={sectionShell}>
+      <h2 className={sectionTitle}>
+        {isSelf ? "My activity" : "Activity"}
+        {termCode && (
+          <span className="ml-1.5 text-xs font-normal text-os-grey">
+            · {termCode}
+          </span>
+        )}
+      </h2>
 
-      <div className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide inline-flex items-center gap-1">
+      <div
+        className={cn(
+          panel,
+          "p-5 flex flex-col gap-3 transition-shadow",
+          highlight &&
+            "ring-2 ring-os-accent ring-offset-2 ring-offset-background",
+        )}
+      >
+        <SubHeading>
           Projects
           <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
-        </h3>
+        </SubHeading>
         {projectAssignments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-os-muted italic">
             No project assignments this term.
           </p>
         ) : (
@@ -826,10 +1015,7 @@ function ActivitySection({
               canEditLevel ? (
                 // The level control is interactive, so the project link can't
                 // wrap the whole row — split them.
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border"
-                >
+                <li key={a.id} className={LIST_ROW}>
                   <Link
                     to={`/projects/${a.project.id}`}
                     className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
@@ -837,7 +1023,7 @@ function ActivitySection({
                     <ProjectIcon iconEmoji={a.project.iconEmoji} />
                     <span className="truncate">{a.project.name}</span>
                   </Link>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                  <span className="flex items-center gap-1.5 text-xs text-os-grey whitespace-nowrap">
                     {a.domain.name}
                     <ProfileLevelEditor assignment={a} />
                   </span>
@@ -846,13 +1032,13 @@ function ActivitySection({
                 <li key={a.id}>
                   <Link
                     to={`/projects/${a.project.id}`}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+                    className={cn(LIST_ROW, "hover:bg-os-container transition-colors")}
                   >
                     <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
                       <ProjectIcon iconEmoji={a.project.iconEmoji} />
                       <span className="truncate">{a.project.name}</span>
                     </span>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    <span className="text-xs text-os-grey whitespace-nowrap">
                       {a.domain.name} · {a.level}
                     </span>
                   </Link>
@@ -861,25 +1047,25 @@ function ActivitySection({
             )}
           </ul>
         )}
-      </div>
 
-      {showReviewsRow && (
-        <div className="flex items-center gap-2 pt-1 border-t border-border mt-1">
-          <MessageSquare className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-foreground">
-            {`${pendingReviews} review${pendingReviews === 1 ? "" : "s"} in progress`}
-          </span>
-          {isSelf && (
-            <Link
-              to="/hiring/reviewer"
-              className="ml-auto text-xs font-medium text-accent-coral hover:underline"
-            >
-              Go to reviews →
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
+        {showReviewsRow && (
+          <div className="flex items-center gap-2 pt-3 border-t border-os-container">
+            <MessageSquare className="w-4 h-4 text-os-grey" />
+            <span className="text-sm text-foreground">
+              {`${pendingReviews} review${pendingReviews === 1 ? "" : "s"} in progress`}
+            </span>
+            {isSelf && (
+              <Link
+                to="/hiring/reviewer"
+                className="ml-auto text-xs font-medium text-os-accent hover:underline"
+              >
+                Go to reviews →
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -945,7 +1131,7 @@ function ProfileLevelEditor({
             disabled: reason !== null,
           };
         })}
-        buttonClassName="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
+        buttonClassName="text-xs bg-transparent text-os-grey rounded border border-transparent hover:border-os-container-hi focus:border-os-container-hi focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
       />
       {error && (
         <span className="text-[10px] leading-tight text-destructive" role="alert">
@@ -960,11 +1146,10 @@ function ProfileLevelEditor({
 
 function EducationSection({
   education,
-  embedded,
 }: {
   education: NonNullable<ProfilePageData["education"]>;
-  embedded?: boolean;
 }) {
+  const { panel } = useOsChrome();
   if (
     education.attended.length === 0 &&
     education.taught.length === 0 &&
@@ -973,91 +1158,71 @@ function EducationSection({
     return null;
   }
   return (
-    <div
-      className={
-        embedded
-          ? "flex flex-col gap-3"
-          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-      }
-    >
-      {!embedded && (
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <GraduationCap className="w-4 h-4 text-accent-coral" />
-          Education
-        </h2>
-      )}
+    <Section title="Education">
+      <div className={cn(panel, "p-5 flex flex-col gap-4")}>
+        {education.taught.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <SubHeading>Taught</SubHeading>
+            <ul className="flex flex-col gap-1.5">
+              {education.taught.map((t) => (
+                <li key={`${t.offeringId}-${t.termCode}`}>
+                  <Link
+                    to={`/education/${t.offeringId}`}
+                    className={cn(LIST_ROW, "hover:bg-os-container transition-colors")}
+                  >
+                    <span className="text-sm font-medium text-foreground truncate">
+                      {t.title}
+                    </span>
+                    <span className="text-xs text-os-grey whitespace-nowrap">
+                      {t.type} · {t.termCode}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      {education.taught.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Taught
-          </h3>
-          <ul className="flex flex-col gap-1.5">
-            {education.taught.map((t) => (
-              <li key={`${t.offeringId}-${t.termCode}`}>
-                <Link
-                  to={`/education/${t.offeringId}`}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
-                >
-                  <span className="text-sm font-medium text-foreground truncate">
-                    {t.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {t.type} · {t.termCode}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {education.ceCredits.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            CE credits
-          </h3>
-          {education.ceCredits.map((c) => (
-            <span
-              key={c.termCode}
-              className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold"
-            >
-              {c.termCode}: {c.count}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {education.attended.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Attended
-          </h3>
-          <ul className="flex flex-col gap-1.5">
-            {education.attended.map((e) => (
-              <li
-                key={e.offeringId}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border"
+        {education.ceCredits.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <SubHeading>CE credits</SubHeading>
+            {education.ceCredits.map((c) => (
+              <span
+                key={c.termCode}
+                className="inline-flex items-center rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground"
               >
-                <span className="text-sm font-medium text-foreground truncate">
-                  {e.title}
-                </span>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {e.status === "Approved" && e.attendance.total > 0
-                    ? `${e.attendance.present}/${e.attendance.total} sessions`
-                    : e.status}
-                  {e.certificateIssuedAt ? " · Certificate" : ""}
-                </span>
-              </li>
+                {c.termCode}: {c.count}
+              </span>
             ))}
-          </ul>
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+
+        {education.attended.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <SubHeading>Attended</SubHeading>
+            <ul className="flex flex-col gap-1.5">
+              {education.attended.map((e) => (
+                <li key={e.offeringId} className={LIST_ROW}>
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {e.title}
+                  </span>
+                  <span className="text-xs text-os-grey whitespace-nowrap">
+                    {e.status === "Approved" && e.attendance.total > 0
+                      ? `${e.attendance.present}/${e.attendance.total} sessions`
+                      : e.status}
+                    {e.certificateIssuedAt ? " · Certificate" : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
-// ─── Domains & levels (identical to the previous member view) ───────────────
+// ─── Roles, domains & levels ────────────────────────────────────────────────
 
 function DomainsSection({
   roleLabels = [],
@@ -1065,7 +1230,6 @@ function DomainsSection({
   allDomains,
   canManage,
   allowedLevels,
-  embedded,
 }: {
   /** Core titles and Domain Lead posts held this term. */
   roleLabels?: string[];
@@ -1073,76 +1237,60 @@ function DomainsSection({
   allDomains: Array<{ id: string; displayName: string }>;
   canManage: boolean;
   allowedLevels: readonly Level[];
-  embedded?: boolean;
 }) {
+  const { panel } = useOsChrome();
   const assignedDomainIds = new Set(eligibilities.map((e) => e.domain.id));
   const available = allDomains.filter((d) => !assignedDomainIds.has(d.id));
 
   return (
-    <div
-      className={
-        embedded
-          ? "flex flex-col gap-3"
-          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+    <Section
+      title="Roles, domains & levels"
+      aside={
+        !canManage ? (
+          <span className="text-xs text-os-muted">Only Core or Admin can edit.</span>
+        ) : undefined
       }
     >
-      {!embedded && (
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-            <Shield className="w-4 h-4 text-accent-coral" />
-            Roles, domains &amp; levels
-          </h2>
-          {!canManage && (
-            <span className="text-[11px] text-muted-foreground/70">
-              Only Core or Admin can edit.
-            </span>
-          )}
-        </div>
-      )}
-      {embedded && !canManage && (
-        <p className="text-[11px] text-muted-foreground/70">
-          Only Core or Admin can edit.
-        </p>
-      )}
-      {roleLabels.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
-          {roleLabels.map((r) => (
-            <li
-              key={r}
-              className="flex items-center gap-2 rounded-md border border-accent-coral/25 bg-accent-coral/5 px-2.5 py-2"
-            >
-              <BriefcaseIcon className="w-4 h-4 flex-shrink-0 text-accent-coral" />
-              <span className="min-w-0 truncate font-medium text-foreground">{r}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {eligibilities.length === 0 && !canManage && (
-        <p className="text-sm text-muted-foreground/70 italic">
-          No domain eligibilities yet.
-        </p>
-      )}
-      <div className="flex flex-col gap-2">
-        {eligibilities.map((e) => (
-          <EligibilityRow
-            key={e.id}
-            eligibility={e}
-            canManage={canManage}
-            allowedLevels={allowedLevels}
-          />
-        ))}
-      </div>
-      {canManage && available.length > 0 && (
-        <AddEligibility domains={available} allowedLevels={allowedLevels} />
-      )}
-      {canManage &&
-        available.length === 0 &&
-        eligibilities.length === allDomains.length && (
-          <p className="text-xs text-muted-foreground/60">
-            All active domains are assigned.
+      <div className={cn(panel, "p-5 flex flex-col gap-3")}>
+        {roleLabels.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {roleLabels.map((r) => (
+              <span
+                key={r}
+                className="inline-flex items-center rounded-full bg-os-accent/15 px-3.5 py-[5px] text-[13px] font-semibold text-os-accent"
+              >
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
+        {eligibilities.length === 0 && !canManage && (
+          <p className="text-sm text-os-muted italic">
+            No domain eligibilities yet.
           </p>
         )}
-    </div>
+        <div className="flex flex-col gap-2">
+          {eligibilities.map((e) => (
+            <EligibilityRow
+              key={e.id}
+              eligibility={e}
+              canManage={canManage}
+              allowedLevels={allowedLevels}
+            />
+          ))}
+        </div>
+        {canManage && available.length > 0 && (
+          <AddEligibility domains={available} allowedLevels={allowedLevels} />
+        )}
+        {canManage &&
+          available.length === 0 &&
+          eligibilities.length === allDomains.length && (
+            <p className="text-xs text-os-muted">
+              All active domains are assigned.
+            </p>
+          )}
+      </div>
+    </Section>
   );
 }
 
@@ -1159,7 +1307,7 @@ function EligibilityRow({
   const removeFetcher = useFetcher();
   const confirmSubmit = useConfirmSubmit();
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border bg-background/40">
+    <div className={LIST_ROW}>
       <span className="text-sm font-medium text-foreground">
         {eligibility.domain.displayName}
       </span>
@@ -1184,7 +1332,7 @@ function EligibilityRow({
               }}
               options={allowedLevels.map((l) => ({ value: l, label: l }))}
               ariaLabel={`Level for ${eligibility.domain.displayName}`}
-              buttonClassName="text-xs font-medium px-2 py-1 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="text-xs font-medium px-2 py-1 border border-os-container rounded-os-item bg-os-card text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
             />
           </setFetcher.Form>
         ) : (
@@ -1213,7 +1361,7 @@ function EligibilityRow({
             <button
               type="submit"
               aria-label={`Remove ${eligibility.domain.displayName}`}
-              className="text-muted-foreground hover:text-red-600 p-1"
+              className="text-os-grey hover:text-destructive p-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1231,6 +1379,7 @@ function AddEligibility({
   domains: Array<{ id: string; displayName: string }>;
   allowedLevels: readonly Level[];
 }) {
+  const { quietBtn, fieldLabel, formClass } = useOsChrome();
   const fetcher = useFetcher();
   const [open, setOpen] = useState(false);
   const [domainId, setDomainId] = useState("");
@@ -1254,7 +1403,7 @@ function AddEligibility({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="self-start inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+        className={cn(quietBtn, "self-start")}
       >
         <Plus className="w-3 h-3" />
         Add domain
@@ -1263,10 +1412,10 @@ function AddEligibility({
   }
 
   return (
-    <fetcher.Form method="post" className="flex items-end gap-2">
+    <fetcher.Form method="post" className={cn("flex items-end gap-2", formClass)}>
       <input type="hidden" name="intent" value="add-eligibility" />
-      <label className="flex flex-col gap-1 text-xs flex-1">
-        <span className="text-muted-foreground">Domain</span>
+      <label className={cn(fieldLabel, "flex-1")}>
+        <span>Domain</span>
         <Select
           name="domainId"
           value={domainId as string}
@@ -1274,17 +1423,15 @@ function AddEligibility({
           placeholder="Select a domain…"
           required
           options={domains.map((d) => ({ value: d.id, label: d.displayName }))}
-          buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
       </label>
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Level</span>
+      <label className={fieldLabel}>
+        <span>Level</span>
         <Select
           name="level"
           value={level}
           onChange={(v) => setLevel(v as Level)}
           options={allowedLevels.map((l) => ({ value: l, label: l }))}
-          buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
       </label>
       <Tooltip
@@ -1307,7 +1454,7 @@ function AddEligibility({
           setOpen(false);
           setDomainId("");
         }}
-        className="px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+        className="px-3.5 py-1.5 text-[13px] font-semibold text-os-grey hover:text-foreground"
       >
         Cancel
       </button>
@@ -1317,127 +1464,10 @@ function AddEligibility({
 
 // ─── Field plumbing ─────────────────────────────────────────────────────────
 
-// Account's own editable fields, always: name + pronouns. Major/class year
-// join this set only when Account also renders the major/classYear inputs
-// (showIdentitySummary) — on /settings, where there's no Personal section to
-// host them instead. See ACCOUNT_FIELDS below.
-const ACCOUNT_FIELDS_BASE = new Set<keyof ProfileMember>([
-  "firstName",
-  "lastName",
-  "pronouns",
-]);
-
-const ACCOUNT_FIELDS = new Set<keyof ProfileMember>([
-  ...ACCOUNT_FIELDS_BASE,
-  "major",
-  "classYear",
-]);
-
-const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
-  "hometown",
-  "birthday",
-  "phoneNumber",
-  "netId",
-  "personalEmail",
-  "timeZone",
-  "githubUsername",
-  "linkedinUrl",
-  "personalSite",
-  "dietaryRestrictions",
-]);
-
-// Personal's fields when it also hosts name/pronouns + major/class year (the
-// member/profile view, which has no separate Account card — see
-// MemberProfileView's page layout comment).
-const PERSONAL_FIELDS_WITH_IDENTITY = new Set<keyof ProfileMember>([
-  ...PERSONAL_FIELDS,
-  ...ACCOUNT_FIELDS_BASE,
-  "handle",
-  "major",
-  "classYear",
-]);
-
-// Shared by Account and Personal's read-only "Emails" summary — every linked
-// address, regardless of which one is primary.
+// Every linked address, regardless of which one is primary.
 function memberEmails(member: ProfileMember): string[] {
   return [member.daliEmail, member.dartmouthEmail, member.personalEmail].filter(
     (e): e is string => Boolean(e),
-  );
-}
-
-// Every profile-update form posts the full set of editable fields so the
-// action can treat blank inputs as "set to null" consistently. Whichever
-// section isn't currently being edited contributes its values as hidden
-// inputs so they round-trip unchanged.
-function HiddenProfileFields({
-  member,
-  skip,
-}: {
-  member: ProfileMember;
-  skip: Set<keyof ProfileMember>;
-}) {
-  const entries: Array<[string, string]> = [];
-  if (!skip.has("firstName")) entries.push(["firstName", member.firstName]);
-  if (!skip.has("lastName")) entries.push(["lastName", member.lastName]);
-  if (!skip.has("pronouns")) entries.push(["pronouns", member.pronouns ?? ""]);
-  if (!skip.has("major")) entries.push(["major", member.major ?? ""]);
-  if (!skip.has("classYear"))
-    entries.push(["classYear", member.classYear?.toString() ?? ""]);
-  if (!skip.has("hometown")) entries.push(["hometown", member.hometown ?? ""]);
-  if (!skip.has("birthday"))
-    entries.push(["birthday", birthdayInputValue(member.birthday)]);
-  if (!skip.has("phoneNumber"))
-    entries.push(["phoneNumber", member.phoneNumber ?? ""]);
-  if (!skip.has("netId"))
-    entries.push(["netId", member.netId ?? ""]);
-  if (!skip.has("personalEmail"))
-    entries.push(["personalEmail", member.personalEmail ?? ""]);
-  if (!skip.has("timeZone")) entries.push(["timeZone", member.timeZone ?? ""]);
-  if (!skip.has("handle")) entries.push(["handle", member.handle ?? ""]);
-  if (!skip.has("githubUsername"))
-    entries.push(["githubUsername", member.githubUsername ?? ""]);
-  if (!skip.has("linkedinUrl"))
-    entries.push(["linkedinUrl", member.linkedinUrl ?? ""]);
-  if (!skip.has("personalSite"))
-    entries.push(["personalSite", member.personalSite ?? ""]);
-  if (!skip.has("dietaryRestrictions"))
-    entries.push([
-      "dietaryRestrictions",
-      member.dietaryRestrictions ?? "",
-    ]);
-  return (
-    <>
-      {entries.map(([name, value]) => (
-        <input key={name} type="hidden" name={name} value={value} />
-      ))}
-    </>
-  );
-}
-
-function FieldInput({
-  name,
-  label,
-  defaultValue,
-  type = "text",
-  required = false,
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <input
-        name={name}
-        type={type}
-        defaultValue={defaultValue}
-        required={required}
-        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-      />
-    </label>
   );
 }
 
@@ -1459,11 +1489,9 @@ function timeZoneOptions(): string[] {
 
 function TimeZoneField({
   name,
-  label,
   defaultValue,
 }: {
   name: string;
-  label: string;
   defaultValue: string;
 }) {
   const zones = timeZoneOptions();
@@ -1471,183 +1499,19 @@ function TimeZoneField({
   const options =
     defaultValue && !zones.includes(defaultValue) ? [defaultValue, ...zones] : zones;
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <select
-        name={name}
-        defaultValue={defaultValue}
-        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-      >
-        <option value="">Not set</option>
-        {options.map((z) => (
-          <option key={z} value={z}>
-            {z.replace(/_/g, " ")}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted-foreground mb-1">{label}</dt>
-      <dd className="text-sm text-foreground">{value || "—"}</dd>
-    </div>
-  );
-}
-
-// ─── Personal, in view mode ─────────────────────────────────────────────────
-//
-// The same fields, made lighter without breaking the section into more cards:
-//
-//  - empty fields are omitted rather than printed as "—". Most profiles fill in
-//    a handful, so the flat grid was mostly placeholders. Edit mode still shows
-//    every field, so nothing becomes unreachable;
-//  - what's left is grouped (about / contact / links) with a hairline and a
-//    small caption, so the eye has somewhere to stop;
-//  - the three links collapse into one row of chips instead of three
-//    full-height label/value cells.
-//
-// A group with nothing in it renders nothing, hairline included.
-
-type Fact = { label: string; value: string | null | undefined; wide?: boolean };
-
-/**
- * A captioned group of label/value pairs. Facts without a value are dropped,
- * and a group left with none renders nothing at all — caption and divider
- * included. Takes data rather than children on purpose: an element that
- * *renders* null is still an element, so counting children would keep empty
- * groups alive.
- */
-function DetailGroup({
-  caption,
-  facts,
-  first = false,
-  children,
-}: {
-  caption: string;
-  facts: Fact[];
-  first?: boolean;
-  /** Extra rows that aren't simple strings (e.g. the email list). Counts
-   *  toward the group being non-empty. */
-  children?: React.ReactNode;
-}) {
-  const shown = facts.filter((f) => f.value);
-  if (shown.length === 0 && !children) return null;
-  return (
-    <div className={first ? "" : "border-t border-border/60 pt-3"}>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-2">
-        {caption}
-      </p>
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-        {shown.map((f) => (
-          <div key={f.label} className={f.wide ? "sm:col-span-2" : undefined}>
-            <dt className="text-[11px] text-muted-foreground">{f.label}</dt>
-            <dd className="text-sm text-foreground">{f.value}</dd>
-          </div>
-        ))}
-        {children}
-      </dl>
-    </div>
-  );
-}
-
-function ProfileDetails({
-  member,
-  emails,
-  showIdentitySummary,
-}: {
-  member: ProfileMember;
-  emails: string[];
-  showIdentitySummary: boolean;
-}) {
-  const links = [
-    member.githubUsername && {
-      key: "github",
-      href: `https://github.com/${member.githubUsername}`,
-      icon: <Github className="w-3.5 h-3.5" />,
-      label: member.githubUsername,
-    },
-    member.linkedinUrl && {
-      key: "linkedin",
-      href: member.linkedinUrl,
-      icon: <Linkedin className="w-3.5 h-3.5" />,
-      label: "LinkedIn",
-    },
-    member.personalSite && {
-      key: "site",
-      href: member.personalSite,
-      icon: <Globe className="w-3.5 h-3.5" />,
-      label: member.personalSite.replace(/^https?:\/\//, "").replace(/\/$/, ""),
-    },
-  ].filter(Boolean) as { key: string; href: string; icon: JSX.Element; label: string }[];
-
-  return (
-    <div className="flex flex-col gap-3 text-sm">
-      <DetailGroup
-        caption="About"
-        first
-        facts={[
-          ...(showIdentitySummary
-            ? [
-                { label: "Pronouns", value: member.pronouns },
-                { label: "Handle", value: member.handle ? `@${member.handle}` : null },
-                { label: "Major", value: member.major },
-                { label: "Class year", value: member.classYear?.toString() ?? null },
-              ]
-            : []),
-          { label: "Hometown", value: member.hometown },
-          { label: "Birthday", value: formatBirthday(member.birthday) },
-          {
-            label: "Time zone",
-            value: member.timeZone ? formatZoneLabel(member.timeZone) : null,
-          },
-          { label: "Dietary restrictions", value: member.dietaryRestrictions, wide: true },
-        ]}
-      />
-
-      <DetailGroup
-        caption="Contact"
-        facts={[
-          { label: "Phone", value: member.phoneNumber },
-          { label: "NetID", value: member.netId },
-          { label: "Personal email", value: member.personalEmail },
-        ]}
-      >
-        {showIdentitySummary && emails.length > 0 && (
-          <div className="sm:col-span-2">
-            <dt className="text-[11px] text-muted-foreground">Emails</dt>
-            <dd className="flex flex-col gap-0.5">
-              {emails.map((e) => (
-                <span key={e} className="inline-flex items-center gap-1.5 text-sm text-foreground">
-                  <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                  {e}
-                </span>
-              ))}
-            </dd>
-          </div>
-        )}
-      </DetailGroup>
-
-      {links.length > 0 && (
-        <div className="border-t border-border/60 pt-3 flex flex-wrap gap-1.5">
-          {links.map((l) => (
-            <a
-              key={l.key}
-              href={l.href}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:border-accent-coral/40 hover:text-accent-coral"
-            >
-              <span className="text-muted-foreground">{l.icon}</span>
-              <span className="truncate">{l.label}</span>
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
+    <select
+      name={name}
+      defaultValue={defaultValue}
+      aria-label="Time zone"
+      className="w-full"
+    >
+      <option value="">Not set</option>
+      {options.map((z) => (
+        <option key={z} value={z}>
+          {z.replace(/_/g, " ")}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -1687,49 +1551,51 @@ function MentorshipPanel({
   data: NonNullable<ProfilePageData["mentorshipPanel"]>;
   memberId: string;
 }) {
+  const { panel } = useOsChrome();
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="font-heading font-semibold text-foreground">
-          Mentorship
-        </h2>
-        {data.recentNoteCount > 0 && (
+    <Section
+      title="Mentorship"
+      aside={
+        data.recentNoteCount > 0 ? (
           <Link
             to={`/mentorship/browse?menteeId=${memberId}`}
-            className="text-sm text-accent-coral hover:underline"
+            className="text-sm text-os-accent hover:underline"
           >
             View notes ({data.recentNoteCount})
           </Link>
+        ) : undefined
+      }
+    >
+      <div className={cn(panel, "p-5")}>
+        {data.pairs.length === 0 ? (
+          <p className="text-sm text-os-muted italic">
+            No mentorship pairings on record.
+          </p>
+        ) : (
+          <ul className="divide-y divide-os-container">
+            {data.pairs.map((p) => (
+              <li key={p.id} className="py-2.5 text-sm flex items-center gap-3">
+                <Avatar
+                  photoUrl={p.counterpart.photoUrl}
+                  name={`${p.counterpart.firstName} ${p.counterpart.lastName}`}
+                  size="sm"
+                  className="shrink-0"
+                />
+                <div className="flex flex-col min-w-0">
+                  <span className="font-medium text-foreground truncate">
+                    {p.role === "mentor"
+                      ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
+                      : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
+                  </span>
+                  <span className="text-xs text-os-grey truncate">
+                    {p.projectName} · {p.domainCode} · {p.termCode}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
-      {data.pairs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No mentorship pairings on record.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {data.pairs.map((p) => (
-            <li key={p.id} className="py-2 text-sm flex items-center gap-3">
-              <Avatar
-                photoUrl={p.counterpart.photoUrl}
-                name={`${p.counterpart.firstName} ${p.counterpart.lastName}`}
-                size="sm"
-                className="shrink-0"
-              />
-              <div className="flex flex-col min-w-0">
-                <span className="font-medium text-foreground truncate">
-                  {p.role === "mentor"
-                    ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
-                    : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
-                </span>
-                <span className="text-xs text-muted-foreground truncate">
-                  {p.projectName} · {p.domainCode} · {p.termCode}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </Section>
   );
 }

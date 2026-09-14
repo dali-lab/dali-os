@@ -43,7 +43,7 @@ const NEW_PAGE_ID = "new-page-id";
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.page.findUnique.mockResolvedValue(SOURCE_PAGE);
-  mockGetPageAccess.mockResolvedValue({ canEdit: true, canView: true, canComment: true, canResolve: true });
+  mockGetPageAccess.mockResolvedValue({ canEdit: true, canView: true, canComment: true });
   mockPrisma.page.findFirst.mockResolvedValue(null);
   mockPrisma.page.create.mockResolvedValue({ id: NEW_PAGE_ID });
   mockPrisma.collabDocument.findUnique.mockResolvedValue(null);
@@ -101,7 +101,7 @@ describe("duplicatePage", () => {
   });
 
   it("throws when user lacks canEdit", async () => {
-    mockGetPageAccess.mockResolvedValue({ canEdit: false, canView: true, canComment: false, canResolve: false });
+    mockGetPageAccess.mockResolvedValue({ canEdit: false, canView: true, canComment: false });
 
     await expect(
       duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-no-edit" }),
