@@ -25,8 +25,8 @@ import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Toggle } from "~/components/ui/Toggle";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
+import { TimesheetFields } from "~/calendar/components/TimesheetFields";
 import {
   NO_REPEAT,
   RepeatField,
@@ -650,38 +650,21 @@ export function EventComposer({
 
             {/* Timesheet — the event and its hours are one thing, saved together */}
             {canLogWork ? (
-              <div className="rounded-md border border-border bg-muted/20 p-2.5">
-                <Toggle
-                  checked={isWork}
-                  onChange={(e) => setIsWork(e.target.checked)}
-                  label="Count this as work"
-                  description={
-                    linkedEntry
-                      ? "These hours are on your timesheet. Unticking removes them; the event stays."
-                      : "Logs these hours to your timesheet against the role you pick."
-                  }
-                />
-                {isWork && (
-                  <div className="mt-2.5 flex flex-col gap-2">
-                    <Select
-                      value={roleKey}
-                      onChange={setRoleKey}
-                      options={[
-                        { value: "", label: "Pick a role…" },
-                        ...data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
-                      ]}
-                      buttonClassName={cn(fieldCls, "inline-flex w-full items-center justify-between gap-1")}
-                    />
-                    <textarea
-                      value={workNote}
-                      onChange={(e) => setWorkNote(e.target.value)}
-                      placeholder="What did you work on?"
-                      rows={2}
-                      className={cn(fieldCls, "resize-y")}
-                    />
-                  </div>
-                )}
-              </div>
+              <TimesheetFields
+                isWork={isWork}
+                onIsWorkChange={setIsWork}
+                roleKey={roleKey}
+                onRoleKeyChange={setRoleKey}
+                roleOptions={data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+                workNote={workNote}
+                onWorkNoteChange={setWorkNote}
+                description={
+                  linkedEntry
+                    ? "These hours are on your timesheet. Unticking removes them; the event stays."
+                    : "Logs these hours to your timesheet against the role you pick."
+                }
+                fieldClass={fieldCls}
+              />
             ) : linkedEntry ? (
               // Editing pushed the event into a shape hours can't hang off (made
               // it all-day, say). Say so rather than silently dropping the log
@@ -705,7 +688,7 @@ export function EventComposer({
                 disabled={!canSubmit || submitting || (editing && !ev?.writable)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
               >
-                {editing ? "Save" : "Create event"}
+                {editing ? "Save changes" : "Create event"}
               </button>
               {editing && ev?.writable && ev.eventId && (
                 <div className="ml-auto">

@@ -1,9 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Shield, UsersRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useListNavigation,
+  useRole,
+  FloatingPortal,
+} from "@floating-ui/react";
 import { Tooltip, InfoTip, Select } from "~/components/ui/floating";
+import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { buttonClasses } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -484,7 +498,7 @@ export function CreateScheduledMeetingForm({
           </p>
 
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-            <Checkbox
+            <Toggle
               checked={note.state.enabled}
               onChange={(e) => note.setEnabled(e.target.checked)}
               label="Create meeting note"
@@ -503,15 +517,15 @@ export function CreateScheduledMeetingForm({
 
           {canMarkCoreMeeting ? (
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Checkbox
+              <Toggle
                 checked={coreSelected || coreMeeting}
                 disabled={coreSelected}
                 onChange={(e) => setCoreMeeting(e.target.checked)}
                 label="Core meeting"
                 description={
                   coreSelected
-                    ? "The Core group is invited, so this is on the Core calendar."
-                    : "Shows this meeting on the Core hub calendar. Doesn't change who's invited."
+                    ? "The Core group is invited, so this is already on the Core calendar."
+                    : "Adds this to the Core hub calendar. Doesn't change who's invited."
                 }
               />
             </div>
@@ -519,14 +533,14 @@ export function CreateScheduledMeetingForm({
             coreSelected && (
               <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
                 <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
-                <span>The Core group is invited, so this shows on the Core calendar.</span>
+                <span>The Core group is invited, so this is already on the Core calendar.</span>
               </div>
             )
           )}
 
           {canSetSelfCheckIn && (
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Checkbox
+              <Toggle
                 checked={selfCheckIn}
                 onChange={(e) => setSelfCheckIn(e.target.checked)}
                 label="Self check-in (QR)"
@@ -649,54 +663,113 @@ export function ParticipantPicker({
   resolvedCount: number;
 }) {
   const { fieldRadius } = useOsChrome();
+  const panelClass = usePanelClass();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<Array<HTMLElement | null>>([]);
 
-  const availableUsers = users.filter((u) => !selectedUserIds.includes(u.id));
-  const availableGroups = groups.filter((g) => !selectedGroupIds.includes(g.id));
+  const q = query.trim().toLowerCase();
+  const filteredGroups = groups
+    .filter((g) => !selectedGroupIds.includes(g.id))
+    .filter((g) => (q ? g.name.toLowerCase().includes(q) : true))
+    .slice(0, 20);
+  const filteredUsers = users
+    .filter((u) => !selectedUserIds.includes(u.id))
+    .filter((u) =>
+      q ? userLabel(u).toLowerCase().includes(q) || (u.daliEmail ?? "").toLowerCase().includes(q) : true,
+    )
+    .slice(0, 40);
 
-  const filteredUsers = availableUsers.filter((u) => {
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return (
-      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
-      (u.daliEmail ?? "").toLowerCase().includes(q)
-    );
+  // One flat list (groups first, then users) so the arrow keys walk both and
+  // Enter can commit whatever's highlighted.
+  const items: Array<{ kind: "group"; g: GroupOption } | { kind: "user"; u: UserOption }> = [
+    ...filteredGroups.map((g) => ({ kind: "group" as const, g })),
+    ...filteredUsers.map((u) => ({ kind: "user" as const, u })),
+  ];
+  const firstUserIndex = filteredGroups.length;
+
+  function add(index: number) {
+    const it = items[index];
+    if (!it) return;
+    if (it.kind === "group") onChangeGroups([...selectedGroupIds, it.g.id]);
+    else onChangeUsers([...selectedUserIds, it.u.id]);
+    setQuery("");
+    setActiveIndex(0);
+    inputRef.current?.focus();
+  }
+
+  // Backspace on an empty query peels the most recently added chip — the usual
+  // token-field affordance. Users render after groups, so they come off first.
+  function removeLast() {
+    if (selectedUserIds.length > 0) onChangeUsers(selectedUserIds.slice(0, -1));
+    else if (selectedGroupIds.length > 0) onChangeGroups(selectedGroupIds.slice(0, -1));
+  }
+
+  const { refs, floatingStyles, context } = useFloating({
+    open,
+    onOpenChange: (o) => {
+      setOpen(o);
+      if (!o) setActiveIndex(null);
+    },
+    placement: "bottom-start",
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset(4),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ rects, elements, availableHeight }) {
+          Object.assign(elements.floating.style, {
+            width: `${rects.reference.width}px`,
+            maxHeight: `${Math.min(availableHeight, 288)}px`,
+          });
+        },
+      }),
+    ],
   });
-  const filteredGroups = availableGroups.filter((g) =>
-    query ? g.name.toLowerCase().includes(query.toLowerCase()) : true,
-  );
 
-  // Close on an outside click. The menu sits inside the wrapper, so anything
-  // landing outside it is a dismissal.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  const dismiss = useDismiss(context);
+  const role = useRole(context, { role: "listbox" });
+  const listNav = useListNavigation(context, {
+    listRef,
+    activeIndex,
+    onNavigate: setActiveIndex,
+    // The highlight moves without pulling focus off the input.
+    virtual: true,
+    loop: true,
+  });
+  const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([
+    dismiss,
+    role,
+    listNav,
+  ]);
 
   const chip =
     "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
+  const listId = "participant-list";
 
   return (
-    <div ref={wrapRef} className="relative">
-      {/* One always-present field: chips and the caret share it, so adding a
-          guest is just typing rather than first choosing "user" or "group". */}
+    <>
+      {/* One always-present field styled like the app's SearchInput — a leading
+          glyph, hairline border, coral focus ring — with the chips living inside
+          it, so adding a guest is just typing. The menu is portaled (the modal
+          clips overflow) and positioned by floating-ui. */}
       <div
+        ref={refs.setReference}
         onMouseDown={(e) => {
           if (e.target === e.currentTarget) e.preventDefault();
           setOpen(true);
-          wrapRef.current?.querySelector("input")?.focus();
+          inputRef.current?.focus();
         }}
         className={cn(
-          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background p-1.5 text-sm transition-colors focus-within:border-os-accent",
+          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background px-2.5 py-1.5 text-sm transition-shadow focus-within:ring-2 focus-within:ring-accent-coral/30",
           fieldRadius,
         )}
       >
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         {selectedGroupIds.map((gid) => {
           const g = groupsById.get(gid);
           if (!g) return null;
@@ -733,17 +806,38 @@ export function ParticipantPicker({
           );
         })}
         <input
+          ref={inputRef}
           type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={
+            open && activeIndex !== null ? `${listId}-${activeIndex}` : undefined
+          }
+          aria-autocomplete="list"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
           placeholder={
             selectedUserIds.length + selectedGroupIds.length === 0 ? "Add guests or a group" : ""
           }
           className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          {...getReferenceProps({
+            onFocus: () => setOpen(true),
+            onChange: (e) => {
+              setQuery((e.target as HTMLInputElement).value);
+              setOpen(true);
+              setActiveIndex(0);
+            },
+            onKeyDown: (e) => {
+              if (e.key === "Enter" && open && activeIndex !== null && items[activeIndex]) {
+                e.preventDefault();
+                add(activeIndex);
+              } else if (e.key === "Backspace" && query === "") {
+                removeLast();
+              } else if (e.key === "Escape") {
+                setOpen(false);
+              }
+            },
+          })}
         />
         {resolvedCount > 0 && (
           <span className="ml-auto shrink-0 pr-1 text-[11px] text-muted-foreground">
@@ -753,48 +847,68 @@ export function ParticipantPicker({
       </div>
 
       {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-60 overflow-y-auto rounded-lg cal-surface p-1">
-          {filteredGroups.length === 0 && filteredUsers.length === 0 && (
-            <p className="px-2 py-2 text-xs text-muted-foreground">No matches.</p>
-          )}
-          {filteredGroups.slice(0, 20).map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => {
-                onChangeGroups([...selectedGroupIds, g.id]);
-                setQuery("");
-              }}
-              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
-            >
-              <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-                <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {g.name}
-              </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
-              </span>
-            </button>
-          ))}
-          {filteredGroups.length > 0 && filteredUsers.length > 0 && (
-            <div className="my-1 h-px bg-border" />
-          )}
-          {filteredUsers.slice(0, 40).map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => {
-                onChangeUsers([...selectedUserIds, u.id]);
-                setQuery("");
-              }}
-              className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
-            >
-              {userLabel(u)}
-            </button>
-          ))}
-        </div>
+        <FloatingPortal>
+          <ul
+            ref={refs.setFloating}
+            id={listId}
+            style={floatingStyles}
+            className={panelClass}
+            {...getFloatingProps()}
+          >
+            {items.length === 0 ? (
+              <li className="px-2 py-2 text-xs text-muted-foreground">No matches.</li>
+            ) : (
+              items.map((it, i) => {
+                const isActive = i === activeIndex;
+                const startsUsers = it.kind === "user" && i === firstUserIndex && firstUserIndex > 0;
+                return (
+                  <li
+                    key={it.kind === "group" ? `g:${it.g.id}` : `u:${it.u.id}`}
+                    role="none"
+                    className={startsUsers ? "mt-1 border-t border-border pt-1" : undefined}
+                  >
+                    <button
+                      type="button"
+                      role="option"
+                      id={`${listId}-${i}`}
+                      aria-selected={isActive}
+                      tabIndex={-1}
+                      ref={(node) => {
+                        listRef.current[i] = node;
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                        isActive ? "bg-os-container" : "hover:bg-os-container",
+                      )}
+                      {...getItemProps({
+                        // The input's blur would otherwise close the panel before
+                        // the click could land on the row.
+                        onMouseDown: (e) => e.preventDefault(),
+                        onClick: () => add(i),
+                      })}
+                    >
+                      {it.kind === "group" ? (
+                        <>
+                          <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                            <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {it.g.name}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {it.g.memberIds.length} member{it.g.memberIds.length === 1 ? "" : "s"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="min-w-0 truncate">{userLabel(it.u)}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </FloatingPortal>
       )}
-    </div>
+    </>
   );
 }
 

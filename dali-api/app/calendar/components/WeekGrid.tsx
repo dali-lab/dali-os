@@ -6,7 +6,7 @@ import {
   Check, HelpCircle, X, Video, ExternalLink,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
-import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
@@ -480,7 +480,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
-      <Checkbox
+      <Toggle
         checked={onTimesheet}
         disabled={timesheetFetcher.state !== "idle"}
         onChange={(ev) =>
@@ -500,7 +500,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
       )}
       {meeting.canMarkCoreMeeting && (
         <>
-          <Checkbox
+          <Toggle
             checked={isCoreMeeting}
             disabled={coreFetcher.state !== "idle"}
             onChange={(ev) =>
@@ -942,14 +942,14 @@ export function WeekGridEvent({
                       to={`/calendar/meeting/${e.meeting.meetingId}`}
                       className={popoverActionBtn}
                     >
-                      <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
+                      <Users className="h-3.5 w-3.5 text-os-grey" /> Attendance
                     </Link>
                     {e.meeting.notePageId ? (
                       <Link
                         to={`/documents/${e.meeting.notePageId}`}
                         className={popoverActionBtn}
                       >
-                        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting notes
+                        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
                       </Link>
                     ) : e.meeting.canAddNote ? (
                       <AddMeetingNoteButton

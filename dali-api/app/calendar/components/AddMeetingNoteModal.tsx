@@ -163,7 +163,7 @@ function AddMeetingNoteModal({
 
         <div className="flex flex-col gap-4 overflow-y-auto p-5">
           <p className="text-sm text-muted-foreground">
-            Starts a shared notes doc linked to this meeting.
+            Starts a shared note doc linked to this meeting.
           </p>
           {/* MeetingNoteFields indents its rows for the create form's toggle; a
               negative left margin pulls them back flush inside this modal. */}
