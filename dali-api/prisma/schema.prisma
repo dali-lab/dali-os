@@ -3296,6 +3296,9 @@ model EducationOffering {
   id                   String         @id @default(cuid())
   type                 OfferingType
   title                String
+  // Notion-style catalog icon: a single emoji shown on the offering's catalog
+  // card cover. Null → a neutral first-letter fallback. Mirrors Project.iconEmoji.
+  iconEmoji            String?
   descriptionDocId     String?
   capacity             Int
   registrationOpensAt  DateTime

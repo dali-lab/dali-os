@@ -259,6 +259,8 @@ export default [
     route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    // Combined education + hiring application history (linked from the home).
+    route("portal/applications", "routes/portal.applications.tsx"),
     route("portal/settings", "routes/portal.settings.tsx"),
     // Education mirror for non-member Dartmouth students.
     route("portal/education", "routes/portal.education.tsx"),
