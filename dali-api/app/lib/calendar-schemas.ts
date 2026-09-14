@@ -183,6 +183,25 @@ export const SetMeetingCoreSchema = z.object({
   isCoreMeeting: z.boolean(),
 });
 
+// "Add meeting notes" on a note-less meeting's detail popover — creates the
+// notes doc after the fact with the same About/Type/Name/location choices the
+// create form collects. The action re-checks that the caller may file it.
+export const AddMeetingNoteSchema = z.object({
+  intent: z.literal("add-meeting-note"),
+  meetingId: z.string().min(1),
+  meetingType: z.enum(["Team", "Partner", "Other"]),
+  meetingTypeLabel: z.string().optional(),
+  projectId: z.string().optional(),
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().nullable(),
+      parentPageId: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
 // flag on UserAvailabilitySettings and, on enable, lazily provisions the DALI
 // Timesheet Google calendar (see timesheet-mirror.server.ts).
@@ -205,6 +224,7 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
   SetMeetingCoreSchema,
+  AddMeetingNoteSchema,
   SetTimesheetSyncSchema,
 ]);
 

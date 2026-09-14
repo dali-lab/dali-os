@@ -180,6 +180,101 @@ async function resolveNoteDestination(
   };
 }
 
+// Create the meeting-note Page for a meeting and return its id. Shared by
+// createScheduledMeeting (note requested at creation) and attachMeetingNote
+// (note added to an already-created meeting) so the three filing paths —
+// project (Team/Partner), Core, and General (chosen Drive location) — live in
+// one place. `authorId` is the note's creator and the identity note-destination
+// authorization runs against (the organizer at creation, the actor after).
+async function buildMeetingNotePage(input: {
+  meetingId: string;
+  authorId: string;
+  meetingType: MeetingType;
+  meetingTypeLabel: string | null;
+  projectId: string | null;
+  isCoreMeeting: boolean;
+  noteLocation: CreateScheduledMeetingInput["noteLocation"];
+  startDate: Date | null;
+}): Promise<string> {
+  const noteDate = input.startDate ?? new Date();
+  const dateLabel = formatDateShort(noteDate);
+  let title = dateLabel;
+
+  if (input.projectId) {
+    // Team/Partner notes nest under their default, undeletable folder;
+    // "Other" notes stay top-level (no default folder for a custom label).
+    let parentPageId: string | null = null;
+    if (input.meetingType === "Team" || input.meetingType === "Partner") {
+      const folder = await ensureMeetingNotesFolder(
+        input.projectId,
+        input.meetingType,
+        input.authorId,
+      );
+      parentPageId = folder.id;
+      // Team/Partner notes are named for the project and kind they belong
+      // to, so they stay identifiable once they leave that folder — in
+      // search, in Drive, and on the meeting itself.
+      const project = await prisma.project.findUnique({
+        where: { id: input.projectId },
+        select: { name: true },
+      });
+      if (project) {
+        title = `${project.name} ${input.meetingType} meeting note (${dateLabel})`;
+      }
+    }
+    const page = await createProjectPage({
+      projectId: input.projectId,
+      title,
+      createdById: input.authorId,
+      meetingNoteId: input.meetingId,
+      parentPageId,
+    });
+    return page.id;
+  }
+
+  if (input.isCoreMeeting) {
+    // A Core meeting's note belongs to Core, the way a project meeting's note
+    // belongs to its project: always Core's own meeting-notes folder, never a
+    // location the organizer picked. The folder is Core-scoped, so the note is
+    // Core-only without depending on its own link access.
+    if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+    const coreFolderId = await ensureCoreMeetingNotesFolder(input.authorId);
+    const page = await createLabMeetingPage({
+      title,
+      createdById: input.authorId,
+      meetingNoteId: input.meetingId,
+      // Null only when the Core group isn't seeded yet — the note lands at the
+      // Lab root rather than not existing at all.
+      parentPageId: coreFolderId,
+      restricted: coreFolderId !== null,
+    });
+    return page.id;
+  }
+
+  // General meeting: file the note at the author's chosen Drive location
+  // (default/fallback: Lab root). Include the label in the title so the note
+  // stays identifiable wherever it lands.
+  if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+  const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
+  if (dest.workspaceType === "Project" && dest.workspaceId) {
+    const page = await createProjectPage({
+      projectId: dest.workspaceId,
+      title,
+      createdById: input.authorId,
+      meetingNoteId: input.meetingId,
+      parentPageId: dest.parentPageId,
+    });
+    return page.id;
+  }
+  const page = await createLabMeetingPage({
+    title,
+    createdById: input.authorId,
+    meetingNoteId: input.meetingId,
+    parentPageId: dest.parentPageId,
+  });
+  return page.id;
+}
+
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
@@ -312,82 +407,16 @@ export async function createScheduledMeeting(
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   if (input.meetingType) {
-    const noteDate = startDate ?? new Date();
-    const dateLabel = formatDateShort(noteDate);
-    let title = dateLabel;
-
-    if (input.projectId) {
-      // Team/Partner notes nest under their default, undeletable folder;
-      // "Other" notes stay top-level (no default folder for a custom label).
-      let parentPageId: string | null = null;
-      if (input.meetingType === "Team" || input.meetingType === "Partner") {
-        const folder = await ensureMeetingNotesFolder(
-          input.projectId,
-          input.meetingType,
-          input.organizerId,
-        );
-        parentPageId = folder.id;
-        // Team/Partner notes are named for the project and kind they belong
-        // to, so they stay identifiable once they leave that folder — in
-        // search, in Drive, and on the meeting itself.
-        const project = await prisma.project.findUnique({
-          where: { id: input.projectId },
-          select: { name: true },
-        });
-        if (project) {
-          title = `${project.name} ${input.meetingType} meeting note (${dateLabel})`;
-        }
-      }
-      const page = await createProjectPage({
-        projectId: input.projectId,
-        title,
-        createdById: input.organizerId,
-        meetingNoteId: meeting.id,
-        parentPageId,
-      });
-      notePageId = page.id;
-    } else if (input.isCoreMeeting) {
-      // A Core meeting's note belongs to Core, the way a project meeting's note
-      // belongs to its project: always Core's own meeting-notes folder, never a
-      // location the organizer picked. The folder is Core-scoped, so the note is
-      // Core-only without depending on its own link access.
-      if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
-      const coreFolderId = await ensureCoreMeetingNotesFolder(input.organizerId);
-      const page = await createLabMeetingPage({
-        title,
-        createdById: input.organizerId,
-        meetingNoteId: meeting.id,
-        // Null only when the Core group isn't seeded yet — the note lands at the
-        // Lab root rather than not existing at all.
-        parentPageId: coreFolderId,
-        restricted: coreFolderId !== null,
-      });
-      notePageId = page.id;
-    } else {
-      // General meeting: file the note at the organizer's chosen Drive location
-      // (default/fallback: Lab root). Include the label in the title so the note
-      // stays identifiable wherever it lands.
-      if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
-      const dest = await resolveNoteDestination(input.organizerId, input.noteLocation);
-      if (dest.workspaceType === "Project" && dest.workspaceId) {
-        const page = await createProjectPage({
-          projectId: dest.workspaceId,
-          title,
-          createdById: input.organizerId,
-          meetingNoteId: meeting.id,
-          parentPageId: dest.parentPageId,
-        });
-        notePageId = page.id;
-      } else {
-        const page = await createLabMeetingPage({
-          title,
-          createdById: input.organizerId,
-          meetingNoteId: meeting.id,
-          parentPageId: dest.parentPageId,
-        });
-        notePageId = page.id;
-      }
-    }
+    notePageId = await buildMeetingNotePage({
+      meetingId: meeting.id,
+      authorId: input.organizerId,
+      meetingType: input.meetingType,
+      meetingTypeLabel: input.meetingTypeLabel ?? null,
+      projectId: input.projectId ?? null,
+      isCoreMeeting: input.isCoreMeeting ?? false,
+      noteLocation: input.noteLocation ?? null,
+      startDate,
+    });
   }
 
   if (input.meetingType || attendanceMode === "SelfCheckIn") {
@@ -443,6 +472,113 @@ export async function createScheduledMeeting(
     gcalError,
     notePageId,
   };
+}
+
+export type AttachMeetingNoteInput = {
+  meetingId: string;
+  /** Who is adding the note — must be the organizer or Core. Also the note's
+   *  creator and the identity project/destination authorization runs against. */
+  actorId: string;
+  meetingType: MeetingType;
+  meetingTypeLabel?: string | null;
+  projectId?: string | null;
+  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
+};
+
+export type AttachMeetingNoteResult =
+  | { ok: true; notePageId: string }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Add a meeting-notes doc to an already-created meeting that doesn't have one.
+ * The creation-time note fields (About → project/Team/Partner/General, name,
+ * Drive location) aren't captured for a note-less meeting, so this takes them
+ * the same way the create form collects them and files the note through the
+ * shared buildMeetingNotePage paths. A Core meeting keeps filing to Core's
+ * folder regardless of the chosen location (mirrors createScheduledMeeting).
+ */
+export async function attachMeetingNote(
+  input: AttachMeetingNoteInput,
+): Promise<AttachMeetingNoteResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: input.meetingId },
+    select: {
+      id: true,
+      organizerId: true,
+      participantUserIds: true,
+      isCoreMeeting: true,
+      selectedAt: true,
+      status: true,
+      notePage: { select: { id: true } },
+    },
+  });
+  if (!meeting || meeting.status === "Cancelled") {
+    return { ok: false, error: "Meeting not found", status: 404 };
+  }
+  if (meeting.notePage) {
+    return { ok: false, error: "This meeting already has a notes doc", status: 409 };
+  }
+
+  // Same authority as cancelling: the organizer owns the meeting, Core has
+  // broad access. The client only shows the affordance to those two, but the
+  // gate lives here.
+  const core = await isCore(input.actorId);
+  if (meeting.organizerId !== input.actorId && !core) {
+    return { ok: false, error: "Only the organizer or Core can add notes", status: 403 };
+  }
+
+  // Same hard constraint as createScheduledMeeting: a project meeting
+  // (Team/Partner) needs a project; a General ("Other") one must not have one.
+  if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
+    return { ok: false, error: "A project is required for Team and Partner meetings", status: 400 };
+  }
+  if (input.meetingType === "Other" && input.projectId) {
+    return { ok: false, error: "General meetings cannot be attached to a project", status: 400 };
+  }
+  // Filing under a project requires membership (or Core) — mirrors the note
+  // destinations the create form offers via /api/move-destinations.
+  if (input.projectId) {
+    const proj = await prisma.project.findFirst({
+      where: {
+        id: input.projectId,
+        ...(core ? {} : { assignments: { some: { userId: input.actorId } } }),
+      },
+      select: { id: true },
+    });
+    if (!proj) return { ok: false, error: "You can't file a note under that project", status: 403 };
+  }
+
+  const notePageId = await buildMeetingNotePage({
+    meetingId: meeting.id,
+    authorId: input.actorId,
+    meetingType: input.meetingType,
+    meetingTypeLabel: input.meetingTypeLabel ?? null,
+    projectId: input.projectId ?? null,
+    isCoreMeeting: meeting.isCoreMeeting,
+    noteLocation: input.noteLocation ?? null,
+    startDate: meeting.selectedAt,
+  });
+
+  // Record the derived type/project on the meeting so it reads the same as one
+  // configured at creation (the note page is linked via its meetingNoteId FK).
+  await prisma.scheduledMeeting.update({
+    where: { id: meeting.id },
+    data: {
+      meetingType: input.meetingType,
+      meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
+      projectId: input.projectId ?? null,
+    },
+  });
+
+  // Backfill the attendance roster the note's checklist reads. Idempotent — a
+  // SelfCheckIn meeting may already have rows, so skip the duplicates.
+  const attendeeIds = Array.from(new Set([...meeting.participantUserIds, meeting.organizerId]));
+  await prisma.meetingAttendance.createMany({
+    data: attendeeIds.map((userId) => ({ scheduledMeetingId: meeting.id, userId })),
+    skipDuplicates: true,
+  });
+
+  return { ok: true, notePageId };
 }
 
 // Grace on either side of a meeting during which self-check-in / wallet-pass
