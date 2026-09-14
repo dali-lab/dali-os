@@ -17,6 +17,10 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Lab-wide attendance (feature flag `attendance`): every meeting/event the
+    // viewer is invited to, with its roster. Lives under General; supersedes the
+    // Core-only /core/attendance overview when the flag is on.
+    route("attendance", "routes/attendance.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -326,6 +330,7 @@ export default [
   route("auth/handoff", "routes/auth.handoff.ts"),
   route("link", "routes/link.tsx"),
   route("api/desktop/version", "routes/api.desktop.version.ts"),
+  route("api/desktop/updated", "routes/api.desktop.updated.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -404,6 +409,10 @@ export default [
   route("api/public/projects/:id", "public-api/routes/api.public.projects.$id.ts"),
   route("api/public/team", "public-api/routes/api.public.team.ts"),
   route("api/public/offerings", "public-api/routes/api.public.offerings.ts"),
+  route(
+    "api/public/application-cycle",
+    "public-api/routes/api.public.application-cycle.ts",
+  ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
 
   // Scheduled meetings
@@ -426,6 +435,24 @@ export default [
   // save-to-Google-Wallet link, each for the current user only.
   route("api/wallet/apple/pass", "wallet/routes/api.wallet.apple.pass.ts"),
   route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
+  // Apple PassKit web service (pass updates): Apple calls these on the pass's
+  // baked-in webServiceURL (<API_BASE_URL>/api/wallet/apple) to register a
+  // device for push, list serials updated since a tag, fetch the latest pass,
+  // and post diagnostics. Enables silent pass updates for already-downloaded
+  // passes. See app/lib/wallet-apns.server.ts for the push side.
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.device-registration.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier",
+    "wallet/routes/api.wallet.apple.v1.device-serials.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/passes/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.pass.ts",
+  ),
+  route("api/wallet/apple/v1/log", "wallet/routes/api.wallet.apple.v1.log.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),

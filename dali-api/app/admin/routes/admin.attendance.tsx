@@ -18,7 +18,8 @@ import { Select } from "~/components/ui/floating";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore, isAdmin, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -43,6 +44,13 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  // The lab-wide Attendance surface supersedes this Core-only overview: when its
+  // flag is on, both /admin/attendance and /core/attendance (a re-export of this
+  // loader) redirect there. Off = this page stays the live Core surface.
+  const roles = await getUserRoles(auth.user.sub);
+  if (await isFeatureEnabled("attendance", auth.user.sub, roles, request)) {
+    return redirect("/attendance");
+  }
   const regrouped = await regroupRedirect(
     request,
     auth.user.sub,

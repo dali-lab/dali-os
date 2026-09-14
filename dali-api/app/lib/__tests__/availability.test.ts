@@ -1,9 +1,16 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/google-calendar");
 
-import { computeFreeIntervals, type ComputeInput, type Interval } from "~/lib/availability";
+import {
+  computeFreeIntervals,
+  computeUserFreeBusy,
+  type ComputeInput,
+  type Interval,
+} from "~/lib/availability";
+import { prisma } from "~/lib/db";
+import { fetchBusyEvents } from "~/lib/google-calendar";
 
 // Helpers ------------------------------------------------------------------
 
@@ -88,6 +95,46 @@ describe("computeFreeIntervals — external busy", () => {
     ];
     const out = computeFreeIntervals(baseInput({ externalBusy }));
     expect(totalMinutes(out.free)).toBe(40 * 60 - 2 * 60);
+  });
+});
+
+describe("computeUserFreeBusy — calendar coverage", () => {
+  // Regression guard for the "everyone free" bug: a participant with no linked
+  // calendar (or a failed sync) has NO real busy source, so their computed free
+  // is a working-hours/24-7 default. computeUserFreeBusy must flag that so the
+  // UI never counts them as confirmed-free.
+  const w = weekWindow();
+
+  beforeEach(() => {
+    vi.mocked(fetchBusyEvents).mockResolvedValue([]);
+    vi.mocked(prisma.userAvailabilitySettings.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ timeZone: TZ } as never);
+    vi.mocked(prisma.workingHoursDay.findMany).mockResolvedValue([]);
+  });
+
+  it("reports hasCalendar=false when the user has no linked calendar", async () => {
+    vi.mocked(prisma.userCalendarLink.findMany).mockResolvedValue([] as never);
+    const out = await computeUserFreeBusy("u1", w.start, w.end);
+    expect(out.hasCalendar).toBe(false);
+    expect(out.calendarError).toBe(false);
+  });
+
+  it("reports hasCalendar=true for a linked, healthy calendar", async () => {
+    vi.mocked(prisma.userCalendarLink.findMany).mockResolvedValue([
+      { syncError: null },
+    ] as never);
+    const out = await computeUserFreeBusy("u1", w.start, w.end);
+    expect(out.hasCalendar).toBe(true);
+    expect(out.calendarError).toBe(false);
+  });
+
+  it("flags calendarError when a linked calendar's last sync failed", async () => {
+    vi.mocked(prisma.userCalendarLink.findMany).mockResolvedValue([
+      { syncError: "token expired" },
+    ] as never);
+    const out = await computeUserFreeBusy("u1", w.start, w.end);
+    expect(out.hasCalendar).toBe(true);
+    expect(out.calendarError).toBe(true);
   });
 });
 

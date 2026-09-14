@@ -124,6 +124,13 @@ model User {
   // secret never verifies. Server-only; never crosses the wire.
   walletPassSecret String?
 
+  // Bumped whenever the member's Wallet pass content changes (name, class year,
+  // or a secret rotation via rotateWalletSecret). Serves as the Apple PassKit
+  // web-service "last updated" tag: the device-serials endpoint compares it to
+  // the tag a device last saw to decide whether to hand back an updated pass.
+  // Null = no pass issued under the update-service era yet.
+  walletPassUpdatedAt DateTime?
+
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
   // first/last above (e.g. a legal name). Optional — blank means "same".
@@ -149,6 +156,7 @@ model User {
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
+  walletPassRegistrations       WalletPassRegistration[]
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
@@ -1897,6 +1905,26 @@ model MeetingAttendance {
   @@index([userId])
 }
 
+// A phone that registered one member's Apple Wallet pass for silent updates.
+// Written by the PassKit web service (app/wallet/routes/api.wallet.apple.v1.*)
+// when Wallet POSTs a registration after the pass is added; deleted on the
+// matching DELETE (pass removed). serialNumber is the member's User.id (the
+// pass serialNumber), so the FK ties a registration to its member. pushToken
+// is the per-device APNs token we push an empty payload to when the member's
+// pass changes, nudging the phone to re-fetch the updated pass.
+model WalletPassRegistration {
+  id                       String   @id @default(cuid())
+  deviceLibraryIdentifier  String
+  serialNumber             String
+  pushToken                String
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [serialNumber], references: [id], onDelete: Cascade)
+
+  @@unique([deviceLibraryIdentifier, serialNumber])
+  @@index([serialNumber])
+}
+
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
 // Meeting-sourced rows are managed automatically by the attendance-toggle
 // route (one row per present participant, kept in sync as attendance is
@@ -2320,7 +2348,6 @@ model Term {
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
   technigalaAssignments TechnigalaAssignment[]
-  educationOfferings    EducationOffering[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
@@ -3322,11 +3349,6 @@ model EducationOffering {
   // education identity if not set.
   calendarEmail        String?
 
-  // The term this offering runs in — derived server-side from the first
-  // session's date; null until sessions are added.
-  termId               String?
-  term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
-
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
   // always see the latest FormVersion. Null only transiently (offering
@@ -3353,8 +3375,6 @@ model EducationOffering {
   formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
-
-  @@index([termId])
 }
 
 enum OfferingType {

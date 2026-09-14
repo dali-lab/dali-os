@@ -145,6 +145,12 @@ export const FEATURE_FLAGS = [
     description:
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
+  {
+    key: "attendance",
+    label: "Attendance (lab-wide)",
+    description:
+      "Moves attendance out of the Core-only overview into a lab-wide Attendance tab under General (/attendance). It lists every meeting/event you're invited to — across projects, teams, Core, and general lab meetings — with each event's roster, and links into the per-meeting page to check in or mark others. Access is by invitation: you only see an event whose participant list includes you. When on, the old Core ▸ Attendance entry is retired and /core/attendance + /admin/attendance redirect here. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
