@@ -109,12 +109,44 @@ export async function ensureWalletSecret(userId: string): Promise<string> {
   return secret;
 }
 
+// Web-service auth token: baked into the pass's authenticationToken and sent
+// back by the device on every PassKit web-service call as
+// `Authorization: ApplePass <token>`.
+// Derived from the global secret + userId only (NOT the per-member
+// walletPassSecret), so revoking a barcode via rotateWalletSecret doesn't lock
+// the device out of fetching its refreshed pass — which is exactly when we
+// need the device to be able to fetch.
+function computeAuthSig(memberId: string): string {
+  const key = globalSecret();
+  if (!key) throw new Error("WALLET_PASS_SECRET is not set");
+  return crypto
+    .createHmac("sha256", key)
+    .update(`auth.${memberId}`)
+    .digest()
+    .toString("base64url");
+}
+
+export function signWalletAuthToken(memberId: string): string {
+  return computeAuthSig(memberId);
+}
+
+export function verifyWalletAuthToken(memberId: string, token: string): boolean {
+  if (!walletTokensConfigured()) return false;
+  const expected = computeAuthSig(memberId);
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  // timingSafeEqual requires equal-length buffers.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 /**
  * Revoke a member's wallet pass by rotating their secret: every barcode they've
  * downloaded stops verifying immediately. The stale pass still visually shows
- * the (now dead) barcode until they delete + re-add it — we can't push a new
- * one without an Apple pass web service — but a dead barcode can't mark anyone
- * present, and re-adding mints a working one.
+ * the (now dead) barcode until they delete + re-add it — but a dead barcode can't
+ * mark anyone present, and re-adding mints a working one. The APNs push (wired
+ * in profile-page.server.ts) nudges registered devices to re-fetch the refreshed
+ * pass carrying the new barcode.
  */
 export async function rotateWalletSecret(userId: string): Promise<void> {
   const secret = crypto.randomBytes(24).toString("base64url");

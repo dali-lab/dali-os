@@ -3,7 +3,7 @@
 // Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpInvalidError, McpForbiddenError } from "../../registry";
 
 export const CHECK_IN_TO_MEETING_DEF = {
@@ -24,8 +24,6 @@ export const CHECK_IN_TO_MEETING_DEF = {
   },
   requiredScope: "mcp:write" as const,
 };
-
-const CHECK_IN_GRACE_MIN = 15;
 
 type Input = { meetingId: string };
 
@@ -48,13 +46,9 @@ export async function runCheckInToMeeting(userId: string, input: Input) {
     throw new McpInvalidError("This meeting doesn't have a scheduled time yet");
   }
 
-  const graceMs = CHECK_IN_GRACE_MIN * 60_000;
-  const windowStart = meeting.selectedAt.getTime() - graceMs;
-  const windowEnd =
-    meeting.selectedAt.getTime() + meeting.durationMinutes * 60_000 + graceMs;
-  const now = Date.now();
-
-  if (now < windowStart || now > windowEnd) {
+  // Shared window helper so the ±grace math has one definition across the
+  // self-check-in route, the scan route, and this tool.
+  if (!isWithinCheckInWindow(meeting.selectedAt, meeting.durationMinutes)) {
     throw new McpForbiddenError("Check-in window has closed");
   }
 
