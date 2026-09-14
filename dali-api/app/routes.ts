@@ -405,6 +405,10 @@ export default [
   route("api/public/projects/:id", "public-api/routes/api.public.projects.$id.ts"),
   route("api/public/team", "public-api/routes/api.public.team.ts"),
   route("api/public/offerings", "public-api/routes/api.public.offerings.ts"),
+  route(
+    "api/public/application-cycle",
+    "public-api/routes/api.public.application-cycle.ts",
+  ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
 
   // Scheduled meetings
