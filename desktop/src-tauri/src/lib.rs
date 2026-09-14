@@ -85,8 +85,10 @@ pub fn run() {
                 window::show_pairing(&handle);
             }
 
-            // Check for a newer signed release at launch (silent if up to date).
-            tauri::async_runtime::spawn(updater::check_on_launch(handle.clone()));
+            // Check for a newer signed release at launch and once a day after
+            // (silent if up to date). Tray-resident installs rarely relaunch, so
+            // a launch-only check would strand them on an old build.
+            tauri::async_runtime::spawn(updater::run_periodic(handle.clone()));
 
             Ok(())
         })
