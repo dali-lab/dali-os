@@ -31,17 +31,17 @@ beforeEach(() => {
 });
 
 describe("GET /auth/handoff", () => {
-  it("defaults a fresh desktop pairing into tab mode", async () => {
+  it("plants no tabless preference — a fresh desktop pairing rides the tabless default", async () => {
     const res = await loader({ request: req(), params: {}, context: {} } as any);
     const setCookies = res.headers.getSetCookie
       ? res.headers.getSetCookie()
       : [...res.headers.entries()].filter(([k]) => k === "set-cookie").map(([, v]) => v);
-    expect(setCookies.some((c) => c.startsWith(`${TABLESS_COOKIE}=0`))).toBe(true);
+    expect(setCookies.some((c) => c.startsWith(`${TABLESS_COOKIE}=`))).toBe(false);
   });
 
-  it("does not override a device's existing explicit preference", async () => {
+  it("leaves a device's existing preference untouched", async () => {
     const res = await loader({
-      request: req(`${TABLESS_COOKIE}=1`),
+      request: req(`${TABLESS_COOKIE}=0`),
       params: {},
       context: {},
     } as any);
