@@ -181,18 +181,41 @@ export type EventLinkDTO = {
  *  "Pending" is Google's needsAction — invited, hasn't replied. */
 export type RsvpStatus = "Accepted" | "Declined" | "Tentative" | "Pending";
 
-/** The DALI meeting behind a Google event, matched on ScheduledMeeting
- *  .externalEventId. Carries what the detail popover offers beyond the Google
- *  event itself: the meeting page, its notes doc, and the two per-viewer
- *  toggles. */
+/** The Google event a popover action writes against when the event has no
+ *  meeting row yet: the timesheet entry is logged against it, and the Core
+ *  marker / a meeting note adopt it into a ScheduledMeeting first. */
+export type EventMeetingSourceDTO = {
+  eventId: string;
+  linkId: string;
+  /** Master id when this is one instance of a series, so adoption marks the
+   *  series rather than the single occurrence that was clicked. */
+  recurringEventId: string | null;
+  /** Named `eventTitle` to match the action's field, so the whole shape can be
+   *  posted as-is. */
+  eventTitle: string;
+  startIso: string;
+  endIso: string;
+};
+
+/** What the detail popover offers on an event beyond the event itself: the
+ *  meeting page, its notes doc, and the per-viewer toggles.
+ *
+ *  Present on every event the viewer can act on — a DALI meeting matched on
+ *  ScheduledMeeting.externalEventId, and an ordinary calendar event that has no
+ *  meeting row at all (`meetingId` null). Courses carry none: a class is
+ *  scheduled by the registrar, not run as a meeting. */
 export type EventMeetingDTO = {
-  meetingId: string;
+  /** Null for an event no meeting has been opened on. */
+  meetingId: string | null;
   notePageId: string | null;
-  /** Whether the viewer already has a TimeEntry for this meeting. */
+  /** Whether the viewer already has a TimeEntry for this meeting/event. */
   onTimesheet: boolean;
   isCoreMeeting: boolean;
   /** Core only — hides the "Core meeting" checkbox for everyone else. */
   canMarkCoreMeeting: boolean;
+  /** The Google event behind this block. Unset for a meeting with no Google
+   *  event of its own (the Core hub's database-drawn blocks). */
+  source?: EventMeetingSourceDTO;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */
@@ -262,7 +285,8 @@ export type ExternalEventDTO = {
    *  means they aren't invited (their own event, or a calendar they only
    *  watch), and the popover offers no RSVP. */
   rsvp?: RsvpStatus;
-  /** Set when this Google event is a DALI meeting. */
+  /** What the detail popover can act on for this event — see EventMeetingDTO.
+   *  Unset for the viewer's own courses, which aren't meetings. */
   meeting?: EventMeetingDTO;
 };
 
@@ -385,8 +409,9 @@ export type EventBlock = {
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
    *  top of it. `color` is a CSS colour (the role palette's `dot`). */
   loggedAccent?: { color: string; hours: number };
-  /** Set when this block is a DALI meeting: the detail popover adds its
-   *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
+  /** Set when the detail popover can act on this block: the per-viewer
+   *  timesheet / Core toggles and the meeting note, plus the meeting page and
+   *  notes doc once a meeting exists behind it. */
   meeting?: EventMeetingDTO;
   /** Set when the viewer is a guest: the detail popover offers Going / Maybe /
    *  Can't go. Carries the identity the write needs — see EventRsvpTarget. */

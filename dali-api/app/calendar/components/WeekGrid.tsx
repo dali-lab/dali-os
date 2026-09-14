@@ -2,7 +2,7 @@ import React, { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useSt
 import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
-  Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
+  Building2, Wifi, Users, FileText, FilePlus, Pencil, Copy, Trash2,
   Check, HelpCircle, X, Video, ExternalLink,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
@@ -20,6 +20,7 @@ import {
   formatHour, formatHourMinute, readableTextColor, computeEventLanes,
 } from "~/calendar/lib/event-block";
 import type { EventLane } from "~/calendar/lib/event-block";
+import { AddMeetingNoteModal } from "~/calendar/components/AddMeetingNoteModal";
 
 export function useRefreshOnFocus(refresh: () => void) {
   useEffect(() => {
@@ -460,10 +461,15 @@ export function CalendarEventDetailPopover({
 const popoverActionBtn =
   "inline-flex items-center gap-1.5 rounded-full border border-os-container bg-os-well px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:border-os-container-hi";
 
-// Per-meeting toggles in the event detail popover: log the meeting on your own
-// timesheet, and (Core only) flag it as a Core meeting. Both write through the
-// calendar route action, so a success revalidates the loader and the Timesheet
-// tab picks the entry up without a reload.
+// Per-event toggles in the detail popover: log the event on your own timesheet,
+// and (Core only) flag it as a Core meeting. Both write through the calendar
+// route action, so a success revalidates the loader and the Timesheet tab picks
+// the entry up without a reload.
+//
+// These are offered on every event that isn't a course, not just the ones DALI
+// scheduled. An event with no meeting row behind it logs against its Google id
+// (the same entry the composer's "count this as work" writes), and names itself
+// on the Core toggle so the server can adopt it into a meeting.
 export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["meeting"]> }) {
   const timesheetFetcher = useFetcher<{ error?: string }>();
   const coreFetcher = useFetcher<{ error?: string }>();
@@ -476,26 +482,38 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
   const isCoreMeeting = coreFetcher.formData
     ? coreFetcher.formData.get("isCoreMeeting") === "true"
     : meeting.isCoreMeeting;
+  const source = meeting.source;
+  // A meeting logs through its own row; an ordinary event logs against its
+  // Google id, which is what the composer's "count this as work" writes too.
+  const timesheetTarget: Record<string, string> | null = meeting.meetingId
+    ? { intent: "toggle-meeting-time-entry", meetingId: meeting.meetingId }
+    : source
+      ? {
+          intent: "toggle-event-time-entry",
+          ...source,
+          recurringEventId: source.recurringEventId ?? "",
+        }
+      : null;
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
-      <Checkbox
-        checked={onTimesheet}
-        disabled={timesheetFetcher.state !== "idle"}
-        onChange={(ev) =>
-          timesheetFetcher.submit(
-            {
-              intent: "toggle-meeting-time-entry",
-              meetingId: meeting.meetingId,
-              onTimesheet: String(ev.target.checked),
-            },
-            { method: "post", action: meeting.actionPath },
-          )
-        }
-        label="Add to timesheet"
-      />
-      {timesheetFetcher.data?.error && (
-        <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
+      {timesheetTarget && (
+        <>
+          <Checkbox
+            checked={onTimesheet}
+            disabled={timesheetFetcher.state !== "idle"}
+            onChange={(ev) =>
+              timesheetFetcher.submit(
+                { ...timesheetTarget, onTimesheet: String(ev.target.checked) },
+                { method: "post", action: meeting.actionPath },
+              )
+            }
+            label="Add to timesheet"
+          />
+          {timesheetFetcher.data?.error && (
+            <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
+          )}
+        </>
       )}
       {meeting.canMarkCoreMeeting && (
         <>
@@ -506,7 +524,8 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
               coreFetcher.submit(
                 {
                   intent: "set-meeting-core",
-                  meetingId: meeting.meetingId,
+                  meetingId: meeting.meetingId ?? "",
+                  source: source ? JSON.stringify(source) : "",
                   isCoreMeeting: String(ev.target.checked),
                 },
                 { method: "post", action: meeting.actionPath },
@@ -581,6 +600,7 @@ export function WeekGridEvent({
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
@@ -591,7 +611,9 @@ export function WeekGridEvent({
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
-  const isMeeting = Boolean(e.meeting);
+  // Any block the popover can act on — a DALI meeting, or an ordinary event
+  // carrying the timesheet / Core / note actions.
+  const hasMeetingActions = Boolean(e.meeting);
   // An answered invite says so on the block itself, in place of the location —
   // "Pending" is what every unanswered invite says, so it earns no room.
   const answeredRsvp = e.rsvp && e.rsvp.status !== "Pending" ? e.rsvp.status : null;
@@ -604,7 +626,7 @@ export function WeekGridEvent({
   );
   const opensDetail =
     !e.onClick &&
-    (isMeeting ||
+    (hasMeetingActions ||
       hasDetails ||
       Boolean(e.rsvp) ||
       Boolean(e.onEdit) ||
@@ -937,19 +959,34 @@ export function WeekGridEvent({
                   onPointerDown={(ev) => ev.stopPropagation()}
                 >
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      to={`/calendar/meeting/${e.meeting.meetingId}`}
-                      className={popoverActionBtn}
-                    >
-                      <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
-                    </Link>
-                    {e.meeting.notePageId && (
+                    {e.meeting.meetingId && (
+                      <Link
+                        to={`/calendar/meeting/${e.meeting.meetingId}`}
+                        className={popoverActionBtn}
+                      >
+                        <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
+                      </Link>
+                    )}
+                    {e.meeting.notePageId ? (
                       <Link
                         to={`/documents/${e.meeting.notePageId}`}
                         className={popoverActionBtn}
                       >
                         <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting notes
                       </Link>
+                    ) : (
+                      // An event made without a note can still get one — filed
+                      // exactly where creation would have put it.
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailOpen(false);
+                          setNoteOpen(true);
+                        }}
+                        className={popoverActionBtn}
+                      >
+                        <FilePlus className="h-3.5 w-3.5 text-os-grey" /> Add meeting notes
+                      </button>
                     )}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
@@ -1030,6 +1067,18 @@ export function WeekGridEvent({
           }
         />
       )}
+      {/* Portalled for the same reason the detail popover is: a block sits inside
+          the grid's positioned/clipped columns, which a fixed overlay can't escape. */}
+      {noteOpen &&
+        e.meeting &&
+        createPortal(
+          <AddMeetingNoteModal
+            meeting={e.meeting}
+            eventTitle={e.label}
+            onClose={() => setNoteOpen(false)}
+          />,
+          document.body,
+        )}
     </div>
   );
 }

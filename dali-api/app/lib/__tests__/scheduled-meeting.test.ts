@@ -12,7 +12,11 @@ vi.mock("~/lib/pages", () => ({
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { createLabMeetingPage, ensureCoreMeetingNotesFolder } from "~/lib/pages";
-import { cancelScheduledMeeting, createScheduledMeeting } from "~/lib/scheduled-meeting";
+import {
+  adoptEventMeeting,
+  cancelScheduledMeeting,
+  createScheduledMeeting,
+} from "~/lib/scheduled-meeting";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -222,5 +226,107 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     expect(coreFolder).not.toHaveBeenCalled();
     expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: null }));
+  });
+});
+
+describe("adoptEventMeeting", () => {
+  const db = prisma as unknown as {
+    userCalendarLink: { findFirst: ReturnType<typeof vi.fn> };
+    scheduledMeeting: {
+      findFirst: ReturnType<typeof vi.fn>;
+      create: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+  };
+
+  const event = {
+    userId: "u1",
+    eventId: "gcal-instance-1",
+    recurringEventId: null,
+    linkId: "link-1",
+    title: "Design review",
+    startIso: "2026-09-14T15:00:00.000Z",
+    endIso: "2026-09-14T16:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    db.userCalendarLink.findFirst.mockResolvedValue({
+      id: "link-1",
+      externalEmail: "me@dali.dartmouth.edu",
+    });
+    db.scheduledMeeting.findFirst.mockResolvedValue(null);
+    db.scheduledMeeting.create.mockResolvedValue({ id: "m-new" });
+  });
+
+  it("refuses a calendar link that isn't the viewer's", async () => {
+    db.userCalendarLink.findFirst.mockResolvedValue(null);
+
+    const res = await adoptEventMeeting(event);
+
+    expect(res).toEqual({ ok: false, error: "Invalid calendar link" });
+    expect(db.scheduledMeeting.create).not.toHaveBeenCalled();
+  });
+
+  it("opens an unscoped meeting on the event, so adopting invites nobody", async () => {
+    const res = await adoptEventMeeting(event);
+
+    expect(res).toEqual({ ok: true, meetingId: "m-new" });
+    expect(db.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organizerId: "u1",
+          scopeType: "None",
+          participantUserIds: [],
+          durationMinutes: 60,
+          externalEventId: "gcal-instance-1",
+        }),
+      }),
+    );
+  });
+
+  it("adopts a series through its master, so one occurrence marks the series", async () => {
+    await adoptEventMeeting({ ...event, recurringEventId: "gcal-master-1" });
+
+    expect(db.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ externalEventId: "gcal-master-1" }),
+      }),
+    );
+  });
+
+  it("reuses the meeting already on the event rather than opening a second", async () => {
+    db.scheduledMeeting.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: ["u1"],
+    });
+
+    const res = await adoptEventMeeting(event);
+
+    expect(res).toEqual({ ok: true, meetingId: "m-existing" });
+    expect(db.scheduledMeeting.create).not.toHaveBeenCalled();
+    expect(db.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("joins the viewer to an existing meeting they aren't on yet", async () => {
+    db.scheduledMeeting.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: [],
+    });
+
+    await adoptEventMeeting(event);
+
+    expect(db.scheduledMeeting.update).toHaveBeenCalledWith({
+      where: { id: "m-existing" },
+      data: { participantUserIds: { push: "u1" } },
+    });
+  });
+
+  it("rejects an event with no length", async () => {
+    const res = await adoptEventMeeting({ ...event, endIso: event.startIso });
+
+    expect(res).toEqual({ ok: false, error: "Invalid event time" });
+    expect(db.scheduledMeeting.create).not.toHaveBeenCalled();
   });
 });

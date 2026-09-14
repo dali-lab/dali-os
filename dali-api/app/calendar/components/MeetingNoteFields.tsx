@@ -65,12 +65,16 @@ export function MeetingNoteFields({
   fieldClass,
   labelClass,
   core = false,
+  className = "pl-6 space-y-3",
 }: {
   note: MeetingNoteController;
   /** Not read in `core` mode — a Core note has no project to file under. */
   myProjects?: { id: string; name: string }[];
   fieldClass: string;
   labelClass: string;
+  /** Defaults to the indent that reads as "under the note toggle". A surface
+   *  where the note is the whole subject (AddMeetingNoteModal) drops it. */
+  className?: string;
   /** The meeting is a Core meeting: the note belongs to Core, not to a project,
    *  so the About picker collapses to a fixed "Core" instead of offering the
    *  organizer's projects. */
@@ -135,7 +139,7 @@ export function MeetingNoteFields({
   const locationLabel = state.location?.label ?? "Lab-wide";
 
   return (
-    <div className="pl-6 space-y-3">
+    <div className={className}>
       <div>
         <span className={labelClass}>About</span>
         {core ? (

@@ -25,7 +25,12 @@ import {
   MemberClassError,
 } from "~/lib/member-class.server";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
-import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
+import {
+  CalendarActionSchema,
+  validateTimeEntryRange,
+  type EventSource,
+} from "~/lib/calendar-schemas";
+import { adoptEventMeeting, createMeetingNotePage } from "~/lib/scheduled-meeting";
 import {
   setUserTimesheetSync,
   syncTimeEntryToGoogle,
@@ -174,6 +179,43 @@ async function meetingsForExternalEvents(
     if (hit) byEventId.set(e.eventId, hit);
   }
   return byEventId;
+}
+
+/**
+ * What the detail popover can do with one external event. Every non-course
+ * event the viewer can identify gets this, not just the ones DALI scheduled:
+ * an ordinary event answers with `meetingId: null`, and the actions that need a
+ * meeting (the Core marker, a note) adopt it on first use.
+ *
+ * All-day events are left out of the synthesized case — a day-long band has no
+ * hours to log and nothing to meet about.
+ */
+function eventMeetingDto(
+  e: CalendarEvent,
+  meetings: Map<string, EventMeetingDTO>,
+  loggedEventIds: Set<string>,
+  canMarkCoreMeeting: boolean,
+): EventMeetingDTO | undefined {
+  if (!e.eventId || !e.linkId) return undefined;
+  const source = {
+    eventId: e.eventId,
+    linkId: e.linkId,
+    recurringEventId: e.recurringEventId ?? null,
+    eventTitle: e.title || "Busy",
+    startIso: e.startIso,
+    endIso: e.endIso,
+  };
+  const existing = meetings.get(e.eventId);
+  if (existing) return { ...existing, source };
+  if (e.allDay) return undefined;
+  return {
+    meetingId: null,
+    notePageId: null,
+    onTimesheet: loggedEventIds.has(e.eventId),
+    isCoreMeeting: false,
+    canMarkCoreMeeting,
+    source,
+  };
 }
 
 /**
@@ -457,23 +499,63 @@ async function writeEventWorkLog(opts: {
     return;
   }
   const { log } = work;
+  await upsertEventTimeEntry({
+    userId,
+    eventId,
+    linkId: opts.linkId,
+    startIso: opts.startIso,
+    endIso: opts.endIso,
+    note: log.note ?? opts.title,
+    role: log,
+  });
+}
+
+/** The upsert behind both ways of logging a calendar event: the composer's
+ *  "count this as work" (which names a role) and the detail popover's one-click
+ *  "Add to timesheet" (which doesn't — an unattributed entry is attributed in
+ *  the Timesheet edit popover, the same as a meeting-logged row). */
+async function upsertEventTimeEntry(opts: {
+  userId: string;
+  eventId: string;
+  linkId: string;
+  startIso: string;
+  endIso: string;
+  note: string | null;
+  role: {
+    assignmentType: RoleInstance["assignmentType"];
+    roleRefId: string;
+    projectId: string | null;
+  } | null;
+  /** Set by the popover toggle: fill in an entry that isn't there yet, but
+   *  leave the role and note alone if one already is — a one-click checkbox
+   *  shouldn't erase what someone typed in the composer. */
+  fillOnly?: boolean;
+}): Promise<void> {
   const startTime = new Date(opts.startIso);
   const endTime = new Date(opts.endIso);
-  const common = {
+  const timing = {
     date: startTime,
     hours: (endTime.getTime() - startTime.getTime()) / 3_600_000,
-    assignmentType: log.assignmentType,
-    roleRefId: log.roleRefId,
-    projectId: log.projectId,
-    note: log.note ?? opts.title,
     startTime,
     endTime,
     sourceCalendarLinkId: opts.linkId,
   };
+  const details = {
+    assignmentType: opts.role?.assignmentType ?? null,
+    roleRefId: opts.role?.roleRefId ?? null,
+    projectId: opts.role?.projectId ?? null,
+    note: opts.note,
+  };
   await prisma.timeEntry.upsert({
-    where: { sourceEventId_userId: { sourceEventId: eventId, userId } },
-    create: { userId, source: "Manual", sourceEventId: eventId, ...common },
-    update: common,
+    where: { sourceEventId_userId: { sourceEventId: opts.eventId, userId: opts.userId } },
+    create: {
+      userId: opts.userId,
+      source: "Manual",
+      sourceEventId: opts.eventId,
+      ...timing,
+      ...details,
+    },
+    update: opts.fillOnly ? timing : { ...timing, ...details },
   });
 }
 
@@ -803,6 +885,17 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
   const intent = get("intent");
   const asBool = (v: string | undefined) => v === "true";
   const asInt = (v: string | undefined) => (v === undefined ? undefined : parseInt(v, 10));
+  // Nested shapes (the event a popover action names, a note's Drive location)
+  // travel as one JSON field. Leave a malformed value alone — Zod reports it.
+  const asJson = (k: string) => {
+    const v = get(k);
+    if (!v) return null;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  };
 
   switch (intent) {
     case "set-working-segments": {
@@ -878,8 +971,34 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, id: get("id") };
     case "toggle-meeting-time-entry":
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
+    case "toggle-event-time-entry":
+      return {
+        intent,
+        eventId: get("eventId"),
+        linkId: get("linkId"),
+        recurringEventId: get("recurringEventId") || null,
+        eventTitle: get("eventTitle"),
+        startIso: get("startIso"),
+        endIso: get("endIso"),
+        onTimesheet: asBool(get("onTimesheet")),
+      };
     case "set-meeting-core":
-      return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
+      return {
+        intent,
+        meetingId: get("meetingId") || null,
+        source: asJson("source"),
+        isCoreMeeting: asBool(get("isCoreMeeting")),
+      };
+    case "add-meeting-note":
+      return {
+        intent,
+        meetingId: get("meetingId") || null,
+        source: asJson("source"),
+        meetingType: get("meetingType"),
+        meetingTypeLabel: get("meetingTypeLabel") || null,
+        projectId: get("projectId") || null,
+        noteLocation: asJson("noteLocation"),
+      };
     case "set-timesheet-sync":
       return { intent, enabled: asBool(get("enabled")) };
     default:
@@ -1213,26 +1332,53 @@ export async function loadCalendarData(request: Request) {
     ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting)
     : new Map<string, EventMeetingDTO>();
 
+  // The viewer's classes, as the Google events the classes manager synced. A
+  // course is scheduled for them rather than run by them, so it carries none of
+  // the meeting actions. A recurring class is stored as its series master,
+  // which every expanded instance names.
+  const classEventIds = new Set<string>(
+    crudEnabled
+      ? (
+          await prisma.memberClass.findMany({
+            where: { userId, storage: "Google" },
+            select: { googleEventIds: true },
+          })
+        ).flatMap((c) => c.googleEventIds)
+      : [],
+  );
+  // Events the viewer has already logged against, for the timesheet checkbox on
+  // an event that has no meeting row of its own.
+  const loggedEventIds = new Set(
+    timeEntryRows.flatMap((t) => (t.sourceEventId ? [t.sourceEventId] : [])),
+  );
+
   const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? crudEvents.map((e) => ({
-        startIso: e.startIso,
-        endIso: e.endIso,
-        title: e.title || "Busy",
-        color: e.color ?? null,
-        calendarId: e.calendarId,
-        eventId: e.eventId,
-        linkId: e.linkId,
-        allDay: e.allDay,
-        writable: e.writable,
-        recurringEventId: e.recurringEventId ?? null,
-        description: e.description,
-        location: e.location,
-        organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
-        links: externalLinks(e.meetingUrl, e.htmlLink),
-        rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
-        meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
-      }))
+    ? crudEvents.map((e) => {
+        const isClass =
+          (!!e.eventId && classEventIds.has(e.eventId)) ||
+          (!!e.recurringEventId && classEventIds.has(e.recurringEventId));
+        return {
+          startIso: e.startIso,
+          endIso: e.endIso,
+          title: e.title || "Busy",
+          color: e.color ?? null,
+          calendarId: e.calendarId,
+          eventId: e.eventId,
+          linkId: e.linkId,
+          allDay: e.allDay,
+          writable: e.writable,
+          recurringEventId: e.recurringEventId ?? null,
+          description: e.description,
+          location: e.location,
+          organizerName: e.organizerName,
+          attendees: externalAttendees(e.attendees),
+          links: externalLinks(e.meetingUrl, e.htmlLink),
+          rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
+          meeting: isClass
+            ? undefined
+            : eventMeetingDto(e, eventMeetings, loggedEventIds, canMarkCoreMeeting),
+        };
+      })
     : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
         startIso: e.start,
         endIso: e.end,
@@ -1704,23 +1850,139 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
+    case "toggle-event-time-entry": {
+      // An ordinary calendar event, logged against its Google id the way the
+      // composer's "count this as work" does. The link check is the whole
+      // authorization: an event on a calendar the viewer hasn't connected isn't
+      // theirs to log.
+      try {
+        await assertLinkOwned(userId, input.linkId);
+      } catch {
+        return Response.json({ error: "That calendar isn't connected." }, { status: 403 });
+      }
+      if (!input.onTimesheet) {
+        await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: input.eventId } });
+        return null;
+      }
+      const start = new Date(input.startIso);
+      const end = new Date(input.endIso);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        return Response.json({ error: "That event has no length to log" }, { status: 400 });
+      }
+      await upsertEventTimeEntry({
+        userId,
+        eventId: input.eventId,
+        linkId: input.linkId,
+        startIso: input.startIso,
+        endIso: input.endIso,
+        note: input.eventTitle,
+        role: null,
+        fillOnly: true,
+      });
+      return null;
+    }
+
     case "set-meeting-core": {
       // The checkbox is hidden for non-Core, but the gate lives here — the
       // form is a hint, the server decides (same rule as the create route).
       if (!(await isCore(userId, request))) return forbidden(request);
-      const meeting = await prisma.scheduledMeeting.findUnique({
-        where: { id: input.meetingId },
-        select: { id: true, organizerId: true, participantUserIds: true },
-      });
-      if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
-      if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
-        return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
-      }
+      const target = await resolveActionMeeting(userId, input);
+      if (!target.ok) return target.response;
       await prisma.scheduledMeeting.update({
-        where: { id: meeting.id },
+        where: { id: target.meetingId },
         data: { isCoreMeeting: input.isCoreMeeting },
       });
       return null;
     }
+
+    case "add-meeting-note": {
+      if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
+        return Response.json({ error: "Pick a project for this meeting" }, { status: 400 });
+      }
+      if (input.meetingType === "Other" && !input.meetingTypeLabel) {
+        return Response.json({ error: "Name the meeting" }, { status: 400 });
+      }
+      const target = await resolveActionMeeting(userId, input);
+      if (!target.ok) return target.response;
+      const meeting = await prisma.scheduledMeeting.findUnique({
+        where: { id: target.meetingId },
+        select: {
+          id: true,
+          selectedAt: true,
+          isCoreMeeting: true,
+          organizerId: true,
+          participantUserIds: true,
+          notePage: { select: { id: true } },
+        },
+      });
+      if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
+      // One note per meeting: the button that posts this is only offered when
+      // there isn't one, so a second request is a double-submit.
+      if (meeting.notePage) return Response.json({ notePageId: meeting.notePage.id });
+      const notePageId = await createMeetingNotePage({
+        meetingId: meeting.id,
+        authorId: userId,
+        meetingType: input.meetingType,
+        meetingTypeLabel: input.meetingType === "Other" ? input.meetingTypeLabel : null,
+        projectId: input.meetingType === "Other" ? null : input.projectId,
+        noteLocation: input.meetingType === "Other" ? input.noteLocation : null,
+        isCoreMeeting: meeting.isCoreMeeting,
+        date: meeting.selectedAt ?? new Date(),
+      });
+      // The note's roster checklist needs attendance rows; a meeting created
+      // without a note has none yet. skipDuplicates leaves existing ones alone.
+      const attendeeIds = Array.from(
+        new Set([...meeting.participantUserIds, meeting.organizerId]),
+      );
+      await prisma.meetingAttendance.createMany({
+        data: attendeeIds.map((id) => ({ scheduledMeetingId: meeting.id, userId: id })),
+        skipDuplicates: true,
+      });
+      return Response.json({ notePageId });
+    }
   }
+}
+
+/**
+ * The meeting a popover action targets: the one behind the event when it has
+ * one, otherwise the event adopted into a fresh meeting. Confirms the viewer
+ * belongs to an existing meeting before writing to it — seeing an event on a
+ * shared calendar isn't grounds for editing the meeting behind it.
+ */
+async function resolveActionMeeting(
+  userId: string,
+  input: { meetingId: string | null; source: EventSource | null },
+): Promise<{ ok: true; meetingId: string } | { ok: false; response: Response }> {
+  if (input.meetingId) {
+    const meeting = await prisma.scheduledMeeting.findUnique({
+      where: { id: input.meetingId },
+      select: { id: true, organizerId: true, participantUserIds: true },
+    });
+    if (!meeting) {
+      return { ok: false, response: Response.json({ error: "Not found" }, { status: 404 }) };
+    }
+    if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
+      return {
+        ok: false,
+        response: Response.json({ error: "You weren't invited to this meeting" }, { status: 403 }),
+      };
+    }
+    return { ok: true, meetingId: meeting.id };
+  }
+  if (!input.source) {
+    return { ok: false, response: Response.json({ error: "Not found" }, { status: 404 }) };
+  }
+  const adopted = await adoptEventMeeting({
+    userId,
+    eventId: input.source.eventId,
+    recurringEventId: input.source.recurringEventId,
+    linkId: input.source.linkId,
+    title: input.source.eventTitle,
+    startIso: input.source.startIso,
+    endIso: input.source.endIso,
+  });
+  if (!adopted.ok) {
+    return { ok: false, response: Response.json({ error: adopted.error }, { status: 400 }) };
+  }
+  return { ok: true, meetingId: adopted.meetingId };
 }

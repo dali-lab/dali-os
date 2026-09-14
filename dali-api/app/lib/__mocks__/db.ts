@@ -356,6 +356,7 @@ export const prisma = {
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
   },
@@ -501,6 +502,7 @@ export const prisma = {
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
   },
   term: {

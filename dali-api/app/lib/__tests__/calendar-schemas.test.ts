@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  AddMeetingNoteSchema,
   AddTimeEntrySchema,
   CalendarActionSchema,
   SetMeetingCoreSchema,
@@ -145,6 +146,72 @@ describe("meeting detail-popover toggles", () => {
     ).toBe(false);
     expect(
       SetMeetingCoreSchema.safeParse({ intent: "set-meeting-core", meetingId: "m-1" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("popover actions on an event with no meeting behind it", () => {
+  const source = {
+    eventId: "gcal-1",
+    linkId: "link-1",
+    recurringEventId: null,
+    eventTitle: "Design review",
+    startIso: "2026-09-14T15:00:00.000Z",
+    endIso: "2026-09-14T16:00:00.000Z",
+  };
+
+  it("logs an ordinary event against its Google identity", () => {
+    const parsed = CalendarActionSchema.safeParse({
+      intent: "toggle-event-time-entry",
+      ...source,
+      onTimesheet: true,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("won't log an event it can't identify", () => {
+    expect(
+      CalendarActionSchema.safeParse({
+        intent: "toggle-event-time-entry",
+        ...source,
+        linkId: "",
+        onTimesheet: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("takes the Core marker either by meeting or by event", () => {
+    expect(
+      CalendarActionSchema.safeParse({
+        intent: "set-meeting-core",
+        source,
+        isCoreMeeting: true,
+      }).success,
+    ).toBe(true);
+    // Both omitted parses fine — the action 404s rather than the schema, since
+    // "which of the two" isn't a shape question.
+    const neither = SetMeetingCoreSchema.safeParse({
+      intent: "set-meeting-core",
+      isCoreMeeting: true,
+    });
+    expect(neither.success && neither.data.meetingId).toBe(null);
+  });
+
+  it("carries a retroactive note's fields, defaulting the optional ones", () => {
+    const parsed = AddMeetingNoteSchema.safeParse({
+      intent: "add-meeting-note",
+      source,
+      meetingType: "Other",
+      meetingTypeLabel: "All-hands sync",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.projectId).toBe(null);
+    expect(parsed.success && parsed.data.noteLocation).toBe(null);
+  });
+
+  it("rejects a note with no meeting type", () => {
+    expect(
+      AddMeetingNoteSchema.safeParse({ intent: "add-meeting-note", source }).success,
     ).toBe(false);
   });
 });

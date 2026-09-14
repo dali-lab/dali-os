@@ -175,12 +175,61 @@ export const ToggleMeetingTimeEntrySchema = z.object({
   onTimesheet: z.boolean(),
 });
 
-// "Mark as a Core meeting" on a meeting's detail popover — the same flag the
+// The Google event a popover action names when the event has no meeting row of
+// its own. Times come from the block the viewer clicked, the same trust the
+// composer's "count this as work" and the manual add-time-entry form already
+// place in the form — nothing here can reach an event on a calendar the viewer
+// hasn't linked, because linkId is re-checked against them server-side.
+export const EventSourceFields = {
+  eventId: z.string().min(1),
+  linkId: z.string().min(1),
+  recurringEventId: z.string().min(1).nullable().default(null),
+  eventTitle: z.string().trim().min(1).max(300),
+  startIso: z.string().min(1),
+  endIso: z.string().min(1),
+};
+
+export const EventSourceSchema = z.object(EventSourceFields);
+export type EventSource = z.infer<typeof EventSourceSchema>;
+
+// "Add to timesheet" on an ordinary calendar event — one that isn't a DALI
+// meeting. Writes the same event-linked TimeEntry the composer's "count this as
+// work" does (keyed on sourceEventId), so the two agree on one entry per event.
+export const ToggleEventTimeEntrySchema = z.object({
+  intent: z.literal("toggle-event-time-entry"),
+  ...EventSourceFields,
+  onTimesheet: z.boolean(),
+});
+
+// "Mark as a Core meeting" on an event's detail popover — the same flag the
 // create form sets, editable after the fact. Core-only; the action re-checks.
+// An event with no meeting behind it names itself instead, and is adopted into
+// one so the Core hub has something to draw.
 export const SetMeetingCoreSchema = z.object({
   intent: z.literal("set-meeting-core"),
-  meetingId: z.string().min(1),
+  meetingId: z.string().min(1).nullable().default(null),
+  source: EventSourceSchema.nullable().default(null),
   isCoreMeeting: z.boolean(),
+});
+
+// "Add meeting notes" on an event created without one: files the note by the
+// same rules meeting creation does, and adopts the event into a meeting first
+// when it has none. The note fields mirror POST /api/scheduled-meetings.
+export const AddMeetingNoteSchema = z.object({
+  intent: z.literal("add-meeting-note"),
+  meetingId: z.string().min(1).nullable().default(null),
+  source: EventSourceSchema.nullable().default(null),
+  meetingType: z.enum(["Team", "Partner", "Other"]),
+  meetingTypeLabel: z.string().trim().min(1).max(80).nullable().default(null),
+  projectId: z.string().min(1).nullable().default(null),
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().min(1).nullable(),
+      parentPageId: z.string().min(1).nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
@@ -204,7 +253,9 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   UpdateTimeEntrySchema,
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
+  ToggleEventTimeEntrySchema,
   SetMeetingCoreSchema,
+  AddMeetingNoteSchema,
   SetTimesheetSyncSchema,
 ]);
 
