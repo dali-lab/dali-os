@@ -10,6 +10,7 @@ import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
+import { useDesktopVersion } from "~/lib/desktop";
 import { getUserRoles } from "~/lib/roles";
 import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
@@ -92,6 +93,9 @@ export default function Home() {
 
 function HomeOS() {
   const { user, greeting, pages } = useLoaderData<typeof loader>();
+  // Null in a browser, the shell version inside the desktop app — the hunt code
+  // below is only meant to be findable by people running the desktop app.
+  const inDesktopApp = useDesktopVersion() !== null;
   const fullName =
     [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
 
@@ -101,7 +105,7 @@ function HomeOS() {
       // `fitViewport` handle) rather than claiming a viewport height of its own
       // — that stacked under the top bar and the shell's bottom gutter, so the
       // front door always scrolled by ~100px.
-      className="mx-auto flex w-full max-w-[750px] flex-1 flex-col justify-center gap-12 py-12"
+      className="relative mx-auto flex w-full max-w-[750px] flex-1 flex-col justify-center gap-12 py-12"
     >
       <div className="flex flex-col items-center gap-8">
         <h1 className="text-center text-3xl font-medium text-foreground">
@@ -111,6 +115,15 @@ function HomeOS() {
       </div>
 
       <RecentGrid pages={pages} />
+
+      {inDesktopApp && (
+        // A scavenger-hunt code, parked in the corner of the desktop app's
+        // front door: quiet enough to walk past, legible once you look for it.
+        // Absolute so it can't disturb the centred greeting/search stack.
+        <p className="absolute bottom-0 right-0 select-all text-[10px] font-medium tracking-[0.3em] text-muted-foreground/30">
+          FLOWERFARM
+        </p>
+      )}
     </div>
   );
 }
