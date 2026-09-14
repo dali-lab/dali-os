@@ -317,17 +317,38 @@ function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
   });
 }
 
+// Lab-wide Attendance surface (feature flag `attendance`). A General sub-tab
+// that supersedes the Core-only overview; see app/routes/attendance.tsx.
+const ATTENDANCE_SUBTAB: SubTab = {
+  label: "Attendance",
+  href: "/attendance",
+  icon: ClipboardCheck,
+};
+
 /**
- * The area set for one viewer. The role-grouped set (REGROUPED_AREAS) is now
- * the only nav — the nav-regroup flag was retired, so there is no flag-off
- * branch. `flags` is kept on the signature because the matchers below thread it
- * through, and NAV_AREAS survives only to keep favourites saved under the old
- * nav resolvable (see ALL_AREAS).
+ * The area set for one viewer. REGROUPED_AREAS is the base nav; the `attendance`
+ * flag is the one live branch — when on, Attendance moves from Core ▸ (the
+ * Core-only overview) to General ▸ (the invited-scoped lab-wide surface).
+ * NAV_AREAS survives only to keep favourites saved under the old nav resolvable
+ * (see ALL_AREAS).
  */
-export function areasFor(_flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+  let areas = REGROUPED_AREAS;
+  if (flags.attendance) {
+    areas = areas.map((a) => {
+      if (a.key === "projects")
+        return { ...a, subtabs: [...a.subtabs, ATTENDANCE_SUBTAB] };
+      if (a.key === "core")
+        return {
+          ...a,
+          subtabs: a.subtabs.filter((t) => t.href !== "/core/attendance"),
+        };
+      return a;
+    });
+  }
   // Deep-link email templates directly into Drive (agreements has its own Core
   // console page at /core/agreements).
-  return applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  return applyDriveSpacesSubstitutions(areas);
 }
 
 /**
@@ -343,7 +364,14 @@ export function pinnedNavItems(_flags: Partial<FeatureFlagMap> = {}): SubTab[] {
 // favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side — so
 // they must recognise a path that is a sub-tab on EITHER side of the flag.
 // Favorites saved before the flag flips have to keep working after it.
-const ALL_AREAS: NavArea[] = [...NAV_AREAS, ...REGROUPED_AREAS];
+// Include both the flag-off and flag-on regrouped sets so the flag-less matchers
+// recognise BOTH /core/attendance (flag off) and /attendance (flag on) — a
+// favorite or icon lookup must resolve regardless of the attendance flag's state.
+const ALL_AREAS: NavArea[] = [
+  ...NAV_AREAS,
+  ...areasFor({}),
+  ...areasFor({ attendance: true }),
+];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the
 // sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
