@@ -11,6 +11,7 @@ import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd } from "~/lib/pay-period";
+import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -943,14 +944,21 @@ export function WeekGridEvent({
                     >
                       <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
                     </Link>
-                    {e.meeting.notePageId && (
+                    {e.meeting.notePageId ? (
                       <Link
                         to={`/documents/${e.meeting.notePageId}`}
                         className={popoverActionBtn}
                       >
                         <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting notes
                       </Link>
-                    )}
+                    ) : e.meeting.canAddNote ? (
+                      <AddMeetingNoteButton
+                        meetingId={e.meeting.meetingId}
+                        isCoreMeeting={e.meeting.isCoreMeeting}
+                        actionPath={e.meeting.actionPath}
+                        className={popoverActionBtn}
+                      />
+                    ) : null}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>

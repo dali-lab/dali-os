@@ -8,11 +8,17 @@ vi.mock("~/lib/pages", () => ({
   ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
 }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { isCore } from "~/lib/roles";
 import { createLabMeetingPage, ensureCoreMeetingNotesFolder } from "~/lib/pages";
-import { cancelScheduledMeeting, createScheduledMeeting } from "~/lib/scheduled-meeting";
+import {
+  attachMeetingNote,
+  cancelScheduledMeeting,
+  createScheduledMeeting,
+} from "~/lib/scheduled-meeting";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -222,5 +228,129 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     expect(coreFolder).not.toHaveBeenCalled();
     expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: null }));
+  });
+});
+
+describe("attachMeetingNote", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    project: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const mockIsCore = isCore as unknown as ReturnType<typeof vi.fn>;
+
+  const meetingRow = (over: Record<string, unknown> = {}) => ({
+    id: "m1",
+    organizerId: "org-1",
+    participantUserIds: ["org-1", "u2"],
+    isCoreMeeting: false,
+    selectedAt: new Date("2026-09-10T15:00:00Z"),
+    status: "Confirmed",
+    notePage: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    mockIsCore.mockResolvedValue(false);
+    p.scheduledMeeting.update.mockResolvedValue({});
+    p.meetingAttendance.createMany.mockResolvedValue({ count: 0 });
+  });
+
+  it("404s a missing meeting", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(null);
+
+    const res = await attachMeetingNote({
+      meetingId: "nope",
+      actorId: "org-1",
+      meetingType: "Other",
+      meetingTypeLabel: "Sync",
+    });
+
+    expect(res).toEqual({ ok: false, error: "Meeting not found", status: 404 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("409s when the meeting already has a note", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notePage: { id: "page-x" } }));
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Other",
+      meetingTypeLabel: "Sync",
+    });
+
+    expect(res).toEqual({ ok: false, error: "This meeting already has a notes doc", status: 409 });
+  });
+
+  it("403s a non-organizer who isn't Core", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    mockIsCore.mockResolvedValue(false);
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "intruder",
+      meetingType: "Other",
+      meetingTypeLabel: "Sync",
+    });
+
+    expect(res).toEqual({ ok: false, error: "Only the organizer or Core can add notes", status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Team note with no project", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1", meetingType: "Team" });
+
+    expect(res).toEqual({
+      ok: false,
+      error: "A project is required for Team and Partner meetings",
+      status: 400,
+    });
+  });
+
+  it("creates a General note, records the type, and backfills attendance", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Other",
+      meetingTypeLabel: "All-hands",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: { meetingType: "Other", meetingTypeLabel: "All-hands", projectId: null },
+    });
+    expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: [
+        { scheduledMeetingId: "m1", userId: "org-1" },
+        { scheduledMeetingId: "m1", userId: "u2" },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it("lets Core file a Team note under a project they don't belong to", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ participantUserIds: ["org-1"] }));
+    mockIsCore.mockResolvedValue(true);
+    p.project.findFirst.mockResolvedValue({ id: "proj-9" });
+    p.project.findUnique.mockResolvedValue({ name: "Deserto" });
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "core-admin",
+      meetingType: "Team",
+      projectId: "proj-9",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-project" });
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: { meetingType: "Team", meetingTypeLabel: null, projectId: "proj-9" },
+    });
   });
 });

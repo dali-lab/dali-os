@@ -159,6 +159,11 @@ export async function action({ request }: Route.ActionArgs) {
       startIso: iv.start.toISOString(),
       endIso: iv.end.toISOString(),
     })),
+    // Coverage: whether this user's free/busy is real (a linked calendar) or a
+    // working-hours default. The client renders no-coverage users as
+    // "unknown", never as free — see PerUserFree.
+    hasCalendar: u.hasCalendar,
+    calendarError: u.calendarError,
   }));
 
   return withCors(request, Response.json({ days, perUser: perUserOut }));
