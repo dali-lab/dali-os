@@ -56,9 +56,11 @@ test.describe('portal home dashboard', () => {
     await page.goto('/portal');
     await expect(page.getByRole('heading', { name: 'Apply to DALI' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Education' })).toBeVisible();
-    // Nav reaches the two sub-surfaces.
-    await expect(page.getByRole('link', { name: 'Apply', exact: true })).toBeVisible();
+    // Education is the only nav item: applying lives on the portal home
+    // itself, which the logo links back to, so a separate "Apply" tab would
+    // just point at the page you are already on.
     await expect(page.getByRole('link', { name: 'Education', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Apply', exact: true })).toHaveCount(0);
   });
 });
 
