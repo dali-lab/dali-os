@@ -44,6 +44,7 @@ import {
   type NavArea,
   type RoleFlags,
 } from '~/lib/nav-areas'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -246,9 +247,10 @@ export function LayoutOS({
     })
   }
 
-  // The nav-regroup flag was retired; the nav-areas registry no longer branches
-  // on any flag, so an empty map is all the helpers need.
-  const navFlags = {}
+  // The `attendance` flag moves Attendance from Core ▸ to General ▸ in the nav
+  // registry (areasFor); CommandPalette threads the same flag through its own
+  // resolved map, so both stay consistent.
+  const navFlags = { attendance: useFeatureFlag('attendance') }
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -939,6 +941,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={navFlags}
         onOpen={openFromPalette}
       />
     </div>
