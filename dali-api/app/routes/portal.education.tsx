@@ -37,15 +37,13 @@ export default function PortalEducation() {
   const hasCourses = dashboard.myCourses.some((c) => !c.isPast);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
+    <div className="px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
         <h1 className="font-heading text-2xl font-bold text-dark-blue">
           Education at DALI
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Miniseries and workshops open to Dartmouth students — no lab
-          membership required. Apply or RSVP below; once you&apos;re accepted,
-          the course hub with sessions and materials opens up here.
+          Miniseries and workshops open to Dartmouth students. Apply or RSVP below!
         </p>
       </header>
 

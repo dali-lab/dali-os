@@ -57,10 +57,9 @@ export default function ApplicantLayout() {
           />
         </Link>
 
+        {/* No "Apply" item: the logo already goes to /portal, where applying
+            is the first card. */}
         <div className="ml-6 flex items-center gap-4 text-sm font-medium">
-          <Link to="/portal/hiring" className="text-dark-blue hover:text-accent-coral transition">
-            Apply
-          </Link>
           <Link to="/portal/education" className="text-dark-blue hover:text-accent-coral transition">
             Education
           </Link>

@@ -11,13 +11,15 @@
 // and card structure are what carry the project-hub look across the theme line.
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { OfferingDetailPanel } from "./OfferingDetailPanel";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { MetaList } from "~/components/ui/MetaList";
 import { FilterPill } from "~/components/ui/filter-panel";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
   TypeBadge,
   MyStatusChip,
-  registrationWindowLabel,
+  registrationWindowValue,
   type OfferingCardData,
 } from "./OfferingCard";
 
@@ -31,12 +33,17 @@ export type CatalogOffering = OfferingCardData & {
 
 type TypeFilter = "all" | "Miniseries" | "Workshop";
 
-const GRID = "grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-6";
+// Cards hold their size and the row count changes instead: with a 1fr max the
+// tracks stretch, so opening the detail pane made every remaining card wider —
+// the grid visibly reflowing under the thing you just clicked. Capped tracks
+// reflow quietly. Phones keep 1fr so a single column still fills the screen.
+const GRID =
+  "grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(260px,320px))]";
 
 // The coral→green gradient (shared with ProjectCoverImage / project cards),
 // with the offering's emoji centered on it — or the title's first letter when
 // no emoji is set, so a card never collapses to a bare title.
-function OfferingCover({
+export function OfferingCover({
   iconEmoji,
   title,
 }: {
@@ -60,23 +67,50 @@ function OfferingCover({
   );
 }
 
+export function seatsLabel(offering: {
+  capacity: number;
+  approvedCount: number;
+}): string {
+  const left = Math.max(0, offering.capacity - offering.approvedCount);
+  return left > 0
+    ? `${left} of ${offering.capacity} left`
+    : "Full — waitlist open";
+}
+
 export function OfferingCatalogCard({
   offering,
   to,
   myStatus,
+  selected,
+  onSelect,
 }: {
   offering: CatalogOffering;
   to: string;
   myStatus?: string | null;
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const tz = useUserTimeZone();
-  const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
   return (
     // Cover-led card that lifts on hover, the cover scaling on a slower curve
     // than the frame — the project-card choreography, on semantic tokens.
+    // Still a real link even when it opens the side pane: ⌘-click, middle-click
+    // and "open in new tab" have to keep reaching the offering's own page.
     <Link
       to={to}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-brand-1 transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-1"
+      aria-current={selected ? "true" : undefined}
+      onClick={(e) => {
+        if (!onSelect) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+          return;
+        e.preventDefault();
+        onSelect();
+      }}
+      className={`group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-brand-1 transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-1 ${
+        selected
+          ? "border-accent-coral ring-2 ring-accent-coral/40"
+          : "border-border"
+      }`}
     >
       <div className="relative overflow-hidden">
         <OfferingCover iconEmoji={offering.iconEmoji} title={offering.title} />
@@ -96,13 +130,13 @@ export function OfferingCatalogCard({
             {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
           </span>
         </span>
-        <span className="mt-auto text-xs text-muted-foreground">
-          {registrationWindowLabel(offering, tz)}
-          {" · "}
-          {seatsLeft > 0
-            ? `${seatsLeft} of ${offering.capacity} seats left`
-            : "Full — waitlist open"}
-        </span>
+        <MetaList
+          className="mt-auto pt-1"
+          rows={[
+            { label: "Registration", value: registrationWindowValue(offering, tz) },
+            { label: "Seats", value: seatsLabel(offering) },
+          ]}
+        />
       </div>
     </Link>
   );
@@ -139,76 +173,116 @@ export function OfferingCatalog({
       (q === "" || o.title.toLowerCase().includes(q)),
   );
 
+  // Selecting a card opens the detail pane beside the grid instead of
+  // navigating. A selection that the current search/filter has hidden is
+  // dropped, so the pane never describes a card you can no longer see.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    [...shown, ...past].find((o) => o.id === selectedId) ?? null;
+
   return (
-    <section className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search offerings…"
-          containerClassName="flex-1 min-w-[240px] max-w-[420px]"
-        />
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by type">
-          <FilterPill os={false} selected={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
-            All
-          </FilterPill>
-          <FilterPill
-            os={false}
-            selected={typeFilter === "Miniseries"}
-            onClick={() => setTypeFilter("Miniseries")}
-          >
-            Miniseries
-          </FilterPill>
-          <FilterPill
-            os={false}
-            selected={typeFilter === "Workshop"}
-            onClick={() => setTypeFilter("Workshop")}
-          >
-            Workshops
-          </FilterPill>
+    <section className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
+      {/* The grid column. On a phone there is no room for two panes, so the
+          open pane replaces the list rather than shrinking beside it. */}
+      <div
+        className={`min-w-0 flex-1 flex-col gap-5 ${selected ? "hidden lg:flex" : "flex"}`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search offerings…"
+            containerClassName="flex-1 min-w-[240px] max-w-[420px]"
+          />
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by type">
+            {/* Sized and toned to sit beside the search field as one filter
+                bar — see FilterPill's "md" size. */}
+            <FilterPill
+              os={false}
+              size="md"
+              tone="blue"
+              selected={typeFilter === "all"}
+              onClick={() => setTypeFilter("all")}
+            >
+              All
+            </FilterPill>
+            <FilterPill
+              os={false}
+              size="md"
+              tone="blue"
+              selected={typeFilter === "Miniseries"}
+              onClick={() => setTypeFilter("Miniseries")}
+            >
+              Miniseries
+            </FilterPill>
+            <FilterPill
+              os={false}
+              size="md"
+              tone="blue"
+              selected={typeFilter === "Workshop"}
+              onClick={() => setTypeFilter("Workshop")}
+            >
+              Workshops
+            </FilterPill>
+          </div>
         </div>
-      </div>
 
-      {shown.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <p className="font-heading font-semibold text-foreground">
-            {upcoming.length === 0 ? "Nothing open right now" : "No offerings match"}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {upcoming.length === 0
-              ? "Upcoming miniseries and workshops will show up here."
-              : "Try a different search or filter."}
-          </p>
-        </div>
-      ) : (
-        <div className={GRID}>
-          {shown.map((o) => (
-            <OfferingCatalogCard
-              key={o.id}
-              offering={o}
-              to={to(o.id)}
-              myStatus={o.myStatus}
-            />
-          ))}
-        </div>
-      )}
-
-      {past.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Past offerings ({past.length})
-          </summary>
-          <div className={`mt-3 ${GRID} opacity-80`}>
-            {past.map((o) => (
+        {shown.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <p className="font-heading font-semibold text-foreground">
+              {upcoming.length === 0 ? "Nothing open right now" : "No offerings match"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {upcoming.length === 0
+                ? "Upcoming miniseries and workshops will show up here."
+                : "Try a different search or filter."}
+            </p>
+          </div>
+        ) : (
+          <div className={GRID}>
+            {shown.map((o) => (
               <OfferingCatalogCard
                 key={o.id}
                 offering={o}
                 to={to(o.id)}
                 myStatus={o.myStatus}
+                selected={o.id === selectedId}
+                onSelect={() => setSelectedId(o.id)}
               />
             ))}
           </div>
-        </details>
+        )}
+
+        {past.length > 0 && (
+          <details className="group">
+            <summary className="cursor-pointer font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Past offerings ({past.length})
+            </summary>
+            <div className={`mt-3 ${GRID} opacity-80`}>
+              {past.map((o) => (
+                <OfferingCatalogCard
+                  key={o.id}
+                  offering={o}
+                  to={to(o.id)}
+                  myStatus={o.myStatus}
+                  selected={o.id === selectedId}
+                  onSelect={() => setSelectedId(o.id)}
+                />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      {selected && (
+        <OfferingDetailPanel
+          // Keyed so switching cards remounts the pane: the fetch, the scroll
+          // position and the focus move all restart for the new offering.
+          key={selected.id}
+          offering={selected}
+          href={to(selected.id)}
+          onClose={() => setSelectedId(null)}
+        />
       )}
     </section>
   );

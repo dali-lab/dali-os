@@ -7,6 +7,7 @@ import { getActiveCycle } from "~/hiring/lib/cycles";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { buttonClasses } from "~/components/ui/Button";
+import { MetaList } from "~/components/ui/MetaList";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
@@ -144,18 +145,20 @@ function CardShell({
 }
 
 // A project-hub-style action card: a gradient cover with a centered emoji, then
-// a title + one-line blurb, the whole tile a link. Mirrors the project cards'
-// cover-led look on the semantic tokens so it renders on the light portal.
+// a title and the card's facts as labelled rows, the whole tile a link. Mirrors
+// the project cards' cover-led look on the semantic tokens so it renders on the
+// light portal, and the education catalog's MetaList so a deadline or a count
+// reads the same wherever the portal shows one.
 function PortalActionCard({
   to,
   emoji,
   title,
-  blurb,
+  meta,
 }: {
   to: string;
   emoji: string;
   title: string;
-  blurb: string;
+  meta: { label: string; value: string }[];
 }) {
   return (
     <Link
@@ -170,9 +173,9 @@ function PortalActionCard({
           {emoji}
         </span>
       </div>
-      <div className="flex flex-1 flex-col gap-1 p-[17px]">
+      <div className="flex flex-1 flex-col gap-2 p-[17px]">
         <span className="font-heading text-lg font-bold text-dark-blue">{title}</span>
-        <span className="text-sm text-muted-foreground">{blurb}</span>
+        <MetaList rows={meta} />
       </div>
     </Link>
   );
@@ -180,28 +183,54 @@ function PortalActionCard({
 
 // The redesigned home's cards, each conditional on live state — an empty list
 // (no cycle, nothing open, no apps, no courses) falls back to a single note.
+// Each card carries labelled facts rather than a sentence: the deadline, the
+// count and the status are what a student is actually scanning for.
+type ActionCard = {
+  key: string;
+  to: string;
+  emoji: string;
+  title: string;
+  meta: { label: string; value: string }[];
+};
+
 function buildActionCards(
   hiring: PortalData["hiring"],
   education: PortalData["education"],
   teaching: PortalData["teaching"],
   hasAnyApplication: boolean,
   educationAppCount: number,
-): { key: string; to: string; emoji: string; title: string; blurb: string }[] {
-  const cards: { key: string; to: string; emoji: string; title: string; blurb: string }[] = [];
+): ActionCard[] {
+  const cards: ActionCard[] = [];
 
   if (hiring.cycleOpen) {
-    const closes = hiring.closesOn ? ` until ${hiring.closesOn}` : "";
+    const meta: { label: string; value: string }[] = [];
+    if (hiring.cycleName) meta.push({ label: "Cycle", value: hiring.cycleName });
+    meta.push({
+      label: "Status",
+      value:
+        hiring.applicationStatus === "Draft"
+          ? "Draft — not submitted"
+          : hiring.applicationStatus === "Submitted"
+            ? "Submitted"
+            : "Not started",
+    });
+    if (hiring.closesOn) {
+      meta.push({
+        // A submitted application can still be edited up to the close date; an
+        // unstarted one has that long to be filed at all.
+        label: hiring.applicationStatus === "Submitted" ? "Edit until" : "Closes",
+        value: hiring.closesOn,
+      });
+    }
     cards.push({
       key: "apply-dali",
       to: "/portal/apply",
       emoji: "📝",
-      title: hiring.applicationStatus === "Draft" ? "Finish your application" : "Apply to DALI",
-      blurb:
+      title:
         hiring.applicationStatus === "Draft"
-          ? `You have a draft for ${hiring.cycleName}. Submit it${hiring.closesOn ? ` before ${hiring.closesOn}` : ""}.`
-          : hiring.applicationStatus === "Submitted"
-            ? `You've applied to ${hiring.cycleName} — you can still edit${closes}.`
-            : `The ${hiring.cycleName} cycle is open${closes}.`,
+          ? "Finish your application"
+          : "Apply to DALI",
+      meta,
     });
   }
 
@@ -211,37 +240,55 @@ function buildActionCards(
       to: "/portal/education",
       emoji: "🎓",
       title: "Apply to an offering",
-      blurb: `${education.openOfferings} ${education.openOfferings === 1 ? "workshop or miniseries is" : "workshops and miniseries are"} open for registration.`,
+      meta: [
+        {
+          label: "Open now",
+          value: `${education.openOfferings} workshop${education.openOfferings === 1 ? "" : "s"} & miniseries`,
+        },
+        ...(education.pendingCount > 0
+          ? [{ label: "Awaiting review", value: `${education.pendingCount}` }]
+          : []),
+      ],
     });
   }
 
   if (hasAnyApplication) {
-    const parts: string[] = [];
-    if (hiring.applicationStatus) parts.push("1 DALI");
+    const meta: { label: string; value: string }[] = [];
+    if (hiring.applicationStatus)
+      meta.push({ label: "DALI", value: hiring.applicationStatus });
     if (educationAppCount > 0)
-      parts.push(`${educationAppCount} course${educationAppCount === 1 ? "" : "s"}`);
+      meta.push({
+        label: "Offerings",
+        value: `${educationAppCount} application${educationAppCount === 1 ? "" : "s"}`,
+      });
     cards.push({
       key: "my-applications",
       to: "/portal/applications",
       emoji: "📋",
       title: "My applications",
-      blurb: parts.length
-        ? `${parts.join(" · ")} — track status and next steps.`
-        : "Track your applications and next steps.",
+      meta: meta.length
+        ? meta
+        : [{ label: "Status", value: "Track status and next steps" }],
     });
   }
 
   if (education.enrolledCount > 0) {
-    const due =
-      education.openAssignments > 0
-        ? ` · ${education.openAssignments} assignment${education.openAssignments === 1 ? "" : "s"} due`
-        : "";
     cards.push({
       key: "my-courses",
       to: "/portal/education",
       emoji: "📚",
       title: "My courses",
-      blurb: `${education.enrolledCount} in progress${due}.`,
+      meta: [
+        { label: "In progress", value: `${education.enrolledCount}` },
+        ...(education.openAssignments > 0
+          ? [
+              {
+                label: "Assignments due",
+                value: `${education.openAssignments}`,
+              },
+            ]
+          : []),
+      ],
     });
   }
 
@@ -254,10 +301,12 @@ function buildActionCards(
           : "/education/manage",
       emoji: "🧑‍🏫",
       title: "Teaching",
-      blurb:
+      meta: [
         teaching.offerings.length === 1
-          ? `Manage ${teaching.offerings[0].title} — sessions, applications, and grading.`
-          : `Manage ${teaching.offerings.length} offerings — sessions, applications, and grading.`,
+          ? { label: "Offering", value: teaching.offerings[0].title }
+          : { label: "Offerings", value: `${teaching.offerings.length}` },
+        { label: "Manage", value: "Sessions, applications, grading" },
+      ],
     });
   }
 
@@ -281,16 +330,11 @@ export default function PortalHome() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-16 pb-10 flex flex-col gap-8">
       <header>
         <h1 className="font-heading text-3xl font-bold text-dark-blue">
-          {firstName ? `Hey ${firstName} 👋` : "Welcome to DALI"}
+          {firstName ? `What are you here to do today, ${firstName}? 👋` : "Welcome to DALI"}
         </h1>
-        <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-          Everything you can do with the DALI Lab lives here — apply to join
-          the lab, or take one of our workshops and miniseries. No lab
-          membership required.
-        </p>
       </header>
 
       {redesign ? (
@@ -312,7 +356,7 @@ export default function PortalHome() {
                 to={c.to}
                 emoji={c.emoji}
                 title={c.title}
-                blurb={c.blurb}
+                meta={c.meta}
               />
             ))}
           </div>
