@@ -251,16 +251,16 @@ function ClueRow({
 
   return (
     <li className="py-2 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 items-start gap-2">
           {clue.found ? (
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-accent-coral" />
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-coral" />
           ) : (
-            <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           )}
           <span
             className={cn(
-              "truncate font-medium text-foreground",
+              "min-w-0 break-words font-medium text-foreground",
               clue.found && "text-muted-foreground line-through",
             )}
           >
