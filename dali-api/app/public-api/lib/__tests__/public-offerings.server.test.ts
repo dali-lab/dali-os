@@ -290,4 +290,17 @@ describe("listPublicOfferings mapping", () => {
     const [m] = await listPublicOfferings({}, NOW);
     expect(m.term).toBeNull();
   });
+
+  // A Published offering can have null startsAt/endsAt (no sessions). It has no
+  // schedule to render, and `null.toISOString()` would throw and 500 the whole
+  // endpoint — so it's dropped, and the scheduled offerings still come back.
+  it("skips published offerings with a null start/end instead of crashing", async () => {
+    mockPrisma.educationOffering.findMany.mockResolvedValue([
+      { ...baseRow, id: "no-schedule", startsAt: null, endsAt: null },
+      baseRow,
+    ]);
+    const result = await listPublicOfferings({}, NOW);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("o1");
+  });
 });
