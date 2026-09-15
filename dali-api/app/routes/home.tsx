@@ -7,6 +7,7 @@ import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.ser
 import { loadShellUser } from "~/lib/shell-user.server";
 import { timed } from "~/lib/server-timing";
 import { FavoriteIcon } from "~/components/FavoriteIcon";
+import { HuntCode } from "~/components/activities/HuntCode";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
@@ -118,11 +119,9 @@ function HomeOS() {
 
       {inDesktopApp && (
         // A scavenger-hunt code, parked in the corner of the desktop app's
-        // front door: quiet enough to walk past, legible once you look for it.
-        // Absolute so it can't disturb the centred greeting/search stack.
-        <p className="absolute bottom-0 right-0 select-all text-[10px] font-medium tracking-[0.3em] text-muted-foreground/30">
-          FLOWERFARM
-        </p>
+        // front door. Absolute so it can't disturb the centred greeting/search
+        // stack.
+        <HuntCode code="FLOWERFARM" className="absolute bottom-0 right-0" />
       )}
     </div>
   );

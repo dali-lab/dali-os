@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { UserRoles } from "~/lib/roles";
 import {
   activityPhase,
+  autoAssignTeams,
+  clampTeamSize,
   isActivityActive,
   isActivityKind,
   matchesAudienceRoles,
+  removeFromTeams,
   resolveHintState,
+  teamForMember,
+  type ActivityTeamView,
   type HuntHintPolicy,
 } from "~/lib/activities";
 
@@ -133,5 +138,106 @@ describe("resolveHintState", () => {
     expect(
       resolveHintState(p, { revealed: false, nowMs: unlocksAt, startsAtMs: start }),
     ).toEqual({ show: true, cost: null, unlocksAt: null });
+  });
+});
+
+// ─── Teams ───────────────────────────────────────────────────────────────────
+
+describe("autoAssignTeams", () => {
+  // Stable ids so the expectations read as data, not UUIDs.
+  const ids = () => {
+    let n = 0;
+    return () => `t${++n}`;
+  };
+  const shape = (teams: ActivityTeamView[]) => teams.map((t) => t.memberIds);
+
+  const assign = (roster: string[], teams: ActivityTeamView[] = [], teamSize = 2) =>
+    autoAssignTeams({ roster, teams, teamSize, newTeamId: ids() });
+
+  it("pairs an even roster up", () => {
+    expect(shape(assign(["a", "b", "c", "d"]))).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+  });
+
+  it("names the teams it creates", () => {
+    expect(assign(["a", "b", "c", "d"]).map((t) => t.name)).toEqual(["Team 1", "Team 2"]);
+  });
+
+  it("puts a leftover person on an existing team rather than alone", () => {
+    expect(shape(assign(["a", "b", "c"]))).toEqual([["a", "b", "c"]]);
+  });
+
+  it("honors a team size above two", () => {
+    expect(shape(assign(["a", "b", "c", "d", "e", "f"], [], 3))).toEqual([
+      ["a", "b", "c"],
+      ["d", "e", "f"],
+    ]);
+  });
+
+  it("absorbs a remainder too small to be a team of its own", () => {
+    // 7 into 3s leaves one person: a team of four beats a team of one.
+    expect(shape(assign(["a", "b", "c", "d", "e", "f", "g"], [], 3))).toEqual([
+      ["a", "b", "c", "g"],
+      ["d", "e", "f"],
+    ]);
+  });
+
+  it("tops up a half-full team before making a new one", () => {
+    const existing: ActivityTeamView[] = [{ id: "keep", name: "Keepers", memberIds: ["a"] }];
+    expect(shape(assign(["a", "b", "c", "d"], existing))).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+  });
+
+  it("leaves hand-made pairings alone", () => {
+    const existing: ActivityTeamView[] = [
+      { id: "keep", name: "Keepers", memberIds: ["a", "b"] },
+    ];
+    const out = assign(["a", "b", "c", "d"], existing);
+    expect(out[0]).toEqual(existing[0]);
+    expect(shape(out)).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+  });
+
+  it("is a no-op when everyone is already placed", () => {
+    const existing: ActivityTeamView[] = [
+      { id: "keep", name: "Keepers", memberIds: ["a", "b"] },
+    ];
+    expect(assign(["a", "b"], existing)).toEqual(existing);
+  });
+
+  it("makes one team of everyone when the roster is smaller than a pair", () => {
+    expect(shape(assign(["a"]))).toEqual([["a"]]);
+  });
+});
+
+describe("team helpers", () => {
+  const teams: ActivityTeamView[] = [
+    { id: "t1", name: "One", memberIds: ["a", "b"] },
+    { id: "t2", name: "Two", memberIds: ["c"] },
+  ];
+
+  it("finds the team a member is on", () => {
+    expect(teamForMember(teams, "b")?.id).toBe("t1");
+    expect(teamForMember(teams, "zz")).toBeNull();
+  });
+
+  it("removes a member without touching the other teams", () => {
+    expect(removeFromTeams(teams, "a")).toEqual([
+      { id: "t1", name: "One", memberIds: ["b"] },
+      { id: "t2", name: "Two", memberIds: ["c"] },
+    ]);
+  });
+
+  it("clamps a team size to something a team can actually be", () => {
+    expect(clampTeamSize(0)).toBe(2);
+    expect(clampTeamSize(99)).toBe(12);
+    expect(clampTeamSize(Number.NaN)).toBe(2);
+    expect(clampTeamSize(3.4)).toBe(3);
   });
 });
