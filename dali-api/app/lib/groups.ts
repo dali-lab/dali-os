@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
@@ -119,9 +120,24 @@ async function resolveOfferingMembers(offeringId: string): Promise<string[]> {
   return rows.map((r) => r.applicantUserId);
 }
 
+/**
+ * A domain group is the people who work that domain *now*, not everyone who
+ * ever qualified for it.
+ *
+ * DomainEligibility is monotonic and term-independent — rows are never deleted,
+ * and graduating doesn't touch them — so an unfiltered query returns every
+ * member the domain has ever had. Alumni kept receiving the domain's
+ * notifications and meeting invites years after leaving; the same observation
+ * is already recorded on resolveAllLabMembers below, which is why the "whole
+ * lab" audience refuses to use a domain filter at all.
+ *
+ * Gating on the stored membershipStatus (rather than on term activity) keeps a
+ * current member with no assignments yet — a fresh hire, someone between
+ * projects — inside their domain's group.
+ */
 async function resolveDomainMembers(domainId: string): Promise<string[]> {
   const rows = await prisma.domainEligibility.findMany({
-    where: { domainId },
+    where: { domainId, user: ACTIVE_LAB_MEMBER_WHERE },
     select: { userId: true },
   });
   return rows.map((r) => r.userId);
@@ -202,10 +218,7 @@ export async function isUserInAnyGroup(
 // separate audience — the `alumni` system group.
 export async function resolveAllLabMembers(): Promise<string[]> {
   const users = await prisma.user.findMany({
-    where: {
-      daliMember: { isNot: null },
-      membershipStatus: "Active",
-    },
+    where: ACTIVE_LAB_MEMBER_WHERE,
     select: { id: true },
   });
   return users.map((u) => u.id);
@@ -414,11 +427,12 @@ async function deriveUserGroups(userId: string, request?: Request) {
           select: { offeringId: true },
         })
       : Promise.resolve([] as { offeringId: string }[]),
-    needsAlumni || needsHiring
+    needsAlumni || needsHiring || domainIds.size > 0
       ? prisma.user.findUnique({
           where: { id: userId },
           // daliMember presence mirrors resolveAlumni's `daliMember: { isNot: null }`
           // gate — Alumni status alone must not admit a non-DALIMember to the group.
+          // Domain groups need the same row for the inverse test (Active only).
           select: { membershipStatus: true, daliMember: { select: { userId: true } } },
         })
       : Promise.resolve(null),
@@ -470,6 +484,9 @@ async function deriveUserGroups(userId: string, request?: Request) {
   const coreCycleTermIdSet = new Set(coreCycleTermIds);
   const isInCore = userCoreAssignments.some((r) => coreCycleTermIdSet.has(r.termId));
   const isAlumni = userRow?.membershipStatus === "Alumni" && userRow.daliMember != null;
+  // Mirrors resolveDomainMembers' `user: ACTIVE_LAB_MEMBER_WHERE` gate.
+  const isActiveLabMember =
+    userRow?.membershipStatus === "Active" && userRow.daliMember != null;
   const isInHiring =
     isInCore ||
     userDomainLeads.length > 0 ||
@@ -492,7 +509,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
         switch (kind) {
           case "term":     isMember = id ? userTermIds.has(id) : false; break;
           case "project":  isMember = id ? userCurrentProjectIds.has(id) : false; break;
-          case "domain":   isMember = id ? userDomainIds.has(id) : false; break;
+          case "domain":   isMember = id ? isActiveLabMember && userDomainIds.has(id) : false; break;
           case "offering": isMember = id ? userOfferingIds.has(id) : false; break;
           case "core":     isMember = isInCore; break;
           case "hiring":   isMember = isInHiring; break;
