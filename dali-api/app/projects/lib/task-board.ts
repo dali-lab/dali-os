@@ -284,6 +284,35 @@ export function resolveTermIdForDate(
 }
 
 /**
+ * Carried-over work: an unfinished task (not Done/Cancelled) whose own date
+ * falls in a term strictly before `currentTermId`. A task's term is derived
+ * from its date, not stored, so at term rollover an unfinished task still dated
+ * in last term would drop off the current board with no home. Instead it rolls
+ * forward — staying on the current term's board (and current sprint) until it's
+ * finished, the way an overdue item follows you rather than vanishing.
+ * Done/Cancelled tasks stay filed under the term they happened in. Returns
+ * false when there's no current term or the current term isn't in `terms`.
+ */
+export function isCarriedOverTask(
+  task: Pick<TaskCardModel, "status" | "startsAt" | "dueAt">,
+  terms: TermWindow[],
+  currentTermId: string | null,
+): boolean {
+  if (task.status === "Done" || task.status === "Cancelled") return false;
+  if (!currentTermId) return false;
+  const current = terms.find((t) => t.id === currentTermId);
+  if (!current) return false;
+  const raw = task.dueAt ?? task.startsAt;
+  if (!raw) return false;
+  const date = new Date(raw);
+  // Must predate the current term's window — and not merely land in the break
+  // week that resolveTermIdForDate rolls forward into the current term.
+  if (date >= current.startDate) return false;
+  const resolved = resolveTermIdForDate(terms, date);
+  return resolved !== null && resolved !== currentTermId;
+}
+
+/**
  * Terms whose windows overlap [start, end]. Either bound may be null
  * (open-ended): a null start matches every term up to `end`, a null end every
  * term from `start` on. Both null = no dated span = no terms.

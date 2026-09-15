@@ -5,6 +5,7 @@ import {
   moveTaskInBoard,
   nextPositionInColumn,
   resolveTermIdForDate,
+  isCarriedOverTask,
   termIdsInRange,
   currentSprintBand,
   defaultSprintScope,
@@ -159,6 +160,71 @@ describe("resolveTermIdForDate", () => {
 
   it("treats the endDate boundary as still in-term", () => {
     expect(resolveTermIdForDate(TERMS, TERMS[0].endDate)).toBe("spring");
+  });
+});
+
+describe("isCarriedOverTask", () => {
+  // Reuses TERMS above: spring/summer are past when the current term is fall.
+  const dated = (
+    over: Partial<Pick<TaskCardModel, "status" | "startsAt" | "dueAt">>,
+  ): TaskCardModel => ({ ...task("t", "Todo", 0), ...over });
+
+  it("rolls an unfinished past-term task forward to the current term", () => {
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), TERMS, "fall"),
+    ).toBe(true);
+  });
+
+  it("falls back to startsAt when dueAt is null", () => {
+    expect(
+      isCarriedOverTask(dated({ startsAt: "2026-07-15T00:00:00Z" }), TERMS, "fall"),
+    ).toBe(true);
+  });
+
+  it("leaves Done and Cancelled work filed under its own term", () => {
+    expect(
+      isCarriedOverTask(
+        dated({ status: "Done", dueAt: "2026-07-15T00:00:00Z" }),
+        TERMS,
+        "fall",
+      ),
+    ).toBe(false);
+    expect(
+      isCarriedOverTask(
+        dated({ status: "Cancelled", dueAt: "2026-07-15T00:00:00Z" }),
+        TERMS,
+        "fall",
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores current-term and future-term work", () => {
+    // Dated in the current (fall) term — not carried over.
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-10-01T00:00:00Z" }), TERMS, "fall"),
+    ).toBe(false);
+    // With summer current, a fall-dated task is future, not overdue.
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-10-01T00:00:00Z" }), TERMS, "summer"),
+    ).toBe(false);
+  });
+
+  it("does not roll forward a break-week date that already lands in the current term", () => {
+    // Between summer's end and fall's start: resolveTermIdForDate counts it as
+    // fall, so it's current-term work, not carryover.
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-09-07T00:00:00Z" }), TERMS, "fall"),
+    ).toBe(false);
+  });
+
+  it("returns false for undated work, no current term, or an unknown current term", () => {
+    expect(isCarriedOverTask(dated({}), TERMS, "fall")).toBe(false);
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), TERMS, null),
+    ).toBe(false);
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), TERMS, "winter"),
+    ).toBe(false);
   });
 });
 

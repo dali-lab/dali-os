@@ -54,6 +54,7 @@ import {
   taskInSprintScope,
   sprintPickerOptions,
   resolveTermIdForDate,
+  isCarriedOverTask,
   type SprintScope,
   type TermWindow,
 } from "../lib/task-board";
@@ -442,14 +443,30 @@ export function TaskBoard({
     if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
     else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
     if (sprintScope !== "all") {
-      ts = ts.filter((t) => taskInSprintScope(t, sprintScope, options.termSpans, now));
+      ts = ts.filter(
+        (t) =>
+          taskInSprintScope(t, sprintScope, options.termSpans, now) ||
+          // Unfinished work carried over from a past term rides along in the
+          // current sprint (the board's default scope) so it isn't cut here
+          // before the term filter can surface it.
+          (sprintScope === "current" &&
+            isCarriedOverTask(t, termWindows, options.currentTermId)),
+      );
     }
     if (effectiveTerm !== ALL_TERMS) {
       ts = ts.filter((t) => {
         // A task's term comes from its own dates. Undated (backlog) work is
         // term-less — always visible so it stays the pool you plan from.
         const d = t.dueAt ?? t.startsAt;
-        return d === null ? true : resolveTermIdForDate(termWindows, new Date(d)) === effectiveTerm;
+        if (d === null) return true;
+        // Unfinished work dated in a past term rolls forward onto the current
+        // term's board — otherwise it silently drops off at term rollover.
+        if (
+          effectiveTerm === options.currentTermId &&
+          isCarriedOverTask(t, termWindows, options.currentTermId)
+        )
+          return true;
+        return resolveTermIdForDate(termWindows, new Date(d)) === effectiveTerm;
       });
     }
     if (onlyMine) {
@@ -469,6 +486,7 @@ export function TaskBoard({
     now,
     effectiveTerm,
     termWindows,
+    options.currentTermId,
     onlyMine,
     currentUserId,
     filterPeopleIds,
