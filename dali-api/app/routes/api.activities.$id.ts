@@ -33,6 +33,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const mech = mechanicServer(activity.kind);
   if (!mech) throw new Response("Not found", { status: 404 });
 
+  // Some codes are earned by what a member has already done in DALI OS rather
+  // than by finding a string somewhere, so settle those before reading the
+  // event stream — an award then shows up in this same response. Only while the
+  // activity is running: a hunt that has ended shouldn't keep crediting people.
+  if (active && mech.autoAward && (await mech.autoAward({ activity, userId }))) {
+    publishActivityChange(activity.id);
+  }
+
   const [userEvents, allEvents, viewerIsCore] = await Promise.all([
     prisma.activityEvent.findMany({ where: { activityId: activity.id, userId } }),
     prisma.activityEvent.findMany({ where: { activityId: activity.id } }),

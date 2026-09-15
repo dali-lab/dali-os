@@ -24,13 +24,12 @@ function session(
 describe("recomputeOfferingDates", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockPrisma.term = { findFirst: vi.fn().mockResolvedValue(null) };
     mockPrisma.educationOffering = { update: vi.fn().mockResolvedValue({}) };
     // Renumbering runs its per-row updates through $transaction(array).
     mockPrisma.$transaction = vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops));
   });
 
-  it("sets all three to null when the offering has no sessions", async () => {
+  it("sets both dates to null when the offering has no sessions", async () => {
     mockPrisma.educationSession = {
       findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockResolvedValue({}),
@@ -40,7 +39,7 @@ describe("recomputeOfferingDates", () => {
 
     expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
       where: { id: "off-1" },
-      data: { startsAt: null, endsAt: null, termId: null },
+      data: { startsAt: null, endsAt: null },
     });
   });
 
@@ -56,14 +55,11 @@ describe("recomputeOfferingDates", () => {
       ]),
       update: vi.fn().mockResolvedValue({}),
     };
-    const termId = "term-26f";
-    mockPrisma.term.findFirst.mockResolvedValue({ id: termId });
-
     await recomputeOfferingDates("off-1");
 
     expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
       where: { id: "off-1" },
-      data: { startsAt: first, endsAt: third, termId },
+      data: { startsAt: first, endsAt: third },
     });
     // Sequences already match chronological order, so nothing is renumbered.
     expect(mockPrisma.educationSession.update).not.toHaveBeenCalled();
@@ -76,8 +72,6 @@ describe("recomputeOfferingDates", () => {
       findMany: vi.fn().mockResolvedValue([session("s1", 1, start, end)]),
       update: vi.fn().mockResolvedValue({}),
     };
-    mockPrisma.term.findFirst.mockResolvedValue({ id: "term-26f" });
-
     await recomputeOfferingDates("off-1");
 
     const call = mockPrisma.educationOffering.update.mock.calls[0][0];
@@ -114,30 +108,12 @@ describe("recomputeOfferingDates", () => {
     expect(mockPrisma.educationSession.update).toHaveBeenCalledTimes(2);
   });
 
-  it("sets termId null when no term window matches", async () => {
-    const datetime = new Date("2030-01-01T14:00:00Z");
-    mockPrisma.educationSession = {
-      findMany: vi.fn().mockResolvedValue([session("s1", 1, datetime)]),
-      update: vi.fn().mockResolvedValue({}),
-    };
-    mockPrisma.term.findFirst.mockResolvedValue(null);
-
-    await recomputeOfferingDates("off-1");
-
-    expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
-      where: { id: "off-1" },
-      data: { startsAt: datetime, endsAt: datetime, termId: null },
-    });
-  });
-
   it("uses same date for both start and end when there is only one session", async () => {
     const datetime = new Date("2026-10-05T10:00:00Z");
     mockPrisma.educationSession = {
       findMany: vi.fn().mockResolvedValue([session("s1", 1, datetime)]),
       update: vi.fn().mockResolvedValue({}),
     };
-    mockPrisma.term.findFirst.mockResolvedValue({ id: "term-26f" });
-
     await recomputeOfferingDates("off-1");
 
     const call = mockPrisma.educationOffering.update.mock.calls[0][0];
