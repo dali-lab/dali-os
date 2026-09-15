@@ -1,15 +1,12 @@
 {
   "manifest_version": 3,
   "name": "DALI OS → JobX Timesheet",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Fills your Dartmouth JobX timesheet from the hours you logged in DALI OS — pick a role and a pay period, review, fill.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://dartmouth.studentemployment.ngwebsolutions.com/*",
-    "http://localhost:3001/*",
-    "http://localhost:3002/*",
-    "http://localhost:5173/*",
-    "https://*.dali.dartmouth.edu/*"
+    "https://os.dali.dartmouth.edu/*"
   ],
   "background": {
     "service_worker": "background.js"

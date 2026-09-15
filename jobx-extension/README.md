@@ -14,9 +14,16 @@ timesheet — nothing reaches payroll until you submit the period in JobX.
 - The content script runs only on `Tsx_StuManageTimesheet.aspx` and adds a
   **Fill from DALI** button (bottom-right). Clicking it opens a panel:
   **Role** → **Pay period** → the entries in that period → **Fill & save**.
+- The panel header has a **refresh** (⟳) button that re-pulls the current role
+  and pay period from DALI OS, so hours logged after the panel was opened show
+  up without closing and reopening it.
 - The panel opens on the pay period of the JobX page you're on (marked
   *This page*), so the common case is one click. Entries whose day isn't on
   the open JobX page are shown but skipped.
+- The server is always production DALI OS (`https://os.dali.dartmouth.edu`),
+  hardcoded in `background.js`. There's no server picker — members shouldn't
+  have to think about it. To test against staging or local dev, change `BASE`
+  there and add the host to the manifest's `host_permissions`.
 - All DALI requests go through the background service worker
   (`background.js`), not the content script. A content script's fetch counts
   as the JobX page's, so it's cross-site to DALI and Chrome drops the
@@ -63,9 +70,21 @@ zone, which is what JobX's hour/minute/AM-PM selects take.
 1. Chrome → `chrome://extensions`
 2. Toggle **Developer mode** (top-right).
 3. **Load unpacked** → select this `jobx-extension/` folder.
-4. It talks to production (`https://os.dali.dartmouth.edu`) by default. To
-   point it at staging or local dev, click the extension icon → **DALI OS
-   server**. The popup also shows whether you're signed in.
+
+Clicking the extension icon opens a popup that shows whether you're signed in
+to DALI OS and how many paid roles it can see.
+
+## Packaging for the Chrome Web Store
+
+```
+./package.sh
+```
+
+Bump `version` in `manifest.json` first — the Web Store rejects an upload whose
+version isn't higher than the published one. The script writes
+`dist/jobx-extension-<version>.zip` (gitignored) containing only the files the
+extension loads; upload that zip in the Web Store Developer Dashboard under
+**Package → Upload new package**.
 
 ## Use
 
@@ -81,8 +100,4 @@ zone, which is what JobX's hour/minute/AM-PM selects take.
 
 - After reloading the extension in `chrome://extensions`, refresh any open
   JobX tab — the old content script loses its connection to the extension.
-- A custom server URL has to match one of the manifest's `host_permissions`
-  (`localhost:3001/3002/5173` or `*.dali.dartmouth.edu`).
 - Blocks that run past midnight are skipped (JobX takes one day per row).
-- For non-dev distribution, pack/publish via the Chrome Web Store (or an
-  enterprise policy) so members don't need Developer mode.
