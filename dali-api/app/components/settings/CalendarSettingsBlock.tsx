@@ -13,6 +13,7 @@ import { CalendarDays, ChevronDown, ChevronRight, ExternalLink, Plus, Trash2 } f
 import type { CalendarLinkDTO } from "~/lib/settings-page.server";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
+import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 
 const CALENDAR_ACTION = "/settings/calendar";
 
@@ -126,9 +127,7 @@ function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
 
       {open && (
         <div className="flex flex-col gap-2 px-3 py-3">
-          {link.syncError && (
-            <p className="text-[11px] text-red-700">Sync error: {link.syncError}</p>
-          )}
+          <SyncErrorNotice syncError={link.syncError} />
           <p className="text-xs text-muted-foreground">
             Per-calendar visibility and availability settings are now on the{" "}
             <Link to="/calendar" className="font-medium text-accent-teal hover:underline">
