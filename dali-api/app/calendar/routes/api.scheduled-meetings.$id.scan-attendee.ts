@@ -6,7 +6,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,
@@ -55,15 +55,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       id: true,
       organizerId: true,
       projectId: true,
-      selectedAt: true,
-      durationMinutes: true,
     },
   });
   // Any real meeting is scannable — don't require a meetingType. An all-lab /
   // general attendance event created as SelfCheckIn carries no meetingType but
   // still has a roster (MeetingAttendance rows); the self-check-in route accepts
-  // it, so the scan station must too. The window check (needs selectedAt) rejects
-  // scheduling polls, and markMeetingAttendance rejects non-invitees below.
+  // it, so the scan station must too. markMeetingAttendance rejects non-invitees
+  // below, which is what keeps a scheduling poll out.
+  //
+  // Deliberately NOT window-gated, unlike self-check-in. This is an operator
+  // marking someone else present, and the operator can already do exactly that
+  // at any time from AttendanceChecklist (api.scheduled-meetings.$id.attendance
+  // has no window check) — so the gate granted no authority, it only broke
+  // scanning whenever an event ran past its scheduled end.
   if (!meeting) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
@@ -76,10 +80,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   ]);
   const canMark = auth.user.sub === meeting.organizerId || core || member;
   if (!canMark) return forbidden(request);
-
-  if (!isWithinCheckInWindow(meeting.selectedAt, meeting.durationMinutes)) {
-    return withCors(request, Response.json({ error: "Check-in window is closed" }, { status: 403 }));
-  }
 
   // Resolve the member from the token's id, then verify the signature against
   // THAT member's current secret — a leaked/screenshotted barcode from a
