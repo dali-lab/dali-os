@@ -23,7 +23,12 @@ import {
 } from "~/lib/pages";
 import { isCore } from "~/lib/roles";
 import { expandOccurrences, type OccurrenceException } from "~/lib/meeting-occurrences";
-import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
+import type {
+  ScheduledMeeting,
+  MeetingType,
+  AttendanceMode,
+  ScopeType,
+} from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {
   return `meeting-${meetingId}@dali.dartmouth.edu`;
@@ -648,6 +653,42 @@ export function isWithinCheckInWindow(
   );
 }
 
+/**
+ * Is this user in the meeting's invited scope *right now*?
+ *
+ * MeetingAttendance rows are fanned out once, at create time, from the
+ * `participantUserIds` snapshot — and nothing ever updates that snapshot. For a
+ * Group-scoped meeting the group may be DYNAMIC ("active this term", "core",
+ * "project:x"), so its real membership moves while the snapshot does not. The
+ * consequence was that anyone who joined the lab, a term, or the group after the
+ * event was created had no roster row, and marking them present — by scan, by
+ * self check-in, or by the organizer's checklist — failed with "User was not
+ * invited to this meeting" even though they plainly were invited. A recurring
+ * all-lab event makes it worse: one September snapshot governs every occurrence
+ * for the rest of the year.
+ *
+ * So fall back to resolving the scope live. This stays a real gate — it is not
+ * "the operator may mark anyone". A UserList meeting keeps exactly its explicit
+ * invitees, and a Group meeting admits only current members of that group.
+ */
+export async function isInMeetingScope(
+  meeting: {
+    organizerId: string;
+    scopeType: ScopeType;
+    scopeId: string | null;
+    participantUserIds: string[];
+  },
+  userId: string,
+): Promise<boolean> {
+  if (userId === meeting.organizerId) return true;
+  if (meeting.participantUserIds.includes(userId)) return true;
+  if (meeting.scopeType === "Group" && meeting.scopeId) {
+    const members = await resolveGroupMembers(meeting.scopeId);
+    return members.includes(userId);
+  }
+  return false;
+}
+
 export type MarkMeetingAttendanceResult =
   | { ok: true }
   | { ok: false; error: string; status: number };
@@ -661,6 +702,9 @@ export type MarkMeetingAttendanceResult =
  * isn't duplicated between "someone else marks you present" and "you mark
  * yourself present." Callers are responsible for their own auth/permission
  * gate before calling this — it does not re-check who `markedByUserId` is.
+ *
+ * A member in scope but without a roster row gets one created here; see
+ * isInMeetingScope for why that is not the same as "anyone may be marked".
  */
 export async function markMeetingAttendance(
   meetingId: string,
@@ -670,7 +714,17 @@ export async function markMeetingAttendance(
 ): Promise<MarkMeetingAttendanceResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
-    select: { id: true, projectId: true, durationMinutes: true, selectedAt: true, createdAt: true },
+    select: {
+      id: true,
+      projectId: true,
+      durationMinutes: true,
+      selectedAt: true,
+      createdAt: true,
+      organizerId: true,
+      scopeType: true,
+      scopeId: true,
+      participantUserIds: true,
+    },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
 
@@ -678,7 +732,15 @@ export async function markMeetingAttendance(
     where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
   });
   if (!attendance) {
-    return { ok: false, error: "User was not invited to this meeting", status: 400 };
+    if (!(await isInMeetingScope(meeting, userId))) {
+      return { ok: false, error: "User was not invited to this meeting", status: 400 };
+    }
+    // In scope but rosterless: a late joiner. skipDuplicates because two scans
+    // of the same pass can land here concurrently.
+    await prisma.meetingAttendance.createMany({
+      data: [{ scheduledMeetingId: meeting.id, userId }],
+      skipDuplicates: true,
+    });
   }
 
   await prisma.meetingAttendance.update({

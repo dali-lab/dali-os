@@ -14,6 +14,7 @@ vi.mock("~/lib/google-calendar", () => ({
   createGoogleCalendarEvent: vi.fn(),
   getGoogleEvent: vi.fn(),
 }));
+vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
@@ -24,11 +25,13 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { createGoogleCalendarEvent, getGoogleEvent } from "~/lib/google-calendar";
+import { resolveGroupMembers } from "~/lib/groups";
 import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
   isWithinCheckInWindow,
+  markMeetingAttendance,
   trackExternalEventAsMeeting,
 } from "~/lib/scheduled-meeting";
 
@@ -36,6 +39,15 @@ const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+  };
+  meetingAttendance: {
+    findUnique: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
+  timeEntry: {
+    upsert: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
   };
 };
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
@@ -591,5 +603,74 @@ describe("isWithinCheckInWindow", () => {
     expect(
       isWithinCheckInWindow({ selectedAt: null, durationMinutes: 60, recurrenceRule: null }, []),
     ).toBe(false);
+  });
+});
+
+describe("markMeetingAttendance — a late joiner to a dynamic group", () => {
+  // An all-lab event: Group scope over a dynamic group, roster snapshotted at
+  // create time. "u-new" joined the group afterwards, so they have no row.
+  const GROUP_MEETING = {
+    id: "m1",
+    projectId: null,
+    durationMinutes: 60,
+    selectedAt: new Date("2026-09-15T14:00:00.000Z"),
+    createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    organizerId: "u-org",
+    scopeType: "Group" as const,
+    scopeId: "g-all-lab",
+    participantUserIds: ["u-old"],
+  };
+
+  beforeEach(() => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(GROUP_MEETING);
+    mockPrisma.meetingAttendance.findUnique.mockResolvedValue(null);
+  });
+
+  it("creates the missing row and marks a current group member present", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["u-old", "u-new"]);
+
+    const res = await markMeetingAttendance("m1", "u-new", true, "u-org");
+
+    expect(res).toEqual({ ok: true });
+    expect(mockPrisma.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: [{ scheduledMeetingId: "m1", userId: "u-new" }],
+      skipDuplicates: true,
+    });
+    expect(mockPrisma.meetingAttendance.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ present: true }) }),
+    );
+    // Present also has to produce the Meeting-sourced TimeEntry.
+    expect(mockPrisma.timeEntry.upsert).toHaveBeenCalled();
+  });
+
+  it("still refuses someone outside the group", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["u-old"]);
+
+    const res = await markMeetingAttendance("m1", "u-stranger", true, "u-org");
+
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(mockPrisma.meetingAttendance.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.meetingAttendance.update).not.toHaveBeenCalled();
+  });
+
+  it("admits the organizer and the snapshotted participants without resolving the group", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+
+    expect(await markMeetingAttendance("m1", "u-org", true, "u-org")).toEqual({ ok: true });
+    expect(await markMeetingAttendance("m1", "u-old", true, "u-org")).toEqual({ ok: true });
+    expect(resolveGroupMembers).not.toHaveBeenCalled();
+  });
+
+  it("keeps a UserList meeting closed to non-invitees — no live scope to widen to", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      ...GROUP_MEETING,
+      scopeType: "UserList" as const,
+      scopeId: null,
+    });
+
+    const res = await markMeetingAttendance("m1", "u-new", true, "u-org");
+
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(resolveGroupMembers).not.toHaveBeenCalled();
   });
 });

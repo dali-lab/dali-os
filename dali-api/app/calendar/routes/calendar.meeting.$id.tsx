@@ -5,6 +5,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isInMeetingScope } from "~/lib/scheduled-meeting";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
@@ -51,11 +52,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       attendanceMode: true,
+      // Scope: drives the lab-wide read access check and the live invited-set
+      // resolution below.
+      scopeType: true,
+      scopeId: true,
+      participantUserIds: true,
       projectId: true,
       selectedAt: true,
       durationMinutes: true,
       status: true,
-      scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
@@ -85,7 +90,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // canManage is unchanged); without this the popover would offer them an
   // Attendance link that 404s.
   const labWide = meeting.scopeType === "None" && roles.isLabMember;
-  if (!canManage && !viewerRow && !labWide) throw new Response("Not found", { status: 404 });
+  // The roster is a create-time snapshot of a possibly dynamic group, so absence
+  // from it doesn't mean "not invited" — resolve the scope live before 404ing
+  // someone out of an event they're in. Same reason markMeetingAttendance does.
+  const viewerInvited = viewerRow !== undefined || (await isInMeetingScope(meeting, auth.user.sub));
+  if (!canManage && !viewerInvited && !labWide) throw new Response("Not found", { status: 404 });
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
@@ -119,7 +128,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,
     })) satisfies AttendanceRow[],
-    viewerInvited: viewerRow !== undefined,
+    viewerInvited,
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,
