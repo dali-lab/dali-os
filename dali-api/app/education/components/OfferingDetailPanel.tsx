@@ -13,17 +13,18 @@ import { Link, useFetcher } from "react-router";
 import { X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
-import { formatDateShort, formatDateTime } from "~/lib/display";
+import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
   TypeBadge,
   MyStatusChip,
-  registrationWindowValue,
+  registrationMeta,
 } from "./OfferingCard";
 import { MetaList } from "~/components/ui/MetaList";
 import {
-  OfferingCover,
-  seatsLabel,
+  OfferingTypeTile,
+  seatsMeta,
+  runsValue,
   type CatalogOffering,
 } from "./OfferingCatalog";
 
@@ -96,59 +97,58 @@ export function OfferingDetailPanel({
   return (
     <aside
       aria-label={`${offering.title} details`}
-      className="flex min-h-[70dvh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-brand-2 motion-safe:animate-detail-panel lg:sticky lg:top-6 lg:h-[calc(100dvh-5rem)] lg:min-h-0 lg:w-[27rem] lg:shrink-0"
+      // Full viewport height on desktop: pinned flush under the shell's 64px
+      // (h-16) top bar and filling to the bottom edge (100dvh − 4rem), so the
+      // pane spans the whole visible column rather than floating with gaps.
+      className="flex min-h-[70dvh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-brand-2 motion-safe:animate-detail-panel lg:sticky lg:top-16 lg:h-[calc(100dvh-4rem)] lg:min-h-0 lg:w-[27rem] lg:shrink-0"
     >
-      <div className="relative shrink-0">
-        <OfferingCover iconEmoji={offering.iconEmoji} title={offering.title} />
+      {/* Title and the facts that identify the offering stay put; only the tab
+          panel below them scrolls, so switching tabs never scrolls the heading
+          out from under you. */}
+      <header className="relative flex shrink-0 flex-col gap-3 px-5 pt-5">
         <button
           type="button"
           onClick={onClose}
           aria-label="Close details"
-          className="absolute right-3 top-3 rounded-full bg-card/85 p-1.5 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+          className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X size={16} />
         </button>
-      </div>
-
-      {/* Title and the facts that identify the offering stay put; only the tab
-          panel below them scrolls, so switching tabs never scrolls the heading
-          out from under you. */}
-      <header className="flex shrink-0 flex-col gap-2 px-5 pt-5">
-        <h2
-          ref={headingRef}
-          tabIndex={-1}
-          className="font-heading text-xl font-bold text-foreground outline-none"
-        >
-          {offering.title}
-        </h2>
-        <span className="flex flex-wrap items-center gap-2">
-          <TypeBadge type={offering.type} />
-          <MyStatusChip status={myStatus} />
-          <span className="text-xs text-muted-foreground">
-            {offering.sessionCount} session
-            {offering.sessionCount === 1 ? "" : "s"}
-          </span>
-        </span>
+        <div className="flex items-start gap-3 pr-9">
+          <OfferingTypeTile
+            type={offering.type}
+            iconEmoji={offering.iconEmoji}
+            size="lg"
+          />
+          <div className="min-w-0 flex-1">
+            <h2
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-heading text-xl font-bold text-foreground outline-none"
+            >
+              {offering.title}
+            </h2>
+            <span className="mt-1 flex flex-wrap items-center gap-2">
+              <TypeBadge type={offering.type} />
+              <MyStatusChip status={myStatus} />
+              <span className="text-xs text-muted-foreground">
+                {offering.sessionCount} session
+                {offering.sessionCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </div>
+        </div>
         <MetaList
-          className="mt-1"
           rows={[
-            {
-              label: "Runs",
-              value:
-                offering.startsAt && offering.endsAt
-                  ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
-                  : "Dates TBD",
-            },
-            {
-              label: "Registration",
-              value: registrationWindowValue(offering, tz),
-            },
-            { label: "Seats", value: seatsLabel(offering) },
+            { label: "Runs", value: runsValue(offering, tz), tone: "muted" },
+            { label: "Registration", ...registrationMeta(offering, tz) },
+            { label: "Seats", ...seatsMeta(offering) },
             ...(offering.instructorNames.length > 0
               ? [
                   {
                     label: "Taught by",
                     value: offering.instructorNames.join(", "),
+                    tone: "muted" as const,
                   },
                 ]
               : []),

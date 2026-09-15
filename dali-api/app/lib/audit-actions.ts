@@ -126,6 +126,7 @@ export const AUDIT_ACTIONS = [
   "education.application.withdraw",
   "education.application.decision",
   "education.waitlist.promote",
+  "education.waitlist.reorder",
   "education.attendance.update",
   "education.announcement.create",
   "education.discussion.post",

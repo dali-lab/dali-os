@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { APPLICATION_TZ } from "~/lib/timezone";
+import type { MetaTone } from "~/components/ui/MetaList";
 import { Menu, Tooltip } from "~/components/ui/floating";
 import {
   MoreHorizontal,
@@ -131,6 +132,32 @@ export function registrationWindowValue(
   if (now < opens) return `Opens ${formatDateShort(opens, tz)}`;
   if (now > closes) return "Closed";
   return `Open until ${formatDateShort(closes, tz)}`;
+}
+
+// The registration window as a labelled meta row with urgency baked in: a
+// window closing within a week reads "Closes in N days" in coral so a browser
+// notices the deadline, one not yet open or already closed stays muted, and an
+// open-with-runway window keeps the plain "Open until …".
+export function registrationMeta(
+  o: {
+    registrationOpensAt: string | Date;
+    registrationClosesAt: string | Date;
+  },
+  tz: string = APPLICATION_TZ,
+): { value: string; tone: MetaTone } {
+  const now = Date.now();
+  const opens = new Date(o.registrationOpensAt).getTime();
+  const closes = new Date(o.registrationClosesAt).getTime();
+  if (now < opens) return { value: registrationWindowValue(o, tz), tone: "muted" };
+  if (now > closes) return { value: "Closed", tone: "muted" };
+  const daysLeft = Math.ceil((closes - now) / 86_400_000);
+  if (daysLeft <= 7) {
+    return {
+      value: daysLeft <= 1 ? "Closes soon" : `Closes in ${daysLeft} days`,
+      tone: "urgent",
+    };
+  }
+  return { value: registrationWindowValue(o, tz), tone: "default" };
 }
 
 // The same window as a standalone sentence, for prose contexts (the offering
