@@ -19,6 +19,7 @@ import {
   createLabMeetingPage,
   ensureMeetingNotesFolder,
   ensureCoreMeetingNotesFolder,
+  ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore } from "~/lib/roles";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
@@ -255,9 +256,9 @@ async function buildMeetingNotePage(input: {
     return page.id;
   }
 
-  // General meeting: file the note at the author's chosen Drive location
-  // (default/fallback: Lab root). Include the label in the title so the note
-  // stays identifiable wherever it lands.
+  // General meeting: file the note at the author's chosen Drive location.
+  // Include the label in the title so the note stays identifiable wherever it
+  // lands.
   if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
   const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
   if (dest.workspaceType === "Project" && dest.workspaceId) {
@@ -270,11 +271,17 @@ async function buildMeetingNotePage(input: {
     });
     return page.id;
   }
+  // No folder chosen — the common case, since the picker defaults to the top of
+  // the Lab drive and resolveNoteDestination falls back there for anything it
+  // can't honour. The Lab's own "Meeting notes" folder is the default instead
+  // of the root, where a note titled just its date went loose among every other
+  // Lab doc. An explicitly chosen folder still wins.
+  const parentPageId = dest.parentPageId ?? (await ensureLabMeetingNotesFolder(input.authorId));
   const page = await createLabMeetingPage({
     title,
     createdById: input.authorId,
     meetingNoteId: input.meetingId,
-    parentPageId: dest.parentPageId,
+    parentPageId,
   });
   return page.id;
 }

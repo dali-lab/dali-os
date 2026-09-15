@@ -7,6 +7,7 @@ vi.mock("~/lib/pages", () => ({
   createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
   ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
+  ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/google-calendar", () => ({
@@ -17,7 +18,11 @@ vi.mock("~/lib/google-calendar", () => ({
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
-import { createLabMeetingPage, ensureCoreMeetingNotesFolder } from "~/lib/pages";
+import {
+  createLabMeetingPage,
+  ensureCoreMeetingNotesFolder,
+  ensureLabMeetingNotesFolder,
+} from "~/lib/pages";
 import { createGoogleCalendarEvent, getGoogleEvent } from "~/lib/google-calendar";
 import {
   attachMeetingNote,
@@ -187,6 +192,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
   };
   const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
   const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
+  const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
 
   const base = {
     organizerId: "org-1",
@@ -224,16 +230,45 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     await createScheduledMeeting({ ...base, isCoreMeeting: true });
 
+    // Deliberately the root, not the lab-wide Meeting notes folder: a Core note
+    // that lost its folder must not land on the communal shelf.
     expect(labPage).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: null, restricted: false }),
     );
+    expect(labFolder).not.toHaveBeenCalled();
   });
 
-  it("leaves a non-Core General note on the chosen-location path", async () => {
+  it("files a non-Core General note in the Lab's Meeting notes folder", async () => {
     await createScheduledMeeting({ ...base, isCoreMeeting: false });
 
     expect(coreFolder).not.toHaveBeenCalled();
-    expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: null }));
+    expect(labFolder).toHaveBeenCalledWith("org-1");
+    expect(labPage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentPageId: "folder-lab-notes" }),
+    );
+  });
+
+  it("honours an explicitly chosen Lab folder over the default", async () => {
+    // resolveNoteDestination validates the folder before honouring it.
+    (
+      prisma as unknown as { page: { findUnique: ReturnType<typeof vi.fn> } }
+    ).page.findUnique.mockResolvedValue({
+      kind: "Folder",
+      archivedAt: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+    });
+
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: false,
+      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
+    });
+
+    expect(labPage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentPageId: "folder-chosen" }),
+    );
+    expect(labFolder).not.toHaveBeenCalled();
   });
 });
 

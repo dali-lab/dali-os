@@ -4409,6 +4409,9 @@ enum ProcessType {
   HiringCycle
   // Lab-wide governance singleton (agreements, email templates, rubrics, …).
   Core
+  // Lab-wide, everyone-can-see singleton — the open counterpart of Core, for
+  // folders the whole lab files into (meeting notes that belong to no project).
+  Lab
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
