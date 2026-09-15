@@ -2,23 +2,19 @@ import { useRef, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
-import { Calendar, Globe, History, Plus, Users, X } from "lucide-react";
+import { Calendar, Globe, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { ensurePublicWriteupPage } from "~/lib/pages";
-import { parseSessionCookie } from "~/lib/cookies";
-import { getPresenceUser } from "~/lib/presence-user";
-import { fullName } from "~/lib/display";
-import { DocEditor } from "~/components/doc";
-import { VersionHistoryPanel } from "~/components/collab/VersionHistoryPanel";
-import { pageDocName } from "~/collab/roomName";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { ShowcaseDetailList } from "../components/ShowcaseDetailList";
+import { ShowcaseMediaEditor } from "../components/ShowcaseMediaEditor";
+import { DEFAULT_DETAILS } from "../lib/showcase-content";
 import { loadPublicProjectView } from "../lib/public-project-view.server";
 import type { ProjectShowcaseStatus } from "~/generated/prisma/client";
 
@@ -77,7 +73,12 @@ const STATUS_LABELS: Record<ProjectShowcaseStatus, string> = {
 // anyone staffed on the project. Flipping `status` is separate: Published
 // pushes the project onto the public marketing site, which is a lab-level
 // call, so that one intent is Core-only.
-const CONTENT_INTENTS = ["showcase-card", "showcase-image", "showcase-writeup"];
+const CONTENT_INTENTS = [
+  "showcase-card",
+  "showcase-image",
+  "showcase-details",
+  "showcase-media",
+];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -91,15 +92,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const core = await isCore(auth.user.sub);
   const canEdit = core || (await isProjectMember(auth.user.sub, params.id!));
 
-  // The write-up is a collab document, so it needs the same session token and
-  // presence identity the standalone document route hands the editor.
-  const presenceUser = await getPresenceUser(auth.user.sub);
   return {
     ...data,
     canEdit,
     canPublish: core,
-    collabToken: parseSessionCookie(request),
-    userName: presenceUser?.name ?? "Someone",
   };
 }
 
@@ -116,6 +112,35 @@ function list(form: FormData, name: string): string[] {
 function optional(form: FormData, name: string): string | null {
   const value = (form.get(name) as string | null)?.trim() ?? "";
   return value === "" ? null : value;
+}
+
+// The detail sections post as parallel repeated fields, one detailItem and one
+// detailDescription per row (ShowcaseDetailList renders them in lockstep), so
+// zipping them by index reconstructs the pairs. Rows blank on both fields are
+// dropped — that's also how a section gets deleted.
+function detailPairs(form: FormData): { item: string; description: string }[] {
+  const items = form.getAll("detailItem").map((v) => String(v).trim());
+  const descs = form.getAll("detailDescription").map((v) => String(v).trim());
+  return items
+    .map((item, i) => ({ item, description: descs[i] ?? "" }))
+    .filter((d) => d.item !== "" || d.description !== "");
+}
+
+// Same parallel-fields shape for the gallery: type/src/caption per row. src is
+// an `uploads/` key or a URL; a blank src (nothing uploaded) drops the row.
+function mediaItems(
+  form: FormData,
+): { type: "image" | "video"; src: string; caption?: string }[] {
+  const types = form.getAll("mediaType").map((v) => String(v));
+  const srcs = form.getAll("mediaSrc").map((v) => String(v).trim());
+  const caps = form.getAll("mediaCaption").map((v) => String(v).trim());
+  return srcs
+    .map((src, i) => {
+      const type = types[i] === "video" ? ("video" as const) : ("image" as const);
+      const caption = caps[i] ?? "";
+      return caption ? { type, src, caption } : { type, src };
+    })
+    .filter((m) => m.src !== "");
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -138,20 +163,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if (intent !== "showcase-status" && !CONTENT_INTENTS.includes(intent)) {
     return { error: "Unknown action." };
-  }
-
-  // Starting the write-up doesn't touch the showcase row — it creates (or
-  // adopts) the page whose body the public site renders.
-  if (intent === "showcase-writeup") {
-    const page = await ensurePublicWriteupPage(projectId, auth.user.sub);
-    await logAuditEvent({
-      action: "page.public-visibility",
-      userId: auth.user.sub,
-      targetId: page.id,
-      metadata: { projectId, publicVisible: true },
-      request,
-    });
-    return redirect(`/projects/${projectId}/public-view`);
   }
 
   let data: Record<string, unknown>;
@@ -178,6 +189,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     };
   } else if (intent === "showcase-image") {
     data = { heroImageUrl: optional(form, "heroImageUrl") };
+  } else if (intent === "showcase-details") {
+    data = { details: detailPairs(form) };
+  } else if (intent === "showcase-media") {
+    data = { media: mediaItems(form) };
   } else {
     const status = (form.get("status") as string | null) ?? "";
     if (!STATUSES.includes(status as ProjectShowcaseStatus)) {
@@ -307,16 +322,18 @@ export default function ProjectPublicView() {
     showcase: s,
     heroPreviewUrl,
     teamMembers,
-    writeup,
     canEdit,
     canPublish,
-    collabToken,
-    userName,
   } = data;
   const navigation = useNavigation();
   const saving = navigation.state !== "idle";
-  const [historyOpen, setHistoryOpen] = useState(false);
   const dialog = useDialog();
+
+  // Seed the three default sections when nothing's been written yet — they're
+  // prompts, so the editor opens with them and the public API filters them out
+  // until they carry text.
+  const detailsSeed =
+    s?.details && s.details.length > 0 ? s.details : DEFAULT_DETAILS;
   const [pendingStatus, setPendingStatus] = useState<string>(s?.status ?? "NotStarted");
   const statusFormRef = useRef<HTMLFormElement>(null);
   const publishConfirmedRef = useRef(false);
@@ -519,76 +536,36 @@ export default function ProjectPublicView() {
           )}
         </Form>
 
-        {/* Write-up. The same collab editor the Documents tab uses, so images
-            paste and drop in anywhere and the order is whatever you type. */}
-        <section className="flex flex-col gap-2 flex-1 min-w-0 w-full">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
-            {writeup && collabToken && (
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                title="Version history"
-                aria-label="Version history"
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <History className="w-3.5 h-3.5" /> History
-              </button>
-            )}
-          </div>
-          {writeup && collabToken ? (
-            <>
+        {/* Write-up. Structured sections + a media gallery — dali.website
+            renders the sections as headed cards and lays the media out below,
+            so this stays data-only (no editor formatting leaks to the site). */}
+        <section className="flex flex-col gap-6 flex-1 min-w-0 w-full">
+          <div className="flex flex-col gap-2">
+            <div>
+              <h2 className="font-heading font-semibold text-foreground">
+                Project details
+              </h2>
               <p className="text-xs text-muted-foreground">
-                Rendered below the card on dali.website. Drag or paste images
-                anywhere in the text; type <code>/</code> for headings, lists,
-                quotes, and callouts. Saves as you type.
+                Shown under the card on dali.website as headed cards — The
+                Problem, Our Solution, The Impact, and any sections you add.
               </p>
-              <div className="border border-border rounded-lg bg-card px-4 py-2">
-                <DocEditor
-                  features="document"
-                  editable={canEdit}
-                  collab={{
-                    documentName: pageDocName(writeup.id),
-                    token: collabToken,
-                    userName,
-                  }}
-                  placeholder="Tell the story of this project…"
-                />
-              </div>
-              {historyOpen && (
-                <VersionHistoryPanel
-                  documentName={pageDocName(writeup.id)}
-                  onClose={() => setHistoryOpen(false)}
-                />
-              )}
-            </>
-          ) : writeup ? (
-            // Session cookie missing (an expired tab): the editor can't connect,
-            // so say so rather than mounting one that silently won't sync.
-            <p className="text-sm text-muted-foreground border border-border rounded-lg p-4">
-              Reload the page to edit the write-up — your session needs refreshing.
-            </p>
-          ) : (
-            <div className="border border-dashed border-border rounded-lg p-6 text-center flex flex-col items-center gap-3">
-              <p className="text-sm text-muted-foreground max-w-md">
-                No write-up yet — the card is all a visitor sees. Start one to add
-                the story, screenshots, and results. It becomes a normal project
-                document, editable from the Documents tab too.
-              </p>
-              {canEdit && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="showcase-writeup" />
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Start the write-up
-                  </button>
-                </Form>
-              )}
             </div>
-          )}
+            <ShowcaseDetailList details={detailsSeed} canEdit={canEdit} />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div>
+              <h2 className="font-heading font-semibold text-foreground">Media</h2>
+              <p className="text-xs text-muted-foreground">
+                Images and videos, shown as a gallery beneath the details.
+              </p>
+            </div>
+            <ShowcaseMediaEditor
+              projectId={project.id}
+              media={s?.media ?? []}
+              canEdit={canEdit}
+            />
+          </div>
         </section>
       </div>
     </div>

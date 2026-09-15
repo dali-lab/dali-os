@@ -13,19 +13,14 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 // parseOfferingsFilter). Only Published offerings are ever returned — Draft and
 // Archived stay private, matching what the in-app catalog shows.
 
-export type PublicOfferingDate = {
-  day: number;
-  month: string;
-  year: number;
-  time: string;
-  fullDate: string; // ISO 8601
-};
-
+// All datetimes are ISO 8601 strings. dali.website formats them — month names,
+// times, and the campus timezone are its call, not the API's. Shipping the raw
+// instant keeps this a data endpoint (see the sibling application-cycle).
 export type PublicOfferingSession = {
   sequence: number;
   title: string | null;
   location: string | null;
-  date: PublicOfferingDate;
+  date: string; // ISO 8601
 };
 
 export type PublicOffering = {
@@ -36,12 +31,12 @@ export type PublicOffering = {
   // Term code (e.g. "26F"), derived from the start date; null when the run
   // starts outside every term window.
   term: string | null;
-  startDate: PublicOfferingDate;
-  endDate: PublicOfferingDate;
+  startDate: string; // ISO 8601
+  endDate: string; // ISO 8601
   sessions: PublicOfferingSession[];
   registration: {
-    opensAt: PublicOfferingDate;
-    closesAt: PublicOfferingDate;
+    opensAt: string; // ISO 8601
+    closesAt: string; // ISO 8601
     open: boolean;
   };
   signUpLink: string;
@@ -58,39 +53,6 @@ export type OfferingsFilter = {
   term?: string; // term code (e.g. "26F"); limits to offerings starting in that term's date window
   type?: "Miniseries" | "Workshop"; // limits to one offering type (DB enum)
 };
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-// The site renders the parts separately, so it gets parts rather than a
-// formatted string, plus an ISO `fullDate` for anything that needs the raw
-// value. Times are rendered in Eastern — the lab is one campus and every
-// offering happens on it, so a viewer's local zone would be misleading rather
-// than helpful.
-function toDateParts(d: Date): PublicOfferingDate {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const minute = get("minute");
-  const hour = get("hour");
-  const dayPeriod = get("dayPeriod").toUpperCase();
-  return {
-    day: Number(get("day")),
-    month: MONTHS[Number(get("month")) - 1],
-    year: Number(get("year")),
-    time: minute === "00" ? `${hour} ${dayPeriod}` : `${hour}:${minute} ${dayPeriod}`,
-    fullDate: d.toISOString(),
-  };
-}
 
 type DateClause = {
   startsAt?: { gt?: Date; gte?: Date; lte?: Date };
@@ -239,17 +201,17 @@ export async function listPublicOfferings(
         term: termCodeForDate(windows, o.startsAt!),
         // Published offerings always have sessions, so startsAt/endsAt are
         // guaranteed non-null by the publish gate.
-        startDate: toDateParts(o.startsAt!),
-        endDate: toDateParts(o.endsAt!),
+        startDate: o.startsAt!.toISOString(),
+        endDate: o.endsAt!.toISOString(),
         sessions: o.sessions.map((s) => ({
           sequence: s.sequence,
           title: s.title,
           location: s.location,
-          date: toDateParts(s.datetime),
+          date: s.datetime.toISOString(),
         })),
         registration: {
-          opensAt: toDateParts(o.registrationOpensAt),
-          closesAt: toDateParts(o.registrationClosesAt),
+          opensAt: o.registrationOpensAt.toISOString(),
+          closesAt: o.registrationClosesAt.toISOString(),
           open:
             o.registrationOpensAt.getTime() <= now.getTime() &&
             now.getTime() <= o.registrationClosesAt.getTime(),

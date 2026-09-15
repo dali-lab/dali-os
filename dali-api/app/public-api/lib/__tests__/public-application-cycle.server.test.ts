@@ -29,19 +29,13 @@ beforeEach(() => {
 });
 
 describe("getPublicApplicationCycle", () => {
-  it("reports open, with the deadline in Eastern parts, for an Open cycle", async () => {
+  it("reports open, with the deadline as an ISO timestamp, for an Open cycle", async () => {
     mockGetActiveCycle.mockResolvedValue(openCycle);
 
     expect(await getPublicApplicationCycle()).toEqual({
       status: "open",
       name: "Fall 2026",
-      closeDate: {
-        day: 2,
-        month: "November",
-        year: 2026,
-        time: "11:59 PM",
-        fullDate: "2026-11-03T04:59:00.000Z",
-      },
+      closeDate: "2026-11-03T04:59:00.000Z",
     });
   });
 
