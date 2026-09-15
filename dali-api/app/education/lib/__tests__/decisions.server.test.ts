@@ -6,7 +6,11 @@ vi.mock("~/education/lib/notifications.server", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { decideApplication, withdrawApplication } from "~/education/lib/decisions.server";
+import {
+  decideApplication,
+  withdrawApplication,
+  moveWaitlistEntry,
+} from "~/education/lib/decisions.server";
 import { notifyApplicationStatus } from "~/education/lib/notifications.server";
 
 const mockPrisma = prisma as unknown as Record<
@@ -130,6 +134,72 @@ describe("decideApplication", () => {
     expect(notifyApplicationStatus).toHaveBeenCalledWith("app-2", { promoted: true });
   });
 
+  it("demotes an approved seat to the waitlist and promotes the next in line", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue(
+      appRow({ status: "Approved" }),
+    );
+    mockPrisma.educationApplication.count.mockResolvedValue(1); // a seat frees post-demote
+    mockPrisma.educationApplication.findFirst
+      .mockResolvedValueOnce({ waitlistRank: 1 }) // nextWaitlistRank → demoted parks at rank 2
+      .mockResolvedValueOnce({ id: "app-2", waitlistRank: 1 }); // promote head (excludes app-1)
+
+    const res = await decideApplication({
+      applicationId: "app-1",
+      offeringId: "off-1",
+      status: "Waitlisted",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({
+      ok: true,
+      status: "Waitlisted",
+      promotedApplicationId: "app-2",
+    });
+    // The demoted applicant goes to the back of the queue...
+    expect(mockPrisma.educationApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "app-1" },
+        data: expect.objectContaining({ status: "Waitlisted", waitlistRank: 2 }),
+      }),
+    );
+    // ...and the front is pulled into the freed seat, excluding the demotee.
+    expect(mockPrisma.educationApplication.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "Waitlisted",
+          id: { not: "app-1" },
+        }),
+      }),
+    );
+    expect(mockPrisma.educationApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "app-2" },
+        data: { status: "Approved", waitlistRank: null },
+      }),
+    );
+    expect(notifyApplicationStatus).toHaveBeenCalledWith("app-2", { promoted: true });
+  });
+
+  it("doesn't re-promote a demoted applicant who is alone on the waitlist", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue(
+      appRow({ status: "Approved" }),
+    );
+    mockPrisma.educationApplication.count.mockResolvedValue(1);
+    // findFirst returns null for both nextWaitlistRank and the promote head.
+    mockPrisma.educationApplication.findFirst.mockResolvedValue(null);
+
+    const res = await decideApplication({
+      applicationId: "app-1",
+      offeringId: "off-1",
+      status: "Waitlisted",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ ok: true, promotedApplicationId: null });
+    expect(notifyApplicationStatus).toHaveBeenCalledWith("app-1");
+    expect(notifyApplicationStatus).not.toHaveBeenCalledWith("app-1", { promoted: true });
+  });
+
   it("compacts ranks behind a departing waitlister", async () => {
     mockPrisma.educationApplication.findUnique.mockResolvedValue(
       appRow({ status: "Waitlisted", waitlistRank: 2 }),
@@ -180,6 +250,93 @@ describe("decideApplication", () => {
     });
 
     expect(res).toMatchObject({ ok: true });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("moveWaitlistEntry", () => {
+  it("swaps ranks with the neighbour when moving up", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      status: "Waitlisted",
+      offeringId: "off-1",
+      waitlistRank: 3,
+    });
+    mockPrisma.educationApplication.findFirst.mockResolvedValue({
+      id: "app-2",
+      waitlistRank: 2,
+    });
+
+    const res = await moveWaitlistEntry({
+      applicationId: "app-1",
+      offeringId: "off-1",
+      direction: "up",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ ok: true });
+    expect(mockPrisma.educationApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "app-1" }, data: { waitlistRank: 2 } }),
+    );
+    expect(mockPrisma.educationApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "app-2" }, data: { waitlistRank: 3 } }),
+    );
+  });
+
+  it("is a no-op at the top of the list", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      status: "Waitlisted",
+      offeringId: "off-1",
+      waitlistRank: 1,
+    });
+    mockPrisma.educationApplication.findFirst.mockResolvedValue(null); // nobody above
+
+    const res = await moveWaitlistEntry({
+      applicationId: "app-1",
+      offeringId: "off-1",
+      direction: "up",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ ok: true });
+    expect(mockPrisma.educationApplication.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reorder a non-waitlisted application", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      status: "Approved",
+      offeringId: "off-1",
+    });
+
+    const res = await moveWaitlistEntry({
+      applicationId: "app-1",
+      offeringId: "off-1",
+      direction: "down",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ status: 400 });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reorder an application from another offering", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      status: "Waitlisted",
+      offeringId: "off-1",
+      waitlistRank: 1,
+    });
+
+    const res = await moveWaitlistEntry({
+      applicationId: "app-1",
+      offeringId: "other-offering",
+      direction: "up",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ status: 404 });
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 });
