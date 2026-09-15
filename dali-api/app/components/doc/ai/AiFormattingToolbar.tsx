@@ -8,7 +8,9 @@
 // because the selection is cleared as soon as focus moves to the AiBar input.
 
 import React from "react";
+import { Copy, Trash2 } from "lucide-react";
 import { AiSparkleIcon } from "./AiSparkleIcon";
+import { useMediaQuery } from "~/hooks/useIsMobile";
 import {
   FormattingToolbar,
   useBlockNoteEditor,
@@ -78,6 +80,61 @@ function AiToolbarButton({
   );
 }
 
+// ── Touch block actions (Duplicate / Delete) ───────────────────────────────────
+//
+// The drag-handle side menu (DocSideMenu) is the only home for block-level
+// Duplicate/Delete, but it's revealed on hover in a gutter that doesn't exist
+// on touch. So on touch devices we surface the same two actions in the
+// selection toolbar — the Notion-mobile pattern where the block-action set
+// lives in the on-selection action bar. Turn-into (BlockTypeSelect), Color and
+// Comment are already in this toolbar and work on touch, so only these two are
+// missing. Editable-only.
+
+function TouchBlockActions({ editor }: { editor: DocEditorInstance }) {
+  const Components = useComponentsContext()!;
+
+  function duplicate() {
+    const block = editor.getTextCursorPosition().block;
+    // Recursively strip `id` so BlockNote mints fresh ids (mirrors DocSideMenu).
+    const stripIds = (b: Record<string, unknown>): Record<string, unknown> => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = b;
+      if (Array.isArray(rest.children)) {
+        rest.children = (rest.children as Record<string, unknown>[]).map(stripIds);
+      }
+      return rest;
+    };
+    const copy = stripIds(block as unknown as Record<string, unknown>);
+    editor.insertBlocks(
+      [copy as Parameters<typeof editor.insertBlocks>[0][number]],
+      block,
+      "after",
+    );
+  }
+
+  function remove() {
+    const block = editor.getTextCursorPosition().block;
+    editor.removeBlocks([block]);
+  }
+
+  return (
+    <>
+      <Components.FormattingToolbar.Button
+        mainTooltip="Duplicate block"
+        label="Duplicate block"
+        icon={<Copy size={14} />}
+        onClick={duplicate}
+      />
+      <Components.FormattingToolbar.Button
+        mainTooltip="Delete block"
+        label="Delete block"
+        icon={<Trash2 size={14} />}
+        onClick={remove}
+      />
+    </>
+  );
+}
+
 // ── Main toolbar component ────────────────────────────────────────────────────
 
 /**
@@ -98,6 +155,11 @@ function AiToolbarButton({
 export function AiFormattingToolbar(props: AiFormattingToolbarProps) {
   const editor = useBlockNoteEditor() as DocEditorInstance;
   const showAi = props.aiEnabled && (props.editable ?? true) && props.openSession;
+  // Touch devices have no drag-handle gutter, so route block Duplicate/Delete
+  // through the selection toolbar instead. `(hover: none)` matches the app's
+  // `touch:` Tailwind variant.
+  const isTouch = useMediaQuery("(hover: none)");
+  const showBlockActions = isTouch && (props.editable ?? true);
 
   return (
     <FormattingToolbar>
@@ -122,6 +184,7 @@ export function AiFormattingToolbar(props: AiFormattingToolbarProps) {
       <CreateLinkButton key="createLinkButton" />
       <AddCommentButton key="addCommentButton" />
       <AddTiptapCommentButton key="addTiptapCommentButton" />
+      {showBlockActions && <TouchBlockActions key="touchBlockActions" editor={editor} />}
       {showAi && (
         <AiToolbarButton
           key="aiButton"
