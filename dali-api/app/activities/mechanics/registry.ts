@@ -24,7 +24,10 @@ export type SurfaceProps = {
   results: unknown;
   /** Endpoint the surface's forms post to (the /api/activities/:id action). */
   submitAction: string;
-  /** Called after a successful mutation so the host modal reloads its data. */
+  /**
+   * Called after a successful mutation so the host modal reloads its data.
+   * Stable across renders, so a Surface may list it in effect deps.
+   */
   onChanged?: () => void;
 };
 

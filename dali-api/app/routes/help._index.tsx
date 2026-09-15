@@ -7,9 +7,11 @@ import {
   Keyboard,
   Bell,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { HELP_ARTICLES } from "~/lib/help-articles";
 import type { Route } from "./+types/help._index";
 
 export const meta: Route.MetaFunction = () => [{ title: "Help · DALI OS" }];
@@ -21,44 +23,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   return null;
 }
 
-const CARDS = [
-  {
-    to: "/help/getting-started",
-    title: "Getting started",
-    body: "A short tour of the sidebar and the things you'll touch most often.",
-    icon: BookOpen,
-  },
-  {
-    to: "/help/shortcuts",
-    title: "Keyboard shortcuts",
-    body: "Tabs, panes, in-tab navigation. Stays out of your way until you want it.",
-    icon: Keyboard,
-  },
-  {
-    to: "/help/calendar",
-    title: "Calendar",
-    body: "How linked Google accounts, working hours, and buffers affect scheduling.",
-    icon: CalendarDays,
-  },
-  {
-    to: "/help/staffing",
-    title: "Staffing",
-    body: "Intent to work, project bids, level-up, and how PMs see them.",
-    icon: Users,
-  },
-  {
-    to: "/help/notifications",
-    title: "Notifications",
-    body: "What the bell shows, how RSVPs work, where reminders come from.",
-    icon: Bell,
-  },
-  {
-    to: "/help/mcp",
-    title: "Connect AI assistants",
-    body: "Wire Claude Code, Codex, or Claude Desktop into DALI OS via MCP.",
-    icon: Cpu,
-  },
-];
+// Icons live here rather than in the shared HELP_ARTICLES registry, which stays
+// data-only so it can be indexed by the (client-safe) palette search.
+const ICONS: Record<string, LucideIcon> = {
+  "getting-started": BookOpen,
+  shortcuts: Keyboard,
+  calendar: CalendarDays,
+  staffing: Users,
+  notifications: Bell,
+  mcp: Cpu,
+};
+
+const CARDS = HELP_ARTICLES.map((a) => ({
+  to: `/help/${a.slug}`,
+  title: a.title,
+  body: a.summary,
+  icon: ICONS[a.slug] ?? BookOpen,
+}));
 
 export default function HelpIndex() {
   return (

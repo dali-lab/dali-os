@@ -8,6 +8,7 @@ import { TASK_STATUS_LABELS } from "~/projects/lib/task-board";
 import {
   buildUrl,
   computeHiringVisibility,
+  GUIDE_PAGES,
   MIN_QUERY_LENGTH,
   PER_CATEGORY_CAP,
   rankResults,
@@ -15,6 +16,10 @@ import {
   type SearchResultType,
 } from "~/lib/search";
 import { searchPageContent } from "~/lib/doc-search.server";
+import { resolveSections } from "~/lib/page-doc-sections";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { HELP_ARTICLES } from "~/lib/help-articles";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
 // that feed the pure ranking in lib/search.ts. Each category is a small helper
@@ -47,6 +52,10 @@ export async function runSearch(opts: {
     searchOfferings(q, like),
     searchPartnerOrgs(q, like),
     searchDocuments(q, like),
+    // Page guides ("Docs") and /help articles — both readable by every lab
+    // member, so ungated like docs.
+    searchGuides(q),
+    searchHelpArticles(q),
     searchProjectFiles(q, like),
     searchApplications(opts.userId, roles, q, like),
     // Groups & forms — Forms area gate. Form folders are Drive Pages, already
@@ -279,6 +288,61 @@ async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
     }));
 
   return [...titleResults, ...contentResults].slice(0, PER_CATEGORY_CAP);
+}
+
+// Flatten a guide's authored content into one searchable string: each section's
+// title plus its body text (legacy ProseMirror bodies convert to blocks first).
+function guideContentText(row: { body: unknown; sections: unknown }): string {
+  return resolveSections({ body: row.body, videoKey: null, sections: row.sections })
+    .map((s) => `${s.title} ${blocksToPlainText(ensureBlocks(s.body))}`)
+    .join(" ");
+}
+
+async function searchGuides(q: string): Promise<SearchResult[]> {
+  // The guide set is fixed and tiny (GUIDE_PAGES), so load the authored rows and
+  // rank in memory. A guide still ranks on its declared title/keywords before
+  // anyone has opened it to create its PageDoc row.
+  const rows = await prisma.pageDoc.findMany({
+    where: { pageKey: { in: GUIDE_PAGES.map((g) => g.pageKey) } },
+    select: { pageKey: true, title: true, body: true, sections: true },
+  });
+  const byKey = new Map(rows.map((r) => [r.pageKey, r]));
+
+  return rankResults(
+    GUIDE_PAGES.map((g) => {
+      const row = byKey.get(g.pageKey);
+      const title = row?.title?.trim() || g.title;
+      return {
+        result: {
+          type: "guide" as const,
+          id: g.pageKey,
+          title,
+          subtitle: "Guide",
+          url: buildUrl.guide(g.pageKey),
+        },
+        text: [title, ...(g.keywords ?? []), row ? guideContentText(row) : ""],
+      };
+    }),
+    q,
+  );
+}
+
+// Help-center articles (/help/*). A fully static set (HELP_ARTICLES), so there's
+// no query — just rank its title/summary/keywords in memory.
+async function searchHelpArticles(q: string): Promise<SearchResult[]> {
+  return rankResults(
+    HELP_ARTICLES.map((a) => ({
+      result: {
+        type: "helpArticle" as const,
+        id: a.slug,
+        title: a.title,
+        subtitle: "Help",
+        url: buildUrl.helpArticle(a.slug),
+      },
+      text: [a.title, a.summary, ...(a.keywords ?? [])],
+    })),
+    q,
+  );
 }
 
 async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {

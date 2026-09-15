@@ -184,8 +184,14 @@ export async function listPublicOfferings(
     },
   });
 
+  // startsAt/endsAt are nullable. A Published offering can still have both null
+  // (no sessions yet — the publish gate is supposed to prevent it, but legacy /
+  // edge rows exist in prod). Such an offering has no schedule to render, so
+  // drop it here rather than crash the whole endpoint on a null `.toISOString()`.
+  const scheduled = rows.filter((o) => o.startsAt !== null && o.endsAt !== null);
+
   return Promise.all(
-    rows.map(async (o) => {
+    scheduled.map(async (o) => {
       // The description lives in a collab doc; the site's calendar cards show
       // a plain-text blurb, so flatten rather than shipping blocks it can't
       // render.
@@ -199,8 +205,7 @@ export async function listPublicOfferings(
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
         term: termCodeForDate(windows, o.startsAt!),
-        // Published offerings always have sessions, so startsAt/endsAt are
-        // guaranteed non-null by the publish gate.
+        // Non-null: the filter above dropped any offering without a schedule.
         startDate: o.startsAt!.toISOString(),
         endDate: o.endsAt!.toISOString(),
         sessions: o.sessions.map((s) => ({

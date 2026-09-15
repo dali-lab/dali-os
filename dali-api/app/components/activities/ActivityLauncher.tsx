@@ -12,7 +12,7 @@
 // Reads the live-for-me list from ActivitiesProvider; renders nothing when it's
 // empty, so the bar and modal disappear on their own once a window closes.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Sparkles } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -42,6 +42,16 @@ export function ActivityLauncher() {
   const activities = useActiveActivities();
   const [view, setView] = useState<View>({ mode: "closed" });
   const data = useFetcher<ActivityData>();
+
+  // Stable identity matters: the mechanics call this from effects keyed on
+  // their own fetcher ("the submit landed — reload the surface"), and a fresh
+  // closure on every render would re-fire those effects on the very re-render
+  // the reload causes, looping until the browser gives up and the app falls
+  // into the error boundary.
+  const { load } = data;
+  const reload = useCallback(() => {
+    if (view.mode === "surface") load(`/api/activities/${view.id}`);
+  }, [load, view]);
 
   if (activities.length === 0) return null;
 
@@ -117,7 +127,7 @@ export function ActivityLauncher() {
               data={data.data?.activityId === view.id ? data.data : null}
               loading={data.state === "loading"}
               onClose={close}
-              onChanged={() => data.load(`/api/activities/${view.id}`)}
+              onChanged={reload}
             />
           )}
         </Modal>
