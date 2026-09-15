@@ -17,7 +17,9 @@ export type SearchResultType =
   | "emailTemplate"
   | "confidentialityAgreement"
   | "partnerApplication"
-  | "cycle";
+  | "cycle"
+  | "guide"
+  | "helpArticle";
 
 export interface SearchResult {
   type: SearchResultType;
@@ -34,6 +36,38 @@ export interface SearchResult {
 
 export const MIN_QUERY_LENGTH = 2;
 export const PER_CATEGORY_CAP = 5;
+
+// Page guides ("Docs") are help overlays opened with ?doc=1 on their host
+// route, not standalone pages — so the palette only surfaces the ones with a
+// canonical landing page. Per-instance guides (the document editor, a specific
+// form, a project's Drive) share one guide across many URLs with no single
+// place to open it, so they're deliberately left out. This is the client-safe
+// source of truth for the searchable set: a stable pageKey → where it opens.
+export interface GuidePage {
+  /** PageDoc.pageKey the host route declares via handle.docKey. */
+  pageKey: string;
+  /** App-relative host route the guide opens over (may already carry a query). */
+  path: string;
+  /** Fallback label used before a guide has an authored PageDoc row. */
+  title: string;
+  /** Extra synonyms so a guide is findable by topic, not just its title. */
+  keywords?: string[];
+}
+
+export const GUIDE_PAGES: GuidePage[] = [
+  { pageKey: "calendar", path: "/calendar", title: "Calendar", keywords: ["schedule", "availability", "meetings", "events"] },
+  { pageKey: "projects.hub", path: "/projects", title: "Projects", keywords: ["tasks", "board", "sprints"] },
+  { pageKey: "projects.staffing", path: "/projects/staffing", title: "Staffing", keywords: ["assign", "roster", "preferences"] },
+  { pageKey: "mentorship.hub", path: "/mentorship", title: "Mentorship", keywords: ["mentor", "mentee"] },
+  { pageKey: "drive.root", path: "/drive", title: "Drive", keywords: ["files", "documents", "folders"] },
+  { pageKey: "drive.mine", path: "/drive?scope=mine", title: "My Drive", keywords: ["files", "personal"] },
+  { pageKey: "drive.lab", path: "/drive?scope=lab", title: "Lab-wide Drive", keywords: ["files", "shared"] },
+  { pageKey: "drive.core", path: "/drive?scope=core", title: "Core Drive", keywords: ["files"] },
+  { pageKey: "drive.hiring", path: "/drive?scope=hiring", title: "Hiring Drive", keywords: ["files", "recruiting"] },
+  { pageKey: "drive.templates", path: "/drive/templates", title: "Templates", keywords: ["gallery"] },
+];
+
+const GUIDE_PATH_BY_KEY = new Map(GUIDE_PAGES.map((g) => [g.pageKey, g.path]));
 
 // Canonical detail URLs. Centralized so the route-param gotchas live in one
 // place: members key on User.id, education on :offeringId, partners on :orgId,
@@ -55,6 +89,14 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   confidentialityAgreement: (id) => `/hiring/confidentiality-agreements/${id}`,
   partnerApplication: (id) => `/partners/applications/${id}`,
   cycle: (id) => `/hiring/lead/cycle/${id}`,
+  // Guides open as a ?doc=1 overlay on their host route (see GUIDE_PAGES); the
+  // id is the pageKey. Unknown keys fall back home rather than to a dead URL.
+  guide: (pageKey) => {
+    const path = GUIDE_PATH_BY_KEY.get(pageKey) ?? "/";
+    return path.includes("?") ? `${path}&doc=1` : `${path}?doc=1`;
+  },
+  // Help-center articles are real pages; the id is the slug (see HELP_ARTICLES).
+  helpArticle: (slug) => `/help/${slug}`,
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >
