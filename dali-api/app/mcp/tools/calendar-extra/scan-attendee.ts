@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,
@@ -17,7 +17,7 @@ import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../regi
 export const SCAN_ATTENDEE_DEF = {
   name: "scan_attendee",
   description:
-    "Scan a member's wallet-pass barcode token to mark them present at a meeting. The caller must be the meeting organizer, a Core member, or a project member. Only works within the check-in window (±15 min). Wallet check-in must be configured.",
+    "Scan a member's wallet-pass barcode token to mark them present at a meeting. The caller must be the meeting organizer, a Core member, or a project member. Wallet check-in must be configured.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -51,13 +51,13 @@ export async function runScanAttendee(callerId: string, input: Input) {
       id: true,
       organizerId: true,
       projectId: true,
-      selectedAt: true,
-      durationMinutes: true,
     },
   });
 
   // Any real meeting is scannable — don't require a meetingType (a SelfCheckIn
-  // all-lab event has none but still has a roster). Mirrors the HTTP scan route.
+  // all-lab event has none but still has a roster). Not window-gated either, for
+  // the reason spelled out in the HTTP scan route: an operator can already mark
+  // anyone present at any time from the checklist. Mirrors the HTTP scan route.
   if (!meeting) {
     throw new McpNotFoundError("Meeting not found");
   }
@@ -69,10 +69,6 @@ export async function runScanAttendee(callerId: string, input: Input) {
   ]);
   const canMark = callerId === meeting.organizerId || core || member;
   if (!canMark) throw new McpForbiddenError();
-
-  if (!isWithinCheckInWindow(meeting.selectedAt, meeting.durationMinutes)) {
-    throw new McpForbiddenError("Check-in window is closed");
-  }
 
   // Resolve the member from the token and verify the signature.
   const scannedId = memberIdFromToken(input.memberToken);

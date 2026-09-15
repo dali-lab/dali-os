@@ -19,7 +19,6 @@ vi.mock("~/lib/validate", () => ({ parseJson: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({
   markMeetingAttendance: vi.fn(),
-  isWithinCheckInWindow: vi.fn(),
 }));
 vi.mock("~/lib/wallet-token", () => ({
   memberIdFromToken: vi.fn(),
@@ -33,7 +32,7 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import { memberIdFromToken, verifyWalletToken, walletTokensConfigured } from "~/lib/wallet-token";
 import { action } from "~/calendar/routes/api.scheduled-meetings.$id.scan-attendee";
 
@@ -64,7 +63,6 @@ beforeEach(() => {
   });
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
-  vi.mocked(isWithinCheckInWindow).mockReturnValue(true);
   vi.mocked(memberIdFromToken).mockReturnValue("u2");
   m.user.mockResolvedValue({
     id: "u2",
@@ -124,12 +122,22 @@ describe("scan-attendee action", () => {
     expect(markMeetingAttendance).not.toHaveBeenCalled();
   });
 
-  it("403s outside the check-in window", async () => {
-    vi.mocked(isWithinCheckInWindow).mockReturnValue(false);
+  // An operator scanning is the same authority as ticking the box by hand, and
+  // the checklist route has never been window-gated — so a long-running event
+  // must not start rejecting scans once it passes its scheduled end.
+  it("still scans long after the scheduled end (no window gate)", async () => {
+    m.scheduledMeeting.mockResolvedValue({
+      id: "m1",
+      organizerId: "op1",
+      projectId: null,
+      // Scheduled to end three hours ago — an event that ran long, or a later
+      // occurrence of a recurring meeting whose selectedAt is months back.
+      selectedAt: new Date(Date.now() - 4 * 60 * 60_000),
+      durationMinutes: 60,
+    });
     const res = await callAction();
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining("window") });
-    expect(markMeetingAttendance).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
   });
 
   it("400s a structurally invalid token without touching the DB", async () => {

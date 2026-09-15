@@ -28,6 +28,7 @@ import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
+  isWithinCheckInWindow,
   trackExternalEventAsMeeting,
 } from "~/lib/scheduled-meeting";
 
@@ -521,5 +522,74 @@ describe("trackExternalEventAsMeeting", () => {
     });
 
     expect(await trackExternalEventAsMeeting(input)).toMatchObject({ ok: false, status: 404 });
+  });
+});
+
+describe("isWithinCheckInWindow", () => {
+  const HOUR = 60 * 60_000;
+  // A Tuesday 10:00 UTC meeting, one hour long, repeating weekly.
+  const firstStart = new Date("2026-09-01T10:00:00.000Z");
+  const weekly = {
+    selectedAt: firstStart,
+    durationMinutes: 60,
+    recurrenceRule: "FREQ=WEEKLY;BYDAY=TU",
+  };
+
+  it("accepts a check-in during the first occurrence", () => {
+    expect(isWithinCheckInWindow(weekly, [], firstStart.getTime() + 10 * 60_000)).toBe(true);
+  });
+
+  // The regression: selectedAt never advances, so testing it directly meant
+  // every sitting after the first reported "window closed" mid-meeting.
+  it("accepts a check-in during a later occurrence of a recurring meeting", () => {
+    const fourWeeksLater = firstStart.getTime() + 28 * 24 * HOUR;
+    expect(isWithinCheckInWindow(weekly, [], fourWeeksLater + 10 * 60_000)).toBe(true);
+  });
+
+  it("still rejects a time between occurrences", () => {
+    // Wednesday, a day after an occurrence ended.
+    const between = firstStart.getTime() + 25 * HOUR;
+    expect(isWithinCheckInWindow(weekly, [], between)).toBe(false);
+  });
+
+  it("honours the ±15min grace on either side of an occurrence", () => {
+    const third = firstStart.getTime() + 14 * 24 * HOUR;
+    expect(isWithinCheckInWindow(weekly, [], third - 10 * 60_000)).toBe(true);
+    expect(isWithinCheckInWindow(weekly, [], third - 20 * 60_000)).toBe(false);
+    expect(isWithinCheckInWindow(weekly, [], third + HOUR + 10 * 60_000)).toBe(true);
+    expect(isWithinCheckInWindow(weekly, [], third + HOUR + 20 * 60_000)).toBe(false);
+  });
+
+  it("judges a rescheduled occurrence at its override time, not its original slot", () => {
+    const originalStart = new Date(firstStart.getTime() + 7 * 24 * HOUR);
+    const overrideStart = new Date(originalStart.getTime() + 2 * 24 * HOUR);
+    const exceptions = [
+      { originalStart, overrideStart, overrideDurationMin: null, cancelled: false },
+    ];
+    expect(isWithinCheckInWindow(weekly, exceptions, overrideStart.getTime() + 5 * 60_000)).toBe(
+      true,
+    );
+    expect(isWithinCheckInWindow(weekly, exceptions, originalStart.getTime() + 5 * 60_000)).toBe(
+      false,
+    );
+  });
+
+  it("rejects a cancelled occurrence", () => {
+    const originalStart = new Date(firstStart.getTime() + 7 * 24 * HOUR);
+    const exceptions = [
+      { originalStart, overrideStart: null, overrideDurationMin: null, cancelled: true },
+    ];
+    expect(isWithinCheckInWindow(weekly, exceptions, originalStart.getTime() + 5 * 60_000)).toBe(
+      false,
+    );
+  });
+
+  it("handles a one-off meeting, and has no window without a scheduled time", () => {
+    const oneOff = { selectedAt: firstStart, durationMinutes: 60, recurrenceRule: null };
+    expect(isWithinCheckInWindow(oneOff, [], firstStart.getTime() + 5 * 60_000)).toBe(true);
+    expect(isWithinCheckInWindow(oneOff, [], firstStart.getTime() + 3 * HOUR)).toBe(false);
+    expect(
+      isWithinCheckInWindow({ selectedAt: null, durationMinutes: 60, recurrenceRule: null }, []),
+    ).toBe(false);
   });
 });
