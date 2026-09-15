@@ -284,6 +284,28 @@ export function resolveTermIdForDate(
 }
 
 /**
+ * Carried-over work, Linear-cycle style: an unfinished task (not Done/Cancelled)
+ * whose anchor date (due, else start) falls before `boundaryStartMs` — the start
+ * of the current sprint band, or the current term's start on a break week when
+ * no band is running. Such work rolls forward into the current view instead of
+ * dropping off, the way an unfinished issue rolls into the next cycle. Because
+ * the boundary is a single instant, this is one rule at every zoom level: a task
+ * overdue from an earlier sprint this term and one left over from a past term
+ * both carry forward the same way. Done/Cancelled work stays filed where it
+ * happened; a null boundary (no current term/sprint) carries nothing.
+ */
+export function isCarriedOverTask(
+  task: Pick<TaskCardModel, "status" | "startsAt" | "dueAt">,
+  boundaryStartMs: number | null,
+): boolean {
+  if (task.status === "Done" || task.status === "Cancelled") return false;
+  if (boundaryStartMs === null) return false;
+  const raw = task.dueAt ?? task.startsAt;
+  if (!raw) return false;
+  return new Date(raw).getTime() < boundaryStartMs;
+}
+
+/**
  * Terms whose windows overlap [start, end]. Either bound may be null
  * (open-ended): a null start matches every term up to `end`, a null end every
  * term from `start` on. Both null = no dated span = no terms.
