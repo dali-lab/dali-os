@@ -1,13 +1,16 @@
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, Shield, Video } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { AttendeeScanner } from "~/components/AttendeeScanner";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -113,6 +116,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,
+    walletConfigured: walletTokensConfigured(),
   };
 }
 
@@ -129,6 +133,10 @@ export default function CalendarMeetingPage() {
       })
     : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
+  // Same gate as the Add-to-Wallet buttons and the standalone scan station;
+  // the /calendar/scan route re-checks both server-side.
+  const walletCheckin = useFeatureFlag("wallet-checkin");
+  const canScan = d.canManage && walletCheckin && d.walletConfigured;
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
@@ -197,6 +205,19 @@ export default function CalendarMeetingPage() {
 
         {d.canManage && d.rows.length > 0 && (
           <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
+        )}
+
+        {/* The scanner is the point of opening this page during an event, so the
+            camera comes up on its own rather than hiding behind a click into a
+            second tab. /calendar/scan/:id stays as the full-screen kiosk for a
+            door station; this is the in-page version for marking a few people. */}
+        {canScan && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <ScanLine className="h-4 w-4 text-muted-foreground" /> Scan wallet passes
+            </p>
+            <AttendeeScanner meetingId={d.meetingId} />
+          </div>
         )}
 
         {!d.canManage && !d.selfCheckIn && (
