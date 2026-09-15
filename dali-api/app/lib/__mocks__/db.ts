@@ -366,6 +366,7 @@ export const prisma = {
     create: vi.fn(),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   meetingReminderLog: {
