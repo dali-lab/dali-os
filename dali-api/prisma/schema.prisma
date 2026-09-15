@@ -1897,6 +1897,9 @@ model MeetingAttendance {
   present            Boolean   @default(false)
   markedByUserId     String?
   markedAt           DateTime?
+  // Free-text context Core attaches to an absence from the attendance log
+  // (e.g. "excused - travelling"). Optional and independent of `present`.
+  absenceNote        String?
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
