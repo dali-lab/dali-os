@@ -144,11 +144,12 @@ function CardShell({
   );
 }
 
-// A project-hub-style action card: a gradient cover with a centered emoji, then
-// a title and the card's facts as labelled rows, the whole tile a link. Mirrors
-// the project cards' cover-led look on the semantic tokens so it renders on the
-// light portal, and the education catalog's MetaList so a deadline or a count
-// reads the same wherever the portal shows one.
+// A flat action tile that shares the education catalog card's language: a
+// teal-tinted emoji tile and title up top, the card's facts as labelled rows
+// beneath a hairline, the whole thing a link. On the semantic tokens so it reads
+// on the light portal, and on the shared MetaList so a deadline or a count looks
+// the same wherever the portal shows one. h-full + a bottom-pinned meta block
+// keep a row of cards even and their facts aligned.
 function PortalActionCard({
   to,
   emoji,
@@ -163,18 +164,20 @@ function PortalActionCard({
   return (
     <Link
       to={to}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-brand-1 transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-1"
+      className="group flex h-full flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:border-accent-coral/40 hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5"
     >
-      <div className="flex h-[116px] items-center justify-center overflow-hidden bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20">
+      <div className="flex items-center gap-3">
         <span
-          className="text-4xl leading-none transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.08]"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-teal/10 text-2xl leading-none"
           aria-hidden
         >
           {emoji}
         </span>
+        <span className="font-heading text-lg font-bold text-dark-blue transition-colors group-hover:text-accent-coral">
+          {title}
+        </span>
       </div>
-      <div className="flex flex-1 flex-col gap-2 p-[17px]">
-        <span className="font-heading text-lg font-bold text-dark-blue">{title}</span>
+      <div className="mt-auto border-t border-border pt-4">
         <MetaList rows={meta} />
       </div>
     </Link>

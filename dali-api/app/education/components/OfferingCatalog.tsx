@@ -11,15 +11,18 @@
 // and card structure are what carry the project-hub look across the theme line.
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { GraduationCap, Presentation } from "lucide-react";
 import { OfferingDetailPanel } from "./OfferingDetailPanel";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { MetaList } from "~/components/ui/MetaList";
+import { MetaList, type MetaTone } from "~/components/ui/MetaList";
 import { FilterPill } from "~/components/ui/filter-panel";
+import { cn } from "~/lib/cn";
+import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
   TypeBadge,
   MyStatusChip,
-  registrationWindowValue,
+  registrationMeta,
   type OfferingCardData,
 } from "./OfferingCard";
 
@@ -40,41 +43,68 @@ type TypeFilter = "all" | "Miniseries" | "Workshop";
 const GRID =
   "grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(260px,320px))]";
 
-// The coral→green gradient (shared with ProjectCoverImage / project cards),
-// with the offering's emoji centered on it — or the title's first letter when
-// no emoji is set, so a card never collapses to a bare title.
-export function OfferingCover({
+// A small type-tinted tile carrying the offering's emoji — or a type glyph
+// (mortarboard for a miniseries, easel for a workshop) when none is set, since
+// a real icon reads as intentional where a bare initial reads as a placeholder.
+// The tint is the offering's identity: teal for miniseries, coral for workshops,
+// the same split the TypeBadge uses. Replaces the old full-bleed gradient cover,
+// whose one pastel wash made every offering look identical.
+export function OfferingTypeTile({
+  type,
   iconEmoji,
-  title,
+  size = "md",
 }: {
-  iconEmoji: string | null | undefined;
-  title: string;
+  type: OfferingCardData["type"];
+  iconEmoji?: string | null;
+  size?: "md" | "lg";
 }) {
-  const initial = title.trim().charAt(0).toUpperCase() || "?";
+  const Glyph = type === "Miniseries" ? GraduationCap : Presentation;
   return (
     <div
-      className="flex h-[150px] w-full items-center justify-center bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
+      className={cn(
+        "flex shrink-0 items-center justify-center leading-none",
+        size === "lg" ? "h-14 w-14 rounded-2xl text-3xl" : "h-11 w-11 rounded-xl text-2xl",
+        type === "Miniseries"
+          ? "bg-accent-teal/10 text-accent-teal"
+          : "bg-accent-coral/10 text-accent-coral",
+      )}
       aria-hidden
     >
       {iconEmoji ? (
-        <span className="text-5xl leading-none">{iconEmoji}</span>
+        <span>{iconEmoji}</span>
       ) : (
-        <span className="font-heading text-4xl font-bold text-accent-coral/70">
-          {initial}
-        </span>
+        <Glyph className={size === "lg" ? "h-7 w-7" : "h-5 w-5"} />
       )}
     </div>
   );
 }
 
-export function seatsLabel(offering: {
+// The run window as a meta value: the offering's own dates, or a plain "Dates
+// TBD" before they're set so the row never reads as a blank.
+export function runsValue(
+  offering: Pick<OfferingCardData, "startsAt" | "endsAt">,
+  tz: string,
+): string {
+  return offering.startsAt && offering.endsAt
+    ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
+    : "Dates TBD";
+}
+
+// Seats as a labelled meta row with urgency: a full offering points at its
+// waitlist and a nearly-full one (a quarter of seats or fewer) turns coral, so
+// scarcity reads at a glance — while a small-but-open workshop (e.g. 2 of 2)
+// stays neutral, since every seat is still available.
+export function seatsMeta(offering: {
   capacity: number;
   approvedCount: number;
-}): string {
+}): { value: string; tone: MetaTone } {
   const left = Math.max(0, offering.capacity - offering.approvedCount);
-  return left > 0
-    ? `${left} of ${offering.capacity} left`
-    : "Full — waitlist open";
+  if (left === 0) return { value: "Full — waitlist open", tone: "urgent" };
+  const scarce = offering.capacity > 0 && left / offering.capacity <= 0.25;
+  return {
+    value: `${left} of ${offering.capacity} left`,
+    tone: scarce ? "urgent" : "default",
+  };
 }
 
 export function OfferingCatalogCard({
@@ -91,11 +121,14 @@ export function OfferingCatalogCard({
   onSelect?: () => void;
 }) {
   const tz = useUserTimeZone();
+  const reg = registrationMeta(offering, tz);
+  const seats = seatsMeta(offering);
   return (
-    // Cover-led card that lifts on hover, the cover scaling on a slower curve
-    // than the frame — the project-card choreography, on semantic tokens.
-    // Still a real link even when it opens the side pane: ⌘-click, middle-click
-    // and "open in new tab" have to keep reaching the offering's own page.
+    // A flat, info-led card: type tile + title up top, the facts a browser
+    // scans for below a hairline, with the dynamic ones (a closing deadline,
+    // scarce seats) tinted for urgency. Still a real link even when it opens the
+    // side pane, so ⌘-click / middle-click / "open in new tab" keep reaching the
+    // offering's own page.
     <Link
       to={to}
       aria-current={selected ? "true" : undefined}
@@ -106,38 +139,45 @@ export function OfferingCatalogCard({
         e.preventDefault();
         onSelect();
       }}
-      className={`group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-brand-1 transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-1 ${
+      className={cn(
+        "group flex flex-col gap-3.5 rounded-2xl border bg-card p-4 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5",
         selected
           ? "border-accent-coral ring-2 ring-accent-coral/40"
-          : "border-border"
-      }`}
+          : "border-border hover:border-accent-coral/40",
+      )}
     >
-      <div className="relative overflow-hidden">
-        <OfferingCover iconEmoji={offering.iconEmoji} title={offering.title} />
-        {myStatus ? (
-          <div className="absolute right-3 top-3">
-            <MyStatusChip status={myStatus} />
-          </div>
-        ) : null}
-      </div>
-      <div className="flex flex-1 flex-col gap-2 p-[17px]">
-        <span className="truncate text-lg font-semibold text-foreground">
-          {offering.title}
-        </span>
-        <span className="flex items-center gap-2">
-          <TypeBadge type={offering.type} />
-          <span className="text-xs text-muted-foreground">
-            {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
+      <div className="flex items-start gap-3">
+        <OfferingTypeTile type={offering.type} iconEmoji={offering.iconEmoji} />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate font-heading text-base font-bold text-foreground transition-colors group-hover:text-accent-coral">
+            {offering.title}
+          </h3>
+          <span className="mt-0.5 flex items-center gap-2">
+            <TypeBadge type={offering.type} />
+            <span className="text-xs text-muted-foreground">
+              {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
+            </span>
           </span>
-        </span>
-        <MetaList
-          className="mt-auto pt-1"
-          rows={[
-            { label: "Registration", value: registrationWindowValue(offering, tz) },
-            { label: "Seats", value: seatsLabel(offering) },
-          ]}
-        />
+        </div>
+        {myStatus ? <MyStatusChip status={myStatus} /> : null}
       </div>
+      <div className="border-t border-border" />
+      <MetaList
+        rows={[
+          { label: "Runs", value: runsValue(offering, tz), tone: "muted" },
+          { label: "Registration", value: reg.value, tone: reg.tone },
+          { label: "Seats", value: seats.value, tone: seats.tone },
+          ...(offering.instructorNames.length > 0
+            ? [
+                {
+                  label: "Taught by",
+                  value: offering.instructorNames.join(", "),
+                  tone: "muted" as const,
+                },
+              ]
+            : []),
+        ]}
+      />
     </Link>
   );
 }
