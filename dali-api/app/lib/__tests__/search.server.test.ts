@@ -50,6 +50,7 @@ beforeEach(() => {
   mockPageContent.mockResolvedValue([]);
   mockPrisma.task.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
+  mockPrisma.pageDoc.findMany.mockResolvedValue([]);
 });
 
 describe("runSearch gating", () => {
@@ -240,5 +241,92 @@ describe("runSearch — documents", () => {
     );
 
     expect(docs[0].subtitle).toBe("Document");
+  });
+});
+
+describe("runSearch — guides", () => {
+  it("surfaces a page guide by its declared title before anyone authors it", async () => {
+    // No PageDoc row yet — the guide still ranks on its GUIDE_PAGES title,
+    // deep-linked to the ?doc=1 overlay on its host route.
+    mockPrisma.pageDoc.findMany.mockResolvedValue([]);
+
+    const guides = (await runSearch({ userId: "u1", roles: MEMBER, q: "staffing" })).filter(
+      (r) => r.type === "guide",
+    );
+
+    expect(guides).toContainEqual({
+      type: "guide",
+      id: "projects.staffing",
+      title: "Staffing",
+      subtitle: "Guide",
+      url: "/projects/staffing?doc=1",
+    });
+  });
+
+  it("indexes authored section titles and bodies, using the row's own title", async () => {
+    mockPrisma.pageDoc.findMany.mockResolvedValue([
+      {
+        pageKey: "drive.mine",
+        title: "My Drive",
+        body: null,
+        sections: [
+          {
+            id: "s1",
+            title: "Overview",
+            body: [{ type: "paragraph", content: [{ type: "text", text: "upload a spreadsheet here" }] }],
+            videoKey: null,
+          },
+        ],
+      },
+    ]);
+
+    // "spreadsheet" appears only in the section body — so body indexing is what
+    // surfaces it — and the host route already carries ?scope=mine.
+    const guides = (await runSearch({ userId: "u1", roles: MEMBER, q: "spreadsheet" })).filter(
+      (r) => r.type === "guide",
+    );
+
+    expect(guides).toContainEqual({
+      type: "guide",
+      id: "drive.mine",
+      title: "My Drive",
+      subtitle: "Guide",
+      url: "/drive?scope=mine&doc=1",
+    });
+  });
+
+  it("does not run for a non-member session", async () => {
+    const results = await runSearch({
+      userId: "u1",
+      roles: { ...MEMBER, isLabMember: false },
+      q: "calendar",
+    });
+    expect(results).toEqual([]);
+    expect(mockPrisma.pageDoc.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSearch — help articles", () => {
+  it("surfaces a /help article by title", async () => {
+    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "shortcuts" })).filter(
+      (r) => r.type === "helpArticle",
+    );
+
+    expect(help).toContainEqual({
+      type: "helpArticle",
+      id: "shortcuts",
+      title: "Keyboard shortcuts",
+      subtitle: "Help",
+      url: "/help/shortcuts",
+    });
+  });
+
+  it("matches on a keyword the title doesn't contain", async () => {
+    // "MCP" is only a keyword of the AI-assistants article, not its title.
+    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "mcp" })).filter(
+      (r) => r.type === "helpArticle",
+    );
+
+    expect(help.map((r) => r.id)).toContain("mcp");
   });
 });
