@@ -210,6 +210,21 @@ export const SetTimesheetSyncSchema = z.object({
   enabled: z.boolean(),
 });
 
+// "Track in DALI" on the detail popover of an external event that has no DALI
+// meeting behind it — the lab's general calendar is authored in Google, so its
+// events arrive with nothing to hang a note or an attendance roster off. This
+// creates that missing ScheduledMeeting, bound to the Google event, and the
+// ordinary note/attendance affordances take over from there. Core-only; the
+// action re-checks.
+export const TrackEventAsMeetingSchema = z.object({
+  intent: z.literal("track-event-as-meeting"),
+  /** The Google event id, and the master id when it's one of a series. */
+  eventId: z.string().min(1).max(1024),
+  recurringEventId: z.string().min(1).max(1024).optional(),
+  linkId: z.string().min(1),
+  calendarId: z.string().min(1).max(320),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
   SeedWorkingHoursSchema,
@@ -226,6 +241,7 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetMeetingCoreSchema,
   AddMeetingNoteSchema,
   SetTimesheetSyncSchema,
+  TrackEventAsMeetingSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

@@ -12,6 +12,7 @@ import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -961,6 +962,16 @@ export function WeekGridEvent({
                     ) : null}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
+                </div>
+              )}
+              {!e.meeting && e.trackable && (
+                // An external event with nothing behind it yet. Tracking it is
+                // what gives the popover the note + attendance row above.
+                <div
+                  className="mt-3.5 border-t border-os-container pt-3"
+                  onPointerDown={(ev) => ev.stopPropagation()}
+                >
+                  <TrackEventButton trackable={e.trackable} className={popoverActionBtn} />
                 </div>
               )}
               {(e.onEdit || e.onDuplicate || e.onDelete) && (

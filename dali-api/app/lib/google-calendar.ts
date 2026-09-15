@@ -970,10 +970,24 @@ export async function getGoogleEvent(opts: {
   linkId: string;
   calendarId?: string;
   eventId: string;
-}): Promise<{ id: string; recurrence: string[]; startIso: string | null; startDate: string | null }> {
+}): Promise<{
+  id: string;
+  recurrence: string[];
+  startIso: string | null;
+  startDate: string | null;
+  /** Title/end/attendees are read alongside so a caller that needs to mirror
+   *  the event (rather than just re-read its recurrence) doesn't need a second
+   *  round-trip. `null`/empty when Google omits them. */
+  summary: string | null;
+  endIso: string | null;
+  endDate: string | null;
+  attendeeEmails: string[];
+}> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
-  const params = new URLSearchParams({ fields: "id,recurrence,start(dateTime,date)" });
+  const params = new URLSearchParams({
+    fields: "id,summary,recurrence,start(dateTime,date),end(dateTime,date),attendees(email)",
+  });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -984,14 +998,23 @@ export async function getGoogleEvent(opts: {
   }
   const data = (await res.json()) as {
     id?: string;
+    summary?: string;
     recurrence?: string[];
     start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    attendees?: { email?: string }[];
   };
   return {
     id: data.id ?? opts.eventId,
     recurrence: data.recurrence ?? [],
     startIso: data.start?.dateTime ?? null,
     startDate: data.start?.date ?? null,
+    summary: data.summary ?? null,
+    endIso: data.end?.dateTime ?? null,
+    endDate: data.end?.date ?? null,
+    attendeeEmails: (data.attendees ?? [])
+      .map((a) => a.email)
+      .filter((e): e is string => typeof e === "string" && e.length > 0),
   };
 }
 

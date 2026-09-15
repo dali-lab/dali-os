@@ -5,6 +5,7 @@ import {
   generalCalendarConfigured,
   generalCalendarId,
   generalCalendarState,
+  isGeneralCalendarEvent,
   warmGeneralCalendarFeed,
 } from "../general-calendar";
 
@@ -234,6 +235,41 @@ describe("generalCalendarId", () => {
       "https://calendar.google.com/calendar/ical/derived%40group.calendar.google.com/public/basic.ics";
     process.env.DALI_GENERAL_CALENDAR_ID = "explicit@group.calendar.google.com";
     expect(generalCalendarId()).toBe("explicit@group.calendar.google.com");
+  });
+});
+
+// The lab's general calendar is authored in Google, so DALI sees its events as
+// ordinary external ones. This is what tells the calendar surfaces that such an
+// event is addressed to the whole lab — which is what lets a member reach its
+// meeting note and attendance without having been individually invited.
+describe("isGeneralCalendarEvent", () => {
+  afterEach(() => {
+    delete process.env.DALI_GENERAL_CALENDAR_ID;
+  });
+
+  it("recognises an event on the configured general calendar", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = "dali@dartmouth.edu";
+    expect(isGeneralCalendarEvent("dali@dartmouth.edu")).toBe(true);
+  });
+
+  it("rejects any other calendar", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = "dali@dartmouth.edu";
+    expect(isGeneralCalendarEvent("someone@dartmouth.edu")).toBe(false);
+    expect(isGeneralCalendarEvent("primary")).toBe(false);
+  });
+
+  it("rejects an event with no calendar id", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = "dali@dartmouth.edu";
+    expect(isGeneralCalendarEvent(null)).toBe(false);
+    expect(isGeneralCalendarEvent(undefined)).toBe(false);
+    expect(isGeneralCalendarEvent("")).toBe(false);
+  });
+
+  // An unset env var must never widen anything: with no general calendar
+  // configured, nothing is lab-wide.
+  it("is false for everything when no general calendar is configured", () => {
+    delete process.env.DALI_GENERAL_CALENDAR_ICS;
+    expect(isGeneralCalendarEvent("dali@dartmouth.edu")).toBe(false);
   });
 });
 
