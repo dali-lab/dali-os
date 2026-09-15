@@ -256,6 +256,7 @@ export function CreateScheduledMeetingForm({
   // Core-only: lift this meeting onto the Core hub calendar without touching
   // who's invited. Inviting the Core group ticks it as a default (see below).
   const [coreMeeting, setCoreMeeting] = useState(false);
+  const revalidator = useRevalidator();
   const [status, setStatus] = useState<
     | null
     | {
@@ -371,6 +372,11 @@ export function CreateScheduledMeetingForm({
         note.reset();
         setSelfCheckIn(false);
         setCoreMeeting(false);
+        // This composer sits on the calendar page next to the grid, and its
+        // POST goes out through plain fetch() — invisible to the router, so
+        // without this the meeting you just scheduled is missing from the grid
+        // beside it until the next navigation or window focus.
+        revalidator.revalidate();
       }
     } catch (err) {
       setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
