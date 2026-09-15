@@ -8,6 +8,7 @@ import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
 import {
+  classifyWalletScanFailure,
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
@@ -54,12 +55,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       id: true,
       organizerId: true,
       projectId: true,
-      meetingType: true,
       selectedAt: true,
       durationMinutes: true,
     },
   });
-  if (!meeting || !meeting.meetingType) {
+  // Any real meeting is scannable — don't require a meetingType. An all-lab /
+  // general attendance event created as SelfCheckIn carries no meetingType but
+  // still has a roster (MeetingAttendance rows); the self-check-in route accepts
+  // it, so the scan station must too. The window check (needs selectedAt) rejects
+  // scheduling polls, and markMeetingAttendance rejects non-invitees below.
+  if (!meeting) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
 
@@ -96,6 +101,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     ? verifyWalletToken(body.memberToken, scanned.walletPassSecret)
     : ({ ok: false } as const);
   if (!scanned || !verified.ok) {
+    // One generic message to the client (don't leak member existence / secret
+    // state), but log which of the four causes fired so the failure is
+    // diagnosable from the field. See classifyWalletScanFailure for what each means.
+    console.error(
+      `scan-attendee: rejected pass (meeting=${meeting.id}, member=${scannedId ?? "?"}, reason=${classifyWalletScanFailure(
+        body.memberToken,
+        scanned,
+      )})`,
+    );
     return withCors(request, Response.json({ error: "Invalid or revoked pass" }, { status: 400 }));
   }
 

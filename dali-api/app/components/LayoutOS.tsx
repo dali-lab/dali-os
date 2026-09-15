@@ -44,7 +44,6 @@ import {
   type NavArea,
   type RoleFlags,
 } from '~/lib/nav-areas'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -247,10 +246,6 @@ export function LayoutOS({
     })
   }
 
-  // The `attendance` flag moves Attendance from Core ▸ to General ▸ in the nav
-  // registry (areasFor); CommandPalette threads the same flag through its own
-  // resolved map, so both stay consistent.
-  const navFlags = { attendance: useFeatureFlag('attendance') }
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -263,9 +258,9 @@ export function LayoutOS({
     isLabMentor,
     isInstructor,
   }
-  const areas = visibleAreas(roleFlags, navFlags)
-  const routeArea = areaForPath(path, navFlags)
-  const pinned = pinnedNavItems(navFlags)
+  const areas = visibleAreas(roleFlags)
+  const routeArea = areaForPath(path)
+  const pinned = pinnedNavItems()
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -284,7 +279,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -464,7 +459,7 @@ export function LayoutOS({
           </Tooltip>
           {pinned.map((item) => {
             const Icon = item.icon
-            const active = isPinnedActive(path, item.href, navFlags)
+            const active = isPinnedActive(path, item.href)
             return (
               <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
                 <button
@@ -941,7 +936,6 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={navFlags}
         onOpen={openFromPalette}
       />
     </div>

@@ -1,16 +1,13 @@
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { ChevronLeft, FileText, Users, ScanLine, Shield, Video } from "lucide-react";
+import { FileText, Users, Shield, Video } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
-import { AttendeeScanner } from "~/components/AttendeeScanner";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -19,6 +16,15 @@ export const handle = {
   breadcrumb: (data: unknown) => {
     const d = data as { meetingLabel?: string } | undefined;
     return d?.meetingLabel || "Meeting";
+  },
+  // This page is the attendance/check-in surface for a meeting, so its home is
+  // Attendance, not the URL-derived Calendar > Meeting trail.
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as { meetingLabel?: string } | undefined;
+    return [
+      { label: "Attendance", to: "/attendance" },
+      { label: d?.meetingLabel || "Event" },
+    ];
   },
 };
 
@@ -82,8 +88,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
   }
 
-  const walletEnabled = canManage && (await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request));
-
   const typeLabel =
     meeting.meetingType === "Other"
       ? meeting.meetingTypeLabel || "Meeting"
@@ -109,8 +113,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,
-    walletEnabled,
-    walletConfigured: walletTokensConfigured(),
   };
 }
 
@@ -130,13 +132,6 @@ export default function CalendarMeetingPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6">
-      <Link
-        to="/calendar"
-        className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" /> Calendar
-      </Link>
-
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-accent-teal/15 px-2 py-0.5 text-xs font-medium text-accent-teal">
@@ -200,23 +195,6 @@ export default function CalendarMeetingPage() {
 
         {d.canManage && d.rows.length > 0 && (
           <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
-        )}
-
-        {d.walletEnabled && (
-          <details className="rounded-lg border border-border">
-            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm font-medium text-foreground">
-              <ScanLine className="h-4 w-4 text-muted-foreground" /> Scan wallet passes
-            </summary>
-            <div className="p-3 pt-0">
-              {d.walletConfigured ? (
-                <AttendeeScanner meetingId={d.meetingId} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Wallet check-in isn't configured on this server yet.
-                </p>
-              )}
-            </div>
-          </details>
         )}
 
         {!d.canManage && !d.selfCheckIn && (

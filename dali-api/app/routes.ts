@@ -17,9 +17,8 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
-    // Lab-wide attendance (feature flag `attendance`): every meeting/event the
-    // viewer is invited to, with its roster. Lives under General; supersedes the
-    // Core-only /core/attendance overview when the flag is on.
+    // Lab-wide attendance: every meeting/event the viewer is invited to, with its
+    // roster. Lives under General; replaced the retired Core-only overview.
     route("attendance", "routes/attendance.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
@@ -76,7 +75,6 @@ export default [
     route("admin/members", "admin/routes/admin.members.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/attendance", "admin/routes/admin.attendance.tsx"),
     route("admin/activity", "admin/routes/admin.activity.tsx"),
     route("admin/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
@@ -114,7 +112,6 @@ export default [
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
-    route("core/attendance", "core/routes/core.attendance.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),

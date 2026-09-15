@@ -12,8 +12,6 @@ import {
 import type { Route } from "./+types/attendance";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -27,7 +25,7 @@ export const handle = {
   breadcrumb: () => "Attendance",
 };
 
-// Lab-wide Attendance (feature flag `attendance`): every meeting/event the
+// Lab-wide Attendance: every meeting/event the
 // viewer is invited to, across projects / teams / Core / general lab meetings,
 // with each event's roster. Access is by invitation — we only surface a meeting
 // whose participant list (or organizer) includes the viewer, so "you can see the
@@ -39,14 +37,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   const userId = auth.user.sub;
-
-  const roles = await getUserRoles(userId);
-  const enabled = await isFeatureEnabled("attendance", userId, roles, request);
-  if (!enabled) {
-    // Flag off: the Core-only overview is still the live surface for Core; anyone
-    // else has no attendance home yet, so send them to the app root.
-    return redirect(roles.isCore ? "/core/attendance" : "/");
-  }
 
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {

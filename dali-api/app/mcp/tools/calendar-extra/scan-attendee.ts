@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
 import {
+  classifyWalletScanFailure,
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
@@ -50,13 +51,14 @@ export async function runScanAttendee(callerId: string, input: Input) {
       id: true,
       organizerId: true,
       projectId: true,
-      meetingType: true,
       selectedAt: true,
       durationMinutes: true,
     },
   });
 
-  if (!meeting || !meeting.meetingType) {
+  // Any real meeting is scannable — don't require a meetingType (a SelfCheckIn
+  // all-lab event has none but still has a roster). Mirrors the HTTP scan route.
+  if (!meeting) {
     throw new McpNotFoundError("Meeting not found");
   }
 
@@ -92,6 +94,13 @@ export async function runScanAttendee(callerId: string, input: Input) {
     : ({ ok: false } as const);
 
   if (!scanned || !verified.ok) {
+    // Generic error to the caller, but log which cause fired for diagnostics.
+    console.error(
+      `scan_attendee: rejected pass (meeting=${meeting.id}, member=${scannedId ?? "?"}, reason=${classifyWalletScanFailure(
+        input.memberToken,
+        scanned,
+      )})`,
+    );
     throw new McpInvalidError("Invalid or revoked pass");
   }
 
