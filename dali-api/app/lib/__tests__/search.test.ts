@@ -72,6 +72,18 @@ describe("buildUrl (route-param gotchas)", () => {
     expect(buildUrl.partnerApplication("pa1")).toBe("/partners/applications/pa1");
     expect(buildUrl.cycle("cy1")).toBe("/hiring/lead/cycle/cy1");
   });
+
+  it("opens a guide as a ?doc=1 overlay on its host route, keyed by pageKey", () => {
+    expect(buildUrl.guide("calendar")).toBe("/calendar?doc=1");
+    // A host route that already carries a query gets doc appended, not a 2nd `?`.
+    expect(buildUrl.guide("drive.mine")).toBe("/drive?scope=mine&doc=1");
+    // Unknown key falls back home rather than to a dead URL.
+    expect(buildUrl.guide("nope")).toBe("/?doc=1");
+  });
+
+  it("maps a help article to its /help/<slug> page", () => {
+    expect(buildUrl.helpArticle("getting-started")).toBe("/help/getting-started");
+  });
 });
 
 describe("computeHiringVisibility (leak-proofing)", () => {
