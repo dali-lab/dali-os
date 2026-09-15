@@ -227,18 +227,14 @@ describe("listPublicOfferings mapping", () => {
     expect(m.name).toBe("Intro to Figma");
     expect(m.type).toBe("miniseries");
     expect(m.term).toBe("26F");
-    expect(m.startDate).toEqual({
-      day: 15, month: "September", year: 2026, time: "4 PM",
-      fullDate: "2026-09-15T20:00:00.000Z",
-    });
-    expect(m.endDate).toMatchObject({ day: 6, month: "October", time: "5 PM" });
+    expect(m.startDate).toBe("2026-09-15T20:00:00.000Z");
+    expect(m.endDate).toBe("2026-10-06T21:00:00.000Z");
     expect(m.sessions).toHaveLength(2);
     expect(m.sessions[0]).toEqual({
-      sequence: 1, title: "Basics", location: "DALI Pod",
-      date: {
-        day: 15, month: "September", year: 2026, time: "4 PM",
-        fullDate: "2026-09-15T20:00:00.000Z",
-      },
+      sequence: 1,
+      title: "Basics",
+      location: "DALI Pod",
+      date: "2026-09-15T20:00:00.000Z",
     });
     // Untitled/location-less sessions carry through as null, not "".
     expect(m.sessions[1].title).toBeNull();
@@ -250,7 +246,7 @@ describe("listPublicOfferings mapping", () => {
     mockPrisma.educationOffering.findMany.mockResolvedValue([baseRow]);
     const [open] = await listPublicOfferings({}, NOW); // Sep 1 is inside the window
     expect(open.registration.open).toBe(true);
-    expect(open.registration.opensAt).toMatchObject({ day: 25, month: "August", time: "9 AM" });
+    expect(open.registration.opensAt).toBe("2026-08-25T13:00:00.000Z");
 
     mockPrisma.educationOffering.findMany.mockResolvedValue([baseRow]);
     const [closed] = await listPublicOfferings({}, new Date("2026-08-01T12:00:00.000Z"));

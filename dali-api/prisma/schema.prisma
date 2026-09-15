@@ -2888,6 +2888,20 @@ model ProjectShowcase {
   // curating the public face never disturbs the internal hub's banner.
   heroImageUrl String?
 
+  // The public write-up, as ordered { item, description } pairs (item is the
+  // heading, e.g. "The Problem"; description is its blurb). Replaces the
+  // free-text collab write-up so the public API ships pure data and
+  // dali.website owns all the formatting. Null on a row that predates the
+  // detail-pairs editor; the API seeds the default three pairs in that case.
+  // Shape: [{ item: string, description: string }].
+  details Json?
+
+  // Public media gallery, shown below the detail pairs. Each entry is an S3 key
+  // under `uploads/` (served through the media proxy) or a full URL, mirroring
+  // heroImageUrl's storage rule. Shape: [{ type: "image" | "video", src:
+  // string, caption?: string }].
+  media Json?
+
   // The Notion page this row was imported from. Makes re-running the importer
   // idempotent and lets a later --images pass find its row without re-doing
   // the (lossy) name matching. Null for rows created in-app.

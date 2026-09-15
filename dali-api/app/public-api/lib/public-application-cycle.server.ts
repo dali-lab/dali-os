@@ -15,28 +15,16 @@ import { getActiveCycle } from "~/hiring/lib/cycles";
 // eligibility gate, never a public application, so they must not light up the
 // public banner.
 
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-export type PublicCycleDate = {
-  day: number;
-  month: string;
-  year: number;
-  time: string;
-  fullDate: string; // ISO 8601
-};
-
 export type PublicApplicationCycle = {
   status: "open" | "closed";
   // Lead-authored label (e.g. "Fall 2026"). Null when nothing is open — the
   // site has no cycle to name.
   name: string | null;
-  // The application deadline, if the cycle has one. A cycle may be Open with
-  // no closeDate set yet (leads often open before fixing the date), in which
-  // case the site falls back to generic copy.
-  closeDate: PublicCycleDate | null;
+  // ISO 8601 application deadline. Null when nothing is open, or when the cycle
+  // is Open with no closeDate set yet (leads often open before fixing the
+  // date), in which case the site falls back to generic copy. dali.website
+  // formats it — the API ships the instant, not a rendering.
+  closeDate: string | null;
 };
 
 const CLOSED: PublicApplicationCycle = {
@@ -44,32 +32,6 @@ const CLOSED: PublicApplicationCycle = {
   name: null,
   closeDate: null,
 };
-
-// Mirrors toDateParts in public-offerings.server.ts: the site renders the
-// parts separately, and times are Eastern because the deadline is a campus
-// deadline, not a viewer-local one.
-function toDateParts(d: Date): PublicCycleDate {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const minute = get("minute");
-  const hour = get("hour");
-  const dayPeriod = get("dayPeriod").toUpperCase();
-  return {
-    day: Number(get("day")),
-    month: MONTHS[Number(get("month")) - 1],
-    year: Number(get("year")),
-    time: minute === "00" ? `${hour} ${dayPeriod}` : `${hour}:${minute} ${dayPeriod}`,
-    fullDate: d.toISOString(),
-  };
-}
 
 export async function getPublicApplicationCycle(): Promise<PublicApplicationCycle> {
   const cycle = await getActiveCycle("Standard");
@@ -81,6 +43,6 @@ export async function getPublicApplicationCycle(): Promise<PublicApplicationCycl
   return {
     status: "open",
     name: cycle.name,
-    closeDate: cycle.closeDate ? toDateParts(cycle.closeDate) : null,
+    closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
   };
 }
