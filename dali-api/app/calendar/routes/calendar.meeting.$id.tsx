@@ -131,7 +131,9 @@ export default function CalendarMeetingPage() {
   const present = d.rows.filter((r) => r.present).length;
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6">
+    // Full-bleed and left-aligned: the app shell already supplies the page
+    // gutters, so this surface only owns its vertical rhythm.
+    <div className="flex w-full flex-col items-stretch gap-5 text-left">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-accent-teal/15 px-2 py-0.5 text-xs font-medium text-accent-teal">
