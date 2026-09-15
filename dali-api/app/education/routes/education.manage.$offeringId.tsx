@@ -19,10 +19,14 @@ import {
   runOfferingAction,
 } from "~/education/lib/offerings.server";
 import { listApplications } from "~/education/lib/apply.server";
-import { decideApplication, approveAllPending } from "~/education/lib/decisions.server";
+import {
+  decideApplication,
+  approveAllPending,
+  moveWaitlistEntry,
+} from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
-import { ApplicationsReview } from "~/education/components/ApplicationsReview";
+import { ApplicationsReview, WaitlistOrder } from "~/education/components/ApplicationsReview";
 import { RosterMatrix } from "~/education/components/RosterMatrix";
 import { InstructorPicker } from "~/education/components/InstructorPicker";
 import { AddFormModal } from "~/education/components/AddFormModal";
@@ -396,6 +400,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const contentIntents = [
     "decide-application",
+    "move-waitlist-entry",
     "create-page",
     "move-page",
     "move-file",
@@ -435,6 +440,15 @@ export async function action({ request, params }: Route.ActionArgs) {
           actorId: auth.user.sub,
         });
         return { ok: true, bulkApprove: result };
+      }
+      case "move-waitlist-entry": {
+        const result = await moveWaitlistEntry({
+          applicationId: String(formData.get("applicationId") ?? ""),
+          offeringId: params.offeringId!,
+          direction: formData.get("direction") === "up" ? "up" : "down",
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
       }
       case "move-page": {
         const result = await moveMaterialPage({
@@ -1490,6 +1504,10 @@ export default function ManageOffering() {
                   </Form>
                 )}
               </div>
+              {(appCounts["Waitlisted"] ?? 0) > 0 &&
+                (appFilter === "all" || appFilter === "Waitlisted") && (
+                  <WaitlistOrder applications={applications} />
+                )}
               <ApplicationsReview
                 applications={filteredApps}
                 statusChip={(status) => <MyStatusChip status={status as never} />}
