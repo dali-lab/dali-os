@@ -118,10 +118,13 @@ function HomeOS() {
 
       {inDesktopApp && (
         // A scavenger-hunt code, parked in the corner of the desktop app's
-        // front door: quiet enough to walk past, legible once you look for it.
-        // Absolute so it can't disturb the centred greeting/search stack.
-        <p className="absolute bottom-0 right-0 select-all text-[10px] font-medium tracking-[0.3em] text-muted-foreground/30">
-          FLOWERFARM
+        // front door. The 🕵️ marks it as one of the hunt's codes rather than
+        // stray text; `select-all` sits on the code span alone so copying it
+        // can't drag the emoji along. Absolute so it can't disturb the centred
+        // greeting/search stack.
+        <p className="absolute bottom-0 right-0 text-[10px] font-medium tracking-[0.3em] text-muted-foreground/30">
+          <span aria-hidden>🕵️</span>{" "}
+          <span className="select-all">FLOWERFARM</span>
         </p>
       )}
     </div>

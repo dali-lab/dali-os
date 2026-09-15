@@ -10,6 +10,7 @@ import type { Activity } from "~/generated/prisma/client";
 import {
   DEFAULT_HINT_POLICY,
   resolveHintState,
+  type ActivityTeamView,
   type HuntConfig,
   type HuntHintPolicy,
 } from "~/lib/activities";
@@ -249,19 +250,36 @@ export const scavengerHuntServer: MechanicServer = {
     return `${countFound(userEvents)}/${total} found`;
   },
 
-  summarize({ activity, viewerIsCore, userEvents, allEvents }) {
+  summarize({ activity, userId, viewerIsCore, userEvents, allEvents, teams, viewerTeam }) {
     const cfg = readConfig(activity);
     const policy = cfg.hintPolicy ?? DEFAULT_HINT_POLICY;
     const total = cfg.codes.length;
     const nowMs = Date.now();
     const startsAtMs = new Date(activity.startsAt).getTime();
+    const teamMode = activity.scoring === "Team";
+
+    // In Team mode a partner's find is the member's find: progress, the struck-
+    // through clue rows and an already-paid-for hint are all the team's, so read
+    // the team's events wherever the individual's would do.
+    const myEvents =
+      teamMode && viewerTeam
+        ? allEvents.filter((e) => viewerTeam.memberIds.includes(e.userId))
+        : userEvents;
 
     const foundIds = new Set(
-      userEvents.filter((e) => e.type === "code_found").map((e) => e.refId),
+      myEvents.filter((e) => e.type === "code_found").map((e) => e.refId),
     );
     const revealedIds = new Set(
-      userEvents.filter((e) => e.type === "hint_revealed").map((e) => e.refId),
+      myEvents.filter((e) => e.type === "hint_revealed").map((e) => e.refId),
     );
+    // Who on the team entered each code — the surface credits a partner's find
+    // ("found by Alex") instead of silently ticking a row the member never saw.
+    const foundBy = new Map<string, string>();
+    if (teamMode) {
+      for (const e of myEvents) {
+        if (e.type === "code_found" && !foundBy.has(e.refId)) foundBy.set(e.refId, e.userId);
+      }
+    }
 
     // One row per code for the checklist under the progress bar: the label
     // (never the code value), whether this member has found it, and — for a
@@ -271,11 +289,15 @@ export const scavengerHuntServer: MechanicServer = {
     // the payload.
     const clues = cfg.codes.map((c, i) => {
       const found = foundIds.has(c.id);
+      // Only name a teammate — "found by you" is noise on your own row.
+      const by = foundBy.get(c.id);
+      const foundByUserId = found && by && by !== userId ? by : null;
       if (found || !c.hint) {
         return {
           id: c.id,
           label: c.label || `Clue ${i + 1}`,
           found,
+          foundByUserId,
           hint: null,
           cost: null,
           unlocksAt: null,
@@ -290,6 +312,7 @@ export const scavengerHuntServer: MechanicServer = {
         id: c.id,
         label: c.label || `Clue ${i + 1}`,
         found,
+        foundByUserId,
         hint: st.show ? c.hint : null,
         cost: st.cost,
         unlocksAt: st.unlocksAt,
@@ -305,6 +328,11 @@ export const scavengerHuntServer: MechanicServer = {
       instructionsUrl: cfg.instructionsUrl ?? null,
       hintMode: policy.mode,
       clues,
+      // Team mode: who the member is hunting with, and the nudge for someone the
+      // operator hasn't paired up yet (their finds only reach the board once
+      // they're on a team — the events keep, they're pooled at read time).
+      team: teamMode && viewerTeam ? { name: viewerTeam.name, memberIds: viewerTeam.memberIds } : null,
+      teamless: teamMode && !viewerTeam,
     };
 
     // Leaderboard visibility is enforced here: "core" hides it from non-Core
@@ -313,35 +341,86 @@ export const scavengerHuntServer: MechanicServer = {
     const visible =
       cfg.leaderboard === "public" || (cfg.leaderboard === "core" && viewerIsCore);
     if (visible) {
-      const byUser = new Map<
-        string,
-        { userId: string; points: number; found: number; lastAt: number }
-      >();
-      const rowFor = (uid: string) => {
-        let row = byUser.get(uid);
+      // One bucket per competitor: a member in Individual mode, a team in Team
+      // mode. Team mode also needs the dedup a single member gets for free from
+      // the (activity, user, type, refId) unique index — two partners entering
+      // the same code must not score it twice — so a code counts once per
+      // bucket, on whichever event landed first.
+      type Row = {
+        id: string;
+        userId: string | null;
+        teamName: string | null;
+        memberIds: string[];
+        points: number;
+        found: number;
+        lastAt: number;
+      };
+      const teamByUser = new Map<string, ActivityTeamView>();
+      if (teamMode) {
+        for (const t of teams) for (const uid of t.memberIds) teamByUser.set(uid, t);
+      }
+
+      const rowsById = new Map<string, Row>();
+      const countedRefs = new Set<string>(); // `${rowId}:${type}:${refId}`
+      const bucketFor = (uid: string): Row | null => {
+        if (!teamMode) {
+          let row = rowsById.get(uid);
+          if (!row) {
+            row = { id: uid, userId: uid, teamName: null, memberIds: [uid], points: 0, found: 0, lastAt: 0 };
+            rowsById.set(uid, row);
+          }
+          return row;
+        }
+        // Team mode ranks teams. Someone the operator hasn't paired up yet has
+        // no bucket — their finds are kept and start counting the moment they
+        // join a team (the surface tells them so).
+        const team = teamByUser.get(uid);
+        if (!team) return null;
+        let row = rowsById.get(team.id);
         if (!row) {
-          row = { userId: uid, points: 0, found: 0, lastAt: 0 };
-          byUser.set(uid, row);
+          row = {
+            id: team.id,
+            userId: null,
+            teamName: team.name,
+            memberIds: team.memberIds,
+            points: 0,
+            found: 0,
+            lastAt: 0,
+          };
+          rowsById.set(team.id, row);
         }
         return row;
       };
-      for (const e of allEvents) {
+
+      // Oldest first, so the first event for a code is the one that scores it.
+      const ordered = [...allEvents].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      for (const e of ordered) {
+        if (e.type !== "code_found" && e.type !== "hint_revealed") continue;
+        const row = bucketFor(e.userId);
+        if (!row) continue;
+        const key = `${row.id}:${e.type}:${e.refId}`;
+        if (countedRefs.has(key)) continue;
+        countedRefs.add(key);
+        row.points += e.points;
         if (e.type === "code_found") {
-          const row = rowFor(e.userId);
-          row.points += e.points;
           row.found += 1;
           row.lastAt = Math.max(row.lastAt, new Date(e.createdAt).getTime());
-        } else if (e.type === "hint_revealed") {
-          // Penalty (negative or zero); doesn't count as a find.
-          rowFor(e.userId).points += e.points;
         }
       }
-      // Only rank members who've actually found something — a hint-only row
+
+      // Only rank competitors who've actually found something — a hint-only row
       // (negative points, zero finds) shouldn't appear on the board.
-      const rows = [...byUser.values()]
+      const rows = [...rowsById.values()]
         .filter((r) => r.found > 0)
         .sort((a, b) => b.points - a.points || b.found - a.found || a.lastAt - b.lastAt);
-      results = { visibility: cfg.leaderboard, total, rows };
+      results = {
+        visibility: cfg.leaderboard,
+        total,
+        mode: teamMode ? "team" : "individual",
+        rows,
+      };
     }
 
     return { progress, results };
