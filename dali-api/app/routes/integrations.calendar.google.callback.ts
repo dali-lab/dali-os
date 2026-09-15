@@ -10,7 +10,7 @@ import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { requireAuth } from "~/lib/auth";
-import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
+import { CAL_STATE_COOKIE, GOOGLE_CALENDAR_SCOPE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { exchangeGoogleCode, GoogleOAuthError } from "~/lib/google-oauth";
 
@@ -83,6 +83,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       return redirectToCalendar("calendar_link_error=token_exchange_failed");
     }
     throw err;
+  }
+  // Google can finish consent while granting FEWER scopes than we asked for
+  // (granular consent lets the user untick calendar; a Workspace admin policy
+  // can strip the sensitive scope outright). The flow still returns valid
+  // tokens, so without this guard we'd persist a link that 403s
+  // ("insufficient authentication scopes") on every sync. Refuse it up front
+  // with a message the Calendars panel can act on, and don't clobber whatever
+  // (possibly working) link already exists for this account.
+  if (tokens.scope && !tokens.scope.split(" ").includes(GOOGLE_CALENDAR_SCOPE)) {
+    return redirectToCalendar("calendar_link_error=calendar_scope_denied");
   }
   if (!tokens.refresh_token) {
     return redirectToCalendar("calendar_link_error=no_refresh_token");
