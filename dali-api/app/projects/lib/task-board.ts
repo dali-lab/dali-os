@@ -284,32 +284,25 @@ export function resolveTermIdForDate(
 }
 
 /**
- * Carried-over work: an unfinished task (not Done/Cancelled) whose own date
- * falls in a term strictly before `currentTermId`. A task's term is derived
- * from its date, not stored, so at term rollover an unfinished task still dated
- * in last term would drop off the current board with no home. Instead it rolls
- * forward — staying on the current term's board (and current sprint) until it's
- * finished, the way an overdue item follows you rather than vanishing.
- * Done/Cancelled tasks stay filed under the term they happened in. Returns
- * false when there's no current term or the current term isn't in `terms`.
+ * Carried-over work, Linear-cycle style: an unfinished task (not Done/Cancelled)
+ * whose anchor date (due, else start) falls before `boundaryStartMs` — the start
+ * of the current sprint band, or the current term's start on a break week when
+ * no band is running. Such work rolls forward into the current view instead of
+ * dropping off, the way an unfinished issue rolls into the next cycle. Because
+ * the boundary is a single instant, this is one rule at every zoom level: a task
+ * overdue from an earlier sprint this term and one left over from a past term
+ * both carry forward the same way. Done/Cancelled work stays filed where it
+ * happened; a null boundary (no current term/sprint) carries nothing.
  */
 export function isCarriedOverTask(
   task: Pick<TaskCardModel, "status" | "startsAt" | "dueAt">,
-  terms: TermWindow[],
-  currentTermId: string | null,
+  boundaryStartMs: number | null,
 ): boolean {
   if (task.status === "Done" || task.status === "Cancelled") return false;
-  if (!currentTermId) return false;
-  const current = terms.find((t) => t.id === currentTermId);
-  if (!current) return false;
+  if (boundaryStartMs === null) return false;
   const raw = task.dueAt ?? task.startsAt;
   if (!raw) return false;
-  const date = new Date(raw);
-  // Must predate the current term's window — and not merely land in the break
-  // week that resolveTermIdForDate rolls forward into the current term.
-  if (date >= current.startDate) return false;
-  const resolved = resolveTermIdForDate(terms, date);
-  return resolved !== null && resolved !== currentTermId;
+  return new Date(raw).getTime() < boundaryStartMs;
 }
 
 /**
