@@ -185,6 +185,15 @@ export function buildExternalLayer(
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
         meeting: e.meeting,
+        trackable:
+          e.canTrackAsMeeting && e.eventId && e.linkId && e.calendarId
+            ? {
+                eventId: e.eventId,
+                recurringEventId: e.recurringEventId ?? null,
+                linkId: e.linkId,
+                calendarId: e.calendarId,
+              }
+            : undefined,
         // The RSVP control needs the event's identity to write back to Google;
         // an event the viewer isn't a guest on carries no rsvp and gets none.
         rsvp:

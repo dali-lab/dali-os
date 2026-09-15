@@ -9,15 +9,21 @@ vi.mock("~/lib/pages", () => ({
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
+vi.mock("~/lib/google-calendar", () => ({
+  createGoogleCalendarEvent: vi.fn(),
+  getGoogleEvent: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { createLabMeetingPage, ensureCoreMeetingNotesFolder } from "~/lib/pages";
+import { createGoogleCalendarEvent, getGoogleEvent } from "~/lib/google-calendar";
 import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
+  trackExternalEventAsMeeting,
 } from "~/lib/scheduled-meeting";
 
 const mockPrisma = prisma as unknown as {
@@ -352,5 +358,133 @@ describe("attachMeetingNote", () => {
       where: { id: "m1" },
       data: { meetingType: "Team", meetingTypeLabel: null, projectId: "proj-9" },
     });
+  });
+});
+
+// The lab's general calendar is authored in Google, so its events arrive with
+// no ScheduledMeeting behind them — and therefore no note and no attendance.
+// Tracking one creates that missing row without re-pushing the event to Google
+// or re-inviting people Google already invited.
+describe("trackExternalEventAsMeeting", () => {
+  const GOOGLE_EVENT = {
+    id: "gcal-evt-1",
+    summary: "  All-hands  ",
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+    startIso: "2026-09-15T18:00:00.000Z",
+    startDate: null,
+    endIso: "2026-09-15T19:30:00.000Z",
+    endDate: null,
+    attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
+  };
+
+  function arrange(over: { core?: boolean; event?: Partial<typeof GOOGLE_EVENT> } = {}) {
+    vi.mocked(isCore).mockResolvedValue(over.core ?? true);
+    vi.mocked(getGoogleEvent).mockResolvedValue({ ...GOOGLE_EVENT, ...over.event });
+    const p = mockPrisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+    p.userCalendarLink!.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "core-1",
+      externalEmail: "core@dali.dartmouth.edu",
+    });
+    p.scheduledMeeting!.findFirst.mockResolvedValue(null);
+    p.scheduledMeeting!.create.mockImplementation(async (a: { data: unknown }) => ({
+      id: "m-new",
+      ...(a.data as object),
+    }));
+    p.user!.findMany.mockResolvedValue([{ id: "u-ally" }]);
+    p.meetingAttendance!.createMany.mockResolvedValue({ count: 2 });
+    return p;
+  }
+
+  const input = {
+    actorId: "core-1",
+    eventId: "gcal-evt-1",
+    linkId: "link-1",
+    calendarId: "dali@dartmouth.edu",
+  };
+
+  it("refuses anyone who isn't Core", async () => {
+    arrange({ core: false });
+    expect(await trackExternalEventAsMeeting(input)).toEqual({
+      ok: false,
+      error: "Only Core can track an event in DALI",
+      status: 403,
+    });
+  });
+
+  it("binds the meeting to the Google event, with title and duration from Google", async () => {
+    const p = arrange();
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res.ok).toBe(true);
+    const data = p.scheduledMeeting!.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      organizerId: "core-1",
+      title: "All-hands",
+      durationMinutes: 90,
+      scopeType: "None",
+      status: "Confirmed",
+      externalEventId: "gcal-evt-1",
+      recurrenceRule: "FREQ=WEEKLY;BYDAY=TU",
+    });
+  });
+
+  it("binds a series to its master, so one note covers every occurrence", async () => {
+    const p = arrange();
+
+    await trackExternalEventAsMeeting({ ...input, recurringEventId: "gcal-master" });
+
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data.externalEventId).toBe("gcal-master");
+  });
+
+  it("seeds the roster from Google's guests, resolved to members, plus the actor", async () => {
+    const p = arrange();
+
+    await trackExternalEventAsMeeting(input);
+
+    // outsider@example.com resolves to nobody and is simply absent.
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data.participantUserIds).toEqual(["u-ally"]);
+    expect(p.meetingAttendance!.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          { scheduledMeetingId: "m-new", userId: "u-ally" },
+          { scheduledMeetingId: "m-new", userId: "core-1" },
+        ],
+        skipDuplicates: true,
+      }),
+    );
+  });
+
+  it("never re-pushes the event to Google or re-invites its guests", async () => {
+    arrange();
+
+    await trackExternalEventAsMeeting(input);
+
+    expect(createGoogleCalendarEvent).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("refuses an event that is already tracked", async () => {
+    const p = arrange();
+    p.scheduledMeeting!.findFirst.mockResolvedValue({ id: "m-existing" });
+
+    expect(await trackExternalEventAsMeeting(input)).toEqual({
+      ok: false,
+      error: "This event is already tracked in DALI",
+      status: 409,
+    });
+    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a calendar link that isn't the actor's", async () => {
+    const p = arrange();
+    p.userCalendarLink!.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "someone-else",
+      externalEmail: "x@dali.dartmouth.edu",
+    });
+
+    expect(await trackExternalEventAsMeeting(input)).toMatchObject({ ok: false, status: 404 });
   });
 });

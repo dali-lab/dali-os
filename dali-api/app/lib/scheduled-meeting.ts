@@ -6,7 +6,11 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
-import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
+import {
+  createGoogleCalendarEvent,
+  getGoogleEvent,
+  type GoogleAttendee,
+} from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
@@ -768,4 +772,148 @@ export async function cancelScheduledMeeting(
     }
   }
   return { ok: true, alreadyCancelled: false };
+}
+
+export type TrackExternalEventInput = {
+  actorId: string;
+  /** The Google event the viewer is looking at, and its master when it's one
+   *  instance of a series. */
+  eventId: string;
+  recurringEventId?: string | null;
+  linkId: string;
+  calendarId: string;
+};
+
+export type TrackExternalEventResult =
+  | { ok: true; meeting: ScheduledMeeting }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Give an external Google event the DALI meeting it never had.
+ *
+ * The lab's general calendar is authored in Google Calendar, not in DALI, so
+ * its events reach the grid as plain external events: there is no
+ * ScheduledMeeting row behind them, and therefore no meeting note and no
+ * attendance roster — the gap that made those events look broken next to every
+ * other meeting on the same grid. This creates the missing row, bound to the
+ * Google event through `externalEventId`, after which the ordinary note and
+ * attendance affordances work exactly as they do for a DALI-created meeting.
+ *
+ * Deliberately NOT built on createScheduledMeeting, which exists to bring an
+ * event into being: it pushes to Google and fans out invites. Both are wrong
+ * here — the event already exists and Google has already invited everyone, so
+ * doing either would duplicate the event on people's calendars and mail them
+ * an invite to a meeting they are already going to.
+ *
+ * A series binds to its master id, matching how meetingsForExternalEvents
+ * resolves an expanded instance, so tracking one occurrence covers the series —
+ * one note and one roster for a weekly lab meeting, not one per week.
+ */
+export async function trackExternalEventAsMeeting(
+  input: TrackExternalEventInput,
+): Promise<TrackExternalEventResult> {
+  if (!(await isCore(input.actorId))) {
+    return { ok: false, error: "Only Core can track an event in DALI", status: 403 };
+  }
+
+  const link = await prisma.userCalendarLink.findUnique({
+    where: { id: input.linkId },
+    select: { id: true, userId: true, externalEmail: true },
+  });
+  if (!link || link.userId !== input.actorId) {
+    return { ok: false, error: "Not found", status: 404 };
+  }
+
+  // The form names the event; Google is asked what it actually is. Title,
+  // times and attendees all come from the read, never from the client.
+  let event: Awaited<ReturnType<typeof getGoogleEvent>>;
+  try {
+    event = await getGoogleEvent({
+      linkId: link.id,
+      calendarId: input.calendarId,
+      eventId: input.eventId,
+    });
+  } catch {
+    return { ok: false, error: "Couldn't read that event from Google", status: 502 };
+  }
+
+  const externalEventId = input.recurringEventId || event.id;
+  const existing = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId, status: { not: "Cancelled" } },
+    select: { id: true },
+  });
+  if (existing) {
+    return { ok: false, error: "This event is already tracked in DALI", status: 409 };
+  }
+
+  const startDate = event.startIso
+    ? new Date(event.startIso)
+    : event.startDate
+      ? new Date(`${event.startDate}T00:00:00Z`)
+      : null;
+  const endDate = event.endIso
+    ? new Date(event.endIso)
+    : event.endDate
+      ? new Date(`${event.endDate}T00:00:00Z`)
+      : null;
+  if (!startDate || Number.isNaN(startDate.getTime())) {
+    return { ok: false, error: "That event has no start time", status: 400 };
+  }
+  const durationMinutes =
+    endDate && endDate > startDate
+      ? Math.round((endDate.getTime() - startDate.getTime()) / 60_000)
+      : 60;
+
+  // The roster starts as whoever Google already has on the event, resolved to
+  // DALI members. An event on the general calendar often has no guest list at
+  // all, and that's fine — the roster is editable on the meeting page, and the
+  // actor is always on it.
+  const attendeeEmails = event.attendeeEmails.map((e) => e.toLowerCase());
+  const attendees = attendeeEmails.length
+    ? await prisma.user.findMany({
+        where: {
+          daliMember: { isNot: null },
+          OR: [
+            { daliEmail: { in: attendeeEmails, mode: "insensitive" } },
+            { dartmouthEmail: { in: attendeeEmails, mode: "insensitive" } },
+          ],
+        },
+        select: { id: true },
+      })
+    : [];
+  const participantUserIds = attendees
+    .map((u) => u.id)
+    .filter((id) => id !== input.actorId);
+
+  const meeting = await prisma.scheduledMeeting.create({
+    data: {
+      // The actor, not the Google organizer: organizerId is who may manage the
+      // meeting in DALI, and the Google organizer may not even be a member.
+      organizerId: input.actorId,
+      title: event.summary?.trim() || "Untitled event",
+      durationMinutes,
+      // "None" — not scoped to a group or a hand-picked list. It is the marker
+      // the meeting page reads to let any lab member see a lab-wide meeting.
+      scopeType: "None",
+      participantUserIds,
+      selectedAt: startDate,
+      status: "Confirmed",
+      externalEventId,
+      recurrenceRule: event.recurrence[0]?.replace(/^RRULE:/, "") ?? null,
+      ownerCalendarEmail: link.externalEmail,
+      organizerCalendarLinkId: link.id,
+    },
+  });
+
+  // The roster the attendance checklist reads. The actor is always present on
+  // it so the meeting page is never an empty shell.
+  await prisma.meetingAttendance.createMany({
+    data: Array.from(new Set([...participantUserIds, input.actorId])).map((userId) => ({
+      scheduledMeetingId: meeting.id,
+      userId,
+    })),
+    skipDuplicates: true,
+  });
+
+  return { ok: true, meeting };
 }

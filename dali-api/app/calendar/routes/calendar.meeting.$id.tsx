@@ -55,6 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       selectedAt: true,
       durationMinutes: true,
       status: true,
+      scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
@@ -78,7 +79,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const projectMember = meeting.projectId ? await isProjectMember(auth.user.sub, meeting.projectId) : false;
   const canManage = auth.user.sub === meeting.organizerId || roles.isCore || projectMember;
   const viewerRow = meeting.attendance.find((a) => a.userId === auth.user.sub);
-  if (!canManage && !viewerRow) throw new Response("Not found", { status: 404 });
+  // A "None"-scoped meeting isn't addressed to a group or a hand-picked list —
+  // it's the lab-wide kind, which is what an event on the general calendar
+  // becomes when it's tracked. Any lab member can open it (read-only, since
+  // canManage is unchanged); without this the popover would offer them an
+  // Attendance link that 404s.
+  const labWide = meeting.scopeType === "None" && roles.isLabMember;
+  if (!canManage && !viewerRow && !labWide) throw new Response("Not found", { status: 404 });
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
