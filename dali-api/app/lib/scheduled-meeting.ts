@@ -21,7 +21,7 @@ import {
   ensureCoreMeetingNotesFolder,
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
 import { expandOccurrences, type OccurrenceException } from "~/lib/meeting-occurrences";
 import type {
   ScheduledMeeting,
@@ -670,6 +670,15 @@ export function isWithinCheckInWindow(
  * So fall back to resolving the scope live. This stays a real gate — it is not
  * "the operator may mark anyone". A UserList meeting keeps exactly its explicit
  * invitees, and a Group meeting admits only current members of that group.
+ *
+ * A "None"-scoped meeting is the third case and the one that bit hardest. It is
+ * addressed to nobody in particular — the lab-wide kind, which is what the
+ * create modal produces when no group and no people are picked. Its
+ * participantUserIds is EMPTY, so the create-time fan-out ("never the whole lab")
+ * gave it a roster of exactly one person, the organizer. Every member the
+ * organizer then scanned at an all-lab event came back "not invited" — the exact
+ * event type wallet scanning exists for. Lab-wide means lab members, which is the
+ * same test the meeting page uses to grant read access (its `labWide`).
  */
 export async function isInMeetingScope(
   meeting: {
@@ -686,6 +695,7 @@ export async function isInMeetingScope(
     const members = await resolveGroupMembers(meeting.scopeId);
     return members.includes(userId);
   }
+  if (meeting.scopeType === "None") return isLabMember(userId);
   return false;
 }
 

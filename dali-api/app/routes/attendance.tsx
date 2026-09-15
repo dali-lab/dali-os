@@ -50,9 +50,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       status: { not: "Cancelled" },
-      // Invited = organizer or on the participant list (mirrors calendar.server).
+      // Invited = organizer, on the participant list (mirrors calendar.server), or
+      // holding a roster row. That last one carries a lab-wide ("None"-scoped)
+      // event, whose participant list is empty by construction — without it, an
+      // event you were scanned into never appeared in your own attendance.
       AND: [
-        { OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }] },
+        {
+          OR: [
+            { organizerId: userId },
+            { participantUserIds: { has: userId } },
+            { attendance: { some: { userId } } },
+          ],
+        },
         // Only meetings that actually track attendance have a roster to show.
         { OR: [{ meetingType: { not: null } }, { attendanceMode: "SelfCheckIn" }] },
       ],

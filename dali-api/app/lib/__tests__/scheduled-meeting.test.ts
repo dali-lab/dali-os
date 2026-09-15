@@ -9,7 +9,10 @@ vi.mock("~/lib/pages", () => ({
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
   ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
+vi.mock("~/lib/roles", () => ({
+  isCore: vi.fn(async () => false),
+  isLabMember: vi.fn(async () => false),
+}));
 vi.mock("~/lib/google-calendar", () => ({
   createGoogleCalendarEvent: vi.fn(),
   getGoogleEvent: vi.fn(),
@@ -18,7 +21,7 @@ vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
 import {
   createLabMeetingPage,
   ensureCoreMeetingNotesFolder,
@@ -672,5 +675,63 @@ describe("markMeetingAttendance — a late joiner to a dynamic group", () => {
 
     expect(res).toMatchObject({ ok: false, status: 400 });
     expect(resolveGroupMembers).not.toHaveBeenCalled();
+  });
+});
+
+describe("markMeetingAttendance — a lab-wide (None-scoped) event", () => {
+  // The all-lab event: addressed to nobody in particular, so participantUserIds
+  // is empty and the create-time fan-out gave it a roster of just the organizer.
+  const LAB_WIDE = {
+    id: "m2",
+    projectId: null,
+    durationMinutes: 90,
+    selectedAt: new Date("2026-09-15T18:00:00.000Z"),
+    createdAt: new Date("2026-09-10T00:00:00.000Z"),
+    organizerId: "u-org",
+    scopeType: "None" as const,
+    scopeId: null,
+    participantUserIds: [],
+  };
+
+  beforeEach(() => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(LAB_WIDE);
+    mockPrisma.meetingAttendance.findUnique.mockResolvedValue(null);
+  });
+
+  it("marks any lab member present, rostered or not", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+
+    const res = await markMeetingAttendance("m2", "u-member", true, "u-org");
+
+    expect(res).toEqual({ ok: true });
+    expect(mockPrisma.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: [{ scheduledMeetingId: "m2", userId: "u-member" }],
+      skipDuplicates: true,
+    });
+    expect(mockPrisma.timeEntry.upsert).toHaveBeenCalled();
+  });
+
+  it("refuses a non-lab-member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+
+    const res = await markMeetingAttendance("m2", "u-outsider", true, "u-org");
+
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(mockPrisma.meetingAttendance.createMany).not.toHaveBeenCalled();
+  });
+
+  it("doesn't widen a Group meeting to the whole lab", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      ...LAB_WIDE,
+      scopeType: "Group" as const,
+      scopeId: "g-core",
+    });
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["u-core"]);
+
+    const res = await markMeetingAttendance("m2", "u-member", true, "u-org");
+
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(isLabMember).not.toHaveBeenCalled();
   });
 });
