@@ -90,6 +90,44 @@ export function memberIdFromToken(token: string): string | null {
   return parts[1];
 }
 
+export type WalletScanFailure =
+  | "malformed-token"
+  | "unknown-member"
+  | "no-member-secret"
+  | "signature-mismatch";
+
+/**
+ * Classify why a wallet-pass scan failed, for server-side diagnostics only. Both
+ * scan surfaces surface all four cases to the caller as one generic "Invalid or
+ * revoked pass" (never leak which members exist or whether a secret is set), so
+ * this exists purely to make the log line actionable:
+ *
+ *  - signature-mismatch ⇒ the pass verifies against a different WALLET_PASS_SECRET
+ *    (or a rotated per-member secret) than this server has — usually the pass was
+ *    minted in a different environment (staging vs prod env drift) or the member's
+ *    secret was rotated after they downloaded it. Re-add the pass from the same
+ *    environment you're scanning against.
+ *  - no-member-secret ⇒ the member row has no walletPassSecret in THIS database —
+ *    typically a DB snapshot/restore that predates when the pass was saved (e.g.
+ *    staging rebuilt from an older prod snapshot). Re-downloading mints one.
+ *  - unknown-member ⇒ the token's id matches no user here (scanning against the
+ *    wrong database).
+ *  - malformed-token ⇒ the QR didn't carry a v1 token at all (wrong code scanned,
+ *    or a pass predating this token format).
+ *
+ * Callers pass the same token they verified plus the member row they looked up
+ * (null when the lookup found nothing).
+ */
+export function classifyWalletScanFailure(
+  token: string,
+  member: { walletPassSecret: string | null } | null,
+): WalletScanFailure {
+  if (!memberIdFromToken(token)) return "malformed-token";
+  if (!member) return "unknown-member";
+  if (!member.walletPassSecret) return "no-member-secret";
+  return "signature-mismatch";
+}
+
 /**
  * The member's per-member wallet secret, generating + storing one on first use.
  * Called when a member downloads/saves their pass so the barcode has something

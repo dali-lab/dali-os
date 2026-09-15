@@ -33,6 +33,7 @@ vi.mock("~/lib/wallet-token", () => ({
   walletTokensConfigured: vi.fn(),
   memberIdFromToken: vi.fn(),
   verifyWalletToken: vi.fn(),
+  classifyWalletScanFailure: vi.fn(() => "signature-mismatch"),
 }));
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn(async (url: string | null) => url ?? null),

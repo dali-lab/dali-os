@@ -25,6 +25,7 @@ vi.mock("~/lib/wallet-token", () => ({
   memberIdFromToken: vi.fn(),
   verifyWalletToken: vi.fn(),
   walletTokensConfigured: vi.fn(),
+  classifyWalletScanFailure: vi.fn(() => "signature-mismatch"),
 }));
 
 import { requireAuth } from "~/lib/auth";
@@ -86,6 +87,24 @@ describe("scan-attendee action", () => {
       member: { id: "u2", firstName: "Ada", lastName: "Lovelace", photoUrl: "https://cdn/ada.jpg" },
     });
     // The operator (op1) is the markedBy; the member comes from the token.
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
+  });
+
+  it("scans a SelfCheckIn all-lab event that has no meetingType", async () => {
+    // Regression: the scan endpoint used to require a non-null meetingType and
+    // 404'd ("Not found") these events, even though they carry a real roster and
+    // the meeting page shows the scanner for them.
+    m.scheduledMeeting.mockResolvedValue({
+      id: "m1",
+      organizerId: "op1",
+      projectId: null,
+      meetingType: null,
+      selectedAt: new Date(),
+      durationMinutes: 60,
+    });
+    const res = await callAction();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true });
     expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
   });
 
