@@ -6,7 +6,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useFetcher } from "react-router";
-import { CheckCircle2, Circle, ExternalLink, Lightbulb, Lock, Plus, Trash2, Trophy } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Lightbulb, Lock, Plus, Trash2, Trophy, Users } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { buttonClasses } from "~/components/ui/Button";
 import { DEFAULT_HINT_POLICY } from "~/lib/activities";
@@ -22,7 +22,8 @@ import type { AdminEditorProps, MechanicClient, SurfaceProps } from "./registry"
 type HuntClue = {
   id: string;
   label: string; // never the code value itself
-  found: boolean; // this member has entered it — the row is struck through
+  found: boolean; // this member (or, in team mode, their team) has entered it
+  foundByUserId: string | null; // team mode: the partner who entered it
   hint: string | null; // present when the policy allows showing it now
   cost: number | null; // points mode: cost to reveal (not yet revealed)
   unlocksAt: number | null; // delay mode: epoch ms until it unlocks
@@ -36,10 +37,26 @@ type HuntProgress = {
   instructionsUrl: string | null;
   hintMode: HuntHintMode;
   clues: HuntClue[];
+  team: { name: string; memberIds: string[] } | null;
+  teamless: boolean; // team activity, member not paired up yet
 };
 
-type HuntResultRow = { userId: string; points: number; found: number; lastAt: number };
-type HuntResults = { visibility: HuntLeaderboard; total: number; rows: HuntResultRow[] } | null;
+// One competitor: a member (individual scoring) or a team (team scoring).
+type HuntResultRow = {
+  id: string;
+  userId: string | null;
+  teamName: string | null;
+  memberIds: string[];
+  points: number;
+  found: number;
+  lastAt: number;
+};
+type HuntResults = {
+  visibility: HuntLeaderboard;
+  total: number;
+  mode: "individual" | "team";
+  rows: HuntResultRow[];
+} | null;
 
 // ─── Surface: the hunt's submit + progress + leaderboard (in the modal) ──────
 
@@ -108,8 +125,32 @@ function Surface({
 
       {/* Progress */}
       <section className="rounded-xl border border-border bg-card p-5">
+        {p.team && (
+          <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            <Users className="h-3.5 w-3.5 shrink-0 text-accent-coral" />
+            <span>
+              You're hunting with{" "}
+              <span className="font-medium text-foreground">{p.team.name}</span>
+            </span>
+            <span className="text-muted-foreground">
+              ·{" "}
+              {p.team.memberIds
+                .filter((id) => id !== currentUserId)
+                .map((id) => nameByUserId[id] ?? "a teammate")
+                .join(", ") || "just you, for now"}
+            </span>
+          </p>
+        )}
+        {p.teamless && (
+          <p className="mb-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            This hunt is scored by team and you're not on one yet — ask Core to
+            pair you up. Codes you enter now still count once you are.
+          </p>
+        )}
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Your progress</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            {p.team ? "Your team's progress" : "Your progress"}
+          </h2>
           {p.complete ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-accent-coral/10 px-2.5 py-1 text-xs font-medium text-accent-coral">
               <CheckCircle2 className="h-3.5 w-3.5" /> All found!
@@ -128,6 +169,7 @@ function Surface({
         </div>
         <ClueList
           clues={p.clues}
+          nameByUserId={nameByUserId}
           submitAction={submitAction}
           onChanged={onChanged}
           active={active}
@@ -148,29 +190,41 @@ function Surface({
       {board && board.rows.length > 0 && (
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Trophy className="h-4 w-4 text-accent-coral" /> Leaderboard
+            <Trophy className="h-4 w-4 text-accent-coral" />{" "}
+            {board.mode === "team" ? "Team leaderboard" : "Leaderboard"}
           </h2>
           <ol className="flex flex-col divide-y divide-border">
             {board.rows.map((r, i) => {
-              const isMe = r.userId === currentUserId;
+              const isMe = r.memberIds.includes(currentUserId);
+              const roster =
+                r.teamName === null
+                  ? null
+                  : r.memberIds.map((id) => nameByUserId[id] ?? "Member").join(", ");
               return (
                 <li
-                  key={r.userId}
+                  key={r.id}
                   className={cn(
-                    "flex items-center justify-between py-2 text-sm",
+                    "flex items-start justify-between gap-3 py-2 text-sm",
                     isMe && "font-semibold text-accent-coral",
                   )}
                 >
-                  <span className="flex items-center gap-3">
-                    <span className="w-5 text-right tabular-nums text-muted-foreground">
+                  <span className="flex min-w-0 items-start gap-3">
+                    <span className="w-5 shrink-0 text-right tabular-nums text-muted-foreground">
                       {i + 1}
                     </span>
-                    <span>
-                      {nameByUserId[r.userId] ?? "Member"}
-                      {isMe ? " (you)" : ""}
+                    <span className="min-w-0">
+                      <span className="block break-words">
+                        {r.teamName ?? nameByUserId[r.userId ?? ""] ?? "Member"}
+                        {isMe ? " (you)" : ""}
+                      </span>
+                      {roster && (
+                        <span className="block break-words text-xs font-normal text-muted-foreground">
+                          {roster}
+                        </span>
+                      )}
                     </span>
                   </span>
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
                     {r.found}/{board.total} · {r.points} pts
                   </span>
                 </li>
@@ -198,11 +252,13 @@ function formatUnlock(ms: number): string {
 
 function ClueList({
   clues,
+  nameByUserId,
   submitAction,
   onChanged,
   active,
 }: {
   clues: HuntClue[];
+  nameByUserId: Record<string, string>;
   submitAction: string;
   onChanged?: () => void;
   active: boolean;
@@ -214,6 +270,7 @@ function ClueList({
         <ClueRow
           key={c.id}
           clue={c}
+          nameByUserId={nameByUserId}
           submitAction={submitAction}
           onChanged={onChanged}
           active={active}
@@ -225,11 +282,13 @@ function ClueList({
 
 function ClueRow({
   clue,
+  nameByUserId,
   submitAction,
   onChanged,
   active,
 }: {
   clue: HuntClue;
+  nameByUserId: Record<string, string>;
   submitAction: string;
   onChanged?: () => void;
   active: boolean;
@@ -267,7 +326,13 @@ function ClueRow({
             {clue.label}
           </span>
         </span>
-        {clue.found ? null : text ? (
+        {clue.found ? (
+          clue.foundByUserId ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              found by {nameByUserId[clue.foundByUserId] ?? "a teammate"}
+            </span>
+          ) : null
+        ) : text ? (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}

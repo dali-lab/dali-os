@@ -6,8 +6,9 @@ the surface from a dedicated `/activities/:id` page to a **shell modal** over th
 `DesktopBanner`-style **top-bar bar**. Review pass 2026-09-11: authored code **routes normalized**
 (the exact-match bug — §8); admin editor uses the real **breadcrumb trail** instead of a hand-rolled
 path; the leaderboard is now **live via SSE** (§7.6); and codes take an optional **hint** with an
-operator-chosen reveal policy (free / points / delay — §8). Deferred: the lifecycle job +
-notifications (§7.9) and MCP tools (§7.10).
+operator-chosen reveal policy (free / points / delay — §8). Review pass 2026-09-15: an activity now
+picks its **scoring** — individuals, or **teams** with pooled points and a team leaderboard (§4.1).
+Deferred: the lifecycle job + notifications (§7.9) and MCP tools (§7.10).
 **Author:** planning session, 2026-09
 **Rollout flag:** `activities` (default off)
 
@@ -57,7 +58,8 @@ through this layer. That's out of scope here; noted so we don't conflate the two
 
 ## 4. Data model
 
-Three new tables. `FeatureFlag` is untouched. `kind` is a **plain `String` validated against the
+Four tables (three at v1; `ActivityTeam` landed with team scoring — §4.1). `FeatureFlag` is
+untouched. `kind` is a **plain `String` validated against the
 mechanic registry (§5), not a Prisma enum** — so a new mechanic never touches the schema. `userId`
 is a plain indexed string (mirrors `FeatureFlag.userIds` — no hard FK, so a departed user just stops
 matching), not a relation, to avoid cascade coupling.
@@ -77,6 +79,9 @@ model Activity {
   audienceRoles    String[]       // subset of ROLE_TARGETS
   assignedGroupId  String?        // reuses the Group system
   assignedGroup    Group?         @relation(fields: [assignedGroupId], references: [id])
+  // Scoring (§4.1): per member, or pooled per ActivityTeam
+  scoring          ActivityScoring @default(Individual)
+  teamSize         Int            @default(2)   // target headcount when auto-assigning
   // Mechanic content, validated by a per-kind zod schema. A doc URL/id lives here
   // if a mechanic wants one — NO first-class document FK (docs are informal, optional).
   config           Json
@@ -85,6 +90,7 @@ model Activity {
   updatedAt        DateTime       @updatedAt
 
   participants     ActivityParticipant[]
+  teams            ActivityTeam[]
   events           ActivityEvent[]
 
   @@index([status, startsAt, endsAt])
@@ -95,8 +101,21 @@ model ActivityParticipant {       // explicit adds, unioned with group/role/ever
   activityId String
   activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
   userId     String
+  teamId     String?                 // null = Individual activity, or not paired up yet
+  team       ActivityTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
   @@id([activityId, userId])
   @@index([userId])
+  @@index([teamId])
+}
+
+model ActivityTeam {                 // one pair/group inside a Team-scoped activity
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name       String
+  createdAt  DateTime @default(now())
+  members    ActivityParticipant[]
+  @@index([activityId])
 }
 
 model ActivityEvent {             // the ONE generic per-user participation primitive
@@ -114,12 +133,49 @@ model ActivityEvent {             // the ONE generic per-user participation prim
 }
 
 enum ActivityStatus { Draft Published Archived }
+enum ActivityScoring { Individual Team }
 ```
 
 Progress and leaderboards are **derived** from `ActivityEvent` — no progress/leaderboard tables.
 Mechanic *content* (the hunt's code list, a theme's palette) lives in `config` JSON; if a future
 mechanic's content grows relational, it may add its own typed table keyed by `activityId` without
 disturbing the spine.
+
+### 4.1 Scoring: individuals or teams
+
+An activity is scored one of two ways, chosen per activity in the admin editor (Scoring panel):
+
+- **Individual** (default) — points and the leaderboard are per member, exactly as before.
+- **Team** — members are grouped into `ActivityTeam`s (pairs by default). Points are **pooled per
+  team**, the leaderboard ranks teams, and a partner's find is the member's find: progress, the
+  struck-through clue rows, and an already-revealed hint are all the team's.
+
+This is **spine**, not mechanic config, so any mechanic that scores gets group play for free — a
+future bingo or voting mechanic reads the same `teams` / `viewerTeam` in `summarize` (§5).
+
+- **Team membership implies participation.** Putting someone on a team writes their
+  `ActivityParticipant` row, so the audience picks them up (`isAssigned`). Taking them off deletes
+  only the row the teams editor created (`teamId` non-null).
+- **Dedup is per team, not per member.** The `(activityId, userId, type, refId)` unique index stops
+  one member scoring a code twice; it can't stop two partners both entering it. `summarize`
+  therefore counts each `refId` once per team, crediting whichever event landed first.
+- **Assignment.** *Auto-assign* draws from the activity's resolved audience
+  (`resolveActivityRoster`: everyone / roles / group / explicit participants), shuffles, and fills
+  teams of `teamSize` — topping up under-filled teams first, so hand-made pairings survive, and
+  spreading a lone remainder over earlier teams rather than leaving a team of one. *By hand*, a
+  `Combobox` over the roster adds people to a team; the list offers only unassigned members, so
+  nobody is ever on two teams. The pure half (`autoAssignTeams`) lives in the client-safe
+  `app/lib/activities.ts` and is unit-tested.
+- **Unpaired members** can still play; their finds sit out of the leaderboard until they join a
+  team, at which point the pooling picks them up (events are per-user and grouped at read time).
+  The surface tells them so.
+- **Switching back to Individual keeps the teams** on the row — nothing reads them — so flipping
+  the setting doesn't destroy an operator's pairings. A **Clone** copies `scoring` + `teamSize` but
+  not the teams: next term's pairings are next term's.
+
+**Naming.** These are `Team`s, not "partners" or "groups": `Partner` already means a corporate
+partner in this codebase (`app/partners/`), and `Group`/`GroupDefinition` is the audience system
+`Activity.assignedGroupId` already points at. The UI copy still talks about pairing people up.
 
 ## 5. The mechanic contract
 
@@ -146,9 +202,11 @@ registries**, keyed by `kind`.
 - `parseConfig(input)` (zod) — validates + normalizes `config` on author.
 - `overlayPayload?(activity, pathname)` — optional safe-to-send on-page payload.
 - `onAction(activity, userId, input)` — handle an action, write `ActivityEvent`(s), return a result.
-- `summarize({ activity, userEvents, allEvents, viewerIsCore })` — `{ progress, results }`.
-- `bannerSummary?(activity, userEvents)` — optional short shell-bar label (e.g. `"3/8 found"`);
-  return `null` for mechanics with nothing to count (e.g. a theme).
+- `summarize({ activity, userEvents, allEvents, viewerIsCore, teams, viewerTeam })` —
+  `{ progress, results }`. `teams`/`viewerTeam` are empty/null unless the activity is Team-scoped.
+- `bannerSummary?(activity, events)` — optional short shell-bar label (e.g. `"3/8 found"`); the
+  events that count for this member (their own, or their team's in a Team activity). Return `null`
+  for mechanics with nothing to count (e.g. a theme).
 
 Adding a mechanic = one client module + one server module + a `kind` value. Nothing in the spine
 or schema changes.
@@ -222,7 +280,8 @@ Line refs are against the tree at spec time; treat as anchors.
 
 8. **Admin authoring** — `app/admin/routes/admin.activities*.tsx` (+ an `api.activities.$id` write
    route). CRUD: pick `kind`, set name/term/window, set audience (group + explicit list +
-   role/everyone), edit `config` via the mechanic's `AdminEditor`. A **Clone** action (copy a prior
+   role/everyone), pick scoring and build teams via `ActivityTeamsEditor` (§4.1), edit `config` via
+   the mechanic's `AdminEditor`. A **Clone** action (copy a prior
    activity, bump term + window) is what makes per-term reuse real — no deploy. Place under the
    Admin cluster that fits; Core-scoped.
 
