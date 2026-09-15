@@ -25,6 +25,7 @@ import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { HuntCode } from "~/components/activities/HuntCode";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
 import { TimesheetFields } from "~/calendar/components/TimesheetFields";
 import {
@@ -1417,6 +1418,15 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                 )}
               </div>
             </fetcher.Form>
+
+            {/* A scavenger-hunt code, parked at the foot of the Classes panel
+                and unlocked by actually putting a class on your calendar
+                through DALI OS. Any term counts — the reward is for having used
+                the feature, so it shouldn't blink out when you switch the term
+                selector above. */}
+            {data.memberClasses.length > 0 && (
+              <HuntCode code="HERMIONE" className="self-end" />
+            )}
           </div>
         )}
     </>
