@@ -61,6 +61,19 @@
   padding-inline: 0.875rem;
 }
 
+/* Mobile: BlockNote's default 54px drag-handle gutter (plus the matching 54px
+ * outer padding set in the host JSX) eats ~108px per side, squeezing body text
+ * to a sliver on a phone. Pull the gutter in below Tailwind's `sm` breakpoint;
+ * the host wrapper/title padding drop to 16/12px in the same range (responsive
+ * utilities in DocumentEditor.tsx) so title and body stay aligned at ~28px.
+ * The drag handle that lives in this gutter is hover-only and unreachable on
+ * touch anyway — block actions move to the selection toolbar there. */
+@media (max-width: 639.98px) {
+  .dali-doc:not(.dali-doc--compact) .bn-editor {
+    padding-inline: 0.75rem;
+  }
+}
+
 /* ── 3. Callout block ──────────────────────────────────────────────────── */
 
 /* The colored box (default 💡 = amber). */
@@ -668,8 +681,10 @@ html.dark .dali-find-match--current {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 320px;
-  max-width: 420px;
+  /* Clamp to the viewport so the bar never overflows a narrow phone screen
+   * (it's position:absolute top-right, so an unclamped 320px min would spill). */
+  min-width: min(320px, calc(100vw - 1.5rem));
+  max-width: min(420px, calc(100vw - 1.5rem));
 }
 
 .dali-find-bar__row {
