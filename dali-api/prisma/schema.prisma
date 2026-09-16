@@ -103,13 +103,6 @@ model User {
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite   String?
-  // Opt-in to the public dali.website team directory. The public API serves
-  // only members with this set, and only ever a hard-coded narrow field set
-  // (see app/public-api/lib/public-team.server.ts) — never the onboarding
-  // fields below, the identity columns above, or anything else on this model.
-  // Backfilled true for everyone with a project/Core assignment, preserving
-  // the behavior of the Notion-backed team page it replaces.
-  publicProfile  Boolean @default(false)
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
