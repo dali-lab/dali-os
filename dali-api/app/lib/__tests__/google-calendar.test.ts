@@ -369,6 +369,146 @@ describe("fetchBusyEvents", () => {
     expect(out[0].description).toBe("Q&A session");
   });
 
+  // A 404 on one sub-calendar means that calendar was deleted/unshared on
+  // Google. It must NOT take down the whole link's sync (the old Promise.all
+  // did): the healthy calendars still return, the dead id is pruned, and the
+  // link is marked synced (no scary "Sync error").
+  it("prunes a 404 sub-calendar and still returns events from the healthy ones", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: ["cal-a", "cal-dead"] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    // fetch order is deterministic: calendarList, then events.list for cal-a
+    // (ok), then cal-dead (404) — the .map fires each fetch synchronously.
+    const okRes = (body: unknown): any => ({
+      ok: true,
+      status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+      clone: () => okRes(body),
+    });
+    const notFoundRes = (): any => {
+      const body = { error: { message: "Not Found", errors: [{ reason: "notFound" }] } };
+      return {
+        ok: false,
+        status: 404,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        clone: () => notFoundRes(),
+      };
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okRes({ items: [{ id: "cal-a", summary: "A", backgroundColor: "#123456" }] }))
+      .mockResolvedValueOnce(
+        okRes({
+          items: [
+            {
+              id: "e1",
+              summary: "Standup",
+              status: "confirmed",
+              start: { dateTime: "2026-05-12T13:00:00Z" },
+              end: { dateTime: "2026-05-12T14:00:00Z" },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(notFoundRes());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+
+    // The healthy calendar's event still comes through.
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe("Standup");
+    expect(out[0].calendarId).toBe("cal-a");
+
+    // The dead calendar is pruned from the link.
+    expect(prismaMock.userCalendarLink.update).toHaveBeenCalledWith({
+      where: { id: "L1" },
+      data: { subCalendarIds: ["cal-a"] },
+    });
+    // And the link is marked synced, not errored.
+    expect(prismaMock.userCalendarLink.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ syncError: null }) }),
+    );
+  });
+
+  // A non-404 failure (e.g. a 403 scope error) is a real link-level problem:
+  // it must still be recorded as a sync error (so the reconnect prompt fires)
+  // and must NOT prune the calendar.
+  it("records a sync error and does not prune when a sub-calendar fails for a non-404 reason", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: ["cal-a"] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const okRes = (body: unknown): any => ({
+      ok: true,
+      status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+      clone: () => okRes(body),
+    });
+    const forbidden = (): any => {
+      const body = {
+        error: {
+          message: "Request had insufficient authentication scopes.",
+          errors: [{ reason: "insufficientPermissions" }],
+        },
+      };
+      return {
+        ok: false,
+        status: 403,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        clone: () => forbidden(),
+      };
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okRes({ items: [{ id: "cal-a", summary: "A" }] }))
+      .mockResolvedValueOnce(forbidden());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+
+    expect(out).toEqual([]);
+    // The raw 403 message is recorded so the UI can prompt a reconnect.
+    expect(prismaMock.userCalendarLink.update).toHaveBeenCalledWith({
+      where: { id: "L1" },
+      data: { syncError: expect.stringContaining("Google events.list failed (403)") },
+    });
+    // Nothing was pruned.
+    const prunedSubCalendars = prismaMock.userCalendarLink.update.mock.calls.some(
+      (c: any[]) => c[0]?.data && "subCalendarIds" in c[0].data,
+    );
+    expect(prunedSubCalendars).toBe(false);
+  });
+
   it("returns [] when no UserCalendarLink exists (Phase 2: no legacy User.google* fallback)", async () => {
     prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([]);
     const out = await fetchBusyEvents(
