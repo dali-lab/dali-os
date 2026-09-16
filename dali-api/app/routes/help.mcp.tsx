@@ -21,7 +21,7 @@ const TOOL_CATEGORIES: { area: string; scope: string; blurb: string }[] = [
   { area: "You & directory", scope: "read", blurb: "whoami, your roles, member search + profiles, groups, terms, domains" },
   { area: "Notifications", scope: "read / write", blurb: "list + read your inbox, RSVP, manage notification preferences" },
   { area: "Calendar", scope: "read / write", blurb: "upcoming meetings, free/busy, group availability, schedule / cancel / check in, manual blocks" },
-  { area: "Tasks & projects", scope: "read / write", blurb: "your tasks + boards, create/update tasks, manage_sprint / manage_epic / manage_story, project overview & settings" },
+  { area: "Tasks & projects", scope: "read / write", blurb: "your tasks + boards, create/update tasks, manage_epic / manage_story, project overview & settings" },
   { area: "Docs, notes & search", scope: "read / write", blurb: "global search, pages & lab documents, comments, personal notes, doc tags, version history" },
   { area: "Timesheets", scope: "read / write", blurb: "your roles + logged time, manage_time_entry (with a confirm-first preview)" },
   { area: "Hiring", scope: "read only", blurb: "cycles, applications + full context, reviews, decisions, interviews, waitlist — read-only by design" },

@@ -167,18 +167,42 @@ test.describe('project hub share toggle (member)', () => {
   });
 
   // Each row's actions live behind its own "⋯" menu trigger, marked with a
-  // data-testid="drive-item-actions-<id>". The title renders as a span, so
-  // anchor on its text and take the next actions trigger in document order —
-  // that's this row's menu. (The shared Menu puts its aria-label on the popup
-  // panel, not the trigger, so we key off the trigger's data-testid.)
-  // Scope to the Drive row, not a bare text match: the DriveBrowser action
-  // strip now echoes the selected item's title, so `getByText(title)` alone
-  // resolves to two elements (the row + the strip) and trips strict mode.
-  const docMenu = (page: import('@playwright/test').Page, title: string) =>
+  // data-testid="drive-item-actions-<id>". Scope to the Drive row, not a bare
+  // text match: the DriveBrowser action strip now echoes the selected item's
+  // title, so `getByText(title)` alone resolves to two elements (the row + the
+  // strip) and trips strict mode.
+  const docMenuTrigger = (page: import('@playwright/test').Page, title: string) =>
     page
       .locator('[data-testid^="drive-item-"]')
       .filter({ has: page.getByText(title, { exact: true }) })
       .locator('[data-testid^="drive-item-actions-"]');
+
+  // Opening a row menu is racy in the Finder-shaped Drive: the trigger is
+  // opacity-0 until row hover and the row carries dnd-kit pointer listeners (so a
+  // single click occasionally lands without opening), and the list re-renders on
+  // revalidation (which can close the Floating-UI menu or leave it showing a
+  // stale, pre-toggle label). Close-then-reopen the menu each retry until the
+  // expected item shows, so we always read the latest loader state. Returns the
+  // visible menu item so callers can act on it.
+  const docMenuItem = async (
+    page: import('@playwright/test').Page,
+    title: string,
+    itemName: string,
+  ) => {
+    const trigger = docMenuTrigger(page, title);
+    const item = page.getByRole('menuitem', { name: itemName });
+    await expect(async () => {
+      if ((await trigger.getAttribute('aria-expanded')) === 'true') {
+        await page.keyboard.press('Escape');
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false', {
+          timeout: 1000,
+        });
+      }
+      await trigger.click();
+      await expect(item).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20_000 });
+    return item;
+  };
 
   test('project details shows the Partners section; drive shows share states', async ({ page }) => {
     // Partners live on Project details; the project's files (and their
@@ -193,38 +217,27 @@ test.describe('project hub share toggle (member)', () => {
     await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
     // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
     // read off each row's menu, which names the action that would flip it.
-    await docMenu(page, 'Weekly Partner Update').click();
-    await expect(
-      page.getByRole('menuitem', { name: 'Stop sharing with partner' }),
-    ).toBeVisible();
+    await docMenuItem(page, 'Weekly Partner Update', 'Stop sharing with partner');
     await page.keyboard.press('Escape');
 
-    await docMenu(page, 'Internal Retro Notes').click();
-    await expect(
-      page.getByRole('menuitem', { name: 'Share with partner' }),
-    ).toBeVisible();
+    await docMenuItem(page, 'Internal Retro Notes', 'Share with partner');
     await page.keyboard.press('Escape');
   });
 
   test('toggling share flips the badge and back', async ({ page }) => {
     await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
-    await docMenu(page, 'Internal Retro Notes').click();
-    await page.getByRole('menuitem', { name: 'Share with partner' }).click();
-    await expect(
-      page
-        .locator('[data-testid^="drive-item-"]')
-        .filter({ has: page.getByText('Internal Retro Notes', { exact: true }) }),
-    ).toBeVisible();
-    await docMenu(page, 'Internal Retro Notes').click();
-    await expect(
-      page.getByRole('menuitem', { name: 'Stop sharing with partner' }),
-    ).toBeVisible();
+    await (await docMenuItem(page, 'Internal Retro Notes', 'Share with partner')).click();
+    // Sharing on now prompts for confirmation (action guardrails); the revert
+    // direction ("Stop sharing") does not.
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Share', exact: true })
+      .click();
+    // The menu reflects the flipped state once revalidation lands.
+    await docMenuItem(page, 'Internal Retro Notes', 'Stop sharing with partner');
     // Revert so the test is idempotent against the seed baseline.
     await page.getByRole('menuitem', { name: 'Stop sharing with partner' }).click();
-    await docMenu(page, 'Internal Retro Notes').click();
-    await expect(
-      page.getByRole('menuitem', { name: 'Share with partner' }),
-    ).toBeVisible();
+    await docMenuItem(page, 'Internal Retro Notes', 'Share with partner');
     await page.keyboard.press('Escape');
   });
 });

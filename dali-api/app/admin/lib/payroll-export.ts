@@ -17,6 +17,16 @@ export const ANTICIPATED_HOURS_PER_WEEK = "15";
 export const CORE_INSTRUCTOR_CHART_STRING_TYPE = "";
 export const CORE_INSTRUCTOR_CHART_STRING = "18.722.161028.128512.3000";
 
+// Technigala support is a flat termly hire, so its Job ID / wage / chart string
+// are single fixed values rather than a (level, domain) JobCodeLookup — kept
+// here as constants until an admin UI to edit them lands. Chart string defaults
+// to the lab-wide internal line (same as Core/Instructor); change TECHNIGALA_*
+// if Technigala should bill elsewhere.
+export const TECHNIGALA_JOB_CODE = "8274";
+export const TECHNIGALA_WAGE = "19";
+export const TECHNIGALA_CHART_STRING_TYPE = CORE_INSTRUCTOR_CHART_STRING_TYPE;
+export const TECHNIGALA_CHART_STRING = CORE_INSTRUCTOR_CHART_STRING;
+
 // 16-column header, order matters — Dartmouth payroll imports column-by-column.
 export const CSV_HEADERS = [
   "Student NetID",
@@ -295,6 +305,73 @@ export async function buildInstructorRows(
 ): Promise<PayrollRow[]> {
   const candidates = await listInstructorCandidates(termId);
   return buildNonProjectRows(termId, selectedUserIds, candidates, "Instructor");
+}
+
+// Technigala hires for a term. Unlike Core/Instructor there's no upstream role
+// to derive from — the candidates ARE the TechnigalaAssignment rows an admin
+// created on the export page.
+export async function listTechnigalaCandidates(termId: string): Promise<RoleCandidate[]> {
+  const rows = await prisma.technigalaAssignment.findMany({
+    where: { termId },
+    select: {
+      userId: true,
+      user: { select: { netId: true, firstName: true, lastName: true } },
+    },
+  });
+  return rows
+    .map((r) => ({
+      userId: r.userId,
+      netId: r.user.netId,
+      firstName: r.user.firstName,
+      lastName: r.user.lastName,
+      subtitle: "Technigala",
+    }))
+    .sort((a, b) =>
+      (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName),
+    );
+}
+
+// Technigala rows use flat constants (job code / wage / chart string) rather
+// than a JobCodeLookup, so this doesn't share buildNonProjectRows' lookup path.
+export async function buildTechnigalaRows(
+  termId: string,
+  selectedUserIds: Set<string>,
+): Promise<PayrollRow[]> {
+  if (selectedUserIds.size === 0) return [];
+
+  const [candidates, term] = await Promise.all([
+    listTechnigalaCandidates(termId),
+    prisma.term.findUnique({
+      where: { id: termId },
+      select: { startDate: true, endDate: true },
+    }),
+  ]);
+  if (!term) return [];
+
+  const hireStart = formatDate(term.startDate);
+  const hireEnd = formatDate(term.endDate);
+
+  return candidates
+    .filter((c) => selectedUserIds.has(c.userId))
+    .map((c) => {
+      const warnings: string[] = [];
+      if (!c.netId) warnings.push("User missing NetID");
+
+      return {
+        netId: c.netId ?? "",
+        firstName: c.firstName,
+        lastName: c.lastName,
+        jobId: TECHNIGALA_JOB_CODE,
+        hourlyWage: TECHNIGALA_WAGE,
+        hireStart,
+        hireEnd,
+        chartStringType: TECHNIGALA_CHART_STRING_TYPE,
+        chartString: TECHNIGALA_CHART_STRING,
+        domain: "",
+        level: "",
+        warnings,
+      };
+    });
 }
 
 export async function buildPayrollRows(

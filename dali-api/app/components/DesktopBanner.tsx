@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { isMobileDevice } from "~/lib/device";
 
 const DISMISS_KEY = "dali:desktop-banner:dismissed";
 
@@ -15,6 +16,7 @@ export function DesktopBanner() {
   useEffect(() => {
     if (!enabled) return;
     if ("__TAURI__" in window) return;
+    if (isMobileDevice()) return;
     try {
       if (window.localStorage.getItem(DISMISS_KEY)) return;
     } catch {
@@ -28,7 +30,12 @@ export function DesktopBanner() {
 
   function openInApp() {
     setState("trying");
-    window.location.href = "dalios://open";
+    // Carry the current route so the app lands on this page, not its home
+    // screen. The Rust handler prepends the prod origin to a relative path
+    // (see desktop/src-tauri/src/deeplink.rs).
+    const target =
+      window.location.pathname + window.location.search + window.location.hash;
+    window.location.href = `dalios://open?link=${encodeURIComponent(target)}`;
     timerRef.current = setTimeout(() => setState("fallback"), 1500);
   }
 

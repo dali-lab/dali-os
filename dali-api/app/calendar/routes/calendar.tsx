@@ -9,7 +9,9 @@ import {
   Trash2,
   CalendarDays,
   CalendarPlus,
+  Clock3,
   Search,
+  Settings,
   X,
 } from "lucide-react";
 import { fullName } from "~/lib/display";
@@ -24,6 +26,8 @@ import {
   type ComposerState,
 } from "~/calendar/components/composer";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
+import { useActionErrorToast } from "~/lib/useActionErrorToast";
+import { useToast } from "~/components/ui/toast";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
@@ -50,7 +54,6 @@ import type {
   GroupAvailDay,
   PerUserFree,
   GroupAvailResponse,
-  CalendarView,
 } from "~/calendar/lib/types";
 import {
   ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
@@ -86,14 +89,10 @@ import {
 import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import {
-  GeneralCalendarPrompt,
-} from "~/calendar/components/settings-cards";
 import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
-import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { TimesheetSummaryRail, TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
-import { AvailabilityView } from "~/calendar/components/AvailabilityView";
+import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
+import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { useIsMobile } from "~/hooks/useIsMobile";
 
@@ -146,6 +145,15 @@ export function shouldRevalidate({
   // or time entry off the grid until the next window focus. Anything that
   // isn't a plain GET defers to the default, which is to revalidate.
   if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  // …and a mutation that went out through plain `fetch()` rather than a router
+  // form carries no formMethod at all: the timesheet's add/edit/delete and the
+  // several /api writes on this page all post that way and then ask for a
+  // revalidate by hand. That arrives here as "same URL, no form", which the
+  // comparison below also reads as nothing-changed — so the row landed in
+  // Postgres and never appeared on the grid. An identical URL is never the
+  // view switch this guard exists to skip (those change a param), so it defers
+  // to the default, which is to revalidate.
+  if (currentUrl.href === nextUrl.href) return defaultShouldRevalidate;
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   const cur = new URLSearchParams(currentUrl.search);
   const next = new URLSearchParams(nextUrl.search);
@@ -156,45 +164,6 @@ export function shouldRevalidate({
   cur.sort();
   next.sort();
   return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
-}
-
-/** The shell both of the calendar's settings dialogs wear — Calendars and
- *  Availability — so they read as one surface with two bodies. Only the width
- *  varies, and only because the bodies do. */
-function SettingsDialog({
-  title,
-  width = "max-w-3xl",
-  onClose,
-  children,
-}: {
-  title: string;
-  width?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div role="dialog" aria-modal="true" aria-label={title} className={cn("w-full rounded-xl cal-surface p-6", width)}>
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
 }
 
 export default function CalendarPage() {
@@ -210,18 +179,64 @@ export default function CalendarPage() {
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
-const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
 // UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
 // (?tab=schedule|timesheet) translate to the matching mode/layer.
+
+// The Google calendar-link callback redirects back to /calendar with a one-shot
+// result param. Nothing else surfaced these, so a partial-scope grant used to
+// fail silently — the account just showed a sync error later. Map each code to
+// a message and toast it once on mount.
+const CAL_LINK_ERROR_MESSAGES: Record<string, string> = {
+  calendar_scope_denied:
+    "Calendar access wasn't granted. Reconnect the account and allow the Calendar permission.",
+  no_refresh_token:
+    "Google didn't grant offline access. Reconnect the account and choose Allow when prompted.",
+  auth_failed: "Couldn't connect that Google account. Please try again.",
+  state_mismatch: "Couldn't connect that Google account. Please try again.",
+  token_exchange_failed: "Couldn't connect that Google account. Please try again.",
+  no_email: "Couldn't read that Google account's email. Please try again.",
+};
+
 function CalendarScreen({ data }: { data: LoaderData }) {
   const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
   const [searchParams] = useSearchParams();
+  const toast = useToast();
+
+  // Announce the outcome of a Google calendar-link attempt, then strip the
+  // one-shot params via history (not setSearchParams, which would re-run the
+  // heavy calendar loader just to clean the URL). Mount-only: the callback
+  // lands here with a fresh navigation.
+  useEffect(() => {
+    const linked = searchParams.get("calendar_linked");
+    const errorCode = searchParams.get("calendar_link_error");
+    if (!linked && !errorCode) return;
+    if (errorCode) {
+      toast.error(
+        CAL_LINK_ERROR_MESSAGES[errorCode] ??
+          "Couldn't connect that Google account. Please try again.",
+        { duration: 8000 },
+      );
+    } else if (linked) {
+      toast.success("Google account connected.");
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("calendar_linked");
+    next.delete("calendar_link_error");
+    const qs = next.toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+    );
+    // Mount-only: these are consumed once, on the redirect back from Google.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // One screen now. Availability is a modal and the timesheet is a way of
   // viewing the same grid, so the only other "mode" left is the legacy
@@ -229,7 +244,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [mode, setMode] = useState<"browse" | "meeting">(() =>
     searchParams.get("tab") === "schedule" ? "meeting" : "browse",
   );
-  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Per-role colours for logged time, persisted like the hidden-calendar set.
   const [roleColors, setRoleColors] = useState<Record<string, string>>(() => {
@@ -270,7 +285,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       /* ignore */
     }
   }, [layers]);
-  const toggleLayer = (key: keyof LayerVisibility) => setLayers((p) => ({ ...p, [key]: !p[key] }));
+  const setLayer = (key: keyof LayerVisibility, value: boolean) =>
+    setLayers((p) => (p[key] === value ? p : { ...p, [key]: value }));
 
   const [excludedRoleKeys, setExcludedRoleKeys] = useState<Set<string>>(new Set());
   const toggleRoleKey = (key: string) =>
@@ -318,7 +334,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     setCreateModalUsers(userIds);
     setCreateModalOpen(true);
   };
-  const [calendarsOpen, setCalendarsOpen] = useState(false);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
   // Anchored popover that replaced the old settings modal: working-hours edit
@@ -350,6 +365,11 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     if (prevMoveState.current !== "idle" && eventMoveFetcher.state === "idle") setDragOverride(null);
     prevMoveState.current = eventMoveFetcher.state;
   }, [eventMoveFetcher.state]);
+  // A failed drag-move/delete reverts to the old position; without this the
+  // revert is silent (looks like the drag just didn't take).
+  useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
+    fallback: "Couldn't update the event. Please try again.",
+  });
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
   // UTC-midnight anchored, so their calendar date reads off the UTC fields.
@@ -699,16 +719,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
   const iconToolBtn =
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
-  // The two settings dialogs open from the same pill, tinted by what they are:
-  // Availability is a status colour, Calendars the os accent. One builder so
-  // they can't drift into two different-looking controls.
-  const settingsPill = (tone: "green" | "accent") =>
-    cn(
-      "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-bold transition-colors",
-      tone === "green"
-        ? "border-os-green/35 bg-os-green/10 text-os-green hover:bg-os-green/20"
-        : "border-os-accent/35 bg-os-accent/10 text-os-accent hover:bg-os-accent/20",
-    );
+  // Calendars, classes and working hours are all "how this page is set up",
+  // so they share one pill and one dialog rather than a row of them.
+  const settingsPill =
+    "inline-flex items-center gap-2 rounded-full border border-os-accent/35 bg-os-accent/10 px-4 py-2 text-[13px] font-bold text-os-accent transition-colors hover:bg-os-accent/20";
 
   return (
     <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
@@ -738,40 +752,38 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           {mode === "browse" && (
             <>
 
-              <div className="inline-flex rounded-lg bg-muted p-0.5">
-                {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
+              {/* What the grid *is*, where the view switcher used to sit. The
+                  view (month/week/day/agenda) moved to the rail, above the
+                  mini-month, since both answer "which dates am I looking at". */}
+              <div className="inline-flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Grid mode">
+                {([false, true] as const).map((logged) => (
                   <button
-                    key={v}
+                    key={String(logged)}
                     type="button"
-                    onClick={() => changeView(v)}
+                    role="tab"
+                    aria-selected={layers.logged === logged}
+                    onClick={() => setLayer("logged", logged)}
                     className={cn(
-                      "rounded-md px-3 py-1 text-sm font-medium transition-colors",
-                      v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                      layers.logged === logged
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {VIEW_LABELS[v]}
+                    {logged ? <Clock3 className="h-3.5 w-3.5" /> : <CalendarDays className="h-3.5 w-3.5" />}
+                    {logged ? "Timesheet" : "Calendar"}
                   </button>
                 ))}
               </div>
 
               <button
                 type="button"
-                onClick={() => setCalendarsOpen(true)}
-                className={settingsPill("accent")}
-                title="Connect and manage calendars"
+                onClick={() => setSettingsOpen(true)}
+                className={settingsPill}
+                title="Calendars, classes and working hours"
               >
-                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
-                Calendars
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAvailabilityOpen(true)}
-                className={settingsPill("green")}
-                title="Classes and working hours"
-              >
-                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
-                Availability
+                <Settings className="h-3.5 w-3.5" />
+                Settings
               </button>
 
               <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
@@ -801,7 +813,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             hiddenCals={hiddenCals}
             toggleHiddenCal={toggleHiddenCal}
             layers={layers}
-            onToggleTimesheet={() => toggleLayer("logged")}
+            view={view}
+            onChangeView={changeView}
             myRoles={data.myRoles}
             roleColors={roleColors}
             roleHours={roleHours}
@@ -827,6 +840,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   anchorMonth={anchorMonth}
                   timezone={data.timezone}
                   onSelectDay={goToDay}
+                  markPayPeriodBounds={layers.logged}
                 />
               ) : (
                 <WeekGrid
@@ -835,7 +849,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   days={days}
                   timezone={data.timezone}
                   clickDurationHours={data.defaultEventDurationMin / 60}
-                  markPayPeriodEnds={layers.logged}
+                  markPayPeriodBounds={layers.logged}
                   backgroundLayer={(dayIdx) =>
                     layers.workingHours
                       ? workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {
@@ -945,23 +959,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           }}
         />
       )}
-      {calendarsOpen &&
-        createPortal(
-          /* Wider than Availability: its rows carry a name plus three toggle
-             columns, where Availability stacks full-width cards. Same shell
-             either way — width follows the body, the dress doesn't. */
-          <SettingsDialog title="Calendars" width="max-w-5xl" onClose={() => setCalendarsOpen(false)}>
-            <CalendarsPanel data={data} hiddenCals={hiddenCals} toggleHiddenCal={toggleHiddenCal} />
-          </SettingsDialog>,
-          document.body,
-        )}
-      {availabilityOpen &&
-        createPortal(
-          <SettingsDialog title="Availability" onClose={() => setAvailabilityOpen(false)}>
-            <AvailabilityView data={data} />
-          </SettingsDialog>,
-          document.body,
-        )}
+      {settingsOpen && (
+        <CalendarSettingsModal
+          data={data}
+          hiddenCals={hiddenCals}
+          toggleHiddenCal={toggleHiddenCal}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {createModalOpen && (
         <CreateEventModal
           data={data}

@@ -20,7 +20,6 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  sprint: { updateMany: ReturnType<typeof vi.fn> };
   task: { updateMany: ReturnType<typeof vi.fn> };
   userStory: { deleteMany: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
@@ -51,14 +50,13 @@ beforeEach(() => {
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockReturnValue("epic-delete-op"),
   };
-  mockPrisma.sprint = { updateMany: vi.fn().mockReturnValue("sprint-op") };
   mockPrisma.task = { updateMany: vi.fn().mockReturnValue("task-op") };
   mockPrisma.userStory = { deleteMany: vi.fn().mockReturnValue("story-op") };
   mockPrisma.$transaction = vi.fn().mockResolvedValue([]);
 });
 
 describe("DELETE /api/epics/:id", () => {
-  it("unlinks sprints/tasks and deletes user stories with the epic", async () => {
+  it("unlinks tasks and deletes user stories with the epic", async () => {
     const res = await call("DELETE");
     expect(res.status).toBe(200);
 
@@ -67,17 +65,12 @@ describe("DELETE /api/epics/:id", () => {
     expect(mockPrisma.userStory.deleteMany).toHaveBeenCalledWith({
       where: { epicId: EPIC_ID },
     });
-    expect(mockPrisma.sprint.updateMany).toHaveBeenCalledWith({
-      where: { epicId: EPIC_ID },
-      data: { epicId: null },
-    });
     expect(mockPrisma.task.updateMany).toHaveBeenCalledWith({
       where: { epicId: EPIC_ID },
       data: { epicId: null },
     });
     expect(mockPrisma.epic.delete).toHaveBeenCalledWith({ where: { id: EPIC_ID } });
     expect(mockPrisma.$transaction).toHaveBeenCalledWith([
-      "sprint-op",
       "task-op",
       "story-op",
       "epic-delete-op",

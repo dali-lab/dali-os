@@ -7,7 +7,11 @@ import {
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
-import { listMyNotifications, annotateDesktopFeed } from "~/lib/notifications";
+import {
+  listMyNotifications,
+  annotateDesktopFeed,
+  listRetiredMeetingPingIds,
+} from "~/lib/notifications";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 
@@ -66,14 +70,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   // dev (#…) refactored notification fetching into listMyNotifications();
   // keep that helper and layer the open-tasks payload on top so the bell
   // still shows tasks (Tasks-nav feature). Items additionally carry the
-  // desktop-app annotations (`desktop`, `urgent`); web clients ignore them.
-  const [{ items, unreadCount }, tasks, desktopPrefs] = await Promise.all([
+  // desktop-app annotations (`desktop`, `urgent`); web clients ignore them,
+  // as they do the `retiredIds` list alongside them.
+  const [{ items, unreadCount }, tasks, desktopPrefs, retiredIds] = await Promise.all([
     listMyNotifications(userId),
     listOpenTasks(userId),
     prisma.notificationPreference.findMany({
       where: { userId },
       select: { eventType: true, desktop: true },
     }),
+    listRetiredMeetingPingIds(userId),
   ]);
 
   return withCors(
@@ -83,6 +89,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       unreadCount,
       taskCount: tasks.length,
       tasks,
+      // Rows that went stale unread rather than being read, so the desktop
+      // shell can retire banners it already delivered for them. Web clients
+      // ignore this.
+      retiredIds,
     }),
   );
 }

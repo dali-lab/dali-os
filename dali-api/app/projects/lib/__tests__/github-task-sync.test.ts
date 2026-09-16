@@ -55,7 +55,6 @@ const taskDetail = {
   description: null as string | null,
   priority: "Normal",
   dueAt: null as Date | null,
-  sprint: null as { name: string } | null,
   epic: null as { title: string } | null,
   domain: null as { displayName: string } | null,
   project: { name: "Signup Revamp" },
@@ -114,7 +113,6 @@ describe("createIssueForTask", () => {
       status: "Todo",
       githubRepo: null,
       githubIssueNumber: null,
-      sprint: { name: "Sprint 3" },
       epic: { title: "Onboarding" },
       domain: { displayName: "Dev" },
       project: { name: "Signup Revamp" },
@@ -138,7 +136,6 @@ describe("createIssueForTask", () => {
     expect(createdBody).toContain("Hook the form up to the API");
     expect(createdBody).toContain("**Priority:** High");
     expect(createdBody).toContain("**Due:** 2026-07-30");
-    expect(createdBody).toContain("**Sprint:** Sprint 3");
     expect(createdBody).toContain("**Epic:** Onboarding");
     expect(createdBody).toContain("**Domain:** Dev");
     expect(createdBody).toContain("**Project:** Signup Revamp");

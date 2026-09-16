@@ -1,0 +1,808 @@
+/*
+ * Landing page layout.
+ *
+ * --u is the size of one Figma design unit (the export is a 4075×1545 frame); the art
+ * stage is sized in it. Everything is measured against .landing-frame (container units and
+ * container queries, not the viewport) so the page fits the shell's main column beside the
+ * sidebar. On desktop the content is a right-hand column; below the desktop
+ * breakpoint (narrower than 900px or close to portrait) it stacks above the art.
+ */
+
+/* The landing's dark ground, only while it is on screen — the rest of the app
+   keeps its themed background. */
+html:has(.landing),
+body:has(.landing) {
+  background: #060812;
+}
+
+/*
+ * Below md the shell column has no definite height, and a size container there resolves
+ * cqh to 0 — so the frame only contains inline size and cqh falls back to the viewport
+ * (the stacked layout was designed against the viewport anyway).
+ */
+.landing-frame {
+  container: landing / inline-size;
+  position: relative;
+  flex: 1;
+  min-height: 100svh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .landing-frame {
+    container-type: size;
+    min-height: 0;
+  }
+}
+
+.landing {
+  --u: min(100cqw / 1250, 50cqh / 1545);
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100cqh;
+  overflow: hidden;
+  background: #060812;
+  color: #ffffff;
+}
+
+.landing-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.landing-stage {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: -1;
+  width: calc(4075 * var(--u));
+  height: calc(1545 * var(--u));
+  pointer-events: none;
+}
+
+.landing-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+/* ---------- Entrance animations (play once on load) ---------- */
+
+/*
+ * Timeline: the smoke layers launch in from the bottom-left (0–1.7s), the rocket follows
+ * along its heading (0.2–1.8s), the sparkles pop in outward from the rocket as it settles
+ * (from 1.25s), and the content fades up in reading order (0.4–1.4s).
+ * Smoke and sparkle wrappers are generated with per-item delays offset by --enter-start.
+ */
+.landing {
+  --ease-launch: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-gentle: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Inside the SVG, px are Figma frame units, so the travel scales with the art. */
+.landing-smoke-layer {
+  --enter-start: 0ms;
+  transform-box: view-box;
+  transform-origin: 0 1545px;
+  animation: landing-smoke-launch 1400ms var(--ease-launch) both;
+}
+
+@keyframes landing-smoke-launch {
+  from {
+    opacity: 0;
+    transform: translate(-700px, 600px) scale(0.6);
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Travels along the rocket's ~30° heading, starting below the bottom-left corner. */
+.landing-enter-rocket {
+  animation: landing-rocket-launch 1600ms var(--ease-launch) 200ms both;
+}
+
+@keyframes landing-rocket-launch {
+  from {
+    opacity: 0;
+    transform: translate(calc(-560 * var(--u)), calc(970 * var(--u)));
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Idle smoke motion. The per-bubble loops were removed (each one animated a large
+ * feGaussianBlur, re-blurring ~28 regions every frame); the whole exhaust now drifts
+ * as one unit instead. `will-change` promotes the layer so its blurred content is
+ * rasterized once and this transform just re-composites that cached texture — cheap,
+ * and translate-only so the texture is never re-blurred. Paused when offscreen (see
+ * .landing-motion-paused) and under prefers-reduced-motion.
+ */
+.landing-smoke {
+  will-change: transform;
+  animation: landing-smoke-drift 16s var(--ease-gentle) 1400ms infinite;
+}
+
+@keyframes landing-smoke-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(calc(-14 * var(--u)), calc(-7 * var(--u)));
+  }
+}
+
+.landing-enter-fade {
+  animation: landing-fade-in 1400ms var(--ease-gentle) 200ms both;
+}
+
+@keyframes landing-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.landing-pop {
+  --enter-start: 1250ms;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: landing-pop-in 650ms var(--ease-gentle) both;
+}
+
+@keyframes landing-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  78% {
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.landing-badge,
+.landing-name,
+.landing-greeting,
+.landing-favorites-heading,
+.landing-cards > li {
+  animation: landing-rise 900ms var(--ease-gentle) both;
+}
+
+/* The search bar eases in longer and travels less than the text around it. `backwards`, not
+   `both`: a finished animation that keeps holding its end state leaves the box a backdrop
+   root, and the frosted result panel inside it would stop blurring the page behind. */
+.landing-search-box {
+  animation: landing-search-in 1400ms var(--ease-gentle) 820ms backwards;
+}
+
+.landing-badge { animation-delay: 400ms; }
+.landing-name { animation-delay: 560ms; }
+.landing-greeting { animation-delay: 700ms; }
+.landing-favorites-heading { animation-delay: 940ms; }
+.landing-cards > li:nth-child(1) { animation-delay: 1020ms; }
+.landing-cards > li:nth-child(2) { animation-delay: 1090ms; }
+.landing-cards > li:nth-child(3) { animation-delay: 1160ms; }
+.landing-cards > li:nth-child(4) { animation-delay: 1230ms; }
+.landing-cards > li:nth-child(5) { animation-delay: 1300ms; }
+.landing-cards > li:nth-child(6) { animation-delay: 1370ms; }
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+@keyframes landing-search-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  40% {
+    opacity: 0.35;
+  }
+}
+
+/*
+ * Stop paying for animation the member can't see. `useLandingMotion` adds this class
+ * when the art scrolls out of view, the tab is hidden, or the device asked for less
+ * motion/data (Save-Data, very low core count). Paused animations hold their current
+ * frame and stop repainting, so an offscreen or backgrounded Home costs nothing.
+ */
+.landing-motion-paused .landing-animated *,
+.landing-motion-paused .landing-smoke {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-animated *,
+  .landing-smoke {
+    animation-play-state: paused !important;
+  }
+
+  .landing-smoke-layer,
+  .landing-enter-rocket,
+  .landing-enter-fade,
+  .landing-pop,
+  .landing-badge,
+  .landing-name,
+  .landing-greeting,
+  .landing-search-box,
+  .landing-favorites-heading,
+  .landing-cards > li {
+    animation: none !important;
+  }
+
+  .landing-search,
+  .landing-search::before,
+  .landing-search-results {
+    transition: none !important;
+  }
+}
+
+/*
+ * Figma "Glass" effect used by the badge, search bar and cards (frost 4, refraction 0.8,
+ * depth 20, light -45°, intensity 0.8, dispersion 0.5). The SVG export drops it, so it is
+ * approximated here: backdrop frost, a light rim brightest at the top-left and bottom-right,
+ * inner depth shading and a faint color fringe. The element must be positioned.
+ */
+.landing-glass {
+  -webkit-backdrop-filter: blur(max(3px, calc(4 * var(--u)))) saturate(150%);
+  backdrop-filter: blur(max(3px, calc(4 * var(--u)))) saturate(150%);
+  box-shadow:
+    inset 0 0 max(8px, calc(20 * var(--u))) rgba(255, 255, 255, 0.05),
+    inset 1px 1px 3px rgba(255, 255, 255, 0.14),
+    inset -1px -1px 3px rgba(0, 0, 0, 0.3),
+    inset 1px 0 0 rgba(255, 120, 150, 0.08),
+    inset -1px 0 0 rgba(120, 190, 255, 0.08);
+}
+
+.landing-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.14) 16%,
+    rgba(255, 255, 255, 0.03) 40%,
+    rgba(255, 255, 255, 0.03) 62%,
+    rgba(255, 255, 255, 0.14) 86%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  /* Keep only the 1px border ring of the gradient. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* ---------- Content: stacked (phones, tablets, portrait) ---------- */
+
+/*
+ * One left edge, one type scale: eyebrow → title → subtitle, then the search bar and the
+ * favorites section. The title keeps the Dosis display face; everything else is Inter.
+ * The accent blue is taken from the smoke art.
+ */
+.landing-content {
+  --accent: #41b8e1;
+  --accent-soft: #9edcf3;
+  --text-muted: rgba(255, 255, 255, 0.68);
+  --text-faint: rgba(255, 255, 255, 0.5);
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
+  /* Reserve the art's full height (moon included) below the content. */
+  padding: max(40px, 7cqh) 24px calc(1545 * var(--u) + 16px);
+  text-align: left;
+}
+
+.landing-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.landing-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.55em 1.1em 0.55em 0.95em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+/* Accent dot (decorative). */
+.landing-badge::before {
+  content: '';
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0.8em var(--accent);
+}
+
+.landing-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.28em;
+  margin: 0;
+  font-family: var(--font-milestone);
+  font-weight: 700;
+  font-size: clamp(48px, 14cqw, 70px);
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+}
+
+.landing-name {
+  text-shadow: 0 0 0.4em rgba(255, 255, 255, 0.28);
+}
+
+.landing-greeting {
+  margin: 12px 0 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.landing-greeting-name {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.landing-search-box {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  margin-top: 32px;
+}
+
+.landing-search {
+  position: relative;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(217, 217, 217, 0.14);
+  transition: background-color 200ms ease;
+}
+
+.landing-search:hover {
+  background: rgba(217, 217, 217, 0.18);
+}
+
+.landing-search:focus-within {
+  background: rgba(217, 217, 217, 0.2);
+}
+
+/*
+ * Active ring: a white outline standing off the bar with the same soft halo as the title
+ * text. It lives on its own layer so focusing and blurring cross-fade its opacity smoothly
+ * (::after is the glass rim).
+ */
+.landing-search::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: inherit;
+  box-shadow:
+    0 0 16px rgba(255, 255, 255, 0.35),
+    inset 0 0 10px rgba(255, 255, 255, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 450ms var(--ease-gentle);
+}
+
+.landing-search:focus-within::before {
+  opacity: 1;
+}
+
+/* Result list: dark frosted panel under the bar, fading (and settling) in and out. */
+.landing-search-results {
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  margin-top: 10px;
+  max-height: min(24rem, 40cqh);
+  overflow-y: auto;
+  padding: 8px 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  background: rgba(10, 13, 28, 0.95);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition:
+    opacity 350ms var(--ease-gentle),
+    transform 350ms var(--ease-gentle),
+    visibility 0s linear 350ms;
+}
+
+.landing-search-results[data-open] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 350ms var(--ease-gentle),
+    transform 350ms var(--ease-gentle),
+    visibility 0s;
+}
+
+.landing-search-empty {
+  margin: 0;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.landing-search-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.landing-search-result[aria-selected='true'] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.landing-search-input {
+  width: 100%;
+  height: 52px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  padding: 0 24px 0 52px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  color: #ffffff;
+  outline: none;
+}
+
+.landing-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Hide the browser's clear button so it doesn't clash with the pill shape. */
+.landing-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.landing-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  width: 18px;
+  height: 18px;
+  translate: 0 -50%;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.landing-favorites {
+  width: 100%;
+  margin-top: 36px;
+}
+
+.landing-favorites-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* Hairline that fades out to the right (decorative). */
+.landing-favorites-heading::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0));
+}
+
+/*
+ * One row that scrolls sideways rather than wrapping (two stacked rows of shortcuts read as
+ * clutter). The padding/negative margin pair gives hover lift and focus rings room inside
+ * the scroll box without shifting the row.
+ */
+.landing-cards {
+  --cards-gap: 12px;
+  --cards-in-view: 2;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - (var(--cards-in-view) - 1) * var(--cards-gap)) / var(--cards-in-view));
+  gap: var(--cards-gap);
+  margin: -8px -6px;
+  padding: 8px 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  list-style: none;
+}
+
+/*
+ * Soft edges while the row is scrolled: each side fades out only when more cards are hidden
+ * past it (data-fade-start / data-fade-end, set from the scroll position). The widths are
+ * registered properties so the fades ease in and out instead of snapping. The mask is only
+ * applied while a side is fading, because a masked ancestor stops the glass cards' backdrop
+ * blur.
+ */
+@property --cards-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --cards-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.landing-cards {
+  transition:
+    --cards-fade-start 300ms var(--ease-gentle),
+    --cards-fade-end 300ms var(--ease-gentle);
+}
+
+.landing-cards[data-fade-start],
+.landing-cards[data-fade-end] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--cards-fade-start),
+    #000 calc(100% - var(--cards-fade-end)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--cards-fade-start),
+    #000 calc(100% - var(--cards-fade-end)),
+    transparent
+  );
+}
+
+.landing-cards[data-fade-start] {
+  --cards-fade-start: 48px;
+}
+
+.landing-cards[data-fade-end] {
+  --cards-fade-end: 48px;
+}
+
+.landing-cards::-webkit-scrollbar {
+  display: none;
+}
+
+.landing-cards > li {
+  position: relative;
+}
+
+.landing-card-action {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    translate 250ms var(--ease-gentle);
+}
+
+.landing-card-action[data-pinned],
+.landing-cards > li:hover .landing-card-action,
+.landing-card-action:focus-within {
+  opacity: 1;
+}
+
+.landing-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 0;
+  padding: 0;
+  background: rgba(217, 217, 217, 0.12);
+  color: inherit;
+  text-align: left;
+  transition:
+    background-color 200ms ease,
+    translate 250ms var(--ease-gentle);
+}
+
+/* Hover is on the whole slot, so the star (a sibling over the card) lifts with it and
+   hovering the star itself keeps the card raised. Placeholder tiles stay put. */
+.landing-cards > li:hover > :is(a, button).landing-card {
+  background: rgba(217, 217, 217, 0.2);
+  translate: 0 -3px;
+}
+
+.landing-cards > li:hover > .landing-card-action {
+  translate: 0 -3px;
+}
+
+.landing-card:focus-visible {
+  outline: 2px solid rgba(158, 220, 243, 0.7);
+  outline-offset: 3px;
+}
+
+@container landing (min-width: 640px) {
+  .landing-content {
+    max-width: 640px;
+  }
+
+  .landing-heading {
+    font-size: 84px;
+  }
+
+  .landing-greeting {
+    font-size: 20px;
+  }
+
+  .landing-cards {
+    --cards-in-view: 4;
+  }
+}
+
+/* ---------- Content: desktop ---------- */
+
+/*
+ * A right-hand column, vertically centered, padded from the right edge. Its width follows
+ * the viewport (capped so it always fits vertically) and everything inside is sized in
+ * container units (cqi) so the whole column scales as one piece.
+ *
+ * The art scales with the viewport height, shrinking only when it would run into the
+ * column, so narrowing the window crops sky on the right first.
+ */
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  .landing {
+    --pad: clamp(32px, 5.5cqw, 120px);
+    /* The column is ~0.73× as tall as it is wide; the divisor keeps a little headroom. */
+    --content-w: min(clamp(545px, 50cqw, 975px), (100cqh - 2 * var(--pad)) / 0.76);
+    /* The art fills 95% of the height, and only shrinks further when it would come within
+       40px of the column (the moon, its rightmost piece, ends around x ≈ 1025 of the frame). */
+    --u: min(0.95 * 100cqh / 1545, (100cqw - var(--content-w) - var(--pad) - 40px) / 1025);
+    height: 100cqh;
+  }
+
+  .landing-content {
+    position: absolute;
+    top: 50%;
+    right: var(--pad);
+    width: var(--content-w);
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    translate: 0 -50%;
+    container-type: inline-size;
+  }
+
+  .landing-title {
+    gap: 3.4cqi;
+  }
+
+  .landing-badge {
+    font-size: max(13px, 2.15cqi);
+  }
+
+  .landing-heading {
+    font-size: 15cqi;
+  }
+
+  .landing-greeting {
+    margin-top: 2.6cqi;
+    font-size: 3.5cqi;
+  }
+
+  .landing-search-box {
+    margin-top: 6cqi;
+  }
+
+  .landing-search-input {
+    height: 8.4cqi;
+    padding: 0 4cqi 0 8.2cqi;
+    font-size: 2.45cqi;
+  }
+
+  .landing-search-icon {
+    left: 3.3cqi;
+    width: 2.8cqi;
+    height: 2.8cqi;
+  }
+
+  .landing-favorites {
+    margin-top: 6.4cqi;
+  }
+
+  .landing-favorites-heading {
+    gap: 2.2cqi;
+    margin-bottom: 2.4cqi;
+    font-size: max(11px, 1.7cqi);
+  }
+
+  .landing-cards {
+    --cards-in-view: 4;
+    --cards-gap: 2.2cqi;
+  }
+
+  .landing-card {
+    border-radius: 2.6cqi;
+  }
+
+  .landing-card:focus-visible {
+    outline-offset: 0.5cqi;
+  }
+
+  .landing-search::before {
+    inset: -0.8cqi;
+  }
+}

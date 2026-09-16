@@ -1,12 +1,10 @@
 /**
- * Backfill EducationOffering.startsAt / endsAt / termId from sessions for all
- * existing offerings, now that these fields are derived rather than manually
- * entered.
+ * Backfill EducationOffering.startsAt / endsAt from sessions for all existing
+ * offerings, now that these fields are derived rather than manually entered.
  *
- * Offerings with no sessions are set to null on all three fields (they are
- * draft stubs with no schedule yet). Offerings with sessions get startsAt =
- * earliest session datetime, endsAt = latest session datetime, and termId
- * derived from startsAt.
+ * Offerings with no sessions are set to null on both fields (they are draft
+ * stubs with no schedule yet). Offerings with sessions get startsAt = earliest
+ * session datetime and endsAt = latest session datetime.
  *
  * Dry-run by default.
  *
@@ -29,15 +27,6 @@ if (!connectionString) {
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
-async function termIdForDate(date: Date): Promise<string | null> {
-  const term = await prisma.term.findFirst({
-    where: { startDate: { lte: date }, endDate: { gte: date } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
-  return term?.id ?? null;
-}
-
 async function main() {
   const offerings = await prisma.educationOffering.findMany({
     select: {
@@ -45,7 +34,6 @@ async function main() {
       title: true,
       startsAt: true,
       endsAt: true,
-      termId: true,
       sessions: {
         orderBy: { datetime: "asc" },
         select: { datetime: true },
@@ -62,13 +50,10 @@ async function main() {
     const sessions = offering.sessions;
     const newStartsAt = sessions.length > 0 ? sessions[0].datetime : null;
     const newEndsAt = sessions.length > 0 ? sessions[sessions.length - 1].datetime : null;
-    const newTermId =
-      newStartsAt != null ? await termIdForDate(newStartsAt) : null;
 
     const alreadyCorrect =
       offering.startsAt?.getTime() === newStartsAt?.getTime() &&
-      offering.endsAt?.getTime() === newEndsAt?.getTime() &&
-      offering.termId === newTermId;
+      offering.endsAt?.getTime() === newEndsAt?.getTime();
 
     if (alreadyCorrect) {
       unchanged += 1;
@@ -78,14 +63,13 @@ async function main() {
     console.log(
       `[${commit ? "UPDATE" : "DRY"}] "${offering.title}" (${offering.id}): ` +
         `startsAt=${newStartsAt?.toISOString() ?? "null"} ` +
-        `endsAt=${newEndsAt?.toISOString() ?? "null"} ` +
-        `termId=${newTermId ?? "null"}`,
+        `endsAt=${newEndsAt?.toISOString() ?? "null"}`,
     );
 
     if (commit) {
       await prisma.educationOffering.update({
         where: { id: offering.id },
-        data: { startsAt: newStartsAt, endsAt: newEndsAt, termId: newTermId },
+        data: { startsAt: newStartsAt, endsAt: newEndsAt },
       });
     }
 

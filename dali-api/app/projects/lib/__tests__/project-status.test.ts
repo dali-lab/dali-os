@@ -1,22 +1,29 @@
 import { describe, it, expect } from "vitest";
 import {
   computeProjectStatus,
+  computeStatusBreakdown,
   factsFingerprint,
   buildTldrDetail,
+  BREAKDOWN_CAP,
   STALE_DAYS,
   type StatusTaskInput,
-  type StatusSprintInput,
   type TldrTaskInput,
 } from "../project-status";
+import type { TimelineTermSpan } from "../timeline-days";
 
 const NOW = new Date("2026-09-07T12:00:00.000Z");
+
+// A 10-week fall term whose Sprint 1 opens on the day NOW falls in.
+const TERMS: TimelineTermSpan[] = [
+  { code: "26F", startsAt: "2026-09-07T00:00:00.000Z", endsAt: "2026-11-15T00:00:00.000Z" },
+];
 
 function task(over: Partial<StatusTaskInput>): StatusTaskInput {
   return {
     id: "t",
     status: "Todo",
+    startsAt: NOW, // dated by default → "scheduled"; override to null for unplanned
     dueAt: null,
-    sprintId: "sprint-1",
     activityAt: NOW,
     ...over,
   };
@@ -28,8 +35,8 @@ function detailTask(over: Partial<TldrTaskInput>): TldrTaskInput {
     title: "Task",
     status: "Todo",
     priority: "Normal",
+    startsAt: NOW,
     dueAt: null,
-    sprintId: "sprint-1",
     activityAt: NOW,
     assigneeIds: [],
     ...over,
@@ -38,11 +45,8 @@ function detailTask(over: Partial<TldrTaskInput>): TldrTaskInput {
 
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000);
 
-function compute(tasks: StatusTaskInput[], sprints: StatusSprintInput[] = []) {
-  return computeProjectStatus(
-    { projectStatus: "Active", tasks, sprints },
-    NOW,
-  );
+function compute(tasks: StatusTaskInput[], terms: TimelineTermSpan[] = []) {
+  return computeProjectStatus({ projectStatus: "Active", tasks, terms }, NOW);
 }
 
 describe("computeProjectStatus — progress totals", () => {
@@ -64,11 +68,9 @@ describe("computeProjectStatus — progress totals", () => {
     expect(facts.activeSprint).toBeNull();
   });
 
-  it("reports hasWork=true when there are sprints but no tasks", () => {
-    const facts = compute([], [
-      { id: "s", name: "Sprint 1", startsAt: "2026-09-01", endsAt: "2026-09-14", status: "Active" },
-    ]);
-    expect(facts.hasWork).toBe(true);
+  it("still reports hasWork=false when there are terms but no tasks", () => {
+    const facts = compute([], TERMS);
+    expect(facts.hasWork).toBe(false);
   });
 });
 
@@ -87,14 +89,14 @@ describe("computeProjectStatus — overdue", () => {
 });
 
 describe("computeProjectStatus — unscheduled", () => {
-  it("flags in-motion tasks with no sprint but not Backlog or scheduled work", () => {
+  it("flags in-motion undated tasks but not Backlog or dated work", () => {
     const facts = compute([
-      task({ status: "Todo", sprintId: null }), // unscheduled
-      task({ status: "InProgress", sprintId: null }), // unscheduled
-      task({ status: "InReview", sprintId: null }), // unscheduled
-      task({ status: "Backlog", sprintId: null }), // parked — not flagged
-      task({ status: "Todo", sprintId: "s1" }), // scheduled
-      task({ status: "Done", sprintId: null }), // closed
+      task({ status: "Todo", startsAt: null, dueAt: null }), // unscheduled
+      task({ status: "InProgress", startsAt: null, dueAt: null }), // unscheduled
+      task({ status: "InReview", startsAt: null, dueAt: null }), // unscheduled
+      task({ status: "Backlog", startsAt: null, dueAt: null }), // parked — not flagged
+      task({ status: "Todo", startsAt: NOW }), // dated → scheduled
+      task({ status: "Done", startsAt: null, dueAt: null }), // closed
     ]);
     expect(facts.unscheduled).toBe(3);
   });
@@ -126,31 +128,25 @@ describe("computeProjectStatus — stale", () => {
   });
 });
 
-describe("computeProjectStatus — active sprint", () => {
-  it("prefers an explicitly Active sprint, choosing the soonest to end", () => {
-    const facts = compute([], [
-      { id: "late", name: "Late", startsAt: "2026-09-01", endsAt: "2026-09-30", status: "Active" },
-      { id: "soon", name: "Soon", startsAt: "2026-09-01", endsAt: "2026-09-12", status: "Active" },
-      { id: "closed", name: "Closed", startsAt: "2026-08-01", endsAt: "2026-08-14", status: "Closed" },
-    ]);
-    expect(facts.activeSprint?.id).toBe("soon");
-    expect(facts.activeSprint?.daysRemaining).toBe(5); // Sep 7 12:00 → Sep 12 00:00, ceil
+describe("computeProjectStatus — current sprint", () => {
+  it("labels the current sprint off the term start with days left in the band", () => {
+    const facts = compute([], TERMS);
+    expect(facts.activeSprint?.label).toBe("Sprint 1"); // Sep 7 is week 1
+    expect(facts.activeSprint?.daysRemaining).toBe(7); // Sep 7 12:00 → Sep 14 00:00, ceil
   });
 
-  it("falls back to an unclosed sprint whose window contains now", () => {
-    const facts = compute([], [
-      { id: "current", name: "Current", startsAt: "2026-09-01", endsAt: "2026-09-14", status: "Planned" },
-      { id: "future", name: "Future", startsAt: "2026-10-01", endsAt: "2026-10-14", status: "Planned" },
-    ]);
-    expect(facts.activeSprint?.id).toBe("current");
+  it("exposes the sprint's first-day start for the hover window", () => {
+    const facts = compute([], TERMS);
+    expect(facts.activeSprint?.startsAt).toBe("2026-09-07T00:00:00.000Z");
   });
 
-  it("returns a negative daysRemaining once the active sprint is past its end", () => {
-    const facts = compute([], [
-      { id: "over", name: "Overrun", startsAt: "2026-08-01", endsAt: "2026-09-05", status: "Active" },
-    ]);
-    expect(facts.activeSprint?.id).toBe("over");
-    expect(facts.activeSprint?.daysRemaining).toBeLessThan(0);
+  it("is null when today falls outside every term", () => {
+    const before = new Date("2026-08-01T12:00:00.000Z");
+    const facts = computeProjectStatus(
+      { projectStatus: "Active", tasks: [], terms: TERMS },
+      before,
+    );
+    expect(facts.activeSprint).toBeNull();
   });
 });
 
@@ -193,9 +189,9 @@ describe("buildTldrDetail", () => {
   it("counts open priority mix, distinct team size, and unscheduled high-priority", () => {
     const detail = buildTldrDetail(
       [
-        detailTask({ id: "1", status: "InProgress", priority: "Urgent", sprintId: null, assigneeIds: ["u1", "u2"] }),
-        detailTask({ id: "2", status: "Todo", priority: "High", sprintId: null, assigneeIds: ["u2"] }),
-        detailTask({ id: "3", status: "Todo", priority: "High", sprintId: "s1", assigneeIds: ["u3"] }),
+        detailTask({ id: "1", status: "InProgress", priority: "Urgent", startsAt: null, dueAt: null, assigneeIds: ["u1", "u2"] }),
+        detailTask({ id: "2", status: "Todo", priority: "High", startsAt: null, dueAt: null, assigneeIds: ["u2"] }),
+        detailTask({ id: "3", status: "Todo", priority: "High", startsAt: NOW, assigneeIds: ["u3"] }), // dated
         detailTask({ id: "4", status: "Done", priority: "Urgent", assigneeIds: ["u4"] }),
       ],
       NOW,
@@ -217,5 +213,71 @@ describe("buildTldrDetail", () => {
     );
     expect(detail.stale.map((s) => s.title)).toEqual(["Stuck"]);
     expect(detail.inReview).toEqual(["Reviewing"]);
+  });
+});
+
+describe("computeStatusBreakdown", () => {
+  it("buckets tasks by status in display order, omitting empty buckets and Cancelled", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ status: "Done" }),
+        detailTask({ status: "Done" }),
+        detailTask({ status: "InProgress" }),
+        detailTask({ status: "Todo" }),
+        detailTask({ status: "Cancelled" }),
+      ],
+      NOW,
+    );
+    expect(b.byStatus).toEqual([
+      { status: "Done", label: "Done", count: 2 },
+      { status: "InProgress", label: "In progress", count: 1 },
+      { status: "Todo", label: "To do", count: 1 },
+    ]);
+  });
+
+  it("names overdue tasks most-overdue-first with days + priority, excluding closed", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ id: "1", title: "Old", status: "Todo", priority: "High", dueAt: daysAgo(10) }),
+        detailTask({ id: "2", title: "Older", status: "InProgress", priority: "Urgent", dueAt: daysAgo(30) }),
+        detailTask({ id: "3", title: "Shipped", status: "Done", priority: "High", dueAt: daysAgo(50) }),
+      ],
+      NOW,
+    );
+    expect(b.overdue.map((o) => o.title)).toEqual(["Older", "Old"]);
+    expect(b.overdue[0]).toMatchObject({ priority: "Urgent", daysOver: 30 });
+  });
+
+  it("orders unscheduled highest-priority first and excludes parked Backlog", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ title: "low", status: "Todo", priority: "Low", startsAt: null, dueAt: null }),
+        detailTask({ title: "urgent", status: "InProgress", priority: "Urgent", startsAt: null, dueAt: null }),
+        detailTask({ title: "parked", status: "Backlog", priority: "Urgent", startsAt: null, dueAt: null }),
+      ],
+      NOW,
+    );
+    expect(b.unscheduled.map((u) => u.title)).toEqual(["urgent", "low"]);
+  });
+
+  it("lists longest-stalled InProgress tasks and in-review titles", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ title: "Stuck", status: "InProgress", activityAt: daysAgo(STALE_DAYS + 5) }),
+        detailTask({ title: "Fresh", status: "InProgress", activityAt: daysAgo(2) }),
+        detailTask({ title: "Reviewing", status: "InReview" }),
+      ],
+      NOW,
+    );
+    expect(b.stale.map((s) => s.title)).toEqual(["Stuck"]);
+    expect(b.inReview).toEqual(["Reviewing"]);
+  });
+
+  it("caps each named list at BREAKDOWN_CAP", () => {
+    const many = Array.from({ length: BREAKDOWN_CAP + 3 }, (_, i) =>
+      detailTask({ id: String(i), title: `T${i}`, status: "Todo", dueAt: daysAgo(i + 1) }),
+    );
+    const b = computeStatusBreakdown(many, NOW);
+    expect(b.overdue).toHaveLength(BREAKDOWN_CAP);
   });
 });

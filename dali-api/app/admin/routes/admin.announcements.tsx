@@ -6,6 +6,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -16,7 +17,6 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
-  Search,
   Users,
   UserRound,
   Globe,
@@ -164,6 +164,7 @@ export default function AnnouncementsPage() {
     | null
   >(null);
   const revalidator = useRevalidator();
+  const dialog = useDialog();
 
   // Auto-dismiss the success confirmation after a few seconds; errors stay
   // until the next send attempt.
@@ -216,6 +217,26 @@ export default function AnnouncementsPage() {
   const canSend = title.trim().length > 0 && !sending && hasAudience;
 
   async function send() {
+    // Build a summary of who will receive this and which channels fire.
+    const recipientDesc = allMembers
+      ? `${members.length} lab member${members.length === 1 ? "" : "s"} (whole lab)`
+      : [
+          pickedGroups.size > 0 && `${pickedGroups.size} group${pickedGroups.size === 1 ? "" : "s"}`,
+          pickedUsers.size > 0 && `${pickedUsers.size} ${pickedUsers.size === 1 ? "person" : "people"}`,
+        ]
+          .filter(Boolean)
+          .join(" + ");
+    const channels = ["in-app", "email", ccDartmouth && "Dartmouth email", "Slack DM"]
+      .filter(Boolean)
+      .join(", ");
+    const action = scheduling ? "Schedule" : "Send";
+    const confirmed = await dialog.confirm({
+      title: `${action} announcement to ${recipientDesc}?`,
+      description: `Channels: ${channels}. This is irreversible — recipients will be notified immediately${scheduling ? " at the scheduled time" : ""}.`,
+      confirmLabel: action,
+    });
+    if (!confirmed) return;
+
     setResult(null);
     setSending(true);
     try {
@@ -402,16 +423,13 @@ export default function AnnouncementsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search published forms…"
-                value={formSearch}
-                onChange={(e) => setFormSearch(e.target.value)}
-                className="w-72 pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
+            <SearchInput
+              size="sm"
+              placeholder="Search published forms…"
+              value={formSearch}
+              onChange={(e) => setFormSearch(e.target.value)}
+              containerClassName="w-72"
+            />
             {formSearch.trim() && (
               <div className="max-h-48 w-72 overflow-y-auto border border-border rounded-md divide-y divide-border">
                 {filteredForms.map((f) => (

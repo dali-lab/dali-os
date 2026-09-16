@@ -18,7 +18,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isCore } from "~/lib/roles";
+import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
@@ -54,7 +54,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  // Org pages are lab-wide; editing and the org's applications stay Core/Admin.
+  const [labMember, canViewApplications] = await Promise.all([
+    isLabMember(auth.user.sub, request),
+    canViewStaffing(auth.user.sub, request),
+  ]);
+  if (!labMember && !canViewApplications) return redirect("/");
 
   const canEdit = await isCore(auth.user.sub);
   const now = new Date();
@@ -131,6 +136,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     org: {
       ...org,
+      applications: canViewApplications ? org.applications : [],
       // Presigned display URL; `logoUrl` stays the raw stored value (an S3
       // key for partner-uploaded logos) for the edit form.
       logoDisplayUrl: await resolvePhotoUrl(org.logoUrl),
@@ -154,6 +160,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       org.applications.length === 0 &&
       pendingInvites.length === 0,
     canEdit,
+    canViewApplications,
   };
 }
 
@@ -408,7 +415,7 @@ function memberName(c: { name: string; email: string | null }) {
 }
 
 export default function PartnerOrgDetail() {
-  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit } =
+  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit, canViewApplications } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -569,6 +576,11 @@ export default function PartnerOrgDetail() {
         {inviting && canEdit && (
           <Form
             method="post"
+            onSubmit={confirmSubmit({
+              title: "Send partner invite?",
+              description: "This emails a join link to the address you entered.",
+              confirmLabel: "Send invite",
+            })}
             className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3"
           >
             <input type="hidden" name="intent" value="invite" />
@@ -584,12 +596,14 @@ export default function PartnerOrgDetail() {
               </label>
               <input name="displayRole" placeholder="e.g. CTO" className={inputClass} />
             </div>
-            <button
-              type="submit"
-              className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
-            >
-              Send invite
-            </button>
+            <Tooltip content="Emails a join link to this address">
+              <button
+                type="submit"
+                className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+              >
+                Send invite
+              </button>
+            </Tooltip>
           </Form>
         )}
 
@@ -699,7 +713,15 @@ export default function PartnerOrgDetail() {
                   </div>
                 </div>
                 {canEdit && (
-                  <Form method="post">
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: `Revoke invite for ${inv.email}?`,
+                      description: "Their invite link will stop working.",
+                      confirmLabel: "Revoke",
+                      tone: "destructive",
+                    })}
+                  >
                     <input type="hidden" name="intent" value="revoke-invite" />
                     <input type="hidden" name="inviteId" value={inv.id} />
                     <button
@@ -867,30 +889,32 @@ export default function PartnerOrgDetail() {
       </section>
 
       {/* Applications */}
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-foreground">Applications</h2>
-        {org.applications.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No applications.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {org.applications.map((a) => (
-              <li key={a.id} className="py-2.5 flex items-center gap-3">
-                <Link
-                  to={`/partners/applications/${a.id}`}
-                  className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
-                >
-                  {a.title}
-                </Link>
-                <span
-                  className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_APPLICATION_STATUS_PILL[a.status]}`}
-                >
-                  {PARTNER_APPLICATION_STATUS_LABELS[a.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {canViewApplications && (
+        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+          <h2 className="font-heading font-semibold text-foreground">Applications</h2>
+          {org.applications.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No applications.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {org.applications.map((a) => (
+                <li key={a.id} className="py-2.5 flex items-center gap-3">
+                  <Link
+                    to={`/partners/applications/${a.id}`}
+                    className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
+                  >
+                    {a.title}
+                  </Link>
+                  <span
+                    className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_APPLICATION_STATUS_PILL[a.status]}`}
+                  >
+                    {PARTNER_APPLICATION_STATUS_LABELS[a.status]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
       {canDeleteOrg && (

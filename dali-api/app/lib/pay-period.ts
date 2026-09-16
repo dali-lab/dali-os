@@ -46,6 +46,11 @@ export function payPeriodFor(dayUtcMidnight: Date): PayPeriod {
   };
 }
 
+/** True when this calendar day is the first of its pay period. */
+export function isPayPeriodStart(dayUtcMidnight: Date): boolean {
+  return payPeriodFor(dayUtcMidnight).start.getTime() === dayUtcMidnight.getTime();
+}
+
 /** True when this calendar day is the last of its pay period. */
 export function isPayPeriodEnd(dayUtcMidnight: Date): boolean {
   return payPeriodFor(dayUtcMidnight).end.getTime() === dayUtcMidnight.getTime();

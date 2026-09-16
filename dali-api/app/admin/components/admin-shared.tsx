@@ -4,6 +4,7 @@ import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check, Plus, Briefcase } from "lucide-react";
 import { fullName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -211,36 +212,52 @@ export function DomainLeadPicker({
 
 export function AdminToggle({ member, disabled }: { member: Member; disabled?: boolean }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const submittedValue = fetcher.formData?.get("value");
   const isAdminMember = submittedValue != null
     ? submittedValue === "true"
     : member.isAdmin;
+  const name = fullName(member) || member.daliEmail || "this member";
+
+  async function handleClick() {
+    if (disabled) return;
+    const granting = !isAdminMember;
+    const ok = await dialog.confirm({
+      title: granting ? `Grant Admin to ${name}?` : `Revoke Admin from ${name}?`,
+      description: granting
+        ? "Admins can manage members, roles, domains, and all admin settings."
+        : "This removes all Admin access. The action takes effect immediately.",
+      tone: granting ? "default" : "destructive",
+      confirmLabel: granting ? "Grant Admin" : "Revoke Admin",
+    });
+    if (!ok) return;
+    fetcher.submit(
+      { intent: "set-admin", userId: member.id, value: String(granting) },
+      { method: "post" },
+    );
+  }
 
   return (
-    <fetcher.Form method="post">
-      <input type="hidden" name="intent" value="set-admin" />
-      <input type="hidden" name="userId" value={member.id} />
-      <input type="hidden" name="value" value={String(!isAdminMember)} />
-      <Tooltip
-        content={disabled ? "Only Admins can grant or revoke Admin." : isAdminMember ? "Remove Admin role" : "Grant Admin role"}
-        variant="rich"
-      >
-        <span>
-          <button
-            type="submit"
-            disabled={disabled}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              isAdminMember
-                ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
-                : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-            } disabled:opacity-60 disabled:cursor-not-allowed`}
-          >
-            {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-            {isAdminMember ? "Admin" : "Set Admin"}
-          </button>
-        </span>
-      </Tooltip>
-    </fetcher.Form>
+    <Tooltip
+      content={disabled ? "Only Admins can grant or revoke Admin." : isAdminMember ? "Remove Admin role" : "Grant Admin role"}
+      variant="rich"
+    >
+      <span>
+        <button
+          type="button"
+          disabled={disabled || fetcher.state !== "idle"}
+          onClick={() => void handleClick()}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+            isAdminMember
+              ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
+              : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+          } disabled:opacity-60 disabled:cursor-not-allowed`}
+        >
+          {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+          {isAdminMember ? "Admin" : "Set Admin"}
+        </button>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -249,36 +266,52 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
 // flag but leaves Admin intact. Admin-gated, same as AdminToggle.
 export function StaffToggle({ member, disabled }: { member: Member; disabled?: boolean }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const submittedValue = fetcher.formData?.get("value");
   const isStaffMember = submittedValue != null
     ? submittedValue === "true"
     : member.isStaff;
+  const name = fullName(member) || member.daliEmail || "this member";
+
+  async function handleClick() {
+    if (disabled) return;
+    const granting = !isStaffMember;
+    const ok = await dialog.confirm({
+      title: granting ? `Mark ${name} as Staff?` : `Remove Staff status from ${name}?`,
+      description: granting
+        ? "Staff members gain full Admin access and are exempt from student checklist items."
+        : "This removes the Staff flag. The member retains Admin access unless that is also revoked.",
+      tone: granting ? "default" : "destructive",
+      confirmLabel: granting ? "Mark Staff" : "Remove Staff",
+    });
+    if (!ok) return;
+    fetcher.submit(
+      { intent: "set-staff", userId: member.id, value: String(granting) },
+      { method: "post" },
+    );
+  }
 
   return (
-    <fetcher.Form method="post">
-      <input type="hidden" name="intent" value="set-staff" />
-      <input type="hidden" name="userId" value={member.id} />
-      <input type="hidden" name="value" value={String(!isStaffMember)} />
-      <Tooltip
-        content={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain full Admin access."}
-        variant="rich"
-      >
-        <span>
-          <button
-            type="submit"
-            disabled={disabled}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              isStaffMember
-                ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
-                : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-            } disabled:opacity-60 disabled:cursor-not-allowed`}
-          >
-            {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
-            {isStaffMember ? "Staff" : "Set Staff"}
-          </button>
-        </span>
-      </Tooltip>
-    </fetcher.Form>
+    <Tooltip
+      content={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain full Admin access."}
+      variant="rich"
+    >
+      <span>
+        <button
+          type="button"
+          disabled={disabled || fetcher.state !== "idle"}
+          onClick={() => void handleClick()}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+            isStaffMember
+              ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
+              : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+          } disabled:opacity-60 disabled:cursor-not-allowed`}
+        >
+          {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
+          {isStaffMember ? "Staff" : "Set Staff"}
+        </button>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -333,6 +366,7 @@ export function CorePicker({ member }: { member: Member }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const submitting = fetcher.state !== "idle";
   const wasSubmitting = useRef(false);
 
@@ -345,6 +379,21 @@ export function CorePicker({ member }: { member: Member }) {
       setOpen(false);
     }
   }, [submitting]);
+
+  async function submitTitle(title: string) {
+    if (!title.trim()) return;
+    const name = fullName(member) || member.daliEmail || "this member";
+    const ok = await dialog.confirm({
+      title: `Add "${title.trim()}" Core title to ${name}?`,
+      description: "This creates a Core assignment for the current term, which affects pay. Admins will be notified.",
+      confirmLabel: "Add Core title",
+    });
+    if (!ok) return;
+    fetcher.submit(
+      { intent: "add-core-title", userId: member.id, leadTitle: title.trim() },
+      { method: "post" },
+    );
+  }
 
   return (
     <div className="flex flex-wrap gap-1.5 items-center">
@@ -362,12 +411,9 @@ export function CorePicker({ member }: { member: Member }) {
       ))}
 
       {open ? (
-        <fetcher.Form method="post" className="inline-flex items-center gap-1">
-          <input type="hidden" name="intent" value="add-core-title" />
-          <input type="hidden" name="userId" value={member.id} />
+        <span className="inline-flex items-center gap-1">
           <input
             type="text"
-            name="leadTitle"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Title (e.g. PM)"
@@ -377,6 +423,10 @@ export function CorePicker({ member }: { member: Member }) {
               if (!value.trim() && !submitting) setOpen(false);
             }}
             onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submitTitle(value);
+              }
               if (e.key === "Escape") {
                 e.preventDefault();
                 setValue("");
@@ -386,14 +436,15 @@ export function CorePicker({ member }: { member: Member }) {
             className="px-2 py-0.5 text-xs border border-border rounded-md bg-background text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-green-500/30"
           />
           <button
-            type="submit"
-            disabled={submitting}
+            type="button"
+            disabled={submitting || !value.trim()}
+            onClick={() => void submitTitle(value)}
             className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs bg-green-700 text-white hover:bg-green-800 disabled:opacity-60"
             aria-label="Add Core title"
           >
             <Check className="w-3 h-3" />
           </button>
-        </fetcher.Form>
+        </span>
       ) : (
         <button
           type="button"

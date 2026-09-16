@@ -112,27 +112,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
-  // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
-  // + cycle reviewers/interviewers) so the scope shows for exactly the people
-  // the Hiring root is scoped to.
-  const [hiringReviewer, termFilter] = await Promise.all([
-    roles.isCore || roles.isDomainLead || roles.isInterviewer
-      ? null // already qualifies; skip the DB hit
-      : await prisma.cycleReviewer.findFirst({
-          where: { userId: auth.user.sub },
-          select: { id: true },
-        }),
-    resolveTermFilter(request),
-  ]);
-  const hasHiringAccess =
-    roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
+  const termFilter = await resolveTermFilter(request);
 
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
   // they're staffed on, scoped to the selected term. `?term=` scopes which
   // project (and Education) drives appear, exactly as it scopes the projects
   // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
-  // General / Core / Hiring are never term-filtered.
+  // General / Core are never term-filtered.
   const termId = termFilter.isAll ? null : termFilter.termId;
   const rawProjects = await prisma.project.findMany({
     where: {
@@ -151,23 +138,33 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Education workspaces. Access rule mirrors pageAccess.server: Core sees all
   // offerings; non-Core sees offerings where they are an instructor (any term)
-  // OR have an Approved application. When a specific term is selected, the
-  // offering's own termId is used for scoping (not the instructor-assignment
-  // term) because offerings now carry a DERIVED termId from their sessions.
+  // OR have an Approved application. Offerings don't store a term — one belongs
+  // to the selected term when its run starts inside that term's date window —
+  // so the term gate is a date range on `startsAt`, not the instructor-
+  // assignment term.
+  const termWindow = termId
+    ? await prisma.term.findUnique({
+        where: { id: termId },
+        select: { startDate: true, endDate: true },
+      })
+    : null;
+  const startsInTerm = termWindow
+    ? { startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } }
+    : {};
   const approvedOrInstructor = roles.isCore
-    ? // Core sees all offerings; filter by the offering's own termId when a
-      // specific term is selected, or show all when "all terms" is chosen.
+    ? // Core sees all offerings; gate on the term window when a specific term
+      // is selected, or show all when "all terms" is chosen.
       await prisma.educationOffering.findMany({
-        where: termId ? { termId } : undefined,
+        where: termWindow ? startsInTerm : undefined,
         orderBy: { title: "asc" },
         select: { id: true, title: true },
       })
     : // Non-Core: instructor on the offering (any term) OR Approved application.
-      // When a specific term is selected, ALSO require offering.termId matches.
+      // When a specific term is selected, ALSO require the run to start in it.
       await prisma.educationOffering.findMany({
         where: {
           AND: [
-            termId ? { termId } : {},
+            startsInTerm,
             {
               OR: [
                 { instructors: { some: { userId: auth.user.sub } } },
@@ -192,7 +189,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
-    hasHiringAccess,
     request,
   });
 
@@ -474,7 +470,7 @@ type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-grou
 // "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
   if (id === "mine") return "mine";
-  if (id === "lab" || id === "core" || id === "hiring") return "lab";
+  if (id === "lab" || id === "core") return "lab";
   if (id === "projects") return "projects-group";
   if (id === "education") return "education-group";
   return "project";
@@ -484,7 +480,6 @@ function scopeKindOf(id: string): ScopeKind {
 // the mover knows a move re-scopes visibility.
 function scopeAudience(scopeId: string): string {
   if (scopeId === "core") return "Core only";
-  if (scopeId === "hiring") return "the hiring team";
   if (scopeId === "lab") return "everyone in the lab";
   // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
   if (scopeId === "projects") return "the project team";
@@ -1057,7 +1052,7 @@ export default function DriveHub() {
 
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
-  // into the Hiring drive so the hiring team lands on their artifacts.
+  // into the Hiring drive space (the shared hiring folder set).
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
   const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
@@ -1160,9 +1155,9 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  // Email templates are Drive-managed (rename/move/delete permitted); agreements
-  // and rubrics remain placement-locked (kind-folders).
-  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric"]);
+  // Every artifact now lives in an ordinary (binding) folder, so nothing is
+  // placement-locked — agreements/rubrics/email-templates move like any file.
+  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {
@@ -1470,7 +1465,7 @@ export default function DriveHub() {
   const uploadTarget: UploadTarget = useMemo(() => {
     if (!currentScope) return { scope: { kind: "Lab" } };
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core" || currentScope.id === "hiring")
+    if (currentScope.id === "lab" || currentScope.id === "core")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
       // Resolve the project from the current folder to target the upload correctly.

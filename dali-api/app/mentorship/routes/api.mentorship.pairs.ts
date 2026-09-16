@@ -10,8 +10,14 @@ import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 //        Filters: projectId, termId, mentorUserId, menteeUserId.
 // POST   /api/mentorship/pairs — manual create. Core only.
 //        Body: { menteeUserId, mentorUserId, projectId, termId, domainId }
+// PATCH  /api/mentorship/pairs — reassign a pair's mentor. Core only.
+//        Body: { id, mentorUserId }. Marks the pair manual so it survives a
+//        staffing re-finalize.
 // DELETE /api/mentorship/pairs?id=...&id=... — delete by id. Core only.
 //        Supports one or more id query params for batch removal.
+//
+// Manual writes (create / reassign) set `manual: true`; derivePairings only
+// clears manual:false rows, so hand-edits persist across re-finalize.
 
 type CreateBody = {
   menteeUserId: string;
@@ -31,6 +37,14 @@ function isCreateBody(x: unknown): x is CreateBody {
     typeof o.termId === "string" &&
     typeof o.domainId === "string"
   );
+}
+
+type PatchBody = { id: string; mentorUserId: string };
+
+function isPatchBody(x: unknown): x is PatchBody {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.id === "string" && typeof o.mentorUserId === "string";
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -59,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       projectId: true,
       termId: true,
       domainId: true,
+      manual: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
       mentee: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -90,6 +105,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     Response.json({
       pairs: pairs.map((p) => ({
         id: p.id,
+        manual: p.manual,
         mentor: p.mentor,
         mentee: p.mentee,
         project: projectMap.get(p.projectId) ?? { id: p.projectId, name: "Unknown" },
@@ -118,6 +134,48 @@ export async function action({ request }: Route.ActionArgs) {
     }
     const result = await prisma.mentorshipPair.deleteMany({ where: { id: { in: ids } } });
     return withCors(request, Response.json({ deleted: result.count }));
+  }
+
+  if (request.method === "PATCH") {
+    let patch: unknown;
+    try {
+      patch = await request.json();
+    } catch {
+      return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
+    }
+    if (!isPatchBody(patch)) {
+      return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
+    }
+    const pair = await prisma.mentorshipPair.findUnique({
+      where: { id: patch.id },
+      select: { menteeUserId: true, projectId: true, termId: true, domainId: true },
+    });
+    if (!pair) {
+      return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+    }
+    // Reassigning onto an existing (mentee, mentor, project, term, domain) pair
+    // would duplicate it (no unique constraint). Merge instead: drop this row
+    // and hand back the one already there.
+    const existing = await prisma.mentorshipPair.findFirst({
+      where: {
+        menteeUserId: pair.menteeUserId,
+        mentorUserId: patch.mentorUserId,
+        projectId: pair.projectId,
+        termId: pair.termId,
+        domainId: pair.domainId,
+      },
+      select: { id: true },
+    });
+    if (existing && existing.id !== patch.id) {
+      await prisma.mentorshipPair.delete({ where: { id: patch.id } });
+      return withCors(request, Response.json({ id: existing.id, merged: true }));
+    }
+    const updated = await prisma.mentorshipPair.update({
+      where: { id: patch.id },
+      data: { mentorUserId: patch.mentorUserId, manual: true },
+      select: { id: true },
+    });
+    return withCors(request, Response.json({ id: updated.id, merged: false }));
   }
 
   if (request.method !== "POST") {
@@ -155,6 +213,7 @@ export async function action({ request }: Route.ActionArgs) {
       projectId: body.projectId,
       termId: body.termId,
       domainId: body.domainId,
+      manual: true,
     },
     select: { id: true },
   });

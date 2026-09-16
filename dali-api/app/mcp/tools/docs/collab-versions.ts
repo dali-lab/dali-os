@@ -148,3 +148,47 @@ export async function runRestoreCollabVersion(callerId: string, input: RestoreVe
   await restoreVersion(server, version.name, version.id);
   return { ok: true };
 }
+
+// ─── name_collab_version ──────────────────────────────────────────────────────
+
+export const NAME_COLLAB_VERSION_TOOL = {
+  name: "name_collab_version",
+  description:
+    "Set or clear a human-readable label on a collab document version snapshot (e.g. 'Before Q3 review'). An empty string clears the label. Requires at least view access on the document.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      versionId: { type: "string", minLength: 1, description: "Version ID to label." },
+      label: {
+        type: "string",
+        maxLength: 200,
+        description: "Label text. Empty string clears the label.",
+      },
+    },
+    required: ["versionId", "label"],
+    additionalProperties: false,
+  },
+  requiredScope: "mcp:write" as const,
+};
+
+type NameVersionInput = { versionId: string; label: string };
+
+export async function runNameCollabVersion(callerId: string, input: NameVersionInput) {
+  const version = await prisma.collabDocumentVersion.findUnique({
+    where: { id: input.versionId },
+    select: { id: true, name: true },
+  });
+  if (!version) throw new CollabVersionError("Version not found", 404);
+
+  // Auth: view access is sufficient to label (matches web route behaviour).
+  const { allowed } = await authorizeCollabDoc(callerId, version.name);
+  if (!allowed) throw new CollabVersionError("Forbidden", 403);
+
+  // Empty string clears the label; non-empty sets it.
+  const label = input.label.trim() || null;
+  await prisma.collabDocumentVersion.update({
+    where: { id: version.id },
+    data: { label },
+  });
+  return { ok: true, label };
+}

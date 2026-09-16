@@ -21,10 +21,12 @@ import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Toggle } from "~/components/ui/Toggle";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
+import { TimesheetFields } from "~/calendar/components/TimesheetFields";
 import {
   NO_REPEAT,
   RepeatField,
@@ -47,6 +49,7 @@ import type {
   ExternalEventDTO,
   MemberClassDTO,
   CourseHitDTO,
+  CalendarLinkDTO,
 } from "~/calendar/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -91,6 +94,41 @@ export function eventDestinations(data: LoaderData): { value: string; label: str
     }
   }
   return out;
+}
+
+/**
+ * Where a meeting invite can be sent from: each writable calendar inside each
+ * enabled Google account, same "<linkId>:<calendarId>" values as
+ * eventDestinations. An account whose calendars Google wouldn't list still
+ * gets one entry ("<linkId>:", no calendar) that sends from its primary.
+ */
+export function inviteDestinations(links: CalendarLinkDTO[]): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const link of links) {
+    if (link.provider !== "Google" || !link.enabled) continue;
+    const account = link.displayName || link.externalEmail || "Google";
+    const writable = (link.subCalendars ?? []).filter((sub) => sub.writable);
+    if (writable.length === 0) {
+      out.push({ value: `${link.id}:`, label: account });
+      continue;
+    }
+    for (const sub of writable) {
+      out.push({ value: `${link.id}:${sub.id}`, label: `${account} · ${sub.primary ? "Primary" : sub.summary}` });
+    }
+  }
+  return out;
+}
+
+/** The meeting payload's organizer fields for an inviteDestinations value.
+ *  Link ids are cuids (no ":"); calendar ids may contain anything after it. */
+export function inviteOrganizerFields(
+  value: string,
+): { organizerCalendarLinkId?: string; organizerCalendarId?: string } {
+  const sep = value.indexOf(":");
+  const linkId = sep === -1 ? value : value.slice(0, sep);
+  const calendarId = sep === -1 ? "" : value.slice(sep + 1);
+  if (!linkId) return {};
+  return calendarId ? { organizerCalendarLinkId: linkId, organizerCalendarId: calendarId } : { organizerCalendarLinkId: linkId };
 }
 
 const padTwo = (n: number) => String(n).padStart(2, "0");
@@ -648,38 +686,21 @@ export function EventComposer({
 
             {/* Timesheet — the event and its hours are one thing, saved together */}
             {canLogWork ? (
-              <div className="rounded-md border border-border bg-muted/20 p-2.5">
-                <Toggle
-                  checked={isWork}
-                  onChange={(e) => setIsWork(e.target.checked)}
-                  label="Count this as work"
-                  description={
-                    linkedEntry
-                      ? "These hours are on your timesheet. Unticking removes them; the event stays."
-                      : "Logs these hours to your timesheet against the role you pick."
-                  }
-                />
-                {isWork && (
-                  <div className="mt-2.5 flex flex-col gap-2">
-                    <Select
-                      value={roleKey}
-                      onChange={setRoleKey}
-                      options={[
-                        { value: "", label: "Pick a role…" },
-                        ...data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
-                      ]}
-                      buttonClassName={cn(fieldCls, "inline-flex w-full items-center justify-between gap-1")}
-                    />
-                    <textarea
-                      value={workNote}
-                      onChange={(e) => setWorkNote(e.target.value)}
-                      placeholder="What did you work on?"
-                      rows={2}
-                      className={cn(fieldCls, "resize-y")}
-                    />
-                  </div>
-                )}
-              </div>
+              <TimesheetFields
+                isWork={isWork}
+                onIsWorkChange={setIsWork}
+                roleKey={roleKey}
+                onRoleKeyChange={setRoleKey}
+                roleOptions={data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+                workNote={workNote}
+                onWorkNoteChange={setWorkNote}
+                description={
+                  linkedEntry
+                    ? "These hours are on your timesheet. Unticking removes them; the event stays."
+                    : "Logs these hours to your timesheet against the role you pick."
+                }
+                fieldClass={fieldCls}
+              />
             ) : linkedEntry ? (
               // Editing pushed the event into a shape hours can't hang off (made
               // it all-day, say). Say so rather than silently dropping the log
@@ -703,7 +724,7 @@ export function EventComposer({
                 disabled={!canSubmit || submitting || (editing && !ev?.writable)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
               >
-                {editing ? "Save" : "Create event"}
+                {editing ? "Save changes" : "Create event"}
               </button>
               {editing && ev?.writable && ev.eventId && (
                 <div className="ml-auto">
@@ -751,12 +772,12 @@ export function EventComposer({
 
 export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string } | null>();
+  const dialog = useDialog();
   const [newName, setNewName] = useState("");
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.subCalendars);
   const [newLink, setNewLink] = useState(googleLinks[0]?.id ?? "");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -768,7 +789,6 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
     if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) {
       setNewName("");
       setRenaming(null);
-      setConfirmDel(null);
     }
     prev.current = fetcher.state;
   }, [fetcher.state, fetcher.data]);
@@ -825,27 +845,31 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        {!cal.primary &&
-                          (confirmDel === cal.id ? (
+                        {!cal.primary && (
+                          <Tooltip content={`Delete ${cal.summary}`}>
                             <button
                               type="button"
-                              onClick={() =>
-                                fetcher.submit({ intent: "cal-delete", linkId: link.id, calendarId: cal.id }, { method: "post" })
-                              }
-                              className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
-                            >
-                              Confirm
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDel(cal.id)}
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
                               aria-label={`Delete ${cal.summary}`}
+                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
+                              onClick={async () => {
+                                const ok = await dialog.confirm({
+                                  title: `Delete "${cal.summary}"?`,
+                                  description:
+                                    "Deletes this calendar and every event on it from Google.",
+                                  tone: "destructive",
+                                  confirmLabel: "Delete calendar",
+                                });
+                                if (ok)
+                                  fetcher.submit(
+                                    { intent: "cal-delete", linkId: link.id, calendarId: cal.id },
+                                    { method: "post" },
+                                  );
+                              }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
-                          ))}
+                          </Tooltip>
+                        )}
                       </>
                     )}
                   </div>
@@ -891,6 +915,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const removeFetcher = useFetcher();
+  const dialog = useDialog();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState(""); // "" | period code | "custom"
@@ -1147,17 +1172,32 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (editingId === c.id) resetForm();
-                        removeFetcher.submit({ intent: "class-remove", classId: c.id }, { method: "post" });
-                      }}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
-                      aria-label={`Remove ${c.title}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Tooltip content={`Remove ${c.title}`}>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${c.title}`}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
+                        onClick={async () => {
+                          const ok = await dialog.confirm({
+                            title: `Remove "${c.title}"?`,
+                            description: c.destinationLabel?.startsWith("Google")
+                              ? "Removes this class from DALI and deletes the recurring event from your Google calendar."
+                              : "Removes this class from your DALI calendar.",
+                            tone: "destructive",
+                            confirmLabel: "Remove class",
+                          });
+                          if (ok) {
+                            if (editingId === c.id) resetForm();
+                            removeFetcher.submit(
+                              { intent: "class-remove", classId: c.id },
+                              { method: "post" },
+                            );
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
               </ul>
@@ -1196,19 +1236,17 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                   section fills the fields below; manual entry stays fully available. */}
               <div className="relative flex flex-col gap-1 text-sm">
                 <span className="text-muted-foreground">Find your course (optional)</span>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    value={courseQuery}
-                    onChange={(e) => {
-                      setCourseQuery(e.target.value);
-                      setShowCourseResults(true);
-                    }}
-                    onFocus={() => setShowCourseResults(true)}
-                    placeholder="Search the timetable, e.g. COSC 52"
-                    className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2.5 text-foreground"
-                  />
-                </div>
+                <SearchInput
+                  size="sm"
+                  value={courseQuery}
+                  onChange={(e) => {
+                    setCourseQuery(e.target.value);
+                    setShowCourseResults(true);
+                  }}
+                  onFocus={() => setShowCourseResults(true)}
+                  placeholder="Search the timetable, e.g. COSC 52"
+                  containerClassName="w-full"
+                />
                 {showCourseResults && trimmedCourseQuery.length >= 2 && (
                   <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
                     {courseHits.length > 0 && (

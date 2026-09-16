@@ -16,12 +16,15 @@ beforeEach(() => {
 });
 
 describe("listPublicTeam query shape", () => {
-  it("only ever reads members who opted in", async () => {
+  it("scopes to staffed members (a project or core assignment)", async () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     await listPublicTeam();
     expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.user.findMany.mock.calls[0][0].where).toEqual({
-      publicProfile: true,
+      OR: [
+        { projectAssignments: { some: {} } },
+        { coreAssignments: { some: {} } },
+      ],
     });
   });
 

@@ -18,6 +18,7 @@ import {
   UserCircle,
   FileText,
   FileQuestion,
+  BookOpen,
   ClipboardCheck,
   Mail,
   ShieldCheck,
@@ -94,6 +95,8 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   confidentialityAgreement: { icon: ShieldCheck, section: "Hiring library" },
   cycle: { icon: CalendarRange, section: "Hiring cycles" },
   partnerApplication: { icon: Handshake, section: "Partner applications" },
+  guide: { icon: BookOpen, section: "Guides" },
+  helpArticle: { icon: HelpCircle, section: "Help" },
 };
 
 const SECTION_ORDER = [
@@ -108,6 +111,8 @@ const SECTION_ORDER = [
   "Hiring library",
   "Hiring cycles",
   "Partner applications",
+  "Guides",
+  "Help",
 ];
 
 export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags = {}, onOpen }: CommandPaletteProps) {

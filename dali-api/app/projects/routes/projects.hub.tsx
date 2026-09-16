@@ -33,6 +33,7 @@ import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 import { Globe, Plus } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import {
   matchesShowcaseFilter,
@@ -491,15 +492,11 @@ export default function ProjectsListPage() {
       )}
 
       <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
-        <input
-          type="search"
+        <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by project or partner name"
-          className={cn(
-            "flex-1 min-w-[200px] border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            "max-w-[420px] min-w-[260px] px-5 py-3 text-base rounded-3xl bg-card",
-          )}
+          containerClassName="flex-1 min-w-[260px] max-w-[420px]"
         />
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           Term

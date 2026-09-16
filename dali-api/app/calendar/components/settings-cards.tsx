@@ -1,4 +1,5 @@
 import { useFetcher } from "react-router";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useEffect, useState, useId } from "react";
 import {
   CalendarDays,
@@ -17,6 +18,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
+import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import {
   defaultWorkingHours,
   DEFAULT_WORK_START_MIN,
@@ -193,6 +195,7 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
   const { card, bodyText } = useOsChrome();
   const removeFetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -220,23 +223,32 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
             <span className="flex-shrink-0 text-[11px] text-destructive">Sync error</span>
           )}
         </button>
-        <removeFetcher.Form method="post">
+        <removeFetcher.Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: `Disconnect ${link.externalEmail}?`,
+            description:
+              "Removes its events, availability, and any calendars you create there.",
+            tone: "destructive",
+            confirmLabel: "Disconnect",
+          })}
+        >
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
-          <button
-            type="submit"
-            aria-label={`Remove ${link.externalEmail}`}
-            className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          <Tooltip content={`Disconnect ${link.externalEmail}`}>
+            <button
+              type="submit"
+              aria-label={`Disconnect ${link.externalEmail}`}
+              className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         </removeFetcher.Form>
       </div>
       {open && (
         <div id={bodyId} className="px-3 py-3 flex flex-col gap-2">
-          {link.syncError && (
-            <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
-          )}
+          <SyncErrorNotice syncError={link.syncError} />
           {link.subCalendars === null ? (
             <div className={cn(bodyText, "italic")}>Couldn't load this account's calendars.</div>
           ) : link.subCalendars.length === 0 ? (

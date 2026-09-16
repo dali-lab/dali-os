@@ -36,9 +36,16 @@ import {
   runGetCollabVersion,
   RESTORE_COLLAB_VERSION_TOOL,
   runRestoreCollabVersion,
+  NAME_COLLAB_VERSION_TOOL,
+  runNameCollabVersion,
 } from "./collab-versions";
 import { MANAGE_COMMENT_TOOL_DEF, runManageComment } from "./manage-comment";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "./manage-page";
+import { LIST_PAGE_TEMPLATES_TOOL, runListPageTemplates } from "./list-page-templates";
+import { LIST_DRIVE_TRASH_TOOL, runListDriveTrash } from "./list-drive-trash";
+import { MANAGE_DRIVE_TRASH_TOOL_DEF, runManageDriveTrash } from "./manage-drive-trash";
+import { MOVE_DRIVE_ITEM_TOOL, runMoveDriveItem } from "./move-drive-item";
+import { UPLOAD_DRIVE_FILE_TOOL, runUploadDriveFile } from "./upload-drive-file";
 
 export const DOCS_TOOLS: McpTool[] = [
   {
@@ -112,6 +119,11 @@ export const DOCS_TOOLS: McpTool[] = [
       runRestoreCollabVersion(ctx.user.id, args as Parameters<typeof runRestoreCollabVersion>[1]),
   },
   {
+    def: NAME_COLLAB_VERSION_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runNameCollabVersion(ctx.user.id, args as Parameters<typeof runNameCollabVersion>[1]),
+  },
+  {
     def: MANAGE_COMMENT_TOOL_DEF,
     run: (ctx: McpCtx, args) =>
       runManageComment(ctx.user.id, args as Parameters<typeof runManageComment>[1]),
@@ -120,5 +132,29 @@ export const DOCS_TOOLS: McpTool[] = [
     def: MANAGE_PAGE_TOOL_DEF,
     run: (ctx: McpCtx, args) =>
       runManagePage(ctx.user.id, args as Parameters<typeof runManagePage>[1]),
+  },
+  {
+    def: LIST_PAGE_TEMPLATES_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runListPageTemplates(ctx.user.id, args as Parameters<typeof runListPageTemplates>[1]),
+  },
+  {
+    def: LIST_DRIVE_TRASH_TOOL,
+    run: (_ctx: McpCtx) => runListDriveTrash(_ctx.user.id),
+  },
+  {
+    def: MANAGE_DRIVE_TRASH_TOOL_DEF,
+    run: (ctx: McpCtx, args) =>
+      runManageDriveTrash(ctx.user.id, args as Parameters<typeof runManageDriveTrash>[1]),
+  },
+  {
+    def: MOVE_DRIVE_ITEM_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runMoveDriveItem(ctx.user.id, args as Parameters<typeof runMoveDriveItem>[1]),
+  },
+  {
+    def: UPLOAD_DRIVE_FILE_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runUploadDriveFile(ctx.user.id, args as Parameters<typeof runUploadDriveFile>[1]),
   },
 ];

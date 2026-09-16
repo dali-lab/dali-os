@@ -25,7 +25,6 @@ const basePage = {
   workspaceId: "p1",
   parentPageId: null,
   kind: "FreeForm",
-  systemKey: null,
   archivedAt: null,
 };
 
@@ -76,17 +75,6 @@ describe("update_page", () => {
     expect(mockPrisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { iconEmoji: null } }),
     );
-  });
-
-  it("refuses to archive a system folder", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({
-      ...basePage,
-      kind: "Folder",
-      systemKey: "project:p1:team-meeting-notes",
-    });
-    await expect(
-      runUpdatePage("u1", { pageId: "pg1", archived: true }),
-    ).rejects.toBeInstanceOf(UpdatePageError);
   });
 
   it("refuses to archive a folder with live children", async () => {

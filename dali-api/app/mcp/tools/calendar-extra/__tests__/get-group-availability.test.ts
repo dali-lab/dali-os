@@ -77,6 +77,8 @@ describe("get_group_availability", () => {
       userId: "u1",
       free: [],
       busy: [],
+      hasCalendar: true,
+      calendarError: false,
     });
     vi.mocked(intersectFreeIntervals).mockReturnValue([]);
 

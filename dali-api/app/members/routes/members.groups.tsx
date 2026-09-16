@@ -26,6 +26,7 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 import { Radio } from "~/components/ui/Radio";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -306,15 +307,11 @@ export default function AdminConsoleGroups() {
       {groups.length > 0 && (
         <div className={cn("flex flex-wrap items-center gap-2", "gap-4 pt-2 pb-2")}>
           <StatusTabs status={status} onChange={setStatus} />
-          <input
-            type="search"
+          <SearchInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search groups by name"
-            className={cn(
-              "flex-1 min-w-[12rem] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-              "max-w-[420px] px-5 py-2.5 rounded-full bg-card",
-            )}
+            containerClassName="flex-1 min-w-[12rem] max-w-[420px]"
           />
           <span className="text-xs text-muted-foreground ml-auto">
             {visibleGroups.length} {visibleGroups.length === 1 ? "group" : "groups"}
@@ -559,15 +556,12 @@ function CreateGroupForm({
               })}
             </div>
           )}
-          <input
-            type="text"
+          <SearchInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name or email…"
-            className={cn(
-              "w-full px-3 py-2 text-sm border border-border bg-background text-foreground",
-              "rounded-os-item",
-            )}
+            size="sm"
+            containerClassName="w-full"
           />
           <div
             className={cn(
@@ -764,6 +758,8 @@ function GroupCard({
               method="post"
               onSubmit={confirmSubmit({
                 title: `Delete group "${group.name}"?`,
+                description:
+                  "Any document shares and scheduling audiences that reference this group will stop working. This can't be undone.",
                 confirmLabel: "Delete",
                 tone: "destructive",
               })}
@@ -834,12 +830,12 @@ function GroupCard({
                 "rounded-os-item",
               )}
             >
-              <input
-                type="text"
+              <SearchInput
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search…"
-                className="w-full px-2 py-1 text-sm border border-border rounded bg-background text-foreground"
+                size="sm"
+                containerClassName="w-full"
               />
               <div className="max-h-40 overflow-y-auto">
                 {filtered.slice(0, 30).map((m) => (
@@ -924,13 +920,15 @@ function ExpandedMemberCard({
           <input type="hidden" name="intent" value="remove-member" />
           <input type="hidden" name="groupId" value={groupId} />
           <input type="hidden" name="userId" value={member.id} />
-          <button
-            type="submit"
-            aria-label={`Remove ${fullName} from group`}
-            className="text-muted-foreground hover:text-red-600 p-0.5"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          <Tooltip content={`Remove ${fullName} from group`}>
+            <button
+              type="submit"
+              aria-label={`Remove ${fullName} from group`}
+              className="text-muted-foreground hover:text-red-600 p-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </Tooltip>
         </fetcher.Form>
       )}
     </div>

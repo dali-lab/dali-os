@@ -46,13 +46,20 @@ export async function driveFolderCrumbs(
   let leafWorkspaceType: string | null = null;
   let cursor: string | null = folderPageId;
 
+  // Core scope is now a group share (scopeKind=Group on the core group), not a
+  // systemKey root. Resolve the core group id once for detection in the walk.
+  const coreGroupId =
+    (await prisma.groupDefinition.findUnique({ where: { systemKey: "core" }, select: { id: true } }))
+      ?.id ?? null;
+
   for (let i = 0; i < MAX_DEPTH && cursor; i++) {
     const p: {
       id: string;
       title: string;
       iconEmoji: string | null;
       parentPageId: string | null;
-      systemKey: string | null;
+      scopeKind: string | null;
+      scopeGroupId: string | null;
       workspaceType: string;
       archivedAt: Date | null;
     } | null = await prisma.page.findUnique({
@@ -62,7 +69,8 @@ export async function driveFolderCrumbs(
         title: true,
         iconEmoji: true,
         parentPageId: true,
-        systemKey: true,
+        scopeKind: true,
+        scopeGroupId: true,
         workspaceType: true,
         archivedAt: true,
       },
@@ -75,16 +83,12 @@ export async function driveFolderCrumbs(
       if (p.archivedAt) return { scope: "lab", folders: [] };
       leafWorkspaceType = p.workspaceType;
     }
-    // The scoped roots are shown as the drive itself, not as a folder crumb.
-    if (p.systemKey === "drive:core-root") {
+    // A Core-group-shared folder marks everything inside it as Core scope.
+    // Unlike the old system root it's an ordinary folder, so keep it as a crumb
+    // and keep walking; the nearest (deepest) Core-scoped ancestor wins.
+    if (scope === "lab" && coreGroupId && p.scopeKind === "Group" && p.scopeGroupId === coreGroupId) {
       scope = "core";
       scopeRootId = p.id;
-      break;
-    }
-    if (p.systemKey === "drive:hiring-root") {
-      scope = "hiring";
-      scopeRootId = p.id;
-      break;
     }
     chain.unshift({ id: p.id, title: p.title, iconEmoji: p.iconEmoji });
     cursor = p.parentPageId;

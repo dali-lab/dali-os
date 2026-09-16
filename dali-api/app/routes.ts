@@ -17,6 +17,9 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Lab-wide attendance: every meeting/event the viewer is invited to, with its
+    // roster. Lives under General; replaced the retired Core-only overview.
+    route("attendance", "routes/attendance.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -45,10 +48,13 @@ export default [
     // Accepted-applicant provisioning board (DALI email, Slack, Figma,
     // profile form) — Core-only, same sensitivity tier as the lead dashboard.
     route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
-    // Library — challenges, rubrics, and confidentiality agreements behind one
-    // page with pills. The list views are consolidated here; the detail pages
-    // keep their original paths.
+    // Library — an embedded view of the Hiring drive space (rubrics, application
+    // templates, challenge/application forms). Reuses the unified Drive hub; the
+    // detail pages (rubrics, agreements) keep their original paths.
     route("hiring/library", "hiring/routes/library.tsx"),
+    // Config surface for the Hiring folder set (repoint / create / clear the
+    // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
+    route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
     route("hiring/emails", "hiring/routes/email-templates.tsx"),
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
@@ -69,16 +75,18 @@ export default [
     route("admin/members", "admin/routes/admin.members.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/attendance", "admin/routes/admin.attendance.tsx"),
     route("admin/activity", "admin/routes/admin.activity.tsx"),
     route("admin/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/activities", "admin/routes/admin.activities.tsx"),
+    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -104,7 +112,7 @@ export default [
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
-    route("core/attendance", "core/routes/core.attendance.tsx"),
+    route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
@@ -252,6 +260,8 @@ export default [
     route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    // Combined education + hiring application history (linked from the home).
+    route("portal/applications", "routes/portal.applications.tsx"),
     route("portal/settings", "routes/portal.settings.tsx"),
     // Education mirror for non-member Dartmouth students.
     route("portal/education", "routes/portal.education.tsx"),
@@ -317,6 +327,7 @@ export default [
   route("auth/handoff", "routes/auth.handoff.ts"),
   route("link", "routes/link.tsx"),
   route("api/desktop/version", "routes/api.desktop.version.ts"),
+  route("api/desktop/updated", "routes/api.desktop.updated.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -349,6 +360,15 @@ export default [
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
 
+  // Activities (specs/activities.md): the time-boxed "mode" layer — the
+  // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
+  // activity modal (progress + leaderboard on GET; code submit on POST); the
+  // modal floats over whatever page the member is exploring, so there is no
+  // navigable surface page. Authored in Admin → Activities.
+  route("api/activities/:id", "routes/api.activities.$id.ts"),
+  // Live push for the surface modal (leaderboard/progress) — see §7.6.
+  route("api/activities/:id/stream", "routes/api.activities.$id.stream.ts"),
+
   // Domain & member management API
   route("api/domains", "admin/routes/api.domains.ts"),
   route("api/domains/:domainId", "admin/routes/api.domains.$domainId.ts"),
@@ -373,6 +393,9 @@ export default [
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
+  route("api/infra/action", "admin/routes/api.infra.action.ts"),
+  route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
+  route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No
@@ -383,10 +406,16 @@ export default [
   route("api/public/projects/:id", "public-api/routes/api.public.projects.$id.ts"),
   route("api/public/team", "public-api/routes/api.public.team.ts"),
   route("api/public/offerings", "public-api/routes/api.public.offerings.ts"),
+  route(
+    "api/public/application-cycle",
+    "public-api/routes/api.public.application-cycle.ts",
+  ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
+  route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
+  route("api/scheduled-meetings/:id/edit-context", "calendar/routes/api.scheduled-meetings.$id.edit-context.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
@@ -405,6 +434,24 @@ export default [
   // save-to-Google-Wallet link, each for the current user only.
   route("api/wallet/apple/pass", "wallet/routes/api.wallet.apple.pass.ts"),
   route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
+  // Apple PassKit web service (pass updates): Apple calls these on the pass's
+  // baked-in webServiceURL (<API_BASE_URL>/api/wallet/apple) to register a
+  // device for push, list serials updated since a tag, fetch the latest pass,
+  // and post diagnostics. Enables silent pass updates for already-downloaded
+  // passes. See app/lib/wallet-apns.server.ts for the push side.
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.device-registration.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier",
+    "wallet/routes/api.wallet.apple.v1.device-serials.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/passes/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.pass.ts",
+  ),
+  route("api/wallet/apple/v1/log", "wallet/routes/api.wallet.apple.v1.log.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
@@ -425,6 +472,7 @@ export default [
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+  route("api/staffing/finalize-all", "projects/routes/api.staffing.finalize-all.ts"),
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
   route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
@@ -454,7 +502,7 @@ export default [
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
-  // Project epics & sprints
+  // Project epics & stories
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
   route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
@@ -464,8 +512,6 @@ export default [
   ),
   route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
   route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
-  route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),
-  route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
 
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
@@ -641,6 +687,7 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+  route("api/mentorship/roster", "mentorship/routes/api.mentorship.roster.ts"),
 
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).

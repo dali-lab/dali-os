@@ -25,9 +25,21 @@ export const USER_NAME_AND_EMAIL_SELECT = {
   dartmouthEmail: true,
 } satisfies Prisma.UserSelect;
 
-// "Is a DALI lab member" predicate
+// "Is a DALI lab member" predicate — includes alumni. Use it only where the
+// historical roster is what you want (e.g. the Alumni directory tab, admin
+// tooling that must still reach graduated members).
 export const LAB_MEMBER_WHERE = {
   daliMember: { isNot: null },
+} satisfies Prisma.UserWhereInput;
+
+// "Is a CURRENT DALI lab member" — a lab member who hasn't graduated. This is
+// the right predicate for anything describing the lab as it stands today:
+// directory/roster views, recipient pickers, domain + level membership.
+// membershipStatus is authoritative and stored (app/lib/membership-status.ts
+// folds the manual override into it), so there is nothing to derive here.
+export const ACTIVE_LAB_MEMBER_WHERE = {
+  daliMember: { isNot: null },
+  membershipStatus: "Active",
 } satisfies Prisma.UserWhereInput;
 
 // Canonical sort for any list of members

@@ -43,11 +43,11 @@ import {
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
 import { rotateWalletSecret } from "~/lib/wallet-token";
+import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
-import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -471,7 +471,7 @@ export async function loadProfilePage({
   // this page already is — neither is something you're hired into, so neither
   // belongs here. Core titles and Domain Lead posts do, and they're listed by
   // their real names rather than a generic label.
-  const [coreTitles, domainLeadRows, instructorRows] = term
+  const [coreTitles, domainLeadRows, instructorRows, technigalaRows] = term
     ? await Promise.all([
         prisma.coreAssignment.findMany({
           where: { userId: targetId, termId: term.id },
@@ -485,8 +485,12 @@ export async function loadProfilePage({
           where: { userId: targetId, termId: term.id },
           select: { offering: { select: { title: true, type: true } } },
         }),
+        prisma.technigalaAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { id: true },
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
   const roleLabels = [
     ...coreTitles.map((c) => (c.leadTitle ? `Core — ${c.leadTitle}` : "Core")),
@@ -494,6 +498,8 @@ export async function loadProfilePage({
     // Named by what they teach: "Instructor" alone doesn't identify a post, and
     // a member can hold several in one term.
     ...instructorRows.map((i) => instructorRoleLabel(i.offering.type, i.offering.title)),
+    // A termly Technigala-support hire (one row per member per term).
+    ...(technigalaRows.length > 0 ? ["Technigala Support"] : []),
   ];
 
   const collabToken = parseSessionCookie(request);
@@ -630,6 +636,10 @@ export async function runProfileAction({
       return { error: "You don't have permission to reset this member's pass." };
     }
     await rotateWalletSecret(targetId);
+    // Rotating changes the barcode; nudge registered devices to re-fetch the
+    // pass carrying the new barcode so the dead-barcode window is minimised.
+    // Self-guards (no-op when unconfigured) and never throws.
+    await pushWalletPassUpdate(targetId);
     return redirect(redirectPathFor(request, targetId));
   }
 
@@ -756,11 +766,6 @@ export async function runProfileAction({
       };
     }
     throw e;
-  }
-
-  // Keep the calendar/working-hours zone in step with the display zone.
-  if (typeof data.timeZone === "string") {
-    await syncAvailabilityTimezone(targetId, data.timeZone);
   }
 
   return redirect(redirectPathFor(request, targetId));

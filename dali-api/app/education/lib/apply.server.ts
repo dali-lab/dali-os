@@ -226,7 +226,9 @@ export async function getMyApplication(userId: string, offeringId: string) {
 export async function listApplications(offeringId: string) {
   return prisma.educationApplication.findMany({
     where: { offeringId },
-    orderBy: [{ status: "asc" }, { submittedAt: "asc" }],
+    // Waitlisted rows order by FIFO rank so the review list matches the waitlist
+    // panel; every other status has a null rank and falls through to submittedAt.
+    orderBy: [{ status: "asc" }, { waitlistRank: "asc" }, { submittedAt: "asc" }],
     select: {
       id: true,
       status: true,

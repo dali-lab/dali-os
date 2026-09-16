@@ -5,6 +5,7 @@ import {
   slotFor,
   FOLDER_SLOTS,
   CORE_PROCESS_ID,
+  HIRING_PROCESS_ID,
 } from "~/lib/bindings.server";
 
 vi.mock("~/lib/db", () => ({
@@ -48,12 +49,22 @@ describe("slot registry", () => {
     // Core files its own meeting notes the way a project does — see
     // ensureCoreMeetingNotesFolder.
     expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).toContain("meeting-notes");
+    // Hiring artifacts hang off the HiringCycle singleton, not Core.
+    expect(FOLDER_SLOTS.HiringCycle.map((s) => s.purpose)).toEqual([
+      "hiring-forms",
+      "application-templates",
+      "rubrics",
+    ]);
+    for (const hiringSlot of ["hiring-forms", "application-templates", "rubrics"]) {
+      expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).not.toContain(hiringSlot);
+    }
     expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meeting notes");
     expect(slotFor("Project", "nope")).toBeUndefined();
   });
 
-  it("uses a stable singleton id for Core", () => {
+  it("uses stable singleton ids for the Core and Hiring folder sets", () => {
     expect(CORE_PROCESS_ID).toBe("core");
+    expect(HIRING_PROCESS_ID).toBe("hiring");
   });
 });
 
@@ -120,6 +131,30 @@ describe("ensureProcessFolder", () => {
       scopeKind: "Group",
       scopeGroupId: "core-grp",
       linkAccess: "Restricted",
+    });
+  });
+
+  it("scopes Hiring singleton folders to the Core group too (Core-only)", async () => {
+    m.processFolderBinding.findUnique.mockResolvedValue(null);
+    m.groupDefinition.findUnique.mockResolvedValue({ id: "core-grp" });
+    m.page.create.mockResolvedValue({ id: "hiringf" });
+
+    const id = await ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: "u1",
+    });
+
+    expect(id).toBe("hiringf");
+    const folderData = m.page.create.mock.calls[0][0].data;
+    expect(folderData).toMatchObject({
+      workspaceType: "Lab",
+      workspaceId: null,
+      scopeKind: "Group",
+      scopeGroupId: "core-grp",
+      linkAccess: "Restricted",
+      title: "Hiring Forms",
     });
   });
 });

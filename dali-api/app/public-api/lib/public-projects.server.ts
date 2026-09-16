@@ -1,9 +1,19 @@
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
-import { readDocAsBlocks } from "~/collab/read";
-import { docBlocksToPublicBlocks } from "./blocknote-to-public";
-import type { PublicBlock } from "./pm-to-blocks";
 import { publicMediaUrl } from "./public-media";
+import {
+  parseDetails,
+  parseMedia,
+  type ShowcaseDetail,
+} from "~/projects/lib/showcase-content";
+
+// One gallery item as the site consumes it: the stored src resolved to a
+// publicly reachable URL (media proxy path or a passed-through absolute URL).
+export type PublicProjectMedia = {
+  type: "image" | "video";
+  url: string;
+  caption?: string;
+};
 
 // The shape dali.website's `Project` interface (shared/api.ts) expects. Held
 // to deliberately, so swapping the site's data source from Notion to here
@@ -137,38 +147,36 @@ export async function listPublicProjects(): Promise<PublicProject[]> {
 
 export async function getPublicProject(
   projectId: string,
-): Promise<{ project: PublicProject; pageContent: PublicBlock[] } | null> {
+): Promise<{
+  project: PublicProject;
+  details: ShowcaseDetail[];
+  media: PublicProjectMedia[];
+} | null> {
   const row = await prisma.projectShowcase.findFirst({
     where: { projectId, ...PUBLISHED },
-    select: SHOWCASE_SELECT,
+    // details/media only for the single-project view — the list endpoint
+    // doesn't return them, so they stay out of SHOWCASE_SELECT.
+    select: { ...SHOWCASE_SELECT, details: true, media: true },
   });
   if (!row) return null;
 
-  const [teams, page] = await Promise.all([
-    teamMembersByProject([projectId]),
-    prisma.page.findFirst({
-      where: {
-        workspaceType: "Project",
-        workspaceId: projectId,
-        archivedAt: null,
-        publicVisible: true,
-      },
-      // Nothing stops a team from flagging two pages; take the first in tree
-      // order so the choice is at least stable between requests.
-      orderBy: { position: "asc" },
-      select: { id: true },
-    }),
-  ]);
+  const teams = await teamMembersByProject([projectId]);
 
-  // Page bodies are collab documents named `doc:<pageId>:body` (see
-  // DocumentEditor / documents.$pageId.export.ts) — not Page.contentDocId,
-  // which is unset for pages the editor created directly.
-  const pageContent = page
-    ? docBlocksToPublicBlocks(await readDocAsBlocks(`doc:${page.id}:body`))
-    : [];
+  // Resolve each media src to a public URL; drop anything that can't be made
+  // reachable (an unresolvable key) rather than ship a broken tag to the site.
+  const media = parseMedia(row.media)
+    .map((m): PublicProjectMedia | null => {
+      const url = publicMediaUrl(m.src);
+      if (!url) return null;
+      return m.caption
+        ? { type: m.type, url, caption: m.caption }
+        : { type: m.type, url };
+    })
+    .filter((m): m is PublicProjectMedia => m !== null);
 
   return {
     project: toPublicProject(row, teams.get(projectId) ?? []),
-    pageContent,
+    details: parseDetails(row.details),
+    media,
   };
 }

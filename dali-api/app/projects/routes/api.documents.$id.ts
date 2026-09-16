@@ -44,7 +44,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true, workspaceId: true, systemKey: true, kind: true },
+    select: { id: true, workspaceType: true, workspaceId: true, kind: true },
   });
   if (
     !page ||
@@ -65,12 +65,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    if (page.systemKey) {
-      return withCors(
-        request,
-        Response.json({ error: "This default folder can't be archived" }, { status: 400 }),
-      );
-    }
     if (page.kind === "Folder") {
       const childCount = await prisma.page.count({
         where: { parentPageId: pageId, archivedAt: null },

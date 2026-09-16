@@ -5,7 +5,7 @@
 // the save fails. In create mode there's no task yet, so it collects the full
 // set of fields and hands them to onCreate on submit.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { X, Pencil } from "lucide-react";
 import { Modal } from "~/components/Modal";
@@ -45,7 +45,7 @@ type CommentModel = {
 };
 
 // Field values collected by the modal in create mode. The board turns these
-// into a POST (title/dueAt/sprint/epic/github) plus follow-up patches
+// into a POST (title/dueAt/epic/github) plus follow-up patches
 // (domain/assignees).
 export type NewTaskValues = {
   title: string;
@@ -56,8 +56,8 @@ export type NewTaskValues = {
   startsAt: string | null;
   domainId: string | null;
   assigneeIds: string[];
-  // Null = backlog / no epic / no parent story.
-  sprintId: string | null;
+  // Null = no epic / no parent story. (A task's sprint is derived from its
+  // dates, not chosen here.)
   epicId: string | null;
   storyId: string | null;
   // Not collected in create mode today (the create endpoint doesn't accept a
@@ -137,28 +137,29 @@ export function TaskModal({
   );
   const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
-  const [sprintId, setSprintId] = useState<string>(task?.sprintId ?? "");
   const [epicId, setEpicId] = useState<string>(
     task ? task.epicId ?? "" : defaultEpicId ?? "",
   );
 
-  // Cascading Epic → Sprint: only the chosen epic's sprints are selectable
-  // (or, with no epic, the standalone sprints). Changing epic drops a sprint
-  // that no longer belongs.
-  const epicSprints = options.sprints.filter((s) =>
-    epicId ? s.epicId === epicId : s.epicId === null,
-  );
   // Stories always belong to an epic, so with no epic picked there's nothing
   // to choose from.
   const epicStories = epicId ? options.stories.filter((s) => s.epicId === epicId) : [];
+
+  // Assignable people are the current-term team (options.members). A task
+  // carried over from an earlier term may still hold an assignee who has since
+  // rolled off and so is absent from that list; fold this task's own assignees
+  // in so they render as removable chips instead of being silently stranded.
+  // Create mode has no prior assignees, so its picker stays the current team.
+  const assigneeOptions = useMemo(() => {
+    const byId = new Map(options.members.map((m) => [m.id, m]));
+    for (const a of task?.assignees ?? []) {
+      if (!byId.has(a.id)) byId.set(a.id, { id: a.id, name: a.name, photoUrl: null });
+    }
+    return [...byId.values()];
+  }, [options.members, task]);
   // Why a picker has nothing in it, said once under the field. Inside the
   // control it read as a value you could choose; the design's .field-hint is
   // where an explanation belongs.
-  const sprintHint = epicSprints.length
-    ? undefined
-    : epicId
-      ? "This epic has no sprints yet."
-      : "Pick an epic first.";
   const storyHint = epicStories.length
     ? undefined
     : epicId
@@ -166,10 +167,6 @@ export function TaskModal({
       : "Pick an epic first.";
   function changeEpic(next: string) {
     setEpicId(next);
-    const stillValid = options.sprints.some(
-      (s) => s.id === sprintId && (next ? s.epicId === next : s.epicId === null),
-    );
-    if (!stillValid) setSprintId("");
     if (!options.stories.some((s) => s.id === storyId && s.epicId === next)) {
       setStoryId("");
     }
@@ -242,7 +239,6 @@ export function TaskModal({
     setStartDate(task.startsAt ? dateInputValue(task.startsAt) : "");
     setStoryId(task.storyId ?? "");
     setDomainId(task.domain?.id ?? "");
-    setSprintId(task.sprintId ?? "");
     setEpicId(task.epicId ?? "");
     setChecklist(task.checklist ?? []);
     setGithub({ issueNumber: task.githubIssueNumber, url: task.githubIssueUrl });
@@ -306,8 +302,6 @@ export function TaskModal({
     const currentDomainId = current.domain?.id ?? null;
     const nextDomainId = nextDomain?.id ?? null;
     if (nextDomainId !== currentDomainId) patch.domain = nextDomain;
-    const nextSprintId = sprintId === "" ? null : sprintId;
-    if (nextSprintId !== current.sprintId) patch.sprintId = nextSprintId;
     const nextEpicId = epicId === "" ? null : epicId;
     if (nextEpicId !== current.epicId) patch.epicId = nextEpicId;
     const nextStoryId = storyId === "" ? null : storyId;
@@ -324,7 +318,7 @@ export function TaskModal({
       sortedNext.some((id, i) => id !== sortedCurrent[i]);
     if (assigneesChanged) {
       patch.assignees = assigneeIds.map((id) => {
-        const m = options.members.find((m) => m.id === id);
+        const m = assigneeOptions.find((m) => m.id === id);
         return { id, name: m?.name ?? "" };
       });
     }
@@ -343,7 +337,6 @@ export function TaskModal({
       dueDate !== "" ||
       domainId !== "" ||
       assigneeIds.length > 0 ||
-      sprintId !== "" ||
       epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
@@ -373,7 +366,6 @@ export function TaskModal({
     setStartDate(current.startsAt ? dateInputValue(current.startsAt) : "");
     setStoryId(current.storyId ?? "");
     setDomainId(current.domain?.id ?? "");
-    setSprintId(current.sprintId ?? "");
     setEpicId(current.epicId ?? "");
     setChecklist(current.checklist ?? []);
     setNewItemText("");
@@ -441,7 +433,6 @@ export function TaskModal({
         startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
-        sprintId: sprintId === "" ? null : sprintId,
         epicId: epicId === "" ? null : epicId,
         storyId: storyId === "" ? null : storyId,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
@@ -962,9 +953,12 @@ export function TaskModal({
           </PropRow>
           <PropRow label="Assignees" align="start">
             <AssigneePicker
-              all={options.members}
+              all={assigneeOptions}
               selected={assigneeIds}
-              disabled={!canManage}
+              // Read-only as well as no-rights: a record you are only reading
+              // shows who is on the task, not an Edit link into a picker the
+              // readonly form has already made inert.
+              disabled={!canManage || readOnly}
               onChange={setAssigneeIds}
             />
           </PropRow>

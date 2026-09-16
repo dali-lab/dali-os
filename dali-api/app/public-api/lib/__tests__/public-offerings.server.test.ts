@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { educationOffering: { findMany: vi.fn() } },
+  prisma: {
+    educationOffering: { findMany: vi.fn() },
+    // Term windows: the payload's term code and the ?term= filter are both
+    // derived from them, so every call reads this.
+    term: { findMany: vi.fn() },
+  },
 }));
 // Mock the collab-doc readers so importing the offerings module doesn't pull in
 // the whole editor stack; the description flattening is exercised via them.
@@ -18,6 +23,7 @@ import {
 
 const mockPrisma = prisma as unknown as {
   educationOffering: { findMany: ReturnType<typeof vi.fn> };
+  term: { findMany: ReturnType<typeof vi.fn> };
 };
 const mockReadDoc = readDocAsBlocks as unknown as ReturnType<typeof vi.fn>;
 const mockToPlain = blocksToPlainText as unknown as ReturnType<typeof vi.fn>;
@@ -25,6 +31,20 @@ const mockToPlain = blocksToPlainText as unknown as ReturnType<typeof vi.fn>;
 // Fixed clock so date-parts, filters, and registration.open are deterministic.
 // All dates below fall inside US Eastern Daylight Time (UTC-4).
 const NOW = new Date("2026-09-01T12:00:00.000Z");
+
+// Seeded term windows, newest first (as termWindows() returns them). The gap
+// between 26X and 26F is what makes a date resolve to no term at all.
+const TERM_26F_START = new Date("2026-09-08T00:00:00.000Z");
+const TERM_26F_END = new Date("2026-11-24T00:00:00.000Z");
+const TERMS = [
+  { id: "t-26f", code: "26F", startDate: TERM_26F_START, endDate: TERM_26F_END },
+  {
+    id: "t-26x",
+    code: "26X",
+    startDate: new Date("2026-06-22T00:00:00.000Z"),
+    endDate: new Date("2026-08-25T00:00:00.000Z"),
+  },
+];
 
 // A published, not-yet-started miniseries. Times chosen so the Eastern parts
 // are easy to eyeball: 20:00Z = 4 PM EDT, 21:00Z = 5 PM EDT, 13:00Z = 9 AM EDT.
@@ -38,7 +58,6 @@ const baseRow = {
   endsAt: new Date("2026-10-06T21:00:00.000Z"),
   registrationOpensAt: new Date("2026-08-25T13:00:00.000Z"),
   registrationClosesAt: new Date("2026-09-13T03:59:00.000Z"),
-  term: { code: "26F" },
   sessions: [
     { sequence: 1, title: "Basics", location: "DALI Pod", datetime: new Date("2026-09-15T20:00:00.000Z") },
     { sequence: 2, title: null, location: null, datetime: new Date("2026-09-22T20:00:00.000Z") },
@@ -54,6 +73,7 @@ beforeEach(() => {
   mockReadDoc.mockResolvedValue([]);
   mockToPlain.mockReturnValue("");
   mockPrisma.educationOffering.findMany.mockResolvedValue([]);
+  mockPrisma.term.findMany.mockResolvedValue(TERMS);
 });
 
 describe("parseOfferingsFilter", () => {
@@ -114,14 +134,14 @@ describe("listPublicOfferings query shape", () => {
     await listPublicOfferings({}, NOW);
     expect(mockPrisma.educationOffering.findMany).toHaveBeenCalledTimes(1);
     const arg = mockPrisma.educationOffering.findMany.mock.calls[0][0];
-    expect(arg.where).toEqual({ status: "Published", startsAt: { gt: NOW } });
+    expect(arg.where).toEqual({ status: "Published", AND: [{ startsAt: { gt: NOW } }] });
     expect(arg.orderBy).toEqual({ startsAt: "asc" });
     expect(arg.select.sessions.orderBy).toEqual({ sequence: "asc" });
   });
 
   it("scope=past reads published offerings that have already ended", async () => {
     await listPublicOfferings({ scope: "past" }, NOW);
-    expect(whereOf()).toEqual({ status: "Published", endsAt: { lt: NOW } });
+    expect(whereOf()).toEqual({ status: "Published", AND: [{ endsAt: { lt: NOW } }] });
   });
 
   it("scope=all applies no date bound", async () => {
@@ -135,35 +155,44 @@ describe("listPublicOfferings query shape", () => {
     await listPublicOfferings({ from, to }, NOW);
     expect(whereOf()).toEqual({
       status: "Published",
-      startsAt: { lte: to },
-      endsAt: { gte: from },
+      AND: [{ startsAt: { lte: to } }, { endsAt: { gte: from } }],
     });
   });
 
   it("a one-sided window omits the missing bound", async () => {
     const from = new Date("2026-09-01");
     await listPublicOfferings({ from }, NOW);
-    expect(whereOf()).toEqual({ status: "Published", endsAt: { gte: from } });
+    expect(whereOf()).toEqual({ status: "Published", AND: [{ endsAt: { gte: from } }] });
   });
 
   it("an explicit window overrides scope", async () => {
     const to = new Date("2026-12-31");
     await listPublicOfferings({ scope: "upcoming", to }, NOW);
-    expect(whereOf()).toEqual({ status: "Published", startsAt: { lte: to } });
+    expect(whereOf()).toEqual({ status: "Published", AND: [{ startsAt: { lte: to } }] });
   });
 
-  it("term alone returns the whole term (scope defaults to all)", async () => {
+  it("term alone becomes that term's date window (scope defaults to all)", async () => {
     await listPublicOfferings({ term: "26F" }, NOW);
-    expect(whereOf()).toEqual({ status: "Published", term: { code: "26F" } });
+    expect(whereOf()).toEqual({
+      status: "Published",
+      AND: [{ startsAt: { gte: TERM_26F_START, lte: TERM_26F_END } }],
+    });
   });
 
   it("term composes with an explicit scope", async () => {
     await listPublicOfferings({ term: "26F", scope: "past" }, NOW);
     expect(whereOf()).toEqual({
       status: "Published",
-      term: { code: "26F" },
-      endsAt: { lt: NOW },
+      AND: [
+        { startsAt: { gte: TERM_26F_START, lte: TERM_26F_END } },
+        { endsAt: { lt: NOW } },
+      ],
     });
+  });
+
+  it("an unseeded term code matches nothing without querying offerings", async () => {
+    expect(await listPublicOfferings({ term: "99W" }, NOW)).toEqual([]);
+    expect(mockPrisma.educationOffering.findMany).not.toHaveBeenCalled();
   });
 
   it("type filters to one offering type, keeping the upcoming default", async () => {
@@ -171,7 +200,7 @@ describe("listPublicOfferings query shape", () => {
     expect(whereOf()).toEqual({
       status: "Published",
       type: "Workshop",
-      startsAt: { gt: NOW },
+      AND: [{ startsAt: { gt: NOW } }],
     });
   });
 
@@ -179,9 +208,11 @@ describe("listPublicOfferings query shape", () => {
     await listPublicOfferings({ type: "Miniseries", term: "26F", scope: "past" }, NOW);
     expect(whereOf()).toEqual({
       status: "Published",
-      term: { code: "26F" },
       type: "Miniseries",
-      endsAt: { lt: NOW },
+      AND: [
+        { startsAt: { gte: TERM_26F_START, lte: TERM_26F_END } },
+        { endsAt: { lt: NOW } },
+      ],
     });
   });
 });
@@ -196,30 +227,26 @@ describe("listPublicOfferings mapping", () => {
     expect(m.name).toBe("Intro to Figma");
     expect(m.type).toBe("miniseries");
     expect(m.term).toBe("26F");
-    expect(m.startDate).toEqual({
-      day: 15, month: "September", year: 2026, time: "4 PM",
-      fullDate: "2026-09-15T20:00:00.000Z",
-    });
-    expect(m.endDate).toMatchObject({ day: 6, month: "October", time: "5 PM" });
+    expect(m.startDate).toBe("2026-09-15T20:00:00.000Z");
+    expect(m.endDate).toBe("2026-10-06T21:00:00.000Z");
     expect(m.sessions).toHaveLength(2);
     expect(m.sessions[0]).toEqual({
-      sequence: 1, title: "Basics", location: "DALI Pod",
-      date: {
-        day: 15, month: "September", year: 2026, time: "4 PM",
-        fullDate: "2026-09-15T20:00:00.000Z",
-      },
+      sequence: 1,
+      title: "Basics",
+      location: "DALI Pod",
+      date: "2026-09-15T20:00:00.000Z",
     });
     // Untitled/location-less sessions carry through as null, not "".
     expect(m.sessions[1].title).toBeNull();
     expect(m.sessions[1].location).toBeNull();
-    expect(m.signUpLink).toBe("https://os.example/education/o1");
+    expect(m.signUpLink).toBe("https://os.example/portal/education/o1");
   });
 
   it("computes registration.open from the window around now", async () => {
     mockPrisma.educationOffering.findMany.mockResolvedValue([baseRow]);
     const [open] = await listPublicOfferings({}, NOW); // Sep 1 is inside the window
     expect(open.registration.open).toBe(true);
-    expect(open.registration.opensAt).toMatchObject({ day: 25, month: "August", time: "9 AM" });
+    expect(open.registration.opensAt).toBe("2026-08-25T13:00:00.000Z");
 
     mockPrisma.educationOffering.findMany.mockResolvedValue([baseRow]);
     const [closed] = await listPublicOfferings({}, new Date("2026-08-01T12:00:00.000Z"));
@@ -255,11 +282,25 @@ describe("listPublicOfferings mapping", () => {
     expect(m.signUpLink).toBe("#");
   });
 
-  it("maps a term-less offering to a null term", async () => {
+  it("derives a null term for a run starting outside every term window", async () => {
     mockPrisma.educationOffering.findMany.mockResolvedValue([
-      { ...baseRow, term: null },
+      // Sep 1 falls in the gap between 26X and 26F.
+      { ...baseRow, startsAt: new Date("2026-09-01T20:00:00.000Z") },
     ]);
     const [m] = await listPublicOfferings({}, NOW);
     expect(m.term).toBeNull();
+  });
+
+  // A Published offering can have null startsAt/endsAt (no sessions). It has no
+  // schedule to render, and `null.toISOString()` would throw and 500 the whole
+  // endpoint — so it's dropped, and the scheduled offerings still come back.
+  it("skips published offerings with a null start/end instead of crashing", async () => {
+    mockPrisma.educationOffering.findMany.mockResolvedValue([
+      { ...baseRow, id: "no-schedule", startsAt: null, endsAt: null },
+      baseRow,
+    ]);
+    const result = await listPublicOfferings({}, NOW);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("o1");
   });
 });

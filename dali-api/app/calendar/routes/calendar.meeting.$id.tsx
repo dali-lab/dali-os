@@ -1,16 +1,16 @@
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { ChevronLeft, FileText, Users, ScanLine, Shield, Video } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -19,6 +19,15 @@ export const handle = {
   breadcrumb: (data: unknown) => {
     const d = data as { meetingLabel?: string } | undefined;
     return d?.meetingLabel || "Meeting";
+  },
+  // This page is the attendance/check-in surface for a meeting, so its home is
+  // Attendance, not the URL-derived Calendar > Meeting trail.
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as { meetingLabel?: string } | undefined;
+    return [
+      { label: "Attendance", to: "/attendance" },
+      { label: d?.meetingLabel || "Event" },
+    ];
   },
 };
 
@@ -46,6 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       selectedAt: true,
       durationMinutes: true,
       status: true,
+      scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
@@ -69,7 +79,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const projectMember = meeting.projectId ? await isProjectMember(auth.user.sub, meeting.projectId) : false;
   const canManage = auth.user.sub === meeting.organizerId || roles.isCore || projectMember;
   const viewerRow = meeting.attendance.find((a) => a.userId === auth.user.sub);
-  if (!canManage && !viewerRow) throw new Response("Not found", { status: 404 });
+  // A "None"-scoped meeting isn't addressed to a group or a hand-picked list —
+  // it's the lab-wide kind, which is what an event on the general calendar
+  // becomes when it's tracked. Any lab member can open it (read-only, since
+  // canManage is unchanged); without this the popover would offer them an
+  // Attendance link that 404s.
+  const labWide = meeting.scopeType === "None" && roles.isLabMember;
+  if (!canManage && !viewerRow && !labWide) throw new Response("Not found", { status: 404 });
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
@@ -81,8 +97,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     checkInUrl = `${origin}/calendar/check-in/${meeting.id}`;
     checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
   }
-
-  const walletEnabled = canManage && (await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request));
 
   const typeLabel =
     meeting.meetingType === "Other"
@@ -109,7 +123,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,
-    walletEnabled,
     walletConfigured: walletTokensConfigured(),
   };
 }
@@ -127,16 +140,17 @@ export default function CalendarMeetingPage() {
       })
     : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
+  // Same gate as the Add-to-Wallet buttons and the standalone scan station;
+  // the /calendar/scan route re-checks both server-side. Require a roster too —
+  // scanning a passholder into a meeting with no MeetingAttendance rows only ever
+  // returns "not invited", so hide the station rather than show a dead scanner.
+  const walletCheckin = useFeatureFlag("wallet-checkin");
+  const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6">
-      <Link
-        to="/calendar"
-        className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" /> Calendar
-      </Link>
-
+    // Full-bleed and left-aligned: the app shell already supplies the page
+    // gutters, so this surface only owns its vertical rhythm.
+    <div className="flex w-full flex-col items-stretch gap-5 text-left">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-accent-teal/15 px-2 py-0.5 text-xs font-medium text-accent-teal">
@@ -202,21 +216,17 @@ export default function CalendarMeetingPage() {
           <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
         )}
 
-        {d.walletEnabled && (
-          <details className="rounded-lg border border-border">
-            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm font-medium text-foreground">
+        {/* The scanner is the point of opening this page during an event, so the
+            camera comes up on its own rather than hiding behind a click into a
+            second tab. /calendar/scan/:id stays as the full-screen kiosk for a
+            door station; this is the in-page version for marking a few people. */}
+        {canScan && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
               <ScanLine className="h-4 w-4 text-muted-foreground" /> Scan wallet passes
-            </summary>
-            <div className="p-3 pt-0">
-              {d.walletConfigured ? (
-                <AttendeeScanner meetingId={d.meetingId} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Wallet check-in isn't configured on this server yet.
-                </p>
-              )}
-            </div>
-          </details>
+            </p>
+            <AttendeeScanner meetingId={d.meetingId} />
+          </div>
         )}
 
         {!d.canManage && !d.selfCheckIn && (

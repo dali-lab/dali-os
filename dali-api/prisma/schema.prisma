@@ -103,13 +103,6 @@ model User {
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite   String?
-  // Opt-in to the public dali.website team directory. The public API serves
-  // only members with this set, and only ever a hard-coded narrow field set
-  // (see app/public-api/lib/public-team.server.ts) — never the onboarding
-  // fields below, the identity columns above, or anything else on this model.
-  // Backfilled true for everyone with a project/Core assignment, preserving
-  // the behavior of the Notion-backed team page it replaces.
-  publicProfile  Boolean @default(false)
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
@@ -123,6 +116,13 @@ model User {
   // against this value. Null = no pass issued (or revoked to nothing); a null
   // secret never verifies. Server-only; never crosses the wire.
   walletPassSecret String?
+
+  // Bumped whenever the member's Wallet pass content changes (name, class year,
+  // or a secret rotation via rotateWalletSecret). Serves as the Apple PassKit
+  // web-service "last updated" tag: the device-serials endpoint compares it to
+  // the tag a device last saw to decide whether to hand back an updated pass.
+  // Null = no pass issued under the update-service era yet.
+  walletPassUpdatedAt DateTime?
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
@@ -149,6 +149,7 @@ model User {
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
+  walletPassRegistrations       WalletPassRegistration[]
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
@@ -172,6 +173,7 @@ model User {
   projectAssignments       ProjectAssignment[]
   coreAssignments          CoreAssignment[]
   instructorAssignments    InstructorAssignment[]
+  technigalaAssignments    TechnigalaAssignment[]
   adminMembership          AdminMembership?
   mentorshipPairsAsMentee  MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor  MentorshipPair[]       @relation("MentorPairs")
@@ -1823,6 +1825,12 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
+  // Which calendar within that linked account holds the event (Google's
+  // calendarId, e.g. "primary" or a calendar's address). Persisted at create so
+  // an edit can events.patch the right calendar instead of defaulting to
+  // "primary". Null = primary / no external event.
+  organizerCalendarId String?
+
   // Set when the sender picks a meeting type at invite time. Drives auto-
   // creation of a meeting-note Page under `project`'s shared documents
   // (see notePage) plus a MeetingAttendance row per participant.
@@ -1888,12 +1896,35 @@ model MeetingAttendance {
   present            Boolean   @default(false)
   markedByUserId     String?
   markedAt           DateTime?
+  // Free-text context Core attaches to an absence from the attendance log
+  // (e.g. "excused - travelling"). Optional and independent of `present`.
+  absenceNote        String?
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
   @@index([userId])
+}
+
+// A phone that registered one member's Apple Wallet pass for silent updates.
+// Written by the PassKit web service (app/wallet/routes/api.wallet.apple.v1.*)
+// when Wallet POSTs a registration after the pass is added; deleted on the
+// matching DELETE (pass removed). serialNumber is the member's User.id (the
+// pass serialNumber), so the FK ties a registration to its member. pushToken
+// is the per-device APNs token we push an empty payload to when the member's
+// pass changes, nudging the phone to re-fetch the updated pass.
+model WalletPassRegistration {
+  id                       String   @id @default(cuid())
+  deviceLibraryIdentifier  String
+  serialNumber             String
+  pushToken                String
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [serialNumber], references: [id], onDelete: Cascade)
+
+  @@unique([deviceLibraryIdentifier, serialNumber])
+  @@index([serialNumber])
 }
 
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
@@ -2318,7 +2349,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
-  educationOfferings    EducationOffering[]
+  technigalaAssignments TechnigalaAssignment[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
@@ -2496,6 +2527,10 @@ model MentorshipPair {
   projectId    String
   termId       String
   domainId     String
+  // True when a Core user hand-created/reassigned this pair (vs. auto-derived
+  // from the roster at staffing finalize). derivePairings only clears and
+  // rewrites manual:false rows, so manual edits survive a re-finalize.
+  manual       Boolean @default(false)
 
   mentee  User    @relation("MenteePairs", fields: [menteeUserId], references: [id])
   mentor  User    @relation("MentorPairs", fields: [mentorUserId], references: [id])
@@ -2591,6 +2626,28 @@ model InstructorAssignment {
 
   @@unique([userId, offeringId, termId])
   @@index([offeringId, termId])
+}
+
+// A termly Technigala-support hire. Unlike Core/Instructor there's no upstream
+// role to derive from — a Core admin picks lab members on the Payroll Export
+// page and each pick is one row here. Purely a payroll-export input: it feeds a
+// row under the fixed Technigala Job ID (see payroll-export.ts), so there's no
+// level/domain/pay column (those live as constants). One hire per member per
+// term.
+model TechnigalaAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  termId    String
+  createdAt DateTime @default(now())
+  // Free-form actor userId of whoever added the hire — not an FK so the record
+  // survives user deletion (mirrors AdminMembership.grantedBy).
+  createdById String?
+
+  user User @relation(fields: [userId], references: [id])
+  term Term @relation(fields: [termId], references: [id])
+
+  @@unique([userId, termId])
+  @@index([termId])
 }
 
 // Permanent (until revoked). The admin-access marker. Admin is a superset of
@@ -2733,6 +2790,17 @@ model Project {
   chartStringType String?
   chartString     String?
 
+  // ─── Cloud infrastructure (Fly.io + Neon) ───
+  // The lab runs one Fly org + one Neon org per project. These power the
+  // per-project Infrastructure section (view for any member) and the lab-wide
+  // Infrastructure console (Core/Admin actions). Fly tokens are AES-256-GCM
+  // encrypted at rest (app/lib/infra/crypto.server.ts). Null = not configured.
+  flyOrgSlug       String?
+  neonOrgId        String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
+  flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
+  flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
+  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
   // Deliberately NOT a hub/search filter — the hub still lists them.
@@ -2752,7 +2820,6 @@ model Project {
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
-  sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
   // Declared domains for the project — surfaced on the project detail page
@@ -2822,6 +2889,20 @@ model ProjectShowcase {
   // resolvePhotoUrl like every other image. Separate from Project.imageUrl so
   // curating the public face never disturbs the internal hub's banner.
   heroImageUrl String?
+
+  // The public write-up, as ordered { item, description } pairs (item is the
+  // heading, e.g. "The Problem"; description is its blurb). Replaces the
+  // free-text collab write-up so the public API ships pure data and
+  // dali.website owns all the formatting. Null on a row that predates the
+  // detail-pairs editor; the API seeds the default three pairs in that case.
+  // Shape: [{ item: string, description: string }].
+  details Json?
+
+  // Public media gallery, shown below the detail pairs. Each entry is an S3 key
+  // under `uploads/` (served through the media proxy) or a full URL, mirroring
+  // heroImageUrl's storage rule. Shape: [{ type: "image" | "video", src:
+  // string, caption?: string }].
+  media Json?
 
   // The Notion page this row was imported from. Makes re-running the importer
   // idempotent and lets a later --images pass find its row without re-doing
@@ -2975,16 +3056,15 @@ model Epic {
   status           EpicStatus @default(Open)
   // Explicit timeline span. Nullable: an epic may be created before its
   // dates are known. When null, the timeline falls back to the min/max of
-  // the epic's sprint dates (see projects.$id loader).
+  // its stories' (and their tasks') dates (see buildTimelineEpics).
   startsAt         DateTime?
   endsAt           DateTime?
-  // Optional target term for cross-term epics that span multiple sprints.
+  // Optional target term for cross-term epics that span multiple terms.
   targetTermId     String?
   position         Int        @default(0)
 
   project Project     @relation(fields: [projectId], references: [id])
   tasks   Task[]
-  sprints Sprint[]
   stories UserStory[]
 
   createdAt DateTime @default(now())
@@ -3027,7 +3107,7 @@ model UserStory {
   epic  Epic   @relation(fields: [epicId], references: [id])
   tasks Task[]
 
-  // Timeline dependency edges, same two-sided shape as SprintDependency.
+  // Timeline dependency edges (a two-sided "must finish before" shape).
   // `dependencies` are rows where this story is the dependent (stories it
   // waits on); `blocking` are rows where it is the predecessor.
   dependencies UserStoryDependency[] @relation("UserStoryDependent")
@@ -3069,61 +3149,14 @@ enum UserStoryStatus {
   Done
 }
 
-model Sprint {
-  id        String       @id @default(cuid())
-  projectId String
-  // Optional epic this sprint belongs to. Null = standalone/cross-epic
-  // sprint. Tasks still carry their own epicId for cross-sprint grouping.
-  epicId    String?
-  name      String
-  startsAt  DateTime
-  endsAt    DateTime
-  // Sprint goal as collab doc. Retros live as collab pages in the project's
-  // page tree.
-  goalDocId String?
-  status    SprintStatus @default(Planned)
-
-  project Project @relation(fields: [projectId], references: [id])
-  epic    Epic?   @relation(fields: [epicId], references: [id])
-  tasks   Task[]
-
-  // Timeline dependency edges. `dependencies` are the rows where this sprint is
-  // the dependent (the sprints it waits on); `blocking` are rows where it is
-  // the predecessor (sprints that wait on it). Both sides are same-project —
-  // enforced in the API, not the schema.
-  dependencies SprintDependency[] @relation("SprintDependent")
-  blocking     SprintDependency[] @relation("SprintBlocker")
-
-  @@index([projectId, status])
-}
-
-// A directed "must finish before" edge between two sprints, drawn as an arrow
-// on the epics timeline. `sprintId` depends on (waits for) `dependsOnSprintId`.
-model SprintDependency {
-  id                String @id @default(cuid())
-  sprintId          String
-  dependsOnSprintId String
-
-  sprint          Sprint @relation("SprintDependent", fields: [sprintId], references: [id], onDelete: Cascade)
-  dependsOnSprint Sprint @relation("SprintBlocker", fields: [dependsOnSprintId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([sprintId, dependsOnSprintId])
-  @@index([dependsOnSprintId])
-}
-
-enum SprintStatus {
-  Planned
-  Active
-  Closed
-}
+// Sprints are not stored: a sprint is a computed term-anchored one-week band
+// (Sprint 1..N per term), derived from the project's terms — see
+// app/projects/lib/timeline-days.ts (sprintBands). A task belongs to a sprint
+// by its dates, not a stored FK.
 
 model Task {
   id        String  @id @default(cuid())
   projectId String
-  // Null sprintId = backlog.
-  sprintId  String?
   // Optional epic linkage for cross-sprint grouping.
   epicId    String?
   // Optional parent user story. Null = the task hangs directly off the epic
@@ -3138,8 +3171,9 @@ model Task {
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional timeline start. Pairs with dueAt to give the task a span on the
-  // project timeline; null falls back to the parent story/sprint start.
-  // Purely a planning field — it fires no reminders.
+  // project timeline (and, via those dates, which sprint week it lands in);
+  // null falls back to the parent story start. Purely a planning field — it
+  // fires no reminders.
   startsAt         DateTime?
   // Optional deadline. UTC instant; UI formats in local time. When set,
   // the task-due-reminders job notifies assignees 24h before and at the
@@ -3180,7 +3214,6 @@ model Task {
   githubIssueUrl    String?
 
   project   Project        @relation(fields: [projectId], references: [id])
-  sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
   story     UserStory?     @relation(fields: [storyId], references: [id])
   domain    Domain?        @relation(fields: [domainId], references: [id])
@@ -3196,7 +3229,7 @@ model Task {
   updatedAt   DateTime @updatedAt
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
-  @@index([projectId, sprintId])
+  @@index([projectId])
   @@index([storyId])
 }
 
@@ -3310,6 +3343,9 @@ model EducationOffering {
   id                   String         @id @default(cuid())
   type                 OfferingType
   title                String
+  // Notion-style catalog icon: a single emoji shown on the offering's catalog
+  // card cover. Null → a neutral first-letter fallback. Mirrors Project.iconEmoji.
+  iconEmoji            String?
   descriptionDocId     String?
   capacity             Int
   registrationOpensAt  DateTime
@@ -3328,11 +3364,6 @@ model EducationOffering {
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
   calendarEmail        String?
-
-  // The term this offering runs in — derived server-side from the first
-  // session's date; null until sessions are added.
-  termId               String?
-  term                 Term?          @relation(fields: [termId], references: [id], onDelete: SetNull)
 
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
@@ -3360,8 +3391,6 @@ model EducationOffering {
   formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
-
-  @@index([termId])
 }
 
 enum OfferingType {
@@ -4278,13 +4307,6 @@ model Page {
   meetingNoteId String?           @unique
   meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
 
-  // Marks a page as system-managed and undeletable (mirrors
-  // GroupDefinition.systemKey) — e.g. the default "Team meeting notes" /
-  // "Partner meeting notes" folders auto-created per project (see
-  // ensureProjectFolder in app/lib/pages.ts). Null for ordinary user-created
-  // pages. The unique constraint makes ensure-create idempotent.
-  systemKey String? @unique
-
   // When true, this page acts as a template: it is excluded from the normal
   // document list and offered as a starting point when creating new pages.
   // The new page is created by byte-copying the CollabDocument state into a
@@ -4389,6 +4411,9 @@ enum ProcessType {
   HiringCycle
   // Lab-wide governance singleton (agreements, email templates, rubrics, …).
   Core
+  // Lab-wide, everyone-can-see singleton — the open counterpart of Core, for
+  // folders the whole lab files into (meeting notes that belong to no project).
+  Lab
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
@@ -4677,6 +4702,182 @@ model FeatureFlag {
 
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+// ─── Activities — time-boxed "mode" layer (specs/activities.md) ───────────────
+// A generic, term-scoped, audience-targeted experience that changes what the
+// site shows for assigned members during a window, then auto-reverts. The
+// mechanic (Activity.kind) is registry-validated in app code (app/lib/
+// activities.ts), NOT a DB enum, so a new mechanic needs no migration. termId
+// and assignedGroupId are loose scalar refs (like FeatureFlag.userIds) — no FK,
+// so a removed term/group just stops matching and never cascades. Per-user
+// participation lives in ActivityEvent; progress/leaderboards derive from it.
+model Activity {
+  id               String         @id @default(cuid())
+  // Registry-validated mechanic key: "scavenger_hunt" | "theme" | … (app code).
+  kind             String
+  termId           String?
+  name             String
+  // Draft | Published | Archived. "Live right now" (Active/Ended) is DERIVED
+  // from status=Published + the window, not stored (see isActivityActive).
+  status           ActivityStatus @default(Draft)
+  startsAt         DateTime
+  endsAt           DateTime
+  // Audience (mirrors FeatureFlag targeting): union of everyone / role / group /
+  // explicit participant. audienceRoles holds ROLE_TARGETS keys.
+  audienceEveryone Boolean        @default(false)
+  audienceRoles    String[]       @default([])
+  assignedGroupId  String?
+  // Individual | Team. Team turns the activity into a group competition: points
+  // and the leaderboard are pooled per ActivityTeam instead of per member.
+  scoring          ActivityScoring @default(Individual)
+  // Target headcount per team, used when auto-assigning. Advisory only — hand
+  // edits may leave a team over or under it.
+  teamSize         Int            @default(2)
+  // Mechanic content, validated by a per-kind zod schema in app code.
+  config           Json           @default("{}")
+  createdById      String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  participants ActivityParticipant[]
+  teams        ActivityTeam[]
+  events       ActivityEvent[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([termId, kind])
+}
+
+// Explicit participants, unioned with the group/role/everyone audience. A row
+// here is also how a member lands on a team: assigning someone to a team writes
+// their participant row, so team membership always implies being in the
+// activity. teamId stays null for unassigned members and for Individual
+// activities.
+model ActivityParticipant {
+  activityId String
+  userId     String
+  teamId     String?
+  activity   Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  team       ActivityTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@id([activityId, userId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+// One team (a pair, by default) inside a Team-scoped activity. Spine-level, not
+// mechanic content: any mechanic that scores can pool its points per team.
+model ActivityTeam {
+  id         String   @id @default(cuid())
+  activityId String
+  name       String
+  createdAt  DateTime @default(now())
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  members ActivityParticipant[]
+
+  @@index([activityId])
+}
+
+// The one generic per-user participation primitive. `type` + `refId` are
+// mechanic-defined (e.g. "code_found" + codeId). refId defaults to "" and is
+// NEVER null: Postgres treats NULLs as distinct, which would defeat the dedup
+// unique index for single-action mechanics (e.g. "rsvp").
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  activityId String
+  userId     String
+  type       String
+  refId      String   @default("")
+  points     Int      @default(0)
+  createdAt  DateTime @default(now())
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, userId, type, refId])
+  @@index([activityId, userId])
+  @@index([activityId, type])
+}
+
+enum ActivityStatus {
+  Draft
+  Published
+  Archived
+}
+
+// Whether points and the leaderboard are per member or pooled per team.
+enum ActivityScoring {
+  Individual
+  Team
+}
+// ─── Infrastructure Dashboard ────────────────────────────────────────────────
+
+// Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
+// / flyWriteTokenEnc / infraEnabled) — the lab runs one Fly org + one Neon org
+// per project. Fly tokens are AES-256-GCM encrypted at rest (app/lib/infra/
+// crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon personal key is
+// an env secret (INFRA_NEON_API_KEY). The tables below cache swept inventory /
+// usage and hold members' change requests, keyed by Project id (plain string,
+// AuditLog-style — no FK, so a project delete won't cascade; the sweep prunes).
+
+// One row per (project, provider) sweep — the latest wins for the current-state
+// render; older rows are a raw audit trail. Payload is the normalized inventory
+// (apps/machines/volumes for Fly; projects/branches/endpoints for Neon). Never
+// contains tokens or connection secrets.
+model InfraSnapshot {
+  id        String   @id @default(cuid())
+  fetchedAt DateTime @default(now())
+  projectId String
+  provider  String // "fly" | "neon"
+  payload   Json
+
+  @@index([projectId, provider, fetchedAt])
+}
+
+// Usage time-series for trend sparklines. No dollar values — raw provider
+// metrics only (Neon consumption + Fly Prometheus). This table is our long-term
+// record, since Fly's Prometheus retention is only ~15 days.
+model InfraUsageSample {
+  id        String   @id @default(cuid())
+  projectId String
+  provider  String // "fly" | "neon"
+  scopeType String // "fly-app" | "neon-project" | "neon-endpoint"
+  scopeId   String
+  scopeName String
+  metric    String // e.g. "compute_unit_seconds", "egress_bytes", "storage_bytes"
+  value     Float
+  at        DateTime
+
+  @@unique([provider, scopeType, scopeId, metric, at])
+  @@index([projectId, metric, at])
+}
+
+// A member-submitted request to change a project's infra: staffed members (and
+// Core) ASK; Core/Admin fulfill from the fleet console. v1 is fulfilled
+// manually — Core performs the change via the console actions, then marks it
+// resolved. userIds are free-form (AuditLog-style), not FKs.
+enum InfraRequestStatus {
+  Pending
+  Fulfilled
+  Rejected
+}
+
+model InfraRequest {
+  id                String             @id @default(cuid())
+  createdAt         DateTime           @default(now())
+  resolvedAt        DateTime?
+  projectId         String
+  requestedByUserId String
+  // Free-form, backed by the registry in app/lib/infra/request-kinds.ts (not an
+  // enum) so kinds broaden without a migration; submit validates against the pool.
+  kind              String
+  details           String
+  targetHint        String?
+  status            InfraRequestStatus @default(Pending)
+  resolutionNote    String?
+  resolvedByUserId  String?
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 // A composed announcement waiting for its send time. Payload + audience

@@ -205,21 +205,46 @@ const DEFAULT_BUFFER_MIN = 15;
  * Pulls UserAvailabilitySettings, WorkingHoursDay segments, ManualBlock rows
  * (incl. RRULE expansion), and external Google Calendar busy events.
  *
- * `fallbackTimezone` is used only if the user has no UserAvailabilitySettings row.
+ * `fallbackTimezone` is used only if the user has no display zone (User.timeZone).
  */
 export async function computeUserFreeBusy(
   userId: string,
   windowStart: Date,
   windowEnd: Date,
   fallbackTimezone: string = DEFAULT_TIMEZONE,
-): Promise<{ userId: string; free: Interval[]; busy: Interval[] }> {
-  const [settings, userRow, whRows, busyRaw] = await Promise.all([
+): Promise<{
+  userId: string;
+  free: Interval[];
+  busy: Interval[];
+  /**
+   * True when the user exposes a real busy source (≥1 enabled Google calendar
+   * link). When false, `free` is derived from working hours alone (or a 24/7
+   * default) and must NOT be read as "confirmed free": the user's real
+   * availability is unknown, so callers should surface them as such rather than
+   * counting them as available. This is the fix for slots that read "everyone
+   * free" when some participants simply hadn't linked a calendar.
+   */
+  hasCalendar: boolean;
+  /**
+   * True when the user's last calendar sync errored, so `busy` may be stale or
+   * incomplete. Treated like `!hasCalendar` for display purposes.
+   */
+  calendarError: boolean;
+}> {
+  const [settings, userRow, whRows, busyRaw, calLinks] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
     prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
     fetchBusyEvents(userId, windowStart, windowEnd).catch(
       () => [] as { start: string; end: string }[],
     ),
+    // Coverage signal. Read concurrently with the fetch above: `hasCalendar`
+    // (link count) is race-free; `syncError` reflects the prior sync's state,
+    // which is fine as a "data may be stale" hint.
+    prisma.userCalendarLink.findMany({
+      where: { userId, provider: "Google", enabled: true },
+      select: { syncError: true },
+    }),
   ]);
 
   // Working-hours policy:
@@ -229,9 +254,9 @@ export async function computeUserFreeBusy(
   //   • Any persisted rows         → feature is ON → trust the saved segments
   //     verbatim (including enabled weekend days). Days the user never saved a
   //     row for stay unavailable, matching what they see in the editor.
-  // Prefer the availability-settings zone (working hours depend on it); with no
-  // settings row, use the user's own display zone before the caller's fallback.
-  const timezone = pickUserTimezone(settings?.timezone, userRow?.timeZone, fallbackTimezone);
+  // Interpret the user's day in their own display zone (User.timeZone); with no
+  // stored zone, use the caller's fallback (e.g. the requester's zone).
+  const timezone = pickUserTimezone(userRow?.timeZone, fallbackTimezone);
   const hasPersisted = whRows.length > 0;
   const workingHours: WorkingHoursDayInput[] = hasPersisted
     ? whRows.map((r) => ({
@@ -260,7 +285,9 @@ export async function computeUserFreeBusy(
     bufferMin: settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN,
     timezone,
   });
-  return { userId, free, busy };
+  const hasCalendar = calLinks.length > 0;
+  const calendarError = calLinks.some((l) => l.syncError != null);
+  return { userId, free, busy, hasCalendar, calendarError };
 }
 
 /**

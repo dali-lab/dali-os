@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
-import {
-  TablessHistoryNavInline,
-  useShowTablessHistoryNav,
-} from "~/components/TablessHistoryNav";
 
 // The dali.os section switcher. The design navigates areas from the sidebar
 // rail and has no underline tab bar; the few pages whose sections aren't sidebar
@@ -93,13 +89,9 @@ export function UnderlineTabButtons({
    */
   heading?: ReactNode;
 }) {
-  const showHistoryNav = useShowTablessHistoryNav();
-  // No Guide button here: the os top bar already carries it. The history arrows
-  // stay — hasSubnavRow still counts this page as owning a row, so the shell's
-  // standalone arrow bar stands down for it.
+  // No Guide button or history arrows here: the os top bar carries both.
   return (
     <div className="mb-6 flex flex-wrap items-center gap-3">
-      {showHistoryNav && <TablessHistoryNavInline />}
       {heading}
       <SegmentedTabButtons items={items} label={label} className="ml-auto" />
     </div>

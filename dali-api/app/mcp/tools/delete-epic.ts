@@ -1,5 +1,5 @@
-// MCP `delete_epic` — Core or project member. Sprints/tasks pointing at the
-// epic have their epicId nulled (mirrors api.epics.$id DELETE).
+// MCP `delete_epic` — Core or project member. Tasks pointing at the epic have
+// their epicId nulled (mirrors api.epics.$id DELETE).
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
@@ -7,7 +7,7 @@ import { canEditProject } from "./access";
 export const DELETE_EPIC_TOOL = {
   name: "delete_epic",
   description:
-    "Delete an epic. Sprints and tasks pointing at it have their epicId nulled (no cascade). Requires Core or project-member access.",
+    "Delete an epic. Tasks pointing at it have their epicId nulled (no cascade). Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -40,10 +40,6 @@ export async function runDeleteEpic(callerId: string, input: Input) {
   }
 
   await prisma.$transaction([
-    prisma.sprint.updateMany({
-      where: { epicId: input.epicId },
-      data: { epicId: null },
-    }),
     prisma.task.updateMany({
       where: { epicId: input.epicId },
       data: { epicId: null },

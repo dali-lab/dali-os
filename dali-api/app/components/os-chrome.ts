@@ -81,7 +81,9 @@ export function useOsChrome() {
      *  Its pressed state is the design's accent. */
     actionBtn: (active = false) =>
       cn(
-        "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors",
+        // touch: enlarge the hit area to ~40px on hover-less devices (phones);
+        // desktop pointer sizing is unchanged.
+        "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors touch:min-h-[40px] touch:min-w-[40px]",
         active
           ? "bg-os-accent/15 text-os-accent"
           : "text-os-grey hover:bg-os-container hover:text-foreground",

@@ -7,10 +7,12 @@ import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import {
   AdminForbiddenError as McpForbiddenError,
+  AdminNotFoundError as McpNotFoundError,
   AdminInvalidError as McpInvalidError,
   requireForAction,
 } from "./errors";
 import type { McpCtx } from "../../registry";
+import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 
 export const MANAGE_EMAIL_TEMPLATE_TOOL = {
   name: "manage_email_template",
@@ -18,13 +20,14 @@ export const MANAGE_EMAIL_TEMPLATE_TOOL = {
     "Create a new email template or update an existing one. " +
     "action=create: creates a blank template with the given name. " +
     "action=update: renames the template (name), creates a new version (subject + optional body), or both in one call. " +
+    "action=send_test: renders a specific version and sends a test email to the caller's own DALI address. " +
     "Only accessible to Core leads.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "update"],
+        enum: ["create", "update", "send_test"],
         description: "The operation to perform.",
       },
       name: {
@@ -46,6 +49,10 @@ export const MANAGE_EMAIL_TEMPLATE_TOOL = {
         description:
           "Email body HTML/text. Only used when subject is also provided (new version). Defaults to empty string.",
       },
+      versionId: {
+        type: "string",
+        description: "Required for send_test — the id of the template version to send.",
+      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -59,6 +66,7 @@ type Input = {
   templateId?: string;
   subject?: string;
   body?: string;
+  versionId?: string;
 };
 
 export async function runManageEmailTemplate(ctx: McpCtx, args: Input) {
@@ -71,11 +79,59 @@ export async function runManageEmailTemplate(ctx: McpCtx, args: Input) {
   requireForAction(action, args, {
     create: ["name"],
     update: ["templateId"],
+    send_test: ["versionId"],
   });
 
+  if (action === "send_test") {
+    const version = await prisma.emailTemplateVersion.findUnique({
+      where: { id: args.versionId },
+      select: { subject: true, body: true },
+    });
+    if (!version) throw new McpNotFoundError("Template version not found.");
+
+    const user = await prisma.user.findUnique({
+      where: { id: callerId },
+      select: { firstName: true, daliEmail: true },
+    });
+    const toEmail = user?.daliEmail;
+    if (!toEmail) throw new McpInvalidError("Your account has no DALI email address on file.");
+
+    const sampleVars = {
+      firstName: user?.firstName || "FirstName",
+      domain: "Product Design",
+      time: "Friday, Jan 10 at 2:00 PM",
+      location: "MacLean 132",
+      meetingUrl: "https://dartmouth.zoom.us/j/example",
+      originalCloseDate: "January 7",
+      newCloseDate: "January 14",
+    };
+    const { renderEmail } = await import("~/lib/email");
+    const { enqueueOutbound, drainNow } = await import("~/lib/outbound.server");
+    const { subject: renderedSubject, html } = renderEmail(
+      { subject: version.subject, body: version.body },
+      sampleVars,
+    );
+    const { id } = await enqueueOutbound({
+      channel: "email",
+      purpose: "Hiring",
+      target: toEmail,
+      subject: renderedSubject,
+      bodyHtml: html,
+      eventType: "admin.test_email",
+    });
+    await drainNow([id]);
+    return { ok: true, sentTo: toEmail };
+  }
+
   if (action === "create") {
+    const folderPageId = await ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "email-templates",
+      createdById: callerId,
+    }).catch(() => null);
     const template = await prisma.emailTemplate.create({
-      data: { name: args.name! },
+      data: { name: args.name!, folderPageId },
     });
     return template;
   }

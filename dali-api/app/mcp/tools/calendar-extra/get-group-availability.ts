@@ -189,6 +189,11 @@ export async function runGetGroupAvailability(input: Input) {
       startIso: iv.start.toISOString(),
       endIso: iv.end.toISOString(),
     })),
+    // Coverage: false when the user has no linked calendar (or a failed sync).
+    // `free` is then a working-hours default, not confirmed availability — do
+    // not treat these users as free.
+    hasCalendar: u.hasCalendar,
+    calendarError: u.calendarError,
   }));
 
   return { days, perUser: perUserOut };

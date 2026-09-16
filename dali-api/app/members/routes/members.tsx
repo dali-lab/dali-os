@@ -27,6 +27,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Plus } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
@@ -107,13 +108,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin/routes/api.members.ts for the canonical shape.
-  // The Alumni view layers the stored membership status onto the same base set
-  // (still requires a DALIMember row; drops the term filter) and sorts by class
-  // year. membershipStatus is authoritative — no derivation here.
-  const alumniCondition =
-    status === "alumni" ? { membershipStatus: "Alumni" as const } : {};
+  // Each view pins the stored membership status onto the same base set (both
+  // still require a DALIMember row). Alumni drops the term filter and sorts by
+  // class year; Active excludes alumni outright rather than leaning on the term
+  // filter to hide them — assignment rows are never deleted, so a member who
+  // graduated mid-term still matches this term, and "All terms" dropped the
+  // clause entirely and listed every alumnus the lab ever had under Active.
+  // membershipStatus is authoritative — no derivation here.
+  const statusCondition =
+    status === "alumni"
+      ? { membershipStatus: "Alumni" as const }
+      : { membershipStatus: "Active" as const };
   const users = await prisma.user.findMany({
-    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...alumniCondition },
+    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...statusCondition },
     orderBy:
       status === "alumni"
         ? [{ classYear: "desc" as const }, ...MEMBER_LIST_ORDER_BY]
@@ -384,15 +391,11 @@ export default function MembersList() {
           in reading order and first in the tab order. */}
       <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
         <StatusTabs status={status} />
-        <input
-          type="search"
+        <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
-          className={cn(
-            "flex-1 min-w-[200px] text-sm border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
-            "max-w-[420px] px-5 py-2.5 rounded-full bg-card",
-          )}
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />

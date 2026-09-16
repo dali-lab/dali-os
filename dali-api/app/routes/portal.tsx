@@ -7,6 +7,8 @@ import { getActiveCycle } from "~/hiring/lib/cycles";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { buttonClasses } from "~/components/ui/Button";
+import { MetaList } from "~/components/ui/MetaList";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI Portal" }];
@@ -64,8 +66,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const enrolled = offerings.filter((o) => o.myStatus === "Approved");
+  // Every education application ever (any status, including offerings that have
+  // since dropped from the live catalog) — drives the "My applications" card.
+  const educationAppCount = await prisma.educationApplication.count({
+    where: { applicantUserId: auth.user.sub },
+  });
   return {
     firstName: auth.user.firstName ?? null,
+    // The redesigned home shows a "My applications" card whenever the student
+    // has applied to anything — DALI hiring or an education offering.
+    hasAnyApplication: educationAppCount > 0 || applicationStatus != null,
+    educationAppCount,
     hiring: {
       cycleName: cycle?.name ?? null,
       cycleOpen: cycle?.currentStatus === "Open",
@@ -133,22 +144,227 @@ function CardShell({
   );
 }
 
+// A flat action tile that shares the education catalog card's language: a
+// teal-tinted emoji tile and title up top, the card's facts as labelled rows
+// beneath a hairline, the whole thing a link. On the semantic tokens so it reads
+// on the light portal, and on the shared MetaList so a deadline or a count looks
+// the same wherever the portal shows one. h-full + a bottom-pinned meta block
+// keep a row of cards even and their facts aligned.
+function PortalActionCard({
+  to,
+  emoji,
+  title,
+  meta,
+}: {
+  to: string;
+  emoji: string;
+  title: string;
+  meta: { label: string; value: string }[];
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex h-full flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:border-accent-coral/40 hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5"
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-teal/10 text-2xl leading-none"
+          aria-hidden
+        >
+          {emoji}
+        </span>
+        <span className="font-heading text-lg font-bold text-dark-blue transition-colors group-hover:text-accent-coral">
+          {title}
+        </span>
+      </div>
+      <div className="mt-auto border-t border-border pt-4">
+        <MetaList rows={meta} />
+      </div>
+    </Link>
+  );
+}
+
+// The redesigned home's cards, each conditional on live state — an empty list
+// (no cycle, nothing open, no apps, no courses) falls back to a single note.
+// Each card carries labelled facts rather than a sentence: the deadline, the
+// count and the status are what a student is actually scanning for.
+type ActionCard = {
+  key: string;
+  to: string;
+  emoji: string;
+  title: string;
+  meta: { label: string; value: string }[];
+};
+
+function buildActionCards(
+  hiring: PortalData["hiring"],
+  education: PortalData["education"],
+  teaching: PortalData["teaching"],
+  hasAnyApplication: boolean,
+  educationAppCount: number,
+): ActionCard[] {
+  const cards: ActionCard[] = [];
+
+  if (hiring.cycleOpen) {
+    const meta: { label: string; value: string }[] = [];
+    if (hiring.cycleName) meta.push({ label: "Cycle", value: hiring.cycleName });
+    meta.push({
+      label: "Status",
+      value:
+        hiring.applicationStatus === "Draft"
+          ? "Draft — not submitted"
+          : hiring.applicationStatus === "Submitted"
+            ? "Submitted"
+            : "Not started",
+    });
+    if (hiring.closesOn) {
+      meta.push({
+        // A submitted application can still be edited up to the close date; an
+        // unstarted one has that long to be filed at all.
+        label: hiring.applicationStatus === "Submitted" ? "Edit until" : "Closes",
+        value: hiring.closesOn,
+      });
+    }
+    cards.push({
+      key: "apply-dali",
+      to: "/portal/apply",
+      emoji: "📝",
+      title:
+        hiring.applicationStatus === "Draft"
+          ? "Finish your application"
+          : "Apply to DALI",
+      meta,
+    });
+  }
+
+  if (education.openOfferings > 0) {
+    cards.push({
+      key: "apply-offering",
+      to: "/portal/education",
+      emoji: "🎓",
+      title: "Apply to an offering",
+      meta: [
+        {
+          label: "Open now",
+          value: `${education.openOfferings} workshop${education.openOfferings === 1 ? "" : "s"} & miniseries`,
+        },
+        ...(education.pendingCount > 0
+          ? [{ label: "Awaiting review", value: `${education.pendingCount}` }]
+          : []),
+      ],
+    });
+  }
+
+  if (hasAnyApplication) {
+    const meta: { label: string; value: string }[] = [];
+    if (hiring.applicationStatus)
+      meta.push({ label: "DALI", value: hiring.applicationStatus });
+    if (educationAppCount > 0)
+      meta.push({
+        label: "Offerings",
+        value: `${educationAppCount} application${educationAppCount === 1 ? "" : "s"}`,
+      });
+    cards.push({
+      key: "my-applications",
+      to: "/portal/applications",
+      emoji: "📋",
+      title: "My applications",
+      meta: meta.length
+        ? meta
+        : [{ label: "Status", value: "Track status and next steps" }],
+    });
+  }
+
+  if (education.enrolledCount > 0) {
+    cards.push({
+      key: "my-courses",
+      to: "/portal/education",
+      emoji: "📚",
+      title: "My courses",
+      meta: [
+        { label: "In progress", value: `${education.enrolledCount}` },
+        ...(education.openAssignments > 0
+          ? [
+              {
+                label: "Assignments due",
+                value: `${education.openAssignments}`,
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+
+  if (teaching.offerings.length > 0) {
+    cards.push({
+      key: "teaching",
+      to:
+        teaching.offerings.length === 1
+          ? `/education/manage/${teaching.offerings[0].id}`
+          : "/education/manage",
+      emoji: "🧑‍🏫",
+      title: "Teaching",
+      meta: [
+        teaching.offerings.length === 1
+          ? { label: "Offering", value: teaching.offerings[0].title }
+          : { label: "Offerings", value: `${teaching.offerings.length}` },
+        { label: "Manage", value: "Sessions, applications, grading" },
+      ],
+    });
+  }
+
+  return cards;
+}
+
+// The loader also returns a redirect Response on the member path; exclude it so
+// the card-builder can index the data shape.
+type PortalData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+
 export default function PortalHome() {
-  const { firstName, hiring, education, teaching } = useLoaderData<typeof loader>();
+  const { firstName, hiring, education, teaching, hasAnyApplication, educationAppCount } =
+    useLoaderData<typeof loader>();
+  const redesign = useFeatureFlag("education-redesign-v2");
+  const actionCards = buildActionCards(
+    hiring,
+    education,
+    teaching,
+    hasAnyApplication,
+    educationAppCount,
+  );
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-16 pb-10 flex flex-col gap-8">
       <header>
         <h1 className="font-heading text-3xl font-bold text-dark-blue">
-          {firstName ? `Hey ${firstName} 👋` : "Welcome to DALI"}
+          {firstName ? `What are you here to do today, ${firstName}? 👋` : "Welcome to DALI"}
         </h1>
-        <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-          Everything you can do with the DALI Lab lives here — apply to join
-          the lab, or take one of our workshops and miniseries. No lab
-          membership required.
-        </p>
       </header>
 
+      {redesign ? (
+        actionCards.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <p className="font-heading font-semibold text-dark-blue">
+              Nothing active right now
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              New application cycles, workshops, and miniseries are posted here
+              each term — check back soon.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-6">
+            {actionCards.map((c) => (
+              <PortalActionCard
+                key={c.key}
+                to={c.to}
+                emoji={c.emoji}
+                title={c.title}
+                meta={c.meta}
+              />
+            ))}
+          </div>
+        )
+      ) : (
       <div className="grid gap-5 sm:grid-cols-2">
         <CardShell
           title="Apply to DALI"
@@ -256,6 +472,7 @@ export default function PortalHome() {
           </CardShell>
         )}
       </div>
+      )}
     </div>
   );
 }

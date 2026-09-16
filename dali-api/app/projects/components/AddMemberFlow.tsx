@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { ChevronLeft, UserPlus, X } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
 import { Select } from "~/components/ui/floating";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -73,7 +74,11 @@ export function AddMemberFlow({
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Element | null;
+      // The Project/Domain Selects render their menus in a floating-ui portal
+      // (outside containerRef) — a click there isn't "outside" the flow.
+      if (target?.closest("[data-floating-ui-portal]")) return;
+      if (containerRef.current && !containerRef.current.contains(target as Node)) {
         setOpen(false);
       }
     }
@@ -207,10 +212,6 @@ export function AddMemberFlow({
     }
   }
 
-  const inputClass = cn(
-    "w-full text-sm px-2 py-1.5 border border-border bg-background text-foreground focus:outline-none focus:ring-2",
-    os ? "rounded-os-item focus:ring-os-accent/40" : "rounded-md focus:ring-accent-coral/30",
-  );
   const selectClass =
     "w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40";
 
@@ -240,13 +241,13 @@ export function AddMemberFlow({
           {!selected ? (
             // ── Step 1: pick a person ──────────────────────────────────────
             <>
-              <input
+              <SearchInput
                 autoFocus
-                type="text"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search members by name or email…"
-                className={inputClass}
+                size="sm"
+                containerClassName="w-full"
               />
               {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
               <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">

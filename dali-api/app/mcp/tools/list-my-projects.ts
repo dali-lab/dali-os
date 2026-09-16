@@ -1,15 +1,17 @@
 // MCP `list_my_projects` — every Project the authenticated member is staffed
 // on (any term, like `isProjectMember`), enriched with current-term context:
-// their role on the project this term, the active sprint, open task count.
+// their role on the project this term, the current sprint, open task count.
 // Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { currentSprintBand } from "~/projects/lib/task-board";
+import { DAY } from "~/projects/lib/timeline-days";
 
 export const LIST_MY_PROJECTS_TOOL = {
   name: "list_my_projects",
   description:
-    "List projects the authenticated DALI OS member is staffed on. Past-term assignments stay visible (matches in-app access). Each row includes the current-term role/domain (if assigned this term), the active sprint, and open task count.",
+    "List projects the authenticated DALI OS member is staffed on. Past-term assignments stay visible (matches in-app access). Each row includes the current-term role/domain (if assigned this term), the current sprint, and open task count.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -36,7 +38,7 @@ type MyProjectOut = {
     domainName: string;
     level: string;
   } | null;
-  activeSprint: { id: string; name: string; endsAt: string } | null;
+  activeSprint: { label: string; endsAt: string } | null;
   openTaskCount: number;
 };
 
@@ -61,15 +63,20 @@ export async function runListMyProjects(callerId: string, input: Input) {
   const projectIds = Array.from(new Set(assignments.map((a) => a.projectId)));
   if (projectIds.length === 0) return { projects: [] as MyProjectOut[] };
 
-  const [projects, activeSprints, openTaskCounts] = await Promise.all([
+  const [projects, openTaskCounts] = await Promise.all([
     prisma.project.findMany({
       where: { id: { in: projectIds } },
-      select: { id: true, name: true, status: true, imageUrl: true },
-    }),
-    prisma.sprint.findMany({
-      where: { projectId: { in: projectIds }, status: "Active" },
-      orderBy: { startsAt: "desc" },
-      select: { id: true, projectId: true, name: true, endsAt: true },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        imageUrl: true,
+        projectTerms: {
+          select: {
+            term: { select: { code: true, startDate: true, endDate: true, sortKey: true } },
+          },
+        },
+      },
     }),
     prisma.task.groupBy({
       by: ["projectId"],
@@ -81,13 +88,6 @@ export async function runListMyProjects(callerId: string, input: Input) {
     }),
   ]);
 
-  // First active sprint per project (groupBy not directly applicable here).
-  const activeSprintByProject = new Map<string, { id: string; name: string; endsAt: Date }>();
-  for (const s of activeSprints) {
-    if (!activeSprintByProject.has(s.projectId)) {
-      activeSprintByProject.set(s.projectId, { id: s.id, name: s.name, endsAt: s.endsAt });
-    }
-  }
   const openTaskByProject = new Map<string, number>();
   for (const row of openTaskCounts) openTaskByProject.set(row.projectId, row._count._all);
 
@@ -108,16 +108,25 @@ export async function runListMyProjects(callerId: string, input: Input) {
     }
   }
 
+  const now = new Date();
   const out: MyProjectOut[] = projects.map((p) => {
-    const sprint = activeSprintByProject.get(p.id);
+    const termSpans = p.projectTerms
+      .map((pt) => pt.term)
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map((t) => ({
+        code: t.code,
+        startsAt: t.startDate.toISOString(),
+        endsAt: t.endDate.toISOString(),
+      }));
+    const band = currentSprintBand(termSpans, now);
     return {
       id: p.id,
       name: p.name,
       status: p.status,
       imageUrl: p.imageUrl,
       currentTermAssignment: currentTermByProject.get(p.id) ?? null,
-      activeSprint: sprint
-        ? { id: sprint.id, name: sprint.name, endsAt: sprint.endsAt.toISOString() }
+      activeSprint: band
+        ? { label: band.label, endsAt: new Date(band.end + DAY).toISOString() }
         : null,
       openTaskCount: openTaskByProject.get(p.id) ?? 0,
     };

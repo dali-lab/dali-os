@@ -11,9 +11,9 @@
 // page's left rail, so this panel is purely about connecting and configuring
 // accounts.
 //
-// Like AvailabilityView, this renders the *contents* only — the dialog shell
-// (backdrop, title, close) belongs to the page that opens it, so the two
-// calendar dialogs are the same dialog with different bodies.
+// This renders the *contents* only — the dialog shell
+// (backdrop, title, close) belongs to the page that opens it, so this drops
+// into the settings dialog as one section beside Classes and Working hours.
 //
 // Timesheet-sync intent wired below:
 //   intent    = "set-timesheet-sync"
@@ -24,12 +24,15 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Tooltip } from "~/components/ui/floating";
 import { useFetcher, useRevalidator } from "react-router";
 import { CalendarDays, ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { CalendarManagerModal } from "~/calendar/components/composer";
-import { SectionHeader } from "~/calendar/components/settings-cards";
+import { GeneralCalendarPrompt, SectionHeader } from "~/calendar/components/settings-cards";
+import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
 import { perCalendarLegend, type CalendarLegendGroup } from "~/calendar/lib/layers";
 
@@ -90,6 +93,14 @@ export function CalendarsPanel({
             </a>
           }
         />
+
+        {/* Same prompt the left rail shows, mounted here too because this dialog
+            is where someone lands when they go looking for what they're missing.
+            It renders nothing once the calendar is on one of their accounts, and
+            nothing at all when no Google account is connected. */}
+        {data.generalCalendar === "missing" && (
+          <GeneralCalendarPrompt links={data.calendarLinks} />
+        )}
 
         {googleLinks.length === 0 ? (
           <div className={cn(card, "text-sm text-muted-foreground")}>
@@ -156,6 +167,7 @@ function AccountSection({
   setMain: (dest: string) => void;
 }) {
   const removeFetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(true); // expanded by default in the panel
   const Chevron = open ? ChevronDown : ChevronRight;
 
@@ -182,25 +194,34 @@ function AccountSection({
             <span className="shrink-0 text-[11px] text-red-600">Sync error</span>
           )}
         </button>
-        <removeFetcher.Form method="post">
+        <removeFetcher.Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: `Disconnect ${link.externalEmail}?`,
+            description:
+              "Removes its events, availability, and any calendars you create there.",
+            tone: "destructive",
+            confirmLabel: "Disconnect",
+          })}
+        >
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
-          <button
-            type="submit"
-            aria-label={`Disconnect ${link.externalEmail}`}
-            className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip content={`Disconnect ${link.externalEmail}`}>
+            <button
+              type="submit"
+              aria-label={`Disconnect ${link.externalEmail}`}
+              className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
         </removeFetcher.Form>
       </div>
 
       {/* Sub-calendar rows */}
       {open && (
         <div className="flex flex-col gap-0.5 px-2 py-2">
-          {link.syncError && (
-            <p className="mb-1 text-[11px] text-red-600">Sync error: {link.syncError}</p>
-          )}
+          <SyncErrorNotice syncError={link.syncError} className="mb-1" />
           {link.subCalendars === null ? (
             <p className="text-xs italic text-muted-foreground">Couldn't load calendars.</p>
           ) : link.subCalendars.length === 0 ? (

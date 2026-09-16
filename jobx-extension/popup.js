@@ -1,16 +1,29 @@
-const baseEl = document.getElementById("base");
-const periodEl = document.getElementById("period");
-const statusEl = document.getElementById("status");
+const dotEl = document.getElementById("dot");
+const titleEl = document.getElementById("status-title");
+const detailEl = document.getElementById("status-detail");
+const signinEl = document.getElementById("signin");
 
-chrome.storage.sync.get(["daliBase", "daliPeriodId"]).then(({ daliBase, daliPeriodId }) => {
-  if (daliBase) baseEl.value = daliBase;
-  if (daliPeriodId) periodEl.value = daliPeriodId;
-});
+function setStatus(kind, title, detail) {
+  dotEl.className = "dot" + (kind ? ` ${kind}` : "");
+  titleEl.textContent = title;
+  detailEl.textContent = detail || "";
+}
 
-document.getElementById("save").addEventListener("click", async () => {
-  const daliBase = baseEl.value.trim().replace(/\/$/, "");
-  const daliPeriodId = periodEl.value.trim();
-  await chrome.storage.sync.set({ daliBase, daliPeriodId });
-  statusEl.textContent = "Saved ✓";
-  setTimeout(() => { statusEl.textContent = ""; }, 2000);
-});
+async function checkConnection() {
+  setStatus("", "Checking DALI OS…");
+  signinEl.hidden = true;
+  const res = await chrome.runtime.sendMessage({ type: "dali:export" });
+  const host = res && res.base ? new URL(res.base).host : "";
+  if (res && res.ok) {
+    const n = res.data.availableHires.length;
+    setStatus("ok", "Connected", `${n} role${n === 1 ? "" : "s"} on ${host}`);
+  } else if (res && res.signedOut) {
+    setStatus("warn", "Not signed in", `Sign in to ${host} in this browser.`);
+    signinEl.href = res.base;
+    signinEl.hidden = false;
+  } else {
+    setStatus("warn", "Can't reach DALI OS", res ? res.error : "The extension didn't respond.");
+  }
+}
+
+checkConnection();

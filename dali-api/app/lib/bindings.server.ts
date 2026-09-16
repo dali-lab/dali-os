@@ -24,6 +24,18 @@ export type { ProcessType };
 // the unique key dedupes; see the ProcessFolderBinding model).
 export const CORE_PROCESS_ID = "core";
 
+// Singleton processId for the lab-wide Hiring folder set. Hiring artifacts
+// (challenge/application forms, application templates, rubrics) are shared across
+// every cycle, not per-cycle, so — like Core — they hang off ONE reserved
+// processId on the HiringCycle process type. A real cycle id is a cuid, never
+// this sentinel, so the two never collide.
+export const HIRING_PROCESS_ID = "hiring";
+
+// Singleton processId for the lab-wide, everyone-can-see folder set — the open
+// counterpart of CORE_PROCESS_ID. There is exactly one Lab, so all its bindings
+// share this constant.
+export const LAB_PROCESS_ID = "lab";
+
 // A named slot a process type exposes. `purpose` is the stable key stored on the
 // binding; `label` is shown in settings; `defaultTitle` names the folder we
 // create when auto-provisioning. Slots are system-defined (they map to what
@@ -37,8 +49,13 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "meeting-notes-partner", label: "Partner meeting notes", defaultTitle: "Partner meeting notes" },
   ],
   EducationOffering: [{ purpose: "forms", label: "Forms", defaultTitle: "Forms" }],
+  // Hiring is a lab-wide singleton (processId = HIRING_PROCESS_ID), parallel to
+  // Core: ONE shared, user-configurable folder set for all of hiring, not per
+  // cycle. These default to a Core-group scope (Core-only, which covers every
+  // lead/domain lead) and surface as the "Hiring" drive space + /hiring/library.
   HiringCycle: [
-    { purpose: "forms", label: "Forms", defaultTitle: "Forms" },
+    { purpose: "hiring-forms", label: "Hiring forms", defaultTitle: "Hiring Forms" },
+    { purpose: "application-templates", label: "Application templates", defaultTitle: "Application Templates" },
     { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
   ],
   Core: [
@@ -46,8 +63,12 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "agreements", label: "Agreements", defaultTitle: "Agreements" },
     { purpose: "email-templates", label: "Email templates", defaultTitle: "Templates" },
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },
-    { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
-    { purpose: "application-templates", label: "Application templates", defaultTitle: "Application Templates" },
+  ],
+  // Lab is Core's open twin (processId = LAB_PROCESS_ID): the same Lab
+  // workspace, but no Core-group scope, so these folders are the communal shelf
+  // every member can see and edit.
+  Lab: [
+    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
   ],
 };
 
@@ -59,7 +80,8 @@ export function slotFor(processType: ProcessType, purpose: string): FolderSlot |
 // and offerings nest inside their own workspace (access follows the workspace).
 // HiringCycle + Core folders live in the Lab workspace but default to a Group
 // scope on the Core group — confidential, mirroring the old Core/Hiring roots,
-// but now an ordinary editable share rather than a systemKey root.
+// but now an ordinary editable share rather than a systemKey root. Lab folders
+// live there too but take no scope at all: they're the communal shelf.
 function workspaceFor(
   processType: ProcessType,
   processId: string,
@@ -72,6 +94,11 @@ function workspaceFor(
     case "HiringCycle":
     case "Core":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
+    case "Lab":
+      // Same workspace as Core, deliberately unscoped: a Lab folder inherits the
+      // Lab drive's own "everyone in the lab" access rather than narrowing to a
+      // group. Core's meeting notes stay on the Core path.
+      return { workspaceType: "Lab", workspaceId: null, coreScoped: false };
   }
 }
 

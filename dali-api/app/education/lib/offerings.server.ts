@@ -22,7 +22,6 @@ const offeringListInclude = {
     orderBy: { sequence: "asc" as const },
     select: { id: true, datetime: true },
   },
-  term: { select: { id: true, code: true } },
 };
 
 export type CatalogOffering = Awaited<ReturnType<typeof listCatalog>>[number];
@@ -166,7 +165,6 @@ export async function getOfferingDetail(offeringId: string) {
         },
       },
       sessions: { orderBy: { sequence: "asc" } },
-      term: { select: { code: true } },
     },
   });
   if (!offering) return null;
@@ -178,10 +176,8 @@ export async function getOfferingDetail(offeringId: string) {
       photoUrl: await resolvePhotoUrl(i.user.photoUrl),
     })),
   );
-  const { term, ...rest } = offering;
   return {
-    ...rest,
-    termCode: term?.code ?? null,
+    ...offering,
     approvedCount: counts.get(offering.id) ?? 0,
     instructors,
   };
@@ -201,6 +197,7 @@ function shapeOffering(o: {
   id: string;
   type: OfferingType;
   title: string;
+  iconEmoji: string | null;
   status: OfferingStatus;
   capacity: number;
   requiresReview: boolean;
@@ -214,12 +211,12 @@ function shapeOffering(o: {
     user: { firstName: string; lastName: string; photoUrl: string | null };
   }[];
   sessions: { id: string; datetime: Date }[];
-  term: { id: string; code: string } | null;
 }) {
   return {
     id: o.id,
     type: o.type,
     title: o.title,
+    iconEmoji: o.iconEmoji,
     status: o.status,
     capacity: o.capacity,
     requiresReview: o.requiresReview,
@@ -228,8 +225,6 @@ function shapeOffering(o: {
     startsAt: o.startsAt,
     endsAt: o.endsAt,
     closedOutAt: o.closedOutAt,
-    termId: o.term?.id ?? null,
-    termCode: o.term?.code ?? null,
     sessionCount: o.sessions.length,
     // Kept as plain strings for the cert/PDF servers that render names only.
     instructorNames: o.instructors.map((i) =>
@@ -387,29 +382,14 @@ function validateRegistrationWindow(o: {
 }
 
 /**
- * The term an offering belongs to, derived from its start date: the term whose
- * date window contains it. Null when the date falls outside every seeded term.
- * Mirrors the backfill in the education-offering-term migration, so create/
- * update stay consistent with the one-time backfill.
- */
-async function termIdForDate(date: Date): Promise<string | null> {
-  const term = await prisma.term.findFirst({
-    where: { startDate: { lte: date }, endDate: { gte: date } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
-  return term?.id ?? null;
-}
-
-/**
- * Recompute startsAt, endsAt, and termId from the offering's sessions AND
+ * Recompute startsAt and endsAt from the offering's sessions AND
  * renumber the sessions so "Session N" always matches chronological order.
  * Called after every session add/update/delete/generate so both the catalog
  * dates and the session labels stay in sync with what instructors scheduled —
  * this is what keeps a Mon/Wed class from listing as "1, 2" then "3, 4" out of
  * date order. Renumbering only touches `sequence` (a display/order field);
  * attendance, assignments, and CE credits key off `sessionId`, so it's safe.
- * Zero sessions → dates/term set to null (offering is a draft stub).
+ * Zero sessions → dates set to null (offering is a draft stub).
  */
 export async function recomputeOfferingDates(offeringId: string): Promise<void> {
   const sessions = await prisma.educationSession.findMany({
@@ -421,7 +401,7 @@ export async function recomputeOfferingDates(offeringId: string): Promise<void> 
   if (sessions.length === 0) {
     await prisma.educationOffering.update({
       where: { id: offeringId },
-      data: { startsAt: null, endsAt: null, termId: null },
+      data: { startsAt: null, endsAt: null },
     });
     return;
   }
@@ -442,7 +422,7 @@ export async function recomputeOfferingDates(offeringId: string): Promise<void> 
   const endsAt = last.endsAt ?? last.datetime;
   await prisma.educationOffering.update({
     where: { id: offeringId },
-    data: { startsAt, endsAt, termId: await termIdForDate(startsAt) },
+    data: { startsAt, endsAt },
   });
 }
 
@@ -488,6 +468,7 @@ export async function runOfferingAction(
       data: {
         type,
         title,
+        iconEmoji: String(formData.get("iconEmoji") ?? "").trim() || null,
         capacity,
         registrationOpensAt: dates.registrationOpensAt,
         registrationClosesAt: dates.registrationClosesAt,
@@ -649,6 +630,7 @@ export async function runOfferingAction(
         where: { id: offeringId },
         data: {
           title,
+          iconEmoji: String(formData.get("iconEmoji") ?? "").trim() || null,
           capacity,
           registrationOpensAt,
           registrationClosesAt,

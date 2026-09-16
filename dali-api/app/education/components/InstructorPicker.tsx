@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 // Assigning instructors is a search, not a survey. The previous control listed
 // every lab member as a checkbox in a scrolling grid, which is fine at a dozen
@@ -83,13 +84,13 @@ export function InstructorPicker({
         <label htmlFor="instructor-search" className="sr-only">
           Search members to add as instructors
         </label>
-        <input
+        <SearchInput
           id="instructor-search"
-          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search members by name…"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm"
+          size="sm"
+          containerClassName="w-full sm:max-w-sm"
         />
         {query.trim() !== "" && (
           <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-card p-1 sm:max-w-sm">

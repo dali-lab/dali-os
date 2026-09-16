@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
@@ -119,9 +120,24 @@ async function resolveOfferingMembers(offeringId: string): Promise<string[]> {
   return rows.map((r) => r.applicantUserId);
 }
 
+/**
+ * A domain group is the people who work that domain *now*, not everyone who
+ * ever qualified for it.
+ *
+ * DomainEligibility is monotonic and term-independent — rows are never deleted,
+ * and graduating doesn't touch them — so an unfiltered query returns every
+ * member the domain has ever had. Alumni kept receiving the domain's
+ * notifications and meeting invites years after leaving; the same observation
+ * is already recorded on resolveAllLabMembers below, which is why the "whole
+ * lab" audience refuses to use a domain filter at all.
+ *
+ * Gating on the stored membershipStatus (rather than on term activity) keeps a
+ * current member with no assignments yet — a fresh hire, someone between
+ * projects — inside their domain's group.
+ */
 async function resolveDomainMembers(domainId: string): Promise<string[]> {
   const rows = await prisma.domainEligibility.findMany({
-    where: { domainId },
+    where: { domainId, user: ACTIVE_LAB_MEMBER_WHERE },
     select: { userId: true },
   });
   return rows.map((r) => r.userId);
@@ -202,10 +218,7 @@ export async function isUserInAnyGroup(
 // separate audience — the `alumni` system group.
 export async function resolveAllLabMembers(): Promise<string[]> {
   const users = await prisma.user.findMany({
-    where: {
-      daliMember: { isNot: null },
-      membershipStatus: "Active",
-    },
+    where: ACTIVE_LAB_MEMBER_WHERE,
     select: { id: true },
   });
   return users.map((u) => u.id);
@@ -227,30 +240,82 @@ export type VisibleGroup = {
   boundTermIds: string[];
 };
 
-// A static group is archived if it was manually archived (archivedAt set) OR
-// it is term-bound and every bound term has already ended. `now` is passed in
-// so callers can resolve a whole list against one consistent clock.
+// The lookups isGroupArchived needs, resolved once per list so a whole page of
+// groups is judged against one consistent clock (and one pair of queries).
+export type GroupArchiveContext = {
+  termEndById: Map<string, Date>;
+  /** Projects with status Archived — their auto group archives with them. */
+  archivedProjectIds: ReadonlySet<string>;
+  now: Date;
+};
+
+// Loads the entity state the derived archive rule reads. Only the two call
+// sites that actually compute `archived` pay for this; the ids-only hot path
+// (listVisibleGroupIdsForUser) reads raw archivedAt and skips it.
+export async function loadGroupArchiveContext(): Promise<GroupArchiveContext> {
+  const [terms, archivedProjects] = await Promise.all([
+    prisma.term.findMany({ select: { id: true, endDate: true } }),
+    prisma.project.findMany({ where: { status: "Archived" }, select: { id: true } }),
+  ]);
+  return {
+    termEndById: new Map(terms.map((t) => [t.id, t.endDate])),
+    archivedProjectIds: new Set(archivedProjects.map((p) => p.id)),
+    now: new Date(),
+  };
+}
+
+// A group is archived if it was manually archived (archivedAt set), or it has
+// outlived whatever it is scoped to:
+//
+//   • static, term-bound  — every term in boundTermIds has ended
+//   • Dynamic "term:<id>" — that term has ended
+//   • Dynamic "project:<id>" — that project is Archived
+//
+// The auto groups are the reason for the last two: ensureTermGroup /
+// ensureProjectGroup mint one per term and per project and nothing ever retires
+// them, so every finished term and dead project kept its group in the pickers
+// forever. Derived rather than stored, like the term-bound rule above it —
+// un-archiving a project brings its group straight back, and there is no job or
+// migration to keep in sync. A Paused project keeps its group: it's expected
+// back.
+//
+// Dynamic groups other than term/project (domain, core, hiring, alumni,
+// offering) have nothing to outlive and never auto-archive.
 export function isGroupArchived(
-  group: { archivedAt: Date | string | null; boundTermIds: string[] },
-  termEndById: Map<string, Date>,
-  now: Date,
+  group: {
+    archivedAt: Date | string | null;
+    boundTermIds: string[];
+    dynamicQuery?: string | null;
+  },
+  ctx: GroupArchiveContext,
 ): boolean {
   if (group.archivedAt) return true;
+
+  const [kind, id] = (group.dynamicQuery ?? "").split(":", 2);
+  if (kind === "term" && id) return hasEnded(ctx.termEndById.get(id), ctx.now);
+  if (kind === "project" && id) return ctx.archivedProjectIds.has(id);
+
   if (group.boundTermIds.length === 0) return false;
   // Resolve each bound term's end; unknown ids (deleted terms) are ignored.
   const ends = group.boundTermIds
-    .map((id) => termEndById.get(id))
+    .map((tid) => ctx.termEndById.get(tid))
     .filter((d): d is Date => d instanceof Date);
   if (ends.length === 0) return false;
   const latestEnd = ends.reduce((a, b) => (a > b ? a : b));
-  return latestEnd.getTime() < now.getTime();
+  return latestEnd.getTime() < ctx.now.getTime();
+}
+
+// An unknown term id (deleted term) is not evidence the group is stale, so it
+// stays active — same fallback the boundTermIds path takes.
+function hasEnded(endDate: Date | undefined, now: Date): boolean {
+  return endDate instanceof Date && endDate.getTime() < now.getTime();
 }
 
 // Resolves every group to a VisibleGroup (members + derived archive state),
 // without any per-viewer filtering. Shared by the membership-scoped and
 // management list functions below.
 async function resolveAllGroups(): Promise<VisibleGroup[]> {
-  const [groups, terms] = await Promise.all([
+  const [groups, archiveContext] = await Promise.all([
     prisma.groupDefinition.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -264,11 +329,8 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
         boundTermIds: true,
       },
     }),
-    prisma.term.findMany({ select: { id: true, endDate: true } }),
+    loadGroupArchiveContext(),
   ]);
-
-  const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
-  const now = new Date();
 
   return Promise.all(
     groups.map(async (g) => {
@@ -285,7 +347,7 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
         dynamicQuery: g.dynamicQuery,
         systemKey: g.systemKey,
         memberIds,
-        archived: isGroupArchived(g, termEndById, now),
+        archived: isGroupArchived(g, archiveContext),
         archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
         boundTermIds: g.boundTermIds,
       };
@@ -414,11 +476,12 @@ async function deriveUserGroups(userId: string, request?: Request) {
           select: { offeringId: true },
         })
       : Promise.resolve([] as { offeringId: string }[]),
-    needsAlumni || needsHiring
+    needsAlumni || needsHiring || domainIds.size > 0
       ? prisma.user.findUnique({
           where: { id: userId },
           // daliMember presence mirrors resolveAlumni's `daliMember: { isNot: null }`
           // gate — Alumni status alone must not admit a non-DALIMember to the group.
+          // Domain groups need the same row for the inverse test (Active only).
           select: { membershipStatus: true, daliMember: { select: { userId: true } } },
         })
       : Promise.resolve(null),
@@ -470,6 +533,9 @@ async function deriveUserGroups(userId: string, request?: Request) {
   const coreCycleTermIdSet = new Set(coreCycleTermIds);
   const isInCore = userCoreAssignments.some((r) => coreCycleTermIdSet.has(r.termId));
   const isAlumni = userRow?.membershipStatus === "Alumni" && userRow.daliMember != null;
+  // Mirrors resolveDomainMembers' `user: ACTIVE_LAB_MEMBER_WHERE` gate.
+  const isActiveLabMember =
+    userRow?.membershipStatus === "Active" && userRow.daliMember != null;
   const isInHiring =
     isInCore ||
     userDomainLeads.length > 0 ||
@@ -492,7 +558,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
         switch (kind) {
           case "term":     isMember = id ? userTermIds.has(id) : false; break;
           case "project":  isMember = id ? userCurrentProjectIds.has(id) : false; break;
-          case "domain":   isMember = id ? userDomainIds.has(id) : false; break;
+          case "domain":   isMember = id ? isActiveLabMember && userDomainIds.has(id) : false; break;
           case "offering": isMember = id ? userOfferingIds.has(id) : false; break;
           case "core":     isMember = isInCore; break;
           case "hiring":   isMember = isInHiring; break;
@@ -530,7 +596,10 @@ export async function listVisibleGroupsForUser(
   userId: string,
   request?: Request,
 ): Promise<VisibleGroup[]> {
-  const { memberOf, termEndById, now } = await deriveUserGroups(userId, request);
+  const [{ memberOf }, archiveContext] = await Promise.all([
+    deriveUserGroups(userId, request),
+    loadGroupArchiveContext(),
+  ]);
   const result: VisibleGroup[] = [];
   for (const g of memberOf) {
     let memberIds: string[];
@@ -548,7 +617,7 @@ export async function listVisibleGroupsForUser(
       dynamicQuery: g.dynamicQuery,
       systemKey: g.systemKey,
       memberIds,
-      archived: isGroupArchived(g, termEndById, now),
+      archived: isGroupArchived(g, archiveContext),
       archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
       boundTermIds: g.boundTermIds,
     });

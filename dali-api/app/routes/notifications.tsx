@@ -3,12 +3,12 @@ import { redirect, useLoaderData, useSearchParams } from "react-router";
 import {
   ListTodo,
   History as HistoryIcon,
-  Search,
   ExternalLink,
   RotateCcw,
   Check,
   X,
 } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -363,16 +363,13 @@ function HistoryTab({
             </button>
           ))}
         </div>
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search notifications…"
-            className="w-full rounded-lg border border-border bg-card pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </div>
+        <SearchInput
+          size="sm"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search notifications…"
+          containerClassName="flex-1 min-w-[180px]"
+        />
       </div>
 
       {items.length === 0 ? (
