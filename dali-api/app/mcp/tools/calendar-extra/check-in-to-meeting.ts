@@ -35,6 +35,15 @@ export async function runCheckInToMeeting(userId: string, input: Input) {
       attendanceMode: true,
       selectedAt: true,
       durationMinutes: true,
+      recurrenceRule: true,
+      exceptions: {
+        select: {
+          originalStart: true,
+          overrideStart: true,
+          overrideDurationMin: true,
+          cancelled: true,
+        },
+      },
     },
   });
 
@@ -48,7 +57,7 @@ export async function runCheckInToMeeting(userId: string, input: Input) {
 
   // Shared window helper so the ±grace math has one definition across the
   // self-check-in route, the scan route, and this tool.
-  if (!isWithinCheckInWindow(meeting.selectedAt, meeting.durationMinutes)) {
+  if (!isWithinCheckInWindow(meeting, meeting.exceptions)) {
     throw new McpForbiddenError("Check-in window has closed");
   }
 

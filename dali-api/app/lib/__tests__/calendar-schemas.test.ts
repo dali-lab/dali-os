@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AddTimeEntrySchema,
+  ASSIGNMENT_TYPES,
   CalendarActionSchema,
   SetMeetingCoreSchema,
   ToggleMeetingTimeEntrySchema,
@@ -92,6 +93,18 @@ describe("AddTimeEntrySchema", () => {
     const { startTime: _s, endTime: _e, ...noRange } = valid;
     expect(AddTimeEntrySchema.safeParse(noRange).success).toBe(false);
     expect(AddTimeEntrySchema.safeParse({ ...valid, startTime: null }).success).toBe(false);
+  });
+
+  // Regression: the enum omitted "Custom", so hours logged against a non-DALI
+  // job (a CustomHire) were rejected at the schema before they ever reached
+  // resolveRoleRef — the Timesheet form just failed to save with no useful
+  // explanation.
+  it("accepts every role kind the picker can offer, including a non-DALI job", () => {
+    for (const assignmentType of ASSIGNMENT_TYPES) {
+      const res = AddTimeEntrySchema.safeParse({ ...valid, assignmentType });
+      expect(res.success, `assignmentType ${assignmentType} should parse`).toBe(true);
+    }
+    expect(ASSIGNMENT_TYPES).toContain("Custom");
   });
 });
 

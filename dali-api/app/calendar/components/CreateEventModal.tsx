@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useFetcher } from "react-router";
+import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -256,6 +256,7 @@ export function CreateEventModal({
   // ── Submission state ─────────────────────────────────────────────────────
   const eventFetcher = useFetcher<{ error?: string }>();
   const timeFetcher = useFetcher();
+  const revalidator = useRevalidator();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
     | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
@@ -375,6 +376,14 @@ export function CreateEventModal({
             );
           }
         }
+        // The meeting POST goes out through plain fetch(), which the router
+        // knows nothing about — so nothing revalidates and the grid keeps
+        // painting the pre-create window until the next navigation or window
+        // focus. Ask for it by hand, the way CreateCoreEventModal does, and the
+        // new block is already on screen behind the success message by the time
+        // the modal closes. (calendar.tsx's shouldRevalidate deliberately lets a
+        // same-URL revalidate through for exactly this case.)
+        revalidator.revalidate();
         setTimeout(() => onClose(), 1200);
       }
     } catch (err) {
