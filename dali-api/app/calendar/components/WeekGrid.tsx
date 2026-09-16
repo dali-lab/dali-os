@@ -10,7 +10,7 @@ import { Toggle } from "~/components/ui/Toggle";
 import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
-import { isPayPeriodEnd } from "~/lib/pay-period";
+import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import type {
@@ -1087,7 +1087,7 @@ export function WeekGrid({
   showSubHourGrid = false,
   clean = false,
   timezone,
-  markPayPeriodEnds = false,
+  markPayPeriodBounds = false,
   fillAndScroll = false,
   allDayByDay,
   clickDurationHours,
@@ -1118,10 +1118,10 @@ export function WeekGrid({
   // When set, the column matching "today" in this timezone is highlighted and a
   // horizontal current-time line is drawn in it.
   timezone?: string;
-  // Timesheet only: draw a boundary on the last day of each pay period, so it's
-  // visible where hours stop accruing to one period and start on the next.
+  // Timesheet only: mark the first and last day of each pay period, so it's
+  // visible where hours start accruing to one period and where they stop.
   // Availability has no payroll meaning, so it doesn't ask for this.
-  markPayPeriodEnds?: boolean;
+  markPayPeriodBounds?: boolean;
   // Fill the parent's bounded height and scroll internally (24h stays fully
   // reachable) instead of rendering a fixed 24h block clipped at midnight.
   // Also makes the day-header row + hour axis sticky. Availability opts in;
@@ -1415,18 +1415,34 @@ export function WeekGrid({
       </div>
       {days.map((d, idx) => {
         const isToday = idx === todayIdx;
-        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
+        const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+        const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
         return (
           <div
             key={idx}
-            className={`flex-1 min-w-0 flex flex-col items-center justify-center border-r last:border-r-0 border-b ${
+            className={`flex-1 min-w-0 flex flex-col items-center justify-center border-b ${
               showProviderRow ? "h-20" : "h-12"
             } ${
-              periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
-            } ${isToday ? "bg-accent-coral/10" : periodEnd ? "bg-accent-teal/10" : ""}`}
+              periodEnd
+                ? // No last:border-r-0 here — periods end on a Saturday, which is
+                  // the week's last column, and the edge has to survive there.
+                  "border-r-2 border-r-accent-teal"
+                : "border-r last:border-r-0 border-border"
+            } ${periodStart ? "border-l-2 border-l-accent-teal" : ""} ${
+              isToday ? "bg-accent-coral/10" : periodStart || periodEnd ? "bg-accent-teal/10" : ""
+            }`}
           >
             <div className={`mb-0.5 text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
             <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
+            {periodStart && !showProviderRow && (
+              <Tooltip content="First day of this pay period" placement="bottom">
+                <span
+                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
+                >
+                  Pay starts
+                </span>
+              </Tooltip>
+            )}
             {periodEnd && !showProviderRow && (
               <Tooltip content="Last day of this pay period" placement="bottom">
                 <span
@@ -1463,14 +1479,19 @@ export function WeekGrid({
           </span>
         </div>
         {/* One cell per day column */}
-        {days.map((_d, idx) => {
+        {days.map((d, idx) => {
           const blocks = allDayByDay?.[idx] ?? [];
+          // Same period edges as the header and grid, so the columns line up.
+          const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+          const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
           const visible = blocks.slice(0, 3);
           const overflow = blocks.length - visible.length;
           return (
             <div
               key={idx}
-              className="flex-1 min-w-0 border-r last:border-r-0 border-border py-0.5 px-0.5 flex flex-col gap-0.5"
+              className={`flex-1 min-w-0 py-0.5 px-0.5 flex flex-col gap-0.5 ${
+                periodEnd ? "border-r-2 border-r-accent-teal" : "border-r last:border-r-0 border-border"
+              } ${periodStart ? "border-l-2 border-l-accent-teal" : ""}`}
             >
               {visible.map((block, bi) => {
                 const hasColor = Boolean(block.color);
@@ -1530,16 +1551,17 @@ export function WeekGrid({
       {/* Day columns */}
       {days.map((d, idx) => {
         const isToday = idx === todayIdx;
-        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
+        const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+        const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
         return (
         <div
           key={idx}
-          className={`flex-1 min-w-0 border-r last:border-r-0 flex flex-col ${
-            // A solid accent edge on the period's last column, rather than a
-            // badge: the boundary is between this day and the next, so it wants
-            // to be drawn on the seam.
-            periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
-          }`}
+          className={`flex-1 min-w-0 flex flex-col ${
+            // A solid accent edge on the period's first and last columns, rather
+            // than a badge: each boundary sits on a seam between two days, so it
+            // wants to be drawn there.
+            periodEnd ? "border-r-2 border-r-accent-teal" : "border-r last:border-r-0 border-border"
+          } ${periodStart ? "border-l-2 border-l-accent-teal" : ""}`}
         >
           <div
             ref={(el) => {
