@@ -840,6 +840,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   anchorMonth={anchorMonth}
                   timezone={data.timezone}
                   onSelectDay={goToDay}
+                  markPayPeriodBounds={layers.logged}
                 />
               ) : (
                 <WeekGrid
@@ -848,7 +849,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   days={days}
                   timezone={data.timezone}
                   clickDurationHours={data.defaultEventDurationMin / 60}
-                  markPayPeriodEnds={layers.logged}
+                  markPayPeriodBounds={layers.logged}
                   backgroundLayer={(dayIdx) =>
                     layers.workingHours
                       ? workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {

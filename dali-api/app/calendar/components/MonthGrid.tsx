@@ -5,6 +5,8 @@
 // affordance).
 
 import { cn } from "~/lib/cn";
+import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
+import { Tooltip } from "~/components/ui/floating";
 import { readableTextColor } from "~/calendar/lib/event-block";
 import type { GridDay } from "~/calendar/lib/layers";
 import type { EventBlock } from "~/calendar/lib/types";
@@ -41,6 +43,7 @@ export function MonthGrid({
   anchorMonth,
   timezone,
   onSelectDay,
+  markPayPeriodBounds = false,
 }: {
   days: GridDay[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -49,6 +52,8 @@ export function MonthGrid({
   timezone: string;
   /** Drill into a day: called with the column's UTC-anchored date. */
   onSelectDay: (dateUtc: Date) => void;
+  /** Timesheet only: tag the first and last day of each pay period. */
+  markPayPeriodBounds?: boolean;
 }) {
   const todayYmd = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -78,6 +83,8 @@ export function MonthGrid({
             day.dateUtc.getUTCDate(),
           ).padStart(2, "0")}`;
           const isToday = dayKey === todayYmd;
+          const periodStart = markPayPeriodBounds && isPayPeriodStart(day.dateUtc);
+          const periodEnd = markPayPeriodBounds && isPayPeriodEnd(day.dateUtc);
           const blocks = (eventsByDay[idx] ?? []).slice().sort((a, b) => a.startHour - b.startHour);
           const shown = blocks.slice(0, MAX_CHIPS);
           const overflow = blocks.length - shown.length;
@@ -110,6 +117,16 @@ export function MonthGrid({
                 >
                   {day.dateUtc.getUTCDate()}
                 </span>
+                {(periodStart || periodEnd) && (
+                  <Tooltip
+                    content={periodStart ? "First day of this pay period" : "Last day of this pay period"}
+                    placement="bottom"
+                  >
+                    <span className="rounded-full bg-accent-teal/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide leading-none text-accent-teal">
+                      {periodStart ? "Pay starts" : "Pay ends"}
+                    </span>
+                  </Tooltip>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 overflow-hidden">
                 {shown.map((b, i) => (
