@@ -127,12 +127,18 @@ export function instructorRoleLabel(type: OfferingType, title: string): string {
 
 /**
  * How a project assignment reads to a person, rather than as a level code.
- * The ladder (schema.prisma `ProjectLevel`) is P1 Learner / P2 Doer / P3 Mentor,
- * so P3 mentors and P1–P2 do the building — "DALI OS Developer Mentor" instead
- * of "DALI OS (P3)".
+ * Names the domain the person was staffed in on that assignment row — a
+ * designer reads "Evergreen UI/UX Design", not "Evergreen Developer" — which
+ * also tells apart the rows of someone staffed in several domains on one
+ * project. The ladder (schema.prisma `Level`) is P1 Learner / P2 Doer /
+ * P3 Mentor, so P3 appends "Mentor" instead of showing "(P3)".
  */
-export function projectRoleLabel(projectName: string, level: string): string {
-  return `${projectName} ${level === "P3" ? "Developer Mentor" : "Developer"}`;
+export function projectRoleLabel(
+  projectName: string,
+  domainName: string,
+  level: string,
+): string {
+  return `${projectName} ${domainName}${level === "P3" ? " Mentor" : ""}`;
 }
 
 /**
@@ -182,7 +188,13 @@ export async function getUserRoleInstances(
       term
         ? prisma.projectAssignment.findMany({
             where: { userId, termId: term.id },
-            select: { id: true, projectId: true, level: true, project: { select: { name: true } } },
+            select: {
+              id: true,
+              projectId: true,
+              level: true,
+              project: { select: { name: true } },
+              domain: { select: { displayName: true } },
+            },
           })
         : Promise.resolve([]),
       term
@@ -216,7 +228,7 @@ export async function getUserRoleInstances(
     roles.push({
       assignmentType: "Project",
       roleRefId: pa.id,
-      label: projectRoleLabel(pa.project.name, pa.level),
+      label: projectRoleLabel(pa.project.name, pa.domain.displayName, pa.level),
       projectId: pa.projectId,
     });
   }
@@ -331,9 +343,13 @@ export async function getRoleLabel(
     case "Project": {
       const row = await prisma.projectAssignment.findUnique({
         where: { id: roleRefId },
-        select: { level: true, project: { select: { name: true } } },
+        select: {
+          level: true,
+          project: { select: { name: true } },
+          domain: { select: { displayName: true } },
+        },
       });
-      return row ? projectRoleLabel(row.project.name, row.level) : null;
+      return row ? projectRoleLabel(row.project.name, row.domain.displayName, row.level) : null;
     }
     case "Core": {
       const row = await prisma.coreAssignment.findUnique({

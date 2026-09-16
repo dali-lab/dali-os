@@ -241,6 +241,7 @@ export const prisma = {
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   project: {
