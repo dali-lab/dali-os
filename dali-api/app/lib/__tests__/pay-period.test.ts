@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { payPeriodFor, isPayPeriodEnd, formatPayPeriod } from "~/lib/pay-period";
+import { payPeriodFor, isPayPeriodStart, isPayPeriodEnd, formatPayPeriod } from "~/lib/pay-period";
 
 const day = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -43,6 +43,21 @@ describe("payPeriodFor", () => {
     const later = payPeriodFor(day(2026, 12, 25));
     expect(later.index).toBeGreaterThan(0);
     expect((later.end.getTime() - later.start.getTime()) / 86_400_000).toBe(13);
+  });
+});
+
+describe("isPayPeriodStart", () => {
+  it("is true only on the first day", () => {
+    expect(isPayPeriodStart(day(2026, 7, 5))).toBe(true);
+    expect(isPayPeriodStart(day(2026, 7, 19))).toBe(true);
+    expect(isPayPeriodStart(day(2026, 8, 2))).toBe(true);
+    expect(isPayPeriodStart(day(2026, 6, 21))).toBe(true);
+  });
+
+  it("is false on an end day or mid-period", () => {
+    expect(isPayPeriodStart(day(2026, 7, 18))).toBe(false);
+    expect(isPayPeriodStart(day(2026, 7, 12))).toBe(false);
+    expect(isPayPeriodStart(day(2026, 7, 6))).toBe(false);
   });
 });
 
@@ -93,5 +108,11 @@ describe("marking a Sun–Sat week", () => {
 
   it("never marks a week that lies wholly inside a period", () => {
     expect(week(2026, 8, 2).filter(isPayPeriodEnd)).toHaveLength(0);
+  });
+
+  it("marks the start on the first week's Sunday only", () => {
+    expect(week(2026, 7, 5).filter(isPayPeriodStart).map(iso)).toEqual(["2026-07-05"]);
+    expect(week(2026, 7, 19).filter(isPayPeriodStart).map(iso)).toEqual(["2026-07-19"]);
+    expect(week(2026, 7, 12).filter(isPayPeriodStart)).toHaveLength(0);
   });
 });
