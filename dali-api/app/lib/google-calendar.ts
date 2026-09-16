@@ -256,6 +256,76 @@ function plainTextFromGoogleHtml(html: string): string {
     .trim();
 }
 
+/**
+ * Error from a Google Calendar REST call, carrying the HTTP status so callers
+ * can branch on it — notably a 404 on ONE sub-calendar (deleted or unshared on
+ * Google's side), which we prune rather than let fail the whole link's sync.
+ * The message keeps the "Google events.list failed (…)" shape the sync-error
+ * UI (`app/calendar/lib/sync-error.ts`) reads.
+ */
+export class GoogleCalendarApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "GoogleCalendarApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Read each sub-calendar independently so one dead calendar can't drop events
+ * from the others. A 404 means that calendar no longer exists on Google
+ * (deleted or unshared) — its id is collected into `deadCalendarIds` for the
+ * caller to prune, NOT treated as a link-level failure. Any other error
+ * (auth/scope/transient) surfaces as `fatalError` (first one wins) so the
+ * sync-error notice and reconnect prompt still fire. A 404 on the "primary"
+ * fallback is treated as fatal, not prunable — there's nothing to remove.
+ */
+async function readSubCalendars<T>(
+  calendarIds: string[],
+  fetchOne: (calendarId: string) => Promise<T[]>,
+): Promise<{ events: T[]; deadCalendarIds: string[]; fatalError?: Error }> {
+  const settled = await Promise.allSettled(calendarIds.map((id) => fetchOne(id)));
+  const events: T[] = [];
+  const deadCalendarIds: string[] = [];
+  let fatalError: Error | undefined;
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      events.push(...r.value);
+      return;
+    }
+    const err = r.reason instanceof Error ? r.reason : new Error(String(r.reason));
+    if (
+      err instanceof GoogleCalendarApiError &&
+      err.status === 404 &&
+      calendarIds[i] !== "primary"
+    ) {
+      deadCalendarIds.push(calendarIds[i]);
+    } else if (!fatalError) {
+      fatalError = err;
+    }
+  });
+  return { events, deadCalendarIds, fatalError };
+}
+
+/**
+ * Drop sub-calendar ids Google 404'd (deleted/unshared) so they stop breaking
+ * every future sync. Best-effort read-modify-write off the ids we just read; a
+ * concurrent settings edit simply gets re-pruned on the next sync.
+ */
+async function pruneDeadSubCalendars(
+  linkId: string,
+  current: string[],
+  dead: string[],
+): Promise<void> {
+  if (dead.length === 0) return;
+  const deadSet = new Set(dead);
+  const remaining = current.filter((id) => !deadSet.has(id));
+  await prisma.userCalendarLink
+    .update({ where: { id: linkId }, data: { subCalendarIds: remaining } })
+    .catch(() => {});
+}
+
 // One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
 // window. Uses events.list (not freeBusy) so we get the real title; freeBusy
 // returns only opaque time ranges. `color` is the calendar's backgroundColor,
@@ -285,7 +355,7 @@ async function fetchEventsForCalendar(
   );
   if (!res.ok) {
     const detail = await extractGoogleErrorDetail(res);
-    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
   }
   const data = (await res.json()) as { items?: GoogleEvent[] };
   const out: BusyEvent[] = [];
@@ -351,12 +421,15 @@ async function fetchBusyForLink(
     }
   }
   const calendarIds = subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
-  const perCalendar = await Promise.all(
-    calendarIds.map((id) =>
-      fetchEventsForCalendar(token, id, colorById.get(id), start, end),
-    ),
+  const { events, deadCalendarIds, fatalError } = await readSubCalendars(
+    calendarIds,
+    (id) => fetchEventsForCalendar(token, id, colorById.get(id), start, end),
   );
-  return perCalendar.flat();
+  // Self-heal deleted/unshared sub-calendars; only a real (auth/scope/transient)
+  // failure should mark the whole link as errored.
+  await pruneDeadSubCalendars(linkId, subCalendarIds, deadCalendarIds);
+  if (fatalError) throw fatalError;
+  return events;
 }
 
 /**
@@ -497,7 +570,7 @@ async function fetchAllEventsForCalendar(
   );
   if (!res.ok) {
     const detail = await extractGoogleErrorDetail(res);
-    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
   }
   const data = (await res.json()) as { items?: (GoogleEvent & { recurringEventId?: string })[] };
   const color = calendarMeta?.backgroundColor;
@@ -598,16 +671,17 @@ export async function fetchCalendarEvents(
         }
 
         const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
-        const perCalendar = await Promise.all(
-          calendarIds.map((id) =>
-            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
-          ),
+        const { events, deadCalendarIds, fatalError } = await readSubCalendars(
+          calendarIds,
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
         );
+        await pruneDeadSubCalendars(l.id, l.subCalendarIds, deadCalendarIds);
+        if (fatalError) throw fatalError;
         await prisma.userCalendarLink.update({
           where: { id: l.id },
           data: { lastSyncedAt: new Date(), syncError: null },
         });
-        return perCalendar.flat();
+        return events;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         await prisma.userCalendarLink
@@ -652,12 +726,13 @@ export async function searchCalendarEvents(
           // Best-effort colour/writable metadata; matches still return.
         }
         const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
-        const perCalendar = await Promise.all(
-          calendarIds.map((id) =>
-            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
-          ),
+        // Read-only: isolate per-calendar failures (a dead one shouldn't drop
+        // the rest) but don't prune or record sync errors here.
+        const { events } = await readSubCalendars(
+          calendarIds,
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
         );
-        return perCalendar.flat();
+        return events;
       } catch {
         return [] as CalendarEvent[];
       }
