@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import {
   getRoleLabel,
   instructorRoleLabel,
+  projectRoleLabel,
   resolveRoleRef,
   getUserRoleInstances,
 } from "~/lib/roles";
@@ -135,6 +136,38 @@ describe("instructorRoleLabel", () => {
     expect(roles.map((r) => r.label)).toEqual([
       "Intro to Figma (Workshop Instructor)",
       "Swift Bootcamp (Miniseries Instructor)",
+    ]);
+  });
+});
+
+describe("projectRoleLabel", () => {
+  it("names the staffed domain, not a blanket 'Developer'", () => {
+    expect(projectRoleLabel("Evergreen", "UI/UX Design", "P2")).toBe("Evergreen UI/UX Design");
+    expect(projectRoleLabel("Evergreen", "Fullstack Dev", "P1")).toBe("Evergreen Fullstack Dev");
+  });
+
+  it("marks P3 as a mentor within that domain", () => {
+    expect(projectRoleLabel("Evergreen", "UI/UX Design", "P3")).toBe("Evergreen UI/UX Design Mentor");
+  });
+
+  it("is what getRoleLabel returns for a Project assignment", async () => {
+    mockPrisma.projectAssignment!.findUnique.mockResolvedValue({
+      level: "P3",
+      project: { name: "Evergreen" },
+      domain: { displayName: "UI/UX Design" },
+    });
+    expect(await getRoleLabel("Project", "pa-1")).toBe("Evergreen UI/UX Design Mentor");
+  });
+
+  it("gives one distinct entry per domain for someone staffed in several", async () => {
+    mockPrisma.projectAssignment!.findMany.mockResolvedValue([
+      { id: "pa-1", projectId: "p-1", level: "P3", project: { name: "Evergreen" }, domain: { displayName: "UI/UX Design" } },
+      { id: "pa-2", projectId: "p-1", level: "P1", project: { name: "Evergreen" }, domain: { displayName: "Fullstack Dev" } },
+    ]);
+    const roles = await getUserRoleInstances(USER, "term-1");
+    expect(roles.map((r) => r.label)).toEqual([
+      "Evergreen UI/UX Design Mentor",
+      "Evergreen Fullstack Dev",
     ]);
   });
 });

@@ -60,7 +60,7 @@ beforeEach(() => {
     { timezone: "America/New_York" } as never,
   );
   vi.mocked(prisma.user.findUnique).mockResolvedValue({ timeZone: null } as never);
-  vi.mocked(getRoleLabel).mockImplementation(async (_t, id) => (id === "pa1" ? "DALI OS Developer" : "Core"));
+  vi.mocked(getRoleLabel).mockImplementation(async (_t, id) => (id === "pa1" ? "DALI OS Fullstack Dev" : "Core"));
   vi.mocked(getUserRoleInstances).mockResolvedValue([]);
 });
 
@@ -141,13 +141,13 @@ describe("GET /api/timesheets/export", () => {
   it("returns an empty picker instead of a 404 when nothing is logged", async () => {
     findEntries.mockResolvedValue([]);
     vi.mocked(getUserRoleInstances).mockResolvedValue([
-      { assignmentType: "Project", roleRefId: "pa9", label: "New Project Developer" } as never,
+      { assignmentType: "Project", roleRefId: "pa9", label: "New Project Fullstack Dev" } as never,
     ]);
 
     const { status, body } = await get();
 
     expect(status).toBe(200);
-    expect(body.availableHires).toEqual([{ key: "pa9", label: "New Project Developer" }]);
+    expect(body.availableHires).toEqual([{ key: "pa9", label: "New Project Fullstack Dev" }]);
     expect(body.periods).toEqual([]);
     expect(body.periodKey).toBeNull();
     expect(body.entries).toEqual([]);
