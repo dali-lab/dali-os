@@ -19,7 +19,13 @@ const Base = {
 
 const UpdateSchema = z.discriminatedUnion("scopeType", [
   z.object({ scopeType: z.literal("None"), ...Base }),
-  z.object({ scopeType: z.literal("Group"), groupId: z.string().min(1), ...Base }),
+  z.object({
+    scopeType: z.literal("Group"),
+    groupId: z.string().min(1),
+    // Guests on top of the group, so an edit keeps anyone invited individually.
+    extraUserIds: z.array(z.string().min(1)).optional(),
+    ...Base,
+  }),
   z.object({
     scopeType: z.literal("UserList"),
     participantUserIds: z.array(z.string().min(1)).min(1),
@@ -44,7 +50,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {
-    scope = { type: "Group", groupId: body.groupId };
+    scope = { type: "Group", groupId: body.groupId, extraUserIds: body.extraUserIds };
   } else if (body.scopeType === "UserList") {
     scope = { type: "UserList", participantUserIds: body.participantUserIds };
   } else {
