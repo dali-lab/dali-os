@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { PKPass } from "passkit-generator";
 import { prisma } from "~/lib/db";
-import { walletTokensConfigured, signWalletToken, ensureWalletSecret } from "~/lib/wallet-token";
+import { walletTokensConfigured, signWalletToken, ensureWalletSecret, signWalletAuthToken } from "~/lib/wallet-token";
+import { getApiBaseUrl } from "~/lib/app-env";
 
 // Apple Wallet (.pkpass) pass generator for DALI membership passes. Signs passes
 // using Apple's passkit-generator (v3) with the three PEM certificates supplied
@@ -50,10 +51,20 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
       firstName: true,
       lastName: true,
       classYear: true,
+      walletPassUpdatedAt: true,
       daliMember: { select: { onboardedAt: true } },
     },
   });
   if (!user) throw new Error(`User not found: ${userId}`);
+
+  // Baseline the update tag on first download so the web-service
+  // "passes updated since" query always has a non-null timestamp to compare.
+  if (!user.walletPassUpdatedAt) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { walletPassUpdatedAt: new Date() },
+    });
+  }
 
   // Normalize PEM values — hosting platforms often escape newlines as \n literals.
   const signerCert = process.env.APPLE_PASS_CERT_PEM!.replace(/\\n/g, "\n");
@@ -72,20 +83,24 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
       organizationName: "DALI Lab",
       description: "DALI Membership",
       serialNumber: userId,
-      logoText: "Membership",
-      // Official DALI blue (#1E5779).
+      // Official DALI blue (#1E5779) — fills the whole card face (no strip).
       backgroundColor: "rgb(30, 87, 121)",
       foregroundColor: "rgb(255, 255, 255)",
       labelColor: "rgb(199, 218, 231)",
+      // webServiceURL + authenticationToken enable Apple's PassKit web service:
+      // when the device sees these, it polls /api/wallet/apple/v1/passes/…
+      // after we send an APNs push, so the barcode refreshes silently.
+      webServiceURL: `${getApiBaseUrl()}/api/wallet/apple`,
+      authenticationToken: signWalletAuthToken(userId),
     },
   );
 
-  // storeCard: a branded strip banner with the member name over it and the
-  // fields below (setting the style resets the field arrays).
+  // storeCard: flat-color membership card with name + secondary fields below
+  // (setting the type resets the field arrays).
   pass.type = "storeCard";
 
-  // Primary field: member name, rendered over the strip.
-  pass.primaryFields.push({ key: "member", label: "MEMBER", value: `${user.firstName} ${user.lastName}` });
+  // Primary field: member name, shown prominently on the card face.
+  pass.primaryFields.push({ key: "member", value: `${user.firstName} ${user.lastName}` });
 
   // Secondary fields: onboarding-based "member since" + Dartmouth class year.
   // Both are staleness-proof (they don't change term to term), so a static pass
@@ -106,16 +121,14 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
   const token = signWalletToken(userId, memberSecret);
   pass.setBarcodes({ format: "PKBarcodeFormatQR", message: token, messageEncoding: "iso-8859-1" });
 
-  // Images: white icon/logo for the dark card, plus the branded strip banner.
+  // Images: white icon/logo for the dark card. No strip image — the flat
+  // backgroundColor fills the whole card face.
   const iconBuf = readBrandAsset("icon-white.png");
   const logoBuf = readBrandAsset("logo-white.png");
   pass.addBuffer("icon.png", iconBuf);
   pass.addBuffer("icon@2x.png", iconBuf);
   pass.addBuffer("logo.png", logoBuf);
   pass.addBuffer("logo@2x.png", logoBuf);
-  pass.addBuffer("strip.png", readBrandAsset("wallet/strip.png"));
-  pass.addBuffer("strip@2x.png", readBrandAsset("wallet/strip@2x.png"));
-  pass.addBuffer("strip@3x.png", readBrandAsset("wallet/strip@3x.png"));
 
   return pass.getAsBuffer();
 }

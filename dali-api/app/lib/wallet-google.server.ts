@@ -111,12 +111,8 @@ export async function buildGoogleWalletSaveUrl(
         value: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
       },
     },
-    subheader: {
-      defaultValue: { language: "en-US", value: "Membership" },
-    },
     hexBackgroundColor: "#1E5779",
     logo: { sourceUri: { uri: `${origin}/logo-white.png` } },
-    heroImage: { sourceUri: { uri: `${origin}/wallet/hero.png` } },
     textModulesData,
     barcode: { type: "QR_CODE", value: barcodeValue },
   };

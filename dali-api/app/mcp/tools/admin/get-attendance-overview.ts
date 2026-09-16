@@ -1,5 +1,7 @@
-// MCP `get_attendance_overview` — cross-meeting admin attendance grid.
-// Reuses admin.attendance.tsx loader query. mcp:admin, Core leads only.
+// MCP `get_attendance_overview` — cross-meeting admin attendance grid. This is
+// the surviving home of the cross-meeting Core view (the old /admin/attendance
+// overview page was retired for the lab-wide /attendance surface). mcp:admin,
+// Core leads only.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";

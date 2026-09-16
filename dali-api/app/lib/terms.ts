@@ -101,3 +101,30 @@ export async function resolveTermFilter(
     isUpcoming: false,
   };
 }
+
+/**
+ * A term's date window. Nothing stores a term FK for education offerings —
+ * the term an offering runs in is a pure function of its start date — so the
+ * windows are what read-time derivation and term-scoped date filters work
+ * from.
+ */
+export type TermWindow = { id: string; code: string; startDate: Date; endDate: Date };
+
+/** Every term's date window, newest first. */
+export async function termWindows(): Promise<TermWindow[]> {
+  return prisma.term.findMany({
+    orderBy: { sortKey: "desc" },
+    select: { id: true, code: true, startDate: true, endDate: true },
+  });
+}
+
+/**
+ * The term code whose window contains `date`, or null when the date falls
+ * outside every term (a break, or a term not seeded yet). Newest-first input
+ * order means an overlap resolves to the newer term, matching the old
+ * `termIdForDate` lookup this replaced.
+ */
+export function termCodeForDate(windows: TermWindow[], date: Date): string | null {
+  const hit = windows.find((w) => w.startDate <= date && date <= w.endDate);
+  return hit?.code ?? null;
+}

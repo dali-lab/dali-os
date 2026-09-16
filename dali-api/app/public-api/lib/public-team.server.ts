@@ -10,9 +10,11 @@ import { publicMediaUrl } from "./public-media";
 //   1. `USER_PUBLIC_SELECT` below is an explicit allow-list. Never widen it,
 //      and never replace it with a spread of a wider select — the Prisma
 //      `select` is what actually stops the columns being read at all.
-//   2. `publicProfile` gates *which* users appear. It's opt-in (default
-//      false), backfilled true for anyone who has been staffed, so a member
-//      can be taken off the public site by flipping one boolean.
+//   2. The `where` scopes to staffed members — anyone with a project or core
+//      assignment — so applicants (User rows with no assignment) never appear.
+//      This replaced an opt-in `publicProfile` flag that nothing maintained: it
+//      was backfilled once for staffed members, so anyone added afterward was
+//      silently invisible. Deriving membership from assignments stays current.
 //
 // The response shape matches dali.website's `TeamMember` interface
 // (shared/api.ts) exactly, so its components needed no changes.
@@ -56,7 +58,14 @@ const USER_PUBLIC_SELECT = {
 
 export async function listPublicTeam(): Promise<PublicTeamMember[]> {
   const users = await prisma.user.findMany({
-    where: { publicProfile: true },
+    // Staffed members only — a project or core assignment. That's what puts
+    // someone "on the team", and it keeps applicants (no assignments) out.
+    where: {
+      OR: [
+        { projectAssignments: { some: {} } },
+        { coreAssignments: { some: {} } },
+      ],
+    },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     select: USER_PUBLIC_SELECT,
   });

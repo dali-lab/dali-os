@@ -2,10 +2,10 @@ import type { Route } from "./+types/api.public.projects.$id";
 import { requireShowcaseSecret } from "../lib/public-auth.server";
 import { getPublicProject } from "../lib/public-projects.server";
 
-// GET /api/public/projects/:id — one published project plus the block content
-// of its public write-up (the project page flagged publicVisible). 404s for a
-// project that exists but isn't published, so an unpublished id is
-// indistinguishable from a missing one.
+// GET /api/public/projects/:id — one published project plus its structured
+// write-up: `details` ({ item, description } pairs, curated in the Public view)
+// and `media` (image/video gallery URLs). 404s for a project that exists but
+// isn't published, so an unpublished id is indistinguishable from a missing one.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const denied = requireShowcaseSecret(request);

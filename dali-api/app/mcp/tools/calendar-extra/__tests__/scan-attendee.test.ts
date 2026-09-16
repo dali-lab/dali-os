@@ -27,12 +27,12 @@ vi.mock("~/lib/roles", async (orig) => {
 });
 vi.mock("~/lib/scheduled-meeting", () => ({
   markMeetingAttendance: vi.fn(),
-  isWithinCheckInWindow: vi.fn(),
 }));
 vi.mock("~/lib/wallet-token", () => ({
   walletTokensConfigured: vi.fn(),
   memberIdFromToken: vi.fn(),
   verifyWalletToken: vi.fn(),
+  classifyWalletScanFailure: vi.fn(() => "signature-mismatch"),
 }));
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn(async (url: string | null) => url ?? null),
@@ -40,7 +40,7 @@ vi.mock("~/lib/photo", () => ({
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import { walletTokensConfigured, memberIdFromToken, verifyWalletToken } from "~/lib/wallet-token";
 import { runScanAttendee, SCAN_ATTENDEE_DEF } from "~/mcp/tools/calendar-extra/scan-attendee";
 
@@ -93,24 +93,12 @@ describe("scan_attendee", () => {
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
-  it("throws McpForbiddenError when outside check-in window", async () => {
-    vi.mocked(walletTokensConfigured).mockReturnValue(true);
-    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING);
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(isProjectMember).mockResolvedValue(false);
-    vi.mocked(isWithinCheckInWindow).mockReturnValue(false);
-
-    await expect(
-      runScanAttendee("u-core", { meetingId: "m1", memberToken: "tok" }),
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
 
   it("throws McpInvalidError for invalid token", async () => {
     vi.mocked(walletTokensConfigured).mockReturnValue(true);
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING);
     vi.mocked(isCore).mockResolvedValue(true);
     vi.mocked(isProjectMember).mockResolvedValue(false);
-    vi.mocked(isWithinCheckInWindow).mockReturnValue(true);
     vi.mocked(memberIdFromToken).mockReturnValue(null);
 
     await expect(
@@ -123,7 +111,6 @@ describe("scan_attendee", () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING);
     vi.mocked(isCore).mockResolvedValue(true);
     vi.mocked(isProjectMember).mockResolvedValue(false);
-    vi.mocked(isWithinCheckInWindow).mockReturnValue(true);
     vi.mocked(memberIdFromToken).mockReturnValue("u-member");
     mockPrisma.user.findUnique.mockResolvedValue({
       id: "u-member",

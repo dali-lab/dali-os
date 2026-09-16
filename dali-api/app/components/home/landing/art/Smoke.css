@@ -1,0 +1,17 @@
+/* Landing 'Smoke' layer — hand-optimized for performance (home-graphics-perf).
+ *
+ * Originally emitted by scripts/split-landing-svg.py, but that generator is not
+ * checked into this repo, so edit this file directly.
+ *
+ * Every exhaust cloud and bubble here carries an feGaussianBlur (stdDeviation 20)
+ * drop-shadow filter. The export animated each of them individually with an
+ * `infinite` transform/offset-path loop, which forced the browser to recompute
+ * ~28 large Gaussian blurs every single frame — the biggest cost on the page.
+ *
+ * The per-element loops are gone: the elements now render at their authored SVG
+ * poses, so each blur is rasterized once. The subtle "living" drift is applied to
+ * the whole layer instead, as a single compositor-friendly transform on the
+ * outer <svg> (`.landing-smoke` in landing.css), which reuses that one cached
+ * raster instead of re-blurring. See landing.css for that drift and the
+ * offscreen/reduced-motion pause.
+ */

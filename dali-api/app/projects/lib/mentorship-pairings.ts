@@ -11,8 +11,14 @@ type Tx = {
     >;
   };
   mentorshipPair: {
+    findMany: (args: {
+      where: { projectId: string; termId: string; manual: true };
+      select: { menteeUserId: true; mentorUserId: true; domainId: true };
+    }) => Promise<
+      { menteeUserId: string; mentorUserId: string; domainId: string }[]
+    >;
     deleteMany: (args: {
-      where: { projectId: string; termId: string };
+      where: { projectId: string; termId: string; manual: false };
     }) => Promise<{ count: number }>;
     createMany: (args: {
       data: {
@@ -71,6 +77,17 @@ export async function derivePairings(
     bucketFor(em.domainId).mentors.push(em.userId);
   }
 
+  // Hand-created pairs (Core, via the manual editor) are preserved across a
+  // re-finalize. Skip any auto pair that would exact-duplicate one so a manual
+  // link isn't shadowed by an identical derived row.
+  const manualPairs = await tx.mentorshipPair.findMany({
+    where: { projectId, termId, manual: true },
+    select: { menteeUserId: true, mentorUserId: true, domainId: true },
+  });
+  const manualKeys = new Set(
+    manualPairs.map((p) => `${p.menteeUserId}|${p.mentorUserId}|${p.domainId}`),
+  );
+
   const toCreate: {
     menteeUserId: string;
     mentorUserId: string;
@@ -82,14 +99,16 @@ export async function derivePairings(
     if (mentors.length === 0) continue;
     for (const menteeUserId of mentees) {
       for (const mentorUserId of mentors) {
+        if (manualKeys.has(`${menteeUserId}|${mentorUserId}|${domainId}`)) continue;
         toCreate.push({ menteeUserId, mentorUserId, projectId, termId, domainId });
       }
     }
   }
 
-  // Clear prior pairs for this project+term so re-finalize reflects the current
-  // roster (domain chips / mentor badges), not leftover links from earlier runs.
-  await tx.mentorshipPair.deleteMany({ where: { projectId, termId } });
+  // Clear prior AUTO pairs for this project+term so re-finalize reflects the
+  // current roster (domain chips / mentor badges), not leftover links from
+  // earlier runs — but leave manual pairs untouched.
+  await tx.mentorshipPair.deleteMany({ where: { projectId, termId, manual: false } });
 
   if (toCreate.length === 0) return 0;
   await tx.mentorshipPair.createMany({ data: toCreate });

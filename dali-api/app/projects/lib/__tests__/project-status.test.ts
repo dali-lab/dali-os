@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   computeProjectStatus,
+  computeStatusBreakdown,
   factsFingerprint,
   buildTldrDetail,
+  BREAKDOWN_CAP,
   STALE_DAYS,
   type StatusTaskInput,
   type TldrTaskInput,
@@ -133,6 +135,11 @@ describe("computeProjectStatus — current sprint", () => {
     expect(facts.activeSprint?.daysRemaining).toBe(7); // Sep 7 12:00 → Sep 14 00:00, ceil
   });
 
+  it("exposes the sprint's first-day start for the hover window", () => {
+    const facts = compute([], TERMS);
+    expect(facts.activeSprint?.startsAt).toBe("2026-09-07T00:00:00.000Z");
+  });
+
   it("is null when today falls outside every term", () => {
     const before = new Date("2026-08-01T12:00:00.000Z");
     const facts = computeProjectStatus(
@@ -206,5 +213,71 @@ describe("buildTldrDetail", () => {
     );
     expect(detail.stale.map((s) => s.title)).toEqual(["Stuck"]);
     expect(detail.inReview).toEqual(["Reviewing"]);
+  });
+});
+
+describe("computeStatusBreakdown", () => {
+  it("buckets tasks by status in display order, omitting empty buckets and Cancelled", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ status: "Done" }),
+        detailTask({ status: "Done" }),
+        detailTask({ status: "InProgress" }),
+        detailTask({ status: "Todo" }),
+        detailTask({ status: "Cancelled" }),
+      ],
+      NOW,
+    );
+    expect(b.byStatus).toEqual([
+      { status: "Done", label: "Done", count: 2 },
+      { status: "InProgress", label: "In progress", count: 1 },
+      { status: "Todo", label: "To do", count: 1 },
+    ]);
+  });
+
+  it("names overdue tasks most-overdue-first with days + priority, excluding closed", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ id: "1", title: "Old", status: "Todo", priority: "High", dueAt: daysAgo(10) }),
+        detailTask({ id: "2", title: "Older", status: "InProgress", priority: "Urgent", dueAt: daysAgo(30) }),
+        detailTask({ id: "3", title: "Shipped", status: "Done", priority: "High", dueAt: daysAgo(50) }),
+      ],
+      NOW,
+    );
+    expect(b.overdue.map((o) => o.title)).toEqual(["Older", "Old"]);
+    expect(b.overdue[0]).toMatchObject({ priority: "Urgent", daysOver: 30 });
+  });
+
+  it("orders unscheduled highest-priority first and excludes parked Backlog", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ title: "low", status: "Todo", priority: "Low", startsAt: null, dueAt: null }),
+        detailTask({ title: "urgent", status: "InProgress", priority: "Urgent", startsAt: null, dueAt: null }),
+        detailTask({ title: "parked", status: "Backlog", priority: "Urgent", startsAt: null, dueAt: null }),
+      ],
+      NOW,
+    );
+    expect(b.unscheduled.map((u) => u.title)).toEqual(["urgent", "low"]);
+  });
+
+  it("lists longest-stalled InProgress tasks and in-review titles", () => {
+    const b = computeStatusBreakdown(
+      [
+        detailTask({ title: "Stuck", status: "InProgress", activityAt: daysAgo(STALE_DAYS + 5) }),
+        detailTask({ title: "Fresh", status: "InProgress", activityAt: daysAgo(2) }),
+        detailTask({ title: "Reviewing", status: "InReview" }),
+      ],
+      NOW,
+    );
+    expect(b.stale.map((s) => s.title)).toEqual(["Stuck"]);
+    expect(b.inReview).toEqual(["Reviewing"]);
+  });
+
+  it("caps each named list at BREAKDOWN_CAP", () => {
+    const many = Array.from({ length: BREAKDOWN_CAP + 3 }, (_, i) =>
+      detailTask({ id: String(i), title: `T${i}`, status: "Todo", dueAt: daysAgo(i + 1) }),
+    );
+    const b = computeStatusBreakdown(many, NOW);
+    expect(b.overdue).toHaveLength(BREAKDOWN_CAP);
   });
 });

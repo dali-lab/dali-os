@@ -1,15 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Shield, UsersRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useListNavigation,
+  useRole,
+  FloatingPortal,
+} from "@floating-ui/react";
 import { Tooltip, InfoTip, Select } from "~/components/ui/floating";
+import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { buttonClasses } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
+import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -229,10 +244,9 @@ export function CreateScheduledMeetingForm({
   const { panel, panelPad, formClass } = useOsChrome();
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const googleLinks = calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
-    googleLinks[0]?.id ?? "",
-  );
+  // A specific calendar inside a linked Google account, not just the account.
+  const inviteDests = inviteDestinations(calendarLinks);
+  const [inviteFrom, setInviteFrom] = useState<string>(inviteDests[0]?.value ?? "");
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
@@ -242,6 +256,7 @@ export function CreateScheduledMeetingForm({
   // Core-only: lift this meeting onto the Core hub calendar without touching
   // who's invited. Inviting the Core group ticks it as a default (see below).
   const [coreMeeting, setCoreMeeting] = useState(false);
+  const revalidator = useRevalidator();
   const [status, setStatus] = useState<
     | null
     | {
@@ -307,9 +322,7 @@ export function CreateScheduledMeetingForm({
           payload.startTime = localDate.toISOString();
         }
       }
-      if (organizerCalendarLinkId) {
-        payload.organizerCalendarLinkId = organizerCalendarLinkId;
-      }
+      Object.assign(payload, inviteOrganizerFields(inviteFrom));
       Object.assign(payload, meetingNotePayload(note.state));
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
@@ -357,6 +370,11 @@ export function CreateScheduledMeetingForm({
         note.reset();
         setSelfCheckIn(false);
         setCoreMeeting(false);
+        // This composer sits on the calendar page next to the grid, and its
+        // POST goes out through plain fetch() — invisible to the router, so
+        // without this the meeting you just scheduled is missing from the grid
+        // beside it until the next navigation or window focus.
+        revalidator.revalidate();
       }
     } catch (err) {
       setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
@@ -456,20 +474,17 @@ export function CreateScheduledMeetingForm({
             <label htmlFor="organizer-calendar" className={labelClass}>
               Send invite from
             </label>
-            {googleLinks.length === 0 ? (
+            {inviteDests.length === 0 ? (
               <p className="text-xs text-muted-foreground pt-2">
                 No Google calendar linked. Link one in My Availability to send Gmail invites.
               </p>
             ) : (
               <Select
-                value={organizerCalendarLinkId}
-                onChange={(v) => setOrganizerCalendarLinkId(v)}
+                value={inviteFrom}
+                onChange={(v) => setInviteFrom(v)}
                 options={[
                   { value: "", label: "No invite (in-app notification only)" },
-                  ...googleLinks.map((l) => ({
-                    value: l.id,
-                    label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
-                  })),
+                  ...inviteDests,
                 ]}
                 buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
               />
@@ -484,7 +499,7 @@ export function CreateScheduledMeetingForm({
           </p>
 
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-            <Checkbox
+            <Toggle
               checked={note.state.enabled}
               onChange={(e) => note.setEnabled(e.target.checked)}
               label="Create meeting note"
@@ -503,15 +518,15 @@ export function CreateScheduledMeetingForm({
 
           {canMarkCoreMeeting ? (
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Checkbox
+              <Toggle
                 checked={coreSelected || coreMeeting}
                 disabled={coreSelected}
                 onChange={(e) => setCoreMeeting(e.target.checked)}
                 label="Core meeting"
                 description={
                   coreSelected
-                    ? "The Core group is invited, so this is on the Core calendar."
-                    : "Shows this meeting on the Core hub calendar. Doesn't change who's invited."
+                    ? "The Core group is invited, so this is already on the Core calendar."
+                    : "Adds this to the Core hub calendar. Doesn't change who's invited."
                 }
               />
             </div>
@@ -519,14 +534,14 @@ export function CreateScheduledMeetingForm({
             coreSelected && (
               <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
                 <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
-                <span>The Core group is invited, so this shows on the Core calendar.</span>
+                <span>The Core group is invited, so this is already on the Core calendar.</span>
               </div>
             )
           )}
 
           {canSetSelfCheckIn && (
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Checkbox
+              <Toggle
                 checked={selfCheckIn}
                 onChange={(e) => setSelfCheckIn(e.target.checked)}
                 label="Self check-in (QR)"
@@ -649,54 +664,113 @@ export function ParticipantPicker({
   resolvedCount: number;
 }) {
   const { fieldRadius } = useOsChrome();
+  const panelClass = usePanelClass();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<Array<HTMLElement | null>>([]);
 
-  const availableUsers = users.filter((u) => !selectedUserIds.includes(u.id));
-  const availableGroups = groups.filter((g) => !selectedGroupIds.includes(g.id));
+  const q = query.trim().toLowerCase();
+  const filteredGroups = groups
+    .filter((g) => !selectedGroupIds.includes(g.id))
+    .filter((g) => (q ? g.name.toLowerCase().includes(q) : true))
+    .slice(0, 20);
+  const filteredUsers = users
+    .filter((u) => !selectedUserIds.includes(u.id))
+    .filter((u) =>
+      q ? userLabel(u).toLowerCase().includes(q) || (u.daliEmail ?? "").toLowerCase().includes(q) : true,
+    )
+    .slice(0, 40);
 
-  const filteredUsers = availableUsers.filter((u) => {
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return (
-      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
-      (u.daliEmail ?? "").toLowerCase().includes(q)
-    );
+  // One flat list (groups first, then users) so the arrow keys walk both and
+  // Enter can commit whatever's highlighted.
+  const items: Array<{ kind: "group"; g: GroupOption } | { kind: "user"; u: UserOption }> = [
+    ...filteredGroups.map((g) => ({ kind: "group" as const, g })),
+    ...filteredUsers.map((u) => ({ kind: "user" as const, u })),
+  ];
+  const firstUserIndex = filteredGroups.length;
+
+  function add(index: number) {
+    const it = items[index];
+    if (!it) return;
+    if (it.kind === "group") onChangeGroups([...selectedGroupIds, it.g.id]);
+    else onChangeUsers([...selectedUserIds, it.u.id]);
+    setQuery("");
+    setActiveIndex(0);
+    inputRef.current?.focus();
+  }
+
+  // Backspace on an empty query peels the most recently added chip — the usual
+  // token-field affordance. Users render after groups, so they come off first.
+  function removeLast() {
+    if (selectedUserIds.length > 0) onChangeUsers(selectedUserIds.slice(0, -1));
+    else if (selectedGroupIds.length > 0) onChangeGroups(selectedGroupIds.slice(0, -1));
+  }
+
+  const { refs, floatingStyles, context } = useFloating({
+    open,
+    onOpenChange: (o) => {
+      setOpen(o);
+      if (!o) setActiveIndex(null);
+    },
+    placement: "bottom-start",
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset(4),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ rects, elements, availableHeight }) {
+          Object.assign(elements.floating.style, {
+            width: `${rects.reference.width}px`,
+            maxHeight: `${Math.min(availableHeight, 288)}px`,
+          });
+        },
+      }),
+    ],
   });
-  const filteredGroups = availableGroups.filter((g) =>
-    query ? g.name.toLowerCase().includes(query.toLowerCase()) : true,
-  );
 
-  // Close on an outside click. The menu sits inside the wrapper, so anything
-  // landing outside it is a dismissal.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  const dismiss = useDismiss(context);
+  const role = useRole(context, { role: "listbox" });
+  const listNav = useListNavigation(context, {
+    listRef,
+    activeIndex,
+    onNavigate: setActiveIndex,
+    // The highlight moves without pulling focus off the input.
+    virtual: true,
+    loop: true,
+  });
+  const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([
+    dismiss,
+    role,
+    listNav,
+  ]);
 
   const chip =
     "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
+  const listId = "participant-list";
 
   return (
-    <div ref={wrapRef} className="relative">
-      {/* One always-present field: chips and the caret share it, so adding a
-          guest is just typing rather than first choosing "user" or "group". */}
+    <>
+      {/* One always-present field styled like the app's SearchInput — a leading
+          glyph, hairline border, coral focus ring — with the chips living inside
+          it, so adding a guest is just typing. The menu is portaled (the modal
+          clips overflow) and positioned by floating-ui. */}
       <div
+        ref={refs.setReference}
         onMouseDown={(e) => {
           if (e.target === e.currentTarget) e.preventDefault();
           setOpen(true);
-          wrapRef.current?.querySelector("input")?.focus();
+          inputRef.current?.focus();
         }}
         className={cn(
-          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background p-1.5 text-sm transition-colors focus-within:border-os-accent",
+          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background px-2.5 py-1.5 text-sm transition-shadow focus-within:ring-2 focus-within:ring-accent-coral/30",
           fieldRadius,
         )}
       >
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         {selectedGroupIds.map((gid) => {
           const g = groupsById.get(gid);
           if (!g) return null;
@@ -733,17 +807,38 @@ export function ParticipantPicker({
           );
         })}
         <input
+          ref={inputRef}
           type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={
+            open && activeIndex !== null ? `${listId}-${activeIndex}` : undefined
+          }
+          aria-autocomplete="list"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
           placeholder={
             selectedUserIds.length + selectedGroupIds.length === 0 ? "Add guests or a group" : ""
           }
           className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          {...getReferenceProps({
+            onFocus: () => setOpen(true),
+            onChange: (e) => {
+              setQuery((e.target as HTMLInputElement).value);
+              setOpen(true);
+              setActiveIndex(0);
+            },
+            onKeyDown: (e) => {
+              if (e.key === "Enter" && open && activeIndex !== null && items[activeIndex]) {
+                e.preventDefault();
+                add(activeIndex);
+              } else if (e.key === "Backspace" && query === "") {
+                removeLast();
+              } else if (e.key === "Escape") {
+                setOpen(false);
+              }
+            },
+          })}
         />
         {resolvedCount > 0 && (
           <span className="ml-auto shrink-0 pr-1 text-[11px] text-muted-foreground">
@@ -753,48 +848,68 @@ export function ParticipantPicker({
       </div>
 
       {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-60 overflow-y-auto rounded-lg cal-surface p-1">
-          {filteredGroups.length === 0 && filteredUsers.length === 0 && (
-            <p className="px-2 py-2 text-xs text-muted-foreground">No matches.</p>
-          )}
-          {filteredGroups.slice(0, 20).map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => {
-                onChangeGroups([...selectedGroupIds, g.id]);
-                setQuery("");
-              }}
-              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
-            >
-              <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-                <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {g.name}
-              </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
-              </span>
-            </button>
-          ))}
-          {filteredGroups.length > 0 && filteredUsers.length > 0 && (
-            <div className="my-1 h-px bg-border" />
-          )}
-          {filteredUsers.slice(0, 40).map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => {
-                onChangeUsers([...selectedUserIds, u.id]);
-                setQuery("");
-              }}
-              className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
-            >
-              {userLabel(u)}
-            </button>
-          ))}
-        </div>
+        <FloatingPortal>
+          <ul
+            ref={refs.setFloating}
+            id={listId}
+            style={floatingStyles}
+            className={panelClass}
+            {...getFloatingProps()}
+          >
+            {items.length === 0 ? (
+              <li className="px-2 py-2 text-xs text-muted-foreground">No matches.</li>
+            ) : (
+              items.map((it, i) => {
+                const isActive = i === activeIndex;
+                const startsUsers = it.kind === "user" && i === firstUserIndex && firstUserIndex > 0;
+                return (
+                  <li
+                    key={it.kind === "group" ? `g:${it.g.id}` : `u:${it.u.id}`}
+                    role="none"
+                    className={startsUsers ? "mt-1 border-t border-border pt-1" : undefined}
+                  >
+                    <button
+                      type="button"
+                      role="option"
+                      id={`${listId}-${i}`}
+                      aria-selected={isActive}
+                      tabIndex={-1}
+                      ref={(node) => {
+                        listRef.current[i] = node;
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                        isActive ? "bg-os-container" : "hover:bg-os-container",
+                      )}
+                      {...getItemProps({
+                        // The input's blur would otherwise close the panel before
+                        // the click could land on the row.
+                        onMouseDown: (e) => e.preventDefault(),
+                        onClick: () => add(i),
+                      })}
+                    >
+                      {it.kind === "group" ? (
+                        <>
+                          <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                            <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {it.g.name}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {it.g.memberIds.length} member{it.g.memberIds.length === 1 ? "" : "s"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="min-w-0 truncate">{userLabel(it.u)}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </FloatingPortal>
       )}
-    </div>
+    </>
   );
 }
 
@@ -941,7 +1056,6 @@ export function ScheduleWeekGrid({
   // background layer, leaving the Busy blocks out entirely — free vs. busy is
   // already encoded in the cell's saturation.
   const eventsByDay: Record<number, EventBlock[]> = {};
-  const totalParticipants = participantIds.length;
   const CELL_HOURS = SNAP_HOURS; // 10-minute availability cells
   const GRID_START_H = HOURS[0];
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
@@ -965,17 +1079,33 @@ export function ScheduleWeekGrid({
     }
   }, [compact, weekStartIso, focusHour, GRID_START_H]);
 
-  // Pre-parse each participant's free intervals into sorted (startMs, endMs)
-  // tuples for fast containment checks below.
+  // A participant is "known" only if we have a real busy source for them (a
+  // linked calendar that synced). Without one, their computed `free` is just
+  // working-hours-minus-nothing (or a 24/7 default) — NOT confirmed-free.
+  // Counting that as free is exactly what made a slot read "11/11 free" when
+  // some of those people were actually busy, so we keep unknown participants out
+  // of every free count and surface them as their own group instead.
+  const isKnown = (userId: string): boolean => {
+    const u = data?.perUser.find((p) => p.userId === userId);
+    return !!u && u.hasCalendar && !u.calendarError;
+  };
+  const unknownParticipantIds = participantIds.filter((id) => !isKnown(id));
+  const knownCount = participantIds.length - unknownParticipantIds.length;
+
+  // Pre-parse each KNOWN participant's free intervals into sorted (startMs,
+  // endMs) tuples for fast containment checks below. Unknown participants are
+  // excluded so they never tint a cell as "free".
   const perUserFree: { startMs: number; endMs: number }[][] = data
-    ? data.perUser.map((u) =>
-        u.free
-          .map((iv) => ({
-            startMs: new Date(iv.startIso).getTime(),
-            endMs: new Date(iv.endIso).getTime(),
-          }))
-          .sort((a, b) => a.startMs - b.startMs),
-      )
+    ? data.perUser
+        .filter((u) => isKnown(u.userId))
+        .map((u) =>
+          u.free
+            .map((iv) => ({
+              startMs: new Date(iv.startIso).getTime(),
+              endMs: new Date(iv.endIso).getTime(),
+            }))
+            .sort((a, b) => a.startMs - b.startMs),
+        )
     : [];
 
   function freeCountAtCell(cellStartMs: number, cellEndMs: number): number {
@@ -997,7 +1127,7 @@ export function ScheduleWeekGrid({
 
   // Build per-day cell tints. Each entry is { startHour, durationHours, alpha }
   // ready to render as a colored absolute-positioned block.
-  type CellTint = { startHour: number; alpha: number };
+  type CellTint = { startHour: number; alpha: number; all: boolean };
   const tintsByColIdx: CellTint[][] = data
     ? days.map((d, colIdx) => {
         const cells: CellTint[] = [];
@@ -1008,8 +1138,10 @@ export function ScheduleWeekGrid({
           const cellEndMs = cellStartMs + CELL_HOURS * 3_600_000;
           const k = freeCountAtCell(cellStartMs, cellEndMs);
           if (k === 0) continue;
-          const alpha = totalParticipants > 0 ? k / totalParticipants : 0;
-          cells.push({ startHour: hour, alpha });
+          // Denominator is the number of participants we actually have data for,
+          // so unknown members don't dilute (or inflate) the shade.
+          const alpha = knownCount > 0 ? k / knownCount : 0;
+          cells.push({ startHour: hour, alpha, all: knownCount > 0 && k === knownCount });
         }
         // Reference d so the linter doesn't complain (we may use it later).
         void d;
@@ -1057,7 +1189,8 @@ export function ScheduleWeekGrid({
     startHour: number;
     duration: number;
     available: UserOption[];
-    unavailable: UserOption[];
+    busy: UserOption[];
+    unknown: UserOption[];
   };
   let selectedSlot: SelectedSlot | null = null;
   if (selectedStartLocal && selectedEndLocal && data && participantIds.length > 0) {
@@ -1077,7 +1210,8 @@ export function ScheduleWeekGrid({
         const usersById = new Map(users.map((u) => [u.id, u]));
         const perUserById = new Map(data.perUser.map((p) => [p.userId, p]));
         const available: UserOption[] = [];
-        const unavailable: UserOption[] = [];
+        const busy: UserOption[] = [];
+        const unknown: UserOption[] = [];
         for (const uid of participantIds) {
           const user = usersById.get(uid) ?? {
             id: uid,
@@ -1085,6 +1219,11 @@ export function ScheduleWeekGrid({
             lastName: "",
             daliEmail: null,
           };
+          // No busy source → availability unknown; never counted free or busy.
+          if (!isKnown(uid)) {
+            unknown.push(user);
+            continue;
+          }
           const free = perUserById.get(uid)?.free ?? [];
           // Build the contiguous free-coverage over [slotStartMs, slotEndMs].
           // Sort & merge first, then walk.
@@ -1099,9 +1238,9 @@ export function ScheduleWeekGrid({
             if (cursor >= slotEndMs) break;
           }
           if (cursor >= slotEndMs) available.push(user);
-          else unavailable.push(user);
+          else busy.push(user);
         }
-        selectedSlot = { dow, startHour, duration, available, unavailable };
+        selectedSlot = { dow, startHour, duration, available, busy, unknown };
       }
     }
   }
@@ -1135,7 +1274,11 @@ export function ScheduleWeekGrid({
                   topHour={GRID_START_H}
                   startHour={t.startHour}
                   duration={CELL_HOURS}
-                  style={{ backgroundColor: availabilityTint(t.alpha) }}
+                  // Reserve the deep end of the ramp for "everyone's free" and
+                  // compress partial coverage into the lighter end, so a fully-
+                  // free stretch reads as a distinctly bolder band instead of
+                  // just a slightly deeper shade of "almost everyone".
+                  style={{ backgroundColor: availabilityTint(t.all ? 1 : t.alpha * 0.7) }}
                 />
               ))
             )
@@ -1153,7 +1296,8 @@ export function ScheduleWeekGrid({
             startHour={selectedSlot.startHour}
             duration={selectedSlot.duration}
             available={selectedSlot.available}
-            unavailable={selectedSlot.unavailable}
+            busy={selectedSlot.busy}
+            unknown={selectedSlot.unknown}
           />
         );
       }}
@@ -1219,6 +1363,7 @@ export function ScheduleWeekGrid({
               availableIds={
                 selectedSlot ? new Set(selectedSlot.available.map((u) => u.id)) : null
               }
+              unknownIds={new Set(unknownParticipantIds)}
               hoveredUserId={hoveredUserId}
               onHover={setHoveredUserId}
             />
@@ -1233,12 +1378,14 @@ export function ScheduleWeekGrid({
 // panel has room to state the whole answer, so this replaces both the invitee
 // roster that used to sit above the grid and the hover popover on the selected
 // block. Once a slot is picked the names split into Available / Busy groups;
-// before that it's one flat roster. Hovering a name overlays just that one
-// person's free intervals on the grid.
+// before that it's one flat roster. Participants with no linked calendar are
+// always split into a separate "No calendar" group so they're never mistaken
+// for free. Hovering a known name overlays that person's free intervals.
 export function ParticipantAvailabilityList({
   participantIds,
   users,
   availableIds,
+  unknownIds,
   hoveredUserId,
   onHover,
 }: {
@@ -1246,6 +1393,9 @@ export function ParticipantAvailabilityList({
   users: UserOption[];
   /** Ids free for the whole selected slot, or null when no slot is picked. */
   availableIds: Set<string> | null;
+  /** Ids whose availability is unknown (no linked calendar / failed sync).
+   *  Slot-independent — surfaced even before a time is picked. */
+  unknownIds: Set<string>;
   hoveredUserId: string | null;
   onHover: (userId: string | null) => void;
 }) {
@@ -1254,8 +1404,10 @@ export function ParticipantAvailabilityList({
     (uid) =>
       usersById.get(uid) ?? { id: uid, firstName: uid, lastName: "", daliEmail: null },
   );
-  const available = availableIds ? entries.filter((u) => availableIds.has(u.id)) : [];
-  const busy = availableIds ? entries.filter((u) => !availableIds.has(u.id)) : [];
+  const unknown = entries.filter((u) => unknownIds.has(u.id));
+  const known = entries.filter((u) => !unknownIds.has(u.id));
+  const available = availableIds ? known.filter((u) => availableIds.has(u.id)) : [];
+  const busy = availableIds ? known.filter((u) => !availableIds.has(u.id)) : [];
 
   const chip = (user: UserOption, free: boolean | null) => {
     const active = hoveredUserId === user.id;
@@ -1290,6 +1442,23 @@ export function ParticipantAvailabilityList({
     );
   };
 
+  // Unknown participants can't be overlaid on the grid (their "free" is just
+  // working hours, not real availability), so these are plain, non-hoverable
+  // chips with a hollow gray dot.
+  const unknownChip = (user: UserOption) => (
+    <span
+      key={user.id}
+      title="No calendar connected — availability unknown"
+      className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+    >
+      <span
+        aria-hidden
+        className="h-1.5 w-1.5 shrink-0 rounded-full border border-muted-foreground/50"
+      />
+      {userLabel(user)}
+    </span>
+  );
+
   const group = (label: string, members: UserOption[], free: boolean) =>
     members.length === 0 ? null : (
       <div>
@@ -1302,21 +1471,40 @@ export function ParticipantAvailabilityList({
       </div>
     );
 
+  const unknownGroup =
+    unknown.length === 0 ? null : (
+      <div>
+        <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          No calendar · {unknown.length}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {unknown.map((u) => unknownChip(u))}
+        </div>
+        <div className="mt-1 text-[10px] text-muted-foreground/80">
+          Availability unknown — not counted as free.
+        </div>
+      </div>
+    );
+
   return (
-    <div className="mt-3 border-t border-border px-2 pt-3">
+    <div className="mt-3 flex flex-col gap-2.5 border-t border-border px-2 pt-3">
       {availableIds ? (
-        <div className="flex flex-col gap-2.5">
+        <>
           {group("Available", available, true)}
           {group("Busy", busy, false)}
-        </div>
+          {unknownGroup}
+        </>
       ) : (
         <>
-          <div className="mb-2 text-xs font-medium text-muted-foreground">
-            Pick a time to see who&apos;s free
+          <div>
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              Pick a time to see who&apos;s free
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {known.map((u) => chip(u, null))}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {entries.map((u) => chip(u, null))}
-          </div>
+          {unknownGroup}
         </>
       )}
     </div>
@@ -1327,23 +1515,62 @@ export function SelectedSlotBlock({
   startHour,
   duration,
   available,
-  unavailable,
+  busy,
+  unknown,
 }: {
   startHour: number;
   duration: number;
   available: UserOption[];
-  unavailable: UserOption[];
+  busy: UserOption[];
+  unknown: UserOption[];
 }) {
-  const total = available.length + unavailable.length;
+  // "known" = participants we can actually judge. Everyone-free is only claimed
+  // when every known participant is free AND no one is unaccounted-for.
+  const known = available.length + busy.length;
+  const everyoneFree = known > 0 && busy.length === 0 && unknown.length === 0;
   const top = (startHour - HOURS[0]) * HOUR_PX;
   const height = duration * HOUR_PX;
   return (
     <div
-      className="absolute left-0 right-0 z-30 border-2 border-os-accent bg-os-accent/10 rounded-sm"
+      className={cn(
+        "absolute left-0 right-0 z-30 rounded-sm border-2",
+        everyoneFree
+          ? "border-green-600 bg-green-500/15 dark:border-green-400"
+          : "border-os-accent bg-os-accent/10",
+      )}
       style={{ top, height }}
     >
-      <div className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm bg-os-accent text-os-bg">
-        {available.length}/{total}
+      <div
+        className={cn(
+          "m-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold shadow-sm",
+          everyoneFree ? "bg-green-600 text-white dark:bg-green-500" : "bg-os-accent text-os-bg",
+        )}
+      >
+        {everyoneFree ? (
+          <>
+            <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden fill="none">
+              <path
+                d="M2.5 6.4l2.4 2.4 4.6-5.2"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Everyone&apos;s free
+          </>
+        ) : known === 0 ? (
+          <span>{unknown.length} no calendar</span>
+        ) : (
+          <>
+            <span>
+              {available.length}/{known} free
+            </span>
+            {unknown.length > 0 && (
+              <span className="font-normal opacity-80">· {unknown.length} no calendar</span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

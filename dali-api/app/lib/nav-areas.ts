@@ -161,7 +161,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/partners",
     subtabs: [
       { label: "Hub", href: "/partners", icon: LayoutGrid },
-      { label: "Applications", href: "/partners/applications", icon: FileText },
+      { label: "Applications", href: "/partners/applications", icon: FileText, gate: (r) => r.canViewStaffing },
     ],
   },
   {
@@ -228,6 +228,9 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
       { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
+      // Lab-wide Attendance: every meeting/event you're invited to, with each
+      // event's roster (invited-scoped, see app/routes/attendance.tsx).
+      { label: "Attendance", href: "/attendance", icon: ClipboardCheck },
     ],
   },
   {
@@ -260,7 +263,6 @@ const REGROUPED_AREAS: NavArea[] = [
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
       { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
-      { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },
   {
@@ -318,11 +320,9 @@ function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
 }
 
 /**
- * The area set for one viewer. The role-grouped set (REGROUPED_AREAS) is now
- * the only nav — the nav-regroup flag was retired, so there is no flag-off
- * branch. `flags` is kept on the signature because the matchers below thread it
- * through, and NAV_AREAS survives only to keep favourites saved under the old
- * nav resolvable (see ALL_AREAS).
+ * The area set for one viewer. REGROUPED_AREAS is the base nav; NAV_AREAS
+ * survives only to keep favourites saved under the old nav resolvable (see
+ * ALL_AREAS).
  */
 export function areasFor(_flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   // Deep-link email templates directly into Drive (agreements has its own Core
@@ -338,12 +338,15 @@ export function pinnedNavItems(_flags: Partial<FeatureFlagMap> = {}): SubTab[] {
   return [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
-// Both area sets at once. isAreaSubtabPath and the icon map are read from
-// places with no flag context — the favorites star (FavoriteRouteButton), the
-// favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side — so
-// they must recognise a path that is a sub-tab on EITHER side of the flag.
-// Favorites saved before the flag flips have to keep working after it.
-const ALL_AREAS: NavArea[] = [...NAV_AREAS, ...REGROUPED_AREAS];
+// Both area sets at once. isAreaSubtabPath and the icon map are read from places
+// with no flag context — the favorites star (FavoriteRouteButton), the
+// favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side. Both
+// the legacy (NAV_AREAS) and current (areasFor) regrouped sets are included so a
+// favorite saved under the old nav still resolves its area and icon.
+const ALL_AREAS: NavArea[] = [
+  ...NAV_AREAS,
+  ...areasFor(),
+];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the
 // sidebar tracks the focused tab, whose url keeps its query string (layout.tsx

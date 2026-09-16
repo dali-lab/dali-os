@@ -11,7 +11,7 @@ import type { Route } from "./+types/partners";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isCore } from "~/lib/roles";
+import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -19,7 +19,6 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
 import { SearchInput } from "~/components/ui/SearchInput";
 
 // areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
@@ -45,7 +44,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  // The org directory is lab-wide; editing and the applications pipeline stay
+  // Core/Admin (canViewStaffing).
+  const [labMember, canViewApplications] = await Promise.all([
+    isLabMember(auth.user.sub, request),
+    canViewStaffing(auth.user.sub, request),
+  ]);
+  if (!labMember && !canViewApplications) return redirect("/");
 
   const now = new Date();
   const [orgs, canEdit] = await Promise.all([
@@ -91,7 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   );
 
-  return { rows, canEdit };
+  return { rows, canEdit, canViewApplications };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -123,7 +128,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersOrganizations() {
-  const { rows, canEdit } = useLoaderData<typeof loader>();
+  const { rows, canEdit, canViewApplications } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -234,8 +239,7 @@ export default function PartnersOrganizations() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        <TablessHistoryNavInline />
-        <SegmentedTabButtons label="Partners" items={areaTabs} />
+        {canViewApplications && <SegmentedTabButtons label="Partners" items={areaTabs} />}
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}

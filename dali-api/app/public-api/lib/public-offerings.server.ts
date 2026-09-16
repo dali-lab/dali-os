@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { termCodeForDate, termWindows, type TermWindow } from "~/lib/terms";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
@@ -12,19 +13,14 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 // parseOfferingsFilter). Only Published offerings are ever returned — Draft and
 // Archived stay private, matching what the in-app catalog shows.
 
-export type PublicOfferingDate = {
-  day: number;
-  month: string;
-  year: number;
-  time: string;
-  fullDate: string; // ISO 8601
-};
-
+// All datetimes are ISO 8601 strings. dali.website formats them — month names,
+// times, and the campus timezone are its call, not the API's. Shipping the raw
+// instant keeps this a data endpoint (see the sibling application-cycle).
 export type PublicOfferingSession = {
   sequence: number;
   title: string | null;
   location: string | null;
-  date: PublicOfferingDate;
+  date: string; // ISO 8601
 };
 
 export type PublicOffering = {
@@ -32,13 +28,15 @@ export type PublicOffering = {
   name: string;
   description: string;
   type: string; // lowercased offering type: "miniseries" | "workshop"
-  term: string | null; // term code (e.g. "26F"), null if outside any term
-  startDate: PublicOfferingDate;
-  endDate: PublicOfferingDate;
+  // Term code (e.g. "26F"), derived from the start date; null when the run
+  // starts outside every term window.
+  term: string | null;
+  startDate: string; // ISO 8601
+  endDate: string; // ISO 8601
   sessions: PublicOfferingSession[];
   registration: {
-    opensAt: PublicOfferingDate;
-    closesAt: PublicOfferingDate;
+    opensAt: string; // ISO 8601
+    closesAt: string; // ISO 8601
     open: boolean;
   };
   signUpLink: string;
@@ -52,78 +50,65 @@ export type OfferingsFilter = {
   scope?: OfferingScope; // defaults to "upcoming"; ignored when from/to are set
   from?: Date; // calendar window lower bound (interval overlap)
   to?: Date; // calendar window upper bound (interval overlap)
-  term?: string; // term code (e.g. "26F"); limits to offerings in that term
+  term?: string; // term code (e.g. "26F"); limits to offerings starting in that term's date window
   type?: "Miniseries" | "Workshop"; // limits to one offering type (DB enum)
 };
 
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-// The site renders the parts separately, so it gets parts rather than a
-// formatted string, plus an ISO `fullDate` for anything that needs the raw
-// value. Times are rendered in Eastern — the lab is one campus and every
-// offering happens on it, so a viewer's local zone would be misleading rather
-// than helpful.
-function toDateParts(d: Date): PublicOfferingDate {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const minute = get("minute");
-  const hour = get("hour");
-  const dayPeriod = get("dayPeriod").toUpperCase();
-  return {
-    day: Number(get("day")),
-    month: MONTHS[Number(get("month")) - 1],
-    year: Number(get("year")),
-    time: minute === "00" ? `${hour} ${dayPeriod}` : `${hour}:${minute} ${dayPeriod}`,
-    fullDate: d.toISOString(),
-  };
-}
-
-type OfferingWhere = {
-  status: "Published";
-  term?: { code: string };
-  type?: "Miniseries" | "Workshop";
-  startsAt?: { gt?: Date; lte?: Date };
+type DateClause = {
+  startsAt?: { gt?: Date; gte?: Date; lte?: Date };
   endsAt?: { lt?: Date; gte?: Date };
 };
 
-function buildWhere(filter: OfferingsFilter, now: Date): OfferingWhere {
+type OfferingWhere = {
+  status: "Published";
+  type?: "Miniseries" | "Workshop";
+  AND?: DateClause[];
+};
+
+/**
+ * `termWindow` is the resolved date window for `filter.term` (the caller looks
+ * it up — a term is a date range here, not a stored relation). Date clauses go
+ * in an AND array rather than one merged object so a term window and a
+ * scope/calendar bound can both constrain `startsAt` without overwriting each
+ * other.
+ */
+function buildWhere(
+  filter: OfferingsFilter,
+  now: Date,
+  termWindow: TermWindow | null,
+): OfferingWhere {
   const where: OfferingWhere = { status: "Published" };
   // Term and type compose with the date filters below (independent ANDs, e.g.
   // term=26F&type=workshop&scope=past).
-  if (filter.term) where.term = { code: filter.term };
   if (filter.type) where.type = filter.type;
+
+  const and: DateClause[] = [];
+  // "In term 26F" = the run starts inside 26F's window, the same rule that
+  // used to set the offering's termId column.
+  if (termWindow) {
+    and.push({ startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } });
+  }
 
   // An explicit calendar window wins over scope: return every offering whose
   // run overlaps [from, to]. Either bound may be omitted (open-ended window).
   if (filter.from || filter.to) {
-    if (filter.to) where.startsAt = { lte: filter.to };
-    if (filter.from) where.endsAt = { gte: filter.from };
-    return where;
+    if (filter.to) and.push({ startsAt: { lte: filter.to } });
+    if (filter.from) and.push({ endsAt: { gte: filter.from } });
+  } else {
+    // A term implies "the whole term" unless the caller narrows it; without a
+    // term the default is the upcoming feed.
+    switch (filter.scope ?? (filter.term ? "all" : "upcoming")) {
+      case "upcoming":
+        and.push({ startsAt: { gt: now } }); // hasn't started yet
+        break;
+      case "past":
+        and.push({ endsAt: { lt: now } }); // already ended
+        break;
+      case "all":
+        break; // whole published catalog
+    }
   }
-
-  // A term implies "the whole term" unless the caller narrows it; without a
-  // term the default is the upcoming feed.
-  switch (filter.scope ?? (filter.term ? "all" : "upcoming")) {
-    case "upcoming":
-      where.startsAt = { gt: now }; // hasn't started yet
-      break;
-    case "past":
-      where.endsAt = { lt: now }; // already ended
-      break;
-    case "all":
-      break; // whole published catalog
-  }
+  if (and.length > 0) where.AND = and;
   return where;
 }
 
@@ -169,8 +154,16 @@ export async function listPublicOfferings(
   filter: OfferingsFilter = {},
   now: Date = new Date(),
 ): Promise<PublicOffering[]> {
+  const windows = await termWindows();
+  // An unseeded/unknown term code matches nothing, as the old relation filter
+  // on a nonexistent code did.
+  const termWindow = filter.term
+    ? (windows.find((w) => w.code === filter.term) ?? null)
+    : null;
+  if (filter.term && !termWindow) return [];
+
   const rows = await prisma.educationOffering.findMany({
-    where: buildWhere(filter, now),
+    where: buildWhere(filter, now, termWindow),
     // Published offerings always have sessions (publish gate), so startsAt is
     // non-null here — a plain ascending sort is sufficient.
     orderBy: { startsAt: "asc" },
@@ -184,7 +177,6 @@ export async function listPublicOfferings(
       endsAt: true,
       registrationOpensAt: true,
       registrationClosesAt: true,
-      term: { select: { code: true } },
       sessions: {
         orderBy: { sequence: "asc" },
         select: { sequence: true, title: true, location: true, datetime: true },
@@ -192,8 +184,14 @@ export async function listPublicOfferings(
     },
   });
 
+  // startsAt/endsAt are nullable. A Published offering can still have both null
+  // (no sessions yet — the publish gate is supposed to prevent it, but legacy /
+  // edge rows exist in prod). Such an offering has no schedule to render, so
+  // drop it here rather than crash the whole endpoint on a null `.toISOString()`.
+  const scheduled = rows.filter((o) => o.startsAt !== null && o.endsAt !== null);
+
   return Promise.all(
-    rows.map(async (o) => {
+    scheduled.map(async (o) => {
       // The description lives in a collab doc; the site's calendar cards show
       // a plain-text blurb, so flatten rather than shipping blocks it can't
       // render.
@@ -206,28 +204,33 @@ export async function listPublicOfferings(
         description,
         // The site keys its filter chips off lowercase type names.
         type: o.type.toLowerCase(),
-        term: o.term?.code ?? null,
-        // Published offerings always have sessions, so startsAt/endsAt are
-        // guaranteed non-null by the publish gate.
-        startDate: toDateParts(o.startsAt!),
-        endDate: toDateParts(o.endsAt!),
+        term: termCodeForDate(windows, o.startsAt!),
+        // Non-null: the filter above dropped any offering without a schedule.
+        startDate: o.startsAt!.toISOString(),
+        endDate: o.endsAt!.toISOString(),
         sessions: o.sessions.map((s) => ({
           sequence: s.sequence,
           title: s.title,
           location: s.location,
-          date: toDateParts(s.datetime),
+          date: s.datetime.toISOString(),
         })),
         registration: {
-          opensAt: toDateParts(o.registrationOpensAt),
-          closesAt: toDateParts(o.registrationClosesAt),
+          opensAt: o.registrationOpensAt.toISOString(),
+          closesAt: o.registrationClosesAt.toISOString(),
           open:
             o.registrationOpensAt.getTime() <= now.getTime() &&
             now.getTime() <= o.registrationClosesAt.getTime(),
         },
         // Offerings apply through the shared Forms system. Null form = not
         // open yet; "#" matches what the site already renders for that case.
+        // Point at the /portal mirror, not the member-shell /education/:id: the
+        // public audience is prospective (non-DALI) students, and the member
+        // shell bounces a Dartmouth account with no DALIMember row straight to
+        // /portal, dropping the offering. The portal offering page serves
+        // dartmouth/partner users directly and redirects actual members back to
+        // /education/:id, so this one link lands both audiences correctly.
         signUpLink: o.applicationFormId
-          ? `${process.env.FRONTEND_URL ?? ""}/education/${o.id}`
+          ? `${process.env.FRONTEND_URL ?? ""}/portal/education/${o.id}`
           : "#",
       };
     }),

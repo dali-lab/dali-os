@@ -17,6 +17,9 @@ export default [
     route("calendar/scan/:meetingId", "calendar/routes/calendar.scan.$meetingId.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Lab-wide attendance: every meeting/event the viewer is invited to, with its
+    // roster. Lives under General; replaced the retired Core-only overview.
+    route("attendance", "routes/attendance.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -72,7 +75,6 @@ export default [
     route("admin/members", "admin/routes/admin.members.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/attendance", "admin/routes/admin.attendance.tsx"),
     route("admin/activity", "admin/routes/admin.activity.tsx"),
     route("admin/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
@@ -110,7 +112,6 @@ export default [
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
-    route("core/attendance", "core/routes/core.attendance.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
@@ -326,6 +327,7 @@ export default [
   route("auth/handoff", "routes/auth.handoff.ts"),
   route("link", "routes/link.tsx"),
   route("api/desktop/version", "routes/api.desktop.version.ts"),
+  route("api/desktop/updated", "routes/api.desktop.updated.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -404,10 +406,16 @@ export default [
   route("api/public/projects/:id", "public-api/routes/api.public.projects.$id.ts"),
   route("api/public/team", "public-api/routes/api.public.team.ts"),
   route("api/public/offerings", "public-api/routes/api.public.offerings.ts"),
+  route(
+    "api/public/application-cycle",
+    "public-api/routes/api.public.application-cycle.ts",
+  ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
+  route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
+  route("api/scheduled-meetings/:id/edit-context", "calendar/routes/api.scheduled-meetings.$id.edit-context.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
@@ -426,6 +434,24 @@ export default [
   // save-to-Google-Wallet link, each for the current user only.
   route("api/wallet/apple/pass", "wallet/routes/api.wallet.apple.pass.ts"),
   route("api/wallet/google/save-url", "wallet/routes/api.wallet.google.save-url.ts"),
+  // Apple PassKit web service (pass updates): Apple calls these on the pass's
+  // baked-in webServiceURL (<API_BASE_URL>/api/wallet/apple) to register a
+  // device for push, list serials updated since a tag, fetch the latest pass,
+  // and post diagnostics. Enables silent pass updates for already-downloaded
+  // passes. See app/lib/wallet-apns.server.ts for the push side.
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.device-registration.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier",
+    "wallet/routes/api.wallet.apple.v1.device-serials.ts",
+  ),
+  route(
+    "api/wallet/apple/v1/passes/:passTypeIdentifier/:serialNumber",
+    "wallet/routes/api.wallet.apple.v1.pass.ts",
+  ),
+  route("api/wallet/apple/v1/log", "wallet/routes/api.wallet.apple.v1.log.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
@@ -661,6 +687,7 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+  route("api/mentorship/roster", "mentorship/routes/api.mentorship.roster.ts"),
 
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).

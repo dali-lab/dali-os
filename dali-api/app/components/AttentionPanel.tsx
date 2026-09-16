@@ -3,6 +3,7 @@ import { useRevalidator } from "react-router";
 import { Check, ExternalLink, CalendarClock, X } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
+import { buttonClasses } from "~/components/ui/Button";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 // The client mirror of ~/lib/tasks' `Task`, so the shell's panel pulls in no
 // server code (see NotificationBell).
@@ -150,7 +151,7 @@ export function AttentionPanel({
       </span>
 
       {tasks.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex flex-col gap-2">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} onOpen={onOpen} />
           ))}
@@ -185,8 +186,11 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
   const { confirm: confirmDialog } = useDialog();
   const [confirming, setConfirming] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+  // Same full-width card as NotificationCard below. The tasks used to be a
+  // horizontal strip of fixed-width tiles, which clipped a row of actions
+  // (Accept / Maybe / Decline) at the tile's border.
   const cls =
-    "flex-shrink-0 w-56 bg-card border border-border shadow-brand-1 rounded-md px-3 py-2";
+    "block bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2.5";
 
   const meta = t.dueAt ? (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
@@ -259,7 +263,7 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
           type="button"
           onClick={dismissForm}
           disabled={dismissing}
-          className="inline-flex items-center gap-1 mt-2 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+          className={buttonClasses("secondary", "sm", "mt-2 gap-1")}
         >
           <X className="w-3 h-3" />
           {dismissing ? "Dismissing…" : "Dismiss"}
@@ -304,12 +308,12 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     <div className={cls}>
       {title}
       {meta}
-      <div className="flex items-center gap-1.5 mt-2">
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
         <button
           type="button"
           onClick={confirm}
           disabled={confirming}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+          className={buttonClasses("primary", "sm", "gap-1")}
         >
           <Check className="w-3 h-3" />
           {confirming ? "Confirming…" : "Confirm"}
@@ -318,7 +322,7 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
           <a
             href={t.link}
             onClick={(e) => openTarget(e, t.link!, t.title, onOpen)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted"
+            className={buttonClasses("secondary", "sm", "gap-1")}
           >
             <ExternalLink className="w-3 h-3" />
             Open
@@ -402,7 +406,7 @@ function NotificationCard({
                 type="button"
                 onClick={dismiss}
                 disabled={dismissing}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+                className={buttonClasses("secondary", "sm", "gap-1")}
                 aria-label="Dismiss notification"
               >
                 <Check className="w-3 h-3" />

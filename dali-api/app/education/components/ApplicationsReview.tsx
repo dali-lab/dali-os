@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, useFetcher } from "react-router";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ApplicationAnswers } from "./ApplicationAnswers";
@@ -43,6 +44,100 @@ function applicantEmail(a: ReviewApplication) {
     a.applicant.daliEmail ??
     a.applicant.dartmouthEmail ??
     (a.applicant.netId ? `${a.applicant.netId}@dartmouth.edu` : "")
+  );
+}
+
+/**
+ * The waitlist, in the exact order seats are filled. Auto-promotion always
+ * pulls #1 first, so the arrows here decide who's enrolled next when a seat
+ * frees. Purely an ordering control — deciding on applicants (approve/reject)
+ * still happens in the review list below. Shown only when someone's waitlisted.
+ */
+export function WaitlistOrder({ applications }: { applications: ReviewApplication[] }) {
+  const waitlisted = applications
+    .filter((a) => a.status === "Waitlisted")
+    .sort((a, b) => (a.waitlistRank ?? 0) - (b.waitlistRank ?? 0));
+  if (waitlisted.length === 0) return null;
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center gap-1.5">
+        <h3 className="font-heading text-sm font-semibold text-foreground">
+          Waitlist order
+        </h3>
+        <InfoTip content="When a seat opens before registration closes, students are enrolled automatically from the top of this list down. Use the arrows to change who's next in line." />
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        #1 is next up. Reordering only changes who gets promoted first — it
+        doesn't approve, reject, or email anyone.
+      </p>
+      <ol className="mt-3 flex flex-col gap-1.5">
+        {waitlisted.map((a, i) => (
+          <li
+            key={a.id}
+            className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2"
+          >
+            <span className="w-7 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">
+              #{a.waitlistRank}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-foreground">
+                {applicantName(a)}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {applicantEmail(a)}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1">
+              <ReorderButton
+                applicationId={a.id}
+                direction="up"
+                disabled={i === 0}
+                label={`Move ${applicantName(a)} up`}
+              />
+              <ReorderButton
+                applicationId={a.id}
+                direction="down"
+                disabled={i === waitlisted.length - 1}
+                label={`Move ${applicantName(a)} down`}
+              />
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function ReorderButton({
+  applicationId,
+  direction,
+  disabled,
+  label,
+}: {
+  applicationId: string;
+  direction: "up" | "down";
+  disabled: boolean;
+  label: string;
+}) {
+  return (
+    <Form method="post">
+      <input type="hidden" name="intent" value="move-waitlist-entry" />
+      <input type="hidden" name="applicationId" value={applicationId} />
+      <input type="hidden" name="direction" value={direction} />
+      <button
+        type="submit"
+        disabled={disabled}
+        aria-label={label}
+        className="flex rounded-md border border-border p-1 text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        {direction === "up" ? (
+          <ChevronUp className="h-4 w-4" />
+        ) : (
+          <ChevronDown className="h-4 w-4" />
+        )}
+      </button>
+    </Form>
   );
 }
 

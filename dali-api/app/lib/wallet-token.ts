@@ -90,6 +90,44 @@ export function memberIdFromToken(token: string): string | null {
   return parts[1];
 }
 
+export type WalletScanFailure =
+  | "malformed-token"
+  | "unknown-member"
+  | "no-member-secret"
+  | "signature-mismatch";
+
+/**
+ * Classify why a wallet-pass scan failed, for server-side diagnostics only. Both
+ * scan surfaces surface all four cases to the caller as one generic "Invalid or
+ * revoked pass" (never leak which members exist or whether a secret is set), so
+ * this exists purely to make the log line actionable:
+ *
+ *  - signature-mismatch ⇒ the pass verifies against a different WALLET_PASS_SECRET
+ *    (or a rotated per-member secret) than this server has — usually the pass was
+ *    minted in a different environment (staging vs prod env drift) or the member's
+ *    secret was rotated after they downloaded it. Re-add the pass from the same
+ *    environment you're scanning against.
+ *  - no-member-secret ⇒ the member row has no walletPassSecret in THIS database —
+ *    typically a DB snapshot/restore that predates when the pass was saved (e.g.
+ *    staging rebuilt from an older prod snapshot). Re-downloading mints one.
+ *  - unknown-member ⇒ the token's id matches no user here (scanning against the
+ *    wrong database).
+ *  - malformed-token ⇒ the QR didn't carry a v1 token at all (wrong code scanned,
+ *    or a pass predating this token format).
+ *
+ * Callers pass the same token they verified plus the member row they looked up
+ * (null when the lookup found nothing).
+ */
+export function classifyWalletScanFailure(
+  token: string,
+  member: { walletPassSecret: string | null } | null,
+): WalletScanFailure {
+  if (!memberIdFromToken(token)) return "malformed-token";
+  if (!member) return "unknown-member";
+  if (!member.walletPassSecret) return "no-member-secret";
+  return "signature-mismatch";
+}
+
 /**
  * The member's per-member wallet secret, generating + storing one on first use.
  * Called when a member downloads/saves their pass so the barcode has something
@@ -109,12 +147,44 @@ export async function ensureWalletSecret(userId: string): Promise<string> {
   return secret;
 }
 
+// Web-service auth token: baked into the pass's authenticationToken and sent
+// back by the device on every PassKit web-service call as
+// `Authorization: ApplePass <token>`.
+// Derived from the global secret + userId only (NOT the per-member
+// walletPassSecret), so revoking a barcode via rotateWalletSecret doesn't lock
+// the device out of fetching its refreshed pass — which is exactly when we
+// need the device to be able to fetch.
+function computeAuthSig(memberId: string): string {
+  const key = globalSecret();
+  if (!key) throw new Error("WALLET_PASS_SECRET is not set");
+  return crypto
+    .createHmac("sha256", key)
+    .update(`auth.${memberId}`)
+    .digest()
+    .toString("base64url");
+}
+
+export function signWalletAuthToken(memberId: string): string {
+  return computeAuthSig(memberId);
+}
+
+export function verifyWalletAuthToken(memberId: string, token: string): boolean {
+  if (!walletTokensConfigured()) return false;
+  const expected = computeAuthSig(memberId);
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  // timingSafeEqual requires equal-length buffers.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 /**
  * Revoke a member's wallet pass by rotating their secret: every barcode they've
  * downloaded stops verifying immediately. The stale pass still visually shows
- * the (now dead) barcode until they delete + re-add it — we can't push a new
- * one without an Apple pass web service — but a dead barcode can't mark anyone
- * present, and re-adding mints a working one.
+ * the (now dead) barcode until they delete + re-add it — but a dead barcode can't
+ * mark anyone present, and re-adding mints a working one. The APNs push (wired
+ * in profile-page.server.ts) nudges registered devices to re-fetch the refreshed
+ * pass carrying the new barcode.
  */
 export async function rotateWalletSecret(userId: string): Promise<void> {
   const secret = crypto.randomBytes(24).toString("base64url");

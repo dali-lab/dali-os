@@ -384,6 +384,9 @@
       border-radius: 50%; font-size: 15px; line-height: 1; align-self: center;
     }
     .icon-btn:hover { background: rgba(19, 41, 58, 0.06); color: var(--fg); }
+    .icon-btn:disabled { opacity: 0.45; cursor: default; background: transparent; }
+    .icon-btn.refresh { font-size: 17px; }
+    .icon-btn.refresh:disabled { animation: spin 700ms linear infinite; }
 
     .body { padding: 8px 22px 4px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
     .section-label {
@@ -578,6 +581,11 @@
       h("div", { class: "head" },
         h("span", { class: "logo" }, "dali.os"),
         h("span", { class: "title" }, "JobX timesheet"),
+        h("button", {
+          class: "icon-btn refresh", type: "button", disabled: state.loading,
+          "aria-label": "Refresh hours from DALI OS", title: "Refresh hours from DALI OS",
+          onclick: () => load(currentParams()),
+        }, "⟳"),
         h("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closePanel }, "✕"),
       ),
       state.loading ? h("div", { class: "loading-bar" }) : h("div", { style: "height:2px" }),

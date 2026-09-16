@@ -1,8 +1,9 @@
 // Admin → Activities → editor (specs/activities.md §7.8). Edits an activity's
-// window, audience (everyone / roles / group), and mechanic config, plus the
-// status transitions (Draft ⇄ Published, Archive), Clone (for term reuse), and
-// Delete (Draft/eventless only — archive otherwise). The mechanic's own config
-// editor comes from the client registry.
+// window, audience (everyone / roles / group), scoring (individuals or teams,
+// plus the teams themselves), and mechanic config, plus the status transitions
+// (Draft ⇄ Published, Archive), Clone (for term reuse), and Delete
+// (Draft/eventless only — archive otherwise). The mechanic's own config editor
+// comes from the client registry; the teams panel is ActivityTeamsEditor.
 
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData } from "react-router";
@@ -16,14 +17,24 @@ import { logAuditEvent } from "~/lib/audit";
 import { buttonClasses } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
-import { activityKindLabel } from "~/lib/activities";
+import {
+  activityKindLabel,
+  clampTeamSize,
+  type ActivityScoring,
+  type ActivityTeamView,
+} from "~/lib/activities";
 import { mechanicClient } from "~/activities/mechanics/registry";
+import { ActivityTeamsEditor } from "~/admin/components/ActivityTeamsEditor";
 import {
   cloneActivity,
   deleteActivity,
+  listActivityTeams,
+  resolveActivityRoster,
+  saveActivityTeams,
   setActivityStatus,
   updateActivity,
 } from "~/lib/activities.server";
+import { fullName } from "~/lib/display";
 
 // Append the activity's name as the breadcrumb leaf so the shell trail reads
 // Admin → System & Insights → Activities → <name>, instead of the page rolling
@@ -61,7 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const activity = await prisma.activity.findUnique({ where: { id: params.id } });
   if (!activity) throw new Response("Not found", { status: 404 });
 
-  const [terms, groups, eventCount] = await Promise.all([
+  const [terms, groups, eventCount, roster, teams] = await Promise.all([
     prisma.term.findMany({ orderBy: { sortKey: "desc" }, select: { id: true, code: true } }),
     prisma.groupDefinition.findMany({
       where: { archivedAt: null },
@@ -69,9 +80,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { id: true, name: true, type: true },
     }),
     prisma.activityEvent.count({ where: { activityId: params.id } }),
+    resolveActivityRoster(activity),
+    listActivityTeams(params.id),
   ]);
 
-  return { activity, terms, groups, eventCount, viewerIsAdmin: false };
+  // Everyone the teams panel has to name: the audience, plus anyone already on
+  // a team who has since fallen out of it (a group edited mid-activity), who
+  // would otherwise render as a blank chip.
+  const nameByUserId: Record<string, string> = Object.fromEntries(
+    roster.map((m) => [m.id, m.name]),
+  );
+  const orphans = [...new Set(teams.flatMap((t) => t.memberIds))].filter(
+    (id) => !(id in nameByUserId),
+  );
+  if (orphans.length > 0) {
+    const rows = await prisma.user.findMany({
+      where: { id: { in: orphans } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    for (const u of rows) nameByUserId[u.id] = fullName(u);
+  }
+
+  return { activity, terms, groups, eventCount, roster, teams, nameByUserId, viewerIsAdmin: false };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -130,6 +160,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Invalid config." }, { status: 400 });
   }
 
+  const scoring: ActivityScoring = form.get("scoring") === "Team" ? "Team" : "Individual";
+  const teamSize = clampTeamSize(Number(form.get("teamSize") ?? 2));
+
+  // Teams arrive as the editor's client state. Shapes that don't parse are a
+  // bug, not operator input, so fail loudly rather than silently wiping teams.
+  let teams: ActivityTeamView[] = [];
+  try {
+    const parsed = JSON.parse(String(form.get("teams") ?? "[]"));
+    if (!Array.isArray(parsed)) throw new Error("not a list");
+    teams = parsed.map((t: ActivityTeamView) => ({
+      id: String(t.id),
+      name: String(t.name ?? ""),
+      memberIds: Array.isArray(t.memberIds) ? t.memberIds.map(String) : [],
+    }));
+  } catch {
+    return Response.json({ error: "Invalid teams." }, { status: 400 });
+  }
+
   const startsAtRaw = String(form.get("startsAt") ?? "");
   const endsAtRaw = String(form.get("endsAt") ?? "");
   const startsAt = startsAtRaw ? new Date(startsAtRaw) : undefined;
@@ -149,8 +197,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       audienceEveryone,
       audienceRoles,
       assignedGroupId,
+      scoring,
+      teamSize,
       config,
     });
+    // Individual scoring keeps its teams on the row rather than deleting them,
+    // so an operator who flips to Individual and back doesn't lose the pairings
+    // they built. Nothing reads them while scoring is Individual.
+    if (scoring === "Team") await saveActivityTeams(id, teams);
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Couldn't save." },
@@ -168,7 +222,8 @@ function toLocalInputValue(iso: string): string {
 }
 
 export default function AdminActivityEditor() {
-  const { activity, terms, groups, eventCount } = useLoaderData<typeof loader>();
+  const { activity, terms, groups, eventCount, roster, teams: savedTeams, nameByUserId } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>() as { error?: string } | undefined;
   const error = actionData?.error ?? null;
 
@@ -180,6 +235,9 @@ export default function AdminActivityEditor() {
   const [roles, setRoles] = useState<string[]>(activity.audienceRoles);
   const [groupId, setGroupId] = useState(activity.assignedGroupId ?? "");
   const [config, setConfig] = useState<unknown>(activity.config);
+  const [scoring, setScoring] = useState<ActivityScoring>(activity.scoring);
+  const [teamSize, setTeamSize] = useState(activity.teamSize);
+  const [teams, setTeams] = useState<ActivityTeamView[]>(savedTeams);
   // datetime-local values are filled after mount to keep SSR/client markup in
   // sync (the local formatting differs from the server's UTC).
   const [startsAt, setStartsAt] = useState("");
@@ -213,6 +271,9 @@ export default function AdminActivityEditor() {
         {/* Serialized complex fields */}
         <input type="hidden" name="audienceRoles" value={JSON.stringify(roles)} />
         <input type="hidden" name="config" value={JSON.stringify(config ?? {})} />
+        <input type="hidden" name="scoring" value={scoring} />
+        <input type="hidden" name="teamSize" value={teamSize} />
+        <input type="hidden" name="teams" value={JSON.stringify(teams)} />
         <input type="hidden" name="startsAt" value={startsAt ? new Date(startsAt).toISOString() : ""} />
         <input type="hidden" name="endsAt" value={endsAt ? new Date(endsAt).toISOString() : ""} />
 
@@ -309,6 +370,18 @@ export default function AdminActivityEditor() {
             </label>
           </div>
         </section>
+
+        {/* Scoring & teams */}
+        <ActivityTeamsEditor
+          scoring={scoring}
+          onScoringChange={setScoring}
+          teamSize={teamSize}
+          onTeamSizeChange={setTeamSize}
+          teams={teams}
+          onTeamsChange={setTeams}
+          roster={roster}
+          nameByUserId={nameByUserId}
+        />
 
         {/* Mechanic config */}
         <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">

@@ -27,6 +27,7 @@ import {
 } from "~/calendar/components/composer";
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useActionErrorToast } from "~/lib/useActionErrorToast";
+import { useToast } from "~/components/ui/toast";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
@@ -183,12 +184,59 @@ const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
 // UIs); day-to-day browsing is the layered grid. Deep links from the old tabs
 // (?tab=schedule|timesheet) translate to the matching mode/layer.
+
+// The Google calendar-link callback redirects back to /calendar with a one-shot
+// result param. Nothing else surfaced these, so a partial-scope grant used to
+// fail silently — the account just showed a sync error later. Map each code to
+// a message and toast it once on mount.
+const CAL_LINK_ERROR_MESSAGES: Record<string, string> = {
+  calendar_scope_denied:
+    "Calendar access wasn't granted. Reconnect the account and allow the Calendar permission.",
+  no_refresh_token:
+    "Google didn't grant offline access. Reconnect the account and choose Allow when prompted.",
+  auth_failed: "Couldn't connect that Google account. Please try again.",
+  state_mismatch: "Couldn't connect that Google account. Please try again.",
+  token_exchange_failed: "Couldn't connect that Google account. Please try again.",
+  no_email: "Couldn't read that Google account's email. Please try again.",
+};
+
 function CalendarScreen({ data }: { data: LoaderData }) {
   const { panel } = useOsChrome();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
   const [searchParams] = useSearchParams();
+  const toast = useToast();
+
+  // Announce the outcome of a Google calendar-link attempt, then strip the
+  // one-shot params via history (not setSearchParams, which would re-run the
+  // heavy calendar loader just to clean the URL). Mount-only: the callback
+  // lands here with a fresh navigation.
+  useEffect(() => {
+    const linked = searchParams.get("calendar_linked");
+    const errorCode = searchParams.get("calendar_link_error");
+    if (!linked && !errorCode) return;
+    if (errorCode) {
+      toast.error(
+        CAL_LINK_ERROR_MESSAGES[errorCode] ??
+          "Couldn't connect that Google account. Please try again.",
+        { duration: 8000 },
+      );
+    } else if (linked) {
+      toast.success("Google account connected.");
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("calendar_linked");
+    next.delete("calendar_link_error");
+    const qs = next.toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+    );
+    // Mount-only: these are consumed once, on the redirect back from Google.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // One screen now. Availability is a modal and the timesheet is a way of
   // viewing the same grid, so the only other "mode" left is the legacy
@@ -792,6 +840,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   anchorMonth={anchorMonth}
                   timezone={data.timezone}
                   onSelectDay={goToDay}
+                  markPayPeriodBounds={layers.logged}
                 />
               ) : (
                 <WeekGrid
@@ -800,7 +849,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   days={days}
                   timezone={data.timezone}
                   clickDurationHours={data.defaultEventDurationMin / 60}
-                  markPayPeriodEnds={layers.logged}
+                  markPayPeriodBounds={layers.logged}
                   backgroundLayer={(dayIdx) =>
                     layers.workingHours
                       ? workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {

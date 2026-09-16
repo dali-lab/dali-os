@@ -74,7 +74,11 @@ export function AddMemberFlow({
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Element | null;
+      // The Project/Domain Selects render their menus in a floating-ui portal
+      // (outside containerRef) — a click there isn't "outside" the flow.
+      if (target?.closest("[data-floating-ui-portal]")) return;
+      if (containerRef.current && !containerRef.current.contains(target as Node)) {
         setOpen(false);
       }
     }

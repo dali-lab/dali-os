@@ -8,7 +8,7 @@
 // `kind` is a plain string validated against ACTIVITY_KINDS below — NOT a DB
 // enum — so a new mechanic is a code module with zero migration.
 
-import type { ActivityStatus } from "~/generated/prisma/client";
+import type { ActivityScoring, ActivityStatus } from "~/generated/prisma/client";
 import type { UserRoles } from "~/lib/roles";
 
 /** The one feature flag that gates the whole subsystem during rollout. */
@@ -103,6 +103,130 @@ export function resolveHintState(
       : { show: false, cost: null, unlocksAt };
   }
   return { show: true, cost: null, unlocksAt: null }; // free
+}
+
+// ─── Teams (spine-level, every mechanic that scores) ─────────────────────────
+// An activity is scored either per member (Individual) or per team (Team). Team
+// mode pools points and ranks teams rather than people, so a pair hunting
+// together shares one line on the leaderboard. Teams are spine data
+// (ActivityTeam + ActivityParticipant.teamId), NOT mechanic config — a future
+// bingo or voting mechanic gets group scoring for free.
+
+export type { ActivityScoring };
+
+export const DEFAULT_TEAM_SIZE = 2;
+export const MIN_TEAM_SIZE = 2;
+export const MAX_TEAM_SIZE = 12;
+
+/** One person the admin teams editor can pair up (an audience member). */
+export type RosterMember = { id: string; name: string };
+
+/** A team plus its members, in the shape both the admin editor and the surface read. */
+export type ActivityTeamView = {
+  id: string;
+  name: string;
+  memberIds: string[];
+};
+
+export function clampTeamSize(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_TEAM_SIZE;
+  return Math.min(MAX_TEAM_SIZE, Math.max(MIN_TEAM_SIZE, Math.round(n)));
+}
+
+/** "Team 3" — the name auto-assign gives a team it creates. */
+export function defaultTeamName(index: number): string {
+  return `Team ${index + 1}`;
+}
+
+/** The team this member is on, or null when they're unassigned. */
+export function teamForMember(
+  teams: ActivityTeamView[],
+  userId: string,
+): ActivityTeamView | null {
+  return teams.find((t) => t.memberIds.includes(userId)) ?? null;
+}
+
+/**
+ * Fisher-Yates, on a copy. Pull the randomness out of `autoAssignTeams` so that
+ * one stays pure and testable and the caller decides whether pairing is random
+ * (the admin editor's "Auto-assign") or deterministic (a test).
+ */
+export function shuffled<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * Place every rostered member who isn't on a team yet, without disturbing the
+ * pairings an operator already made by hand: under-filled existing teams are
+ * topped up first (in order), then new teams of `teamSize` are appended.
+ *
+ * A trailing remainder smaller than a pair is spread back over the earlier
+ * teams rather than left as a team of one — nobody should hunt alone because
+ * the roster didn't divide evenly. Pure: pass a shuffled roster for random
+ * pairing.
+ *
+ * `newTeamId` mints ids for the teams this creates (crypto.randomUUID in the
+ * browser; injectable so tests get stable ids).
+ */
+export function autoAssignTeams({
+  roster,
+  teams,
+  teamSize,
+  newTeamId,
+}: {
+  roster: string[];
+  teams: ActivityTeamView[];
+  teamSize: number;
+  newTeamId: () => string;
+}): ActivityTeamView[] {
+  const size = clampTeamSize(teamSize);
+  const next = teams.map((t) => ({ ...t, memberIds: [...t.memberIds] }));
+  const assigned = new Set(next.flatMap((t) => t.memberIds));
+  const queue = roster.filter((id) => !assigned.has(id));
+  if (queue.length === 0) return next;
+
+  for (const team of next) {
+    while (team.memberIds.length < size && queue.length > 0) {
+      team.memberIds.push(queue.shift()!);
+    }
+  }
+
+  while (queue.length > 0) {
+    next.push({
+      id: newTeamId(),
+      name: defaultTeamName(next.length),
+      memberIds: queue.splice(0, size),
+    });
+  }
+
+  // Spread a lone straggler over the teams before it (round-robin from the
+  // front, so the overflow lands on as few teams as possible).
+  const last = next[next.length - 1];
+  if (next.length > 1 && last.memberIds.length < MIN_TEAM_SIZE) {
+    for (let i = 0; i < last.memberIds.length; i++) {
+      next[i % (next.length - 1)].memberIds.push(last.memberIds[i]);
+    }
+    next.pop();
+  }
+
+  return next;
+}
+
+/** Drop a member from whichever team holds them, leaving empty teams behind. */
+export function removeFromTeams(
+  teams: ActivityTeamView[],
+  userId: string,
+): ActivityTeamView[] {
+  return teams.map((t) =>
+    t.memberIds.includes(userId)
+      ? { ...t, memberIds: t.memberIds.filter((id) => id !== userId) }
+      : t,
+  );
 }
 
 // ─── Active-window predicate (mirrors education's isRegistrationOpen) ─────────

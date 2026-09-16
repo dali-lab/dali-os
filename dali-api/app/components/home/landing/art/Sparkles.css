@@ -1,0 +1,12 @@
+/* Landing 'Sparkles' layer — hand-optimized for performance (home-graphics-perf).
+ *
+ * Originally emitted by scripts/split-landing-svg.py, but that generator is not
+ * checked into this repo, so edit this file directly.
+ *
+ * Each sparkle is a small feGaussianBlur drop-shadow (16 of them). The export ran
+ * an `infinite` transform/opacity loop on every one, re-rasterizing all 16 blurs
+ * per frame. Those idle loops are gone; the sparkles keep their one-time entrance
+ * "pop" (`.landing-pop` in landing.css) and then sit still, so each blur is
+ * computed once. The pop already reads as a twinkle, so the resting look is
+ * effectively unchanged.
+ */

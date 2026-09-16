@@ -18,6 +18,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
+import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import {
   defaultWorkingHours,
   DEFAULT_WORK_START_MIN,
@@ -247,9 +248,7 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
       </div>
       {open && (
         <div id={bodyId} className="px-3 py-3 flex flex-col gap-2">
-          {link.syncError && (
-            <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
-          )}
+          <SyncErrorNotice syncError={link.syncError} />
           {link.subCalendars === null ? (
             <div className={cn(bodyText, "italic")}>Couldn't load this account's calendars.</div>
           ) : link.subCalendars.length === 0 ? (
