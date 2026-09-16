@@ -309,6 +309,31 @@ async function readSubCalendars<T>(
 }
 
 /**
+ * Which of a link's calendars a read covers.
+ * - "availability" (default): the link's `subCalendarIds` — the calendars that
+ *   count toward busy/free (the "Availability" toggle). Falls back to the
+ *   primary calendar when none are chosen.
+ * - "all": every calendar on the account's calendar list. The calendar page
+ *   reads this way because its per-calendar "Show" toggle is a client-side
+ *   filter over what the loader returns — reading only availability calendars
+ *   made a calendar with Show on but Availability off draw nothing.
+ */
+export type CalendarReadScope = "availability" | "all";
+
+function calendarIdsForScope(
+  subCalendarIds: string[],
+  calendarList: GoogleCalendarListEntry[] | undefined,
+  scope: CalendarReadScope,
+): string[] {
+  // Without the account's list (calendarList failed) "all" degrades to the
+  // availability set rather than showing nothing.
+  if (scope === "all" && calendarList && calendarList.length > 0) {
+    return calendarList.map((c) => c.id);
+  }
+  return subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
+}
+
+/**
  * Drop sub-calendar ids Google 404'd (deleted/unshared) so they stop breaking
  * every future sync. Best-effort read-modify-write off the ids we just read; a
  * concurrent settings edit simply gets re-pruned on the next sync.
@@ -318,9 +343,9 @@ async function pruneDeadSubCalendars(
   current: string[],
   dead: string[],
 ): Promise<void> {
-  if (dead.length === 0) return;
   const deadSet = new Set(dead);
   const remaining = current.filter((id) => !deadSet.has(id));
+  if (remaining.length === current.length) return;
   await prisma.userCalendarLink
     .update({ where: { id: linkId }, data: { subCalendarIds: remaining } })
     .catch(() => {});
@@ -401,6 +426,7 @@ async function fetchEventsForCalendar(
 async function fetchBusyForLink(
   linkId: string,
   subCalendarIds: string[],
+  calendarIds: string[],
   start: Date,
   end: Date,
   prefetchedToken?: string,
@@ -420,7 +446,6 @@ async function fetchBusyForLink(
       // Colour is best-effort; events still render (untinted) without it.
     }
   }
-  const calendarIds = subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
   const { events, deadCalendarIds, fatalError } = await readSubCalendars(
     calendarIds,
     (id) => fetchEventsForCalendar(token, id, colorById.get(id), start, end),
@@ -453,6 +478,7 @@ export async function fetchBusyEvents(
   end: Date,
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
+  scope: CalendarReadScope = "availability",
 ): Promise<BusyEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -468,22 +494,22 @@ export async function fetchBusyEvents(
 
         // Build the color map: prefer a pre-fetched list from the caller,
         // then fall back to fetching ourselves (best-effort; untinted on fail).
-        let colorById = new Map<string, string | undefined>();
-        const prefetchedList = prefetchedCalendarLists?.get(l.id);
-        if (prefetchedList) {
-          colorById = new Map(prefetchedList.map((c) => [c.id, c.backgroundColor]));
-        } else {
+        let calendarList = prefetchedCalendarLists?.get(l.id);
+        if (!calendarList) {
           try {
-            const list = await listCalendarsForLink(l.id, token);
-            colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
+            calendarList = await listCalendarsForLink(l.id, token);
           } catch {
             // Colour is best-effort; events still render (untinted).
           }
         }
+        const colorById = new Map<string, string | undefined>(
+          (calendarList ?? []).map((c) => [c.id, c.backgroundColor]),
+        );
 
         const events = await fetchBusyForLink(
           l.id,
           l.subCalendarIds,
+          calendarIdsForScope(l.subCalendarIds, calendarList, scope),
           start,
           end,
           token,
@@ -645,6 +671,7 @@ export async function fetchCalendarEvents(
   end: Date,
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
+  scope: CalendarReadScope = "availability",
 ): Promise<CalendarEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -657,20 +684,19 @@ export async function fetchCalendarEvents(
         const token = prefetchedTokens?.get(l.id) ?? await getValidAccessTokenForLink(l.id);
 
         // Build a map of calendarId → entry (has both backgroundColor + accessRole).
-        let entryById = new Map<string, GoogleCalendarListEntry>();
-        const prefetchedList = prefetchedCalendarLists?.get(l.id);
-        if (prefetchedList) {
-          entryById = new Map(prefetchedList.map((c) => [c.id, c]));
-        } else {
+        let calendarList = prefetchedCalendarLists?.get(l.id);
+        if (!calendarList) {
           try {
-            const list = await listCalendarsForLink(l.id, token);
-            entryById = new Map(list.map((c) => [c.id, c]));
+            calendarList = await listCalendarsForLink(l.id, token);
           } catch {
             // Best-effort; events still load without color/writable metadata.
           }
         }
+        const entryById = new Map<string, GoogleCalendarListEntry>(
+          (calendarList ?? []).map((c) => [c.id, c]),
+        );
 
-        const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
+        const calendarIds = calendarIdsForScope(l.subCalendarIds, calendarList, scope);
         const { events, deadCalendarIds, fatalError } = await readSubCalendars(
           calendarIds,
           (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
