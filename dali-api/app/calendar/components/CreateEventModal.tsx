@@ -24,7 +24,8 @@ import {
   inviteOrganizerFields,
   addDaysToDate,
 } from "~/calendar/components/composer";
-import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
+import { durationMinutesBetween } from "~/calendar/lib/event-block";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -224,6 +225,15 @@ export function CreateEventModal({
 
   // ── Week navigation for the left panel ───────────────────────────────────
   const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
+  // Keep the week start on zoned midnight (like the loader's weekWindow) so the
+  // availability fetch covers the whole local week. A bare YYYY-MM-DD from
+  // shiftWeekParam parses as UTC midnight, which is hours off in US zones.
+  const shiftWeek = (weeks: number) => {
+    const ymd = getZonedYMD(new Date(weekStartIso), data.timezone);
+    setWeekStartIso(
+      zonedDayStartUtc(ymd.year, ymd.month, ymd.day + weeks * 7, data.timezone).toISOString(),
+    );
+  };
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
 
   // ── Slot selected from the availability grid ─────────────────────────────
@@ -481,7 +491,7 @@ export function CreateEventModal({
             <button
               type="button"
               aria-label="Previous week"
-              onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, -1))}
+              onClick={() => shiftWeek(-1)}
               className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -492,7 +502,7 @@ export function CreateEventModal({
             <button
               type="button"
               aria-label="Next week"
-              onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, 1))}
+              onClick={() => shiftWeek(1)}
               className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
