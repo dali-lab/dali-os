@@ -313,6 +313,10 @@ export default function AppLayoutRoute() {
   const flushPane = matches.some(
     (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
   )
+  // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
+  const bleedPane = matches.some(
+    (m) => (m as { handle?: { bleedPane?: boolean } }).handle?.bleedPane,
+  )
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
   // On tabless desktop a page with no subnav row gets the standalone
@@ -473,9 +477,11 @@ export default function AppLayoutRoute() {
         // same gutter every other page gets. `flushPane` pages (calendar) fill
         // the pane instead — large side/bottom gutters left a floating box and
         // a page scrollbar.
-        flushPane
-          ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-          : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
+        bleedPane
+          ? ''
+          : flushPane
+            ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
+            : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
       )}
     >
       {!hideBreadcrumbRow && (
