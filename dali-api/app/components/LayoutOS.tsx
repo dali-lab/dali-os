@@ -318,6 +318,7 @@ export function LayoutOS({
 
   const placeBellPanel = useCallback(() => setBellPanel(bellAnchor()), [bellAnchor])
   const closeBellPanel = useCallback(() => setBellPanel(null), [])
+  const seeAllProps = tabClickProps({ url: '/notifications', label: 'My Tasks' })
   const toggleBellPanel = useCallback(
     () => setBellPanel((open) => (open ? null : bellAnchor())),
     [bellAnchor],
@@ -761,10 +762,16 @@ export function LayoutOS({
                   openInWorkspace({ url, label })
                 }}
               />
+              {/* Close after opening, in the same handler. Closing on
+                  capture flushed the state update before the bubble phase,
+                  unmounting this button so its navigation never ran. */}
               <button
                 type="button"
-                {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-                onClickCapture={closeBellPanel}
+                {...seeAllProps}
+                onClick={(e) => {
+                  seeAllProps.onClick(e)
+                  closeBellPanel()
+                }}
                 className={cn(osMenuItemClass, 'text-os-grey')}
               >
                 <span className="truncate">See all →</span>
