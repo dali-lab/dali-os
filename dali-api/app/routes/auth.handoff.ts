@@ -41,7 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   setSessionCookie(headers, webview.rawId);
   // The desktop shell rides the same tabless-by-default shell as the web app.
   // Its bare WKWebView has no browser chrome, but tabless mode supplies its own
-  // back/forward arrows on desktop (TablessHistoryNav), so there's nothing to
+  // back/forward arrows in the desktop top bar (TablessHistoryNav), so there's nothing to
   // force here — a fresh pairing plants no preference and takes the default.
   await logAuditEvent({ action: "pairing.handoff", userId: row.userId, request });
   return redirect("/", { headers });
