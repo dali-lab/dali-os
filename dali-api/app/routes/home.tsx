@@ -6,13 +6,11 @@ import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.ser
 import { loadShellUser } from "~/lib/shell-user.server";
 import { timed } from "~/lib/server-timing";
 import { FavoriteIcon } from "~/components/FavoriteIcon";
-import { HuntCode } from "~/components/activities/HuntCode";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { useDesktopVersion } from "~/lib/desktop";
 import { currentTermStrict, getUserRoles } from "~/lib/roles";
 import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
@@ -118,9 +116,6 @@ export default function Home() {
   const { user, greeting, week, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
-  // Null in a browser, the shell version inside the desktop app — the hunt code
-  // below is only meant to be findable by people running the desktop app.
-  const inDesktopApp = useDesktopVersion() !== null;
   const fullName =
     [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
   const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
@@ -160,12 +155,6 @@ export default function Home() {
           actionPinned: page.favorited,
         }))}
       />
-
-      {inDesktopApp && (
-        // A scavenger-hunt code, parked in the corner of the desktop app's
-        // front door.
-        <HuntCode code="FLOWERFARM" className="absolute bottom-0 right-0" />
-      )}
     </div>
   );
 }

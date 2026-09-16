@@ -55,85 +55,6 @@ function countFound(userEvents: { type: string; refId: string }[]): number {
   ).size;
 }
 
-// ─── Earned codes ───────────────────────────────────────────────
-// A few codes aren't hidden anywhere in the world — a member earns them by
-// having already done the thing in DALI OS. They're matched against the hunt
-// config by code VALUE (case/whitespace-insensitive), so a hunt opts in simply
-// by listing that code: nothing here fires for an activity that doesn't.
-
-const EARNED_CODES: { value: string; earned: (userId: string) => Promise<boolean> }[] = [
-  {
-    // More than one time entry logged on their timesheet. `take: 2` because the
-    // question is "is there a second one?", not "how many?" — this runs on every
-    // surface load.
-    value: "DESIGNLOFT",
-    async earned(userId) {
-      const rows = await prisma.timeEntry.findMany({
-        where: { userId },
-        select: { id: true },
-        take: 2,
-      });
-      return rows.length > 1;
-    },
-  },
-];
-
-/**
- * Grant every earned code this member now qualifies for and hasn't been
- * credited with yet. Idempotent: already-credited codes are filtered out up
- * front, and the write goes through `createMany({ skipDuplicates: true })` so
- * two concurrent surface loads can't collide on the
- * (activityId, userId, type, refId) unique index.
- */
-async function awardEarnedCodes(activity: Activity, userId: string): Promise<boolean> {
-  const cfg = readConfig(activity);
-  if (!cfg.codes.length) return false;
-
-  const candidates = EARNED_CODES.flatMap((rule) => {
-    const code = cfg.codes.find((c) => norm(c.value) === norm(rule.value));
-    return code ? [{ rule, code }] : [];
-  });
-  if (!candidates.length) return false;
-
-  const credited = new Set(
-    (
-      await prisma.activityEvent.findMany({
-        where: {
-          activityId: activity.id,
-          userId,
-          type: "code_found",
-          refId: { in: candidates.map((c) => c.code.id) },
-        },
-        select: { refId: true },
-      })
-    ).map((e) => e.refId),
-  );
-
-  const pending = candidates.filter(({ code }) => !credited.has(code.id));
-  if (!pending.length) return false;
-
-  // Only now do the per-rule lookups, and only for codes still outstanding —
-  // once a member is credited, later loads cost one indexed read.
-  const qualified = (
-    await Promise.all(
-      pending.map(async ({ rule, code }) => ((await rule.earned(userId)) ? code : null)),
-    )
-  ).filter((c): c is NonNullable<typeof c> => c !== null);
-  if (!qualified.length) return false;
-
-  const { count } = await prisma.activityEvent.createMany({
-    data: qualified.map((code) => ({
-      activityId: activity.id,
-      userId,
-      type: "code_found",
-      refId: code.id,
-      points: code.points,
-    })),
-    skipDuplicates: true,
-  });
-  return count > 0;
-}
-
 // Reveal one code's hint, honoring the activity's hint policy. "free" always
 // returns the text; "delay" gates on the unlock time; "points" records a
 // (dedup'd) hint_revealed event carrying the negative point cost so the
@@ -238,10 +159,6 @@ export const scavengerHuntServer: MechanicServer = {
       message: `Found: ${match.label || match.value}`,
       data: { points: match.points },
     };
-  },
-
-  autoAward({ activity, userId }) {
-    return awardEarnedCodes(activity, userId);
   },
 
   bannerSummary(activity, userEvents) {
