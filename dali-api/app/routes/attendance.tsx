@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import {
   ClipboardCheck,
   ChevronDown,
@@ -8,16 +8,28 @@ import {
   UserCheck,
   UserX,
   CalendarClock,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import type { Route } from "./+types/attendance";
 import { requireAuth } from "~/lib/auth";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { useDialog } from "~/components/ui/dialog";
+import { Menu, Tooltip } from "~/components/ui/floating";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { cn } from "~/lib/cn";
+
+// An absence note is a short aside ("excused — flu"), not a place for a
+// paragraph; the cap keeps a roster row from turning into an essay.
+const ABSENCE_NOTE_MAX = 280;
 
 export const meta: Route.MetaFunction = () => [{ title: "Attendance · DALI OS" }];
 
@@ -44,8 +56,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Invited = organizer or on the participant list (mirrors calendar.server).
       AND: [
         { OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }] },
-        // Only meetings that actually track attendance have a roster to show.
-        { OR: [{ meetingType: { not: null } }, { attendanceMode: "SelfCheckIn" }] },
+        // Any meeting with a roster is attendance-tracked — notes, self check-in,
+        // or a plain event with guests (createScheduledMeeting fans out a
+        // MeetingAttendance row per participant whenever there are guests).
+        { attendance: { some: {} } },
       ],
     },
     orderBy: [{ selectedAt: "desc" }, { createdAt: "desc" }],
@@ -57,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       isCoreMeeting: true,
+      organizerId: true,
       project: { select: { id: true, name: true } },
       organizer: { select: { firstName: true, lastName: true, daliEmail: true } },
       attendance: {
@@ -64,6 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: {
           present: true,
           markedAt: true,
+          absenceNote: true,
           userId: true,
           user: {
             select: { id: true, firstName: true, lastName: true, daliEmail: true },
@@ -73,8 +89,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  // Who may write an absence note is the same gate as marking attendance, so
+  // resolve it here per event rather than letting the roster offer an editor
+  // the action would only reject. One membership query covers every event.
+  const [core, assignments] = await Promise.all([
+    isCore(userId),
+    prisma.projectAssignment.findMany({
+      where: { userId },
+      select: { projectId: true },
+    }),
+  ]);
+  const memberProjectIds = new Set(assignments.map((a) => a.projectId));
+
   const now = Date.now();
   const events = meetings.map((m) => {
+    const canManage =
+      m.organizerId === userId ||
+      core ||
+      (m.project !== null && memberProjectIds.has(m.project.id));
+    // Editing/cancelling the event itself is the organizer's or Core's call —
+    // narrower than canManage (project members can mark attendance but not
+    // reschedule or delete a meeting they don't own). Mirrors the update/cancel
+    // server gates.
+    const canEdit = m.organizerId === userId || core;
     const invited = m.attendance.length;
     const checkedIn = m.attendance.filter((a) => a.present).length;
     const scope = m.project
@@ -102,11 +139,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       checkedIn,
       viewerPresent:
         m.attendance.find((a) => a.userId === userId)?.present ?? false,
+      canManage,
+      canEdit,
       attendees: m.attendance.map((a) => ({
         id: a.user.id,
         name: fullName(a.user) || a.user.daliEmail || a.user.id,
         present: a.present,
         markedAt: a.markedAt?.toISOString() ?? null,
+        // Withheld rather than merely hidden: a plain invitee's payload
+        // shouldn't carry a note they aren't allowed to read.
+        absenceNote: canManage ? a.absenceNote : null,
       })),
     };
   });
@@ -114,11 +156,67 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { events };
 }
 
+// Save (or clear) the absence note on one roster row. Writing is gated by the
+// same organizer / Core / project-member rule that governs marking attendance —
+// this page is otherwise read-only and open to everyone invited, so the gate is
+// re-checked here rather than trusted from the loader's `canManage`.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (auth.user.type === "applicant") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const form = await request.formData();
+  if (form.get("intent") !== "set-absence-note") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  }
+  const meetingId = String(form.get("meetingId") ?? "");
+  const userId = String(form.get("userId") ?? "");
+  if (!meetingId || !userId) {
+    return Response.json({ error: "Missing meetingId or userId" }, { status: 400 });
+  }
+  const raw = String(form.get("note") ?? "").trim();
+  if (raw.length > ABSENCE_NOTE_MAX) {
+    return Response.json({ error: "Note is too long" }, { status: 400 });
+  }
+  // An emptied note clears the column rather than storing "".
+  const absenceNote = raw || null;
+
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { id: true, organizerId: true, projectId: true },
+  });
+  if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
+
+  const [core, member] = await Promise.all([
+    isCore(auth.user.sub),
+    meeting.projectId
+      ? isProjectMember(auth.user.sub, meeting.projectId)
+      : Promise.resolve(false),
+  ]);
+  if (auth.user.sub !== meeting.organizerId && !core && !member) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Note-only write: `present` and its TimeEntry mirror are untouched, and a
+  // row that doesn't exist means the person isn't on this roster.
+  const updated = await prisma.meetingAttendance.updateMany({
+    where: { scheduledMeetingId: meeting.id, userId },
+    data: { absenceNote },
+  });
+  if (updated.count === 0) {
+    return Response.json({ error: "Not on this roster" }, { status: 404 });
+  }
+  return Response.json({ ok: true });
+}
+
 type Attendee = {
   id: string;
   name: string;
   present: boolean;
   markedAt: string | null;
+  absenceNote: string | null;
 };
 
 type AttendanceEvent = {
@@ -132,6 +230,8 @@ type AttendanceEvent = {
   invited: number;
   checkedIn: number;
   viewerPresent: boolean;
+  canManage: boolean;
+  canEdit: boolean;
   attendees: Attendee[];
 };
 
@@ -240,10 +340,28 @@ function EventSection({
 
 function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) {
   const tz = useUserTimeZone();
+  const dialog = useDialog();
+  const cancelFetcher = useFetcher();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
   const present = event.attendees.filter((a) => a.present);
   const missing = event.attendees.filter((a) => !a.present);
+
+  async function cancelEvent() {
+    const ok = await dialog.confirm({
+      title: "Cancel this event?",
+      description: `"${event.title}" will be removed for everyone invited, and disappears from Attendance. This can't be undone.`,
+      confirmLabel: "Cancel event",
+      cancelLabel: "Keep event",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    cancelFetcher.submit(null, {
+      method: "post",
+      action: `/api/scheduled-meetings/${event.id}/cancel`,
+    });
+  }
 
   return (
     <li className={cn(panel, "overflow-hidden")}>
@@ -293,7 +411,7 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
             </div>
           </div>
         </button>
-        <div className="flex items-start pr-3 pt-3.5 flex-shrink-0">
+        <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
           <Link
             to={`/calendar/meeting/${event.id}`}
             className="p-1.5 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40"
@@ -302,8 +420,39 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
           >
             <ExternalLink className="w-4 h-4" />
           </Link>
+          {event.canEdit && (
+            <Menu
+              align="right"
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Event options"
+                  disabled={cancelFetcher.state !== "idle"}
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              }
+            >
+              <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => setEditing(true)}>
+                Edit event
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                onSelect={cancelEvent}
+                destructive
+              >
+                Cancel event
+              </Menu.Item>
+            </Menu>
+          )}
         </div>
       </div>
+
+      {editing && (
+        <EditMeetingModal meetingId={event.id} onClose={() => setEditing(false)} />
+      )}
 
       {open && (
         <div className="border-t border-border bg-muted/15">
@@ -317,6 +466,8 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
                 icon={UserCheck}
                 title="Checked in"
                 tone="present"
+                meetingId={event.id}
+                canManage={event.canManage}
                 attendees={present}
                 empty="Nobody has checked in yet."
               />
@@ -324,6 +475,8 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
                 icon={UserX}
                 title="Not submitted"
                 tone="missing"
+                meetingId={event.id}
+                canManage={event.canManage}
                 attendees={missing}
                 empty="Everyone checked in."
               />
@@ -339,12 +492,16 @@ function RosterColumn({
   icon: Icon,
   title,
   tone,
+  meetingId,
+  canManage,
   attendees,
   empty,
 }: {
   icon: typeof UserCheck;
   title: string;
   tone: "present" | "missing";
+  meetingId: string;
+  canManage: boolean;
   attendees: Attendee[];
   empty: string;
 }) {
@@ -366,17 +523,98 @@ function RosterColumn({
       ) : (
         <ul className="max-h-72 overflow-y-auto divide-y divide-border/60">
           {attendees.map((a) => (
-            <li key={a.id} className="px-4 py-2.5 flex items-baseline justify-between gap-3 text-sm">
-              <span className="text-foreground truncate">{a.name}</span>
-              {a.present && a.markedAt && (
-                <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
-                  {formatDateTime(a.markedAt, tz)}
-                </span>
+            <li key={a.id} className="px-4 py-2.5 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-foreground truncate">{a.name}</span>
+                <div className="flex items-baseline gap-1.5 flex-shrink-0">
+                  {a.present && a.markedAt && (
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {formatDateTime(a.markedAt, tz)}
+                    </span>
+                  )}
+                  {/* Notes belong to an absence, so only the missing column
+                      offers the editor. A note left behind on someone who was
+                      later marked present still renders below, so nothing a
+                      manager wrote silently disappears. */}
+                  {tone === "missing" && canManage && (
+                    <AbsenceNoteButton
+                      meetingId={meetingId}
+                      userId={a.id}
+                      name={a.name}
+                      note={a.absenceNote}
+                    />
+                  )}
+                </div>
+              </div>
+              {/* A note can say why someone was out, so it stays with the
+                  people who mark attendance rather than the whole invite
+                  list. */}
+              {a.absenceNote && canManage && (
+                <p className="mt-1 text-xs text-muted-foreground italic break-words">
+                  {a.absenceNote}
+                </p>
               )}
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+// Add / edit / clear the absence note on one person. The prompt dialog is the
+// app's standard text-entry surface; submitting an empty value clears the note.
+function AbsenceNoteButton({
+  meetingId,
+  userId,
+  name,
+  note,
+}: {
+  meetingId: string;
+  userId: string;
+  name: string;
+  note: string | null;
+}) {
+  const dialog = useDialog();
+  const fetcher = useFetcher();
+  const busy = fetcher.state !== "idle";
+  const label = note ? `Edit absence note for ${name}` : `Add an absence note for ${name}`;
+
+  async function edit() {
+    const next = await dialog.prompt({
+      title: note ? "Edit absence note" : "Add absence note",
+      description: `Why ${name} wasn't there — visible to whoever can mark attendance on this event, not to the rest of the invite list.`,
+      label: "Note",
+      placeholder: "Excused — class conflict",
+      defaultValue: note ?? "",
+      confirmLabel: "Save note",
+      validate: (v) =>
+        v.trim().length > ABSENCE_NOTE_MAX
+          ? `Keep it under ${ABSENCE_NOTE_MAX} characters.`
+          : null,
+    });
+    if (next === null) return;
+    fetcher.submit(
+      { intent: "set-absence-note", meetingId, userId, note: next.trim() },
+      { method: "post", action: "/attendance" },
+    );
+  }
+
+  return (
+    <Tooltip content={note ? "Edit absence note" : "Add absence note"} placement="left">
+      <button
+        type="button"
+        onClick={edit}
+        disabled={busy}
+        aria-label={label}
+        className="p-1 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
+      >
+        {note ? (
+          <Pencil className="w-3.5 h-3.5" aria-hidden />
+        ) : (
+          <MessageSquarePlus className="w-3.5 h-3.5" aria-hidden />
+        )}
+      </button>
+    </Tooltip>
   );
 }

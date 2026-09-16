@@ -16,51 +16,106 @@ const mockPrisma = prisma as unknown as Record<
 
 const NOW = new Date("2026-05-24T00:00:00Z");
 
-// Two terms: 26W has ended, 26S is still running as of NOW.
+// Two terms: 26W has ended, 26S is still running as of NOW. One project has
+// been archived; "p-live" is still going.
 const ended = new Date("2026-03-01T00:00:00Z");
 const running = new Date("2026-06-15T00:00:00Z");
-const termEnds = new Map([
-  ["26W", ended],
-  ["26S", running],
-]);
+const ctx = {
+  termEndById: new Map([
+    ["26W", ended],
+    ["26S", running],
+  ]),
+  archivedProjectIds: new Set(["p-dead"]),
+  now: NOW,
+};
 
 describe("isGroupArchived", () => {
   it("is archived when manually archived, regardless of terms", () => {
     expect(
-      isGroupArchived({ archivedAt: new Date("2026-01-01"), boundTermIds: [] }, termEnds, NOW),
+      isGroupArchived({ archivedAt: new Date("2026-01-01"), boundTermIds: [] }, ctx),
     ).toBe(true);
     // Manual archive overrides a still-running bound term.
     expect(
-      isGroupArchived({ archivedAt: new Date("2026-01-01"), boundTermIds: ["26S"] }, termEnds, NOW),
+      isGroupArchived({ archivedAt: new Date("2026-01-01"), boundTermIds: ["26S"] }, ctx),
     ).toBe(true);
   });
 
   it("is not archived when ongoing (no archive, no bound terms)", () => {
-    expect(isGroupArchived({ archivedAt: null, boundTermIds: [] }, termEnds, NOW)).toBe(false);
+    expect(isGroupArchived({ archivedAt: null, boundTermIds: [] }, ctx)).toBe(false);
   });
 
   it("auto-archives once the only bound term has ended", () => {
-    expect(isGroupArchived({ archivedAt: null, boundTermIds: ["26W"] }, termEnds, NOW)).toBe(true);
+    expect(isGroupArchived({ archivedAt: null, boundTermIds: ["26W"] }, ctx)).toBe(true);
   });
 
   it("stays active while a bound term is still running", () => {
-    expect(isGroupArchived({ archivedAt: null, boundTermIds: ["26S"] }, termEnds, NOW)).toBe(false);
+    expect(isGroupArchived({ archivedAt: null, boundTermIds: ["26S"] }, ctx)).toBe(false);
   });
 
   it("uses the latest bound term: active until the last term ends", () => {
     // Bound to both an ended and a running term — the running one keeps it active.
     expect(
-      isGroupArchived({ archivedAt: null, boundTermIds: ["26W", "26S"] }, termEnds, NOW),
+      isGroupArchived({ archivedAt: null, boundTermIds: ["26W", "26S"] }, ctx),
     ).toBe(false);
+  });
+
+  it("auto-archives a term auto group once its term has ended", () => {
+    expect(
+      isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: "term:26W" }, ctx),
+    ).toBe(true);
+  });
+
+  it("keeps a term auto group active while its term is running", () => {
+    expect(
+      isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: "term:26S" }, ctx),
+    ).toBe(false);
+  });
+
+  it("auto-archives a project auto group once its project is archived", () => {
+    expect(
+      isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: "project:p-dead" }, ctx),
+    ).toBe(true);
+  });
+
+  it("keeps a live project's auto group active", () => {
+    // Paused projects are not in archivedProjectIds either — they're expected back.
+    expect(
+      isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: "project:p-live" }, ctx),
+    ).toBe(false);
+  });
+
+  it("never auto-archives the term-independent dynamic groups", () => {
+    for (const q of ["core", "hiring", "alumni", "domain:d1", "offering:o1"]) {
+      expect(
+        isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: q }, ctx),
+      ).toBe(false);
+    }
+  });
+
+  it("keeps a term auto group active when its term id is unknown", () => {
+    // A deleted term is not evidence the group is stale — same fallback the
+    // boundTermIds path takes.
+    expect(
+      isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: "term:gone" }, ctx),
+    ).toBe(false);
+  });
+
+  it("still honours a manual archive on an auto group's live term", () => {
+    expect(
+      isGroupArchived(
+        { archivedAt: new Date("2026-01-01"), boundTermIds: [], dynamicQuery: "term:26S" },
+        ctx,
+      ),
+    ).toBe(true);
   });
 
   it("ignores unknown (deleted) term ids; falls back to not-archived if all unknown", () => {
     expect(
-      isGroupArchived({ archivedAt: null, boundTermIds: ["gone"] }, termEnds, NOW),
+      isGroupArchived({ archivedAt: null, boundTermIds: ["gone"] }, ctx),
     ).toBe(false);
     // A known-ended term still archives even alongside an unknown id.
     expect(
-      isGroupArchived({ archivedAt: null, boundTermIds: ["gone", "26W"] }, termEnds, NOW),
+      isGroupArchived({ archivedAt: null, boundTermIds: ["gone", "26W"] }, ctx),
     ).toBe(true);
   });
 });

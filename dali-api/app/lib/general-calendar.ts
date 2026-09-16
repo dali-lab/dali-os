@@ -370,6 +370,22 @@ export function calendarIdFromIcsUrl(url: string): string | null {
   }
 }
 
+/**
+ * Whether a Google event reaches the viewer through the lab's own general
+ * calendar — which makes it lab-wide by construction, whoever Google happens to
+ * list as a guest. The calendar surfaces use this to decide that a member may
+ * see such an event's meeting note and attendance even though they were never
+ * individually invited, and that Core may give an untracked one a DALI meeting.
+ *
+ * False whenever no general calendar is configured, so an unset env var can
+ * never widen anything.
+ */
+export function isGeneralCalendarEvent(calendarId: string | null | undefined): boolean {
+  if (!calendarId) return false;
+  const generalId = generalCalendarId();
+  return generalId != null && calendarId === generalId;
+}
+
 // Whether the viewer still needs to add the general calendar to one of their
 // linked Google accounts, derived from the calendar lists the availability
 // loader already fetched. "unknown" when a list read failed — better to stay

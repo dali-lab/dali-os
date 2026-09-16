@@ -1825,6 +1825,12 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
+  // Which calendar within that linked account holds the event (Google's
+  // calendarId, e.g. "primary" or a calendar's address). Persisted at create so
+  // an edit can events.patch the right calendar instead of defaulting to
+  // "primary". Null = primary / no external event.
+  organizerCalendarId String?
+
   // Set when the sender picks a meeting type at invite time. Drives auto-
   // creation of a meeting-note Page under `project`'s shared documents
   // (see notePage) plus a MeetingAttendance row per participant.
@@ -1890,6 +1896,9 @@ model MeetingAttendance {
   present            Boolean   @default(false)
   markedByUserId     String?
   markedAt           DateTime?
+  // Free-text context Core attaches to an absence from the attendance log
+  // (e.g. "excused - travelling"). Optional and independent of `present`.
+  absenceNote        String?
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
@@ -4402,6 +4411,9 @@ enum ProcessType {
   HiringCycle
   // Lab-wide governance singleton (agreements, email templates, rubrics, …).
   Core
+  // Lab-wide, everyone-can-see singleton — the open counterpart of Core, for
+  // folders the whole lab files into (meeting notes that belong to no project).
+  Lab
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
@@ -4716,6 +4728,12 @@ model Activity {
   audienceEveryone Boolean        @default(false)
   audienceRoles    String[]       @default([])
   assignedGroupId  String?
+  // Individual | Team. Team turns the activity into a group competition: points
+  // and the leaderboard are pooled per ActivityTeam instead of per member.
+  scoring          ActivityScoring @default(Individual)
+  // Target headcount per team, used when auto-assigning. Advisory only — hand
+  // edits may leave a team over or under it.
+  teamSize         Int            @default(2)
   // Mechanic content, validated by a per-kind zod schema in app code.
   config           Json           @default("{}")
   createdById      String
@@ -4723,20 +4741,42 @@ model Activity {
   updatedAt        DateTime       @updatedAt
 
   participants ActivityParticipant[]
+  teams        ActivityTeam[]
   events       ActivityEvent[]
 
   @@index([status, startsAt, endsAt])
   @@index([termId, kind])
 }
 
-// Explicit participants, unioned with the group/role/everyone audience.
+// Explicit participants, unioned with the group/role/everyone audience. A row
+// here is also how a member lands on a team: assigning someone to a team writes
+// their participant row, so team membership always implies being in the
+// activity. teamId stays null for unassigned members and for Individual
+// activities.
 model ActivityParticipant {
   activityId String
   userId     String
-  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  teamId     String?
+  activity   Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  team       ActivityTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
   @@id([activityId, userId])
   @@index([userId])
+  @@index([teamId])
+}
+
+// One team (a pair, by default) inside a Team-scoped activity. Spine-level, not
+// mechanic content: any mechanic that scores can pool its points per team.
+model ActivityTeam {
+  id         String   @id @default(cuid())
+  activityId String
+  name       String
+  createdAt  DateTime @default(now())
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  members ActivityParticipant[]
+
+  @@index([activityId])
 }
 
 // The one generic per-user participation primitive. `type` + `refId` are
@@ -4762,6 +4802,12 @@ enum ActivityStatus {
   Draft
   Published
   Archived
+}
+
+// Whether points and the leaderboard are per member or pooled per team.
+enum ActivityScoring {
+  Individual
+  Team
 }
 // ─── Infrastructure Dashboard ────────────────────────────────────────────────
 
