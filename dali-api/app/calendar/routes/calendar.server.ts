@@ -194,6 +194,8 @@ async function meetingsForExternalEvents(
       // Adding notes after the fact is the organizer's or Core's call — the same
       // authority attachMeetingNote re-checks server-side.
       canAddNote: m.organizerId === userId || canMarkCoreMeeting,
+      // Same authority inviteToScheduledMeeting re-checks.
+      canInvite: m.organizerId === userId || canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a

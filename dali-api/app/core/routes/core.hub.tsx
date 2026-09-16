@@ -292,6 +292,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // This page is Core-gated, so every viewer may add a note (the organizer
       // and Core are exactly who attachMeetingNote allows).
       canAddNote: true,
+      canInvite: true,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",
     };

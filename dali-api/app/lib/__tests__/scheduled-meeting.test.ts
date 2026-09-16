@@ -10,6 +10,7 @@ vi.mock("~/lib/pages", () => ({
   ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
+vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 vi.mock("~/lib/google-calendar", () => ({
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("~/lib/google-calendar", () => ({
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
+import { resolveGroupMembers } from "~/lib/groups";
 import {
   createLabMeetingPage,
   ensureCoreMeetingNotesFolder,
@@ -33,7 +35,9 @@ import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
+  inviteToScheduledMeeting,
   isWithinCheckInWindow,
+  meetingIsUpcoming,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
@@ -524,6 +528,203 @@ describe("updateScheduledMeeting", () => {
 
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.gcalError).toContain("events.patch failed");
+  });
+
+  it("keeps a Group meeting scoped to its group when guests ride along", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "org-1" }, { userId: "u2" }]);
+    vi.mocked(resolveGroupMembers).mockResolvedValueOnce(["u2", "u3"]);
+
+    const res = await updateScheduledMeeting("m1", "org-1", {
+      title: "Old title",
+      durationMinutes: 30,
+      scope: { type: "Group", groupId: "g1", extraUserIds: ["u9", "u2"] },
+      startTime: "2026-09-10T15:00:00.000Z",
+    });
+
+    expect(res.ok).toBe(true);
+    const data = p.scheduledMeeting.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ scopeType: "Group", scopeId: "g1" });
+    expect(data.participantUserIds.sort()).toEqual(["u2", "u3", "u9"]);
+  });
+});
+
+describe("meetingIsUpcoming", () => {
+  const now = new Date("2026-09-16T12:00:00Z");
+
+  it("is over once a one-off meeting has ended", () => {
+    const base = { durationMinutes: 60, recurrenceRule: null };
+    expect(meetingIsUpcoming({ ...base, selectedAt: new Date("2026-09-16T10:30:00Z") }, now)).toBe(false);
+    // Still in progress counts as upcoming — invitees can still make it.
+    expect(meetingIsUpcoming({ ...base, selectedAt: new Date("2026-09-16T11:30:00Z") }, now)).toBe(true);
+  });
+
+  it("treats a series or an unscheduled meeting as upcoming", () => {
+    const past = new Date("2026-01-01T10:00:00Z");
+    expect(meetingIsUpcoming({ selectedAt: past, durationMinutes: 30, recurrenceRule: "FREQ=WEEKLY" }, now)).toBe(true);
+    expect(meetingIsUpcoming({ selectedAt: null, durationMinutes: 30, recurrenceRule: null }, now)).toBe(true);
+  });
+});
+
+describe("inviteToScheduledMeeting", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+    userCalendarLink: { findUnique: ReturnType<typeof vi.fn> };
+    user: { findMany: ReturnType<typeof vi.fn> };
+  };
+  const mockPatch = vi.mocked(patchGoogleCalendarEvent);
+  const mockGetEvent = vi.mocked(getGoogleEvent);
+  const now = new Date("2026-09-16T12:00:00Z");
+
+  const meetingRow = (over: Record<string, unknown> = {}) => ({
+    id: "m1",
+    organizerId: "org-1",
+    status: "Confirmed",
+    title: "Lab night",
+    scopeType: "Group",
+    scopeId: "g-core",
+    participantUserIds: ["u2", "u3"],
+    selectedAt: new Date("2026-09-20T22:00:00Z"),
+    durationMinutes: 60,
+    recurrenceRule: null,
+    ownerCalendarEmail: "org@dali.dartmouth.edu",
+    externalEventId: null,
+    organizerCalendarLinkId: null,
+    organizerCalendarId: null,
+    ...over,
+  });
+
+  const userRow = (id: string) => ({
+    id,
+    firstName: id,
+    lastName: "X",
+    daliEmail: `${id}@dali.dartmouth.edu`,
+    dartmouthEmail: null,
+  });
+
+  beforeEach(() => {
+    p.scheduledMeeting.update.mockResolvedValue({});
+    p.meetingAttendance.createMany.mockResolvedValue({});
+    // Both the existence check and the attendee lookup read users by id.
+    p.user.findMany.mockImplementation(async (a: { where: { id: { in: string[] } } }) =>
+      a.where.id.in.filter((id) => id !== "ghost").map(userRow),
+    );
+    mockNotify.mockResolvedValue({ inApp: 1 });
+  });
+
+  it("adds new people and group members on top of the current guests, keeping the scope", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    vi.mocked(resolveGroupMembers).mockResolvedValueOnce(["u3", "u5", "org-1"]);
+
+    const res = await inviteToScheduledMeeting(
+      "m1",
+      "org-1",
+      { userIds: ["u2", "u4", "ghost"], groupIds: ["g-design"] },
+      now,
+    );
+
+    // u2/u3 already invited, org-1 is the organizer, ghost isn't a user.
+    expect(res).toEqual({ ok: true, addedCount: 2, notified: true, gcalError: null });
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: { participantUserIds: ["u2", "u3", "u4", "u5"] },
+    });
+    expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: ["u4", "u5", "org-1"].map((userId) => ({ scheduledMeetingId: "m1", userId })),
+      skipDuplicates: true,
+    });
+    const call = mockNotify.mock.calls[0][0];
+    expect(call.eventType).toBe("meeting.invite");
+    expect(call.message.sourceGroupId).toBe("g-core");
+    expect(call.recipients.map((r: { userId: string }) => r.userId)).toEqual(["u4", "u5"]);
+  });
+
+  it("puts people on a past meeting's roster without inviting them", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        selectedAt: new Date("2026-09-15T22:00:00Z"),
+        externalEventId: "gcal-1",
+        organizerCalendarLinkId: "link-1",
+        organizerCalendarId: "cal-1",
+      }),
+    );
+    p.userCalendarLink.findUnique.mockResolvedValue({ id: "link-1", enabled: true });
+    mockGetEvent.mockResolvedValue({
+      id: "gcal-1",
+      recurrence: [],
+      startIso: null,
+      startDate: null,
+      summary: "Lab night",
+      endIso: null,
+      endDate: null,
+      attendeeEmails: ["u2@dali.dartmouth.edu", "partner@example.com"],
+    });
+
+    const res = await inviteToScheduledMeeting("m1", "org-1", { userIds: ["u4"], groupIds: [] }, now);
+
+    expect(res).toEqual({ ok: true, addedCount: 1, notified: false, gcalError: null });
+    expect(p.meetingAttendance.createMany).toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+    // Google's own guests (even non-members) are kept; no emails for a past event.
+    expect(mockPatch).toHaveBeenCalledWith({
+      linkId: "link-1",
+      calendarId: "cal-1",
+      eventId: "gcal-1",
+      attendees: [
+        { email: "u2@dali.dartmouth.edu" },
+        { email: "partner@example.com" },
+        { email: "u4@dali.dartmouth.edu", displayName: "u4 X" },
+      ],
+      sendUpdates: "none",
+    });
+  });
+
+  it("surfaces a Google failure but keeps the DALI invite", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({ externalEventId: "gcal-1", organizerCalendarLinkId: "link-1" }),
+    );
+    p.userCalendarLink.findUnique.mockResolvedValue({ id: "link-1", enabled: true });
+    mockGetEvent.mockRejectedValueOnce(new Error("Google events.get failed (404): not found"));
+
+    const res = await inviteToScheduledMeeting("m1", "org-1", { userIds: ["u4"], groupIds: [] }, now);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.addedCount).toBe(1);
+      expect(res.gcalError).toContain("events.get failed");
+    }
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op when everyone picked is already invited", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const res = await inviteToScheduledMeeting("m1", "org-1", { userIds: ["u2", "org-1"], groupIds: [] }, now);
+
+    expect(res).toEqual({ ok: true, addedCount: 0, notified: false, gcalError: null });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("lets Core invite to a meeting they don't organize, and 403s anyone else", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const denied = await inviteToScheduledMeeting("m1", "intruder", { userIds: ["u4"], groupIds: [] }, now);
+    expect(denied).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+
+    vi.mocked(isCore).mockResolvedValue(true);
+    const allowed = await inviteToScheduledMeeting("m1", "core-9", { userIds: ["u4"], groupIds: [] }, now);
+    expect(allowed).toMatchObject({ ok: true, addedCount: 1 });
+  });
+
+  it("refuses a cancelled meeting", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ status: "Cancelled" }));
+
+    const res = await inviteToScheduledMeeting("m1", "org-1", { userIds: ["u4"], groupIds: [] }, now);
+
+    expect(res).toMatchObject({ ok: false, status: 400 });
   });
 });
 
