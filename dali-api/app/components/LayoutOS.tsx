@@ -28,7 +28,12 @@ import { DesktopBanner } from '~/components/DesktopBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
-import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
+import {
+  TablessHistoryNav,
+  useRecordTablessHistory,
+  useShowTablessHistoryNav,
+  useTablessHistoryShortcuts,
+} from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -37,7 +42,6 @@ import {
   areaForPath,
   pinnedNavItems,
   activeSubtabHref,
-  hasSubnavRow,
   isPinnedActive,
   visibleAreas,
   visibleSubtabs,
@@ -134,10 +138,8 @@ export function LayoutOS({
   const location = useLocation()
   const matches = useMatches()
   useRecordTablessHistory()
+  useTablessHistoryShortcuts(useShowTablessHistoryNav())
   const tabless = children !== undefined
-  // This shell owns the sub-tabs in its rail; only areaSubnav pages (calendar)
-  // render their own in-page row.
-  const ownsSubnavRow = hasSubnavRow(matches)
   useOsShellRoot(true)
 
   const {
@@ -679,30 +681,34 @@ export function LayoutOS({
 
   const topBar = (
     <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
-      {favorites.length === 0 ? (
-        <div className="flex items-center gap-3 text-base text-os-muted">
-          <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
-          Favorited pages will appear here.
-        </div>
-      ) : (
-        <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
-          <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
-          <div className="flex items-center gap-2">
-            {favorites.map((p) => (
-              <Tooltip key={p.id} content={p.title || 'Untitled'}>
-                <button
-                  type="button"
-                  {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                  className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-                >
-                  <FavoriteIcon page={p} glyphClassName="text-os-accent" />
-                  <span className="truncate">{p.title || 'Untitled'}</span>
-                </button>
-              </Tooltip>
-            ))}
+      <div className="flex min-w-0 items-center gap-3">
+        {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
+        <TablessHistoryNav />
+        {favorites.length === 0 ? (
+          <div className="flex items-center gap-3 text-base text-os-muted">
+            <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
+            Favorited pages will appear here.
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
+            <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
+            <div className="flex items-center gap-2">
+              {favorites.map((p) => (
+                <Tooltip key={p.id} content={p.title || 'Untitled'}>
+                  <button
+                    type="button"
+                    {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+                    className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                  >
+                    <FavoriteIcon page={p} glyphClassName="text-os-accent" />
+                    <span className="truncate">{p.title || 'Untitled'}</span>
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
         {/* The page's guide, on the same plate as the bell beside it. Renders
@@ -888,7 +894,6 @@ export function LayoutOS({
         {tabless ? (
           <ShellGuideProvider>
             <div className="flex min-h-0 flex-1 flex-col">
-              {!ownsSubnavRow && <TablessHistoryNav />}
               {children}
             </div>
           </ShellGuideProvider>
