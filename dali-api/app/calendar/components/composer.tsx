@@ -49,6 +49,7 @@ import type {
   ExternalEventDTO,
   MemberClassDTO,
   CourseHitDTO,
+  CalendarLinkDTO,
 } from "~/calendar/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -93,6 +94,41 @@ export function eventDestinations(data: LoaderData): { value: string; label: str
     }
   }
   return out;
+}
+
+/**
+ * Where a meeting invite can be sent from: each writable calendar inside each
+ * enabled Google account, same "<linkId>:<calendarId>" values as
+ * eventDestinations. An account whose calendars Google wouldn't list still
+ * gets one entry ("<linkId>:", no calendar) that sends from its primary.
+ */
+export function inviteDestinations(links: CalendarLinkDTO[]): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const link of links) {
+    if (link.provider !== "Google" || !link.enabled) continue;
+    const account = link.displayName || link.externalEmail || "Google";
+    const writable = (link.subCalendars ?? []).filter((sub) => sub.writable);
+    if (writable.length === 0) {
+      out.push({ value: `${link.id}:`, label: account });
+      continue;
+    }
+    for (const sub of writable) {
+      out.push({ value: `${link.id}:${sub.id}`, label: `${account} · ${sub.primary ? "Primary" : sub.summary}` });
+    }
+  }
+  return out;
+}
+
+/** The meeting payload's organizer fields for an inviteDestinations value.
+ *  Link ids are cuids (no ":"); calendar ids may contain anything after it. */
+export function inviteOrganizerFields(
+  value: string,
+): { organizerCalendarLinkId?: string; organizerCalendarId?: string } {
+  const sep = value.indexOf(":");
+  const linkId = sep === -1 ? value : value.slice(0, sep);
+  const calendarId = sep === -1 ? "" : value.slice(sep + 1);
+  if (!linkId) return {};
+  return calendarId ? { organizerCalendarLinkId: linkId, organizerCalendarId: calendarId } : { organizerCalendarLinkId: linkId };
 }
 
 const padTwo = (n: number) => String(n).padStart(2, "0");

@@ -18,7 +18,12 @@ import {
   repeatSpecToRRule,
   type RepeatSpec,
 } from "~/calendar/components/RepeatField";
-import { eventDestinations, addDaysToDate } from "~/calendar/components/composer";
+import {
+  eventDestinations,
+  inviteDestinations,
+  inviteOrganizerFields,
+  addDaysToDate,
+} from "~/calendar/components/composer";
 import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
 import {
   useMeetingNote,
@@ -202,9 +207,12 @@ export function CreateEventModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroupIds, isCoreMeeting]);
 
-  const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
-    googleLinks[0]?.id ?? "",
+  // Send the invite from a specific calendar, not just an account — the same
+  // sub-calendars the event destination offers. Starts on the event default
+  // (last-used calendar) when it's in the list.
+  const inviteDests = inviteDestinations(data.calendarLinks);
+  const [inviteFrom, setInviteFrom] = useState<string>(() =>
+    inviteDests.some((d) => d.value === defaultDest) ? defaultDest : inviteDests[0]?.value ?? "",
   );
 
   // ── Google Meet ──────────────────────────────────────────────────────────
@@ -212,7 +220,7 @@ export function CreateEventModal({
   // makes sense with a Google destination and real guests.
   const meetEnabled = useFeatureFlag("google-meet");
   const [addMeet, setAddMeet] = useState(false);
-  const canAddMeet = meetEnabled && !!organizerCalendarLinkId && hasGuests;
+  const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
   // ── Week navigation for the left panel ───────────────────────────────────
   const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
@@ -319,7 +327,7 @@ export function CreateEventModal({
         const d = new Date(selectedStartLocal);
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
       }
-      if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      Object.assign(payload, inviteOrganizerFields(inviteFrom));
       const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
       if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
@@ -816,23 +824,20 @@ export function CreateEventModal({
               />
 
               {/* Send invite from */}
-              {googleLinks.length > 0 && (
+              {inviteDests.length > 0 && (
                 <div>
                   <label className={labelClass}>Send invite from</label>
                   <Select
-                    value={organizerCalendarLinkId}
-                    onChange={(v) => setOrganizerCalendarLinkId(v)}
-                    options={googleLinks.map((l) => ({
-                      value: l.id,
-                      label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
-                    }))}
+                    value={inviteFrom}
+                    onChange={(v) => setInviteFrom(v)}
+                    options={inviteDests}
                     buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
                   />
                 </div>
               )}
 
               {/* Google Meet */}
-              {meetEnabled && googleLinks.length > 0 && (
+              {meetEnabled && inviteDests.length > 0 && (
                 <div className="rounded-md border border-border bg-muted/20 p-3">
                   <Toggle
                     checked={canAddMeet && addMeet}
