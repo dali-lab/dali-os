@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink,
+  Check, HelpCircle, X, Video, ExternalLink, UserPlus,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
@@ -13,6 +13,7 @@ import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
+import { InviteGuestsModal } from "~/calendar/components/InviteGuestsModal";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -583,6 +584,7 @@ export function WeekGridEvent({
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
@@ -960,6 +962,18 @@ export function WeekGridEvent({
                         className={popoverActionBtn}
                       />
                     ) : null}
+                    {e.meeting.canInvite && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailOpen(false);
+                          setInviting(true);
+                        }}
+                        className={popoverActionBtn}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 text-os-grey" /> Invite
+                      </button>
+                    )}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>
@@ -1048,6 +1062,13 @@ export function WeekGridEvent({
             </>
           }
         />
+      )}
+      {inviting && e.meeting && (
+        // Portaled, but React still bubbles its events up through this block —
+        // stop them so typing/clicking in the modal doesn't drag or reopen it.
+        <div onPointerDown={(ev) => ev.stopPropagation()} onClick={(ev) => ev.stopPropagation()}>
+          <InviteGuestsModal meetingId={e.meeting.meetingId} onClose={() => setInviting(false)} />
+        </div>
       )}
     </div>
   );
