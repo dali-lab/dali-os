@@ -38,7 +38,6 @@ import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
   FilterCountBadge,
@@ -468,7 +467,6 @@ export default function PartnersApplications() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        <TablessHistoryNavInline />
         <SegmentedTabButtons label="Partners" items={areaTabs} />
         <SearchInput
           value={query}

@@ -19,7 +19,6 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { TablessHistoryNavInline } from "~/components/TablessHistoryNav";
 import { SearchInput } from "~/components/ui/SearchInput";
 
 // areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
@@ -234,7 +233,6 @@ export default function PartnersOrganizations() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        <TablessHistoryNavInline />
         <SegmentedTabButtons label="Partners" items={areaTabs} />
         <SearchInput
           value={query}
