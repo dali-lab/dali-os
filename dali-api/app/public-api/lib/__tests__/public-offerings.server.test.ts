@@ -239,7 +239,7 @@ describe("listPublicOfferings mapping", () => {
     // Untitled/location-less sessions carry through as null, not "".
     expect(m.sessions[1].title).toBeNull();
     expect(m.sessions[1].location).toBeNull();
-    expect(m.signUpLink).toBe("https://os.example/education/o1");
+    expect(m.signUpLink).toBe("https://os.example/portal/education/o1");
   });
 
   it("computes registration.open from the window around now", async () => {

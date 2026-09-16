@@ -223,8 +223,14 @@ export async function listPublicOfferings(
         },
         // Offerings apply through the shared Forms system. Null form = not
         // open yet; "#" matches what the site already renders for that case.
+        // Point at the /portal mirror, not the member-shell /education/:id: the
+        // public audience is prospective (non-DALI) students, and the member
+        // shell bounces a Dartmouth account with no DALIMember row straight to
+        // /portal, dropping the offering. The portal offering page serves
+        // dartmouth/partner users directly and redirects actual members back to
+        // /education/:id, so this one link lands both audiences correctly.
         signUpLink: o.applicationFormId
-          ? `${process.env.FRONTEND_URL ?? ""}/education/${o.id}`
+          ? `${process.env.FRONTEND_URL ?? ""}/portal/education/${o.id}`
           : "#",
       };
     }),
