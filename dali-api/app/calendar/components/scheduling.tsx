@@ -1108,6 +1108,18 @@ export function ScheduleWeekGrid({
         )
     : [];
 
+  // Epoch ms for a wall-clock hour on a grid column, built the same way
+  // `dayHourToLocal` builds the selected slot (browser-local Y/M/D + hour).
+  // Offsetting from `weekStart` instead only lines up when the week start is
+  // exactly local midnight — after week navigation it's UTC midnight, which
+  // shifted the tint by the zone offset so a green cell could read "0/N free".
+  function cellMs(colIdx: number, hour: number): number {
+    const d = days[colIdx].dateUtc;
+    const h = Math.floor(hour);
+    const mins = Math.round((hour - h) * 60);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, mins).getTime();
+  }
+
   function freeCountAtCell(cellStartMs: number, cellEndMs: number): number {
     let n = 0;
     for (const intervals of perUserFree) {
@@ -1131,11 +1143,10 @@ export function ScheduleWeekGrid({
   const tintsByColIdx: CellTint[][] = data
     ? days.map((d, colIdx) => {
         const cells: CellTint[] = [];
-        const dayStartMs = weekStart.getTime() + colIdx * 86_400_000;
         for (let i = 0; i < CELLS_PER_DAY; i++) {
           const hour = GRID_START_H + i * CELL_HOURS;
-          const cellStartMs = dayStartMs + hour * 3_600_000;
-          const cellEndMs = cellStartMs + CELL_HOURS * 3_600_000;
+          const cellStartMs = cellMs(colIdx, hour);
+          const cellEndMs = cellMs(colIdx, hour + CELL_HOURS);
           const k = freeCountAtCell(cellStartMs, cellEndMs);
           if (k === 0) continue;
           // Denominator is the number of participants we actually have data for,
@@ -1164,9 +1175,9 @@ export function ScheduleWeekGrid({
             }))
             .sort((a, b) => a.startMs - b.startMs);
           return days.map((_, colIdx) => {
-            const dayStartMs = weekStart.getTime() + colIdx * 86_400_000;
-            const winStartMs = dayStartMs + GRID_START_H * 3_600_000;
-            const winEndMs = dayStartMs + GRID_END_H * 3_600_000;
+            const dayStartMs = cellMs(colIdx, 0);
+            const winStartMs = cellMs(colIdx, GRID_START_H);
+            const winEndMs = cellMs(colIdx, GRID_END_H);
             const blocks: { startHour: number; durationHours: number }[] = [];
             for (const iv of ivs) {
               const s = Math.max(iv.startMs, winStartMs);
