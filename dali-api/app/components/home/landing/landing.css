@@ -128,6 +128,29 @@ body:has(.landing) {
   }
 }
 
+/*
+ * Idle smoke motion. The per-bubble loops were removed (each one animated a large
+ * feGaussianBlur, re-blurring ~28 regions every frame); the whole exhaust now drifts
+ * as one unit instead. `will-change` promotes the layer so its blurred content is
+ * rasterized once and this transform just re-composites that cached texture — cheap,
+ * and translate-only so the texture is never re-blurred. Paused when offscreen (see
+ * .landing-motion-paused) and under prefers-reduced-motion.
+ */
+.landing-smoke {
+  will-change: transform;
+  animation: landing-smoke-drift 16s var(--ease-gentle) 1400ms infinite;
+}
+
+@keyframes landing-smoke-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(calc(-14 * var(--u)), calc(-7 * var(--u)));
+  }
+}
+
 .landing-enter-fade {
   animation: landing-fade-in 1400ms var(--ease-gentle) 200ms both;
 }
@@ -206,8 +229,20 @@ body:has(.landing) {
   }
 }
 
+/*
+ * Stop paying for animation the member can't see. `useLandingMotion` adds this class
+ * when the art scrolls out of view, the tab is hidden, or the device asked for less
+ * motion/data (Save-Data, very low core count). Paused animations hold their current
+ * frame and stop repainting, so an offscreen or backgrounded Home costs nothing.
+ */
+.landing-motion-paused .landing-animated *,
+.landing-motion-paused .landing-smoke {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .landing-animated * {
+  .landing-animated *,
+  .landing-smoke {
     animation-play-state: paused !important;
   }
 

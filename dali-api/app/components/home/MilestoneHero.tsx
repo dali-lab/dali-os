@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import CardBevel from './landing/CardBevel'
 import { LandingSky, LandingStage } from './landing/LandingArt'
+import { useLandingMotion } from './landing/useLandingMotion'
 import './landing/landing.css'
 
 export interface RecentCard {
@@ -42,10 +43,12 @@ export default function MilestoneHero({
   const id = useId()
   const cards = padRecents(recents, 4)
   const { ref: rowRef, fade, onScroll } = useEdgeFade<HTMLUListElement>()
+  const landingRef = useRef<HTMLElement>(null)
+  useLandingMotion(landingRef)
 
   return (
     <div className="landing-frame">
-      <main className={joinClasses('landing', className)}>
+      <main ref={landingRef} className={joinClasses('landing', className)}>
         <LandingSky />
         <LandingStage />
 
