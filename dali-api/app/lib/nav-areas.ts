@@ -161,7 +161,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/partners",
     subtabs: [
       { label: "Hub", href: "/partners", icon: LayoutGrid },
-      { label: "Applications", href: "/partners/applications", icon: FileText },
+      { label: "Applications", href: "/partners/applications", icon: FileText, gate: (r) => r.canViewStaffing },
     ],
   },
   {
