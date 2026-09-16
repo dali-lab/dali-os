@@ -47,15 +47,6 @@ export type MechanicServer = {
     userId: string;
     input: Record<string, unknown>;
   }): Promise<ActionOutcome>;
-  /**
-   * Optional: settle any codes this member has EARNED through what they've
-   * already done in DALI OS, rather than by finding something and submitting
-   * it. Called on every surface load before the event stream is read, so an
-   * award lands in the same response that triggered it. Must be idempotent —
-   * it runs on every load — and resolves true when it actually wrote events,
-   * so the caller can nudge other open surfaces.
-   */
-  autoAward?(args: { activity: Activity; userId: string }): Promise<boolean>;
   /** Compute what the surface renders: per-user progress + (optional) results. */
   summarize(args: SummarizeArgs): { progress: unknown; results: unknown };
   /**
