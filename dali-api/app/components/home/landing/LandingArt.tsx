@@ -23,7 +23,7 @@ export function LandingStage() {
       <Glows className="landing-layer landing-enter-fade" />
       <Sparkles className="landing-layer" />
       <Rocket className="landing-layer landing-enter-rocket" />
-      <Smoke className="landing-layer" />
+      <Smoke className="landing-layer landing-smoke" />
     </div>
   )
 }
