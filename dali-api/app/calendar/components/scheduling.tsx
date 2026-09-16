@@ -24,6 +24,7 @@ import { cn } from "~/lib/cn";
 import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
+import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -243,10 +244,9 @@ export function CreateScheduledMeetingForm({
   const { panel, panelPad, formClass } = useOsChrome();
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const googleLinks = calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
-    googleLinks[0]?.id ?? "",
-  );
+  // A specific calendar inside a linked Google account, not just the account.
+  const inviteDests = inviteDestinations(calendarLinks);
+  const [inviteFrom, setInviteFrom] = useState<string>(inviteDests[0]?.value ?? "");
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
@@ -322,9 +322,7 @@ export function CreateScheduledMeetingForm({
           payload.startTime = localDate.toISOString();
         }
       }
-      if (organizerCalendarLinkId) {
-        payload.organizerCalendarLinkId = organizerCalendarLinkId;
-      }
+      Object.assign(payload, inviteOrganizerFields(inviteFrom));
       Object.assign(payload, meetingNotePayload(note.state));
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
@@ -476,20 +474,17 @@ export function CreateScheduledMeetingForm({
             <label htmlFor="organizer-calendar" className={labelClass}>
               Send invite from
             </label>
-            {googleLinks.length === 0 ? (
+            {inviteDests.length === 0 ? (
               <p className="text-xs text-muted-foreground pt-2">
                 No Google calendar linked. Link one in My Availability to send Gmail invites.
               </p>
             ) : (
               <Select
-                value={organizerCalendarLinkId}
-                onChange={(v) => setOrganizerCalendarLinkId(v)}
+                value={inviteFrom}
+                onChange={(v) => setInviteFrom(v)}
                 options={[
                   { value: "", label: "No invite (in-app notification only)" },
-                  ...googleLinks.map((l) => ({
-                    value: l.id,
-                    label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
-                  })),
+                  ...inviteDests,
                 ]}
                 buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
               />

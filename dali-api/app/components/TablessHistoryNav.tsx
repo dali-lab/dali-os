@@ -8,7 +8,6 @@ import {
   subscribe,
 } from "~/lib/navigation-history-store";
 import { readTablessPreference } from "~/lib/tabless";
-import { PageDocButton } from "~/components/page-docs/PageDocButton";
 import { desktopVersion } from "~/lib/desktop";
 
 // The arrows are a stand-in for OS/browser chrome tabless mode doesn't have.
@@ -65,30 +64,14 @@ function useTablessHistory() {
   };
 }
 
-// Buttons + right-click history dropdown, with no opinion on the bar that
-// hosts them — TablessHistoryNav wraps this in its own full-width bar for
-// pages with no subtab row; AreaPillNav/UnderlineTabButtons embed it directly
-// in their row for pages that have one, so the arrows don't stack a second
-// bar on top of the subtabs.
-function HistoryNavButtons() {
-  const { backStack, forwardStack, goBack, goForward, goHistory } = useTablessHistory();
-  const [historyMenu, setHistoryMenu] = useState<{
-    side: "back" | "forward";
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const canBack = backStack.length > 0;
-  const canFwd = forwardStack.length > 0;
-
-  const navBtn = (enabled: boolean) =>
-    `px-2.5 ${
-      enabled
-        ? "text-muted-foreground hover:text-foreground hover:bg-muted"
-        : "text-muted-foreground/30 cursor-default"
-    }`;
+// Back/forward shortcuts (⌘[ / ⌘], ⌥← / ⌥→, mouse buttons 4/5). Mounted by the
+// always-present shell rather than the arrows, so they keep working in focus
+// mode, where the top bar (and the arrows in it) is unmounted.
+export function useTablessHistoryShortcuts(enabled: boolean) {
+  const { goBack, goForward } = useTablessHistory();
 
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
@@ -130,7 +113,34 @@ function HistoryNavButtons() {
       window.removeEventListener("mousedown", onMouse);
       window.removeEventListener("auxclick", onMouse);
     };
-  }, [goBack, goForward]);
+  }, [enabled, goBack, goForward]);
+}
+
+// Back/forward buttons + right-click history dropdown, sitting at the left of
+// the os top bar ahead of the favorites star. Renders nothing on web (no
+// desktop shell) or in tab mode.
+export function TablessHistoryNav() {
+  if (!useShowTablessHistoryNav()) return null;
+  return <HistoryNavButtons />;
+}
+
+function HistoryNavButtons() {
+  const { backStack, forwardStack, goBack, goForward, goHistory } = useTablessHistory();
+  const [historyMenu, setHistoryMenu] = useState<{
+    side: "back" | "forward";
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const canBack = backStack.length > 0;
+  const canFwd = forwardStack.length > 0;
+
+  const navBtn = (enabled: boolean) =>
+    `flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+      enabled
+        ? "text-os-muted hover:text-foreground hover:bg-os-card"
+        : "text-os-muted/30 cursor-default"
+    }`;
 
   useEffect(() => {
     if (!historyMenu) return;
@@ -147,7 +157,7 @@ function HistoryNavButtons() {
   const entries = stack.slice(-15).reverse();
 
   return (
-    <>
+    <div className="flex flex-shrink-0 items-center gap-1">
       <button
         type="button"
         disabled={!canBack}
@@ -169,7 +179,7 @@ function HistoryNavButtons() {
         aria-label="Back"
         className={navBtn(canBack)}
       >
-        <ChevronLeft className="w-[18px] h-[18px]" />
+        <ChevronLeft className="h-5 w-5" />
       </button>
       <button
         type="button"
@@ -192,7 +202,7 @@ function HistoryNavButtons() {
         aria-label="Forward"
         className={navBtn(canFwd)}
       >
-        <ChevronRight className="w-[18px] h-[18px]" />
+        <ChevronRight className="h-5 w-5" />
       </button>
 
       {historyMenu && entries.length > 0 && (
@@ -221,32 +231,6 @@ function HistoryNavButtons() {
           })}
         </div>
       )}
-    </>
-  );
-}
-
-// Standalone bar, for tabless desktop pages with no subtab row of their own
-// to sit in. Renders nothing on web (no desktop shell) or in tab mode.
-//
-// This bar is the page's one nav row, so it owns the Guide CTA the same way a
-// subtab row does (AreaPillNav) — arrows left, Guide right. The layout's
-// breadcrumb-row copy stands down while this bar is up (see routes/layout.tsx)
-// so the page never shows two.
-export function TablessHistoryNav() {
-  if (!useShowTablessHistoryNav()) return null;
-  return (
-    <div className="flex items-stretch h-10 bg-section-bg border-b border-border shrink-0">
-      <HistoryNavButtons />
-      <span className="ml-auto flex shrink-0 items-center self-center pl-2 pr-2">
-        <PageDocButton />
-      </span>
     </div>
   );
-}
-
-// Embedded in a page's own AreaPillNav/UnderlineTabButtons row so the arrows
-// share a line with the subtabs instead of stacking a bar above them.
-export function TablessHistoryNavInline() {
-  if (!useShowTablessHistoryNav()) return null;
-  return <HistoryNavButtons />;
 }

@@ -1,24 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
-import { Search } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { timed } from "~/lib/server-timing";
 import { FavoriteIcon } from "~/components/FavoriteIcon";
-import { HuntCode } from "~/components/activities/HuntCode";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
+import MilestoneHero from "~/components/home/MilestoneHero";
+import SearchIcon from "~/components/home/landing/SearchIcon";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { useDesktopVersion } from "~/lib/desktop";
-import { getUserRoles } from "~/lib/roles";
+import { currentTermStrict, getUserRoles } from "~/lib/roles";
 import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
 import {
   getZonedHourFraction,
+  getZonedYMD,
   resolveUserTimeZone,
 } from "~/lib/timezone";
 import type { Route } from "./+types/home";
@@ -46,11 +46,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // bell panel, not here — home is the front door, not an inbox. It polls
   // /api/notifications for itself, so this loader owns only the greeting and
   // the page cards.
-  const pages = await timed(request, 'home.favorites', () =>
-    // `request` reuses the read the shell's sidebar already kicked off for the
-    // same navigation instead of re-running the per-row access checks.
-    listFavoritesAndRecents(auth.user.sub, request),
-  );
+  const [pages, week] = await Promise.all([
+    timed(request, 'home.favorites', () =>
+      // `request` reuses the read the shell's sidebar already kicked off for the
+      // same navigation instead of re-running the per-row access checks.
+      listFavoritesAndRecents(auth.user.sub, request),
+    ),
+    loadCurrentWeek(tz, request),
+  ]);
 
   const __loaderTotal = performance.now() - __loaderStart;
   if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
@@ -64,6 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     greeting,
+    week,
     user: auth.user,
     pages: {
       favorites: pages.favorites.slice(0, HOME_PAGE_LIMIT),
@@ -72,143 +76,95 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+/* The term week "now" falls in, for the hero's badge: week 0 starts on the
+   current term's start date (days counted in the viewer's zone) and each week
+   is labelled with its first five days, e.g. "Week 0 Sep 15 – 19". Null
+   between terms, where the badge is dropped. */
+async function loadCurrentWeek(tz: string, request: Request) {
+  const term = await currentTermStrict(request);
+  if (!term) return null;
+  const start = Date.UTC(
+    term.startDate.getUTCFullYear(),
+    term.startDate.getUTCMonth(),
+    term.startDate.getUTCDate(),
+  );
+  const today = getZonedYMD(new Date(), tz);
+  const days = (Date.UTC(today.year, today.month - 1, today.day) - start) / DAY_MS;
+  const index = Math.floor(days / 7);
+  const first = new Date(start + index * 7 * DAY_MS);
+  const last = new Date(first.getTime() + 4 * DAY_MS);
+  const month = (d: Date) => d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  const dates =
+    month(first) === month(last)
+      ? `${month(first)} ${first.getUTCDate()} – ${last.getUTCDate()}`
+      : `${month(first)} ${first.getUTCDate()} – ${month(last)} ${last.getUTCDate()}`;
+  return { index, dates };
+}
+
+const DAY_MS = 86_400_000;
+
 /* How many starred and how many recently-opened pages home shows. The lists
    themselves are longer (the sidebar shows more) — home is a landing page, not
    an index, and an unbounded pin list pushed everything else off the screen. */
 const HOME_PAGE_LIMIT = 6;
 
-// Home's quiet state centres itself in the shell's main column, which only
-// works if that column hands the page a height instead of sizing to it.
-export const handle = { fitViewport: true };
+// The hero fills the shell's main column edge to edge: the column hands it a
+// height (fitViewport) and drops its gutter (bleedPane).
+export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  return <HomeOS />;
-}
-
-/* ------------------------------------------------------------------ */
-/* Home. The design's front door: a time-of-day greeting, one wide       */
-/* search field, and the pages you were last in as cards. The only other */
-/* surface is the attention banner for tasks and invites still waiting   */
-/* on an answer.                                                         */
-/* ------------------------------------------------------------------ */
-
-function HomeOS() {
-  const { user, greeting, pages } = useLoaderData<typeof loader>();
-  // Null in a browser, the shell version inside the desktop app — the hunt code
-  // below is only meant to be findable by people running the desktop app.
-  const inDesktopApp = useDesktopVersion() !== null;
-  const fullName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
-
-  return (
-    <div
-      // Fill the column the shell sized to the window (see the route's
-      // `fitViewport` handle) rather than claiming a viewport height of its own
-      // — that stacked under the top bar and the shell's bottom gutter, so the
-      // front door always scrolled by ~100px.
-      className="relative mx-auto flex w-full max-w-[750px] flex-1 flex-col justify-center gap-12 py-12"
-    >
-      <div className="flex flex-col items-center gap-8">
-        <h1 className="text-center text-3xl font-medium text-foreground">
-          {greeting}, {fullName}.
-        </h1>
-        <HomeSearch />
-      </div>
-
-      <RecentGrid pages={pages} />
-
-      {inDesktopApp && (
-        // A scavenger-hunt code, parked in the corner of the desktop app's
-        // front door. Absolute so it can't disturb the centred greeting/search
-        // stack.
-        <HuntCode code="FLOWERFARM" className="absolute bottom-0 right-0" />
-      )}
-    </div>
-  );
-}
-
-function RecentGrid({
-  pages,
-}: {
-  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
-}) {
+  const { user, greeting, week, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
+  const fullName =
+    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
   const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
 
-  // A brand-new account: nothing starred, nothing opened. The search field
-  // above is the only thing to do here, and a caption over an empty row of
-  // cards just crowds it.
-  if (shortcuts.length === 0) return null;
-
-  // The row is one merged list, so name only the halves that survived the
-  // slice — captioning "recently visited" over nothing but favorites lies.
-  const shownFavorites = Math.min(pages.favorites.length, shortcuts.length);
-  const caption =
-    shownFavorites === 0
-      ? "Recently visited"
-      : shownFavorites === shortcuts.length
-        ? "Favorites"
-        : "Favorites & recently visited";
-
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-center text-sm tracking-wider text-foreground uppercase">{caption}</p>
-      {/* A single row that scrolls sideways rather than wrapping: two stacked
-          rows of shortcuts read as clutter, so cap it at one. The inner row is
-          w-max mx-auto so a short list stays centered, while a long one simply
-          overflows and scrolls from the start (justify-center would clip the
-          leading cards out of reach once the row overflows). no-scrollbar hides
-          the always-on bar (the row still scrolls by wheel/trackpad/drag). */}
-      <div className="overflow-x-auto no-scrollbar">
-        <div className="mx-auto flex w-max gap-3">
-          {shortcuts.map((p) => (
-            <RecentCard key={p.id} page={p} onChanged={onChanged} />
-          ))}
-        </div>
-      </div>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <MilestoneHero
+        weekBadge={week ? `Week ${week.index} ${week.dates}` : undefined}
+        milestoneTitle="Lab Kickoff"
+        greeting={greeting}
+        userName={fullName}
+        search={<HomeSearch />}
+        recentsHeading="Favorites + Recently Visited"
+        // A brand-new account (nothing starred, nothing opened) gets no card
+        // row at all — the search field is the only thing to do.
+        recents={shortcuts.map((page) => ({
+          id: page.id,
+          title: page.title || "Untitled",
+          href: page.href,
+          media: <RecentCardMedia page={page} />,
+          // Recents show a hollow star on hover — a way to keep the page
+          // without hunting for it — while a favorite always shows its filled one.
+          action:
+            page.favorited || !page.isRoute || !isNavbarRoute(page.href) ? (
+              page.isRoute ? (
+                <FavoriteRouteButton
+                  href={page.href}
+                  label={page.title}
+                  favorited={page.favorited}
+                  onToggled={onChanged}
+                  compact
+                />
+              ) : (
+                <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+              )
+            ) : undefined,
+          actionPinned: page.favorited,
+        }))}
+      />
     </div>
   );
 }
 
-function RecentCard({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
+function RecentCardMedia({ page }: { page: FavoritePage }) {
   return (
-    // Link + star are siblings: the star must not navigate.
-    // Fixed width + no shrink: in a single scrolling row the cards must hold
-    // their size rather than divide the container, so the row scrolls instead
-    // of squeezing every card thinner as more are added.
-    <div className="group relative w-32 flex-shrink-0">
-      <a
-        href={page.href}
-        className="flex h-full flex-col items-center gap-2 rounded-os-card bg-os-card p-3 text-center transition-colors hover:bg-os-card-hover"
-      >
-        <span className="flex items-center justify-center">
-          <FavoriteIcon page={page} size="lg" />
-        </span>
-        <span className="w-full truncate text-sm text-foreground">{page.title || "Untitled"}</span>
-      </a>
-      {/* Recents show a hollow star on hover — a way to keep the page without
-          hunting for it — while a favorite always shows its filled one. */}
-      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
-        <span
-          className={`absolute right-2 top-2 ${
-            page.favorited ? "" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
-          }`}
-        >
-          {page.isRoute ? (
-            <FavoriteRouteButton
-              href={page.href}
-              label={page.title}
-              favorited={page.favorited}
-              onToggled={onChanged}
-              compact
-            />
-          ) : (
-            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
-          )}
-        </span>
-      )}
-    </div>
+    <span className="relative z-[2] flex size-full flex-col items-center justify-center gap-2 p-3 text-center">
+      <FavoriteIcon page={page} size="lg" glyphClassName="text-white/80" />
+      <span className="w-full truncate text-sm text-white">{page.title || "Untitled"}</span>
+    </span>
   );
 }
 
@@ -302,9 +258,8 @@ function HomeSearch() {
   };
 
   return (
-    <div ref={boxRef} className="relative w-full max-w-2xl">
-      <div className="flex items-center gap-3 rounded-full border border-border bg-card px-6 py-4 shadow-brand-1 focus-within:ring-2 focus-within:ring-accent-teal">
-        <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" aria-hidden />
+    <div ref={boxRef} className="landing-search-box">
+      <div className="landing-search landing-glass">
         <input
           type="search"
           value={query}
@@ -320,57 +275,56 @@ function HomeSearch() {
           aria-expanded={show}
           aria-controls="home-search-results"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+          className="landing-search-input"
         />
+        <SearchIcon className="landing-search-icon" />
       </div>
 
-      {show && (
-        // Absolute so a long result list never pushes the shortcut tiles down.
-        <div
-          id="home-search-results"
-          role="listbox"
-          className="absolute inset-x-0 top-full z-20 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-border bg-card py-2 text-left shadow-brand-2"
-        >
-          {results.length === 0 ? (
-            <p className="px-5 py-3 text-sm text-muted-foreground">
-              No matches for “{query.trim()}”
-            </p>
-          ) : (
-            results.map((r, i) => {
-              const Icon = TYPE_META[r.type].icon;
-              return (
-                <button
-                  key={`${r.type}-${r.id}`}
-                  type="button"
-                  role="option"
-                  aria-selected={i === active}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => openResult(r)}
-                  className={`flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors ${
-                    i === active ? "bg-muted/60" : "hover:bg-muted/40"
-                  }`}
-                >
-                  {r.type === "person" ? (
-                    <Avatar photoUrl={r.photoUrl} name={r.title} size="xs" />
-                  ) : r.iconEmoji ? (
-                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center leading-none">
-                      {r.iconEmoji}
-                    </span>
-                  ) : (
-                    <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">{r.title}</span>
-                  {r.subtitle && (
-                    <span className="max-w-[40%] flex-shrink-0 truncate text-xs text-muted-foreground">
-                      {r.subtitle}
-                    </span>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
+      {/* Always mounted so opening and closing can fade; `inert` keeps the
+          hidden list out of the tab order and away from clicks. Absolute so a
+          long result list never pushes the shortcut tiles down. */}
+      <div
+        id="home-search-results"
+        role="listbox"
+        data-open={show || undefined}
+        inert={!show}
+        className="landing-search-results"
+      >
+        {results.length === 0 ? (
+          <p className="landing-search-empty">No matches for “{query.trim()}”</p>
+        ) : (
+          results.map((r, i) => {
+            const Icon = TYPE_META[r.type].icon;
+            return (
+              <button
+                key={`${r.type}-${r.id}`}
+                type="button"
+                role="option"
+                aria-selected={i === active}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => openResult(r)}
+                className="landing-search-result"
+              >
+                {r.type === "person" ? (
+                  <Avatar photoUrl={r.photoUrl} name={r.title} size="xs" />
+                ) : r.iconEmoji ? (
+                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center leading-none">
+                    {r.iconEmoji}
+                  </span>
+                ) : (
+                  <Icon className="h-4 w-4 flex-shrink-0 text-white/60" aria-hidden />
+                )}
+                <span className="min-w-0 flex-1 truncate text-sm text-white">{r.title}</span>
+                {r.subtitle && (
+                  <span className="max-w-[40%] flex-shrink-0 truncate text-xs text-white/55">
+                    {r.subtitle}
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
