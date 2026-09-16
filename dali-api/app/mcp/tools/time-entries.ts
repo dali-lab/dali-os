@@ -21,10 +21,8 @@
 
 import { prisma } from "~/lib/db";
 import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
-import { validateTimeEntryRange } from "~/lib/calendar-schemas";
+import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/lib/calendar-schemas";
 import type { AssignmentType } from "~/generated/prisma/client";
-
-const ASSIGNMENT_TYPES = ["Project", "Core", "Instructor", "DomainLead", "Admin"] as const;
 
 const CONFIRM_PROPERTY = {
   confirmed: {
