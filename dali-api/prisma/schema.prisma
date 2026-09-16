@@ -1832,6 +1832,12 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
+  // Which calendar within that linked account holds the event (Google's
+  // calendarId, e.g. "primary" or a calendar's address). Persisted at create so
+  // an edit can events.patch the right calendar instead of defaulting to
+  // "primary". Null = primary / no external event.
+  organizerCalendarId String?
+
   // Set when the sender picks a meeting type at invite time. Drives auto-
   // creation of a meeting-note Page under `project`'s shared documents
   // (see notePage) plus a MeetingAttendance row per participant.

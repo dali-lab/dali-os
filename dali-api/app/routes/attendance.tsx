@@ -9,7 +9,9 @@ import {
   UserX,
   CalendarClock,
   MessageSquarePlus,
+  MoreHorizontal,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import type { Route } from "./+types/attendance";
 import { requireAuth } from "~/lib/auth";
@@ -21,7 +23,8 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/floating";
+import { Menu, Tooltip } from "~/components/ui/floating";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { cn } from "~/lib/cn";
 
 // An absence note is a short aside ("excused — flu"), not a place for a
@@ -53,8 +56,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Invited = organizer or on the participant list (mirrors calendar.server).
       AND: [
         { OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }] },
-        // Only meetings that actually track attendance have a roster to show.
-        { OR: [{ meetingType: { not: null } }, { attendanceMode: "SelfCheckIn" }] },
+        // Any meeting with a roster is attendance-tracked — notes, self check-in,
+        // or a plain event with guests (createScheduledMeeting fans out a
+        // MeetingAttendance row per participant whenever there are guests).
+        { attendance: { some: {} } },
       ],
     },
     orderBy: [{ selectedAt: "desc" }, { createdAt: "desc" }],
@@ -102,6 +107,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       m.organizerId === userId ||
       core ||
       (m.project !== null && memberProjectIds.has(m.project.id));
+    // Editing/cancelling the event itself is the organizer's or Core's call —
+    // narrower than canManage (project members can mark attendance but not
+    // reschedule or delete a meeting they don't own). Mirrors the update/cancel
+    // server gates.
+    const canEdit = m.organizerId === userId || core;
     const invited = m.attendance.length;
     const checkedIn = m.attendance.filter((a) => a.present).length;
     const scope = m.project
@@ -130,6 +140,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       viewerPresent:
         m.attendance.find((a) => a.userId === userId)?.present ?? false,
       canManage,
+      canEdit,
       attendees: m.attendance.map((a) => ({
         id: a.user.id,
         name: fullName(a.user) || a.user.daliEmail || a.user.id,
@@ -220,6 +231,7 @@ type AttendanceEvent = {
   checkedIn: number;
   viewerPresent: boolean;
   canManage: boolean;
+  canEdit: boolean;
   attendees: Attendee[];
 };
 
@@ -328,10 +340,28 @@ function EventSection({
 
 function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) {
   const tz = useUserTimeZone();
+  const dialog = useDialog();
+  const cancelFetcher = useFetcher();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
   const present = event.attendees.filter((a) => a.present);
   const missing = event.attendees.filter((a) => !a.present);
+
+  async function cancelEvent() {
+    const ok = await dialog.confirm({
+      title: "Cancel this event?",
+      description: `"${event.title}" will be removed for everyone invited, and disappears from Attendance. This can't be undone.`,
+      confirmLabel: "Cancel event",
+      cancelLabel: "Keep event",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    cancelFetcher.submit(null, {
+      method: "post",
+      action: `/api/scheduled-meetings/${event.id}/cancel`,
+    });
+  }
 
   return (
     <li className={cn(panel, "overflow-hidden")}>
@@ -381,7 +411,7 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
             </div>
           </div>
         </button>
-        <div className="flex items-start pr-3 pt-3.5 flex-shrink-0">
+        <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
           <Link
             to={`/calendar/meeting/${event.id}`}
             className="p-1.5 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40"
@@ -390,8 +420,39 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
           >
             <ExternalLink className="w-4 h-4" />
           </Link>
+          {event.canEdit && (
+            <Menu
+              align="right"
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Event options"
+                  disabled={cancelFetcher.state !== "idle"}
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              }
+            >
+              <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => setEditing(true)}>
+                Edit event
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                onSelect={cancelEvent}
+                destructive
+              >
+                Cancel event
+              </Menu.Item>
+            </Menu>
+          )}
         </div>
       </div>
+
+      {editing && (
+        <EditMeetingModal meetingId={event.id} onClose={() => setEditing(false)} />
+      )}
 
       {open && (
         <div className="border-t border-border bg-muted/15">

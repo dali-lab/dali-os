@@ -16,7 +16,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const result = await cancelScheduledMeeting(params.id!, auth.user.sub);
+  const result = await cancelScheduledMeeting(params.id!, auth.user.sub, { allowCore: true });
   if (!result.ok) {
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));
   }

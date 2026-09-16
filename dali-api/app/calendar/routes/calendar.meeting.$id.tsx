@@ -141,9 +141,11 @@ export default function CalendarMeetingPage() {
     : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
   // Same gate as the Add-to-Wallet buttons and the standalone scan station;
-  // the /calendar/scan route re-checks both server-side.
+  // the /calendar/scan route re-checks both server-side. Require a roster too —
+  // scanning a passholder into a meeting with no MeetingAttendance rows only ever
+  // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
-  const canScan = d.canManage && walletCheckin && d.walletConfigured;
+  const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page

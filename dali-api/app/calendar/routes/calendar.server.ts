@@ -962,6 +962,48 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
   }
 }
 
+// Members + groups for a participant picker: current lab members (no applicants,
+// partners, or non-active alumni) plus every non-archived group. Group rosters
+// can name members outside the current-term set (alumni, inactive), so display
+// names for those are fetched and merged in — otherwise the picker renders a raw
+// user id. Shared by the calendar loader and the meeting edit-context endpoint.
+export async function loadParticipantOptions(
+  request: Request,
+): Promise<{ groups: GroupOption[]; users: UserOption[] }> {
+  const memberWhere = await currentTermMemberWhere(request);
+  const [groups, users] = await Promise.all([
+    listAllGroups().then((rows) =>
+      rows
+        .filter((r) => !r.archived)
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          memberIds: r.memberIds,
+          projectId: r.dynamicQuery?.startsWith("project:")
+            ? r.dynamicQuery.slice("project:".length)
+            : null,
+          systemKey: r.systemKey ?? null,
+        })),
+    ),
+    prisma.user.findMany({
+      where: memberWhere,
+      select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    }),
+  ]);
+  const knownUserIds = new Set(users.map((u) => u.id));
+  const missingMemberIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
+  );
+  const extraGroupMembers = missingMemberIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: missingMemberIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      })
+    : [];
+  return { groups, users: [...users, ...extraGroupMembers] };
+}
+
 export async function loadCalendarData(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -975,18 +1017,16 @@ export async function loadCalendarData(request: Request) {
   const term = await currentTerm(request);
   const termId = term?.id;
 
-  // Participant picker is for scheduling with current lab members — exclude
-  // applicants, partners, and alumni who happen to still have a User row.
-  // Pass the already-resolved termId to avoid a second currentTerm() call.
-  const memberWhere = await currentTermMemberWhere(request);
+  // Members + groups for the participant picker (shared with the meeting
+  // edit-context endpoint). Kicked off here so it runs alongside the fan-out
+  // below; awaited once the rest resolves.
+  const participantOptionsP = loadParticipantOptions(request);
 
   const [
     settings,
     userRow,
     whRows,
     links,
-    groups,
-    users,
     myProjects,
     myRoles,
     canSetSelfCheckIn,
@@ -1016,29 +1056,6 @@ export async function loadCalendarData(request: Request) {
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      // Every active group is schedulable — the picker is intentionally not
-      // limited to groups the organizer belongs to, so staff/Core can schedule
-      // a meeting with any team (and the project hub's "Schedule meeting" button
-      // pre-fills a project's group even for non-members). Group rosters aren't
-      // sensitive here — they're already shown on hubs, the directory, etc.
-      listAllGroups().then((rows) =>
-        rows
-          .filter((r) => !r.archived)
-          .map((r) => ({
-            id: r.id,
-            name: r.name,
-            memberIds: r.memberIds,
-            projectId: r.dynamicQuery?.startsWith("project:")
-              ? r.dynamicQuery.slice("project:".length)
-              : null,
-            systemKey: r.systemKey ?? null,
-          })),
-      ),
-      prisma.user.findMany({
-        where: memberWhere,
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      }),
       prisma.project.findMany({
         where: { assignments: { some: { userId } } },
         select: { id: true, name: true },
@@ -1050,22 +1067,7 @@ export async function loadCalendarData(request: Request) {
       isCore(userId, request),
     ]);
 
-  // Group rosters can include members outside the current-term member set
-  // (alumni, users inactive this term, etc.), so those ids aren't in `users`
-  // above. Without names, the scheduling grid falls back to rendering a raw
-  // user id (a cuid). Fetch display names for any such member and merge them
-  // in so every resolvable participant renders as a person, not an id.
-  const knownUserIds = new Set(users.map((u) => u.id));
-  const missingMemberIds = Array.from(
-    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
-  );
-  const extraGroupMembers = missingMemberIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: missingMemberIds } },
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-      })
-    : [];
-  const allUsers = [...users, ...extraGroupMembers];
+  const { groups, users: allUsers } = await participantOptionsP;
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
