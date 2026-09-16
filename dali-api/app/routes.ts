@@ -414,6 +414,8 @@ export default [
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
+  route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
+  route("api/scheduled-meetings/:id/edit-context", "calendar/routes/api.scheduled-meetings.$id.edit-context.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),

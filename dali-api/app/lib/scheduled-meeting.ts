@@ -8,6 +8,7 @@ import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
   createGoogleCalendarEvent,
+  patchGoogleCalendarEvent,
   getGoogleEvent,
   type GoogleAttendee,
 } from "~/lib/google-calendar";
@@ -342,6 +343,7 @@ export async function createScheduledMeeting(
       status: startDate ? "Confirmed" : "Searching",
       ownerCalendarEmail: organizerLink?.externalEmail ?? input.organizerEmail,
       organizerCalendarLinkId: organizerLink?.id ?? null,
+      organizerCalendarId: organizerLink ? (input.organizerCalendarId ?? null) : null,
       meetingType: input.meetingType ?? null,
       meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
       projectId: input.meetingType ? (input.projectId ?? null) : null,
@@ -414,8 +416,9 @@ export async function createScheduledMeeting(
   }
 
   // Note-page creation is optional (driven by meetingType). Attendance rows
-  // fan out for notes (roster checklist) and for SelfCheckIn (QR / self-serve
-  // present) — either alone or together. Scope is always the meeting's
+  // fan out for notes (roster checklist), for SelfCheckIn (QR / self-serve
+  // present), and for any meeting with guests — the organizer can mark/scan a
+  // roster regardless of whether a note exists. Scope is always the meeting's
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   if (input.meetingType) {
@@ -431,7 +434,7 @@ export async function createScheduledMeeting(
     });
   }
 
-  if (input.meetingType || attendanceMode === "SelfCheckIn") {
+  if (input.meetingType || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
     const attendeeIds = Array.from(new Set([...participantUserIds, input.organizerId]));
     await prisma.meetingAttendance.createMany({
       data: attendeeIds.map((userId) => ({
@@ -810,6 +813,241 @@ export async function cancelScheduledMeeting(
     }
   }
   return { ok: true, alreadyCancelled: false };
+}
+
+export type UpdateScheduledMeetingInput = {
+  title: string;
+  durationMinutes: number;
+  scope: ScheduledMeetingScope;
+  startTime?: string | null;
+  recurrenceRule?: string | null;
+};
+
+export type UpdateScheduledMeetingResult =
+  | { ok: true; meeting: ScheduledMeeting; gcalError: string | null }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Edit a meeting's title, time, and guest list. The organizer may edit; Core can
+ * too (mirrors cancel). Meeting type, project, and any note page are intentionally
+ * left untouched — edit is for the schedule and roster, not for turning a meeting
+ * into a different kind. The attendance roster is reconciled to the new guest list
+ * (rows added for new guests, removed for dropped ones; retained rows keep their
+ * present/absenceNote state), and a linked Google event is events.patch'd so the
+ * organizer's calendar and its guests stay in sync. Edits apply to the whole
+ * series for a recurring meeting.
+ */
+export async function updateScheduledMeeting(
+  meetingId: string,
+  actorUserId: string,
+  input: UpdateScheduledMeetingInput,
+): Promise<UpdateScheduledMeetingResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: {
+      id: true,
+      organizerId: true,
+      status: true,
+      title: true,
+      participantUserIds: true,
+      selectedAt: true,
+      durationMinutes: true,
+      ownerCalendarEmail: true,
+      externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarId: true,
+      meetingType: true,
+      attendanceMode: true,
+    },
+  });
+  if (!meeting) return { ok: false, error: "Not found", status: 404 };
+  if (meeting.status === "Cancelled") {
+    return { ok: false, error: "This meeting has been cancelled", status: 400 };
+  }
+  if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
+    return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
+  }
+
+  let participantUserIds: string[] = [];
+  let scopeId: string | null = null;
+  if (input.scope.type === "Group") {
+    participantUserIds = await resolveGroupMembers(input.scope.groupId);
+    scopeId = input.scope.groupId;
+  } else if (input.scope.type === "UserList") {
+    participantUserIds = Array.from(new Set(input.scope.participantUserIds));
+  }
+
+  const startDate = input.startTime ? new Date(input.startTime) : null;
+
+  const updated = await prisma.scheduledMeeting.update({
+    where: { id: meetingId },
+    data: {
+      title: input.title,
+      durationMinutes: input.durationMinutes,
+      scopeType: input.scope.type,
+      scopeId,
+      participantUserIds,
+      recurrenceRule: input.recurrenceRule ?? null,
+      selectedAt: startDate,
+      status: startDate ? "Confirmed" : "Searching",
+    },
+  });
+
+  // Reconcile the roster to the new guest list. A meeting stays attendance-tracked
+  // while it has a note, self check-in, or any guests; editing it down to none
+  // drops its roster (and with it the Attendance-tab row), same as create's gate.
+  const tracksAttendance =
+    meeting.meetingType !== null ||
+    meeting.attendanceMode === "SelfCheckIn" ||
+    participantUserIds.length > 0;
+  const desiredIds = tracksAttendance
+    ? new Set([...participantUserIds, meeting.organizerId])
+    : new Set<string>();
+  const existingRows = await prisma.meetingAttendance.findMany({
+    where: { scheduledMeetingId: meetingId },
+    select: { userId: true },
+  });
+  const existingIds = new Set(existingRows.map((r) => r.userId));
+  const toAdd = [...desiredIds].filter((id) => !existingIds.has(id));
+  const toRemove = [...existingIds].filter((id) => !desiredIds.has(id));
+  if (toAdd.length > 0) {
+    await prisma.meetingAttendance.createMany({
+      data: toAdd.map((userId) => ({ scheduledMeetingId: meetingId, userId })),
+      skipDuplicates: true,
+    });
+  }
+  if (toRemove.length > 0) {
+    await prisma.meetingAttendance.deleteMany({
+      where: { scheduledMeetingId: meetingId, userId: { in: toRemove } },
+    });
+  }
+
+  // Re-sync the Google event (title, time, guests, recurrence) when one exists.
+  // Best-effort — the DALI-side edit already landed; a Google hiccup is surfaced
+  // to the caller, not fatal. sendUpdates:"all" has Google email guests (added,
+  // removed, and retained) about the change.
+  let gcalError: string | null = null;
+  if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+    try {
+      const link = await prisma.userCalendarLink.findUnique({
+        where: { id: meeting.organizerCalendarLinkId },
+        select: { id: true, enabled: true },
+      });
+      if (link?.enabled) {
+        const attendeeUsers = await prisma.user.findMany({
+          where: { id: { in: participantUserIds } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            daliEmail: true,
+            dartmouthEmail: true,
+          },
+        });
+        const attendees: GoogleAttendee[] = [];
+        for (const u of attendeeUsers) {
+          const email = primaryEmail(u);
+          if (!email) continue;
+          attendees.push({
+            email,
+            displayName: `${u.firstName} ${u.lastName}`.trim() || email,
+          });
+        }
+        const organizerUser = await prisma.user.findUnique({
+          where: { id: meeting.organizerId },
+          select: { timeZone: true },
+        });
+        const endDate = startDate
+          ? new Date(startDate.getTime() + input.durationMinutes * 60_000)
+          : null;
+        await patchGoogleCalendarEvent({
+          linkId: link.id,
+          calendarId: meeting.organizerCalendarId ?? undefined,
+          eventId: meeting.externalEventId,
+          summary: input.title,
+          ...(startDate && endDate
+            ? { startIso: startDate.toISOString(), endIso: endDate.toISOString() }
+            : {}),
+          recurrenceRule: input.recurrenceRule ?? null,
+          timeZone: resolveUserTimeZone(organizerUser),
+          attendees,
+          sendUpdates: "all",
+        });
+      }
+    } catch (err) {
+      gcalError = err instanceof Error ? err.message : "Google Calendar update failed";
+    }
+  }
+
+  // Tell the people whose invitation changed: new guests get an invite, dropped
+  // guests get a cancellation. Retained guests are handled by Google's own email
+  // above (or, for a non-Google meeting, left as-is — an in-app time change is
+  // visible on their calendar). An ICS is attached only when we manage the invite
+  // ourselves, i.e. there's no Google event mirroring it.
+  const selfManaged = !meeting.externalEventId && startDate !== null;
+  const addedRecipients = toAdd.filter((id) => id !== meeting.organizerId);
+  const removedRecipients = toRemove.filter((id) => id !== meeting.organizerId);
+  try {
+    if (addedRecipients.length > 0) {
+      const ics = selfManaged
+        ? await buildPerRecipientIcs({
+            meetingId: updated.id,
+            method: "REQUEST",
+            title: input.title,
+            startTime: startDate!,
+            durationMinutes: input.durationMinutes,
+            organizerEmail: meeting.ownerCalendarEmail,
+            recurrenceRule: input.recurrenceRule ?? null,
+            userIds: addedRecipients,
+          })
+        : null;
+      await notify({
+        eventType: "meeting.invite",
+        createdByUserId: actorUserId,
+        message: {
+          title: `Meeting invite: ${input.title}`,
+          body: startDate ? `Starts ${startDate.toISOString()}` : null,
+          link: `/calendar?meeting=${updated.id}`,
+          sourceGroupId: scopeId,
+          scheduledMeetingId: updated.id,
+        },
+        recipients: addedRecipients.map((userId) => ({
+          userId,
+          ics: ics?.get(userId) ?? null,
+        })),
+      });
+    }
+    if (removedRecipients.length > 0) {
+      const ics = selfManaged
+        ? await buildPerRecipientIcs({
+            meetingId: updated.id,
+            method: "CANCEL",
+            title: input.title,
+            startTime: startDate!,
+            durationMinutes: input.durationMinutes,
+            organizerEmail: meeting.ownerCalendarEmail,
+            recurrenceRule: input.recurrenceRule ?? null,
+            userIds: removedRecipients,
+          })
+        : null;
+      await notify({
+        eventType: "meeting.cancelled",
+        createdByUserId: actorUserId,
+        message: {
+          title: `Removed from meeting: ${input.title}`,
+          link: "/calendar",
+        },
+        recipients: removedRecipients.map((userId) => ({
+          userId,
+          ics: ics?.get(userId) ?? null,
+        })),
+      });
+    }
+  } catch (err) {
+    console.error(`meeting ${meetingId}: edit notify failed`, err);
+  }
+
+  return { ok: true, meeting: updated, gcalError };
 }
 
 export type TrackExternalEventInput = {
