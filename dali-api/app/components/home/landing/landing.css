@@ -240,6 +240,23 @@ body:has(.landing) {
   animation-play-state: paused !important;
 }
 
+/*
+ * WebKit only (Safari + the Tauri desktop shell's WKWebView). WebKit re-runs an
+ * element's feGaussianBlur every frame while a transform animates it, where
+ * Chromium caches the blurred raster and just composites the transform (the
+ * trick .landing-smoke already relies on). The scale/bob loops below each sit on
+ * a large blur (rocket flame stdDev 50, fire glow 30, rocket drop-shadow 20), so
+ * on WebKit that was a full Gaussian reconvolved ~60x/second. Promoting them to
+ * their own compositing layer forces the raster to be cached once and the
+ * animation to only re-composite it. Gated to WebKit (.landing-webkit, set in
+ * useLandingMotion) so the already-smooth Chromium path is untouched.
+ */
+.landing-webkit #lp-Fire,
+.landing-webkit #lp-Fire_Glow,
+.landing-webkit #lp-Rocket_Ship {
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-animated *,
   .landing-smoke {
