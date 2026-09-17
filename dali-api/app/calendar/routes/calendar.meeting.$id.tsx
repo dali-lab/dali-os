@@ -115,8 +115,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notePageId: meeting.notePage?.id ?? null,
     meetingUrl: meeting.meetingUrl,
     canManage,
-    // Narrower than canManage: adding guests is the organizer's or Core's call,
-    // as inviteToScheduledMeeting enforces.
+    // Narrower than canManage: editing the event is the organizer's or Core's
+    // call, as updateScheduledMeeting enforces.
     canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
