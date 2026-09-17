@@ -85,7 +85,6 @@ type DiscussionPost = {
 // concept split — see specs/education-student-ui.md.
 const TABS = [
   { key: "timeline", label: "Timeline" },
-  { key: "grades", label: "Grades" },
   { key: "discussions", label: "Discussions" },
   { key: "overview", label: "Overview" },
 ] as const;
@@ -95,7 +94,6 @@ const TABS = [
 // roster that used to sit inside Overview.
 const V2_TABS = [
   { key: "timeline", label: "Timeline" },
-  { key: "grades", label: "Grades" },
   { key: "discussions", label: "Discussions" },
   { key: "people", label: "People" },
   { key: "overview", label: "Overview" },
@@ -128,7 +126,7 @@ export function CourseHub({
   const tabs = v2
     ? V2_TABS
     : data.workspaceDocs.length > 0
-      ? [...TABS.slice(0, 3), { key: "workspace", label: "Workspace" } as const, ...TABS.slice(3)]
+      ? [...TABS.slice(0, 2), { key: "workspace", label: "Workspace" } as const, ...TABS.slice(2)]
       : TABS;
 
   // Assignments awaiting this student's submission (past-due ones can't be
@@ -180,15 +178,6 @@ export function CourseHub({
 
       {v2 && tab === "people" && (
         <PeopleTab instructors={data.instructors} classmates={data.classmates} />
-      )}
-
-      {tab === "grades" && (
-        <GradesTab
-          sessions={data.sessions}
-          assignments={data.assignments}
-          myCertificateId={data.myCertificateId}
-          tz={tz}
-        />
       )}
 
       {tab === "overview" && (
@@ -680,17 +669,6 @@ function WorkspaceTab({
   );
 }
 
-/** One number on the Overview progress row (attendance, assignments, grades). */
-function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-bold text-foreground">{value}</p>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
-
 /** One-tap self-check-in for the student, used on the Overview "up next" card and
  *  each open session row. Posts to the same endpoint the projected QR opens. */
 function SessionCheckInButton({
@@ -997,87 +975,3 @@ function AssignmentRow({
   );
 }
 
-/** Grades tab: the student's standing (attendance + certificate) and a table of
- *  every assignment with its score and status. */
-function GradesTab({
-  sessions,
-  assignments,
-  myCertificateId,
-  tz,
-}: {
-  sessions: HubData["sessions"];
-  assignments: HubData["assignments"];
-  myCertificateId: string | null;
-  tz: string;
-}) {
-  const present = sessions.filter((s) => s.myAttendance === "Present").length;
-  const total = sessions.length;
-  const pct = total > 0 ? Math.round((present / total) * 100) : null;
-  return (
-    <div className="flex flex-col gap-4">
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard
-          label="Attendance"
-          value={total > 0 ? `${present}/${total}` : "—"}
-          hint={pct != null ? `${pct}% of sessions` : "No sessions yet"}
-        />
-        <StatCard
-          label="Assignments"
-          value={
-            assignments.length > 0
-              ? `${assignments.filter((a) => a.mySubmittedAt).length}/${assignments.length}`
-              : "—"
-          }
-          hint={assignments.length > 0 ? "submitted" : "None assigned"}
-        />
-        <StatCard
-          label="Certificate"
-          value={myCertificateId ? "Earned" : "—"}
-          hint={myCertificateId ? "course complete" : "on completion"}
-        />
-      </section>
-
-      {assignments.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No graded work yet.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-semibold">Assignment</th>
-                <th className="px-4 py-2 font-semibold">Due</th>
-                <th className="px-4 py-2 text-right font-semibold">Score</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {assignments.map((a) => {
-                const graded = a.myGrade != null || a.myScore != null;
-                return (
-                  <tr key={a.id}>
-                    <td className="px-4 py-2 text-foreground">{a.title}</td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {a.dueAt ? formatDateTime(a.dueAt, tz) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right font-semibold text-foreground">
-                      {graded ? (
-                        a.myScore != null && a.points != null ? (
-                          `${a.myScore}/${a.points}`
-                        ) : (
-                          (a.myGrade ?? String(a.myScore))
-                        )
-                      ) : a.mySubmittedAt ? (
-                        <span className="font-normal text-blue-700">Submitted</span>
-                      ) : (
-                        <span className="font-normal text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
