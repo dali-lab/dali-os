@@ -280,6 +280,30 @@ describe("buildLoggedTimeLayer", () => {
     const filtered = buildLoggedTimeLayer(data, days, { excludedRoleKeys: new Set(["unassigned"]) });
     expect(Object.keys(filtered)).toHaveLength(0);
   });
+
+  it("flags entries with no role and/or no note, and leaves complete ones alone", () => {
+    const days = buildGridDays(WEEK, 7);
+    const base = {
+      source: "Manual", scheduledMeetingId: null, manualBlockId: null, meetingNotePageId: null,
+      projectId: null, date: "2026-08-19", hours: 1,
+      startTime: "2026-08-19T13:00:00.000Z", endTime: "2026-08-19T14:00:00.000Z",
+    };
+    const data = fixture({
+      timeEntries: [
+        { ...base, id: "none", assignmentType: null, roleRefId: null, note: null },
+        { ...base, id: "no-role", assignmentType: null, roleRefId: null, note: "Design" },
+        { ...base, id: "no-note", assignmentType: "Position", roleRefId: "r1", note: "   " },
+        { ...base, id: "ok", assignmentType: "Position", roleRefId: "r1", note: "Design" },
+      ] as unknown as LoaderData["timeEntries"],
+    });
+    const issues = (buildLoggedTimeLayer(data, days)[3] ?? []).map((b) => b.issue);
+    expect(issues).toEqual([
+      "Missing a role and a note",
+      "Missing a role",
+      "Missing a note",
+      undefined,
+    ]);
+  });
 });
 
 describe("logged-time de-duplication", () => {
@@ -367,6 +391,32 @@ describe("logged-time de-duplication", () => {
     const blocks = external[2] ?? [];
     expect(blocks.find((b) => b.label === "Studio")?.loggedAccent?.hours).toBe(2);
     expect(blocks.find((b) => b.label === "Plain")?.loggedAccent).toBeUndefined();
+  });
+
+  it("passes the incomplete flag to the source block the entry hides behind", () => {
+    const data = loggedFixture();
+    // t-e (the work-marked event's entry) has a note but no role.
+    data.externalEvents = [
+      { startIso: "2026-08-18T13:00:00.000Z", endIso: "2026-08-18T15:00:00.000Z", title: "Studio", color: null, calendarId: "c1", eventId: "e1", writable: true },
+    ] as LoaderData["externalEvents"];
+    const idx = buildLoggedSourceIndex(data);
+    expect(idx.byEvent.get("e1")?.incomplete).toBe(true);
+    const external = buildExternalLayer(data, days, undefined, undefined, undefined, undefined, undefined, idx.byEvent);
+    expect((external[2] ?? [])[0]?.issue).toBe("Logged time is missing a role or a note");
+  });
+
+  it("leaves a complete entry's source block unflagged", () => {
+    const data = loggedFixture();
+    data.timeEntries = data.timeEntries.map((t) =>
+      t.id === "t-e" ? { ...t, assignmentType: "Position", roleRefId: "r1" } : t,
+    ) as LoaderData["timeEntries"];
+    data.externalEvents = [
+      { startIso: "2026-08-18T13:00:00.000Z", endIso: "2026-08-18T15:00:00.000Z", title: "Studio", color: null, calendarId: "c1", eventId: "e1", writable: true },
+    ] as LoaderData["externalEvents"];
+    const idx = buildLoggedSourceIndex(data);
+    expect(idx.byEvent.get("e1")?.incomplete).toBe(false);
+    const external = buildExternalLayer(data, days, undefined, undefined, undefined, undefined, undefined, idx.byEvent);
+    expect((external[2] ?? [])[0]?.issue).toBeUndefined();
   });
 
   it("draws events plain when the logged layer is off (no accents passed)", () => {

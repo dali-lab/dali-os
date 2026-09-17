@@ -132,6 +132,20 @@ export function timeEntryRoleKey(t: TimeEntryDTO): string {
   return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
 }
 
+// Payroll can't process an entry that doesn't say which role the hours go
+// against or what the work was, and both are easy to end up without: a
+// meeting-sourced entry is written with neither, and the drag-out form can be
+// abandoned mid-fill. Returns the reason such an entry is incomplete (for the
+// warning icon on its Timesheet block), or null when it's fine.
+export function timeEntryIssue(t: TimeEntryDTO): string | null {
+  const noRole = timeEntryRoleKey(t) === UNASSIGNED_ROLE_KEY;
+  const noNote = !t.note || t.note.trim() === "";
+  if (noRole && noNote) return "Missing a role and a note";
+  if (noRole) return "Missing a role";
+  if (noNote) return "Missing a note";
+  return null;
+}
+
 // Pick dark or light ink for a solid fill by its perceived luminance, so
 // custom event colors (which arrive as arbitrary hex — light Google "Banana"
 // through dark "Blueberry") stay readable instead of always getting white text.

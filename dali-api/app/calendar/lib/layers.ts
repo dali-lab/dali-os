@@ -18,6 +18,7 @@ import {
   nominalDayRange,
   roleColor,
   timeEntryRoleKey,
+  timeEntryIssue,
 } from "./event-block";
 
 /** One column of the grid — a single calendar day, in UTC-anchored form. */
@@ -208,6 +209,10 @@ export function buildExternalLayer(
               }
             : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
+        issue:
+          e.eventId && loggedAccents?.get(e.eventId)?.incomplete
+            ? "Logged time is missing a role or a note"
+            : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
         // Delete affordances in the detail popover and can be dragged. A meeting
         // the viewer manages is also editable even when its Google copy isn't
@@ -294,7 +299,7 @@ export function buildAllDayLayer(
 /** A role accent for an event that's also logged as work — the colour + total
  *  logged hours, keyed by the source event so the block can show it in place of
  *  a duplicate logged-time block. */
-export type LoggedAccent = { color: string; hours: number };
+export type LoggedAccent = { color: string; hours: number; incomplete?: boolean };
 
 /** Logged work grouped by the on-grid thing it came from — a meeting, or the
  *  calendar event it was logged against — so something that is *also* logged
@@ -319,7 +324,13 @@ export function buildLoggedSourceIndex(
     if (!into || !id) continue;
     const prev = into.get(id);
     const color = prev?.color ?? roleColors?.[roleKey] ?? roleColor(roleKey).dot;
-    into.set(id, { color, hours: (prev?.hours ?? 0) + t.hours });
+    into.set(id, {
+      color,
+      hours: (prev?.hours ?? 0) + t.hours,
+      // The source block draws no entry block of its own, so it has to carry
+      // the warning for the hours it stands in for.
+      incomplete: Boolean(prev?.incomplete) || timeEntryIssue(t) !== null,
+    });
   }
   return { byMeeting, byEvent };
 }
@@ -385,6 +396,7 @@ export function buildLoggedTimeLayer(
         className: custom ? "" : color.className,
         bgColor: custom,
         borderClassName: custom ? undefined : color.borderClassName,
+        issue: timeEntryIssue(t) ?? undefined,
         onClick: opts.onEntryClick ? () => opts.onEntryClick!(t, startIso, endIso) : undefined,
       },
       into,

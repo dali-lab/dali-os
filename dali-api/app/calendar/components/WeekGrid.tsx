@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink, Clock,
+  Check, HelpCircle, X, Video, ExternalLink, Clock, AlertCircle,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
@@ -980,7 +980,11 @@ export function WeekGridEvent({
             }
           : undefined
       }
-      aria-label={clickable || movable ? `${e.label}, ${timeRange}` : undefined}
+      aria-label={
+        clickable || movable
+          ? `${e.label}, ${timeRange}${e.issue ? `, ${e.issue}` : ""}`
+          : undefined
+      }
     >
       {/* Top resize handle — only for movable blocks */}
       {movable && (
@@ -1014,7 +1018,18 @@ export function WeekGridEvent({
             aria-hidden
           />
         )}
-        {e.label && <span className="truncate block">{e.label}</span>}
+        {(e.label || e.issue) && (
+          <span className="flex items-start gap-1" title={e.issue || undefined}>
+            {e.issue && (
+              <AlertCircle
+                className="mt-px h-3 w-3 shrink-0 fill-white text-red-700"
+                aria-hidden
+              />
+            )}
+            <span className="truncate block">{e.label}</span>
+          </span>
+        )}
+        {e.issue && <span className="sr-only">{e.issue}</span>}
         {displayBodyHeight >= 34 && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
             {displayTimeRange}
