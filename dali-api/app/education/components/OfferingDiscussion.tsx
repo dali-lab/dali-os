@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Form } from "react-router";
-import { Megaphone, MessageSquare, Reply } from "lucide-react";
+import { Megaphone, MessageSquare, Reply, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { AddFormModal } from "./AddFormModal";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -34,6 +35,35 @@ export type DiscussionPost = DiscussionReply & {
 
 const name = (a: { firstName: string; lastName: string }) =>
   `${a.firstName} ${a.lastName}`.trim();
+
+/** Delete control for a post or reply — the author sees it on their own posts,
+ *  managers on any. Deleting a top-level post also removes its replies. */
+function DeletePost({ id, canDelete }: { id: string; canDelete: boolean }) {
+  const confirmSubmit = useConfirmSubmit();
+  if (!canDelete) return null;
+  return (
+    <Form
+      method="post"
+      className="ml-auto"
+      onSubmit={confirmSubmit({
+        title: "Delete this post?",
+        description: "This removes it for everyone, along with any replies.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      })}
+    >
+      <input type="hidden" name="intent" value="delete-announcement" />
+      <input type="hidden" name="postId" value={id} />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 className="h-3 w-3" aria-hidden />
+        Delete
+      </button>
+    </Form>
+  );
+}
 
 export function OfferingDiscussion({
   posts,
@@ -100,6 +130,10 @@ export function OfferingDiscussion({
               <span className="text-xs text-muted-foreground">
                 {formatDateTime(p.sentAt as never, tz)}
               </span>
+              <DeletePost
+                id={p.id}
+                canDelete={p.authorId === currentUserId || canAnnounce}
+              />
             </header>
 
             <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{p.body}</p>
@@ -121,6 +155,10 @@ export function OfferingDiscussion({
                       <span className="text-xs text-muted-foreground">
                         {formatDateTime(r.sentAt as never, tz)}
                       </span>
+                      <DeletePost
+                        id={r.id}
+                        canDelete={r.authorId === currentUserId || canAnnounce}
+                      />
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{r.body}</p>
                   </li>

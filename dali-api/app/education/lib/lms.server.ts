@@ -265,6 +265,139 @@ export async function moveMaterialFile(args: {
 }
 
 /**
+ * Rename a material page or folder. Same-offering guardrail as the move helpers:
+ * the page must belong to this offering's workspace.
+ */
+export async function renameMaterialPage(args: {
+  offeringId: string;
+  pageId: string;
+  title: string;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const title = args.title.trim();
+  if (!title) return { error: "Title is required", status: 400 };
+
+  const page = await prisma.page.findUnique({
+    where: { id: args.pageId },
+    select: { workspaceType: true, workspaceId: true },
+  });
+  if (
+    !page ||
+    page.workspaceType !== "EducationOffering" ||
+    page.workspaceId !== args.offeringId
+  ) {
+    return { error: "Page not found", status: 404 };
+  }
+
+  await prisma.page.update({
+    where: { id: args.pageId },
+    data: { title, lastEditedById: args.actorId },
+  });
+  return { ok: true };
+}
+
+/** Rename an uploaded material file (a ProjectFile) in this offering. */
+export async function renameMaterialFile(args: {
+  offeringId: string;
+  fileId: string;
+  title: string;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const title = args.title.trim();
+  if (!title) return { error: "Title is required", status: 400 };
+
+  const file = await prisma.projectFile.findUnique({
+    where: { id: args.fileId },
+    select: { workspaceType: true, workspaceId: true },
+  });
+  if (
+    !file ||
+    file.workspaceType !== "EducationOffering" ||
+    file.workspaceId !== args.offeringId
+  ) {
+    return { error: "File not found", status: 404 };
+  }
+
+  await prisma.projectFile.update({
+    where: { id: args.fileId },
+    data: { title },
+  });
+  return { ok: true };
+}
+
+/**
+ * Archive (soft-delete) a material page or folder — mirrors the standard Drive
+ * DELETE, which sets archivedAt and drops the item from the list rather than
+ * hard-deleting it. A folder can't be archived while it still holds material
+ * pages or uploaded files, matching the Drive "empty the folder first" rule.
+ */
+export async function archiveMaterialPage(args: {
+  offeringId: string;
+  pageId: string;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const page = await prisma.page.findUnique({
+    where: { id: args.pageId },
+    select: { workspaceType: true, workspaceId: true, kind: true },
+  });
+  if (
+    !page ||
+    page.workspaceType !== "EducationOffering" ||
+    page.workspaceId !== args.offeringId
+  ) {
+    return { error: "Page not found", status: 404 };
+  }
+
+  if (page.kind === "Folder") {
+    const [childPages, childFiles] = await Promise.all([
+      prisma.page.count({
+        where: { parentPageId: args.pageId, archivedAt: null },
+      }),
+      prisma.projectFile.count({
+        where: { folderPageId: args.pageId, archivedAt: null },
+      }),
+    ]);
+    if (childPages + childFiles > 0) {
+      return {
+        error: "Move or delete the items inside this folder first",
+        status: 400,
+      };
+    }
+  }
+
+  await prisma.page.update({
+    where: { id: args.pageId },
+    data: { archivedAt: new Date() },
+  });
+  return { ok: true };
+}
+
+/** Archive (soft-delete) an uploaded material file in this offering. */
+export async function archiveMaterialFile(args: {
+  offeringId: string;
+  fileId: string;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const file = await prisma.projectFile.findUnique({
+    where: { id: args.fileId },
+    select: { workspaceType: true, workspaceId: true },
+  });
+  if (
+    !file ||
+    file.workspaceType !== "EducationOffering" ||
+    file.workspaceId !== args.offeringId
+  ) {
+    return { error: "File not found", status: 404 };
+  }
+
+  await prisma.projectFile.update({
+    where: { id: args.fileId },
+    data: { archivedAt: new Date() },
+  });
+  return { ok: true };
+}
+
+/**
  * Cross-course student dashboard for the /education landing: what needs the
  * student's attention now (open check-ins + unsubmitted assignments) and their
  * enrolled courses with progress. Powers the thin "what's next" shell that

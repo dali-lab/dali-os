@@ -10,6 +10,10 @@ import {
   createMaterialPage,
   moveMaterialPage,
   moveMaterialFile,
+  renameMaterialPage,
+  renameMaterialFile,
+  archiveMaterialPage,
+  archiveMaterialFile,
 } from "~/education/lib/lms.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { prisma } from "~/lib/db";
@@ -25,18 +29,27 @@ import {
 export const MANAGE_OFFERING_MATERIALS_TOOL = {
   name: "manage_offering_materials",
   description:
-    "Create pages/folders, move material pages into folders, move uploaded files, or assign a page to a session in an offering's materials. Instructor or Core only. Actions: create_page · move_page · move_file · set_material_session.",
+    "Full CRUD for an offering's materials (mirrors the standard Drive): create pages/folders, rename or delete pages/folders and uploaded files, move pages into folders, move uploaded files, or assign a page to a session. Deletes soft-archive the item (a folder must be emptied first). Instructor or Core only. Actions: create_page · rename_page · delete_page · move_page · rename_file · delete_file · move_file · set_material_session.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create_page", "move_page", "move_file", "set_material_session"],
+        enum: [
+          "create_page",
+          "rename_page",
+          "delete_page",
+          "move_page",
+          "rename_file",
+          "delete_file",
+          "move_file",
+          "set_material_session",
+        ],
       },
       offeringId: { type: "string", minLength: 1 },
       title: {
         type: "string",
-        description: "create_page: page title.",
+        description: "create_page: page title. rename_page / rename_file: the new name.",
       },
       kind: {
         type: "string",
@@ -60,11 +73,12 @@ export const MANAGE_OFFERING_MATERIALS_TOOL = {
       },
       pageId: {
         type: "string",
-        description: "move_page / set_material_session: target page ID.",
+        description:
+          "move_page / rename_page / delete_page / set_material_session: target page (or folder) ID.",
       },
       fileId: {
         type: "string",
-        description: "move_file: target file ID.",
+        description: "move_file / rename_file / delete_file: target file ID.",
       },
       folderId: {
         type: "string",
@@ -94,7 +108,11 @@ type Args = {
 export async function runManageOfferingMaterials(ctx: McpCtx, args: Args) {
   requireForAction(args.action, args, {
     create_page: ["title"],
+    rename_page: ["pageId", "title"],
+    delete_page: ["pageId"],
     move_page: ["pageId"],
+    rename_file: ["fileId", "title"],
+    delete_file: ["fileId"],
     move_file: ["fileId"],
     set_material_session: ["pageId"],
   });
@@ -135,11 +153,65 @@ export async function runManageOfferingMaterials(ctx: McpCtx, args: Args) {
       return { ok: true };
     }
 
+    case "rename_page": {
+      const result = await renameMaterialPage({
+        offeringId: args.offeringId,
+        pageId: args.pageId!,
+        title: args.title!,
+        actorId: ctx.user.id,
+      });
+      if ("error" in result) {
+        if (result.status === 404) throw new McpNotFoundError(result.error);
+        throw new McpInvalidError(result.error);
+      }
+      return { ok: true };
+    }
+
+    case "delete_page": {
+      const result = await archiveMaterialPage({
+        offeringId: args.offeringId,
+        pageId: args.pageId!,
+        actorId: ctx.user.id,
+      });
+      if ("error" in result) {
+        if (result.status === 404) throw new McpNotFoundError(result.error);
+        throw new McpInvalidError(result.error);
+      }
+      return { ok: true };
+    }
+
     case "move_file": {
       const result = await moveMaterialFile({
         offeringId: args.offeringId,
         fileId: args.fileId!,
         folderId: args.folderId ?? null,
+        actorId: ctx.user.id,
+      });
+      if ("error" in result) {
+        if (result.status === 404) throw new McpNotFoundError(result.error);
+        throw new McpInvalidError(result.error);
+      }
+      return { ok: true };
+    }
+
+    case "rename_file": {
+      const result = await renameMaterialFile({
+        offeringId: args.offeringId,
+        fileId: args.fileId!,
+        title: args.title!,
+        actorId: ctx.user.id,
+      });
+      if ("error" in result) {
+        if (result.status === 404) throw new McpNotFoundError(result.error);
+        throw new McpInvalidError(result.error);
+      }
+      return { ok: true };
+    }
+
+    case "delete_file": {
+      const result = await archiveMaterialFile({
+        offeringId: args.offeringId,
+        fileId: args.fileId!,
         actorId: ctx.user.id,
       });
       if ("error" in result) {
