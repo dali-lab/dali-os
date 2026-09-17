@@ -286,7 +286,15 @@ export async function runSetStaffingAssignment(
       },
     });
 
-    if (input.projectId === null && input.fromProjectId) {
+    // Leaving a project (drag to Unassigned / × OR a move A→B — both send
+    // fromProjectId). Decline any Confirmed rows there so a finalized card
+    // leaves the column, AND delete the canonical ProjectAssignment for
+    // (userId, fromProjectId, term) so the member drops off payroll/jobx export
+    // and their profile immediately. Mirrors api.staffing.assign.ts (the
+    // PR #1533 roster-leak fix): finalize's drop-detector only sees still-
+    // Confirmed rows, so if we don't delete the roster row here nothing ever
+    // will. A plain "add to a second project" carries no fromProjectId.
+    if (input.fromProjectId) {
       await tx.staffingAssignment.updateMany({
         where: {
           userId: input.userId,
@@ -295,6 +303,13 @@ export async function runSetStaffingAssignment(
           status: "Confirmed",
         },
         data: { status: "Declined" },
+      });
+      await tx.projectAssignment.deleteMany({
+        where: {
+          userId: input.userId,
+          projectId: input.fromProjectId,
+          termId: cycle.termId,
+        },
       });
     }
 

@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { APPLICATION_TZ } from "~/lib/timezone";
+import type { MetaTone } from "~/components/ui/MetaList";
 import { Menu, Tooltip } from "~/components/ui/floating";
 import {
   MoreHorizontal,
@@ -19,6 +20,7 @@ export type OfferingCardData = {
   id: string;
   type: "Miniseries" | "Workshop";
   title: string;
+  iconEmoji?: string | null;
   status: "Draft" | "Published" | "Archived";
   capacity: number;
   requiresReview: boolean;
@@ -115,7 +117,9 @@ export function MyStatusChip({ status }: { status: string | null }) {
   );
 }
 
-export function registrationWindowLabel(
+// The registration window on its own, for callers that already label the field
+// ("Registration: open until Mar 3"). Prefixing it there would stutter.
+export function registrationWindowValue(
   o: {
     registrationOpensAt: string | Date;
     registrationClosesAt: string | Date;
@@ -125,9 +129,48 @@ export function registrationWindowLabel(
   const now = new Date();
   const opens = new Date(o.registrationOpensAt);
   const closes = new Date(o.registrationClosesAt);
-  if (now < opens) return `Registration opens ${formatDateShort(opens, tz)}`;
-  if (now > closes) return "Registration closed";
-  return `Registration open until ${formatDateShort(closes, tz)}`;
+  if (now < opens) return `Opens ${formatDateShort(opens, tz)}`;
+  if (now > closes) return "Closed";
+  return `Open until ${formatDateShort(closes, tz)}`;
+}
+
+// The registration window as a labelled meta row with urgency baked in: a
+// window closing within a week reads "Closes in N days" in coral so a browser
+// notices the deadline, one not yet open or already closed stays muted, and an
+// open-with-runway window keeps the plain "Open until …".
+export function registrationMeta(
+  o: {
+    registrationOpensAt: string | Date;
+    registrationClosesAt: string | Date;
+  },
+  tz: string = APPLICATION_TZ,
+): { value: string; tone: MetaTone } {
+  const now = Date.now();
+  const opens = new Date(o.registrationOpensAt).getTime();
+  const closes = new Date(o.registrationClosesAt).getTime();
+  if (now < opens) return { value: registrationWindowValue(o, tz), tone: "muted" };
+  if (now > closes) return { value: "Closed", tone: "muted" };
+  const daysLeft = Math.ceil((closes - now) / 86_400_000);
+  if (daysLeft <= 7) {
+    return {
+      value: daysLeft <= 1 ? "Closes soon" : `Closes in ${daysLeft} days`,
+      tone: "urgent",
+    };
+  }
+  return { value: registrationWindowValue(o, tz), tone: "default" };
+}
+
+// The same window as a standalone sentence, for prose contexts (the offering
+// detail pages, the admin card) that carry no separate field label.
+export function registrationWindowLabel(
+  o: {
+    registrationOpensAt: string | Date;
+    registrationClosesAt: string | Date;
+  },
+  tz: string = APPLICATION_TZ,
+): string {
+  const value = registrationWindowValue(o, tz);
+  return `Registration ${value.charAt(0).toLowerCase()}${value.slice(1)}`;
 }
 
 export function OfferingCard({

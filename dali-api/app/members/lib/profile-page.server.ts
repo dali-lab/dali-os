@@ -43,6 +43,7 @@ import {
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
 import { rotateWalletSecret } from "~/lib/wallet-token";
+import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
@@ -383,8 +384,8 @@ export async function loadProfilePage({
 
   // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
   // AND they are NOT looking at their own profile. Mentees never see
-  // anything about notes written about them. Non-Core mentors only see
-  // pairs/notes in domains they mentor in (plus notes they authored).
+  // anything about notes written about them. Any lab mentor sees every pair
+  // and note here — the scope helpers only narrow a non-mentor caller.
   const viewerCanSeeMentorshipPanel = !isSelf
     ? canManageEligibility || (await isLabMentor(auth.user.sub))
     : false;
@@ -635,6 +636,10 @@ export async function runProfileAction({
       return { error: "You don't have permission to reset this member's pass." };
     }
     await rotateWalletSecret(targetId);
+    // Rotating changes the barcode; nudge registered devices to re-fetch the
+    // pass carrying the new barcode so the dead-barcode window is minimised.
+    // Self-guards (no-op when unconfigured) and never throws.
+    await pushWalletPassUpdate(targetId);
     return redirect(redirectPathFor(request, targetId));
   }
 

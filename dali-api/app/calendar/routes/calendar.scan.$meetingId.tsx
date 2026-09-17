@@ -40,11 +40,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       organizerId: true,
       projectId: true,
-      meetingType: true,
       status: true,
     },
   });
-  if (!meeting || !meeting.meetingType || meeting.status === "Cancelled") {
+  // No meetingType requirement — a SelfCheckIn all-lab event has none but is a
+  // valid scan target (matches the scan endpoint and the meeting-detail page).
+  if (!meeting || meeting.status === "Cancelled") {
     throw new Response("Not found", { status: 404 });
   }
 

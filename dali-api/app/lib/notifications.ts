@@ -148,3 +148,57 @@ export function annotateDesktopFeed<T extends { eventType: string }>(
     };
   });
 }
+
+// How far back to look for banners worth retiring. A delivered native banner
+// can sit in Notification Center indefinitely, but a month past the meeting is
+// well beyond the point where retiring one matters, and the window keeps the
+// query bounded.
+const RETIRED_LOOKBACK_MS = 30 * 24 * 3_600_000;
+const RETIRED_CAP = 200;
+
+/**
+ * Ids of meeting-backed rows that the live-surface hides have dropped while
+ * still unread: a "Starting soon" reminder whose occurrence has passed, an
+ * un-RSVP'd one-off invite to a meeting that already happened, anything on a
+ * Cancelled meeting.
+ *
+ * The desktop app retires a delivered banner when its row comes back through
+ * the feed with `readAt` set — which never happens to these, because going
+ * stale removes them from the feed instead of marking them read. So the banner
+ * outlives the meeting (a "Starting soon" ping still sitting in Notification
+ * Center a day later). The feed payload carries these ids so the shell can
+ * clear them; resolving the list server-side is what makes it survive an app
+ * restart, which in-memory client tracking would not.
+ */
+export async function listRetiredMeetingPingIds(
+  userId: string,
+  now = new Date(),
+): Promise<string[]> {
+  const candidates = await prisma.notification.findMany({
+    where: {
+      recipientUserId: userId,
+      readAt: null,
+      scheduledMeetingId: { not: null },
+      createdAt: { gte: new Date(now.getTime() - RETIRED_LOOKBACK_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+    take: RETIRED_CAP,
+    select: { id: true },
+  });
+  if (candidates.length === 0) return [];
+
+  // Re-ask for the same rows through the live-surface clauses: what they drop
+  // is exactly what the feed hid, so the difference is the set to retire.
+  // Asking twice beats negating the clauses — one definition of "live", and no
+  // NOT over relation filters and nullable dueAt comparisons.
+  const ids = candidates.map((r) => r.id);
+  const live = await prisma.notification.findMany({
+    where: {
+      id: { in: ids },
+      AND: [NOT_CANCELLED_MEETING, ...liveMeetingPingClauses(now)],
+    },
+    select: { id: true },
+  });
+  const liveIds = new Set(live.map((r) => r.id));
+  return ids.filter((id) => !liveIds.has(id));
+}

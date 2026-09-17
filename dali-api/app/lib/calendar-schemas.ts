@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { AssignmentType } from "~/generated/prisma/client";
+
 // Minutes from local midnight: 0..1440 (inclusive end allowed for endMinute).
 const minuteOfDay = z.number().int().min(0).max(1440);
 
@@ -12,10 +14,38 @@ const isoString = z.string().refine(
 
 // Mirrors the Prisma AssignmentType enum. Paired with roleRefId to identify
 // which concrete ProjectAssignment/CoreAssignment/InstructorAssignment/
-// DomainLeadAssignment/AdminMembership row a TimeEntry or work ManualBlock is
-// attributed to — untyped at the DB layer, dispatched in app code, same
-// pattern as ScheduledMeeting.scopeType/scopeId.
-const assignmentType = z.enum(["Project", "Core", "Instructor", "DomainLead", "Admin"]);
+// DomainLeadAssignment/AdminMembership/CustomHire row a TimeEntry or work
+// ManualBlock is attributed to — untyped at the DB layer, dispatched in app
+// code, same pattern as ScheduledMeeting.scopeType/scopeId.
+//
+// The list has to be spelled out (Zod needs the literals, and this module is
+// imported by client components, so it can't pull in the generated client at
+// runtime), but `satisfies` ties it back to the generated enum: adding a
+// variant in schema.prisma without listing it here is a type error rather
+// than a silently rejected save. "Custom" — a non-DALI job, backed by
+// CustomHire — was missed when it was added, which rejected every timesheet
+// entry attributed to one.
+export const ASSIGNMENT_TYPES = [
+  "Project",
+  "Core",
+  "Instructor",
+  "DomainLead",
+  "Admin",
+  "Custom",
+] as const satisfies readonly AssignmentType[];
+
+// `satisfies` above only rules out values the enum doesn't have. This rules
+// out the other direction — a variant the enum has that the list is missing,
+// which is exactly how "Custom" was lost. The annotation resolves to `never`
+// when anything is unlisted, so the initializer stops compiling.
+const _assignmentTypesAreExhaustive: Exclude<
+  AssignmentType,
+  (typeof ASSIGNMENT_TYPES)[number]
+> extends never
+  ? true
+  : never = true;
+
+const assignmentType = z.enum(ASSIGNMENT_TYPES);
 
 // Each intent is a discriminated variant so the action handler can switch on it.
 // Cross-field checks (e.g. start < end) are enforced by the action handler, not the
@@ -183,12 +213,46 @@ export const SetMeetingCoreSchema = z.object({
   isCoreMeeting: z.boolean(),
 });
 
+// "Add meeting notes" on a note-less meeting's detail popover — creates the
+// notes doc after the fact with the same About/Type/Name/location choices the
+// create form collects. The action re-checks that the caller may file it.
+export const AddMeetingNoteSchema = z.object({
+  intent: z.literal("add-meeting-note"),
+  meetingId: z.string().min(1),
+  meetingType: z.enum(["Team", "Partner", "Other"]),
+  meetingTypeLabel: z.string().optional(),
+  projectId: z.string().optional(),
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().nullable(),
+      parentPageId: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
 // flag on UserAvailabilitySettings and, on enable, lazily provisions the DALI
 // Timesheet Google calendar (see timesheet-mirror.server.ts).
 export const SetTimesheetSyncSchema = z.object({
   intent: z.literal("set-timesheet-sync"),
   enabled: z.boolean(),
+});
+
+// "Track in DALI" on the detail popover of an external event that has no DALI
+// meeting behind it — the lab's general calendar is authored in Google, so its
+// events arrive with nothing to hang a note or an attendance roster off. This
+// creates that missing ScheduledMeeting, bound to the Google event, and the
+// ordinary note/attendance affordances take over from there. Core-only; the
+// action re-checks.
+export const TrackEventAsMeetingSchema = z.object({
+  intent: z.literal("track-event-as-meeting"),
+  /** The Google event id, and the master id when it's one of a series. */
+  eventId: z.string().min(1).max(1024),
+  recurringEventId: z.string().min(1).max(1024).optional(),
+  linkId: z.string().min(1),
+  calendarId: z.string().min(1).max(320),
 });
 
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
@@ -205,7 +269,9 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
   SetMeetingCoreSchema,
+  AddMeetingNoteSchema,
   SetTimesheetSyncSchema,
+  TrackEventAsMeetingSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

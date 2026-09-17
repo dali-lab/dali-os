@@ -19,10 +19,14 @@ import {
   runOfferingAction,
 } from "~/education/lib/offerings.server";
 import { listApplications } from "~/education/lib/apply.server";
-import { decideApplication, approveAllPending } from "~/education/lib/decisions.server";
+import {
+  decideApplication,
+  approveAllPending,
+  moveWaitlistEntry,
+} from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
-import { ApplicationsReview } from "~/education/components/ApplicationsReview";
+import { ApplicationsReview, WaitlistOrder } from "~/education/components/ApplicationsReview";
 import { RosterMatrix } from "~/education/components/RosterMatrix";
 import { InstructorPicker } from "~/education/components/InstructorPicker";
 import { AddFormModal } from "~/education/components/AddFormModal";
@@ -33,6 +37,10 @@ import {
   createMaterialPage,
   moveMaterialPage,
   moveMaterialFile,
+  renameMaterialPage,
+  renameMaterialFile,
+  archiveMaterialPage,
+  archiveMaterialFile,
 } from "~/education/lib/lms.server";
 import QRCode from "qrcode";
 import {
@@ -45,7 +53,11 @@ import {
   updateAssignment,
   deleteAssignment,
 } from "~/education/lib/assignments.server";
-import { listDiscussion, postAnnouncement } from "~/education/lib/announcements.server";
+import {
+  listDiscussion,
+  postAnnouncement,
+  deleteAnnouncement,
+} from "~/education/lib/announcements.server";
 import { builtinDecisionEmail } from "~/education/lib/notifications.server";
 import {
   getAttendanceMatrix,
@@ -53,7 +65,7 @@ import {
   saveAttendance,
 } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
+import { closeOutOffering, reopenOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -84,7 +96,7 @@ import { OfferingFields, toDatetimeLocal } from "~/education/components/Offering
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { DateField } from "~/components/ui/DateField";
-import { formatDateTime, formatSessionWhen } from "~/lib/display";
+import { formatDateTime, formatDateShort, formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { InfoTip } from "~/components/ui/floating";
@@ -396,18 +408,25 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const contentIntents = [
     "decide-application",
+    "move-waitlist-entry",
     "create-page",
     "move-page",
     "move-file",
+    "rename-page",
+    "rename-file",
+    "delete-page",
+    "delete-file",
     "set-material-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
     "post-announcement",
+    "delete-announcement",
     "save-attendance",
     "set-session-check-in",
     "save-student-note",
     "close-out-offering",
+    "reopen-offering",
     "set-form-binding",
   ];
   if (contentIntents.includes(intent)) {
@@ -436,6 +455,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return { ok: true, bulkApprove: result };
       }
+      case "move-waitlist-entry": {
+        const result = await moveWaitlistEntry({
+          applicationId: String(formData.get("applicationId") ?? ""),
+          offeringId: params.offeringId!,
+          direction: formData.get("direction") === "up" ? "up" : "down",
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
       case "move-page": {
         const result = await moveMaterialPage({
           offeringId: params.offeringId!,
@@ -450,6 +478,40 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           fileId: String(formData.get("fileId") ?? ""),
           folderId: String(formData.get("folderId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "rename-page": {
+        const result = await renameMaterialPage({
+          offeringId: params.offeringId!,
+          pageId: String(formData.get("pageId") ?? ""),
+          title: String(formData.get("title") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "rename-file": {
+        const result = await renameMaterialFile({
+          offeringId: params.offeringId!,
+          fileId: String(formData.get("fileId") ?? ""),
+          title: String(formData.get("title") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-page": {
+        const result = await archiveMaterialPage({
+          offeringId: params.offeringId!,
+          pageId: String(formData.get("pageId") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-file": {
+        const result = await archiveMaterialFile({
+          offeringId: params.offeringId!,
+          fileId: String(formData.get("fileId") ?? ""),
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -541,6 +603,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "delete-announcement": {
+        // Manager-gated by the contentIntents check above, so isManager holds.
+        const result = await deleteAnnouncement({
+          postId: String(formData.get("postId") ?? ""),
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+          isManager: true,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
       case "set-form-binding": {
         const result = await setFormBinding({
           offeringId: params.offeringId!,
@@ -558,6 +630,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         const result = await closeOutOffering({
           offeringId: params.offeringId!,
           actorId: auth.user.sub,
+          // The button only appears after a confirm dialog that warns when the
+          // course hasn't finished, so an operator reaching here has consciously
+          // chosen to close out — let the intentional early close-out through.
+          allowEarly: formData.get("allowEarly") === "true",
         });
         if ("error" in result) return fail(result);
         return {
@@ -568,6 +644,14 @@ export async function action({ request, params }: Route.ActionArgs) {
             ineligible: result.ineligible,
           },
         };
+      }
+      case "reopen-offering": {
+        const result = await reopenOffering({
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        if ("error" in result) return fail(result);
+        return { ok: true, reopened: true };
       }
       case "save-student-note": {
         const applicationId = String(formData.get("applicationId") ?? "");
@@ -680,6 +764,7 @@ export default function ManageOffering() {
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
     closeOutPreview?: { eligible: string[]; belowThreshold: string[]; alreadyIssued: number } | null;
+    reopened?: boolean;
     bulkApprove?: { approved: number; skipped: number };
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -706,6 +791,25 @@ export default function ManageOffering() {
             { to: "Archived", label: "Archive", variant: "destructive" },
           ]
         : [{ to: "Published", label: "Re-publish", variant: "secondary" }];
+
+  // Close-out completes the course (issues certificates, emails students). If it
+  // hasn't finished running yet, warn hard in the confirm dialog before letting
+  // an operator proceed — closing early is what strands an offering in the "Past
+  // offerings" bucket before it ever happens.
+  const hasEnded =
+    offering.endsAt != null && new Date(offering.endsAt).getTime() < Date.now();
+  const closeOutConfirm = hasEnded
+    ? {
+        title: "Close out this course?",
+        description:
+          "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
+        confirmLabel: "Close out",
+      }
+    : {
+        title: "Close out before it's finished?",
+        description: `This course ${offering.endsAt ? `runs until ${formatDateShort(offering.endsAt, tz)} and ` : ""}hasn't finished yet. Closing out now issues certificates to everyone who has already met the attendance threshold and emails them — anyone still to attend is left out, and it moves to Past offerings. You can reopen it afterward.`,
+        confirmLabel: "Close out anyway",
+      };
 
   // Per-session rollups so the Sessions tab connects to the rest of the offering
   // (attendance, materials, assignments) instead of being a bare date list.
@@ -758,16 +862,27 @@ export default function ManageOffering() {
           >
             View as student
           </Link>
-          <Form
-            method="post"
-            onSubmit={confirmSubmit({
-              title: "Close out this course?",
-              description:
-                "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
-              confirmLabel: "Close out",
-            })}
-          >
+          {offering.closedOutAt && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Reopen this course?",
+                description:
+                  "This clears the close-out so the course leaves Past offerings and can be edited and closed out again later. Certificates already issued stay valid.",
+                confirmLabel: "Reopen",
+              })}
+            >
+              <input type="hidden" name="intent" value="reopen-offering" />
+              <Button type="submit" variant="ghost" size="sm">
+                Reopen
+              </Button>
+            </Form>
+          )}
+          <Form method="post" onSubmit={confirmSubmit(closeOutConfirm)}>
             <input type="hidden" name="intent" value="close-out-offering" />
+            {/* The confirm dialog above warns when the course hasn't finished, so
+                a submit that reaches the action is a deliberate close-out. */}
+            <input type="hidden" name="allowEarly" value="true" />
             <Button type="submit" variant="secondary" size="sm">
               {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
             </Button>
@@ -798,6 +913,11 @@ export default function ManageOffering() {
           {actionData.closeOut.ineligible > 0 &&
             `, ${actionData.closeOut.ineligible} below the attendance threshold`}
           .
+        </p>
+      )}
+      {actionData?.reopened && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Course reopened — it's back in the active catalog and can be edited.
         </p>
       )}
       {actionData?.closeOutPreview && (
@@ -1490,6 +1610,10 @@ export default function ManageOffering() {
                   </Form>
                 )}
               </div>
+              {(appCounts["Waitlisted"] ?? 0) > 0 &&
+                (appFilter === "all" || appFilter === "Waitlisted") && (
+                  <WaitlistOrder applications={applications} />
+                )}
               <ApplicationsReview
                 applications={filteredApps}
                 statusChip={(status) => <MyStatusChip status={status as never} />}

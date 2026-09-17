@@ -6,7 +6,6 @@ import { useOsShellRoot } from '~/lib/os-shell'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
-import { useShowTablessHistoryNav } from '~/components/TablessHistoryNav'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
@@ -34,6 +33,7 @@ import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
 import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
+import { educationPortalTwin } from '~/education/lib/portal-twin'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -98,12 +98,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Non-member gate: a Dartmouth account with no DALIMember row (e.g. an
   // external instructor) never gets the full member shell. They may only reach
   // education management inside it — every other member-shell path sends them
-  // back to their /portal home. Members and Core are unaffected. Keyed on the
-  // DALIMember row (isLabMember), not auth type, so a NetID-native member is
-  // never misfiled here. Partners/applicants were already redirected above.
+  // back to their /portal home, with the education browsing surfaces mapped to
+  // their /portal/education twin so a deep link keeps its offering. Members and
+  // Core are unaffected. Keyed on the DALIMember row (isLabMember), not auth
+  // type, so a NetID-native member is never misfiled here. Partners/applicants
+  // were already redirected above.
   const instructorChrome = !isLabMember
-  if (instructorChrome && !new URL(request.url).pathname.startsWith('/education/manage')) {
-    return redirect('/portal')
+  if (instructorChrome) {
+    const url = new URL(request.url)
+    const twin = educationPortalTwin(url.pathname)
+    if (twin) return redirect(twin + url.search)
+    if (!url.pathname.startsWith('/education/manage')) return redirect('/portal')
   }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement
@@ -313,16 +318,12 @@ export default function AppLayoutRoute() {
   const flushPane = matches.some(
     (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
   )
+  // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
+  const bleedPane = matches.some(
+    (m) => (m as { handle?: { bleedPane?: boolean } }).handle?.bleedPane,
+  )
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
-  // On tabless desktop a page with no subnav row gets the standalone
-  // history-arrow bar, and that bar carries the Guide CTA so both sit on one
-  // row — so the breadcrumb-row copy stands down, or the page shows two.
-  // Mirrors Layout's `!ownsSubnavRow && <TablessHistoryNav />`; the redesign
-  // check matters because LayoutClassic renders no such bar to move it into.
-  const showTablessHistoryNav = useShowTablessHistoryNav()
-  const guideOnHistoryRow = showTablessHistoryNav && !hasAreaSubnav
-
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
   // new favorite reaches the header without a reload.
@@ -473,9 +474,11 @@ export default function AppLayoutRoute() {
         // same gutter every other page gets. `flushPane` pages (calendar) fill
         // the pane instead — large side/bottom gutters left a floating box and
         // a page scrollbar.
-        flushPane
-          ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-          : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
+        bleedPane
+          ? ''
+          : flushPane
+            ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
+            : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
       )}
     >
       {!hideBreadcrumbRow && (
@@ -488,7 +491,7 @@ export default function AppLayoutRoute() {
           <Breadcrumbs />
           {/* Under the dali.os shell the top bar carries the Guide, and
               ShellGuideProvider stands this copy down for it. */}
-          {!guideOnHistoryRow && <PageDocButton suppressWhenPills />}
+          <PageDocButton suppressWhenPills />
         </div>
       )}
       <div className={cn(fitViewport && 'flex min-h-0 min-w-0 flex-1 flex-col')}>

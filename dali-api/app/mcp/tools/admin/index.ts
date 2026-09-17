@@ -13,6 +13,26 @@ import { MANAGE_FEATURE_FLAG_TOOL, runManageFeatureFlag } from "./manage-feature
 import { LIST_EMAIL_SENDERS_TOOL, runListEmailSenders } from "./list-email-senders";
 import { LIST_EMAIL_TEMPLATES_TOOL, runListEmailTemplates } from "./list-email-templates";
 import { MANAGE_EMAIL_TEMPLATE_TOOL, runManageEmailTemplate } from "./manage-email-template";
+import { LIST_ANNOUNCEMENTS_TOOL, runListAnnouncements } from "./list-announcements";
+import {
+  MANAGE_EMAIL_SENDER_TOOL,
+  runManageEmailSender,
+} from "./manage-email-sender";
+import {
+  LIST_OUTBOUND_MESSAGES_TOOL,
+  runListOutboundMessages,
+} from "./list-outbound-messages";
+import {
+  MANAGE_OUTBOUND_MESSAGE_TOOL,
+  runManageOutboundMessage,
+} from "./manage-outbound-message";
+import { MANAGE_ACTIVITY_TOOL, runManageActivity } from "./manage-activity";
+import { LIST_AI_USAGE_TOOL, runListAiUsage } from "./list-ai-usage";
+import {
+  GET_ATTENDANCE_OVERVIEW_TOOL,
+  runGetAttendanceOverview,
+} from "./get-attendance-overview";
+import { LIST_INFRASTRUCTURE_TOOL, runListInfrastructure } from "./list-infrastructure";
 
 export const ADMIN_TOOLS: McpTool[] = [
   {
@@ -61,5 +81,43 @@ export const ADMIN_TOOLS: McpTool[] = [
     def: MANAGE_EMAIL_TEMPLATE_TOOL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     run: (ctx, args) => runManageEmailTemplate(ctx, args as any),
+  },
+  {
+    def: LIST_ANNOUNCEMENTS_TOOL,
+    run: (ctx) => runListAnnouncements(ctx),
+  },
+  {
+    def: MANAGE_EMAIL_SENDER_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runManageEmailSender(ctx, args as any),
+  },
+  {
+    def: LIST_OUTBOUND_MESSAGES_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runListOutboundMessages(ctx, args as any),
+  },
+  {
+    def: MANAGE_OUTBOUND_MESSAGE_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runManageOutboundMessage(ctx, args as any),
+  },
+  {
+    def: MANAGE_ACTIVITY_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runManageActivity(ctx, args as any),
+  },
+  {
+    def: LIST_AI_USAGE_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runListAiUsage(ctx, args as any),
+  },
+  {
+    def: GET_ATTENDANCE_OVERVIEW_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runGetAttendanceOverview(ctx, args as any),
+  },
+  {
+    def: LIST_INFRASTRUCTURE_TOOL,
+    run: (ctx) => runListInfrastructure(ctx),
   },
 ];

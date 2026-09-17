@@ -8,7 +8,9 @@ import { listCatalog, listMyApplications } from "~/education/lib/offerings.serve
 import { getStudentDashboard } from "~/education/lib/lms.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
+import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Link } from "react-router";
 
@@ -48,6 +50,7 @@ const APPLICATION_STATUS_STYLE: Record<string, string> = {
 export default function EducationCatalog() {
   const { offerings, myApplications, ceStanding, dashboard, canManage, isCore } =
     useLoaderData<typeof loader>();
+  const redesign = useFeatureFlag("education-redesign-v2");
   const tz = useUserTimeZone();
   const now = Date.now();
   const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date | null }) =>
@@ -104,51 +107,57 @@ export default function EducationCatalog() {
         }}
       />
 
-      <section>
-        {dashboard.myCourses.some((c) => !c.isPast) && (
-          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            Open &amp; upcoming
-          </h2>
-        )}
-        {upcoming.length === 0 ? (
-          <div className="bg-card border border-border rounded-lg p-8 text-center">
-            <p className="font-heading font-semibold text-foreground">
-              Nothing open right now
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Upcoming miniseries and workshops will show up here.
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {upcoming.map((o) => (
-              <OfferingCard
-                key={o.id}
-                offering={o}
-                myStatus={o.myStatus}
-                to={`/education/${o.id}`}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {redesign ? (
+        <OfferingCatalog offerings={offerings} to={(id) => `/education/${id}`} />
+      ) : (
+        <>
+          <section>
+            {dashboard.myCourses.some((c) => !c.isPast) && (
+              <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Open &amp; upcoming
+              </h2>
+            )}
+            {upcoming.length === 0 ? (
+              <div className="bg-card border border-border rounded-lg p-8 text-center">
+                <p className="font-heading font-semibold text-foreground">
+                  Nothing open right now
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Upcoming miniseries and workshops will show up here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {upcoming.map((o) => (
+                  <OfferingCard
+                    key={o.id}
+                    offering={o}
+                    myStatus={o.myStatus}
+                    to={`/education/${o.id}`}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
 
-      {past.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Past offerings ({past.length})
-          </summary>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 opacity-80">
-            {past.map((o) => (
-              <OfferingCard
-                key={o.id}
-                offering={o}
-                myStatus={o.myStatus}
-                to={`/education/${o.id}`}
-              />
-            ))}
-          </div>
-        </details>
+          {past.length > 0 && (
+            <details className="group">
+              <summary className="cursor-pointer font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Past offerings ({past.length})
+              </summary>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 opacity-80">
+                {past.map((o) => (
+                  <OfferingCard
+                    key={o.id}
+                    offering={o}
+                    myStatus={o.myStatus}
+                    to={`/education/${o.id}`}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
+        </>
       )}
 
       {myApplications.length > 0 && (

@@ -5,9 +5,10 @@ import {
   redirect,
   useLoaderData,
   useNavigate,
+  useRevalidator,
   useSearchParams,
 } from "react-router";
-import { LayoutTemplate } from "lucide-react";
+import { LayoutTemplate, PencilLine } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -20,17 +21,25 @@ import {
 } from "../lib/visibility";
 import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
-import { MentorGrid } from "../components/MentorGrid";
+import { MentorGrid, type MentorGridEdit } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Select } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useDialog } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
 import {
   buildGrid,
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
+import {
+  AddPairForm,
+  memberName,
+  usePairMutations,
+  useRoster,
+} from "../components/pair-editing";
 import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
@@ -105,7 +114,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     status: pickFilter(url.searchParams.get("status")),
   };
 
-  // Scope non-Core viewers to their own notes/pairs + own-domain mentee data.
+  // Every lab mentor sees all pairs/notes lab-wide (Core included); the scope
+  // helpers only narrow a caller who isn't a mentor at all.
   const [pairScope, noteScope] = await Promise.all([
     mentorshipPairWhere(auth.user.sub),
     mentorNoteWhere(auth.user.sub),
@@ -233,6 +243,13 @@ export default function MentorshipBrowse() {
   const [query, setQuery] = useState(data.filters.query);
   const restored = useRef(false);
 
+  // Core-only manual pair editing, behind the mentorship-manage flag.
+  const manageFlag = useFeatureFlag("mentorship-manage");
+  const canManage = data.isCore && manageFlag;
+  const [editing, setEditing] = useState(false);
+  const revalidator = useRevalidator();
+  const dialog = useDialog();
+
   // `q` only enters the URL on Apply / Clear / a deep link, so re-syncing on
   // its value can't fight the keystrokes it isn't recording.
   useEffect(() => setQuery(data.filters.query), [data.filters.query]);
@@ -241,6 +258,45 @@ export default function MentorshipBrowse() {
     () => searchGrid(data.grid.mentors, query),
     [data.grid.mentors, query],
   );
+
+  // Add & reassign need the project's roster, which we only fetch when a single
+  // project + term is pinned; remove works on any visible row.
+  const editProject =
+    canManage && data.filters.projectId && data.filters.termId
+      ? { projectId: data.filters.projectId, termId: data.filters.termId }
+      : null;
+  const { roster } = useRoster(
+    editProject?.projectId ?? null,
+    editProject?.termId ?? null,
+    editing,
+  );
+  const { addPair, reassign, removePair, busy } = usePairMutations(() =>
+    revalidator.revalidate(),
+  );
+
+  const gridEdit: MentorGridEdit | undefined =
+    editing && canManage
+      ? {
+          busy,
+          mentorOptionsFor: (row) =>
+            roster.members
+              .filter((m) => m.domainId === row.domainId)
+              .map((m) => ({ value: m.id, label: `${memberName(m)} · ${m.level}` })),
+          onReassign: (row, mentorUserId) => reassign(row.pairId, mentorUserId),
+          onRemove: async (row) => {
+            const name = `${row.mentee.firstName} ${row.mentee.lastName}`.trim();
+            if (
+              await dialog.confirm({
+                title: "Remove pairing?",
+                description: `Remove ${name} from this mentor? This deletes the pairing but keeps any notes already written.`,
+                tone: "destructive",
+              })
+            ) {
+              removePair(row.pairId);
+            }
+          },
+        }
+      : undefined;
 
   // Remember the last-applied filter query and restore it on a fresh visit (no
   // filter params). Running once guards against clobbering an explicit "Clear".
@@ -270,6 +326,20 @@ export default function MentorshipBrowse() {
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              aria-pressed={editing}
+              className={editing ? "os-btn-primary" : "os-edit-btn"}
+            >
+              <PencilLine
+                className={cn("w-4 h-4", editing ? "" : "text-os-grey")}
+                aria-hidden
+              />
+              {editing ? "Done editing" : "Edit pairs"}
+            </button>
+          )}
           {data.isCore && (
             <button
               type="button"
@@ -366,6 +436,23 @@ export default function MentorshipBrowse() {
         </div>
       </Form>
 
+      {editing &&
+        canManage &&
+        (editProject ? (
+          <AddPairForm
+            projectId={editProject.projectId}
+            termId={editProject.termId}
+            roster={roster}
+            busy={busy}
+            onAdd={addPair}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Filter by a single <strong>Project</strong> (with a term) to add or
+            reassign pairs. You can still remove pairs on any row below.
+          </p>
+        ))}
+
       {!data.grid.termSelected ? (
         <EmptyState>Pick a term to see the weekly mentorship grid.</EmptyState>
       ) : groups.length === 0 ? (
@@ -383,6 +470,7 @@ export default function MentorshipBrowse() {
             currentWeek={data.grid.currentWeek}
             termId={data.filters.termId}
             highlightMissing={data.isCore}
+            edit={gridEdit}
           />
         ))
       )}

@@ -1,12 +1,9 @@
-import { useLoaderData, Link, Form } from "react-router";
+import { redirect, useLoaderData, Link, Form } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { withdrawApplication } from "~/education/lib/decisions.server";
-import {
-  isOfferingManager,
-  redirectDartmouthToPortal,
-} from "~/education/lib/access.server";
+import { isOfferingManager } from "~/education/lib/access.server";
 import {
   getOfferingDetail,
   registrationOpen,
@@ -37,13 +34,18 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectDartmouthToPortal(auth);
-  if (portalRedirect) return portalRedirect;
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering) throw new Response("Not found", { status: 404 });
 
   const isManager = await isOfferingManager(auth.user.sub, offering.id);
+  // Dartmouth students belong on the portal mirror — but a Dartmouth-auth
+  // instructor (or Core) manages this offering from the member shell, so bounce
+  // only non-managers instead of every CAS user.
+  if (auth.user.type === "dartmouth" && !isManager) {
+    return redirect("/portal/education");
+  }
+
   // Draft/Archived offerings are manager-only surfaces.
   if (offering.status !== "Published" && !isManager) {
     throw new Response("Not found", { status: 404 });

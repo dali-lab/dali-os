@@ -32,6 +32,12 @@ struct NotifResp {
     items: Vec<NotifItem>,
     #[serde(rename = "unreadCount", default)]
     unread_count: i64,
+    // Rows that left the feed unread because they went stale (a "Starting
+    // soon" reminder past its meeting, an invite to a cancelled one). They
+    // never come back with readAt set, so the server names them explicitly.
+    // Absent on older servers → nothing extra to retire.
+    #[serde(rename = "retiredIds", default)]
+    retired_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -165,15 +171,19 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
         notify::raise(app, banner);
     }
 
-    // Rows read elsewhere (web, another device, a banner action) come back
-    // with readAt set — drop their delivered banners from Notification Center.
-    let read_ids: Vec<String> = body
+    // Retire delivered banners two ways. Rows read elsewhere (web, another
+    // device, a banner action) come back with readAt set. Rows that went stale
+    // instead of being read drop out of the feed entirely, so the server lists
+    // them separately — without that, a "Starting soon" banner would sit in
+    // Notification Center long after the meeting ended.
+    let stale_ids: Vec<String> = body
         .items
         .iter()
         .filter(|i| i.read_at.is_some())
         .map(|i| i.id.clone())
+        .chain(body.retired_ids.iter().cloned())
         .collect();
-    notify::clear_delivered(&read_ids);
+    notify::clear_delivered(&stale_ids);
 
     // Tray menu: latest unread, urgent bumped to the top (stable sort keeps
     // feed order within each group).

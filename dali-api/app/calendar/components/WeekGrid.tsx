@@ -3,14 +3,20 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink,
+  Check, HelpCircle, X, Video, ExternalLink, Clock,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
-import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { DateField } from "~/components/ui/DateField";
+import { TimeField } from "~/components/ui/TimeField";
+import { useToast } from "~/components/ui/toast";
 import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
-import { isPayPeriodEnd } from "~/lib/pay-period";
+import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
+import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -147,13 +153,39 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
  * meeting goes through its invite endpoint, which pushes the answer on with
  * the organizer's link. Either way the next read shows what Google holds.
  */
-export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
+export function EventRsvpControl({
+  rsvp,
+  meetingId,
+  eventStartIso,
+}: {
+  rsvp: EventRsvpTarget;
+  /** When set (DALI meeting, viewer is invitee), shows "Propose new time". */
+  meetingId?: string;
+  /** ISO string of the event's current start, used to prefill the picker. */
+  eventStartIso?: string;
+}) {
   const fetcher = useFetcher<{ error?: string }>();
   const revalidator = useRevalidator();
+  const toast = useToast();
   // The notification route is a plain endpoint, not this page's action, so its
   // in-flight state is tracked here rather than by a fetcher.
   const [sending, setSending] = useState<RsvpResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [proposeDate, setProposeDate] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+  const [proposeTime, setProposeTime] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
+  const [proposing, setProposing] = useState(false);
 
   // Revalidation lands a beat after the write, so show the answer being sent —
   // otherwise the pressed button visibly snaps back before settling.
@@ -202,6 +234,33 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
     }
   }
 
+  async function submitProposal() {
+    if (!meetingId || !proposeDate || !proposeTime) return;
+    const proposedStart = new Date(`${proposeDate}T${proposeTime}`).toISOString();
+    setProposing(true);
+    try {
+      const res = await fetch(`/api/scheduled-meetings/${meetingId}/propose-time`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposedStart }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Failed to propose time");
+        return;
+      }
+      toast.success("Time proposed — the organizer will be notified");
+      setProposeOpen(false);
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  const showPropose = meetingId && rsvp.via === "notification";
+
   return (
     <DetailSection label="Going?">
       <div className="flex flex-wrap gap-1.5">
@@ -232,6 +291,52 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
       {(error ?? fetcher.data?.error) && (
         <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
       )}
+      {showPropose && (
+        <button
+          type="button"
+          onClick={() => setProposeOpen(true)}
+          className="mt-2 inline-flex items-center gap-1 text-[13px] text-os-accent hover:underline"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          Propose new time
+        </button>
+      )}
+      {proposeOpen && meetingId && (
+        <Modal open labelledBy="propose-time-title" onClose={() => setProposeOpen(false)}>
+          <ModalHeader
+            titleId="propose-time-title"
+            title="Propose a new time"
+            onClose={() => setProposeOpen(false)}
+          />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Date</label>
+              <DateField
+                mode="date"
+                value={proposeDate}
+                onChange={setProposeDate}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Time</label>
+              <TimeField
+                value={proposeTime}
+                onChange={setProposeTime}
+              />
+            </div>
+          </div>
+          <ModalFooter onCancel={() => setProposeOpen(false)}>
+            <button
+              type="button"
+              disabled={proposing || !proposeDate || !proposeTime}
+              onClick={submitProposal}
+              className="os-btn-primary disabled:opacity-60"
+            >
+              {proposing ? "Proposing…" : "Propose time"}
+            </button>
+          </ModalFooter>
+        </Modal>
+      )}
     </DetailSection>
   );
 }
@@ -248,6 +353,8 @@ export function CalendarEventDetailPopover({
   attendees,
   links,
   rsvp,
+  meetingId,
+  eventStartIso,
   onClose,
   footer,
 }: {
@@ -264,6 +371,10 @@ export function CalendarEventDetailPopover({
   links?: EventLinkDTO[];
   /** The viewer's own answer, when they're a guest — renders the RSVP control. */
   rsvp?: EventRsvpTarget;
+  /** DALI meeting id — enables "Propose new time" for invitees. */
+  meetingId?: string;
+  /** ISO start of the event, prefills the propose-time picker. */
+  eventStartIso?: string;
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -414,7 +525,7 @@ export function CalendarEventDetailPopover({
           </DetailSection>
         )}
 
-        {rsvp && <EventRsvpControl rsvp={rsvp} />}
+        {rsvp && <EventRsvpControl rsvp={rsvp} meetingId={meetingId} eventStartIso={eventStartIso} />}
 
         {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
 
@@ -479,7 +590,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
-      <Checkbox
+      <Toggle
         checked={onTimesheet}
         disabled={timesheetFetcher.state !== "idle"}
         onChange={(ev) =>
@@ -499,7 +610,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
       )}
       {meeting.canMarkCoreMeeting && (
         <>
-          <Checkbox
+          <Toggle
             checked={isCoreMeeting}
             disabled={coreFetcher.state !== "idle"}
             onChange={(ev) =>
@@ -570,6 +681,7 @@ export function WeekGridEvent({
   e,
   lane,
   dayIdx,
+  dayDateUtc,
   hitTestDay,
 }: {
   e: EventBlock;
@@ -577,6 +689,7 @@ export function WeekGridEvent({
   // This event's day column, and a hit-test to resolve a pointer X → day index,
   // so a body-move drag can cross columns to another date.
   dayIdx?: number;
+  dayDateUtc?: Date;
   hitTestDay?: (clientX: number) => number | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -591,6 +704,16 @@ export function WeekGridEvent({
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
+  // ISO start for the propose-time flow — built from the day date + fractional startHour.
+  const eventStartIso = dayDateUtc
+    ? (() => {
+        const d = new Date(dayDateUtc);
+        const wholeHour = Math.floor(e.startHour);
+        const minutes = Math.round((e.startHour - wholeHour) * 60);
+        d.setUTCHours(wholeHour, minutes, 0, 0);
+        return d.toISOString();
+      })()
+    : undefined;
   const isMeeting = Boolean(e.meeting);
   // An answered invite says so on the block itself, in place of the location —
   // "Pending" is what every unanswered invite says, so it earns no room.
@@ -925,6 +1048,8 @@ export function WeekGridEvent({
           attendees={e.attendees}
           links={e.links}
           rsvp={e.rsvp}
+          meetingId={e.meeting?.meetingId}
+          eventStartIso={eventStartIso}
           onClose={() => {
             setConfirmDelete(false);
             setDetailOpen(false);
@@ -941,18 +1066,35 @@ export function WeekGridEvent({
                       to={`/calendar/meeting/${e.meeting.meetingId}`}
                       className={popoverActionBtn}
                     >
-                      <Users className="h-3.5 w-3.5 text-os-grey" /> Details &amp; attendance
+                      <Users className="h-3.5 w-3.5 text-os-grey" /> Attendance
                     </Link>
-                    {e.meeting.notePageId && (
+                    {e.meeting.notePageId ? (
                       <Link
                         to={`/documents/${e.meeting.notePageId}`}
                         className={popoverActionBtn}
                       >
-                        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting notes
+                        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
                       </Link>
-                    )}
+                    ) : e.meeting.canAddNote ? (
+                      <AddMeetingNoteButton
+                        meetingId={e.meeting.meetingId}
+                        isCoreMeeting={e.meeting.isCoreMeeting}
+                        actionPath={e.meeting.actionPath}
+                        className={popoverActionBtn}
+                      />
+                    ) : null}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
+                </div>
+              )}
+              {!e.meeting && e.trackable && (
+                // An external event with nothing behind it yet. Tracking it is
+                // what gives the popover the note + attendance row above.
+                <div
+                  className="mt-3.5 border-t border-os-container pt-3"
+                  onPointerDown={(ev) => ev.stopPropagation()}
+                >
+                  <TrackEventButton trackable={e.trackable} className={popoverActionBtn} />
                 </div>
               )}
               {(e.onEdit || e.onDuplicate || e.onDelete) && (
@@ -1068,8 +1210,9 @@ export function WeekGrid({
   showSubHourGrid = false,
   clean = false,
   timezone,
-  markPayPeriodEnds = false,
+  markPayPeriodBounds = false,
   fillAndScroll = false,
+  stickyHeader = false,
   allDayByDay,
   clickDurationHours,
 }: {
@@ -1099,15 +1242,22 @@ export function WeekGrid({
   // When set, the column matching "today" in this timezone is highlighted and a
   // horizontal current-time line is drawn in it.
   timezone?: string;
-  // Timesheet only: draw a boundary on the last day of each pay period, so it's
-  // visible where hours stop accruing to one period and start on the next.
+  // Timesheet only: mark the first and last day of each pay period, so it's
+  // visible where hours start accruing to one period and where they stop.
   // Availability has no payroll meaning, so it doesn't ask for this.
-  markPayPeriodEnds?: boolean;
+  markPayPeriodBounds?: boolean;
   // Fill the parent's bounded height and scroll internally (24h stays fully
   // reachable) instead of rendering a fixed 24h block clipped at midnight.
   // Also makes the day-header row + hour axis sticky. Availability opts in;
   // Schedule/Timesheet keep the page-flow layout.
   fillAndScroll?: boolean;
+  // Pin the weekday-header row to the top of the nearest scrollport via CSS
+  // `sticky`, for callers that place the whole grid inside their own scroll
+  // container (the availability preview scrolls the grid, not the page). This is
+  // the complement to fillAndScroll: there the header sits outside an internal
+  // scrollport, so it needs no sticky; here it lives inside the caller's one.
+  // Inert when there's no scrolling ancestor, so it's safe to leave on.
+  stickyHeader?: boolean;
   // Optional all-day events band. Keyed by day-column index (matching
   // eventsByDay). Only rendered when at least one day has events.
   allDayByDay?: Record<number, AllDayBlock[]>;
@@ -1381,7 +1531,11 @@ export function WeekGrid({
         view in fillAndScroll mode — no sticky needed. Same scrollbar-width
         reservation as the band so its columns line up with the grid's. */}
     <div
-      className="flex border-x border-t border-border rounded-t-md bg-card select-none"
+      className={`flex border-x border-t border-border rounded-t-md bg-card select-none ${
+        // z-40 clears the grid's z-30 event/selection blocks so they scroll
+        // under the (opaque) header rather than over it.
+        stickyHeader ? "sticky top-0 z-40" : ""
+      }`}
       style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
     >
       {/* Left gutter — matches the hour-axis width */}
@@ -1396,18 +1550,34 @@ export function WeekGrid({
       </div>
       {days.map((d, idx) => {
         const isToday = idx === todayIdx;
-        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
+        const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+        const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
         return (
           <div
             key={idx}
-            className={`flex-1 min-w-0 flex flex-col items-center justify-center border-r last:border-r-0 border-b ${
+            className={`flex-1 min-w-0 flex flex-col items-center justify-center border-b ${
               showProviderRow ? "h-20" : "h-12"
             } ${
-              periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
-            } ${isToday ? "bg-accent-coral/10" : periodEnd ? "bg-accent-teal/10" : ""}`}
+              periodEnd
+                ? // No last:border-r-0 here — periods end on a Saturday, which is
+                  // the week's last column, and the edge has to survive there.
+                  "border-r-2 border-r-accent-teal"
+                : "border-r last:border-r-0 border-border"
+            } ${periodStart ? "border-l-2 border-l-accent-teal" : ""} ${
+              isToday ? "bg-accent-coral/10" : periodStart || periodEnd ? "bg-accent-teal/10" : ""
+            }`}
           >
             <div className={`mb-0.5 text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
             <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
+            {periodStart && !showProviderRow && (
+              <Tooltip content="First day of this pay period" placement="bottom">
+                <span
+                  className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
+                >
+                  Pay starts
+                </span>
+              </Tooltip>
+            )}
             {periodEnd && !showProviderRow && (
               <Tooltip content="Last day of this pay period" placement="bottom">
                 <span
@@ -1444,14 +1614,19 @@ export function WeekGrid({
           </span>
         </div>
         {/* One cell per day column */}
-        {days.map((_d, idx) => {
+        {days.map((d, idx) => {
           const blocks = allDayByDay?.[idx] ?? [];
+          // Same period edges as the header and grid, so the columns line up.
+          const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+          const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
           const visible = blocks.slice(0, 3);
           const overflow = blocks.length - visible.length;
           return (
             <div
               key={idx}
-              className="flex-1 min-w-0 border-r last:border-r-0 border-border py-0.5 px-0.5 flex flex-col gap-0.5"
+              className={`flex-1 min-w-0 py-0.5 px-0.5 flex flex-col gap-0.5 ${
+                periodEnd ? "border-r-2 border-r-accent-teal" : "border-r last:border-r-0 border-border"
+              } ${periodStart ? "border-l-2 border-l-accent-teal" : ""}`}
             >
               {visible.map((block, bi) => {
                 const hasColor = Boolean(block.color);
@@ -1511,16 +1686,17 @@ export function WeekGrid({
       {/* Day columns */}
       {days.map((d, idx) => {
         const isToday = idx === todayIdx;
-        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
+        const periodStart = markPayPeriodBounds && isPayPeriodStart(d.dateUtc);
+        const periodEnd = markPayPeriodBounds && isPayPeriodEnd(d.dateUtc);
         return (
         <div
           key={idx}
-          className={`flex-1 min-w-0 border-r last:border-r-0 flex flex-col ${
-            // A solid accent edge on the period's last column, rather than a
-            // badge: the boundary is between this day and the next, so it wants
-            // to be drawn on the seam.
-            periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
-          }`}
+          className={`flex-1 min-w-0 flex flex-col ${
+            // A solid accent edge on the period's first and last columns, rather
+            // than a badge: each boundary sits on a seam between two days, so it
+            // wants to be drawn there.
+            periodEnd ? "border-r-2 border-r-accent-teal" : "border-r last:border-r-0 border-border"
+          } ${periodStart ? "border-l-2 border-l-accent-teal" : ""}`}
         >
           <div
             ref={(el) => {
@@ -1670,7 +1846,7 @@ export function WeekGrid({
               const dayEvents = eventsByDay[idx] ?? [];
               const eventLanes = computeEventLanes(dayEvents);
               return dayEvents.map((e, i) => (
-                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} hitTestDay={hitTestDay} />
+                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} dayDateUtc={d.dateUtc} hitTestDay={hitTestDay} />
               ));
             })()}
             {overlayLayer?.(idx)}

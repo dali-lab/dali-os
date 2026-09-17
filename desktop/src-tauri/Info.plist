@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the generated bundle Info.plist by tauri-bundler (any key here
+     is additive; don't restate tauri-managed keys like CFBundleVersion). -->
+<plist version="1.0">
+<dict>
+	<!-- WKWebView withholds navigator.mediaDevices entirely unless the host app
+	     declares a camera usage string — without this the wallet-pass check-in
+	     scanner (AttendeeScanner, dali-api) reports "needs a secure connection"
+	     because getUserMedia is undefined, not because the origin is insecure.
+	     Shown by macOS the first time the scanner asks for the camera. -->
+	<key>NSCameraUsageDescription</key>
+	<string>DALI OS uses the camera to scan membership wallet passes for event check-in.</string>
+</dict>
+</plist>

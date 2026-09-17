@@ -76,15 +76,19 @@ pub fn run() {
             // by watching the first navigation.
             if keychain::get_token().is_some() {
                 app.state::<AppState>().set_auth(AuthState::Authenticated);
-                window::show_main(&handle);
+                // Splash → app, or the offline page if the origin is unreachable
+                // (rather than a blank webview on a cold start with no network).
+                window::start_main(&handle);
                 poller::spawn(handle.clone());
             } else {
                 app.state::<AppState>().set_auth(AuthState::Unpaired);
                 window::show_pairing(&handle);
             }
 
-            // Check for a newer signed release at launch (silent if up to date).
-            tauri::async_runtime::spawn(updater::check_on_launch(handle.clone()));
+            // Check for a newer signed release at launch and once a day after
+            // (silent if up to date). Tray-resident installs rarely relaunch, so
+            // a launch-only check would strand them on an old build.
+            tauri::async_runtime::spawn(updater::run_periodic(handle.clone()));
 
             Ok(())
         })

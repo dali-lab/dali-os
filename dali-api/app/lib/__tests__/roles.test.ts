@@ -15,6 +15,7 @@ import {
   isCore,
   isLabMember,
   isProjectMember,
+  currentTermMemberWhere,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -425,5 +426,35 @@ describe("request-scoped memoization", () => {
     await isLabMember("u");
     await isLabMember("u");
     expect(mockPrisma.dALIMember.findUnique).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The predicate every directory/picker endpoint builds on. It used to stand on
+// the term clause alone, which does not exclude alumni: assignment rows are
+// never deleted, so a member who graduates mid-term still matches the current
+// term — and with no current term the clause disappears and every alumnus the
+// lab ever had matches.
+describe("currentTermMemberWhere (directory + picker scope)", () => {
+  it("requires a current membership status alongside the term activity", async () => {
+    mockPrisma.term.findFirst.mockResolvedValue({ id: "term-1", sortKey: 262 });
+
+    expect(await currentTermMemberWhere()).toEqual({
+      daliMember: { isNot: null },
+      membershipStatus: "Active",
+      OR: [
+        { coreAssignments: { some: { termId: "term-1" } } },
+        { projectAssignments: { some: { termId: "term-1" } } },
+      ],
+    });
+  });
+
+  it("still excludes alumni when there is no current term to scope by", async () => {
+    mockPrisma.term.findFirst.mockResolvedValue(null);
+
+    const where = await currentTermMemberWhere();
+    expect(where).toEqual({
+      daliMember: { isNot: null },
+      membershipStatus: "Active",
+    });
   });
 });

@@ -289,6 +289,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Everything on this calendar is here *because* it's a Core meeting, so
       // clearing the flag from here would delete the block you clicked.
       canMarkCoreMeeting: false,
+      // This page is Core-gated, so every viewer may add a note (the organizer
+      // and Core are exactly who attachMeetingNote allows).
+      canAddNote: true,
+      canInvite: true,
+      guestEditOnly: false,
+      hideGuestList: false,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",
     };

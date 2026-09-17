@@ -223,17 +223,23 @@ describe("get_mentor_note", () => {
     expect(out.vibe).toBeNull();
   });
 
-  it("forbids a lab mentor who is not the author and not in the same domain", async () => {
-    // Different mentor, different domain.
+  it("lets any lab mentor read a note they didn't author, even in another domain", async () => {
+    // Different mentor, different domain — all lab mentors can now see it.
     mockPrisma.mentorNote.findUnique.mockResolvedValue({
       ...BASE_NOTE,
       mentorId: "other-mentor",
       domainId: "dom-99",
     });
-    // Caller mentors only dom-1
-    mockPrisma.mentorshipPair.findMany.mockResolvedValue([{ domainId: "dom-1" }]);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "proj-1", name: "DALI OS" });
+    mockPrisma.term.findUnique.mockResolvedValue({ id: "term-1", code: "26S" });
+    mockPrisma.domain.findUnique.mockResolvedValue({
+      id: "dom-99",
+      code: "ML",
+      displayName: "Machine Learning",
+    });
 
-    await expect(runGetMentorNote(ME, { id: NOTE_ID })).rejects.toMatchObject({ status: 403 });
+    const out = (await runGetMentorNote(ME, { id: NOTE_ID })) as Record<string, unknown>;
+    expect(out.id).toBe(NOTE_ID);
   });
 
   it("returns 404 for missing note", async () => {

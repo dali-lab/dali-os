@@ -13,7 +13,7 @@ import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { ACTIVITIES_FLAG } from "~/lib/activities";
-import { getActivityForMember } from "~/lib/activities.server";
+import { getActivityForMember, listActivityTeams } from "~/lib/activities.server";
 import { mechanicServer } from "~/activities/mechanics/registry.server";
 import { publishActivityChange } from "~/lib/activity-events.server";
 
@@ -28,15 +28,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) throw new Response("Not found", { status: 404 });
-  const { activity, active } = found;
+  const { activity, active, team } = found;
 
   const mech = mechanicServer(activity.kind);
   if (!mech) throw new Response("Not found", { status: 404 });
 
-  const [userEvents, allEvents, viewerIsCore] = await Promise.all([
+  const [userEvents, allEvents, viewerIsCore, teams] = await Promise.all([
     prisma.activityEvent.findMany({ where: { activityId: activity.id, userId } }),
     prisma.activityEvent.findMany({ where: { activityId: activity.id } }),
     isCore(userId),
+    activity.scoring === "Team" ? listActivityTeams(activity.id) : [],
   ]);
 
   const { progress, results } = mech.summarize({
@@ -45,10 +46,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     viewerIsCore,
     userEvents,
     allEvents,
+    teams,
+    viewerTeam: team,
   });
 
-  // Resolve display names for anyone on the leaderboard.
-  const ids = [...new Set(allEvents.map((e) => e.userId))];
+  // Resolve display names for anyone on the leaderboard — plus every teammate,
+  // who is named on a team's row (and beside a clue they found) whether or not
+  // they've scored yet.
+  const ids = [
+    ...new Set([...allEvents.map((e) => e.userId), ...teams.flatMap((t) => t.memberIds)]),
+  ];
   const users = ids.length
     ? await prisma.user.findMany({
         where: { id: { in: ids } },

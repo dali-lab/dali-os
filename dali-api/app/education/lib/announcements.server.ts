@@ -165,3 +165,34 @@ export async function postAnnouncement(args: {
   });
   return { ok: true };
 }
+
+/**
+ * Delete an announcement, message, or reply. The author may delete their own;
+ * an offering manager may delete any (route-gated). Deleting a top-level post
+ * cascades to its replies via the parent FK. Notifications already sent aren't
+ * revoked — they link to the offering hub, not the row.
+ */
+export async function deleteAnnouncement(args: {
+  postId: string;
+  offeringId: string;
+  actorId: string;
+  isManager: boolean;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const post = await prisma.educationAnnouncement.findUnique({
+    where: { id: args.postId },
+    select: { offeringId: true, authorId: true },
+  });
+  if (!post || post.offeringId !== args.offeringId)
+    return { error: "Post not found", status: 404 };
+  if (post.authorId !== args.actorId && !args.isManager)
+    return { error: "Forbidden", status: 403 };
+
+  await prisma.educationAnnouncement.delete({ where: { id: args.postId } });
+  await logAuditEvent({
+    action: "education.announcement.delete",
+    userId: args.actorId,
+    targetId: args.offeringId,
+    metadata: { postId: args.postId },
+  });
+  return { ok: true };
+}

@@ -11,9 +11,9 @@
 // page's left rail, so this panel is purely about connecting and configuring
 // accounts.
 //
-// Like AvailabilityView, this renders the *contents* only — the dialog shell
-// (backdrop, title, close) belongs to the page that opens it, so the two
-// calendar dialogs are the same dialog with different bodies.
+// This renders the *contents* only — the dialog shell
+// (backdrop, title, close) belongs to the page that opens it, so this drops
+// into the settings dialog as one section beside Classes and Working hours.
 //
 // Timesheet-sync intent wired below:
 //   intent    = "set-timesheet-sync"
@@ -32,6 +32,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { CalendarManagerModal } from "~/calendar/components/composer";
 import { GeneralCalendarPrompt, SectionHeader } from "~/calendar/components/settings-cards";
+import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
 import { perCalendarLegend, type CalendarLegendGroup } from "~/calendar/lib/layers";
 
@@ -220,9 +221,7 @@ function AccountSection({
       {/* Sub-calendar rows */}
       {open && (
         <div className="flex flex-col gap-0.5 px-2 py-2">
-          {link.syncError && (
-            <p className="mb-1 text-[11px] text-red-600">Sync error: {link.syncError}</p>
-          )}
+          <SyncErrorNotice syncError={link.syncError} className="mb-1" />
           {link.subCalendars === null ? (
             <p className="text-xs italic text-muted-foreground">Couldn't load calendars.</p>
           ) : link.subCalendars.length === 0 ? (

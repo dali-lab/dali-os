@@ -24,7 +24,10 @@ export const LIST_AGREEMENT_SIGNATURES_TOOL = {
     required: ["documentId"],
     additionalProperties: false,
   },
-  requiredScope: "mcp:read" as const,
+  // Core-only at runtime (isCore below). Tag as mcp:admin so the advertised
+  // scope matches the gate — a non-Core mcp:read token would pass the scope
+  // check then 403, which is misleading.
+  requiredScope: "mcp:admin" as const,
 };
 
 type Args = {

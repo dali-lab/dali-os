@@ -128,10 +128,22 @@ export const FEATURE_FLAGS = [
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
   },
   {
+    key: "mentorship-manage",
+    label: "Manage mentorship pairs",
+    description:
+      "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
+  },
+  {
     key: "activities",
     label: "Activities",
     description:
       "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a top-bar bar, its on-page codes, and a surface modal (submit + progress + leaderboard) that floats over whatever page they're on; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+  },
+  {
+    key: "education-redesign-v2",
+    label: "Education redesign",
+    description:
+      "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

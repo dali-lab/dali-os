@@ -6,7 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 
-// GET    /api/mentorship/notes/:id  — read one (author, same-domain mentor, or Core/Admin).
+// GET    /api/mentorship/notes/:id  — read one (author, any lab mentor, or Core/Admin).
 //                                     contentJson is normalized to block JSON.
 // PATCH  /api/mentorship/notes/:id  — update vibe. Author or Core only. The body
 //                                     is a collaborative document (Hocuspocus

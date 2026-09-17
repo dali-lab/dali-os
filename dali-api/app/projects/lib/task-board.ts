@@ -10,6 +10,7 @@ import {
   type SprintBand,
   type TimelineTermSpan,
 } from "./timeline-days";
+import { termWeekNumber } from "~/lib/terms.shared";
 
 export const TASK_STATUSES = [
   "Backlog",
@@ -122,10 +123,10 @@ export function currentSprintBand(
   const today = localTodayUtcDay(now);
   const term = termWindowContaining(terms, today);
   if (!term) return null;
-  const n = Math.floor((today - term.start) / SPRINT_STEP);
-  const key = term.start + n * SPRINT_STEP;
+  const number = termWeekNumber(today, term.start);
+  const key = term.start + (number - 1) * SPRINT_STEP;
   const end = Math.min(key + SPRINT_STEP - DAY, term.end);
-  return { key, end, label: `Sprint ${n + 1}` };
+  return { key, end, label: `Sprint ${number}` };
 }
 
 /** The [start, end] UTC days a task's dates cover, or null when undated. */
@@ -281,6 +282,28 @@ export function resolveTermIdForDate(
     if (date <= t.endDate) return t.id;
   }
   return null;
+}
+
+/**
+ * Carried-over work, Linear-cycle style: an unfinished task (not Done/Cancelled)
+ * whose anchor date (due, else start) falls before `boundaryStartMs` — the start
+ * of the current sprint band, or the current term's start on a break week when
+ * no band is running. Such work rolls forward into the current view instead of
+ * dropping off, the way an unfinished issue rolls into the next cycle. Because
+ * the boundary is a single instant, this is one rule at every zoom level: a task
+ * overdue from an earlier sprint this term and one left over from a past term
+ * both carry forward the same way. Done/Cancelled work stays filed where it
+ * happened; a null boundary (no current term/sprint) carries nothing.
+ */
+export function isCarriedOverTask(
+  task: Pick<TaskCardModel, "status" | "startsAt" | "dueAt">,
+  boundaryStartMs: number | null,
+): boolean {
+  if (task.status === "Done" || task.status === "Cancelled") return false;
+  if (boundaryStartMs === null) return false;
+  const raw = task.dueAt ?? task.startsAt;
+  if (!raw) return false;
+  return new Date(raw).getTime() < boundaryStartMs;
 }
 
 /**

@@ -9,7 +9,7 @@ import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
-import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { ACTIVE_LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
 import { ALLOWED_LEVELS, parseLevel, type Level } from "~/admin/lib/eligibility";
 import {
@@ -33,8 +33,10 @@ export const handle = adminHandle("domains");
 export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DALI OS" }];
 
 // Phase 2 rewrite: domain-lead assignments now key off User.id (not
-// DALIMember.id) and require a termId. Lead picker lists Users with a
-// DALIMember row (lab members).
+// DALIMember.id) and require a termId. Lead picker lists current lab members —
+// alumni are excluded from both the picker and the per-domain rosters, since
+// this page describes who works each domain now. Deliberately NOT term-scoped:
+// a next-term hire with no assignments yet must still be grantable.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -51,7 +53,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
-      where: { ...LAB_MEMBER_WHERE },
+      where: { ...ACTIVE_LAB_MEMBER_WHERE },
       include: {
         adminMembership: { select: { id: true, isStaff: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
@@ -71,6 +73,9 @@ export async function loader({ request }: Route.LoaderArgs) {
           orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
         },
         eligibilities: {
+          // Eligibility is monotonic and survives graduation, so the roster has
+          // to filter on the member, not just the row.
+          where: { user: ACTIVE_LAB_MEMBER_WHERE },
           include: {
             user: {
               select: { id: true, firstName: true, lastName: true, daliEmail: true },

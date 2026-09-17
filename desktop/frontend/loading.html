@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DALI OS</title>
+    <link rel="stylesheet" href="pairing.css" />
+  </head>
+  <body>
+    <!-- Cold-start splash: shown while the main window loads the app, so the
+         user sees a branded loading state instead of a blank window. The shell
+         closes this window as soon as the app is ready (or swaps the main
+         window to offline.html if the origin can't be reached). -->
+    <main class="card">
+      <img class="logo" src="assets/logo.svg" alt="DALI Lab" />
+      <div class="spinner" role="status" aria-label="Loading"></div>
+      <p class="muted">Loading DALI OS…</p>
+    </main>
+  </body>
+</html>

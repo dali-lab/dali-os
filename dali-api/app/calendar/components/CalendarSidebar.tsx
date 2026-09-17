@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { CalendarDays, Check, ChevronDown, ChevronRight, Clock3, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
@@ -9,7 +9,7 @@ import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
 import { userLabel } from "~/calendar/components/scheduling";
 import { GeneralCalendarPrompt } from "~/calendar/components/settings-cards";
-import type { CalendarLinkDTO, LoaderData } from "~/calendar/lib/types";
+import type { CalendarLinkDTO, CalendarView, LoaderData } from "~/calendar/lib/types";
 import type { LayerVisibility } from "~/calendar/lib/layers";
 import type { RoleInstance } from "~/lib/roles";
 
@@ -162,6 +162,8 @@ function MeetWith({
   );
 }
 
+const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week", day: "Day", agenda: "Agenda" };
+
 /** The colours a role can be assigned. A fixed set keeps the grid legible —
  *  free-form hex would let someone pick something unreadable on either theme. */
 const ROLE_SWATCHES = [
@@ -239,6 +241,38 @@ function RoleRow({
   );
 }
 
+/** Month / Week / Day / Agenda. It rides above the mini-month because both
+ *  control what the grid shows for a date — the header keeps the date itself
+ *  and the Calendar/Timesheet mode. Four labels don't fit the rail at the
+ *  header's type size, so this is the one size down. */
+function ViewSwitcher({
+  view,
+  onChangeView,
+}: {
+  view: CalendarView;
+  onChangeView: (v: CalendarView) => void;
+}) {
+  return (
+    <div className="mx-2 flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Calendar view">
+      {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={v === view}
+          onClick={() => onChangeView(v)}
+          className={cn(
+            "flex-1 rounded-md px-1.5 py-1 text-xs font-semibold transition-colors",
+            v === view ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {VIEW_LABELS[v]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type CalendarSidebarProps = {
   data: LoaderData;
   focusDate: Date;
@@ -246,8 +280,8 @@ type CalendarSidebarProps = {
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   layers: LayerVisibility;
-  /** Flips the grid between events and logged time. */
-  onToggleTimesheet: () => void;
+  view: CalendarView;
+  onChangeView: (v: CalendarView) => void;
   myRoles: RoleInstance[];
   roleColors: Record<string, string>;
   /** Hours logged against each role this pay period, keyed like the colours. */
@@ -266,7 +300,8 @@ function CalendarSidebarContent({
   hiddenCals,
   toggleHiddenCal,
   layers,
-  onToggleTimesheet,
+  view,
+  onChangeView,
   myRoles,
   roleColors,
   roleHours,
@@ -278,94 +313,93 @@ function CalendarSidebarContent({
 
   return (
     <>
-      <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
-
-      <MeetWith users={data.users} onPick={onMeetWith} />
-
+      {/* One group, not two: the rail's gap-5 plus MiniMonth's own p-2 left the
+          switcher floating well clear of the month it belongs to. */}
       <div className="flex flex-col gap-1">
-        <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          My calendars
-        </h2>
-        {links.length === 0 ? (
-          <p className="px-1 text-xs text-muted-foreground">
-            No calendars linked yet.
-          </p>
-        ) : (
-          links.map((link) => (
-            <AccountGroup
-              key={link.id}
-              link={link}
-              hiddenCals={hiddenCals}
-              toggleHiddenCal={toggleHiddenCal}
-            />
-          ))
-        )}
-        {/* Nudge to add the shared DALI General Calendar, below the member's own
-            calendars because it's the odd one out — a calendar they don't have
-            yet. `data.calendarLinks` unfiltered, not the `enabled` subset above:
-            the loader derived "missing" from every link, so filtering here would
-            hide the prompt from someone whose only Google account is disabled
-            while the state still says they need it. */}
-        {data.generalCalendar === "missing" && (
-          <div className="px-1 pt-1">
-            <GeneralCalendarPrompt links={data.calendarLinks} />
-          </div>
-        )}
+        <ViewSwitcher view={view} onChangeView={onChangeView} />
+        <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
       </div>
+
+      {/* Scheduling someone is a calendar act — in timesheet mode the rail is
+          about hours already worked, so the search box only gets in the way. */}
+      {!layers.logged && <MeetWith users={data.users} onPick={onMeetWith} />}
+
+      {/* Which calendars to draw is a question about events. In timesheet
+          mode the grid draws logged hours, so the whole group goes with
+          Meet with rather than sitting there inert. */}
+      {!layers.logged && (
+        <div className="flex flex-col gap-1">
+          <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            My calendars
+          </h2>
+          {links.length === 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">
+              No calendars linked yet.
+            </p>
+          ) : (
+            links.map((link) => (
+              <AccountGroup
+                key={link.id}
+                link={link}
+                hiddenCals={hiddenCals}
+                toggleHiddenCal={toggleHiddenCal}
+              />
+            ))
+          )}
+          {/* Nudge to add the shared DALI General Calendar, below the member's own
+              calendars because it's the odd one out — a calendar they don't have
+              yet. `data.calendarLinks` unfiltered, not the `enabled` subset above:
+              the loader derived "missing" from every link, so filtering here would
+              hide the prompt from someone whose only Google account is disabled
+              while the state still says they need it. */}
+          {data.generalCalendar === "missing" && (
+            <div className="px-1 pt-1">
+              <GeneralCalendarPrompt links={data.calendarLinks} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Timesheet is a way of *looking* at the grid, not a calendar to overlay,
-          so it's a mode button rather than another checkbox. */}
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={onToggleTimesheet}
-          aria-pressed={layers.logged}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
-            layers.logged
-              ? "border-os-accent/40 bg-os-accent/10 text-os-accent"
-              : "border-border text-foreground hover:bg-muted",
-          )}
-        >
-          <Clock3 className="h-4 w-4" />
-          {layers.logged ? "Timesheet mode" : "Enter timesheet mode"}
-        </button>
-
-        {layers.logged && (
-          <>
-            <ul className="flex flex-col gap-0.5">
-              {myRoles.map((r) => {
-                const key = `${r.assignmentType}:${r.roleRefId}`;
-                return (
-                  <li key={key}>
-                    <RoleRow
-                      label={r.label}
-                      color={roleColors[key] ?? roleColor(key).dot}
-                      hours={roleHours[key] ?? 0}
-                      onPick={(hex) => setRoleColor(key, hex)}
-                      // Only a job you added yourself can be removed — a DALI
-                      // assignment comes from staffing, not from this list.
-                      onDelete={
-                        r.assignmentType === "Custom"
-                          ? async () => {
-                              await archiveCustomHire(r.roleRefId);
-                              revalidator.revalidate();
-                            }
-                          : undefined
-                      }
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-            <CustomHiresManager
-              hires={myRoles
-                .filter((r) => r.assignmentType === "Custom")
-                .map((r) => ({ id: r.roleRefId, label: r.label }))}
-            />
-          </>
-        )}
-      </div>
+          so the mode itself lives in the header beside the date. What's left
+          here is what the mode needs: the roles being logged against. */}
+      {layers.logged && (
+        <div className="flex flex-col gap-2">
+          <h2 className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Roles this pay period
+          </h2>
+          <ul className="flex flex-col gap-0.5">
+            {myRoles.map((r) => {
+              const key = `${r.assignmentType}:${r.roleRefId}`;
+              return (
+                <li key={key}>
+                  <RoleRow
+                    label={r.label}
+                    color={roleColors[key] ?? roleColor(key).dot}
+                    hours={roleHours[key] ?? 0}
+                    onPick={(hex) => setRoleColor(key, hex)}
+                    // Only a job you added yourself can be removed — a DALI
+                    // assignment comes from staffing, not from this list.
+                    onDelete={
+                      r.assignmentType === "Custom"
+                        ? async () => {
+                            await archiveCustomHire(r.roleRefId);
+                            revalidator.revalidate();
+                          }
+                        : undefined
+                    }
+                  />
+                </li>
+              );
+            })}
+          </ul>
+          <CustomHiresManager
+            hires={myRoles
+              .filter((r) => r.assignmentType === "Custom")
+              .map((r) => ({ id: r.roleRefId, label: r.label }))}
+          />
+        </div>
+      )}
     </>
   );
 }

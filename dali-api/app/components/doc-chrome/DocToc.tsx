@@ -31,7 +31,8 @@ export function DocToc({
       )}
       trigger={
         <button type="button" className={actionBtn()}>
-          <List className={actionIcon} /> Contents
+          <List className={actionIcon} />{" "}
+          <span className="hidden sm:inline">Contents</span>
         </button>
       }
     >

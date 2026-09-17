@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
-import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
+import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -229,6 +229,22 @@ export async function ensureCoreMeetingNotesFolder(createdById: string): Promise
   return ensureProcessFolder({
     processType: "Core",
     processId: CORE_PROCESS_ID,
+    purpose: "meeting-notes",
+    createdById,
+  });
+}
+
+/** Idempotently ensure the Lab drive's own "Meeting notes" folder — the open
+ *  counterpart of Core's, and the home for every meeting note that belongs to
+ *  no project and isn't Core's. Those used to land loose at the Lab root, where
+ *  a note titled just its date is effectively unfindable a week later.
+ *  Backed by a ProcessFolderBinding (Lab / "meeting-notes"): an ordinary Lab
+ *  folder on the communal shelf (no group scope — everyone in the lab can see
+ *  and edit it), so it can be renamed, moved, or repointed like any other. */
+export async function ensureLabMeetingNotesFolder(createdById: string): Promise<string | null> {
+  return ensureProcessFolder({
+    processType: "Lab",
+    processId: LAB_PROCESS_ID,
     purpose: "meeting-notes",
     createdById,
   });

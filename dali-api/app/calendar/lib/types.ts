@@ -193,6 +193,19 @@ export type EventMeetingDTO = {
   isCoreMeeting: boolean;
   /** Core only — hides the "Core meeting" checkbox for everyone else. */
   canMarkCoreMeeting: boolean;
+  /** Whether the viewer (organizer or Core) may add a notes doc to a meeting
+   *  that doesn't have one yet — gates the popover's "Add meeting notes"
+   *  affordance. Moot once `notePageId` is set. */
+  canAddNote: boolean;
+  /** Whether the viewer (organizer or Core) may invite more people to the
+   *  meeting — including after it has happened. Gates the popover's "Invite". */
+  canInvite: boolean;
+  /** True when the viewer can edit the guest list but not the rest of the
+   *  meeting (guestsCanInviteOthers without guestsCanModify). */
+  guestEditOnly: boolean;
+  /** True when the viewer is not the organizer/Core and guestsCanSeeGuestList
+   *  is false — the attendee list should be hidden from the popover. */
+  hideGuestList: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */
@@ -264,6 +277,11 @@ export type ExternalEventDTO = {
   rsvp?: RsvpStatus;
   /** Set when this Google event is a DALI meeting. */
   meeting?: EventMeetingDTO;
+  /** True when this event has no DALI meeting behind it and the viewer may
+   *  give it one — Core, on the lab's general calendar. Drives the popover's
+   *  "Track in DALI" action, which is what unlocks a note and attendance for
+   *  events authored in Google rather than in DALI. */
+  canTrackAsMeeting?: boolean;
 };
 
 export type LoaderData = {
@@ -388,6 +406,17 @@ export type EventBlock = {
   /** Set when this block is a DALI meeting: the detail popover adds its
    *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
   meeting?: EventMeetingDTO;
+  /** Set on an external event with no DALI meeting behind it that the viewer
+   *  may track — carries the identity the action posts back. */
+  trackable?: {
+    eventId: string;
+    recurringEventId: string | null;
+    linkId: string;
+    calendarId: string;
+    /** Same convention as EventMeetingDTO.actionPath: unset posts to the
+     *  current route, which is right on the calendar page. */
+    actionPath?: string;
+  };
   /** Set when the viewer is a guest: the detail popover offers Going / Maybe /
    *  Can't go. Carries the identity the write needs — see EventRsvpTarget. */
   rsvp?: EventRsvpTarget;
@@ -403,6 +432,13 @@ export type GroupAvailDay = {
   busy: { startHour: number; durationHours: number }[];
 };
 
-export type PerUserFree = { userId: string; free: { startIso: string; endIso: string }[] };
+export type PerUserFree = {
+  userId: string;
+  free: { startIso: string; endIso: string }[];
+  /** False when the user has no linked calendar (or a failed sync): their
+   *  availability is unknown, not free. See computeUserFreeBusy. */
+  hasCalendar: boolean;
+  calendarError: boolean;
+};
 
 export type GroupAvailResponse = { days: GroupAvailDay[]; perUser: PerUserFree[] };

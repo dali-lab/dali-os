@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRevalidator } from "react-router";
 import { Check, HelpCircle, X as XIcon } from "lucide-react";
 import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
+import { buttonClasses } from "~/components/ui/Button";
 
 // Tell the shell's sidebar task poller that the task list changed. Inside a
 // TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
@@ -72,12 +73,12 @@ export function RsvpButtons({
 
   return (
     <>
-      <div className="flex items-center gap-1.5 mt-2">
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
         <button
           type="button"
           onClick={() => sendRsvp("accepted")}
           disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+          className={buttonClasses("primary", "sm", "gap-1")}
         >
           <Check className="w-3 h-3" />
           {submitting === "accepted" ? "Accepting…" : "Accept"}
@@ -86,7 +87,7 @@ export function RsvpButtons({
           type="button"
           onClick={() => sendRsvp("tentative")}
           disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+          className={buttonClasses("secondary", "sm", "gap-1")}
         >
           <HelpCircle className="w-3 h-3" />
           {submitting === "tentative" ? "…" : "Maybe"}
@@ -95,7 +96,7 @@ export function RsvpButtons({
           type="button"
           onClick={() => sendRsvp("declined")}
           disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+          className={buttonClasses("secondary", "sm", "gap-1")}
         >
           <XIcon className="w-3 h-3" />
           {submitting === "declined" ? "…" : "Decline"}

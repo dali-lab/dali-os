@@ -117,6 +117,9 @@ pub async fn run(app: AppHandle) {
                         emit_state(&app, json!({ "status": "paired" }));
                         window::show_main(&app);
                         window::hide_pairing(&app);
+                        // Cover a failed post-handoff load (e.g. the network
+                        // dropped mid-pairing) with the offline fallback.
+                        window::arm_offline_watchdog(&app);
                         poller::spawn(app.clone());
                     }
                     return;

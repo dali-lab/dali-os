@@ -6,7 +6,7 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -16,10 +16,14 @@ import {
 } from "~/components/AnalyticsErrorReporter";
 import { NavigationProgress } from "~/components/NavigationProgress";
 import { ThemeSync } from "~/components/ThemeSync";
+import { ErrorScreen } from "~/components/ErrorScreen";
+import { StaleBuildWatcher } from "~/components/StaleBuildWatcher";
+import { buttonClasses } from "~/components/ui/Button";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import { PresenceStatusProvider } from "~/components/presence/PresenceStatusProvider";
 import { THEME_BOOT_SRC } from "~/lib/theme";
+import { isBuildStale, isChunkLoadError, reloadForNewBuild } from "~/lib/stale-build";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -30,7 +34,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@600;700&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@600;700&display=swap",
   },
   { rel: "icon", href: "/icon-blue.svg", type: "image/svg+xml" },
   { rel: "alternate icon", href: "/favicon.ico" },
@@ -101,6 +105,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </DialogProvider>
         </ToastProvider>
         <AnalyticsErrorReporter />
+        <StaleBuildWatcher />
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -113,39 +118,74 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
+  let heading = "Something went wrong";
+  let description =
+    "An unexpected error occurred. Try reloading the page, or head back home.";
   let stack: string | undefined;
+  let notFound = false;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
+    if (error.status === 404) {
+      notFound = true;
+      heading = "Page not found";
+      description =
+        "We couldn't find that page. It may have moved, or the link may be out of date.";
+    } else {
+      heading = `Error ${error.status}`;
+      description =
+        error.statusText ||
+        "Something went wrong on our end. Try reloading, or head back home.";
+    }
   } else if (import.meta.env.DEV && error && error instanceof Error) {
-    details = error.message;
+    description = error.message;
     stack = error.stack;
   }
 
   // Only report genuine render-time errors — 404s and other intentional
   // routing responses are not crashes.
   const reportable = !isRouteErrorResponse(error) && error;
+
+  // A tab left open across a deploy crashes here once its old bundle can't
+  // load a chunk or render the new loaders' data (see lib/stale-build.ts).
+  // Before showing the error card, check for that and quietly reload onto the
+  // new build instead. Blank while checking so the card doesn't flash.
+  const [recovering, setRecovering] = useState(Boolean(reportable));
   useEffect(() => {
     if (!reportable) return;
     if (typeof window === "undefined") return;
-    reportBoundaryError(error, window.location.pathname);
+    let cancelled = false;
+    (async () => {
+      const stale = isChunkLoadError(error) || (await isBuildStale());
+      if (cancelled) return;
+      if (stale && reloadForNewBuild()) return;
+      reportBoundaryError(error, window.location.pathname);
+      setRecovering(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [reportable, error]);
 
+  if (recovering) return null;
+
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
+    <ErrorScreen heading={heading} description={description} stack={stack}>
+      {/* Plain anchors, not <Link>: a full-document load is the robust way out
+          even when a render crash has wedged the client router. */}
+      <a href="/" className={buttonClasses("primary", "md")}>
+        Go to home
+      </a>
+      {!notFound && (
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined") window.location.reload();
+          }}
+          className={buttonClasses("secondary", "md")}
+        >
+          Reload page
+        </button>
       )}
-    </main>
+    </ErrorScreen>
   );
 }

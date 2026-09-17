@@ -10,7 +10,7 @@ import { McpForbiddenError } from "../../registry";
 export const LIST_MENTORSHIP_PAIRS_TOOL = {
   name: "list_mentorship_pairs",
   description:
-    "List mentorship pairs the caller can see. Mentors see their own pairs plus pairs in domains they mentor; Core sees all. All filters are optional and AND-combined.",
+    "List mentorship pairs the caller can see. Every lab mentor (and Core) sees all pairs lab-wide. All filters are optional and AND-combined.",
   inputSchema: {
     type: "object" as const,
     properties: {
