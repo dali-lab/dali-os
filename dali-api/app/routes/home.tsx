@@ -12,6 +12,7 @@ import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { termWeekNumber } from "~/lib/terms.shared";
 import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -76,9 +77,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-/* The term week "now" falls in, for the hero's badge: week 0 starts on the
+/* The term week "now" falls in, for the hero's badge: week 1 starts on the
    current term's start date (days counted in the viewer's zone) and each week
-   is labelled with its first five days, e.g. "Week 0 Sep 15 – 19". Null
+   is labelled with its first five days, e.g. "Week 1 Sep 15 – 19". Null
    between terms, where the badge is dropped. */
 async function loadCurrentWeek(tz: string, request: Request) {
   const term = await currentTermStrict(request);
@@ -89,16 +90,15 @@ async function loadCurrentWeek(tz: string, request: Request) {
     term.startDate.getUTCDate(),
   );
   const today = getZonedYMD(new Date(), tz);
-  const days = (Date.UTC(today.year, today.month - 1, today.day) - start) / DAY_MS;
-  const index = Math.floor(days / 7);
-  const first = new Date(start + index * 7 * DAY_MS);
+  const number = termWeekNumber(Date.UTC(today.year, today.month - 1, today.day), start);
+  const first = new Date(start + (number - 1) * 7 * DAY_MS);
   const last = new Date(first.getTime() + 4 * DAY_MS);
   const month = (d: Date) => d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
   const dates =
     month(first) === month(last)
       ? `${month(first)} ${first.getUTCDate()} – ${last.getUTCDate()}`
       : `${month(first)} ${first.getUTCDate()} – ${month(last)} ${last.getUTCDate()}`;
-  return { index, dates };
+  return { index: number, dates };
 }
 
 const DAY_MS = 86_400_000;
@@ -116,8 +116,7 @@ export default function Home() {
   const { user, greeting, week, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
-  const fullName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
+  const firstName = user.firstName || user.email.split("@")[0];
   const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
 
   return (
@@ -126,7 +125,7 @@ export default function Home() {
         weekBadge={week ? `Week ${week.index} ${week.dates}` : undefined}
         milestoneTitle="Lab Kickoff"
         greeting={greeting}
-        userName={fullName}
+        userName={firstName}
         search={<HomeSearch />}
         recentsHeading="Favorites + Recently Visited"
         // A brand-new account (nothing starred, nothing opened) gets no card
@@ -178,6 +177,10 @@ function RecentCardMedia({ page }: { page: FavoritePage }) {
 function HomeSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  // The query `results` belong to. Compared against the live query during
+  // render, so a keystroke reads as "searching" in the frame it paints — a
+  // boolean flipped from the effect lands a frame late and flashes "No matches".
+  const [resultsQuery, setResultsQuery] = useState("");
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -188,6 +191,7 @@ function HomeSearch() {
     const q = query.trim();
     if (q.length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setResultsQuery(q);
       return;
     }
     const ctrl = new AbortController();
@@ -200,9 +204,12 @@ function HomeSearch() {
         .then((d) => {
           setResults(d.results ?? []);
           setActive(0);
+          setResultsQuery(q);
         })
         .catch(() => {
-          /* aborted or network error — leave prior results */
+          // Abort means a newer query already owns the state; a real failure
+          // still has to settle the query or "Searching…" would never clear.
+          if (!ctrl.signal.aborted) setResultsQuery(q);
         });
     }, 150);
     return () => {
@@ -221,7 +228,11 @@ function HomeSearch() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const show = open && query.trim().length >= MIN_QUERY_LENGTH;
+  const trimmed = query.trim();
+  const show = open && trimmed.length >= MIN_QUERY_LENGTH;
+  // Results still catching up to the query (debounce window + in-flight fetch):
+  // show a pending state instead of flashing "No matches" before the first hit.
+  const isSearching = trimmed.length >= MIN_QUERY_LENGTH && resultsQuery !== trimmed;
 
   // Home renders inside the workspace iframe, so a result opens as a workspace
   // tab rather than navigating this view away — same rule as every other link
@@ -291,7 +302,13 @@ function HomeSearch() {
         className="landing-search-results"
       >
         {results.length === 0 ? (
-          <p className="landing-search-empty">No matches for “{query.trim()}”</p>
+          isSearching ? (
+            <p className="landing-search-empty" role="status" aria-live="polite">
+              Searching…
+            </p>
+          ) : (
+            <p className="landing-search-empty">No matches for “{trimmed}”</p>
+          )
         ) : (
           results.map((r, i) => {
             const Icon = TYPE_META[r.type].icon;

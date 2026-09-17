@@ -5,8 +5,8 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 
-// GET    /api/mentorship/pairs — list pairs. Mentors see their own pairs plus
-//        pairs in domains they mentor in; Core/Admin see everything.
+// GET    /api/mentorship/pairs — list pairs. Every lab mentor (and Core/Admin)
+//        sees all pairs lab-wide.
 //        Filters: projectId, termId, mentorUserId, menteeUserId.
 // POST   /api/mentorship/pairs — manual create. Core only.
 //        Body: { menteeUserId, mentorUserId, projectId, termId, domainId }
