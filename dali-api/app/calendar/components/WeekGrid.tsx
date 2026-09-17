@@ -23,7 +23,7 @@ import type {
 import {
   HOURS, HOUR_PX, INITIAL_SCROLL_CENTER_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
-  formatHour, formatHourMinute, readableTextColor, computeEventLanes,
+  formatHour, formatHourMinute, readableTextColor, computeEventLanes, eventSkin,
 } from "~/calendar/lib/event-block";
 import type { EventLane } from "~/calendar/lib/event-block";
 
@@ -700,7 +700,10 @@ export function WeekGridEvent({
   const bufferBefore = e.bufferBefore ?? 0;
   const bufferAfter = e.bufferAfter ?? 0;
   const totalHours = bufferBefore + e.duration + bufferAfter;
-  const border = e.borderClassName ? `border-2 ${e.borderClassName}` : "";
+  const skin = eventSkin(e);
+  // An unanswered invite draws its own outline on the body, so the wrapper
+  // stands down — otherwise its border and the body's stack into a double ring.
+  const border = !skin.outlined && e.borderClassName ? `border-2 ${e.borderClassName}` : "";
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
@@ -996,19 +999,25 @@ export function WeekGridEvent({
       )}
       <div
         ref={setAnchorEl}
-        className={`absolute left-0 right-0 ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
-          displayBufferAfter === 0 ? "rounded-b-md" : ""
-        } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          clickable || movable
-            ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
-            : ""
-        }`}
+        className={cn(
+          "absolute left-0 right-0 px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow",
+          displayBufferBefore === 0 && "rounded-t-md",
+          displayBufferAfter === 0 && "rounded-b-md",
+          // The inset left bar reads as a stray grey stripe on a hollow block,
+          // and a white hover ring is invisible on one — both swap out.
+          skin.outlined
+            ? "border-2 shadow-[0_1px_2px_-1px_rgba(0,0,0,0.15)]"
+            : "shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)]",
+          skin.className,
+          (clickable || movable) &&
+            (skin.outlined
+              ? "hover:ring-2 hover:ring-inset hover:ring-foreground/20"
+              : "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"),
+        )}
         style={{
           top: displayBufferBefore * HOUR_PX,
           height: displayBodyHeight,
-          ...(e.bgColor
-            ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
-            : {}),
+          ...skin.style,
         }}
       >
         {e.loggedAccent && (
@@ -1194,6 +1203,9 @@ export function WeekGridEvent({
 export type AllDayBlock = {
   label: string;
   color?: string | null;
+  /** The viewer hasn't answered this invite — drawn hollow, the same way an
+   *  unanswered timed invite is on the grid below. */
+  unanswered?: boolean;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
@@ -1645,20 +1657,27 @@ export function WeekGrid({
             >
               {visible.map((block, bi) => {
                 const hasColor = Boolean(block.color);
+                const outlined = Boolean(block.unanswered);
                 return (
                   <button
                     key={bi}
                     type="button"
                     onClick={block.onClick}
-                    className={`w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight ${
-                      block.onClick ? "cursor-pointer" : "cursor-default"
-                    } ${hasColor ? "" : "bg-muted text-foreground"}`}
+                    className={cn(
+                      "w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight",
+                      block.onClick ? "cursor-pointer" : "cursor-default",
+                      outlined
+                        ? cn("border bg-card text-foreground", !hasColor && "border-border")
+                        : !hasColor && "bg-muted text-foreground",
+                    )}
                     style={
                       hasColor
-                        ? {
-                            backgroundColor: block.color!,
-                            color: readableTextColor(block.color!),
-                          }
+                        ? outlined
+                          ? { borderColor: block.color! }
+                          : {
+                              backgroundColor: block.color!,
+                              color: readableTextColor(block.color!),
+                            }
                         : undefined
                     }
                   >
