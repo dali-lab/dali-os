@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Select, MultiSelect, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
   X,
   Trash2,
@@ -30,6 +30,7 @@ import {
   type TimelineEpic,
   type TimelineTerm,
   type StoryDependencyEdge,
+  type EpicDependencyEdge,
 } from "./EpicsTimeline";
 import { EpicList } from "./EpicList";
 
@@ -72,6 +73,9 @@ export type EditableEpic = {
   // Collab-doc reference for the epic's rich description (Notion-style),
   // same pattern as the project Overview/PRD pages. Null when none attached.
   descriptionDocId: string | null;
+  // Ids of epics this one waits for, edited in the epic detail modal and drawn
+  // as arrows between epic bars on the timeline.
+  dependsOn: string[];
   // User stories under this epic, ordered by position.
   stories: EditableStory[];
 };
@@ -121,6 +125,8 @@ type Props = {
   timelineEpics?: TimelineEpic[];
   // Story dependency edges, drawn as arrows between story bars on the timeline.
   storyDependencies?: StoryDependencyEdge[];
+  // The same, one level up — arrows between epic bars.
+  epicDependencies?: EpicDependencyEdge[];
   // Project terms (oldest first) anchoring the timeline's one-week sprint grid.
   timelineTerms?: TimelineTerm[];
   // Terms each epic counts toward, keyed by epic id — the same footprint the
@@ -200,6 +206,7 @@ export function EpicSprintManager({
   userName,
   timelineEpics = [],
   storyDependencies = [],
+  epicDependencies = [],
   timelineTerms = [],
   epicTermIds,
   currentTermId,
@@ -292,6 +299,12 @@ export function EpicSprintManager({
       epics.flatMap((e) =>
         e.stories.map((st) => ({ id: st.id, name: `${e.title} · ${st.title}` })),
       ),
+    [epics],
+  );
+
+  // The same list one level up, for the epic's own "depends on".
+  const allEpicOptions = useMemo(
+    () => epics.map((e) => ({ id: e.id, name: e.title })),
     [epics],
   );
 
@@ -582,6 +595,7 @@ export function EpicSprintManager({
             epic={activeEpic}
             autoNewStory={autoNewStoryEpicId === activeEpic.id}
             storyOptions={allStoryOptions}
+            epicOptions={allEpicOptions}
             terms={terms}
             timelineTerms={timelineTerms}
             canManage={canManage}
@@ -617,6 +631,7 @@ export function EpicSprintManager({
             epics={timelineEpics}
             terms={timelineTerms}
             storyDependencies={storyDependencies}
+            epicDependencies={epicDependencies}
             actions={progressActions}
             editMode={editMode}
             fillHeight={fullscreen}
@@ -647,6 +662,7 @@ export function EpicDetail({
   epic,
   autoNewStory = false,
   storyOptions,
+  epicOptions,
   terms,
   timelineTerms,
   canManage,
@@ -665,6 +681,9 @@ export function EpicDetail({
   // Every story in the project except the one being edited — "depends on"
   // targets. Cross-epic edges are allowed, same as sprint dependencies.
   storyOptions: { id: string; name: string }[];
+  // Every epic in the project, as targets for this epic's own "depends on".
+  // This epic is filtered out where it's offered — a self-edge is rejected.
+  epicOptions: { id: string; name: string }[];
   terms: EpicTermOption[];
   // Term spans, oldest first — the anchor for the fixed one-week sprint grid
   // this modal reads the epic's sprints off.
@@ -923,6 +942,34 @@ export function EpicDetail({
             </span>
           )}
           </div>
+        </div>
+        {/* Which other epics this one waits on. Advisory, like the story-level
+            edge: it draws an arrow on the timeline rather than moving dates or
+            blocking a status change. */}
+        <div className="os-field-group">
+          <span className="os-field-label">Depends on</span>
+          {canManage ? (
+            <MultiSelect
+              values={epic.dependsOn}
+              options={epicOptions
+                .filter((o) => o.id !== epic.id)
+                .map((o) => ({ value: o.id, label: o.name }))}
+              onChange={(next) => void saveEpic({ dependsOn: next })}
+              ariaLabel="Epics this one waits on"
+              placeholder="Nothing — starts on its own"
+              emptyLabel="No other epics in this project"
+              buttonClassName={EPIC_FIELD}
+            />
+          ) : (
+            <span className="text-sm text-foreground">
+              {epic.dependsOn.length > 0
+                ? epicOptions
+                    .filter((o) => epic.dependsOn.includes(o.id))
+                    .map((o) => o.name)
+                    .join(", ")
+                : "—"}
+            </span>
+          )}
         </div>
         {/* Not a picker. A sprint is a fixed week, so the weeks an epic runs
             through are already settled by the two dates above — these state
@@ -1304,60 +1351,6 @@ function EpicForm({
   );
 }
 
-// Multi-select "waits for" picker for the story form. Checkbox list so several
-// can be picked; closes on outside click.
-function DependsOnField({
-  options,
-  value,
-  onChange,
-  noun,
-}: {
-  options: { id: string; name: string }[];
-  value: string[];
-  onChange: (next: string[]) => void;
-  // Singular label for the summary line ("2 sprints", "1 story").
-  noun: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  const toggle = (id: string) =>
-    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="min-w-[120px] rounded-md border border-border bg-background px-2 py-1.5 text-left text-sm text-foreground"
-      >
-        {value.length === 0
-          ? "None"
-          : `${value.length} ${noun}${value.length === 1 ? "" : "s"}`}
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
-          {options.map((s) => (
-            <Checkbox
-              key={s.id}
-              checked={value.includes(s.id)}
-              onChange={() => toggle(s.id)}
-              label={<span className="truncate">{s.name}</span>}
-              className="rounded px-2 py-1 text-sm hover:bg-muted"
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 
 function StoryForm({
@@ -1455,6 +1448,11 @@ function StoryForm({
       className="w-full"
     />
   );
+  // Only an existing story can point at siblings, and it must not point at
+  // itself — the route rejects a self-edge, so it's never offered.
+  const dependsOnOptions = storyOptions
+    .filter((o) => o.id !== initial?.id)
+    .map((o) => ({ value: o.id, label: o.name }));
 
   return (
     <form
@@ -1506,6 +1504,22 @@ function StoryForm({
           <span>Labels</span>
           {categoryField}
         </label>
+        {/* Only offered once the story exists: the create route ignores
+            `dependsOn`, so a picker there would silently drop what was set. */}
+        {initial && (
+          <div className="os-field-group">
+            <span>Depends on</span>
+            <MultiSelect
+              values={dependsOn}
+              options={dependsOnOptions}
+              onChange={setDependsOn}
+              ariaLabel="Stories this one waits on"
+              placeholder="Nothing — starts on its own"
+              emptyLabel="No other stories in this project"
+              buttonClassName={EPIC_FIELD}
+            />
+          </div>
+        )}
         <label className="os-field-group">
           <span>Description</span>
           {notesField}

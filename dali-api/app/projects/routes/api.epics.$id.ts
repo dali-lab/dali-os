@@ -1,9 +1,10 @@
 import type { Route } from "./+types/api.epics.$id";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-// POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId? }
+// POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId?,
+//                          startsAt?, endsAt?, dependsOn? }
 // DELETE /api/epics/:id  — delete. Tasks pointing at this epic have
 //                          their epicId nulled (both are nullable links) so
 //                          nothing is orphaned or cascade-deleted. User
@@ -25,6 +26,7 @@ type EditBody = {
   targetTermId?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
+  dependsOn?: string[];
 };
 
 function isEditBody(x: unknown): x is EditBody {
@@ -39,6 +41,11 @@ function isEditBody(x: unknown): x is EditBody {
   if (o.startsAt !== undefined && o.startsAt !== null && typeof o.startsAt !== "string")
     return false;
   if (o.endsAt !== undefined && o.endsAt !== null && typeof o.endsAt !== "string")
+    return false;
+  if (
+    o.dependsOn !== undefined &&
+    (!Array.isArray(o.dependsOn) || o.dependsOn.some((v) => typeof v !== "string"))
+  )
     return false;
   return true;
 }
@@ -145,6 +152,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  await prisma.epic.update({ where: { id: epicId }, data });
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.epic.update({ where: { id: epicId }, data }),
+  ];
+
+  // Dependencies are replaced wholesale, mirroring the story route: each id
+  // must be another epic in the same project. (Cycles aren't blocked — the
+  // arrows are advisory, and the unique index dedupes repeats.)
+  if (body.dependsOn !== undefined) {
+    const ids = [...new Set(body.dependsOn)].filter((x) => x && x !== epicId);
+    if (ids.length > 0) {
+      const valid = await prisma.epic.count({
+        where: { id: { in: ids }, projectId: epic.projectId },
+      });
+      if (valid !== ids.length) {
+        return withCors(
+          request,
+          Response.json({ error: "Invalid dependency target" }, { status: 400 }),
+        );
+      }
+    }
+    ops.push(
+      prisma.epicDependency.deleteMany({ where: { epicId } }),
+      ...ids.map((depId) =>
+        prisma.epicDependency.create({
+          data: { epicId, dependsOnEpicId: depId },
+        }),
+      ),
+    );
+  }
+
+  await prisma.$transaction(ops);
   return withCors(request, Response.json({ ok: true }));
 }

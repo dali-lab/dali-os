@@ -73,6 +73,8 @@ export type TimelineTerm = { code: string; startsAt: string; endsAt: string };
 
 export type StoryDependencyEdge = { storyId: string; dependsOnStoryId: string };
 
+export type EpicDependencyEdge = { epicId: string; dependsOnEpicId: string };
+
 type Level = "epic" | "story" | "task";
 
 function findBarSpan(
@@ -138,6 +140,10 @@ const FLICK_PX_PER_MS = 6;
 // Quiet time after the last scroll event before the spring-back fires; long
 // enough to sit out momentum scrolling, short enough not to feel like a lag.
 const SCROLL_SETTLE_MS = 180;
+// How stale a flick may be when the scroll finally settles and still count as
+// the throw that's being finished. Momentum from a real throw decays within a
+// few hundred ms; past that, whatever is still moving the view is a hand on it.
+const FLICK_MAX_AGE_MS = 400;
 
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
@@ -189,6 +195,46 @@ function barX(level: Level, left: number, width: number) {
     left: left + inset,
     width: Math.max(width - inset * 2, MIN_BAR_W),
   };
+}
+
+/** A bar's horizontal extent as actually drawn — what row packing has to
+ *  compare, since the nesting inset and the `MIN_BAR_W` floor both move an
+ *  edge away from the raw day geometry. */
+function drawnExtent(level: Level, left: number, width: number) {
+  const x = barX(level, left, width);
+  return { start: x.left, end: x.left + x.width };
+}
+
+// Clearance two bars must leave each other to share a row. Bars that merely
+// abut read as one long bar, and a dependency arrow between them would have
+// nowhere to go.
+const ROW_MIN_GAP = 16;
+
+/** Greedy first-fit row packing: things that never run at the same time share
+ *  a horizontal line instead of each taking one of their own. Returns the row
+ *  index per item id.
+ *
+ *  Assignment runs in start order rather than the caller's (stories arrive in
+ *  manual `position` order), so rows fill left to right and the first row is
+ *  the one that reads as the spine of the group. First-fit is correct from any
+ *  order — a row's recorded end is the max of its members' — but out of order
+ *  it strands early bars in late rows. */
+export function packRows<T extends { id: string }>(
+  items: T[],
+  extent: (item: T) => { start: number; end: number },
+): Map<string, number> {
+  const rows = new Map<string, number>();
+  const rowEnds: number[] = [];
+  const byStart = items
+    .map((item) => ({ item, ...extent(item) }))
+    .sort((a, b) => a.start - b.start);
+  for (const { item, start, end } of byStart) {
+    let row = rowEnds.findIndex((e) => e + ROW_MIN_GAP <= start);
+    if (row === -1) row = rowEnds.length;
+    rowEnds[row] = Math.max(rowEnds[row] ?? -Infinity, end);
+    rows.set(item.id, row);
+  }
+  return rows;
 }
 
 // ── Palette ─────────────────────────────────────────────────────────────────
@@ -596,12 +642,82 @@ function HoverBar({
   );
 }
 
+/** One level's dependency arrows, drawn between the bars laid out for it.
+ *  `z-20` lifts them above the bars, `pointer-events-none` keeps those
+ *  clickable. Edges whose endpoints aren't currently laid out (scrolled out of
+ *  the window, or the level toggled off) are skipped. A backward edge — the
+ *  dependent starting before its blocker ends — still draws; the bezier simply
+ *  loops leftward, which is the point: it's what an out-of-order plan looks
+ *  like. */
+function DependencyArrows({
+  level,
+  edges,
+  rects,
+  width,
+  height,
+}: {
+  level: Level;
+  // Directed: `from` (the blocker) → `to` (the dependent).
+  edges: { from: string; to: string }[];
+  rects: Map<string, { sx: number; ex: number; cy: number }>;
+  width: number;
+  height: number;
+}) {
+  if (edges.length === 0) return null;
+  const color = OS_LEVEL[level].edge;
+  const markerId = `${level}-dep-arrow`;
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 z-20 overflow-visible"
+      width={width}
+      height={height}
+      aria-hidden
+    >
+      <defs>
+        <marker
+          id={markerId}
+          viewBox="0 0 8 8"
+          refX="6.5"
+          refY="4"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto"
+        >
+          <path d="M0,0 L8,4 L0,8 z" fill={color} />
+        </marker>
+      </defs>
+      {edges.map((d) => {
+        const from = rects.get(d.from);
+        const to = rects.get(d.to);
+        if (!from || !to) return null;
+        const x1 = from.ex;
+        const y1 = from.cy;
+        const x2 = to.sx;
+        const y2 = to.cy;
+        const dx = Math.max(18, Math.abs(x2 - x1) / 2);
+        return (
+          <path
+            key={`${d.from}->${d.to}`}
+            d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeOpacity={0.9}
+            markerEnd={`url(#${markerId})`}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function EpicsTimeline({
   epics,
   terms = [],
   storyDependencies = [],
+  epicDependencies = [],
   hiddenLevels,
   compact = false,
   fillHeight = false,
@@ -622,6 +738,9 @@ export function EpicsTimeline({
   // arrows between story bars. Edges whose endpoints aren't currently laid out
   // (epic scrolled out of view, or story level hidden) are skipped.
   storyDependencies?: StoryDependencyEdge[];
+  // The same edges one level up (epicId waits on dependsOnEpicId), drawn
+  // between epic bars in the epic hue.
+  epicDependencies?: EpicDependencyEdge[];
   // Levels this timeline doesn't have at all — dropped from the legend, from
   // the bars, and from the hover rows that count them. Distinct from the
   // legend's own on/off toggles: those are the viewer's choice, this is the
@@ -935,9 +1054,9 @@ export function EpicsTimeline({
   // circle are one mark, not a hairline sitting on yesterday's edge.
   const todayCenter = todayLeft != null ? todayLeft + PX_PER_DAY / 2 : null;
 
-  // Only epics overlapping the visible day range are laid out, and they stack
-  // from the top in start order — so scrolling sideways keeps the visible work
-  // compact instead of leaving the viewport parked on empty rows.
+  // The day range currently on screen. It decides which bars are *rendered*,
+  // never where any of them sit — placement is over the whole project (see the
+  // layout pass), so scrolling sideways can't move a bar that stays in view.
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<{ start: number; end: number }>({
     start: 0,
@@ -956,9 +1075,10 @@ export function EpicsTimeline({
     );
   }, []);
 
-  // Layout pass: sizes bottom-up (tasks → story → epic), then places the
-  // visible epics top-down. Also emits the story-bar rectangles the dependency
-  // arrows are drawn between.
+  // Layout pass: sizes bottom-up (tasks → story → epic), then packs the epics
+  // into rows top-down. Independent of the scroll window, so it re-runs only
+  // when the data or the date bounds change. Also emits the bar rectangles the
+  // dependency arrows are drawn between.
   const layout = useMemo(() => {
     const epicBars: {
       epic: TimelineEpic;
@@ -983,62 +1103,113 @@ export function EpicsTimeline({
       height: number;
     }[] = [];
     const storyRects = new Map<string, { sx: number; ex: number; cy: number }>();
+    const epicRects = new Map<string, { sx: number; ex: number; cy: number }>();
 
-    if (!bounds) return { epicBars, storyBars, taskBars, storyRects, height: 0 };
+    if (!bounds)
+      return { epicBars, storyBars, taskBars, storyRects, epicRects, height: 0 };
 
     const left = (iso: string) => dayOffset(iso, bounds.min) * PX_PER_DAY;
     const width = (a: string, b: string) =>
       Math.max(daySpan(a, b) * PX_PER_DAY, PX_PER_DAY);
 
-    const scheduled = epics.filter((e) => e.startsAt && e.endsAt);
-    const visible = scheduled
-      .filter((e) => {
-        const s = dayOffset(e.startsAt!, bounds.min);
-        const en = s + daySpan(e.startsAt!, e.endsAt!);
-        return en > view.start && s < view.end;
-      })
+    // Every scheduled epic is placed, whatever the scroll window happens to
+    // show. Laying out only what was on screen re-flowed the stack mid-scroll:
+    // an epic leaving the window closed the gap under it and jumped every bar
+    // below, which is what made a sideways scroll feel like it was snatching
+    // the grid around. The window culls at render instead, so what you can see
+    // changes without anything that stays put moving.
+    const placed = epics
+      .filter((e) => e.startsAt && e.endsAt)
       .sort(
         (a, b) => dayOffset(a.startsAt!, bounds.min) - dayOffset(b.startsAt!, bounds.min),
       );
 
     // Sizes first — a story is as tall as its task stack, an epic as tall as
-    // its story stack.
+    // the rows its stories pack into.
     const storyH = new Map<string, number>();
     const epicH = new Map<string, number>();
-    for (const e of visible) {
-      let sum = 0;
+    // Row index per story within its epic, and the height of each of those
+    // rows. Held per epic so the placement pass below can read them back.
+    const storyRowOf = new Map<string, number>();
+    const storyRowHeights = new Map<string, number[]>();
+    for (const e of placed) {
       for (const st of e.stories) {
         const n = st.tasks.length;
-        const h =
+        storyH.set(
+          st.id,
           n > 0
             ? STORY_TOP_PAD + n * TASK_H + (n - 1) * TASK_GAP + STORY_BOTTOM_PAD
-            : STORY_MIN_H;
-        storyH.set(st.id, h);
-        sum += h;
+            : STORY_MIN_H,
+        );
       }
-      const n = e.stories.length;
+      const rows = packRows(
+        e.stories,
+        (st) => drawnExtent("story", left(st.startsAt), width(st.startsAt, st.endsAt)),
+      );
+      const heights: number[] = [];
+      for (const st of e.stories) {
+        const row = rows.get(st.id)!;
+        storyRowOf.set(st.id, row);
+        heights[row] = Math.max(heights[row] ?? 0, storyH.get(st.id)!);
+      }
+      storyRowHeights.set(e.id, heights);
+      const inner = heights.reduce((a, h) => a + h, 0);
       epicH.set(
         e.id,
-        n > 0
-          ? EPIC_TOP_PAD + sum + (n - 1) * STORY_GAP + EPIC_BOTTOM_PAD
+        heights.length > 0
+          ? EPIC_TOP_PAD + inner + (heights.length - 1) * STORY_GAP + EPIC_BOTTOM_PAD
           : EPIC_MIN_H,
       );
     }
 
+    // Epics pack into rows the same way, so two that never run at the same
+    // time share a line instead of each taking one of their own.
+    const epicRowOf = packRows(placed, (e) =>
+      drawnExtent("epic", left(e.startsAt!), width(e.startsAt!, e.endsAt!)),
+    );
+    const epicRowHeights: number[] = [];
+    for (const e of placed) {
+      const row = epicRowOf.get(e.id)!;
+      epicRowHeights[row] = Math.max(epicRowHeights[row] ?? 0, epicH.get(e.id)!);
+    }
+    const epicRowTops: number[] = [];
     let cursor = HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD;
-    for (const e of visible) {
+    for (let r = 0; r < epicRowHeights.length; r++) {
+      epicRowTops[r] = cursor;
+      cursor += epicRowHeights[r] + EPIC_GAP;
+    }
+
+    for (const e of placed) {
       const eh = epicH.get(e.id)!;
+      const eTop = epicRowTops[epicRowOf.get(e.id)!];
+      const eLeft = left(e.startsAt!);
+      const eWidth = width(e.startsAt!, e.endsAt!);
       epicBars.push({
         epic: e,
-        left: left(e.startsAt!),
-        width: width(e.startsAt!, e.endsAt!),
-        top: cursor,
+        left: eLeft,
+        width: eWidth,
+        top: eTop,
         height: eh,
       });
+      const ex = barX("epic", eLeft, eWidth);
+      epicRects.set(e.id, {
+        sx: ex.left,
+        ex: ex.left + ex.width,
+        cy: eTop + eh / 2,
+      });
 
-      let storyTop = cursor + EPIC_TOP_PAD;
+      // Row tops inside the epic, from the row heights measured above.
+      const heights = storyRowHeights.get(e.id)!;
+      const rowTops: number[] = [];
+      let rowCursor = eTop + EPIC_TOP_PAD;
+      for (let r = 0; r < heights.length; r++) {
+        rowTops[r] = rowCursor;
+        rowCursor += heights[r] + STORY_GAP;
+      }
+
       for (const st of e.stories) {
         const sh = storyH.get(st.id)!;
+        const storyTop = rowTops[storyRowOf.get(st.id)!];
         const sLeft = left(st.startsAt);
         const sWidth = width(st.startsAt, st.endsAt);
         storyBars.push({
@@ -1069,20 +1240,16 @@ export function EpicsTimeline({
           });
           taskTop += TASK_H + TASK_GAP;
         }
-
-        storyTop += sh + STORY_GAP;
       }
-
-      cursor += eh + EPIC_GAP;
     }
 
     const height =
-      visible.length > 0
+      placed.length > 0
         ? cursor - EPIC_GAP + BODY_BOTTOM_PAD
         : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
 
-    return { epicBars, storyBars, taskBars, storyRects, height };
-  }, [epics, bounds, view]);
+    return { epicBars, storyBars, taskBars, storyRects, epicRects, height };
+  }, [epics, bounds]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
   // is what makes the horizontal scrollbar jump around under the cursor.
@@ -1144,8 +1311,12 @@ export function EpicsTimeline({
   // later sprint is a viewer going somewhere, and dragging them back from it is
   // the thing that reads as the timeline fighting the scroll.
   const lastSampleRef = useRef<{ x: number; t: number } | null>(null);
-  // Direction of the last fast movement: +1 scrolling right, -1 left, 0 none.
-  const flickDirRef = useRef<0 | 1 | -1>(0);
+  // Direction of the last fast movement (+1 right, -1 left, 0 none) and when it
+  // was seen. The timestamp is what stops a throw from being cashed in later:
+  // flick hard, then steer slowly for a second, and the direction alone would
+  // still spring the view to today the moment you stopped — long after the
+  // throw it was supposed to be finishing.
+  const flickRef = useRef<{ dir: 0 | 1 | -1; at: number }>({ dir: 0, at: 0 });
   const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (settleRef.current) clearTimeout(settleRef.current);
@@ -1169,14 +1340,19 @@ export function EpicsTimeline({
     if (prev && now > prev.t) {
       const dx = el.scrollLeft - prev.x;
       const velocity = Math.abs(dx) / (now - prev.t);
-      if (dx !== 0 && velocity >= FLICK_PX_PER_MS) flickDirRef.current = dx > 0 ? 1 : -1;
+      if (dx !== 0 && velocity >= FLICK_PX_PER_MS) {
+        flickRef.current = { dir: dx > 0 ? 1 : -1, at: now };
+      }
     }
 
     if (settleRef.current) clearTimeout(settleRef.current);
     settleRef.current = setTimeout(() => {
-      const dir = flickDirRef.current;
-      flickDirRef.current = 0;
+      const { dir, at } = flickRef.current;
+      flickRef.current = { dir: 0, at: 0 };
       if (!dir) return;
+      // Only the tail of the throw itself springs back; anything slower that
+      // happened after it is the viewer steering, and steering is left alone.
+      if (performance.now() - at > FLICK_MAX_AGE_MS) return;
       // Dragging a bar can scroll the box; that scroll belongs to the drag.
       if (dragRef.current) return;
       const box = scrollerRef.current;
@@ -1216,6 +1392,21 @@ export function EpicsTimeline({
   const viewWidth = Number.isFinite(view.end)
     ? (view.end - view.start) * PX_PER_DAY
     : 0;
+
+  // Render cull. The layout placed every bar; this only decides which ones are
+  // worth putting in the DOM. A screen-wide margin either side means a bar is
+  // already mounted by the time it scrolls into view, so nothing pops in at the
+  // edge — and because positions were fixed upstream, dropping one can't move
+  // anything else.
+  const cullFrom = view.start * PX_PER_DAY - viewWidth;
+  const cullTo = Number.isFinite(view.end)
+    ? view.end * PX_PER_DAY + viewWidth
+    : Number.POSITIVE_INFINITY;
+  const inWindow = (b: { left: number; width: number }) =>
+    b.left + b.width > cullFrom && b.left < cullTo;
+  const epicBars = layout.epicBars.filter(inWindow);
+  const storyBars = layout.storyBars.filter(inWindow);
+  const taskBars = layout.taskBars.filter(inWindow);
 
   return (
     <div className={cn("space-y-2.5", fillHeight && "flex h-full min-h-0 flex-col")}>
@@ -1274,18 +1465,17 @@ export function EpicsTimeline({
             what finally makes the header's `sticky top-0` bite — until now its
             nearest scrollport was the page, so it never pinned.
 
-            Snapping is `proximity` and x-only: scrolling back toward today
-            lands it in the middle of the box instead of stopping wherever the
-            flick ended, while a scroll that means to be somewhere else
-            (reading a month three sprints out) is left alone. */}
+            No CSS scroll-snap. The today line used to be a `proximity` snap
+            target, which meant the browser pulled any scroll that ended near
+            today straight back to it — and near today is where the timeline
+            usually sits, so short, deliberate scrolls looked like they hadn't
+            moved at all. Getting back to today is the spring-back below's job,
+            which can tell a throw from a nudge; snap couldn't. */}
         <div
           ref={scrollerRef}
           data-timeline-scroller
           className={cn("overflow-auto", fillHeight && "min-h-0 flex-1")}
-          style={{
-            maxHeight: fillHeight ? undefined : MAX_BODY_H,
-            scrollSnapType: "x proximity",
-          }}
+          style={{ maxHeight: fillHeight ? undefined : MAX_BODY_H }}
           onScroll={handleScroll}
         >
           <div
@@ -1338,9 +1528,6 @@ export function EpicsTimeline({
                       left: todayCenter,
                       top: HEADER_ROWS * HEADER_ROW_H,
                       bottom: 0,
-                      // The line is the grid's snap point, so "back to today"
-                      // settles with today centred in the scroll box.
-                      scrollSnapAlign: "center",
                     }}
                     aria-hidden
                   />
@@ -1443,57 +1630,36 @@ export function EpicsTimeline({
                   </div>
                 </div>
 
-                {/* Dependency arrows between story bars. z-20 lifts them above
-                    the bars, pointer-events-none keeps the bars clickable. A
-                    backward edge (dependent starts before its blocker ends)
-                    still draws — the bezier simply loops leftward. */}
-                {shown("story") && storyDependencies.length > 0 && (
-                  <svg
-                    className="pointer-events-none absolute inset-0 z-20 overflow-visible"
+                {/* Dependency arrows, one layer per level. Epics first so a
+                    story edge paints over an epic one where they cross. */}
+                {shown("epic") && (
+                  <DependencyArrows
+                    level="epic"
+                    edges={epicDependencies.map((d) => ({
+                      from: d.dependsOnEpicId,
+                      to: d.epicId,
+                    }))}
+                    rects={layout.epicRects}
                     width={bounds.width}
                     height={gridHeight}
-                    aria-hidden
-                  >
-                    <defs>
-                      <marker
-                        id="story-dep-arrow"
-                        viewBox="0 0 8 8"
-                        refX="6.5"
-                        refY="4"
-                        markerWidth="6"
-                        markerHeight="6"
-                        orient="auto"
-                      >
-                        <path d="M0,0 L8,4 L0,8 z" fill={OS_LEVEL.story.edge} />
-                      </marker>
-                    </defs>
-                    {storyDependencies.map((d) => {
-                      const from = layout.storyRects.get(d.dependsOnStoryId);
-                      const to = layout.storyRects.get(d.storyId);
-                      if (!from || !to) return null;
-                      const x1 = from.ex;
-                      const y1 = from.cy;
-                      const x2 = to.sx;
-                      const y2 = to.cy;
-                      const dx = Math.max(18, Math.abs(x2 - x1) / 2);
-                      return (
-                        <path
-                          key={`${d.dependsOnStoryId}->${d.storyId}`}
-                          d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                          fill="none"
-                          stroke={OS_LEVEL.story.edge}
-                          strokeWidth={1.5}
-                          strokeOpacity={0.9}
-                          markerEnd="url(#story-dep-arrow)"
-                        />
-                      );
-                    })}
-                  </svg>
+                  />
+                )}
+                {shown("story") && (
+                  <DependencyArrows
+                    level="story"
+                    edges={storyDependencies.map((d) => ({
+                      from: d.dependsOnStoryId,
+                      to: d.storyId,
+                    }))}
+                    rects={layout.storyRects}
+                    width={bounds.width}
+                    height={gridHeight}
+                  />
                 )}
 
                 {/* Bars, outermost first so nested levels paint on top. */}
                 {shown("epic") &&
-                  layout.epicBars.map((b) => {
+                  epicBars.map((b) => {
                     return (
                       <HoverBar
                         key={b.epic.id}
@@ -1555,7 +1721,7 @@ export function EpicsTimeline({
                   })}
 
                 {shown("story") &&
-                  layout.storyBars.map((b) => (
+                  storyBars.map((b) => (
                     <HoverBar
                       key={b.story.id}
                       kind="story"
@@ -1609,7 +1775,7 @@ export function EpicsTimeline({
                   ))}
 
                 {shown("task") &&
-                  layout.taskBars.map((b) => (
+                  taskBars.map((b) => (
                     <HoverBar
                       key={b.task.id}
                       kind="task"

@@ -268,6 +268,8 @@ export async function loadPartnerProjectView(
     endsAt: e.endsAt?.toISOString() ?? null,
     targetTermId: null,
     descriptionDocId: null,
+    // The hub shows the shape of the work, not its planning edges.
+    dependsOn: [],
     stories: e.stories.map((st) => ({
       id: st.id,
       title: st.title,
