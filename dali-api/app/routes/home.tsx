@@ -178,6 +178,10 @@ function RecentCardMedia({ page }: { page: FavoritePage }) {
 function HomeSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  // The query `results` belong to. Compared against the live query during
+  // render, so a keystroke reads as "searching" in the frame it paints — a
+  // boolean flipped from the effect lands a frame late and flashes "No matches".
+  const [resultsQuery, setResultsQuery] = useState("");
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -188,6 +192,7 @@ function HomeSearch() {
     const q = query.trim();
     if (q.length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setResultsQuery(q);
       return;
     }
     const ctrl = new AbortController();
@@ -200,9 +205,12 @@ function HomeSearch() {
         .then((d) => {
           setResults(d.results ?? []);
           setActive(0);
+          setResultsQuery(q);
         })
         .catch(() => {
-          /* aborted or network error — leave prior results */
+          // Abort means a newer query already owns the state; a real failure
+          // still has to settle the query or "Searching…" would never clear.
+          if (!ctrl.signal.aborted) setResultsQuery(q);
         });
     }, 150);
     return () => {
@@ -221,7 +229,11 @@ function HomeSearch() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const show = open && query.trim().length >= MIN_QUERY_LENGTH;
+  const trimmed = query.trim();
+  const show = open && trimmed.length >= MIN_QUERY_LENGTH;
+  // Results still catching up to the query (debounce window + in-flight fetch):
+  // show a pending state instead of flashing "No matches" before the first hit.
+  const isSearching = trimmed.length >= MIN_QUERY_LENGTH && resultsQuery !== trimmed;
 
   // Home renders inside the workspace iframe, so a result opens as a workspace
   // tab rather than navigating this view away — same rule as every other link
@@ -291,7 +303,13 @@ function HomeSearch() {
         className="landing-search-results"
       >
         {results.length === 0 ? (
-          <p className="landing-search-empty">No matches for “{query.trim()}”</p>
+          isSearching ? (
+            <p className="landing-search-empty" role="status" aria-live="polite">
+              Searching…
+            </p>
+          ) : (
+            <p className="landing-search-empty">No matches for “{trimmed}”</p>
+          )
         ) : (
           results.map((r, i) => {
             const Icon = TYPE_META[r.type].icon;
