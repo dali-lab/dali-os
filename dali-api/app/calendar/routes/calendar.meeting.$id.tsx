@@ -70,6 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           userId: true,
           present: true,
+          absenceNote: true,
           user: { select: { firstName: true, lastName: true, daliEmail: true } },
         },
       },
@@ -151,6 +152,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,
+      // Withheld rather than merely hidden: a note can say why someone was
+      // out, so a viewer who can't mark attendance never receives one.
+      absenceNote: canManage ? a.absenceNote : null,
     })) satisfies AttendanceRow[],
     viewerInvited: viewerRow !== undefined,
     viewerPresent: viewerRow?.present ?? false,
@@ -350,7 +354,13 @@ export default function CalendarMeetingPage() {
         )}
 
         {d.canManage && d.canSeeGuestList && d.rows.length > 0 && (
-          <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
+          <AttendanceChecklist
+            meetingId={d.meetingId}
+            meetingLabel={d.meetingLabel}
+            canEdit
+            canNote={d.canManage}
+            attendees={d.rows}
+          />
         )}
 
         {d.canManage && !d.canSeeGuestList && (
