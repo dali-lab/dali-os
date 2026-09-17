@@ -170,6 +170,58 @@ describe("fetchBusyEvents", () => {
     });
   });
 
+  it("reads only availability calendars by default, but every listed calendar with scope 'all'", async () => {
+    const calendarList = {
+      items: [
+        { id: "primary", summary: "Me", primary: true },
+        { id: "classes", summary: "Classes" },
+      ],
+    };
+    const event = (id: string) => ({
+      items: [
+        {
+          id,
+          summary: id,
+          status: "confirmed",
+          start: { dateTime: "2026-05-12T13:00:00Z" },
+          end: { dateTime: "2026-05-12T14:00:00Z" },
+        },
+      ],
+    });
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+    const start = new Date("2026-05-12T00:00:00Z");
+    const end = new Date("2026-05-13T00:00:00Z");
+    const calledCalendars = (fetchFn: ReturnType<typeof vi.fn>) =>
+      fetchFn.mock.calls
+        .map(([url]) => /calendars\/([^/]+)\/events/.exec(String(url))?.[1])
+        .filter(Boolean);
+
+    // Availability: "classes" isn't in subCalendarIds, so it isn't read.
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: ["primary"] },
+    ]);
+    let fetchFn = mockFetchSequence([calendarList, event("mine")]);
+    let out = await fetchBusyEvents("userX", start, end);
+    expect(calledCalendars(fetchFn)).toEqual(["primary"]);
+    expect(out.map((e) => e.calendarId)).toEqual(["primary"]);
+
+    // "all" (the calendar grid): the Show-only calendar is read too.
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: ["primary"] },
+    ]);
+    fetchFn = mockFetchSequence([calendarList, event("mine"), event("lecture")]);
+    out = await fetchBusyEvents("userX", start, end, undefined, undefined, "all");
+    expect(calledCalendars(fetchFn)).toEqual(["primary", "classes"]);
+    expect(out.map((e) => e.calendarId).sort()).toEqual(["classes", "primary"]);
+  });
+
   it("carries guests, organizer, and join links onto the busy event", async () => {
     prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
       { id: "L1", subCalendarIds: [] },

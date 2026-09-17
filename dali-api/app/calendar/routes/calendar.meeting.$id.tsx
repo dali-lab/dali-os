@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, UserPlus } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -11,6 +12,7 @@ import { AttendanceChecklist, type AttendanceRow } from "~/components/Attendance
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { InviteGuestsModal } from "~/calendar/components/InviteGuestsModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -113,6 +115,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notePageId: meeting.notePage?.id ?? null,
     meetingUrl: meeting.meetingUrl,
     canManage,
+    // Narrower than canManage: adding guests is the organizer's or Core's call,
+    // as inviteToScheduledMeeting enforces.
+    canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
       userId: a.userId,
@@ -146,6 +151,7 @@ export default function CalendarMeetingPage() {
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
   const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
+  const [inviting, setInviting] = useState(false);
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
@@ -194,12 +200,26 @@ export default function CalendarMeetingPage() {
           <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
             <Users className="h-4 w-4 text-muted-foreground" /> Attendance
           </h2>
-          {d.canManage && d.rows.length > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {present}/{d.rows.length} present
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {d.canManage && d.rows.length > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {present}/{d.rows.length} present
+              </span>
+            )}
+            {d.canInvite && (
+              <button
+                type="button"
+                onClick={() => setInviting(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                <UserPlus className="h-4 w-4 text-muted-foreground" /> Invite people
+              </button>
+            )}
+          </div>
         </div>
+        {inviting && (
+          <InviteGuestsModal meetingId={d.meetingId} onClose={() => setInviting(false)} />
+        )}
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
           <CheckInPanel

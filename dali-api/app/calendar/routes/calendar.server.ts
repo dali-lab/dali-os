@@ -194,6 +194,8 @@ async function meetingsForExternalEvents(
       // Adding notes after the fact is the organizer's or Core's call — the same
       // authority attachMeetingNote re-checks server-side.
       canAddNote: m.organizerId === userId || canMarkCoreMeeting,
+      // Same authority inviteToScheduledMeeting re-checks.
+      canInvite: m.organizerId === userId || canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -1221,12 +1223,15 @@ export async function loadCalendarData(request: Request) {
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${crudEnabled ? "crud" : "busy"}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
   const [externalRaw, calendarLinks] = await Promise.all([
+    // Read every calendar on each account ("all"), not just the ones counting
+    // toward availability: the grid's per-calendar Show toggle filters this
+    // client-side, so a calendar missing here can never be shown.
     cachedExternalRead<CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>>>(
       externalCacheKey,
       () =>
         crudEnabled
-          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens)
-          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens),
+          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all")
+          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
     ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
       return [];
@@ -1321,18 +1326,20 @@ export async function loadCalendarData(request: Request) {
           Boolean(e.eventId) &&
           !eventMeetings.has(e.eventId),
       }))
-    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
-        startIso: e.start,
-        endIso: e.end,
-        title: e.title ?? "Busy",
-        color: e.color ?? null,
-        calendarId: e.calendarId ?? null,
-        description: e.description,
-        location: e.location,
-        organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
-        links: externalLinks(e.meetingUrl, e.htmlLink),
-      }));
+    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>)
+        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
+        .map((e) => ({
+          startIso: e.start,
+          endIso: e.end,
+          title: e.title ?? "Busy",
+          color: e.color ?? null,
+          calendarId: e.calendarId ?? null,
+          description: e.description,
+          location: e.location,
+          organizerName: e.organizerName,
+          attendees: externalAttendees(e.attendees),
+          links: externalLinks(e.meetingUrl, e.htmlLink),
+        }));
 
   // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
   // terms for the modal picker.

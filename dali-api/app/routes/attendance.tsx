@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ExternalLink,
   UserCheck,
+  UserPlus,
   UserX,
   CalendarClock,
   MessageSquarePlus,
@@ -25,6 +26,7 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
 import { Menu, Tooltip } from "~/components/ui/floating";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
+import { InviteGuestsModal } from "~/calendar/components/InviteGuestsModal";
 import { cn } from "~/lib/cn";
 
 // An absence note is a short aside ("excused — flu"), not a place for a
@@ -344,6 +346,7 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
   const cancelFetcher = useFetcher();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
   const present = event.attendees.filter((a) => a.present);
   const missing = event.attendees.filter((a) => !a.present);
@@ -437,6 +440,9 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
               <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => setEditing(true)}>
                 Edit event
               </Menu.Item>
+              <Menu.Item icon={<UserPlus className="h-3.5 w-3.5" />} onSelect={() => setInviting(true)}>
+                Invite people
+              </Menu.Item>
               <Menu.Separator />
               <Menu.Item
                 icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -452,6 +458,9 @@ function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) 
 
       {editing && (
         <EditMeetingModal meetingId={event.id} onClose={() => setEditing(false)} />
+      )}
+      {inviting && (
+        <InviteGuestsModal meetingId={event.id} onClose={() => setInviting(false)} />
       )}
 
       {open && (

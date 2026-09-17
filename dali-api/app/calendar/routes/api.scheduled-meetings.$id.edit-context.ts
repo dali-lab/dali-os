@@ -3,10 +3,11 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { meetingIsUpcoming } from "~/lib/scheduled-meeting";
 import { loadParticipantOptions } from "./calendar.server";
 
-// Everything the Edit-meeting modal needs, fetched on demand when the ⋯ menu's
-// Edit is clicked — the meeting's current fields plus the member/group directory
+// Everything the Edit-meeting and Invite-people modals need, fetched on demand
+// when one opens — the meeting's current fields plus the member/group directory
 // for the guest picker. Kept off the Attendance loader so that page stays light.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -53,6 +54,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         scopeType: meeting.scopeType,
         groupId: meeting.scopeType === "Group" ? meeting.scopeId : null,
         participantUserIds: meeting.participantUserIds,
+        organizerId: meeting.organizerId,
+        // Inviting to a finished meeting adds to the roster without sending an
+        // invite; the invite modal says so.
+        upcoming: meetingIsUpcoming(meeting, new Date()),
       },
       options: { users, groups },
     }),
