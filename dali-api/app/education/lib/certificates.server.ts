@@ -40,6 +40,12 @@ export type CloseOutResult =
 export async function closeOutOffering(args: {
   offeringId: string;
   actorId: string;
+  // Close-out issues certificates and marks the offering complete. By default we
+  // refuse to do that before the offering has finished running (its last session
+  // ends in the future), since that's almost always a misfire — the very bug that
+  // stranded an offering in "Past offerings" before it happened. Callers that
+  // genuinely mean to close an offering early (e.g. a cancellation) pass this.
+  allowEarly?: boolean;
 }): Promise<CloseOutResult> {
   const offering = await prisma.educationOffering.findUnique({
     where: { id: args.offeringId },
@@ -47,6 +53,7 @@ export async function closeOutOffering(args: {
       id: true,
       title: true,
       type: true,
+      endsAt: true,
       closedOutAt: true,
       completionThreshold: true,
       _count: { select: { sessions: true } },
@@ -72,6 +79,19 @@ export async function closeOutOffering(args: {
     },
   });
   if (!offering) return { error: "Offering not found", status: 404 };
+
+  // Guard: don't complete an offering that hasn't run yet. A null endsAt (no
+  // dated sessions) isn't "unfinished" in a way we can prove, so it's allowed.
+  if (
+    !args.allowEarly &&
+    offering.endsAt != null &&
+    offering.endsAt.getTime() > Date.now()
+  ) {
+    return {
+      error: `This course runs until ${offering.endsAt.toISOString().slice(0, 10)} and hasn't finished yet. Close-out issues certificates and marks it complete — pass allowEarly to close it out early.`,
+      status: 409,
+    };
+  }
 
   const firstCloseOut = offering.closedOutAt === null;
   const totalSessions = offering._count.sessions;
@@ -188,6 +208,39 @@ export async function closeOutOffering(args: {
     });
   }
   return { ok: true, issued, alreadyIssued, ineligible };
+}
+
+export type ReopenResult = { ok: true } | { error: string; status: number };
+
+/**
+ * Reverse a close-out: clears `closedOutAt`/`closedOutById` so the offering
+ * leaves the "Past offerings" bucket and can be edited and re-closed later.
+ * Certificates and CE credits already issued by the prior close-out are left in
+ * place — re-running close-out is idempotent and only issues missing ones — so
+ * reopening cleanly undoes an accidental or premature close-out without clawing
+ * anything back. No-op if the offering was never closed out.
+ */
+export async function reopenOffering(args: {
+  offeringId: string;
+  actorId: string;
+}): Promise<ReopenResult> {
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: args.offeringId },
+    select: { id: true, closedOutAt: true },
+  });
+  if (!offering) return { error: "Offering not found", status: 404 };
+  if (offering.closedOutAt === null) return { ok: true }; // already open
+
+  await prisma.educationOffering.update({
+    where: { id: args.offeringId },
+    data: { closedOutAt: null, closedOutById: null },
+  });
+  await logAuditEvent({
+    action: "education.offering.reopen",
+    userId: args.actorId,
+    targetId: args.offeringId,
+  });
+  return { ok: true };
 }
 
 export type CloseOutPreview = {

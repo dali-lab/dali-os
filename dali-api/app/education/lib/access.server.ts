@@ -88,27 +88,30 @@ export async function requireEnrollment(
 }> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  if (surface === "member" && auth.user.type === "dartmouth") {
+
+  // A Dartmouth-auth user who manages this offering (an external instructor, or
+  // Core signed in via CAS) works from the member shell — including the "view as
+  // student" preview — so resolve manager status before the portal bounce
+  // instead of redirecting every Dartmouth user unconditionally.
+  const isManager =
+    surface === "member" && (await isOfferingManager(auth.user.sub, offeringId));
+
+  if (surface === "member" && auth.user.type === "dartmouth" && !isManager) {
     throw redirect(`/portal/education/${offeringId}/hub`);
   }
   if (surface === "portal" && auth.user.type === "member") {
     throw redirect(`/education/${offeringId}/hub`);
   }
 
-  const [application, isManager] = await Promise.all([
-    prisma.educationApplication.findUnique({
-      where: {
-        applicantUserId_offeringId: {
-          applicantUserId: auth.user.sub,
-          offeringId,
-        },
+  const application = await prisma.educationApplication.findUnique({
+    where: {
+      applicantUserId_offeringId: {
+        applicantUserId: auth.user.sub,
+        offeringId,
       },
-      select: { id: true, status: true },
-    }),
-    surface === "member"
-      ? isOfferingManager(auth.user.sub, offeringId)
-      : Promise.resolve(false),
-  ]);
+    },
+    select: { id: true, status: true },
+  });
 
   const enrolled = application?.status === "Approved";
   if (!enrolled && !isManager) {
