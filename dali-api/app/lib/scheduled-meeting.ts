@@ -990,6 +990,10 @@ export type UpdateScheduledMeetingInput = {
   editScope?: "this" | "following" | "all";
   occurrenceStart?: string;   // ISO of this occurrence's ORIGINAL start
   occurrenceEventId?: string; // Google instance event id (for "this" patch)
+  // Guest permission flags — only applied when canFullEdit; ignored for guestEditOnly actors.
+  guestsCanModify?: boolean;
+  guestsCanInviteOthers?: boolean;
+  guestsCanSeeGuestList?: boolean;
 };
 
 export type UpdateScheduledMeetingResult =
@@ -1033,14 +1037,53 @@ export async function updateScheduledMeeting(
       isCoreMeeting: true,
       meetingTypeLabel: true,
       projectId: true,
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
+      guestsCanSeeGuestList: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.status === "Cancelled") {
     return { ok: false, error: "This meeting has been cancelled", status: 400 };
   }
-  if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
+
+  const core = await isCore(actorUserId);
+  const canFullEdit =
+    meeting.organizerId === actorUserId ||
+    core ||
+    (meeting.guestsCanModify && meeting.participantUserIds.includes(actorUserId));
+  const canGuestEdit =
+    canFullEdit ||
+    (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(actorUserId));
+  const guestEditOnly = canGuestEdit && !canFullEdit;
+
+  if (!canGuestEdit) {
     return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
+  }
+
+  if (guestEditOnly) {
+    const editScope = input.editScope ?? "all";
+    if (editScope !== "all") {
+      return { ok: false, error: "Only the organizer can change the schedule", status: 403 };
+    }
+    // Force back all non-guest-list fields so only the participant list can change.
+    input.title = meeting.title;
+    input.durationMinutes = meeting.durationMinutes;
+    input.startTime = meeting.selectedAt?.toISOString() ?? null;
+    input.recurrenceRule = meeting.recurrenceRule;
+    input.location = undefined;
+    input.description = undefined;
+    input.guestsCanModify = undefined;
+    input.guestsCanInviteOthers = undefined;
+    input.guestsCanSeeGuestList = undefined;
+  }
+
+  // Only the organizer (or Core) sets the guest-permission flags — a guest with
+  // edit access can change the event but not who else may edit it.
+  if (meeting.organizerId !== actorUserId && !core) {
+    input.guestsCanModify = undefined;
+    input.guestsCanInviteOthers = undefined;
+    input.guestsCanSeeGuestList = undefined;
   }
 
   const editScope = input.editScope ?? "all";
@@ -1187,6 +1230,9 @@ export async function updateScheduledMeeting(
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
+      ...(input.guestsCanModify !== undefined ? { guestsCanModify: input.guestsCanModify } : {}),
+      ...(input.guestsCanInviteOthers !== undefined ? { guestsCanInviteOthers: input.guestsCanInviteOthers } : {}),
+      ...(input.guestsCanSeeGuestList !== undefined ? { guestsCanSeeGuestList: input.guestsCanSeeGuestList } : {}),
     },
   });
 

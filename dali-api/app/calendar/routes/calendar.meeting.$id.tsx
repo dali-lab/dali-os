@@ -60,6 +60,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
+      participantUserIds: true,
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
       organizer: { select: { firstName: true, lastName: true } },
       notePage: { select: { id: true } },
       attendance: {
@@ -127,9 +130,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notePageId: meeting.notePage?.id ?? null,
     meetingUrl: meeting.meetingUrl,
     canManage,
-    // Narrower than canManage: editing the event is the organizer's or Core's
-    // call, as updateScheduledMeeting enforces.
-    canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
+    // Widened to canGuestEdit: a participant with invite-others permission can also invite.
+    canInvite:
+      auth.user.sub === meeting.organizerId ||
+      roles.isCore ||
+      (meeting.guestsCanModify && meeting.participantUserIds.includes(auth.user.sub)) ||
+      (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(auth.user.sub)),
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
       userId: a.userId,

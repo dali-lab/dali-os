@@ -23,6 +23,11 @@ export type EditContext = {
     participantUserIds: string[];
     organizerId: string;
     upcoming: boolean;
+    guestsCanModify: boolean;
+    guestsCanInviteOthers: boolean;
+    guestsCanSeeGuestList: boolean;
+    guestEditOnly: boolean;
+    canSetPermissions: boolean;
   };
   options: {
     users: { id: string; firstName: string; lastName: string; daliEmail: string | null }[];
