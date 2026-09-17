@@ -5,10 +5,10 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import {
   getCertificateTemplate,
+  getCertificateTemplateBgUrl,
   renameCertificateTemplate,
   saveCertificateTemplateFields,
 } from "~/education/lib/certificate-templates.server";
-import { getDownloadUrl } from "~/lib/s3";
 import { parsePlacedFields } from "~/education/lib/certificate-fields";
 import { CertificateTemplateEditor } from "~/education/components/CertificateTemplateEditor";
 import { Button } from "~/components/ui/Button";
@@ -34,10 +34,8 @@ export async function loader({
   const t = await getCertificateTemplate(params.templateId!);
   if (!t) throw new Response("Not found", { status: 404 });
 
-  const bgUrl = await getDownloadUrl(t.backgroundKey, {
-    contentType: t.backgroundContentType,
-    inline: true,
-  });
+  const bgUrl = await getCertificateTemplateBgUrl(t.backgroundFileId);
+  if (!bgUrl) throw new Response("Not found", { status: 404 });
 
   return { template: t, bgUrl };
 }

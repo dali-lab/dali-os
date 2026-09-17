@@ -11,6 +11,8 @@ import {
   renameCertificateTemplate,
   archiveCertificateTemplate,
 } from "~/education/lib/certificate-templates.server";
+import { CERTIFICATE_TEMPLATES_PROCESS_ID } from "~/lib/bindings.server";
+import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { uploadFileToS3 } from "~/lib/upload-client";
@@ -25,7 +27,10 @@ export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/education");
-  return { templates: await listCertificateTemplates() };
+  return {
+    templates: await listCertificateTemplates(),
+    driveProcessId: CERTIFICATE_TEMPLATES_PROCESS_ID,
+  };
 }
 
 export async function action({ request }: { request: Request }) {
@@ -38,18 +43,14 @@ export async function action({ request }: { request: Request }) {
 
   if (intent === "create-template") {
     const name = String(formData.get("name") ?? "").trim();
-    const backgroundKey = String(formData.get("backgroundKey") ?? "");
-    const backgroundContentType = String(
-      formData.get("backgroundContentType") ?? "image/png",
-    );
-    const bgWidth = Number(formData.get("bgWidth") ?? 0);
-    const bgHeight = Number(formData.get("bgHeight") ?? 0);
     const result = await createCertificateTemplate({
       name,
-      backgroundKey,
-      backgroundContentType,
-      bgWidth,
-      bgHeight,
+      s3Key: String(formData.get("s3Key") ?? ""),
+      fileName: String(formData.get("fileName") ?? "background"),
+      contentType: String(formData.get("contentType") ?? "image/png"),
+      sizeBytes: Number(formData.get("sizeBytes") ?? 0),
+      bgWidth: Number(formData.get("bgWidth") ?? 0),
+      bgHeight: Number(formData.get("bgHeight") ?? 0),
       actorId: auth.user.sub,
     });
     if ("error" in result) {
@@ -97,7 +98,7 @@ export async function action({ request }: { request: Request }) {
 type LoaderData = Extract<Awaited<ReturnType<typeof loader>>, { templates: unknown }>;
 
 export default function CertificateTemplatesPage() {
-  const { templates } = useLoaderData() as LoaderData;
+  const { templates, driveProcessId } = useLoaderData() as LoaderData;
   const dialog = useDialog();
   const mutateFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const createFetcher = useFetcher<{ ok?: boolean; error?: string }>();
@@ -137,8 +138,10 @@ export default function CertificateTemplatesPage() {
         {
           intent: "create-template",
           name,
-          backgroundKey: meta.s3Key,
-          backgroundContentType: meta.contentType,
+          s3Key: meta.s3Key,
+          fileName: meta.fileName,
+          contentType: meta.contentType,
+          sizeBytes: String(meta.sizeBytes),
           bgWidth: String(dims.w),
           bgHeight: String(dims.h),
         },
@@ -310,6 +313,11 @@ export default function CertificateTemplatesPage() {
           ))}
         </ul>
       )}
+
+      {/* Where uploaded background images auto-file in Drive (Core-managed). */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <DriveFolderBindings processType="CertificateTemplates" processId={driveProcessId} />
+      </div>
     </div>
   );
 }

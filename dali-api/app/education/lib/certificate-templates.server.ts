@@ -7,7 +7,33 @@
 
 import { prisma } from "~/lib/db";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
+import {
+  ensureProcessFolder,
+  CERTIFICATE_TEMPLATES_PROCESS_ID,
+} from "~/lib/bindings.server";
 import { parsePlacedFields, type PlacedField } from "./certificate-fields";
+
+/** The S3 key + content type of a background ProjectFile's current version. */
+async function backgroundVersion(
+  fileId: string,
+): Promise<{ s3Key: string; contentType: string } | null> {
+  const f = await prisma.projectFile.findFirst({
+    where: { id: fileId, archivedAt: null },
+    select: { currentVersion: { select: { s3Key: true, contentType: true } } },
+  });
+  if (!f?.currentVersion) return null;
+  return {
+    s3Key: f.currentVersion.s3Key,
+    contentType: f.currentVersion.contentType ?? "image/png",
+  };
+}
+
+/** Presigned inline URL for a template's background (editor preview). */
+export async function getCertificateTemplateBgUrl(fileId: string): Promise<string | null> {
+  const v = await backgroundVersion(fileId);
+  if (!v) return null;
+  return getDownloadUrl(v.s3Key, { contentType: v.contentType, inline: true });
+}
 
 export type CertificateTemplateSummary = {
   id: string;
@@ -40,8 +66,7 @@ export async function getCertificateTemplate(id: string) {
     select: {
       id: true,
       name: true,
-      backgroundKey: true,
-      backgroundContentType: true,
+      backgroundFileId: true,
       bgWidth: true,
       bgHeight: true,
       fields: true,
@@ -54,23 +79,65 @@ export async function getCertificateTemplate(id: string) {
 
 export async function createCertificateTemplate(args: {
   name: string;
-  backgroundKey: string;
-  backgroundContentType: string;
+  // The uploaded background image (already in S3 via the presign flow). Recorded
+  // as a Drive ProjectFile so it's browsable + auto-filed into the bound folder.
+  s3Key: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
   bgWidth: number;
   bgHeight: number;
   actorId: string;
 }): Promise<{ id: string } | { error: string; status: number }> {
   const name = args.name.trim();
   if (!name) return { error: "Name is required", status: 400 };
-  if (!args.backgroundKey.startsWith("uploads/"))
+  if (!args.s3Key.startsWith("uploads/"))
     return { error: "Invalid background image", status: 400 };
   if (!(args.bgWidth > 0 && args.bgHeight > 0))
     return { error: "Background dimensions are required", status: 400 };
+
+  // Auto-file the background into the CertificateTemplates folder binding
+  // (creates a default Core-scoped folder on first upload; Core can repoint it).
+  const folderPageId = await ensureProcessFolder({
+    processType: "CertificateTemplates",
+    processId: CERTIFICATE_TEMPLATES_PROCESS_ID,
+    purpose: "background",
+    createdById: args.actorId,
+  });
+
+  // Create the Drive file + first version, then the template pointing at it.
+  const fileId = await prisma.$transaction(async (tx) => {
+    const file = await tx.projectFile.create({
+      data: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        folderPageId,
+        title: args.fileName || name,
+      },
+      select: { id: true },
+    });
+    const version = await tx.projectFileVersion.create({
+      data: {
+        fileId: file.id,
+        s3Key: args.s3Key,
+        fileName: args.fileName,
+        contentType: args.contentType,
+        sizeBytes: args.sizeBytes,
+        uploadedById: args.actorId,
+      },
+      select: { id: true },
+    });
+    await tx.projectFile.update({
+      where: { id: file.id },
+      data: { currentVersionId: version.id },
+    });
+    return file.id;
+  });
+
   const created = await prisma.certificateTemplate.create({
     data: {
       name,
-      backgroundKey: args.backgroundKey,
-      backgroundContentType: args.backgroundContentType,
+      backgroundFileId: fileId,
       bgWidth: Math.round(args.bgWidth),
       bgHeight: Math.round(args.bgHeight),
       createdById: args.actorId,
@@ -117,11 +184,19 @@ export async function renameCertificateTemplate(args: {
 export async function archiveCertificateTemplate(
   id: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  if (!(await assertTemplate(id))) return { error: "Template not found", status: 404 };
-  // Drop any per-offering bindings that point here so resolution falls back
-  // cleanly to the default / built-in design.
+  const t = await prisma.certificateTemplate.findFirst({
+    where: { id, archivedAt: null },
+    select: { backgroundFileId: true },
+  });
+  if (!t) return { error: "Template not found", status: 404 };
+  // Drop any per-offering bindings that point here (resolution falls back to the
+  // default / built-in design) and archive the background file out of Drive too.
   await prisma.$transaction([
     prisma.educationCertificateBinding.deleteMany({ where: { templateId: id } }),
+    prisma.projectFile.update({
+      where: { id: t.backgroundFileId },
+      data: { archivedAt: new Date() },
+    }),
     prisma.certificateTemplate.update({
       where: { id },
       data: { archivedAt: new Date(), isDefault: false },
@@ -227,17 +302,19 @@ export async function getCertificateRenderTemplate(
 ): Promise<CertificateRenderTemplate | null> {
   const t = await prisma.certificateTemplate.findFirst({
     where: { id: templateId, archivedAt: null },
-    select: { backgroundKey: true, bgWidth: true, bgHeight: true, fields: true },
+    select: { backgroundFileId: true, bgWidth: true, bgHeight: true, fields: true },
   });
   if (!t) return null;
+  const version = await backgroundVersion(t.backgroundFileId);
+  if (!version) return null;
   try {
-    const { body, contentType } = await getObjectBytes(t.backgroundKey);
+    const { body, contentType } = await getObjectBytes(version.s3Key);
     return {
       bgWidth: t.bgWidth,
       bgHeight: t.bgHeight,
       fields: parsePlacedFields(t.fields),
       background: body,
-      contentType: contentType ?? "image/png",
+      contentType: contentType ?? version.contentType,
     };
   } catch {
     return null;
@@ -262,11 +339,13 @@ export async function getCertificateWebTemplate(
 ): Promise<CertificateWebTemplate | null> {
   const t = await prisma.certificateTemplate.findFirst({
     where: { id: templateId, archivedAt: null },
-    select: { backgroundKey: true, backgroundContentType: true, bgWidth: true, bgHeight: true, fields: true },
+    select: { backgroundFileId: true, bgWidth: true, bgHeight: true, fields: true },
   });
   if (!t) return null;
-  const bgUrl = await getDownloadUrl(t.backgroundKey, {
-    contentType: t.backgroundContentType,
+  const version = await backgroundVersion(t.backgroundFileId);
+  if (!version) return null;
+  const bgUrl = await getDownloadUrl(version.s3Key, {
+    contentType: version.contentType,
     inline: true,
   });
   return {

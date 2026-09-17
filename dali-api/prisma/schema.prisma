@@ -3793,9 +3793,11 @@ model EducationCertificate {
 model CertificateTemplate {
   id                    String    @id @default(cuid())
   name                  String
-  // S3 key (under uploads/) of the background image + its MIME type.
-  backgroundKey         String
-  backgroundContentType String
+  // The background image lives in Drive as a ProjectFile (auto-filed into the
+  // CertificateTemplates folder binding). Loose FK — the file's current version
+  // holds the S3 key + content type, so replacing the file in Drive updates the
+  // certificate. See certificate-templates.server.ts.
+  backgroundFileId      String
   // Intrinsic pixel size of the background. The PDF page is sized to match
   // (1px = 1pt) so a field's fractional x/y maps to the same spot in the editor
   // preview and the rendered PDF regardless of display scale.
@@ -4492,6 +4494,8 @@ enum ProcessType {
   // Lab-wide, everyone-can-see singleton — the open counterpart of Core, for
   // folders the whole lab files into (meeting notes that belong to no project).
   Lab
+  // Lab-wide singleton for certificate-template background images (Core-scoped).
+  CertificateTemplates
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible

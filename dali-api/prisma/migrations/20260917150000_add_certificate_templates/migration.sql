@@ -4,8 +4,7 @@
 CREATE TABLE "CertificateTemplate" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "backgroundKey" TEXT NOT NULL,
-    "backgroundContentType" TEXT NOT NULL,
+    "backgroundFileId" TEXT NOT NULL,
     "bgWidth" INTEGER NOT NULL,
     "bgHeight" INTEGER NOT NULL,
     "fields" JSONB NOT NULL DEFAULT '[]',

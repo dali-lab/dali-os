@@ -36,6 +36,10 @@ export const HIRING_PROCESS_ID = "hiring";
 // share this constant.
 export const LAB_PROCESS_ID = "lab";
 
+// Singleton processId for certificate-template background images — one lab-wide,
+// Core-scoped folder that every uploaded template background auto-files into.
+export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
+
 // A named slot a process type exposes. `purpose` is the stable key stored on the
 // binding; `label` is shown in settings; `defaultTitle` names the folder we
 // create when auto-provisioning. Slots are system-defined (they map to what
@@ -70,6 +74,11 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
   Lab: [
     { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
   ],
+  // Lab-wide singleton (processId = CERTIFICATE_TEMPLATES_PROCESS_ID): the one
+  // Core-scoped folder every uploaded certificate-template background files into.
+  CertificateTemplates: [
+    { purpose: "background", label: "Certificate backgrounds", defaultTitle: "Certificate Backgrounds" },
+  ],
 };
 
 export function slotFor(processType: ProcessType, purpose: string): FolderSlot | undefined {
@@ -93,6 +102,7 @@ function workspaceFor(
       return { workspaceType: "EducationOffering", workspaceId: processId, coreScoped: false };
     case "HiringCycle":
     case "Core":
+    case "CertificateTemplates":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
     case "Lab":
       // Same workspace as Core, deliberately unscoped: a Lab folder inherits the
