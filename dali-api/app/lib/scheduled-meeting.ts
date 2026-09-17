@@ -81,10 +81,94 @@ async function buildPerRecipientIcs(args: {
   return byUser;
 }
 
+async function googleAttendeesFor(userIds: string[]): Promise<GoogleAttendee[]> {
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+    },
+  });
+  const attendees: GoogleAttendee[] = [];
+  for (const u of users) {
+    const email = primaryEmail(u);
+    if (!email) continue;
+    attendees.push({ email, displayName: `${u.firstName} ${u.lastName}`.trim() || email });
+  }
+  return attendees;
+}
+
+// The in-app/email/Slack invite for newly added guests. An ICS rides along only
+// when we manage the invite ourselves — a Google-hosted meeting already gets a
+// real invite from Google.
+async function sendMeetingInvites(args: {
+  meetingId: string;
+  actorUserId: string;
+  title: string;
+  startDate: Date | null;
+  durationMinutes: number;
+  recurrenceRule: string | null;
+  ownerCalendarEmail: string;
+  googleManaged: boolean;
+  sourceGroupId: string | null;
+  recipientIds: string[];
+}): Promise<{ inApp: number }> {
+  const icsByUser =
+    args.startDate && !args.googleManaged
+      ? await buildPerRecipientIcs({
+          meetingId: args.meetingId,
+          method: "REQUEST",
+          title: args.title,
+          startTime: args.startDate,
+          durationMinutes: args.durationMinutes,
+          organizerEmail: args.ownerCalendarEmail,
+          recurrenceRule: args.recurrenceRule,
+          userIds: args.recipientIds,
+        })
+      : null;
+  return notify({
+    eventType: "meeting.invite",
+    createdByUserId: args.actorUserId,
+    message: {
+      title: `Meeting invite: ${args.title}`,
+      body: args.startDate ? `Starts ${args.startDate.toISOString()}` : null,
+      link: `/calendar?meeting=${args.meetingId}`,
+      sourceGroupId: args.sourceGroupId,
+      scheduledMeetingId: args.meetingId,
+    },
+    recipients: args.recipientIds.map((userId) => ({
+      userId,
+      ics: icsByUser?.get(userId) ?? null,
+    })),
+  });
+}
+
 export type ScheduledMeetingScope =
   | { type: "None" }
-  | { type: "Group"; groupId: string }
+  // extraUserIds: guests invited on top of the group (e.g. added after the
+  // fact), kept so the meeting stays scoped to the group — and on that group's
+  // calendar — instead of collapsing into a plain list.
+  | { type: "Group"; groupId: string; extraUserIds?: string[] }
   | { type: "UserList"; participantUserIds: string[] };
+
+async function resolveScope(
+  scope: ScheduledMeetingScope,
+): Promise<{ participantUserIds: string[]; scopeId: string | null }> {
+  if (scope.type === "Group") {
+    const members = await resolveGroupMembers(scope.groupId);
+    return {
+      participantUserIds: Array.from(new Set([...members, ...(scope.extraUserIds ?? [])])),
+      scopeId: scope.groupId,
+    };
+  }
+  if (scope.type === "UserList") {
+    return { participantUserIds: Array.from(new Set(scope.participantUserIds)), scopeId: null };
+  }
+  return { participantUserIds: [], scopeId: null };
+}
 
 export type CreateScheduledMeetingInput = {
   organizerId: string;
@@ -301,14 +385,7 @@ export async function createScheduledMeeting(
     return { ok: false, error: "General meetings cannot be attached to a project" };
   }
 
-  let participantUserIds: string[] = [];
-  let scopeId: string | null = null;
-  if (input.scope.type === "Group") {
-    participantUserIds = await resolveGroupMembers(input.scope.groupId);
-    scopeId = input.scope.groupId;
-  } else if (input.scope.type === "UserList") {
-    participantUserIds = Array.from(new Set(input.scope.participantUserIds));
-  }
+  const { participantUserIds, scopeId } = await resolveScope(input.scope);
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
 
@@ -356,25 +433,7 @@ export async function createScheduledMeeting(
   let meetingUrl: string | null = null;
   let gcalError: string | null = null;
   if (organizerLink && organizerLink.enabled && startDate && participantUserIds.length > 0) {
-    const attendeeUsers = await prisma.user.findMany({
-      where: { id: { in: participantUserIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-      },
-    });
-    const attendees: GoogleAttendee[] = [];
-    for (const u of attendeeUsers) {
-      const email = primaryEmail(u);
-      if (!email) continue;
-      attendees.push({
-        email,
-        displayName: `${u.firstName} ${u.lastName}`.trim() || email,
-      });
-    }
+    const attendees = await googleAttendeesFor(participantUserIds);
     if (attendees.length > 0) {
       const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
       // A recurring insert must name the zone its RRULE expands in — anchor it
@@ -447,35 +506,17 @@ export async function createScheduledMeeting(
   const notifyIds = participantUserIds.filter((id) => id !== input.organizerId);
   let notifiedCount = 0;
   if (notifyIds.length > 0) {
-    // Attach a calendar invite on the instant-email channel — but only when
-    // Google Calendar isn't already sending real invites for this meeting.
-    const icsByUser =
-      startDate && !externalEventId
-        ? await buildPerRecipientIcs({
-            meetingId: meeting.id,
-            method: "REQUEST",
-            title: input.title,
-            startTime: startDate,
-            durationMinutes: input.durationMinutes,
-            organizerEmail: meeting.ownerCalendarEmail,
-            recurrenceRule: input.recurrenceRule ?? null,
-            userIds: notifyIds,
-          })
-        : null;
-    const result = await notify({
-      eventType: "meeting.invite",
-      createdByUserId: input.organizerId,
-      message: {
-        title: `Meeting invite: ${input.title}`,
-        body: startDate ? `Starts ${startDate.toISOString()}` : null,
-        link: `/calendar?meeting=${meeting.id}`,
-        sourceGroupId: scopeId,
-        scheduledMeetingId: meeting.id,
-      },
-      recipients: notifyIds.map((userId) => ({
-        userId,
-        ics: icsByUser?.get(userId) ?? null,
-      })),
+    const result = await sendMeetingInvites({
+      meetingId: meeting.id,
+      actorUserId: input.organizerId,
+      title: input.title,
+      startDate,
+      durationMinutes: input.durationMinutes,
+      recurrenceRule: input.recurrenceRule ?? null,
+      ownerCalendarEmail: meeting.ownerCalendarEmail,
+      googleManaged: externalEventId !== null,
+      sourceGroupId: scopeId,
+      recipientIds: notifyIds,
     });
     notifiedCount = result.inApp;
   }
@@ -868,14 +909,7 @@ export async function updateScheduledMeeting(
     return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
   }
 
-  let participantUserIds: string[] = [];
-  let scopeId: string | null = null;
-  if (input.scope.type === "Group") {
-    participantUserIds = await resolveGroupMembers(input.scope.groupId);
-    scopeId = input.scope.groupId;
-  } else if (input.scope.type === "UserList") {
-    participantUserIds = Array.from(new Set(input.scope.participantUserIds));
-  }
+  const { participantUserIds, scopeId } = await resolveScope(input.scope);
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
 
@@ -934,25 +968,7 @@ export async function updateScheduledMeeting(
         select: { id: true, enabled: true },
       });
       if (link?.enabled) {
-        const attendeeUsers = await prisma.user.findMany({
-          where: { id: { in: participantUserIds } },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            daliEmail: true,
-            dartmouthEmail: true,
-          },
-        });
-        const attendees: GoogleAttendee[] = [];
-        for (const u of attendeeUsers) {
-          const email = primaryEmail(u);
-          if (!email) continue;
-          attendees.push({
-            email,
-            displayName: `${u.firstName} ${u.lastName}`.trim() || email,
-          });
-        }
+        const attendees = await googleAttendeesFor(participantUserIds);
         const organizerUser = await prisma.user.findUnique({
           where: { id: meeting.organizerId },
           select: { timeZone: true },
@@ -989,32 +1005,17 @@ export async function updateScheduledMeeting(
   const removedRecipients = toRemove.filter((id) => id !== meeting.organizerId);
   try {
     if (addedRecipients.length > 0) {
-      const ics = selfManaged
-        ? await buildPerRecipientIcs({
-            meetingId: updated.id,
-            method: "REQUEST",
-            title: input.title,
-            startTime: startDate!,
-            durationMinutes: input.durationMinutes,
-            organizerEmail: meeting.ownerCalendarEmail,
-            recurrenceRule: input.recurrenceRule ?? null,
-            userIds: addedRecipients,
-          })
-        : null;
-      await notify({
-        eventType: "meeting.invite",
-        createdByUserId: actorUserId,
-        message: {
-          title: `Meeting invite: ${input.title}`,
-          body: startDate ? `Starts ${startDate.toISOString()}` : null,
-          link: `/calendar?meeting=${updated.id}`,
-          sourceGroupId: scopeId,
-          scheduledMeetingId: updated.id,
-        },
-        recipients: addedRecipients.map((userId) => ({
-          userId,
-          ics: ics?.get(userId) ?? null,
-        })),
+      await sendMeetingInvites({
+        meetingId: updated.id,
+        actorUserId,
+        title: input.title,
+        startDate,
+        durationMinutes: input.durationMinutes,
+        recurrenceRule: input.recurrenceRule ?? null,
+        ownerCalendarEmail: meeting.ownerCalendarEmail,
+        googleManaged: meeting.externalEventId !== null,
+        sourceGroupId: scopeId,
+        recipientIds: addedRecipients,
       });
     }
     if (removedRecipients.length > 0) {
@@ -1048,6 +1049,155 @@ export async function updateScheduledMeeting(
   }
 
   return { ok: true, meeting: updated, gcalError };
+}
+
+export type InviteToScheduledMeetingInput = {
+  userIds: string[];
+  groupIds: string[];
+};
+
+export type InviteToScheduledMeetingResult =
+  | { ok: true; addedCount: number; notified: boolean; gcalError: string | null }
+  | { ok: false; error: string; status: number };
+
+/** Whether a meeting still has an occurrence ahead of `now`. A series is treated
+ *  as ongoing; an unscheduled (Searching) meeting hasn't happened yet. */
+export function meetingIsUpcoming(
+  meeting: { selectedAt: Date | null; durationMinutes: number; recurrenceRule: string | null },
+  now: Date,
+): boolean {
+  if (meeting.recurrenceRule || !meeting.selectedAt) return true;
+  return meeting.selectedAt.getTime() + meeting.durationMinutes * 60_000 > now.getTime();
+}
+
+/**
+ * Add people and/or groups to a meeting that already exists — including one
+ * that has already happened, so someone left off the invite can be put on the
+ * attendance roster after the fact. Strictly additive, unlike
+ * updateScheduledMeeting: current guests, attendance marks, and the meeting's
+ * scope are untouched (a Group meeting stays on its group's calendar, a lab-wide
+ * tracked event stays lab-wide). Groups are expanded to their members at invite
+ * time, same as at create.
+ *
+ * New guests are added to the linked Google event, merged with the guests Google
+ * already has so people added outside DALI aren't dropped. They're only sent an
+ * invite (DALI notification, and Google's email) while the meeting is still
+ * upcoming — nobody needs "you're invited" to something that's over.
+ */
+export async function inviteToScheduledMeeting(
+  meetingId: string,
+  actorUserId: string,
+  input: InviteToScheduledMeetingInput,
+  now: Date = new Date(),
+): Promise<InviteToScheduledMeetingResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: {
+      id: true,
+      organizerId: true,
+      status: true,
+      title: true,
+      scopeType: true,
+      scopeId: true,
+      participantUserIds: true,
+      selectedAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      ownerCalendarEmail: true,
+      externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarId: true,
+    },
+  });
+  if (!meeting) return { ok: false, error: "Not found", status: 404 };
+  if (meeting.status === "Cancelled") {
+    return { ok: false, error: "This meeting has been cancelled", status: 400 };
+  }
+  if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
+    return { ok: false, error: "Only the organizer or Core can invite guests", status: 403 };
+  }
+
+  const groupMembers = await Promise.all(input.groupIds.map((id) => resolveGroupMembers(id)));
+  const current = new Set([...meeting.participantUserIds, meeting.organizerId]);
+  const requested = Array.from(new Set([...input.userIds, ...groupMembers.flat()]));
+  // Only ids that are real users — the picker sends ids, but a stale one would
+  // otherwise fail the roster insert on its foreign key.
+  const known = await prisma.user.findMany({
+    where: { id: { in: requested.filter((id) => !current.has(id)) } },
+    select: { id: true },
+  });
+  const added = known.map((u) => u.id);
+  if (added.length === 0) {
+    return { ok: true, addedCount: 0, notified: false, gcalError: null };
+  }
+
+  await prisma.scheduledMeeting.update({
+    where: { id: meetingId },
+    data: { participantUserIds: [...meeting.participantUserIds, ...added] },
+  });
+  await prisma.meetingAttendance.createMany({
+    data: [...added, meeting.organizerId].map((userId) => ({ scheduledMeetingId: meetingId, userId })),
+    skipDuplicates: true,
+  });
+
+  const upcoming = meetingIsUpcoming(meeting, now);
+
+  // Best-effort, like edit: the DALI roster already has them. Fails harmlessly
+  // (surfaced as gcalError) when the event isn't on a calendar the link can
+  // write, e.g. a tracked event on someone else's calendar.
+  let gcalError: string | null = null;
+  if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+    try {
+      const link = await prisma.userCalendarLink.findUnique({
+        where: { id: meeting.organizerCalendarLinkId },
+        select: { id: true, enabled: true },
+      });
+      if (link?.enabled) {
+        const target = {
+          linkId: link.id,
+          calendarId: meeting.organizerCalendarId ?? undefined,
+          eventId: meeting.externalEventId,
+        };
+        const event = await getGoogleEvent(target);
+        const have = new Set(event.attendeeEmails.map((e) => e.toLowerCase()));
+        const newAttendees = (await googleAttendeesFor(added)).filter(
+          (a) => !have.has(a.email.toLowerCase()),
+        );
+        if (newAttendees.length > 0) {
+          await patchGoogleCalendarEvent({
+            ...target,
+            attendees: [...event.attendeeEmails.map((email) => ({ email })), ...newAttendees],
+            sendUpdates: upcoming ? "all" : "none",
+          });
+        }
+      }
+    } catch (err) {
+      gcalError = err instanceof Error ? err.message : "Google Calendar update failed";
+    }
+  }
+
+  let notified = false;
+  if (upcoming) {
+    try {
+      await sendMeetingInvites({
+        meetingId,
+        actorUserId,
+        title: meeting.title,
+        startDate: meeting.selectedAt,
+        durationMinutes: meeting.durationMinutes,
+        recurrenceRule: meeting.recurrenceRule,
+        ownerCalendarEmail: meeting.ownerCalendarEmail,
+        googleManaged: meeting.externalEventId !== null,
+        sourceGroupId: meeting.scopeType === "Group" ? meeting.scopeId : null,
+        recipientIds: added,
+      });
+      notified = true;
+    } catch (err) {
+      console.error(`meeting ${meetingId}: invite notify failed`, err);
+    }
+  }
+
+  return { ok: true, addedCount: added.length, notified, gcalError };
 }
 
 export type TrackExternalEventInput = {

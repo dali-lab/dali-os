@@ -7,7 +7,8 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { ParticipantPicker } from "~/calendar/components/scheduling";
 
-type EditContext = {
+// Shape of GET /api/scheduled-meetings/:id/edit-context.
+export type EditContext = {
   meeting: {
     id: string;
     title: string;
@@ -17,6 +18,8 @@ type EditContext = {
     scopeType: "None" | "Group" | "UserList" | "Project";
     groupId: string | null;
     participantUserIds: string[];
+    organizerId: string;
+    upcoming: boolean;
   };
   options: {
     users: { id: string; firstName: string; lastName: string; daliEmail: string | null }[];
@@ -131,8 +134,13 @@ export function EditMeetingModal({
         setEndTime(end);
         setRecurrenceRule(data.meeting.recurrenceRule);
         if (data.meeting.scopeType === "Group" && data.meeting.groupId) {
+          // Anyone on the meeting who isn't in the group was invited on top of
+          // it; select them too so saving doesn't drop them.
+          const members = new Set(
+            data.options.groups.find((g) => g.id === data.meeting.groupId)?.memberIds ?? [],
+          );
           setSelectedGroupIds([data.meeting.groupId]);
-          setSelectedUserIds([]);
+          setSelectedUserIds(data.meeting.participantUserIds.filter((id) => !members.has(id)));
         } else {
           setSelectedUserIds(data.meeting.participantUserIds);
           setSelectedGroupIds([]);
@@ -192,9 +200,10 @@ export function EditMeetingModal({
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
       if (recurrenceRule) payload.recurrenceRule = recurrenceRule;
-      if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
+      if (selectedGroupIds.length === 1) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
+        if (selectedUserIds.length > 0) payload.extraUserIds = selectedUserIds;
       } else if (resolvedParticipantIds.length > 0) {
         payload.scopeType = "UserList";
         payload.participantUserIds = resolvedParticipantIds;

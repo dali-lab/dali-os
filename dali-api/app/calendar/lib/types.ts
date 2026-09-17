@@ -197,6 +197,9 @@ export type EventMeetingDTO = {
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
    *  affordance. Moot once `notePageId` is set. */
   canAddNote: boolean;
+  /** Whether the viewer (organizer or Core) may invite more people to the
+   *  meeting — including after it has happened. Gates the popover's "Invite". */
+  canInvite: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */
