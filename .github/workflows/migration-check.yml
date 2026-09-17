@@ -57,4 +57,23 @@ jobs:
           fi
 
       - name: Check migration safety
-        run: npx @flvmnt/pgfence analyze --ci --max-risk high --no-lock-timeout --no-statement-timeout dali-api/prisma/migrations/**/*.sql
+        # Analyze only the migrations this PR adds or edits, not the whole
+        # history. Applied migrations are immutable (never hand-edited), so a
+        # finding on one is unactionable — and re-scanning them means a stricter
+        # analyzer release can fail PRs that touch no migrations at all. That is
+        # exactly how pgfence 0.8.0 (DROP TABLE reclassified CRITICAL) broke
+        # every branch. Mirrors the diff-based deleted-file check above. pgfence
+        # is also pinned so an analyzer release can't change a verdict
+        # mid-review; bump it deliberately.
+        run: |
+          CHANGED=$(git diff --name-only --diff-filter=AM \
+            "origin/${{ github.base_ref }}...HEAD" \
+            -- 'dali-api/prisma/migrations/' | grep '\.sql$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No migration changes in this PR — skipping safety analysis."
+            exit 0
+          fi
+          echo "Analyzing changed migrations:"
+          echo "$CHANGED"
+          npx @flvmnt/pgfence@0.7.0 analyze --ci --max-risk high \
+            --no-lock-timeout --no-statement-timeout $CHANGED
