@@ -1261,6 +1261,11 @@ export function ScheduleWeekGrid({
       days={days}
       eventsByDay={eventsByDay}
       showSubHourGrid
+      // The availability grid always lives inside a scrollport (the compact
+      // preview's own box, or the /calendar composer's scroll section), so pin
+      // the weekday header — otherwise it scrolls off and you lose which day
+      // each column is.
+      stickyHeader
       timezone={timezone}
       backgroundLayer={(dayIdx) => (
         <>
