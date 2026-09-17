@@ -200,6 +200,12 @@ export type EventMeetingDTO = {
   /** Whether the viewer (organizer or Core) may invite more people to the
    *  meeting — including after it has happened. Gates the popover's "Invite". */
   canInvite: boolean;
+  /** True when the viewer can edit the guest list but not the rest of the
+   *  meeting (guestsCanInviteOthers without guestsCanModify). */
+  guestEditOnly: boolean;
+  /** True when the viewer is not the organizer/Core and guestsCanSeeGuestList
+   *  is false — the attendee list should be hidden from the popover. */
+  hideGuestList: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */
