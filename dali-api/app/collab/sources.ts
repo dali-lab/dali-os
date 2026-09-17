@@ -48,8 +48,8 @@ export interface CollabSource {
 }
 
 export const COLLAB_SOURCES: Record<string, CollabSource> = {
-  // Mentorship weekly note body. The author (mentor) + Core edit; other
-  // same-domain mentors read the synced contentJson. Seeded/synced through
+  // Mentorship weekly note body. The author (mentor) + Core edit; every other
+  // lab mentor reads the synced contentJson. Seeded/synced through
   // contentJson so note creation (which copies the default template) is
   // unchanged.
   mentorNote: {
