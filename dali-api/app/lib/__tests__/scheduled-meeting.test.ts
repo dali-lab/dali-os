@@ -448,6 +448,37 @@ describe("updateScheduledMeeting", () => {
     expect(events).toContain("meeting.cancelled");
   });
 
+  it("passes location and description through to the Google patch", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        externalEventId: "gcal-1",
+        organizerCalendarLinkId: "link-1",
+        organizerCalendarId: "cal-1",
+      }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "org-1" }, { userId: "u2" }]);
+    p.userCalendarLink.findUnique.mockResolvedValue({ id: "link-1", enabled: true });
+    p.user.findMany.mockResolvedValue([
+      { id: "u2", firstName: "Bee", lastName: "Two", daliEmail: "u2@dali.dartmouth.edu", dartmouthEmail: null },
+    ]);
+    p.user.findUnique.mockResolvedValue({ timeZone: "America/New_York" });
+
+    const res = await updateScheduledMeeting("m1", "org-1", {
+      title: "Synced",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: ["u2"] },
+      startTime: "2026-09-11T16:00:00.000Z",
+      location: "Room 5",
+      description: "Bring laptops",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(mockPatch.mock.calls[0][0]).toMatchObject({
+      location: "Room 5",
+      description: "Bring laptops",
+    });
+  });
+
   it("lets Core edit a meeting they don't organize", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());

@@ -13,7 +13,6 @@ import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
-import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -584,7 +583,6 @@ export function WeekGridEvent({
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
@@ -962,18 +960,6 @@ export function WeekGridEvent({
                         className={popoverActionBtn}
                       />
                     ) : null}
-                    {e.meeting.canInvite && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDetailOpen(false);
-                          setEditing(true);
-                        }}
-                        className={popoverActionBtn}
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-os-grey" /> Edit event
-                      </button>
-                    )}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>
@@ -1062,13 +1048,6 @@ export function WeekGridEvent({
             </>
           }
         />
-      )}
-      {editing && e.meeting && (
-        // Portaled, but React still bubbles its events up through this block —
-        // stop them so typing/clicking in the modal doesn't drag or reopen it.
-        <div onPointerDown={(ev) => ev.stopPropagation()} onClick={(ev) => ev.stopPropagation()}>
-          <EditMeetingModal meetingId={e.meeting.meetingId} onClose={() => setEditing(false)} />
-        </div>
       )}
     </div>
   );

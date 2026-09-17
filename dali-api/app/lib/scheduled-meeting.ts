@@ -862,6 +862,11 @@ export type UpdateScheduledMeetingInput = {
   scope: ScheduledMeetingScope;
   startTime?: string | null;
   recurrenceRule?: string | null;
+  // Google-only fields (not stored on ScheduledMeeting) — passed straight through
+  // to the linked event's patch. Omitted (undefined) leaves them unchanged; a set
+  // value, including "", is written (so clearing a location clears it on Google).
+  location?: string;
+  description?: string;
 };
 
 export type UpdateScheduledMeetingResult =
@@ -984,6 +989,8 @@ export async function updateScheduledMeeting(
           ...(startDate && endDate
             ? { startIso: startDate.toISOString(), endIso: endDate.toISOString() }
             : {}),
+          ...(input.location !== undefined ? { location: input.location } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
           recurrenceRule: input.recurrenceRule ?? null,
           timeZone: resolveUserTimeZone(organizerUser),
           attendees,
