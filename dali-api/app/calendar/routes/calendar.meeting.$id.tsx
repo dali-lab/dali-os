@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, UserPlus } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -12,7 +12,7 @@ import { AttendanceChecklist, type AttendanceRow } from "~/components/Attendance
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { InviteGuestsModal } from "~/calendar/components/InviteGuestsModal";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -151,7 +151,7 @@ export default function CalendarMeetingPage() {
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
   const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
-  const [inviting, setInviting] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
@@ -209,16 +209,16 @@ export default function CalendarMeetingPage() {
             {d.canInvite && (
               <button
                 type="button"
-                onClick={() => setInviting(true)}
+                onClick={() => setEditing(true)}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
               >
-                <UserPlus className="h-4 w-4 text-muted-foreground" /> Invite people
+                <Pencil className="h-4 w-4 text-muted-foreground" /> Edit event
               </button>
             )}
           </div>
         </div>
-        {inviting && (
-          <InviteGuestsModal meetingId={d.meetingId} onClose={() => setInviting(false)} />
+        {editing && (
+          <EditMeetingModal meetingId={d.meetingId} onClose={() => setEditing(false)} />
         )}
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
