@@ -735,6 +735,23 @@ describe("close_out_education_offering", () => {
     });
     const result = await runCloseOutEducationOffering(ctx(), { offeringId: "o1" });
     expect(result).toMatchObject({ preview: false, issued: 5, alreadyIssued: 2 });
+    expect(closeOutOffering).toHaveBeenCalledWith(
+      expect.objectContaining({ offeringId: "o1", allowEarly: false }),
+    );
+  });
+
+  it("forwards allowEarly to close out an unfinished offering", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    vi.mocked(closeOutOffering).mockResolvedValue({
+      ok: true,
+      issued: 0,
+      alreadyIssued: 0,
+      ineligible: 0,
+    });
+    await runCloseOutEducationOffering(ctx(), { offeringId: "o1", allowEarly: true });
+    expect(closeOutOffering).toHaveBeenCalledWith(
+      expect.objectContaining({ allowEarly: true }),
+    );
   });
 
   it("throws not-found for missing offering in preview", async () => {

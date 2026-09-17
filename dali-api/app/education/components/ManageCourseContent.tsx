@@ -1,10 +1,21 @@
 import { useRef, useState } from "react";
 import { Form, Link, useFetcher } from "react-router";
-import { FileText, Folder, Paperclip, Users, Plus, ChevronDown, Upload } from "lucide-react";
+import {
+  FileText,
+  Folder,
+  Paperclip,
+  Users,
+  Plus,
+  ChevronDown,
+  Upload,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { Select, type SelectOption, Menu } from "~/components/ui/floating";
 import { AddFormModal } from "./AddFormModal";
 import { Button, buttonClasses } from "~/components/ui/Button";
-import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
@@ -102,6 +113,55 @@ export function ManageMaterials({
   useActionErrorToast(sessionFetcher.data as { error?: string } | undefined, {
     fallback: "Couldn't update the session. Please try again.",
   });
+
+  // Rename/delete for a material page, folder, or uploaded file — mirrors the
+  // standard Drive's per-item actions. Deletes soft-archive the item; the
+  // fetcher's revalidation refreshes the list.
+  const dialog = useDialog();
+  const mutateFetcher = useFetcher();
+  useActionErrorToast(mutateFetcher.data as { error?: string } | undefined, {
+    fallback: "Couldn't update that item. Please try again.",
+  });
+
+  async function renameItem(kind: "page" | "file", id: string, current: string) {
+    const title = await dialog.prompt({
+      title: "Rename",
+      label: "Name",
+      defaultValue: current,
+      confirmLabel: "Rename",
+      validate: (v) => (v.trim() ? null : "Name is required"),
+    });
+    if (title == null) return;
+    mutateFetcher.submit(
+      kind === "file"
+        ? { intent: "rename-file", fileId: id, title }
+        : { intent: "rename-page", pageId: id, title },
+      { method: "post" },
+    );
+  }
+
+  async function deleteItem(
+    kind: "page" | "file",
+    id: string,
+    label: string,
+    isFolder = false,
+  ) {
+    const ok = await dialog.confirm({
+      title: isFolder ? "Delete this folder?" : "Delete this item?",
+      description: isFolder
+        ? `"${label}" will be removed. Empty the folder first if it still holds items.`
+        : `"${label}" will be removed from the course materials.`,
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    mutateFetcher.submit(
+      kind === "file"
+        ? { intent: "delete-file", fileId: id }
+        : { intent: "delete-page", pageId: id },
+      { method: "post" },
+    );
+  }
   const [dragged, setDragged] = useState<{ id: string; kind: "page" | "file" } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
 
@@ -263,10 +323,23 @@ export function ManageMaterials({
                   <span className="text-xs text-muted-foreground">
                     {p.children.length} {p.children.length === 1 ? "item" : "items"}
                   </span>
+                  <div className="ml-auto">
+                    <RowMenu
+                      onRename={() => renameItem("page", p.id, p.title)}
+                      onDelete={() => deleteItem("page", p.id, p.title, true)}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
-                  <DocRow id={p.id} title={p.title} kind="material" favorited={favorites.has(p.id)} />
+                  <DocRow
+                    id={p.id}
+                    title={p.title}
+                    kind="material"
+                    favorited={favorites.has(p.id)}
+                    onRename={() => renameItem("page", p.id, p.title)}
+                    onDelete={() => deleteItem("page", p.id, p.title)}
+                  />
                   {sessions.length > 0 && (
                     <SessionSelect
                       pageId={p.id}
@@ -293,7 +366,15 @@ export function ManageMaterials({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <DocRow id={c.id} title={c.title} kind="material" nested favorited={favorites.has(c.id)} />
+                        <DocRow
+                          id={c.id}
+                          title={c.title}
+                          kind="material"
+                          nested
+                          favorited={favorites.has(c.id)}
+                          onRename={() => renameItem("page", c.id, c.title)}
+                          onDelete={() => deleteItem("page", c.id, c.title)}
+                        />
                         {sessions.length > 0 && (
                           <SessionSelect
                             pageId={c.id}
@@ -318,7 +399,12 @@ export function ManageMaterials({
                         dragged?.id === f.id ? "opacity-50" : ""
                       }`}
                     >
-                      <FileRow href={f.href} title={f.title} />
+                      <FileRow
+                        href={f.href}
+                        title={f.title}
+                        onRename={() => renameItem("file", f.id, f.title)}
+                        onDelete={() => deleteItem("file", f.id, f.title)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -335,12 +421,23 @@ export function ManageMaterials({
                 dragged?.id === f.id ? "opacity-50" : ""
               }`}
             >
-              <FileRow href={f.href} title={f.title} />
+              <FileRow
+                href={f.href}
+                title={f.title}
+                onRename={() => renameItem("file", f.id, f.title)}
+                onDelete={() => deleteItem("file", f.id, f.title)}
+              />
             </li>
           ))}
           {workspaceDocs.map((d) => (
             <li key={d.id} className="px-4 py-3">
-              <DocRow id={d.id} title={d.title} kind="shared" />
+              <DocRow
+                id={d.id}
+                title={d.title}
+                kind="shared"
+                onRename={() => renameItem("page", d.id, d.title)}
+                onDelete={() => deleteItem("page", d.id, d.title)}
+              />
             </li>
           ))}
         </ul>
@@ -464,8 +561,56 @@ function SessionSelect({
   );
 }
 
+/** Per-row ⋯ actions menu (Rename / Delete), mirroring the standard Drive's
+ *  item actions. Renders nothing when neither handler is provided. */
+function RowMenu({
+  onRename,
+  onDelete,
+}: {
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
+  if (!onRename && !onDelete) return null;
+  return (
+    <Menu
+      align="right"
+      ariaLabel="Item actions"
+      trigger={
+        <button
+          type="button"
+          aria-label="Item actions"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      }
+    >
+      {onRename && (
+        <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={onRename}>
+          Rename
+        </Menu.Item>
+      )}
+      {onDelete && (
+        <Menu.Item icon={<Trash2 className="h-3.5 w-3.5" />} onSelect={onDelete}>
+          Delete
+        </Menu.Item>
+      )}
+    </Menu>
+  );
+}
+
 /** An uploaded file in the materials list — opens via its Drive file viewer. */
-function FileRow({ href, title }: { href: string; title: string }) {
+function FileRow({
+  href,
+  title,
+  onRename,
+  onDelete,
+}: {
+  href: string;
+  title: string;
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
   return (
     <div className="flex items-center gap-2">
       <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -480,6 +625,9 @@ function FileRow({ href, title }: { href: string; title: string }) {
       <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
         File
       </span>
+      <div className="ml-auto shrink-0">
+        <RowMenu onRename={onRename} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
@@ -495,12 +643,16 @@ function DocRow({
   kind,
   nested = false,
   favorited = false,
+  onRename,
+  onDelete,
 }: {
   id: string;
   title: string;
   kind: "material" | "shared";
   nested?: boolean;
   favorited?: boolean;
+  onRename?: () => void;
+  onDelete?: () => void;
 }) {
   const shared = kind === "shared";
   const Icon = shared ? Users : FileText;
@@ -527,7 +679,10 @@ function DocRow({
           </span>
         )}
       </Link>
-      <FavoriteStar pageId={id} favorited={favorited} />
+      <div className="flex shrink-0 items-center gap-1">
+        <FavoriteStar pageId={id} favorited={favorited} />
+        <RowMenu onRename={onRename} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
