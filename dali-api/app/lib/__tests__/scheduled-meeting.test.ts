@@ -459,6 +459,9 @@ describe("updateScheduledMeeting", () => {
     organizerCalendarId: null,
     meetingType: null,
     attendanceMode: "Roster",
+    guestsCanModify: false,
+    guestsCanInviteOthers: false,
+    guestsCanSeeGuestList: true,
     ...over,
   });
 
@@ -708,6 +711,119 @@ describe("updateScheduledMeeting", () => {
     );
     // Must NOT update the master scheduledMeeting row's fields
     expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("a participant with guestsCanModify can edit (no 403)", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        participantUserIds: ["u-guest"],
+        guestsCanModify: true,
+        guestsCanInviteOthers: false,
+        guestsCanSeeGuestList: true,
+      }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "u-guest" }]);
+
+    const res = await updateScheduledMeeting("m1", "u-guest", {
+      title: "Guest edited title",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: ["u-guest"] },
+      startTime: "2026-09-10T15:00:00.000Z",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(p.scheduledMeeting.update).toHaveBeenCalled();
+  });
+
+  it("a participant with only guestsCanInviteOthers has title forced back; editScope=this is 403", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        title: "Original title",
+        participantUserIds: ["u-guest"],
+        guestsCanModify: false,
+        guestsCanInviteOthers: true,
+        guestsCanSeeGuestList: true,
+        selectedAt: new Date("2026-09-10T15:00:00Z"),
+        durationMinutes: 30,
+        recurrenceRule: null,
+      }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "u-guest" }]);
+
+    // editScope=this should 403 for guestEditOnly
+    const scopeRes = await updateScheduledMeeting("m1", "u-guest", {
+      title: "New title",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: ["u-guest"] },
+      editScope: "this",
+      occurrenceStart: "2026-09-10T15:00:00.000Z",
+    });
+    expect(scopeRes).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+
+    // editScope=all should succeed but title should be forced back
+    const res = await updateScheduledMeeting("m1", "u-guest", {
+      title: "New title",
+      durationMinutes: 45,
+      scope: { type: "UserList", participantUserIds: ["u-guest", "u2"] },
+      startTime: "2026-09-10T15:00:00.000Z",
+      editScope: "all",
+    });
+    expect(res.ok).toBe(true);
+    const data = p.scheduledMeeting.update.mock.calls[0][0].data;
+    // Title must be forced back to "Original title", not the submitted "New title"
+    expect(data.title).toBe("Original title");
+    // Duration must be forced back to 30
+    expect(data.durationMinutes).toBe(30);
+    // Participant list CAN change
+    expect(data.participantUserIds).toContain("u2");
+  });
+
+  it("a participant with neither flag is 403'd", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        participantUserIds: ["u-guest"],
+        guestsCanModify: false,
+        guestsCanInviteOthers: false,
+        guestsCanSeeGuestList: true,
+      }),
+    );
+
+    const res = await updateScheduledMeeting("m1", "u-guest", {
+      title: "Nope",
+      durationMinutes: 30,
+      scope: { type: "None" },
+    });
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("organizer can set guest permission flags and they are persisted", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        guestsCanModify: false,
+        guestsCanInviteOthers: false,
+        guestsCanSeeGuestList: true,
+      }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "org-1" }, { userId: "u2" }]);
+
+    const res = await updateScheduledMeeting("m1", "org-1", {
+      title: "Old title",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: ["u2"] },
+      startTime: "2026-09-10T15:00:00.000Z",
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
+      guestsCanSeeGuestList: false,
+    });
+
+    expect(res.ok).toBe(true);
+    const data = p.scheduledMeeting.update.mock.calls[0][0].data;
+    expect(data.guestsCanModify).toBe(true);
+    expect(data.guestsCanInviteOthers).toBe(true);
+    expect(data.guestsCanSeeGuestList).toBe(false);
   });
 
   it("scope=following truncates master recurrenceRule and calls createGoogleCalendarEvent for new series", async () => {
