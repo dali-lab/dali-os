@@ -19,9 +19,14 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
   };
   task: { updateMany: ReturnType<typeof vi.fn> };
   userStory: { deleteMany: ReturnType<typeof vi.fn> };
+  epicDependency: {
+    deleteMany: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+  };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -47,11 +52,16 @@ beforeEach(() => {
       endsAt: null,
       projectId: PROJECT_ID,
     }),
-    update: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockReturnValue("epic-update-op"),
     delete: vi.fn().mockReturnValue("epic-delete-op"),
+    count: vi.fn().mockResolvedValue(0),
   };
   mockPrisma.task = { updateMany: vi.fn().mockReturnValue("task-op") };
   mockPrisma.userStory = { deleteMany: vi.fn().mockReturnValue("story-op") };
+  mockPrisma.epicDependency = {
+    deleteMany: vi.fn().mockReturnValue("dep-clear-op"),
+    create: vi.fn((args) => `dep-create-${args.data.dependsOnEpicId}`),
+  };
   mockPrisma.$transaction = vi.fn().mockResolvedValue([]);
 });
 
@@ -90,6 +100,83 @@ describe("DELETE /api/epics/:id", () => {
       response: Response.json({ error: "Forbidden" }, { status: 403 }),
     } as any);
     const res = await call("DELETE");
+    expect(res.status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/epics/:id — dependsOn", () => {
+  it("replaces the epic's edges wholesale, in one transaction with the update", async () => {
+    mockPrisma.epic.count.mockResolvedValue(2);
+    const res = await call("POST", { dependsOn: ["epic-2", "epic-3"] });
+    expect(res.status).toBe(200);
+
+    // The clear has to ride in the same transaction as the creates, or a
+    // failed create leaves the epic with no dependencies at all.
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith([
+      "epic-update-op",
+      "dep-clear-op",
+      "dep-create-epic-2",
+      "dep-create-epic-3",
+    ]);
+    expect(mockPrisma.epicDependency.deleteMany).toHaveBeenCalledWith({
+      where: { epicId: EPIC_ID },
+    });
+  });
+
+  it("clears every edge when given an empty list", async () => {
+    const res = await call("POST", { dependsOn: [] });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.epicDependency.deleteMany).toHaveBeenCalledWith({
+      where: { epicId: EPIC_ID },
+    });
+    expect(mockPrisma.epicDependency.create).not.toHaveBeenCalled();
+    // No lookup to make: an empty list can't name a target outside the project.
+    expect(mockPrisma.epic.count).not.toHaveBeenCalled();
+  });
+
+  it("leaves edges alone when dependsOn is absent", async () => {
+    const res = await call("POST", { title: "Renamed" });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.epicDependency.deleteMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith(["epic-update-op"]);
+  });
+
+  it("drops a self-edge rather than writing one", async () => {
+    const res = await call("POST", { dependsOn: [EPIC_ID] });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.epicDependency.create).not.toHaveBeenCalled();
+  });
+
+  it("de-duplicates repeated ids", async () => {
+    mockPrisma.epic.count.mockResolvedValue(1);
+    await call("POST", { dependsOn: ["epic-2", "epic-2"] });
+    expect(mockPrisma.epicDependency.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.epic.count).toHaveBeenCalledWith({
+      where: { id: { in: ["epic-2"] }, projectId: PROJECT_ID },
+    });
+  });
+
+  it("400s when a target is not an epic in the same project", async () => {
+    // Two ids asked for, only one found in this project.
+    mockPrisma.epic.count.mockResolvedValue(1);
+    const res = await call("POST", { dependsOn: ["epic-2", "other-project-epic"] });
+    expect(res.status).toBe(400);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("400s when dependsOn is not a list of strings", async () => {
+    const res = await call("POST", { dependsOn: [1, 2] });
+    expect(res.status).toBe(400);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not write when the caller lacks project edit access", async () => {
+    vi.mocked(requireProjectEditAccess).mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    } as any);
+    const res = await call("POST", { dependsOn: ["epic-2"] });
     expect(res.status).toBe(403);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });

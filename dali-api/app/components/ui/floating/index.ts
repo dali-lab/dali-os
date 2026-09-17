@@ -1,4 +1,5 @@
 export { Select, type SelectOption } from "./Select";
+export { MultiSelect } from "./MultiSelect";
 export { Combobox } from "./Combobox";
 export { Menu, MenuItem, MenuLinkItem, MenuSeparator, MenuContext } from "./Menu";
 export { ContextMenu } from "./ContextMenu";
