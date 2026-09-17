@@ -11,6 +11,7 @@ import { prisma } from "~/lib/db";
 import {
   certificateEligibility,
   closeOutOffering,
+  reopenOffering,
 } from "~/education/lib/certificates.server";
 
 const mockPrisma = prisma as unknown as Record<
@@ -196,5 +197,86 @@ describe("closeOutOffering", () => {
         }),
       }),
     );
+  });
+
+  it("refuses to close out before the offering has finished", async () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    mockPrisma.educationOffering.findUnique.mockResolvedValue(
+      offeringRow({ endsAt: future }),
+    );
+
+    const result = await closeOutOffering({ offeringId: "off-1", actorId: "core-1" });
+
+    expect(result).toMatchObject({ status: 409 });
+    expect(mockPrisma.educationCertificate.create).not.toHaveBeenCalled();
+  });
+
+  it("closes out early when allowEarly is set", async () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    mockPrisma.educationOffering.findUnique.mockResolvedValue(
+      offeringRow({ endsAt: future }),
+    );
+
+    const result = await closeOutOffering({
+      offeringId: "off-1",
+      actorId: "core-1",
+      allowEarly: true,
+    });
+
+    expect(result).toEqual({ ok: true, issued: 1, alreadyIssued: 0, ineligible: 1 });
+  });
+
+  it("closes out a finished offering without allowEarly", async () => {
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    mockPrisma.educationOffering.findUnique.mockResolvedValue(
+      offeringRow({ endsAt: past }),
+    );
+
+    const result = await closeOutOffering({ offeringId: "off-1", actorId: "core-1" });
+
+    expect(result).toEqual({ ok: true, issued: 1, alreadyIssued: 0, ineligible: 1 });
+  });
+});
+
+describe("reopenOffering", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("clears closedOutAt/closedOutById", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue({
+      id: "off-1",
+      closedOutAt: new Date(),
+    });
+    mockPrisma.educationOffering.update.mockResolvedValue({});
+
+    const result = await reopenOffering({ offeringId: "off-1", actorId: "core-1" });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
+      where: { id: "off-1" },
+      data: { closedOutAt: null, closedOutById: null },
+    });
+  });
+
+  it("is a no-op when the offering was never closed out", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue({
+      id: "off-1",
+      closedOutAt: null,
+    });
+
+    const result = await reopenOffering({ offeringId: "off-1", actorId: "core-1" });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.educationOffering.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a missing offering", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue(null);
+
+    const result = await reopenOffering({ offeringId: "gone", actorId: "core-1" });
+
+    expect(result).toMatchObject({ status: 404 });
+    expect(mockPrisma.educationOffering.update).not.toHaveBeenCalled();
   });
 });

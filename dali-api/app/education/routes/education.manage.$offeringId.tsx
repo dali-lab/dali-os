@@ -57,7 +57,7 @@ import {
   saveAttendance,
 } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
+import { closeOutOffering, reopenOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -88,7 +88,7 @@ import { OfferingFields, toDatetimeLocal } from "~/education/components/Offering
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { DateField } from "~/components/ui/DateField";
-import { formatDateTime, formatSessionWhen } from "~/lib/display";
+import { formatDateTime, formatDateShort, formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { InfoTip } from "~/components/ui/floating";
@@ -413,6 +413,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "set-session-check-in",
     "save-student-note",
     "close-out-offering",
+    "reopen-offering",
     "set-form-binding",
   ];
   if (contentIntents.includes(intent)) {
@@ -572,6 +573,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         const result = await closeOutOffering({
           offeringId: params.offeringId!,
           actorId: auth.user.sub,
+          // The button only appears after a confirm dialog that warns when the
+          // course hasn't finished, so an operator reaching here has consciously
+          // chosen to close out — let the intentional early close-out through.
+          allowEarly: formData.get("allowEarly") === "true",
         });
         if ("error" in result) return fail(result);
         return {
@@ -582,6 +587,14 @@ export async function action({ request, params }: Route.ActionArgs) {
             ineligible: result.ineligible,
           },
         };
+      }
+      case "reopen-offering": {
+        const result = await reopenOffering({
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        if ("error" in result) return fail(result);
+        return { ok: true, reopened: true };
       }
       case "save-student-note": {
         const applicationId = String(formData.get("applicationId") ?? "");
@@ -694,6 +707,7 @@ export default function ManageOffering() {
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
     closeOutPreview?: { eligible: string[]; belowThreshold: string[]; alreadyIssued: number } | null;
+    reopened?: boolean;
     bulkApprove?: { approved: number; skipped: number };
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -720,6 +734,25 @@ export default function ManageOffering() {
             { to: "Archived", label: "Archive", variant: "destructive" },
           ]
         : [{ to: "Published", label: "Re-publish", variant: "secondary" }];
+
+  // Close-out completes the course (issues certificates, emails students). If it
+  // hasn't finished running yet, warn hard in the confirm dialog before letting
+  // an operator proceed — closing early is what strands an offering in the "Past
+  // offerings" bucket before it ever happens.
+  const hasEnded =
+    offering.endsAt != null && new Date(offering.endsAt).getTime() < Date.now();
+  const closeOutConfirm = hasEnded
+    ? {
+        title: "Close out this course?",
+        description:
+          "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
+        confirmLabel: "Close out",
+      }
+    : {
+        title: "Close out before it's finished?",
+        description: `This course ${offering.endsAt ? `runs until ${formatDateShort(offering.endsAt, tz)} and ` : ""}hasn't finished yet. Closing out now issues certificates to everyone who has already met the attendance threshold and emails them — anyone still to attend is left out, and it moves to Past offerings. You can reopen it afterward.`,
+        confirmLabel: "Close out anyway",
+      };
 
   // Per-session rollups so the Sessions tab connects to the rest of the offering
   // (attendance, materials, assignments) instead of being a bare date list.
@@ -772,16 +805,27 @@ export default function ManageOffering() {
           >
             View as student
           </Link>
-          <Form
-            method="post"
-            onSubmit={confirmSubmit({
-              title: "Close out this course?",
-              description:
-                "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
-              confirmLabel: "Close out",
-            })}
-          >
+          {offering.closedOutAt && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Reopen this course?",
+                description:
+                  "This clears the close-out so the course leaves Past offerings and can be edited and closed out again later. Certificates already issued stay valid.",
+                confirmLabel: "Reopen",
+              })}
+            >
+              <input type="hidden" name="intent" value="reopen-offering" />
+              <Button type="submit" variant="ghost" size="sm">
+                Reopen
+              </Button>
+            </Form>
+          )}
+          <Form method="post" onSubmit={confirmSubmit(closeOutConfirm)}>
             <input type="hidden" name="intent" value="close-out-offering" />
+            {/* The confirm dialog above warns when the course hasn't finished, so
+                a submit that reaches the action is a deliberate close-out. */}
+            <input type="hidden" name="allowEarly" value="true" />
             <Button type="submit" variant="secondary" size="sm">
               {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
             </Button>
@@ -812,6 +856,11 @@ export default function ManageOffering() {
           {actionData.closeOut.ineligible > 0 &&
             `, ${actionData.closeOut.ineligible} below the attendance threshold`}
           .
+        </p>
+      )}
+      {actionData?.reopened && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Course reopened — it's back in the active catalog and can be edited.
         </p>
       )}
       {actionData?.closeOutPreview && (
