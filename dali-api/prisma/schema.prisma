@@ -162,6 +162,7 @@ model User {
   // ─── Calendar / scheduling relations ───────────────────────────────────────
   calendarLinks        UserCalendarLink[]
   scheduledMeetings    ScheduledMeeting[]
+  meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
   meetingAttendances   MeetingAttendance[]
@@ -1862,6 +1863,7 @@ model ScheduledMeeting {
   reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
   timeEntries   TimeEntry[]
+  timeProposals MeetingTimeProposal[]
 
   createdAt DateTime @default(now())
 }
@@ -2142,6 +2144,28 @@ model MeetingException {
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
 
   @@unique([scheduledMeetingId, originalStart])
+}
+
+// An invitee's suggestion of an alternative start time for a meeting. The
+// organizer accepts (reschedules the meeting to proposedStart) or declines.
+model MeetingTimeProposal {
+  id                 String             @id @default(cuid())
+  scheduledMeetingId String
+  proposedByUserId   String
+  proposedStart      DateTime
+  status             TimeProposalStatus @default(Pending)
+  createdAt          DateTime           @default(now())
+
+  meeting    ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+  proposedBy User             @relation(fields: [proposedByUserId], references: [id])
+
+  @@index([scheduledMeetingId, status])
+}
+
+enum TimeProposalStatus {
+  Pending
+  Accepted
+  Declined
 }
 
 // Send log for meeting reminders (meeting-reminders job) — the idempotency

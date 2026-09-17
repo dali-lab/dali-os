@@ -3,10 +3,14 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink,
+  Check, HelpCircle, X, Video, ExternalLink, Clock,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { DateField } from "~/components/ui/DateField";
+import { TimeField } from "~/components/ui/TimeField";
+import { useToast } from "~/components/ui/toast";
 import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
@@ -149,13 +153,39 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
  * meeting goes through its invite endpoint, which pushes the answer on with
  * the organizer's link. Either way the next read shows what Google holds.
  */
-export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
+export function EventRsvpControl({
+  rsvp,
+  meetingId,
+  eventStartIso,
+}: {
+  rsvp: EventRsvpTarget;
+  /** When set (DALI meeting, viewer is invitee), shows "Propose new time". */
+  meetingId?: string;
+  /** ISO string of the event's current start, used to prefill the picker. */
+  eventStartIso?: string;
+}) {
   const fetcher = useFetcher<{ error?: string }>();
   const revalidator = useRevalidator();
+  const toast = useToast();
   // The notification route is a plain endpoint, not this page's action, so its
   // in-flight state is tracked here rather than by a fetcher.
   const [sending, setSending] = useState<RsvpResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [proposeDate, setProposeDate] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+  const [proposeTime, setProposeTime] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
+  const [proposing, setProposing] = useState(false);
 
   // Revalidation lands a beat after the write, so show the answer being sent —
   // otherwise the pressed button visibly snaps back before settling.
@@ -204,6 +234,33 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
     }
   }
 
+  async function submitProposal() {
+    if (!meetingId || !proposeDate || !proposeTime) return;
+    const proposedStart = new Date(`${proposeDate}T${proposeTime}`).toISOString();
+    setProposing(true);
+    try {
+      const res = await fetch(`/api/scheduled-meetings/${meetingId}/propose-time`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposedStart }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Failed to propose time");
+        return;
+      }
+      toast.success("Time proposed — the organizer will be notified");
+      setProposeOpen(false);
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  const showPropose = meetingId && rsvp.via === "notification";
+
   return (
     <DetailSection label="Going?">
       <div className="flex flex-wrap gap-1.5">
@@ -234,6 +291,52 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
       {(error ?? fetcher.data?.error) && (
         <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
       )}
+      {showPropose && (
+        <button
+          type="button"
+          onClick={() => setProposeOpen(true)}
+          className="mt-2 inline-flex items-center gap-1 text-[13px] text-os-accent hover:underline"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          Propose new time
+        </button>
+      )}
+      {proposeOpen && meetingId && (
+        <Modal open labelledBy="propose-time-title" onClose={() => setProposeOpen(false)}>
+          <ModalHeader
+            titleId="propose-time-title"
+            title="Propose a new time"
+            onClose={() => setProposeOpen(false)}
+          />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Date</label>
+              <DateField
+                mode="date"
+                value={proposeDate}
+                onChange={setProposeDate}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Time</label>
+              <TimeField
+                value={proposeTime}
+                onChange={setProposeTime}
+              />
+            </div>
+          </div>
+          <ModalFooter onCancel={() => setProposeOpen(false)}>
+            <button
+              type="button"
+              disabled={proposing || !proposeDate || !proposeTime}
+              onClick={submitProposal}
+              className="os-btn-primary disabled:opacity-60"
+            >
+              {proposing ? "Proposing…" : "Propose time"}
+            </button>
+          </ModalFooter>
+        </Modal>
+      )}
     </DetailSection>
   );
 }
@@ -250,6 +353,8 @@ export function CalendarEventDetailPopover({
   attendees,
   links,
   rsvp,
+  meetingId,
+  eventStartIso,
   onClose,
   footer,
 }: {
@@ -266,6 +371,10 @@ export function CalendarEventDetailPopover({
   links?: EventLinkDTO[];
   /** The viewer's own answer, when they're a guest — renders the RSVP control. */
   rsvp?: EventRsvpTarget;
+  /** DALI meeting id — enables "Propose new time" for invitees. */
+  meetingId?: string;
+  /** ISO start of the event, prefills the propose-time picker. */
+  eventStartIso?: string;
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -416,7 +525,7 @@ export function CalendarEventDetailPopover({
           </DetailSection>
         )}
 
-        {rsvp && <EventRsvpControl rsvp={rsvp} />}
+        {rsvp && <EventRsvpControl rsvp={rsvp} meetingId={meetingId} eventStartIso={eventStartIso} />}
 
         {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
 
@@ -572,6 +681,7 @@ export function WeekGridEvent({
   e,
   lane,
   dayIdx,
+  dayDateUtc,
   hitTestDay,
 }: {
   e: EventBlock;
@@ -579,6 +689,7 @@ export function WeekGridEvent({
   // This event's day column, and a hit-test to resolve a pointer X → day index,
   // so a body-move drag can cross columns to another date.
   dayIdx?: number;
+  dayDateUtc?: Date;
   hitTestDay?: (clientX: number) => number | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -593,6 +704,16 @@ export function WeekGridEvent({
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
+  // ISO start for the propose-time flow — built from the day date + fractional startHour.
+  const eventStartIso = dayDateUtc
+    ? (() => {
+        const d = new Date(dayDateUtc);
+        const wholeHour = Math.floor(e.startHour);
+        const minutes = Math.round((e.startHour - wholeHour) * 60);
+        d.setUTCHours(wholeHour, minutes, 0, 0);
+        return d.toISOString();
+      })()
+    : undefined;
   const isMeeting = Boolean(e.meeting);
   // An answered invite says so on the block itself, in place of the location —
   // "Pending" is what every unanswered invite says, so it earns no room.
@@ -927,6 +1048,8 @@ export function WeekGridEvent({
           attendees={e.attendees}
           links={e.links}
           rsvp={e.rsvp}
+          meetingId={e.meeting?.meetingId}
+          eventStartIso={eventStartIso}
           onClose={() => {
             setConfirmDelete(false);
             setDetailOpen(false);
@@ -1723,7 +1846,7 @@ export function WeekGrid({
               const dayEvents = eventsByDay[idx] ?? [];
               const eventLanes = computeEventLanes(dayEvents);
               return dayEvents.map((e, i) => (
-                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} hitTestDay={hitTestDay} />
+                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} dayDateUtc={d.dateUtc} hitTestDay={hitTestDay} />
               ));
             })()}
             {overlayLayer?.(idx)}

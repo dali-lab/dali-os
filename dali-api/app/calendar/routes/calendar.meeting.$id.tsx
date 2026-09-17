@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link, useLoaderData } from "react-router";
+import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, Pencil } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -91,6 +91,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
+  const proposalRows = canManage
+    ? await prisma.meetingTimeProposal.findMany({
+        where: { scheduledMeetingId: meeting.id, status: "Pending" },
+        select: {
+          id: true,
+          proposedStart: true,
+          proposedBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+
   // The QR/link is a sharing affordance, so it's only generated for a manager.
   let checkInUrl: string | null = null;
   let checkInQrSvg: string | null = null;
@@ -129,7 +141,94 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     checkInUrl,
     checkInQrSvg,
     walletConfigured: walletTokensConfigured(),
+    proposals: proposalRows.map((p) => ({
+      id: p.id,
+      proposedStartIso: p.proposedStart.toISOString(),
+      proposerName: fullName(p.proposedBy),
+    })),
   };
+}
+
+function ProposedTimesCard({
+  meetingId,
+  proposals,
+}: {
+  meetingId: string;
+  proposals: { id: string; proposedStartIso: string; proposerName: string }[];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
+
+  if (proposals.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
+      <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
+        <Clock className="h-4 w-4 text-muted-foreground" /> Proposed times
+      </h2>
+      <ul className="flex flex-col gap-3">
+        {proposals.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-sm font-medium text-foreground">{p.proposerName}</span>
+              <span className="ml-2 text-sm text-muted-foreground">
+                {new Date(p.proposedStartIso).toLocaleString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={fetcher.state !== "idle"}
+                onClick={() =>
+                  fetcher.submit(
+                    { action: "accept", proposalId: p.id },
+                    {
+                      method: "post",
+                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
+                      encType: "application/json",
+                    },
+                  )
+                }
+                className="inline-flex items-center rounded-md bg-accent-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-teal/90 disabled:opacity-60"
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                disabled={fetcher.state !== "idle"}
+                onClick={() =>
+                  fetcher.submit(
+                    { action: "decline", proposalId: p.id },
+                    {
+                      method: "post",
+                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
+                      encType: "application/json",
+                    },
+                  )
+                }
+                className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                Decline
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {fetcher.data?.error && (
+        <p className="text-sm text-destructive">{fetcher.data.error}</p>
+      )}
+      {fetcher.data?.gcalError && (
+        <p className="text-sm text-muted-foreground">
+          Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
+        </p>
+      )}
+    </section>
+  );
 }
 
 export default function CalendarMeetingPage() {
@@ -257,6 +356,10 @@ export default function CalendarMeetingPage() {
           </p>
         )}
       </section>
+
+      {d.canManage && d.proposals.length > 0 && (
+        <ProposedTimesCard meetingId={d.meetingId} proposals={d.proposals} />
+      )}
     </div>
   );
 }
