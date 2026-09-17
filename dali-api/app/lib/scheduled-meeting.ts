@@ -10,6 +10,7 @@ import {
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,
   getGoogleEvent,
+  deleteGoogleCalendarEvent,
   type GoogleAttendee,
 } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
@@ -23,7 +24,7 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore } from "~/lib/roles";
-import { expandOccurrences, type OccurrenceException } from "~/lib/meeting-occurrences";
+import { expandOccurrences, rruleWithUntil, bareRrule, type OccurrenceException } from "~/lib/meeting-occurrences";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {
@@ -772,17 +773,19 @@ export type CancelScheduledMeetingResult =
 
 /**
  * Cancel a meeting. The organizer may cancel; Core can also cancel (used by
- * Admin → Attendance to remove a self-check-in event from the list). Flipping
- * the status to Cancelled is all that's needed to pull the invite out of every
- * recipient's todos, tasks, attention banner, and notification bell — those
- * surfaces filter on `scheduledMeeting.status !== "Cancelled"` rather than
- * fanning out deletes. The Google Calendar event (if any) is left in place;
- * deleting it would need a new google-calendar helper and is out of scope here.
+ * Admin → Attendance to remove a self-check-in event from the list). Supports
+ * scoped cancellation: "this" cancels one occurrence via MeetingException,
+ * "following" truncates the series, "all" (default) cancels the whole meeting.
  */
 export async function cancelScheduledMeeting(
   meetingId: string,
   actorUserId: string,
-  opts?: { allowCore?: boolean },
+  opts?: {
+    allowCore?: boolean;
+    scope?: "this" | "following" | "all";
+    occurrenceStart?: string;
+    occurrenceEventId?: string;
+  },
 ): Promise<CancelScheduledMeetingResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
@@ -797,6 +800,8 @@ export async function cancelScheduledMeeting(
       recurrenceRule: true,
       ownerCalendarEmail: true,
       externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarId: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -805,12 +810,126 @@ export async function cancelScheduledMeeting(
       return { ok: false, error: "Only the organizer can cancel", status: 403 };
     }
   }
+
+  const cancelScope = opts?.scope ?? "all";
+
+  // ── "this" occurrence ────────────────────────────────────────────────────
+  if (cancelScope === "this") {
+    const occurrenceStart = opts?.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=this", status: 400 };
+    }
+    await prisma.meetingException.upsert({
+      where: {
+        scheduledMeetingId_originalStart: {
+          scheduledMeetingId: meetingId,
+          originalStart: new Date(occurrenceStart),
+        },
+      },
+      create: {
+        scheduledMeetingId: meetingId,
+        originalStart: new Date(occurrenceStart),
+        cancelled: true,
+      },
+      update: { cancelled: true },
+    });
+    if (opts?.occurrenceEventId && meeting.organizerCalendarLinkId) {
+      try {
+        const link = await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, enabled: true },
+        });
+        if (link?.enabled) {
+          await deleteGoogleCalendarEvent({
+            linkId: link.id,
+            calendarId: meeting.organizerCalendarId ?? undefined,
+            eventId: opts.occurrenceEventId,
+          });
+        }
+      } catch {
+        // best-effort
+      }
+    }
+    const recipients = (meeting.participantUserIds ?? []).filter((id) => id !== actorUserId);
+    if (recipients.length > 0) {
+      try {
+        await notify({
+          eventType: "meeting.cancelled",
+          createdByUserId: actorUserId,
+          message: {
+            title: `Meeting occurrence cancelled: ${meeting.title}`,
+            link: "/calendar",
+          },
+          recipients: recipients.map((userId) => ({ userId, ics: null })),
+        });
+      } catch (err) {
+        console.error(`meeting ${meetingId}: occurrence cancel notify failed`, err);
+      }
+    }
+    return { ok: true, alreadyCancelled: false };
+  }
+
+  // ── "following" occurrences ───────────────────────────────────────────────
+  if (cancelScope === "following") {
+    const occurrenceStart = opts?.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
+    }
+    const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
+    const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
+    if (truncatedRule) {
+      await prisma.scheduledMeeting.update({
+        where: { id: meetingId },
+        data: { recurrenceRule: truncatedRule },
+      });
+      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+        try {
+          const link = await prisma.userCalendarLink.findUnique({
+            where: { id: meeting.organizerCalendarLinkId },
+            select: { id: true, enabled: true },
+          });
+          if (link?.enabled) {
+            await patchGoogleCalendarEvent({
+              linkId: link.id,
+              calendarId: meeting.organizerCalendarId ?? undefined,
+              eventId: meeting.externalEventId,
+              recurrenceRule: truncatedRule,
+            });
+          }
+        } catch {
+          // best-effort
+        }
+      }
+    }
+    return { ok: true, alreadyCancelled: false };
+  }
+
+  // ── "all" (default) ───────────────────────────────────────────────────────
   if (meeting.status === "Cancelled") return { ok: true, alreadyCancelled: true };
 
   await prisma.scheduledMeeting.update({
     where: { id: meetingId },
     data: { status: "Cancelled" },
   });
+
+  // Delete the Google event best-effort.
+  if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+    try {
+      const link = await prisma.userCalendarLink.findUnique({
+        where: { id: meeting.organizerCalendarLinkId },
+        select: { id: true, enabled: true },
+      });
+      if (link?.enabled) {
+        await deleteGoogleCalendarEvent({
+          linkId: link.id,
+          calendarId: meeting.organizerCalendarId ?? undefined,
+          eventId: meeting.externalEventId,
+        });
+      }
+    } catch (err) {
+      console.error(`meeting ${meetingId}: Google delete failed`, err);
+    }
+  }
 
   // Tell everyone who was invited. Deliberately NOT stamped with
   // scheduledMeetingId — surfaces hide rows whose meeting is Cancelled, which
@@ -862,6 +981,19 @@ export type UpdateScheduledMeetingInput = {
   scope: ScheduledMeetingScope;
   startTime?: string | null;
   recurrenceRule?: string | null;
+  // Google-only fields (not stored on ScheduledMeeting) — passed straight through
+  // to the linked event's patch. Omitted (undefined) leaves them unchanged; a set
+  // value, including "", is written (so clearing a location clears it on Google).
+  location?: string;
+  description?: string;
+  // Scoped edit fields (optional, default "all"):
+  editScope?: "this" | "following" | "all";
+  occurrenceStart?: string;   // ISO of this occurrence's ORIGINAL start
+  occurrenceEventId?: string; // Google instance event id (for "this" patch)
+  // Guest permission flags — only applied when canFullEdit; ignored for guestEditOnly actors.
+  guestsCanModify?: boolean;
+  guestsCanInviteOthers?: boolean;
+  guestsCanSeeGuestList?: boolean;
 };
 
 export type UpdateScheduledMeetingResult =
@@ -899,16 +1031,190 @@ export async function updateScheduledMeeting(
       organizerCalendarId: true,
       meetingType: true,
       attendanceMode: true,
+      recurrenceRule: true,
+      scopeType: true,
+      scopeId: true,
+      isCoreMeeting: true,
+      meetingTypeLabel: true,
+      projectId: true,
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
+      guestsCanSeeGuestList: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.status === "Cancelled") {
     return { ok: false, error: "This meeting has been cancelled", status: 400 };
   }
-  if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
+
+  const core = await isCore(actorUserId);
+  const canFullEdit =
+    meeting.organizerId === actorUserId ||
+    core ||
+    (meeting.guestsCanModify && meeting.participantUserIds.includes(actorUserId));
+  const canGuestEdit =
+    canFullEdit ||
+    (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(actorUserId));
+  const guestEditOnly = canGuestEdit && !canFullEdit;
+
+  if (!canGuestEdit) {
     return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
   }
 
+  if (guestEditOnly) {
+    const editScope = input.editScope ?? "all";
+    if (editScope !== "all") {
+      return { ok: false, error: "Only the organizer can change the schedule", status: 403 };
+    }
+    // Force back all non-guest-list fields so only the participant list can change.
+    input.title = meeting.title;
+    input.durationMinutes = meeting.durationMinutes;
+    input.startTime = meeting.selectedAt?.toISOString() ?? null;
+    input.recurrenceRule = meeting.recurrenceRule;
+    input.location = undefined;
+    input.description = undefined;
+    input.guestsCanModify = undefined;
+    input.guestsCanInviteOthers = undefined;
+    input.guestsCanSeeGuestList = undefined;
+  }
+
+  // Only the organizer (or Core) sets the guest-permission flags — a guest with
+  // edit access can change the event but not who else may edit it.
+  if (meeting.organizerId !== actorUserId && !core) {
+    input.guestsCanModify = undefined;
+    input.guestsCanInviteOthers = undefined;
+    input.guestsCanSeeGuestList = undefined;
+  }
+
+  const editScope = input.editScope ?? "all";
+
+  // ── "this" occurrence ────────────────────────────────────────────────────
+  if (editScope === "this") {
+    const occurrenceStart = input.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=this", status: 400 };
+    }
+    const startDate = input.startTime ? new Date(input.startTime) : null;
+    await prisma.meetingException.upsert({
+      where: {
+        scheduledMeetingId_originalStart: {
+          scheduledMeetingId: meetingId,
+          originalStart: new Date(occurrenceStart),
+        },
+      },
+      create: {
+        scheduledMeetingId: meetingId,
+        originalStart: new Date(occurrenceStart),
+        overrideStart: startDate,
+        overrideDurationMin: input.durationMinutes,
+        overrideTitle: input.title,
+        cancelled: false,
+      },
+      update: {
+        overrideStart: startDate,
+        overrideDurationMin: input.durationMinutes,
+        overrideTitle: input.title,
+        cancelled: false,
+      },
+    });
+
+    let gcalError: string | null = null;
+    if (input.occurrenceEventId && meeting.organizerCalendarLinkId) {
+      try {
+        const link = await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, enabled: true },
+        });
+        if (link?.enabled && startDate) {
+          const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
+          await patchGoogleCalendarEvent({
+            linkId: link.id,
+            calendarId: meeting.organizerCalendarId ?? undefined,
+            eventId: input.occurrenceEventId,
+            summary: input.title,
+            startIso: startDate.toISOString(),
+            endIso: endDate.toISOString(),
+            ...(input.location !== undefined ? { location: input.location } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            sendUpdates: "all",
+          });
+        }
+      } catch (err) {
+        gcalError = err instanceof Error ? err.message : "Google Calendar update failed";
+      }
+    }
+
+    const updated = await prisma.scheduledMeeting.findUnique({ where: { id: meetingId } });
+    return { ok: true, meeting: updated!, gcalError };
+  }
+
+  // ── "following" occurrences ───────────────────────────────────────────────
+  if (editScope === "following") {
+    const occurrenceStart = input.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
+    }
+    const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
+    const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
+    if (truncatedRule) {
+      await prisma.scheduledMeeting.update({
+        where: { id: meetingId },
+        data: { recurrenceRule: truncatedRule },
+      });
+      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+        try {
+          const link = await prisma.userCalendarLink.findUnique({
+            where: { id: meeting.organizerCalendarLinkId },
+            select: { id: true, enabled: true },
+          });
+          if (link?.enabled) {
+            await patchGoogleCalendarEvent({
+              linkId: link.id,
+              calendarId: meeting.organizerCalendarId ?? undefined,
+              eventId: meeting.externalEventId,
+              recurrenceRule: truncatedRule,
+            });
+          }
+        } catch {
+          // Best-effort; the DALI truncation already landed.
+        }
+      }
+    }
+
+    const newRule = bareRrule(meeting.recurrenceRule ?? "FREQ=WEEKLY");
+
+    const ownerLink = meeting.organizerCalendarLinkId
+      ? await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, externalEmail: true },
+        })
+      : null;
+
+    const newMeetingResult = await createScheduledMeeting({
+      organizerId: meeting.organizerId,
+      organizerEmail: ownerLink?.externalEmail ?? meeting.ownerCalendarEmail,
+      title: input.title,
+      durationMinutes: input.durationMinutes,
+      // The new series carries the edit's guest list (the composer's picker),
+      // not the master's — a "this and following" edit applies guest changes too.
+      scope: input.scope,
+      startTime: occurrenceStart,
+      recurrenceRule: newRule,
+      organizerCalendarLinkId: meeting.organizerCalendarLinkId,
+      organizerCalendarId: meeting.organizerCalendarId,
+      meetingType: meeting.meetingType,
+      meetingTypeLabel: meeting.meetingTypeLabel,
+      projectId: meeting.projectId,
+      isCoreMeeting: meeting.isCoreMeeting,
+    });
+
+    if (!newMeetingResult.ok) {
+      return { ok: false, error: newMeetingResult.error, status: 500 };
+    }
+    return { ok: true, meeting: newMeetingResult.meeting, gcalError: newMeetingResult.gcalError };
+  }
+
+  // ── "all" (default) — existing behavior ──────────────────────────────────
   const { participantUserIds, scopeId } = await resolveScope(input.scope);
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
@@ -924,6 +1230,9 @@ export async function updateScheduledMeeting(
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
+      ...(input.guestsCanModify !== undefined ? { guestsCanModify: input.guestsCanModify } : {}),
+      ...(input.guestsCanInviteOthers !== undefined ? { guestsCanInviteOthers: input.guestsCanInviteOthers } : {}),
+      ...(input.guestsCanSeeGuestList !== undefined ? { guestsCanSeeGuestList: input.guestsCanSeeGuestList } : {}),
     },
   });
 
@@ -984,6 +1293,8 @@ export async function updateScheduledMeeting(
           ...(startDate && endDate
             ? { startIso: startDate.toISOString(), endIso: endDate.toISOString() }
             : {}),
+          ...(input.location !== undefined ? { location: input.location } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
           recurrenceRule: input.recurrenceRule ?? null,
           timeZone: resolveUserTimeZone(organizerUser),
           attendees,

@@ -209,8 +209,14 @@ export function buildExternalLayer(
             : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
-        // Delete affordances in the detail popover and can be dragged.
-        onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
+        // Delete affordances in the detail popover and can be dragged. A meeting
+        // the viewer manages is also editable even when its Google copy isn't
+        // theirs to write (Core, or an invitee-organizer): the edit routes
+        // through the DALI update path, which patches Google via the organizer.
+        onEdit:
+          onEdit && (editable || e.meeting?.canInvite)
+            ? (anchor) => onEdit(e, anchor)
+            : undefined,
         onMoveResize: onMoveResize && editable ? (s, en, di) => onMoveResize(e, s, en, di) : undefined,
         onDuplicate: onDuplicate && editable ? (anchor) => onDuplicate(e, anchor) : undefined,
         onDelete: onDelete && editable ? () => onDelete(e) : undefined,

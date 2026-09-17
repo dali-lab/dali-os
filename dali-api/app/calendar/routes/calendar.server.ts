@@ -56,7 +56,14 @@ import {
   generalCalendarState,
 } from "~/lib/general-calendar";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { attachMeetingNote, trackExternalEventAsMeeting } from "~/lib/scheduled-meeting";
+import {
+  attachMeetingNote,
+  cancelScheduledMeeting,
+  trackExternalEventAsMeeting,
+  updateScheduledMeeting,
+  type ScheduledMeetingScope,
+} from "~/lib/scheduled-meeting";
+import { rruleWithUntil, bareRrule } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -178,6 +185,10 @@ async function meetingsForExternalEvents(
       organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
+      participantUserIds: true,
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
+      guestsCanSeeGuestList: true,
       notePage: { select: { id: true } },
       timeEntries: { where: { userId }, select: { id: true }, take: 1 },
     },
@@ -185,6 +196,15 @@ async function meetingsForExternalEvents(
   const byExternalId = new Map<string, EventMeetingDTO>();
   for (const m of meetings) {
     if (!m.externalEventId) continue;
+    const isOrganizer = m.organizerId === userId;
+    const isParticipant = m.participantUserIds.includes(userId);
+    const canFullEdit =
+      isOrganizer ||
+      canMarkCoreMeeting ||
+      (m.guestsCanModify && isParticipant);
+    const canGuestEdit =
+      canFullEdit ||
+      (m.guestsCanInviteOthers && isParticipant);
     byExternalId.set(m.externalEventId, {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
@@ -193,9 +213,11 @@ async function meetingsForExternalEvents(
       canMarkCoreMeeting,
       // Adding notes after the fact is the organizer's or Core's call — the same
       // authority attachMeetingNote re-checks server-side.
-      canAddNote: m.organizerId === userId || canMarkCoreMeeting,
-      // Same authority updateScheduledMeeting re-checks.
-      canInvite: m.organizerId === userId || canMarkCoreMeeting,
+      canAddNote: isOrganizer || canMarkCoreMeeting,
+      // Widened to canGuestEdit: guests with invite-others permission can invite.
+      canInvite: canGuestEdit,
+      guestEditOnly: canGuestEdit && !canFullEdit,
+      hideGuestList: !m.guestsCanSeeGuestList && !isOrganizer && !canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -410,24 +432,6 @@ async function assertLinkOwned(userId: string, linkId: string): Promise<void> {
   if (!link) throw new Error("That calendar isn't connected to your account.");
 }
 
-/** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
-function rruleUntilBasic(d: Date): string {
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-/** Take a recurring master's `recurrence` array and return one RRULE string with
- *  UNTIL set (existing UNTIL/COUNT stripped) — for splitting/truncating a series. */
-function rruleWithUntil(recurrence: string[], until: Date): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  if (!rule) return null;
-  const parts = rule.split(";").filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
-  parts.push(`UNTIL=${rruleUntilBasic(until)}`);
-  return parts.join(";");
-}
-function bareRrule(recurrence: string[]): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
-}
-
 type EventScope = "this" | "following" | "all";
 
 /** The validated "Count this as work" half of an event form. */
@@ -637,6 +641,149 @@ async function handleEventRsvp(opts: {
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
 // the series.
+/** Parse the composer's guest scope (JSON) back into a ScheduledMeetingScope,
+ *  normalizing anything unexpected to "None" (no guests) rather than trusting the
+ *  wire shape. */
+function parseMeetingScope(raw: string): ScheduledMeetingScope {
+  const p = JSON.parse(raw) as {
+    type?: string;
+    groupId?: unknown;
+    extraUserIds?: unknown;
+    participantUserIds?: unknown;
+  };
+  if (p?.type === "Group" && typeof p.groupId === "string") {
+    return {
+      type: "Group",
+      groupId: p.groupId,
+      extraUserIds: Array.isArray(p.extraUserIds) ? (p.extraUserIds as string[]) : undefined,
+    };
+  }
+  if (p?.type === "UserList" && Array.isArray(p.participantUserIds)) {
+    return { type: "UserList", participantUserIds: p.participantUserIds as string[] };
+  }
+  return { type: "None" };
+}
+
+/**
+ * When the event being edited from the composer is a DALI meeting, edit it
+ * through updateScheduledMeeting instead of a raw Google patch: that reconciles
+ * the attendance roster, notifies added/removed guests, and re-syncs the Google
+ * event — all under organizer-or-Core auth, which also lets Core edit a meeting
+ * on a calendar they don't own. So this runs before the link-ownership gate.
+ * Returns "passthrough" when the event isn't a manageable meeting.
+ */
+async function maybeUpdateMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true, recurrenceRule: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const title = get("title").trim();
+  if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+  const startIso = get("startIso");
+  const endIso = get("endIso");
+  if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+  const durationMinutes = Math.round(
+    (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000,
+  );
+  if (!(durationMinutes > 0)) return Response.json({ error: "End must be after start." }, { status: 400 });
+
+  let scope: ScheduledMeetingScope;
+  try {
+    scope = parseMeetingScope(get("meetingScope") || '{"type":"None"}');
+  } catch {
+    return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+  }
+
+  const editScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+  const occurrenceEventId = get("eventId") || undefined;
+
+  // For "all" we pass the recurrenceRule from the master (cadence unchanged).
+  // For "this"/"following" the handlers in updateScheduledMeeting manage the rule.
+  const recurrenceRule = editScope === "all" ? meeting.recurrenceRule : undefined;
+
+  const guestsCanModifyRaw = get("guestsCanModify");
+  const guestsCanInviteOthersRaw = get("guestsCanInviteOthers");
+  const guestsCanSeeGuestListRaw = get("guestsCanSeeGuestList");
+
+  const result = await updateScheduledMeeting(meeting.id, userId, {
+    title,
+    durationMinutes,
+    scope,
+    startTime: startIso,
+    recurrenceRule,
+    location: get("location").trim(),
+    description: get("description").trim(),
+    editScope,
+    occurrenceStart,
+    occurrenceEventId,
+    ...(guestsCanModifyRaw !== "" ? { guestsCanModify: guestsCanModifyRaw === "1" } : {}),
+    ...(guestsCanInviteOthersRaw !== "" ? { guestsCanInviteOthers: guestsCanInviteOthersRaw === "1" } : {}),
+    ...(guestsCanSeeGuestListRaw !== "" ? { guestsCanSeeGuestList: guestsCanSeeGuestListRaw === "1" } : {}),
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+
+  // "Count this as work" logs the viewer's own hours against the event.
+  // Skip for any scoped edit that isn't a plain single-event save.
+  if (!recurringEventId && editScope === "all") {
+    const [linkId] = get("destination").split(":");
+    const ownsLink = linkId
+      ? Boolean(
+          await prisma.userCalendarLink.findFirst({
+            where: { id: linkId, userId },
+            select: { id: true },
+          }),
+        )
+      : false;
+    if (ownsLink) {
+      const work = await resolveEventWorkLog(userId, get);
+      if (work.error) return work.error;
+      if (work.work.kind === "write") {
+        const shapeError = workLogShapeError(null, get("allDay") === "1");
+        if (shapeError) return shapeError;
+      }
+      await writeEventWorkLog({ userId, eventId, linkId, title, startIso, endIso, work: work.work });
+    }
+  }
+  return null;
+}
+
+async function maybeCancelMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const deleteScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+
+  const result = await cancelScheduledMeeting(meeting.id, userId, {
+    allowCore: true,
+    scope: deleteScope,
+    occurrenceStart,
+    occurrenceEventId: eventId,
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+  return null;
+}
+
 async function handleEventAction(
   intent: string,
   raw: Record<string, FormDataEntryValue>,
@@ -647,6 +794,16 @@ async function handleEventAction(
   const roles = await getUserRoles(userId, request);
   if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
+  }
+  // A meeting-backed event is edited through its own DALI update path (roster +
+  // notifications + Google sync), before the link-ownership gate below.
+  if (intent === "event-update") {
+    const handled = await maybeUpdateMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
+  }
+  if (intent === "event-delete") {
+    const handled = await maybeCancelMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
   }
   const dest = get("destination");
   const [linkId, calRaw] = dest.split(":");
@@ -1316,7 +1473,10 @@ export async function loadCalendarData(request: Request) {
         description: e.description,
         location: e.location,
         organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
+        attendees: (() => {
+          const m = e.eventId ? eventMeetings.get(e.eventId) : undefined;
+          return m?.hideGuestList ? undefined : externalAttendees(e.attendees);
+        })(),
         links: externalLinks(e.meetingUrl, e.htmlLink),
         rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
         meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,

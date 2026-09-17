@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import {
   Calendar as CalendarIcon,
@@ -25,8 +25,11 @@ import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
 import { TimesheetFields } from "~/calendar/components/TimesheetFields";
+import { ParticipantPicker } from "~/calendar/components/scheduling";
+import type { EditContext } from "~/calendar/components/EditMeetingModal";
 import {
   NO_REPEAT,
   RepeatField,
@@ -392,6 +395,13 @@ export function EventComposer({
   const base = ev ?? (state.mode === "create" ? state.seed ?? null : null);
   const dests = eventDestinations(data);
 
+  // When the edited event is a DALI meeting the viewer manages, this composer is
+  // its full editor: it grows a guest list and saves through the meeting's own
+  // update path (roster + notifications + Google sync) rather than a raw Google
+  // patch — see maybeUpdateMeetingFromComposer on the server.
+  const meetingId = editing ? ev?.meeting?.meetingId ?? null : null;
+  const canManageMeeting = Boolean(meetingId && ev?.meeting?.canInvite);
+
   const [title, setTitle] = useState(base?.title ?? "");
   const [allDay, setAllDay] = useState(base?.allDay ?? false);
   const [destination, setDestination] = useState(() => {
@@ -406,6 +416,15 @@ export function EventComposer({
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Guest list, loaded on demand for a meeting edit (mirrors EditMeetingModal).
+  const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  // Guest permission toggles (organizer/Core only).
+  const [guestsCanModify, setGuestsCanModify] = useState(false);
+  const [guestsCanInviteOthers, setGuestsCanInviteOthers] = useState(false);
+  const [guestsCanSeeGuestList, setGuestsCanSeeGuestList] = useState(true);
 
   // ── Count this as work ──────────────────────────────────────────────────
   // An event's hours are part of the event, not a separate thing to manage in
@@ -427,7 +446,10 @@ export function EventComposer({
   // Hours hang off one concrete, timed occurrence: a repeating event has no
   // single occurrence to attach them to, and an all-day event has no range to
   // measure. The server enforces the same rule.
-  const canLogWork = data.myRoles.length > 0 && !isRecurring && !allDay;
+  // Hours attach to a calendar the viewer owns; a meeting they manage but can't
+  // write (Core editing another's meeting) can't carry the viewer's log here.
+  const canLogWork =
+    data.myRoles.length > 0 && !isRecurring && !allDay && !(canManageMeeting && !ev?.writable);
   const loggingWork = canLogWork && isWork;
   const role = parseRoleOptionKey(roleKey);
 
@@ -462,6 +484,79 @@ export function EventComposer({
     prevDel.current = deleteFetcher.state;
   }, [deleteFetcher.state, deleteFetcher.data, onClose]);
 
+  // Load the meeting's guest list + member/group directory once, then seed the
+  // picker. A Group-scoped meeting keeps its group selected and treats anyone
+  // invited on top as extra guests — same split the Attendance-tab editor uses.
+  useEffect(() => {
+    if (!canManageMeeting || !meetingId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/scheduled-meetings/${meetingId}/edit-context`, {
+          credentials: "include",
+        });
+        const json = await res.json();
+        if (cancelled || !res.ok) return;
+        const ctx = json as EditContext;
+        if (ctx.meeting.scopeType === "Group" && ctx.meeting.groupId) {
+          const members = new Set(
+            ctx.options.groups.find((g) => g.id === ctx.meeting.groupId)?.memberIds ?? [],
+          );
+          setSelectedGroupIds([ctx.meeting.groupId]);
+          setSelectedUserIds(ctx.meeting.participantUserIds.filter((id) => !members.has(id)));
+        } else {
+          setSelectedUserIds(ctx.meeting.participantUserIds);
+          setSelectedGroupIds([]);
+        }
+        setGuestsCanModify(ctx.meeting.guestsCanModify);
+        setGuestsCanInviteOthers(ctx.meeting.guestsCanInviteOthers);
+        setGuestsCanSeeGuestList(ctx.meeting.guestsCanSeeGuestList);
+        setGuestCtx(ctx);
+      } catch {
+        // Leave the picker in its loading state; saving is blocked until it loads.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canManageMeeting, meetingId]);
+
+  const guestUsersById = useMemo(
+    () => new Map((guestCtx?.options.users ?? []).map((u) => [u.id, u])),
+    [guestCtx],
+  );
+  const guestGroupsById = useMemo(
+    () => new Map((guestCtx?.options.groups ?? []).map((g) => [g.id, g])),
+    [guestCtx],
+  );
+  const guestResponses = useMemo(
+    () => new Map(Object.entries(guestCtx?.responsesByUserId ?? {})),
+    [guestCtx],
+  );
+  const resolvedParticipantIds = useMemo(() => {
+    const set = new Set<string>(selectedUserIds);
+    for (const gid of selectedGroupIds) {
+      const g = guestGroupsById.get(gid);
+      if (g) for (const uid of g.memberIds) set.add(uid);
+    }
+    return Array.from(set);
+  }, [selectedUserIds, selectedGroupIds, guestGroupsById]);
+  // Serialized ScheduledMeetingScope the action parses back (parseMeetingScope):
+  // one group + extras stays group-scoped; otherwise a flat list, or none.
+  const meetingScope = useMemo(() => {
+    if (selectedGroupIds.length === 1) {
+      return {
+        type: "Group" as const,
+        groupId: selectedGroupIds[0],
+        ...(selectedUserIds.length > 0 ? { extraUserIds: selectedUserIds } : {}),
+      };
+    }
+    if (resolvedParticipantIds.length > 0) {
+      return { type: "UserList" as const, participantUserIds: resolvedParticipantIds };
+    }
+    return { type: "None" as const };
+  }, [selectedGroupIds, selectedUserIds, resolvedParticipantIds]);
+
   // Derived hidden values. Timed events use one date + start/end times; an end
   // that's earlier than the start is read as crossing midnight (next day). Times
   // are interpreted in the user's timezone (data.timezone) via localDayTimeToIso
@@ -490,7 +585,14 @@ export function EventComposer({
     startIso < endIso &&
     // Logged hours are payroll data — they need a role to attribute to and a
     // note saying what the time went on, same as every other way of logging.
-    (!loggingWork || (Boolean(role) && workNote.trim() !== ""));
+    (!loggingWork || (Boolean(role) && workNote.trim() !== "")) &&
+    // Don't let a meeting save before its guest list has loaded — an empty
+    // selection would otherwise be read as "remove everyone".
+    (!canManageMeeting || guestCtx !== null);
+  // A meeting the viewer manages is editable even when its Google copy isn't
+  // theirs to write — the save routes through the DALI update path.
+  const canEdit = Boolean(ev?.writable) || canManageMeeting;
+  const guestEditOnly = Boolean(guestCtx?.meeting.guestEditOnly);
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
 
   // Report the draft times to the grid so the live preview (a tentative block
@@ -538,6 +640,16 @@ export function EventComposer({
           <fetcher.Form method="post" className="flex flex-col gap-3 px-4 py-4">
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
+            {canManageMeeting && (
+              <input type="hidden" name="meetingScope" value={JSON.stringify(meetingScope)} />
+            )}
+            {canManageMeeting && !guestEditOnly && guestCtx?.meeting.canSetPermissions && (
+              <>
+                <input type="hidden" name="guestsCanModify" value={guestsCanModify ? "1" : ""} />
+                <input type="hidden" name="guestsCanInviteOthers" value={guestsCanInviteOthers ? "1" : ""} />
+                <input type="hidden" name="guestsCanSeeGuestList" value={guestsCanSeeGuestList ? "1" : ""} />
+              </>
+            )}
             <input type="hidden" name="destination" value={destination} />
             <input type="hidden" name="startIso" value={startIso} />
             <input type="hidden" name="endIso" value={endIso} />
@@ -569,12 +681,13 @@ export function EventComposer({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Add title"
-              className="rounded-md border border-border bg-background px-3 py-2 text-base font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground focus:border-os-accent focus:outline-none"
-              autoFocus
+              disabled={guestEditOnly}
+              className="rounded-md border border-border bg-background px-3 py-2 text-base font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground focus:border-os-accent focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+              autoFocus={!guestEditOnly}
             />
 
             {/* When — all-day toggle + start/end */}
-            <div className="flex items-start gap-3">
+            <div className={cn("flex items-start gap-3", guestEditOnly && "pointer-events-none opacity-60")}>
               <Clock className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <label className="flex items-center gap-2 text-sm text-foreground">
@@ -621,6 +734,59 @@ export function EventComposer({
 
             <div className="my-0.5 border-t border-border/60" />
 
+            {/* Guests — only for a DALI meeting the viewer manages. Editing the
+                list here reconciles the roster, notifies added/removed guests,
+                and re-syncs the Google event via the meeting update path. */}
+            {canManageMeeting && (
+              <div className="flex items-start gap-3">
+                <UsersRound className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  {guestCtx ? (
+                    <ParticipantPicker
+                      users={guestCtx.options.users}
+                      groups={guestCtx.options.groups}
+                      selectedUserIds={selectedUserIds}
+                      selectedGroupIds={selectedGroupIds}
+                      onChangeUsers={setSelectedUserIds}
+                      onChangeGroups={setSelectedGroupIds}
+                      usersById={guestUsersById}
+                      groupsById={guestGroupsById}
+                      resolvedCount={resolvedParticipantIds.length}
+                      responsesByUserId={guestResponses}
+                    />
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Loading guests…</span>
+                  )}
+                  {guestEditOnly && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      You can only change the guest list.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Guest permissions — organizer/Core only, shown when canManageMeeting and not guestEditOnly */}
+            {canManageMeeting && !guestEditOnly && guestCtx?.meeting.canSetPermissions && (
+              <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Guest permissions
+                </p>
+                <div className="flex items-center justify-between gap-3 text-sm text-foreground">
+                  <span>Guests can modify event</span>
+                  <Toggle checked={guestsCanModify} onChange={(e) => setGuestsCanModify(e.target.checked)} />
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm text-foreground">
+                  <span>Guests can invite others</span>
+                  <Toggle checked={guestsCanInviteOthers} onChange={(e) => setGuestsCanInviteOthers(e.target.checked)} />
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm text-foreground">
+                  <span>Guests can see guest list</span>
+                  <Toggle checked={guestsCanSeeGuestList} onChange={(e) => setGuestsCanSeeGuestList(e.target.checked)} />
+                </div>
+              </div>
+            )}
+
             {/* Location */}
             <div className="flex items-center gap-3">
               <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -629,7 +795,8 @@ export function EventComposer({
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Add location"
-                className={cn(fieldCls, "min-w-0 flex-1")}
+                disabled={guestEditOnly}
+                className={cn(fieldCls, "min-w-0 flex-1 disabled:opacity-60 disabled:cursor-not-allowed")}
               />
             </div>
 
@@ -642,13 +809,14 @@ export function EventComposer({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add description"
                 rows={2}
-                className={cn(fieldCls, "min-w-0 flex-1 resize-y")}
+                disabled={guestEditOnly}
+                className={cn(fieldCls, "min-w-0 flex-1 resize-y disabled:opacity-60 disabled:cursor-not-allowed")}
               />
             </div>
 
             {/* Repeat */}
             {isRecurring ? (
-              <div className="flex items-start gap-3">
+              <div className={cn("flex items-start gap-3", guestEditOnly && "pointer-events-none opacity-60")}>
                 <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
                   <span className="text-muted-foreground">Repeating event — apply to</span>
@@ -714,19 +882,19 @@ export function EventComposer({
             {(fetcher.data?.error || deleteFetcher.data?.error) && (
               <p className="text-xs text-red-600">{fetcher.data?.error || deleteFetcher.data?.error}</p>
             )}
-            {editing && !ev?.writable && (
+            {editing && !canEdit && (
               <p className="text-xs text-muted-foreground">This event is read-only.</p>
             )}
 
             <div className="mt-1 flex items-center gap-2 border-t border-border pt-3">
               <button
                 type="submit"
-                disabled={!canSubmit || submitting || (editing && !ev?.writable)}
+                disabled={!canSubmit || submitting || (editing && !canEdit)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
               >
                 {editing ? "Save changes" : "Create event"}
               </button>
-              {editing && ev?.writable && ev.eventId && (
+              {editing && (ev?.writable || canManageMeeting) && ev?.eventId && (
                 <div className="ml-auto">
                   {confirmDelete ? (
                     <button

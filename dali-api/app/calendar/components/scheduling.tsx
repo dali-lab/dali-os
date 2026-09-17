@@ -25,6 +25,7 @@ import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
+import type { RsvpStatus } from "~/calendar/lib/types";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -652,6 +653,7 @@ export function ParticipantPicker({
   usersById,
   groupsById,
   resolvedCount,
+  responsesByUserId,
 }: {
   users: UserOption[];
   groups: GroupOption[];
@@ -662,6 +664,9 @@ export function ParticipantPicker({
   usersById: Map<string, UserOption>;
   groupsById: Map<string, GroupOption>;
   resolvedCount: number;
+  // Per-guest RSVP (from the meeting's invite notifications), shown as a dot on
+  // each chip when editing an existing meeting. Absent = no response yet.
+  responsesByUserId?: Map<string, RsvpStatus>;
 }) {
   const { fieldRadius } = useOsChrome();
   const panelClass = usePanelClass();
@@ -750,6 +755,13 @@ export function ParticipantPicker({
 
   const chip =
     "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
+  // Google-style RSVP dot: green accepted, red declined, amber maybe.
+  const RSVP_DOT: Record<RsvpStatus, string> = {
+    Accepted: "text-green-600",
+    Declined: "text-red-600",
+    Tentative: "text-amber-500",
+    Pending: "text-muted-foreground/40",
+  };
   const listId = "participant-list";
 
   return (
@@ -792,8 +804,18 @@ export function ParticipantPicker({
         {selectedUserIds.map((uid) => {
           const u = usersById.get(uid);
           if (!u) return null;
+          const rsvp = responsesByUserId?.get(uid);
           return (
             <span key={`u:${uid}`} className={chip}>
+              {rsvp && (
+                <span
+                  className={cn("text-[9px] leading-none", RSVP_DOT[rsvp])}
+                  title={`RSVP: ${rsvp}`}
+                  aria-label={`RSVP: ${rsvp}`}
+                >
+                  ●
+                </span>
+              )}
               {userLabel(u)}
               <button
                 type="button"

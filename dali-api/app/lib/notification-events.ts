@@ -87,6 +87,13 @@ export const EVENT_TYPES = {
     description: "When a meeting you were invited to is cancelled.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "meeting.time_proposed": {
+    kind: "General",
+    area: "Meetings",
+    label: "Proposed time changes",
+    description: "When an invitee proposes a new time for a meeting you organized.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "class.schedule_changed": {
     kind: "General",
     area: "Meetings",

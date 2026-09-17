@@ -419,6 +419,8 @@ export default [
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
+  route("api/scheduled-meetings/:id/propose-time", "calendar/routes/api.scheduled-meetings.$id.propose-time.ts"),
+  route("api/scheduled-meetings/:id/proposal", "calendar/routes/api.scheduled-meetings.$id.proposal.ts"),
   // Wallet-pass scan check-in: an operator scans a member's pass to mark them
   // present (inverse of self-check-in; the member is taken from the pass token).
   route(

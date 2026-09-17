@@ -293,6 +293,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       // and Core are exactly who attachMeetingNote allows).
       canAddNote: true,
       canInvite: true,
+      guestEditOnly: false,
+      hideGuestList: false,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",
     };

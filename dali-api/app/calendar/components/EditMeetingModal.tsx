@@ -10,6 +10,8 @@ import { ParticipantPicker } from "~/calendar/components/scheduling";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
 export type EditContext = {
+  // Per-guest RSVP (userId → response), from the meeting's invite notifications.
+  responsesByUserId?: Record<string, "Accepted" | "Declined" | "Tentative">;
   meeting: {
     id: string;
     title: string;
@@ -21,6 +23,11 @@ export type EditContext = {
     participantUserIds: string[];
     organizerId: string;
     upcoming: boolean;
+    guestsCanModify: boolean;
+    guestsCanInviteOthers: boolean;
+    guestsCanSeeGuestList: boolean;
+    guestEditOnly: boolean;
+    canSetPermissions: boolean;
   };
   options: {
     users: { id: string; firstName: string; lastName: string; daliEmail: string | null }[];
@@ -164,6 +171,10 @@ export function EditMeetingModal({
     () => new Map((ctx?.options.groups ?? []).map((g) => [g.id, g])),
     [ctx],
   );
+  const guestResponses = useMemo(
+    () => new Map(Object.entries(ctx?.responsesByUserId ?? {})),
+    [ctx],
+  );
 
   const resolvedParticipantIds = useMemo(() => {
     const set = new Set<string>(selectedUserIds);
@@ -278,6 +289,7 @@ export function EditMeetingModal({
               usersById={usersById}
               groupsById={groupsById}
               resolvedCount={resolvedParticipantIds.length}
+              responsesByUserId={guestResponses}
             />
           </FieldRow>
 
