@@ -132,6 +132,7 @@ export function WeekToolbar({
   weekStartIso,
   onRefresh,
   refreshing,
+  weekNav,
 }: {
   // `color` is a Tailwind bg-* class; `swatch` is a raw CSS color for tints
   // that are computed at runtime (e.g. the availability gradient stops).
@@ -143,12 +144,24 @@ export function WeekToolbar({
   weekStartIso: string;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /**
+   * Controlled week navigation. Callers that keep the week in their own state
+   * rather than in `?weekStart=` (CreateEventModal) must pass this: the default
+   * Link nav only moves the URL, so in a modal it would re-run the route loader
+   * behind the overlay while the grid — which reads the week from a prop — sat
+   * on the same seven days.
+   */
+  weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
 }) {
   const { iconBtn } = useOsChrome();
   // Use URL-relative resolution so "?weekStart=…" stays on /calendar instead of
   // bubbling up to the parent route (which would land on /).
   const prev = `?weekStart=${shiftWeekParam(weekStartIso, -1)}`;
   const next = `?weekStart=${shiftWeekParam(weekStartIso, 1)}`;
+  const todayClass = cn(
+    "text-xs font-semibold transition-colors",
+    "os-edit-btn os-add-btn--sm",
+  );
   return (
     <div className={cn("flex items-center justify-between", "mb-5")}>
       <div className="flex items-center gap-3">
@@ -161,35 +174,53 @@ export function WeekToolbar({
           {monthLabel}
         </h2>
         <div className="flex items-center gap-1">
-          <Link
-            to={prev}
-            relative="path"
-            aria-label="Previous week"
-            preventScrollReset
-            className={iconBtn}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Link>
-          <Link
-            to="?"
-            relative="path"
-            preventScrollReset
-            className={cn(
-              "text-xs font-semibold transition-colors",
-              "os-edit-btn os-add-btn--sm",
-            )}
-          >
-            Today
-          </Link>
-          <Link
-            to={next}
-            relative="path"
-            aria-label="Next week"
-            preventScrollReset
-            className={iconBtn}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Link>
+          {weekNav ? (
+            <>
+              <button
+                type="button"
+                aria-label="Previous week"
+                onClick={() => weekNav.onShift(-1)}
+                className={iconBtn}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button type="button" onClick={weekNav.onToday} className={todayClass}>
+                Today
+              </button>
+              <button
+                type="button"
+                aria-label="Next week"
+                onClick={() => weekNav.onShift(1)}
+                className={iconBtn}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to={prev}
+                relative="path"
+                aria-label="Previous week"
+                preventScrollReset
+                className={iconBtn}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Link>
+              <Link to="?" relative="path" preventScrollReset className={todayClass}>
+                Today
+              </Link>
+              <Link
+                to={next}
+                relative="path"
+                aria-label="Next week"
+                preventScrollReset
+                className={iconBtn}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </>
+          )}
           {onRefresh && (
             <Tooltip content={refreshing ? "Refreshing…" : "Refresh availability"}>
               <button
@@ -950,6 +981,7 @@ export function ScheduleWeekGrid({
   selectedEndLocal,
   compact = false,
   hideAvailability = false,
+  weekNav,
 }: {
   participantIds: string[];
   // True when the caller is rendering the current user's own availability
@@ -980,6 +1012,12 @@ export function ScheduleWeekGrid({
    * so MeetingComposer is unchanged.
    */
   hideAvailability?: boolean;
+  /**
+   * Controlled week arrows for the toolbar. Required when the caller owns the
+   * week (CreateEventModal); omitted on /calendar, where the arrows navigate
+   * `?weekStart=` and the loader supplies the new week.
+   */
+  weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
 }) {
   const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
@@ -1359,6 +1397,7 @@ export function ScheduleWeekGrid({
       <WeekToolbar
         monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
+        weekNav={weekNav}
         onRefresh={refresh}
         refreshing={loading || revalidator.state !== "idle"}
         legend={
