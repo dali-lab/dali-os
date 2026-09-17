@@ -521,6 +521,10 @@ export function EventComposer({
     () => new Map((guestCtx?.options.groups ?? []).map((g) => [g.id, g])),
     [guestCtx],
   );
+  const guestResponses = useMemo(
+    () => new Map(Object.entries(guestCtx?.responsesByUserId ?? {})),
+    [guestCtx],
+  );
   const resolvedParticipantIds = useMemo(() => {
     const set = new Set<string>(selectedUserIds);
     for (const gid of selectedGroupIds) {
@@ -731,6 +735,7 @@ export function EventComposer({
                       usersById={guestUsersById}
                       groupsById={guestGroupsById}
                       resolvedCount={resolvedParticipantIds.length}
+                      responsesByUserId={guestResponses}
                     />
                   ) : (
                     <span className="text-sm text-muted-foreground">Loading guests…</span>
