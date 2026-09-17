@@ -160,6 +160,18 @@ export async function runDiscussionAction(
       return Response.json({ error: result.error }, { status: result.status });
     return { ok: true };
   }
+  if (intent === "delete-announcement") {
+    const { deleteAnnouncement } = await import("./announcements.server");
+    const result = await deleteAnnouncement({
+      postId: String(formData.get("postId") ?? ""),
+      offeringId: ctx.offeringId,
+      actorId: ctx.userId,
+      isManager: ctx.isManager,
+    });
+    if ("error" in result)
+      return Response.json({ error: result.error }, { status: result.status });
+    return { ok: true };
+  }
   if (intent === "post-discussion") {
     const result = await createPost({
       offeringId: ctx.offeringId,
