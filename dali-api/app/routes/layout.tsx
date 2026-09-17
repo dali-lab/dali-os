@@ -33,6 +33,7 @@ import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
 import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
+import { educationPortalTwin } from '~/education/lib/portal-twin'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -97,12 +98,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Non-member gate: a Dartmouth account with no DALIMember row (e.g. an
   // external instructor) never gets the full member shell. They may only reach
   // education management inside it — every other member-shell path sends them
-  // back to their /portal home. Members and Core are unaffected. Keyed on the
-  // DALIMember row (isLabMember), not auth type, so a NetID-native member is
-  // never misfiled here. Partners/applicants were already redirected above.
+  // back to their /portal home, with the education browsing surfaces mapped to
+  // their /portal/education twin so a deep link keeps its offering. Members and
+  // Core are unaffected. Keyed on the DALIMember row (isLabMember), not auth
+  // type, so a NetID-native member is never misfiled here. Partners/applicants
+  // were already redirected above.
   const instructorChrome = !isLabMember
-  if (instructorChrome && !new URL(request.url).pathname.startsWith('/education/manage')) {
-    return redirect('/portal')
+  if (instructorChrome) {
+    const url = new URL(request.url)
+    const twin = educationPortalTwin(url.pathname)
+    if (twin) return redirect(twin + url.search)
+    if (!url.pathname.startsWith('/education/manage')) return redirect('/portal')
   }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement
