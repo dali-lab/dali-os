@@ -37,6 +37,10 @@ import {
   createMaterialPage,
   moveMaterialPage,
   moveMaterialFile,
+  renameMaterialPage,
+  renameMaterialFile,
+  archiveMaterialPage,
+  archiveMaterialFile,
 } from "~/education/lib/lms.server";
 import QRCode from "qrcode";
 import {
@@ -49,7 +53,11 @@ import {
   updateAssignment,
   deleteAssignment,
 } from "~/education/lib/assignments.server";
-import { listDiscussion, postAnnouncement } from "~/education/lib/announcements.server";
+import {
+  listDiscussion,
+  postAnnouncement,
+  deleteAnnouncement,
+} from "~/education/lib/announcements.server";
 import { builtinDecisionEmail } from "~/education/lib/notifications.server";
 import {
   getAttendanceMatrix,
@@ -404,11 +412,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     "create-page",
     "move-page",
     "move-file",
+    "rename-page",
+    "rename-file",
+    "delete-page",
+    "delete-file",
     "set-material-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
     "post-announcement",
+    "delete-announcement",
     "save-attendance",
     "set-session-check-in",
     "save-student-note",
@@ -465,6 +478,40 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           fileId: String(formData.get("fileId") ?? ""),
           folderId: String(formData.get("folderId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "rename-page": {
+        const result = await renameMaterialPage({
+          offeringId: params.offeringId!,
+          pageId: String(formData.get("pageId") ?? ""),
+          title: String(formData.get("title") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "rename-file": {
+        const result = await renameMaterialFile({
+          offeringId: params.offeringId!,
+          fileId: String(formData.get("fileId") ?? ""),
+          title: String(formData.get("title") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-page": {
+        const result = await archiveMaterialPage({
+          offeringId: params.offeringId!,
+          pageId: String(formData.get("pageId") ?? ""),
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-file": {
+        const result = await archiveMaterialFile({
+          offeringId: params.offeringId!,
+          fileId: String(formData.get("fileId") ?? ""),
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -553,6 +600,16 @@ export async function action({ request, params }: Route.ActionArgs) {
           body: String(formData.get("body") ?? ""),
           kind: formData.get("kind") === "Message" ? "Message" : "Announcement",
           parentId: String(formData.get("parentId") ?? "") || null,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-announcement": {
+        // Manager-gated by the contentIntents check above, so isManager holds.
+        const result = await deleteAnnouncement({
+          postId: String(formData.get("postId") ?? ""),
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+          isManager: true,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
