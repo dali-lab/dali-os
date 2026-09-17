@@ -11,7 +11,7 @@ import { McpForbiddenError } from "../../registry";
 export const LIST_MENTOR_NOTES_TOOL = {
   name: "list_mentor_notes",
   description:
-    "List mentor notes the caller can see. Mentors see their own notes plus notes in domains they mentor; Core sees all. Mentees are never granted access. All filters are optional and AND-combined.",
+    "List mentor notes the caller can see. Every lab mentor (and Core) sees all mentor notes lab-wide; mentees are never granted access. All filters are optional and AND-combined.",
   inputSchema: {
     type: "object" as const,
     properties: {

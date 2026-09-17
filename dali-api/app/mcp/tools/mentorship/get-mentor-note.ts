@@ -11,7 +11,7 @@ import { McpForbiddenError, McpNotFoundError } from "../../registry";
 export const GET_MENTOR_NOTE_TOOL = {
   name: "get_mentor_note",
   description:
-    "Read a single mentor note by id. Returns normalized block JSON content, vibe, and full metadata. Accessible to the note's author, same-domain mentors, or Core. Mentees are never granted access.",
+    "Read a single mentor note by id. Returns normalized block JSON content, vibe, and full metadata. Accessible to any lab mentor (and Core); mentees are never granted access.",
   inputSchema: {
     type: "object" as const,
     properties: {

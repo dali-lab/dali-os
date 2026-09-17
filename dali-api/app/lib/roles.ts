@@ -799,9 +799,9 @@ export async function canManageStaffing(userId: string, request?: Request): Prom
 /**
  * Lab-mentor gate: true if the user is an active mentor anywhere in the lab
  * for the given term. Used as the area gate for `/mentorship` (hub, browse,
- * notes) — mentees are excluded. Per-note / per-pair reads are further scoped
- * by domain in `mentorship/lib/visibility` (own notes + own-domain mentee
- * notes; Core/Admin see everything).
+ * notes) — mentees are excluded. Past this gate every lab mentor reads all
+ * notes/pairs lab-wide; see `mentorship/lib/visibility`. Editing stays narrow
+ * (a note's author or Core; pairs are Core-only).
  *
  * Returns true if the user has, for the given term, ANY of:
  *   - a P3-level ProjectAssignment
