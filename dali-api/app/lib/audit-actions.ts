@@ -114,6 +114,7 @@ export const AUDIT_ACTIONS = [
   "education.offering.status",
   "education.offering.delete",
   "education.offering.close-out",
+  "education.offering.reopen",
   "education.session.create",
   "education.session.update",
   "education.session.delete",
