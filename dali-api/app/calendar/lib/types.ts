@@ -354,6 +354,12 @@ export type EventBlock = {
   bgColor?: string;
   /** Border color class for the outer wrapper (defaults to matching the body). */
   borderClassName?: string;
+  /** The viewer is a guest here and hasn't answered yet. Drawn hollow — border
+   *  and theme ink, no fill — the way Google Calendar marks an invitation you
+   *  haven't accepted, declined or marked maybe. Kept separate from `rsvp`,
+   *  which exists to *write* an answer back and so is only set where there's a
+   *  control to write it with. */
+  unanswered?: boolean;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
   bufferClassName?: string;
   /** Hours of buffer above the event body. */
