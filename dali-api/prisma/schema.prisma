@@ -3105,9 +3105,32 @@ model Epic {
   tasks   Task[]
   stories UserStory[]
 
+  // Timeline dependency edges, the same two-sided shape user stories carry.
+  // `dependencies` are rows where this epic is the dependent (epics it waits
+  // on); `blocking` are rows where it is the predecessor.
+  dependencies EpicDependency[] @relation("EpicDependent")
+  blocking     EpicDependency[] @relation("EpicBlocker")
+
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+// Directed edge: `epic` waits on `dependsOnEpic`. Both sides belong to the
+// same project — enforced in the API, not the schema, exactly as the story
+// edge is. Drawn as arrows between epic bars on the project timeline.
+model EpicDependency {
+  id              String @id @default(cuid())
+  epicId          String
+  dependsOnEpicId String
+
+  epic          Epic @relation("EpicDependent", fields: [epicId], references: [id], onDelete: Cascade)
+  dependsOnEpic Epic @relation("EpicBlocker", fields: [dependsOnEpicId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([epicId, dependsOnEpicId])
+  @@index([dependsOnEpicId])
 }
 
 enum EpicStatus {

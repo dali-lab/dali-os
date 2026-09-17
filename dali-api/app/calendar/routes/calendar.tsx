@@ -558,6 +558,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       allDayByDay[Number(idx)] = evs.map((e) => ({
         label: e.title,
         color: e.color,
+        unanswered: e.rsvp === "Pending",
         onClick:
           e.writable && e.eventId
             ? (ev) => setComposer({ mode: "edit", event: e, anchor: ev.currentTarget.getBoundingClientRect() })

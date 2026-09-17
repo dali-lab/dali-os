@@ -8,7 +8,6 @@ import {
   UserCheck,
   UserX,
   CalendarClock,
-  MessageSquarePlus,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -23,13 +22,20 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
-import { Menu, Tooltip } from "~/components/ui/floating";
+import { Menu, Select } from "~/components/ui/floating";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
+import { AbsenceNoteButton, ABSENCE_NOTE_MAX } from "~/components/AbsenceNoteButton";
+import {
+  attendeeSortOptions,
+  sortAttendees,
+  type AttendeeSort,
+} from "~/lib/attendee-sort";
 import { cn } from "~/lib/cn";
 
-// An absence note is a short aside ("excused — flu"), not a place for a
-// paragraph; the cap keeps a roster row from turning into an essay.
-const ABSENCE_NOTE_MAX = 280;
+// Each roster is already split into checked-in / not-submitted columns, so
+// "Checked in first" would be a no-op here; the check-in time is the ordering
+// this page adds to the shared name sorts.
+const SORTS = attendeeSortOptions(["name-asc", "name-desc", "marked-desc"]);
 
 export const meta: Route.MetaFunction = () => [{ title: "Attendance · DALI OS" }];
 
@@ -243,6 +249,9 @@ export default function AttendancePage() {
   const { events } = useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
   const [query, setQuery] = useState("");
+  // One control for every roster on the page: the cards all show the same kind
+  // of list, so a per-card picker would just repeat itself down the page.
+  const [sort, setSort] = useState<AttendeeSort>("name-asc");
 
   const { upcoming, past } = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -289,22 +298,31 @@ export default function AttendancePage() {
         </div>
       ) : (
         <>
-          <SearchInput
-            size="sm"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by event, organizer, scope, or attendee…"
-            aria-label="Search attendance events"
-            containerClassName="w-full"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
+              size="sm"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by event, organizer, scope, or attendee…"
+              aria-label="Search attendance events"
+              containerClassName="min-w-48 flex-1"
+            />
+            <Select
+              value={sort}
+              options={SORTS}
+              onChange={setSort}
+              ariaLabel="Sort attendees"
+              align="right"
+            />
+          </div>
           {upcoming.length === 0 && past.length === 0 ? (
             <div className={cn(panel, "px-4 py-8 text-center text-sm text-muted-foreground")}>
               No events match this search.
             </div>
           ) : (
             <>
-              <EventSection title="Upcoming" events={upcoming} panel={panel} />
-              <EventSection title="Past" events={past} panel={panel} />
+              <EventSection title="Upcoming" events={upcoming} panel={panel} sort={sort} />
+              <EventSection title="Past" events={past} panel={panel} sort={sort} />
             </>
           )}
         </>
@@ -317,10 +335,12 @@ function EventSection({
   title,
   events,
   panel,
+  sort,
 }: {
   title: string;
   events: AttendanceEvent[];
   panel: string;
+  sort: AttendeeSort;
 }) {
   if (events.length === 0) return null;
   return (
@@ -331,22 +351,30 @@ function EventSection({
       </h2>
       <ul className="flex flex-col gap-3">
         {events.map((event) => (
-          <EventCard key={event.id} event={event} panel={panel} />
+          <EventCard key={event.id} event={event} panel={panel} sort={sort} />
         ))}
       </ul>
     </section>
   );
 }
 
-function EventCard({ event, panel }: { event: AttendanceEvent; panel: string }) {
+function EventCard({
+  event,
+  panel,
+  sort,
+}: {
+  event: AttendanceEvent;
+  panel: string;
+  sort: AttendeeSort;
+}) {
   const tz = useUserTimeZone();
   const dialog = useDialog();
   const cancelFetcher = useFetcher();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
-  const present = event.attendees.filter((a) => a.present);
-  const missing = event.attendees.filter((a) => !a.present);
+  const present = sortAttendees(event.attendees.filter((a) => a.present), sort);
+  const missing = sortAttendees(event.attendees.filter((a) => !a.present), sort);
 
   async function cancelEvent() {
     const ok = await dialog.confirm({
@@ -532,11 +560,11 @@ function RosterColumn({
                       {formatDateTime(a.markedAt, tz)}
                     </span>
                   )}
-                  {/* Notes belong to an absence, so only the missing column
-                      offers the editor. A note left behind on someone who was
-                      later marked present still renders below, so nothing a
-                      manager wrote silently disappears. */}
-                  {tone === "missing" && canManage && (
+                  {/* Notes belong to an absence, so the editor lives with the
+                      missing column — plus anyone who already has one, so a
+                      note doesn't become uneditable the moment its subject is
+                      marked present. */}
+                  {canManage && (tone === "missing" || a.absenceNote) && (
                     <AbsenceNoteButton
                       meetingId={meetingId}
                       userId={a.id}
@@ -559,62 +587,5 @@ function RosterColumn({
         </ul>
       )}
     </div>
-  );
-}
-
-// Add / edit / clear the absence note on one person. The prompt dialog is the
-// app's standard text-entry surface; submitting an empty value clears the note.
-function AbsenceNoteButton({
-  meetingId,
-  userId,
-  name,
-  note,
-}: {
-  meetingId: string;
-  userId: string;
-  name: string;
-  note: string | null;
-}) {
-  const dialog = useDialog();
-  const fetcher = useFetcher();
-  const busy = fetcher.state !== "idle";
-  const label = note ? `Edit absence note for ${name}` : `Add an absence note for ${name}`;
-
-  async function edit() {
-    const next = await dialog.prompt({
-      title: note ? "Edit absence note" : "Add absence note",
-      description: `Why ${name} wasn't there — visible to whoever can mark attendance on this event, not to the rest of the invite list.`,
-      label: "Note",
-      placeholder: "Excused — class conflict",
-      defaultValue: note ?? "",
-      confirmLabel: "Save note",
-      validate: (v) =>
-        v.trim().length > ABSENCE_NOTE_MAX
-          ? `Keep it under ${ABSENCE_NOTE_MAX} characters.`
-          : null,
-    });
-    if (next === null) return;
-    fetcher.submit(
-      { intent: "set-absence-note", meetingId, userId, note: next.trim() },
-      { method: "post", action: "/attendance" },
-    );
-  }
-
-  return (
-    <Tooltip content={note ? "Edit absence note" : "Add absence note"} placement="left">
-      <button
-        type="button"
-        onClick={edit}
-        disabled={busy}
-        aria-label={label}
-        className="p-1 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
-      >
-        {note ? (
-          <Pencil className="w-3.5 h-3.5" aria-hidden />
-        ) : (
-          <MessageSquarePlus className="w-3.5 h-3.5" aria-hidden />
-        )}
-      </button>
-    </Tooltip>
   );
 }

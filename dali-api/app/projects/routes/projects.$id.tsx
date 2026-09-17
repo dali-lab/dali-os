@@ -74,6 +74,7 @@ import {
   type TimelineEpic,
   type TimelineTerm,
   type StoryDependencyEdge,
+  type EpicDependencyEdge,
 } from "../components/EpicsTimeline";
 import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
@@ -387,6 +388,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           endsAt: true,
           targetTermId: true,
           descriptionDocId: true,
+          // Edges where this epic is the dependent (waits on another).
+          dependencies: { select: { dependsOnEpicId: true } },
           stories: {
             orderBy: { position: "asc" },
             select: {
@@ -736,6 +739,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     endsAt: e.endsAt ? e.endsAt.toISOString() : null,
     targetTermId: e.targetTermId,
     descriptionDocId: e.descriptionDocId,
+    dependsOn: e.dependencies.map((d) => d.dependsOnEpicId),
     stories: e.stories.map((s) => ({
       id: s.id,
       title: s.title,
@@ -760,6 +764,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         dependsOnStoryId: d.dependsOnStoryId,
       })),
     ),
+  );
+
+  // The same shape one level up: epicId waits on dependsOnEpicId.
+  const epicDependencies = project.epics.flatMap((e) =>
+    e.dependencies.map((d) => ({
+      epicId: e.id,
+      dependsOnEpicId: d.dependsOnEpicId,
+    })),
   );
 
   // Viewer's "last opened" stamp per task — fetched in Stage 2, now indexed.
@@ -1208,6 +1220,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     epics,
     editableEpics,
     storyDependencies,
+    epicDependencies,
     timelineTerms: termSpans,
     tasks,
     boardOptions,
@@ -1616,6 +1629,7 @@ export default function ProjectDetail() {
     epics,
     editableEpics,
     storyDependencies,
+    epicDependencies,
     timelineTerms,
     tasks,
     boardOptions,
@@ -1745,6 +1759,7 @@ export default function ProjectDetail() {
       epics={epics}
       editableEpics={editableEpics}
       storyDependencies={storyDependencies}
+      epicDependencies={epicDependencies}
       timelineTerms={timelineTerms}
       terms={plannedTerms}
       // The list view's term filter reads the same per-epic term footprint the
@@ -5381,6 +5396,7 @@ function PlanningTab({
   epics,
   editableEpics,
   storyDependencies,
+  epicDependencies,
   timelineTerms,
   terms,
   epicTermIds,
@@ -5395,6 +5411,7 @@ function PlanningTab({
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   storyDependencies: StoryDependencyEdge[];
+  epicDependencies: EpicDependencyEdge[];
   timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
   epicTermIds: Record<string, string[]>;
@@ -5416,6 +5433,7 @@ function PlanningTab({
         userName={userName}
         timelineEpics={epics}
         storyDependencies={storyDependencies}
+        epicDependencies={epicDependencies}
         timelineTerms={timelineTerms}
         epicTermIds={epicTermIds}
         currentTermId={currentTermId}

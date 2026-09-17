@@ -4,10 +4,12 @@
 // clicking a chip drills into that day too (the detail popover is a time-grid
 // affordance).
 
+import { AlertCircle } from "lucide-react";
+
 import { cn } from "~/lib/cn";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { Tooltip } from "~/components/ui/floating";
-import { readableTextColor } from "~/calendar/lib/event-block";
+import { eventSkin } from "~/calendar/lib/event-block";
 import type { GridDay } from "~/calendar/lib/layers";
 import type { EventBlock } from "~/calendar/lib/types";
 
@@ -15,9 +17,7 @@ const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_CHIPS = 3;
 
 function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void }) {
-  const style = block.bgColor
-    ? { backgroundColor: block.bgColor, color: readableTextColor(block.bgColor) }
-    : undefined;
+  const skin = eventSkin(block);
   return (
     <button
       type="button"
@@ -25,14 +25,18 @@ function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void })
         e.stopPropagation();
         onOpen();
       }}
-      style={style}
-      title={block.label}
+      style={skin.style}
+      title={block.issue ? `${block.label} — ${block.issue}` : block.label}
       className={cn(
-        "block w-full truncate rounded-[3px] px-1.5 py-0.5 text-left text-[11px] leading-tight",
-        block.bgColor ? "" : block.className,
+        "flex w-full items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-left text-[11px] leading-tight",
+        // A hairline at chip scale — the grid block's 2px would eat the row.
+        skin.outlined && "border",
+        skin.className,
       )}
     >
-      {block.label}
+      {block.issue && <AlertCircle className="h-3 w-3 shrink-0 fill-white text-red-700" aria-hidden />}
+      <span className="truncate">{block.label}</span>
+      {block.issue && <span className="sr-only">{block.issue}</span>}
     </button>
   );
 }

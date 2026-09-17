@@ -13,6 +13,7 @@ import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
+import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -70,6 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           userId: true,
           present: true,
+          absenceNote: true,
           user: { select: { firstName: true, lastName: true, daliEmail: true } },
         },
       },
@@ -102,6 +104,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub === meeting.organizerId || roles.isCore || meeting.guestsCanSeeGuestList;
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
+
+  // Adding a note after the fact is the organizer's or Core's call — narrower
+  // than canManage (a project member marks attendance but doesn't file the
+  // meeting's doc), and the same authority attachMeetingNote re-checks.
+  const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
 
   const proposalRows = canManage
     ? await prisma.meetingTimeProposal.findMany({
@@ -137,6 +144,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     organizerName: fullName(meeting.organizer),
     selectedAtIso: meeting.selectedAt ? meeting.selectedAt.toISOString() : null,
     notePageId: meeting.notePage?.id ?? null,
+    canAddNote,
     meetingUrl: meeting.meetingUrl,
     canManage,
     canSeeGuestList,
@@ -151,6 +159,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,
+      // Withheld rather than merely hidden: a note can say why someone was
+      // out, so a viewer who can't mark attendance never receives one.
+      absenceNote: canManage ? a.absenceNote : null,
     })) satisfies AttendanceRow[],
     viewerInvited: viewerRow !== undefined,
     viewerPresent: viewerRow?.present ?? false,
@@ -247,6 +258,9 @@ function ProposedTimesCard({
   );
 }
 
+const noteBtnClass =
+  "inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted";
+
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
   // Format in the viewer's own timezone (browser locale) — no server tz needed.
@@ -301,13 +315,27 @@ export default function CalendarMeetingPage() {
               <Video className="h-4 w-4" /> Join Google Meet
             </a>
           )}
-          {d.notePageId && (
+          {d.notePageId ? (
             <Link
               to={`/documents/${d.notePageId}`}
-              className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              className={noteBtnClass}
             >
               <FileText className="h-4 w-4 text-muted-foreground" /> Open meeting note
             </Link>
+          ) : (
+            d.canAddNote && (
+              // A meeting created before notes existed (or with the note
+              // toggle off) has no doc and, unless it synced to Google, never
+              // appears on the calendar grid either — so this page is the only
+              // place its organizer can start one. The action lives on
+              // /calendar, which is also where the grid's popover posts it.
+              <AddMeetingNoteButton
+                meetingId={d.meetingId}
+                isCoreMeeting={d.isCoreMeeting}
+                actionPath="/calendar"
+                className={noteBtnClass}
+              />
+            )
           )}
         </div>
       </header>
@@ -350,7 +378,13 @@ export default function CalendarMeetingPage() {
         )}
 
         {d.canManage && d.canSeeGuestList && d.rows.length > 0 && (
-          <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
+          <AttendanceChecklist
+            meetingId={d.meetingId}
+            meetingLabel={d.meetingLabel}
+            canEdit
+            canNote={d.canManage}
+            attendees={d.rows}
+          />
         )}
 
         {d.canManage && !d.canSeeGuestList && (

@@ -5,7 +5,10 @@
 // day. A row opens its event through the block's own handler (composer /
 // timesheet editor), falling back to drilling into the day.
 
+import { AlertCircle } from "lucide-react";
+
 import { cn } from "~/lib/cn";
+import { eventSkin } from "~/calendar/lib/event-block";
 import type { GridDay } from "~/calendar/lib/layers";
 import type { EventBlock } from "~/calendar/lib/types";
 
@@ -20,6 +23,9 @@ function fmtHour(h: number): string {
 
 function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void }) {
   const dot = block.bgColor ?? undefined;
+  // This list has no coloured surface to hollow out, so the dot carries the
+  // same signal: a ring for an invite you haven't answered, solid otherwise.
+  const skin = eventSkin(block);
   return (
     <button
       type="button"
@@ -30,18 +36,28 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
         else if (block.onClick) block.onClick();
         else onDrill();
       }}
+      title={block.issue || undefined}
       className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted"
     >
       <span className="w-24 shrink-0 text-xs tabular-nums text-muted-foreground">
         {block.allDay ? "All day" : fmtHour(block.startHour)}
       </span>
       <span
-        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-        style={dot ? { backgroundColor: dot } : undefined}
+        className={cn(
+          "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
+          skin.outlined && `border-2 ${skin.className}`,
+        )}
+        style={skin.outlined ? skin.style : dot ? { backgroundColor: dot } : undefined}
         aria-hidden
       />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm text-foreground">{block.label}</span>
+        <span className="flex items-center gap-1 text-sm text-foreground">
+          {block.issue && (
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-700" aria-hidden />
+          )}
+          <span className="truncate">{block.label}</span>
+          {block.issue && <span className="sr-only">{block.issue}</span>}
+        </span>
         {block.location && (
           <span className="block truncate text-xs text-muted-foreground">{block.location}</span>
         )}

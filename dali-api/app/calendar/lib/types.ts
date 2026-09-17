@@ -354,6 +354,12 @@ export type EventBlock = {
   bgColor?: string;
   /** Border color class for the outer wrapper (defaults to matching the body). */
   borderClassName?: string;
+  /** The viewer is a guest here and hasn't answered yet. Drawn hollow — border
+   *  and theme ink, no fill — the way Google Calendar marks an invitation you
+   *  haven't accepted, declined or marked maybe. Kept separate from `rsvp`,
+   *  which exists to *write* an answer back and so is only set where there's a
+   *  control to write it with. */
+  unanswered?: boolean;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
   bufferClassName?: string;
   /** Hours of buffer above the event body. */
@@ -402,7 +408,11 @@ export type EventBlock = {
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
    *  top of it. `color` is a CSS colour (the role palette's `dot`). */
-  loggedAccent?: { color: string; hours: number };
+  loggedAccent?: { color: string; hours: number; incomplete?: boolean };
+  /** Timesheet only: this block's logged time can't be submitted as it stands —
+   *  no role to bill it to, or no note saying what the work was. Draws a "!"
+   *  badge on the block; the string is the reason ("Missing a role"). */
+  issue?: string;
   /** Set when this block is a DALI meeting: the detail popover adds its
    *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
   meeting?: EventMeetingDTO;

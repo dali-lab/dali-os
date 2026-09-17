@@ -444,6 +444,7 @@ export function PartnerProjectHubView({
             projectId={project.id}
             epic={openEpic}
             storyOptions={[]}
+            epicOptions={[]}
             terms={[]}
             timelineTerms={timelineTerms}
             canManage={false}

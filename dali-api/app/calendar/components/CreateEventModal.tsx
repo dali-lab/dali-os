@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -26,6 +26,7 @@ import {
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { weekWindow } from "~/calendar/lib/view-window";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -48,20 +49,6 @@ export type CreateEventModalProps = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function weekLabel(weekStartIso: string, timezone: string): string {
-  const start = new Date(weekStartIso);
-  // Display the 7-day range Sun – Sat
-  const end = new Date(start.getTime() + 6 * 86_400_000);
-  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, ...opts }).format(d);
-  const startMonth = fmt(start, { month: "short" });
-  const endMonth = fmt(end, { month: "short" });
-  const startDay = fmt(start, { day: "numeric" });
-  const endDay = fmt(end, { day: "numeric" });
-  if (startMonth === endMonth) return `${startMonth} ${startDay} – ${endDay}`;
-  return `${startMonth} ${startDay} – ${endMonth} ${endDay}`;
-}
 
 // Compose "YYYY-MM-DDTHH:mm" from separate date + time strings.
 function composeDateTimeLocal(date: string, time: string): string {
@@ -234,6 +221,7 @@ export function CreateEventModal({
       zonedDayStartUtc(ymd.year, ymd.month, ymd.day + weeks * 7, data.timezone).toISOString(),
     );
   };
+  const goToThisWeek = () => setWeekStartIso(weekWindow(data.timezone).start.toISOString());
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
 
   // ── Slot selected from the availability grid ─────────────────────────────
@@ -486,29 +474,6 @@ export function CreateEventModal({
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
         <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
-          {/* Week nav */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Previous week"
-              onClick={() => shiftWeek(-1)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="flex-1 text-center text-sm font-medium text-foreground">
-              {weekLabel(weekStartIso, data.timezone)}
-            </span>
-            <button
-              type="button"
-              aria-label="Next week"
-              onClick={() => shiftWeek(1)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
           {/* Availability grid — compact + no self-only tint when no guests */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleWeekGrid
@@ -530,6 +495,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
+              weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
           </div>
 
