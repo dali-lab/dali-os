@@ -92,3 +92,33 @@ export function expandOccurrences(
   }
   return [];
 }
+
+/** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
+export function rruleUntilBasic(d: Date): string {
+  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * Take a recurring event's recurrence rule (as a string or string[]) and
+ * return one bare RRULE string with UNTIL set (existing UNTIL/COUNT stripped).
+ * Used for splitting/truncating a series. Returns null when no FREQ rule found.
+ */
+export function rruleWithUntil(recurrence: string | string[], until: Date): string | null {
+  const arr = typeof recurrence === "string" ? [recurrence] : recurrence;
+  const rule = arr.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
+  if (!rule) return null;
+  const parts = rule.split(";").filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
+  parts.push(`UNTIL=${rruleUntilBasic(until)}`);
+  return parts.join(";");
+}
+
+/**
+ * Strip UNTIL from a recurrence rule, returning the bare repeating rule.
+ * Used when spinning up a new series from a "following" split — the new
+ * series has no end date unless the user sets one.
+ */
+export function bareRrule(recurrence: string | string[]): string | null {
+  const arr = typeof recurrence === "string" ? [recurrence] : recurrence;
+  const rule = arr.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
+  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
+}

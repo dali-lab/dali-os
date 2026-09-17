@@ -766,38 +766,27 @@ export function EventComposer({
 
             {/* Repeat */}
             {isRecurring ? (
-              canManageMeeting ? (
-                // A meeting applies edits to the whole series (the update path
-                // patches the master), so there's no this/following/all choice.
-                <div className="flex items-start gap-3">
-                  <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    This event repeats — changes apply to the whole series.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-3">
-                  <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">Repeating event — apply to</span>
-                    <div className="inline-flex w-fit rounded-md border border-border p-0.5 text-xs">
-                      {(["this", "following", "all"] as const).map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setScope(s)}
-                          className={cn(
-                            "rounded px-2 py-1",
-                            scope === s ? "bg-os-accent text-os-bg" : "text-foreground hover:bg-muted",
-                          )}
-                        >
-                          {s === "this" ? "This event" : s === "following" ? "This & following" : "All events"}
-                        </button>
-                      ))}
-                    </div>
+              <div className="flex items-start gap-3">
+                <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Repeating event — apply to</span>
+                  <div className="inline-flex w-fit rounded-md border border-border p-0.5 text-xs">
+                    {(["this", "following", "all"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setScope(s)}
+                        className={cn(
+                          "rounded px-2 py-1",
+                          scope === s ? "bg-os-accent text-os-bg" : "text-foreground hover:bg-muted",
+                        )}
+                      >
+                        {s === "this" ? "This event" : s === "following" ? "This & following" : "All events"}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )
+              </div>
             ) : !editing ? (
               <div className="flex items-center gap-3">
                 <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -855,7 +844,7 @@ export function EventComposer({
               >
                 {editing ? "Save changes" : "Create event"}
               </button>
-              {editing && ev?.writable && ev.eventId && (
+              {editing && (ev?.writable || canManageMeeting) && ev?.eventId && (
                 <div className="ml-auto">
                   {confirmDelete ? (
                     <button
