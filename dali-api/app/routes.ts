@@ -192,6 +192,10 @@ export default [
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    // Certificate template library + editor (Core, flag: certificate-templates).
+    // Before education/:offeringId so the literal path isn't read as an offering id.
+    route("education/certificate-templates", "education/routes/education.certificate-templates.tsx"),
+    route("education/certificate-templates/:templateId", "education/routes/education.certificate-templates.$templateId.tsx"),
     // Standalone session self-check-in surface (the projected QR / link target).
     // Literal "check-in" precedes :offeringId so it isn't read as an offering id.
     route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
@@ -269,6 +273,7 @@ export default [
     route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
     route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
     route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
+    route("portal/education/:offeringId/file/:fileId", "routes/portal.education.$offeringId.file.$fileId.tsx"),
     route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
 

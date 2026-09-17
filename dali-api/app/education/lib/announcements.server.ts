@@ -71,7 +71,7 @@ export async function postAnnouncement(args: {
   parentId?: string | null;
 }): Promise<{ ok: true } | { error: string; status: number }> {
   const body = args.body.trim();
-  if (!body) return { error: "Write something first", status: 400 };
+  if (!body) return { error: "Your post can't be empty.", status: 400 };
 
   const gate = await canPostInDiscussion(args.offeringId, args.authorId);
   if (!gate.allowed) return { error: "Forbidden", status: 403 };

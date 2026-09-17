@@ -11,10 +11,10 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 // The offering's discussion, shared by the manage page and the course hub.
 //
 // Two kinds of post: an Announcement, which notifies every enrollee in-app and
-// by email, and a Message, which doesn't. Instructors can send either; students
-// send Messages. Anyone in the offering can reply to any top-level post, and
-// replies never notify — a thread that emails the whole course on every reply
-// stops being a thread.
+// by email, and a regular post, which doesn't. Instructors can send either;
+// students send regular posts. Anyone in the offering can reply to any
+// top-level post, and replies never notify — a thread that emails the whole
+// course on every reply stops being a thread.
 //
 // `canAnnounce` is the only difference between the two surfaces: it's the
 // server's isOfferingManager answer, and the server re-checks it on every post,
@@ -84,12 +84,12 @@ export function OfferingDiscussion({
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs text-muted-foreground">
           {canAnnounce
-            ? "Announcements notify every enrollee. Messages stay here."
+            ? "Announcements email every enrollee. Regular posts just appear here."
             : "Ask a question or reply to a post — your instructors will see it."}
         </p>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" variant="secondary" onClick={() => setComposeKind("Message")}>
-            New message
+            New post
           </Button>
           {canAnnounce && (
             <Button type="button" size="sm" onClick={() => setComposeKind("Announcement")}>
@@ -101,7 +101,7 @@ export function OfferingDiscussion({
 
       {posts.length === 0 && (
         <p className="text-sm text-muted-foreground italic">
-          Nothing posted yet — start the conversation above.
+          No posts yet — start the discussion above.
         </p>
       )}
 
@@ -219,14 +219,14 @@ export function OfferingDiscussion({
       <AddFormModal
         open={composeKind !== null}
         onClose={() => setComposeKind(null)}
-        title={composeKind === "Announcement" ? "New announcement" : "New message"}
+        title={composeKind === "Announcement" ? "New announcement" : "New post"}
         subtitle={
           composeKind === "Announcement"
             ? "Goes to every approved enrollee — in-app and by email."
-            : "Posted to the discussion. Nobody is emailed."
+            : "Posted to the class discussion. No email is sent."
         }
         intent="post-announcement"
-        submitLabel={composeKind === "Announcement" ? "Send announcement" : "Post message"}
+        submitLabel={composeKind === "Announcement" ? "Send announcement" : "Post"}
         hiddenFields={{ kind: composeKind ?? "Message" }}
       >
         <label className="block">
@@ -236,7 +236,7 @@ export function OfferingDiscussion({
             ) : (
               <MessageSquare className="h-3.5 w-3.5" />
             )}
-            Message
+            {composeKind === "Announcement" ? "Announcement" : "Post"}
           </span>
           <textarea
             name="body"

@@ -156,7 +156,7 @@ describe("closeOutOffering", () => {
     expect(mockPrisma.educationCertificate.create).toHaveBeenCalledTimes(1);
     expect(mockPrisma.educationCertificate.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { applicationId: "app-1", issuedById: "core-1" },
+        data: { applicationId: "app-1", issuedById: "core-1", templateId: null },
       }),
     );
   });
