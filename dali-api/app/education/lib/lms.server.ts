@@ -63,8 +63,33 @@ export async function listWorkspaceDocs(offeringId: string) {
       studentEditable: true,
     },
     orderBy: [{ position: "asc" }],
-    select: { id: true, title: true },
+    // sessionId places the doc on the student timeline (education-student-hub);
+    // null = a whole-course shared doc.
+    select: { id: true, title: true, sessionId: true },
   });
+}
+
+/**
+ * Uploaded files (ProjectFile, S3-backed) attached to an offering, for the
+ * student timeline. sessionId places a file under a session; null = a
+ * whole-course file. `href` opens the standard Drive file viewer.
+ */
+export async function listOfferingFiles(offeringId: string) {
+  const files = await prisma.projectFile.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
+      archivedAt: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, sessionId: true },
+  });
+  return files.map((f) => ({
+    id: f.id,
+    title: f.title,
+    sessionId: f.sessionId,
+    href: `/documents/file/${f.id}`,
+  }));
 }
 
 /**
@@ -81,6 +106,7 @@ export async function readMaterialPage(offeringId: string, pageId: string) {
       workspaceType: true,
       workspaceId: true,
       archivedAt: true,
+      studentEditable: true,
     },
   });
   if (
@@ -91,8 +117,16 @@ export async function readMaterialPage(offeringId: string, pageId: string) {
   ) {
     return null;
   }
+  // Compat ProseMirror for the static viewer (and MCP read_education_page). The
+  // page viewer ignores this for a shared doc (studentEditable) and mounts the
+  // live collaborative editor client-side instead.
   const content = await collabDocToProseMirror(`doc:${page.id}:body`);
-  return { id: page.id, title: page.title, content };
+  return {
+    id: page.id,
+    title: page.title,
+    studentEditable: page.studentEditable,
+    content,
+  };
 }
 
 /** Create a material page in the offering workspace (manager-gated at route). */
@@ -611,6 +645,7 @@ export async function getHubData(args: {
     sessions,
     materials,
     workspaceDocs,
+    files,
     assignments,
     threads,
     mySubmissions,
@@ -624,6 +659,7 @@ export async function getHubData(args: {
     listSessionsWithMyAttendance(args.offeringId, args.applicationId),
     listMaterialPages(args.offeringId),
     listWorkspaceDocs(args.offeringId),
+    listOfferingFiles(args.offeringId),
     listAssignments(args.offeringId),
     listThreads(args.offeringId, instructorIds),
     prisma.educationSubmission.findMany({
@@ -676,6 +712,7 @@ export async function getHubData(args: {
     sessions,
     materials,
     workspaceDocs,
+    files,
     assignments: assignments.map((a) => {
       const sub = submissionByAssignment.get(a.id);
       return {

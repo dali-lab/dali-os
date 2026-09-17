@@ -145,6 +145,18 @@ export const FEATURE_FLAGS = [
     description:
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
+  {
+    key: "education-student-hub",
+    label: "Education student hub",
+    description:
+      "Reworks the enrolled student's course hub (member + portal). Adds a Canvas-style People tab (instructors + classmates) and drops that roster from Overview. Removes the separate Workspace tab: shared co-edited docs and uploaded files now attach to a session (or the whole course) and render inline on the session Timeline alongside read-only materials — one place for every resource. Ships off.",
+  },
+  {
+    key: "certificate-templates",
+    label: "Certificate templates",
+    description:
+      "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

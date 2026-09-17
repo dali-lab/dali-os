@@ -65,7 +65,7 @@ export async function createPost(args: {
   parentId?: string | null;
 }): Promise<PostResult> {
   const body = args.body.trim();
-  if (!body) return { error: "Post text is required", status: 400 };
+  if (!body) return { error: "Your post can't be empty.", status: 400 };
 
   if (args.parentId) {
     const parent = await prisma.educationDiscussionPost.findUnique({
@@ -73,7 +73,7 @@ export async function createPost(args: {
       select: { offeringId: true, parentId: true },
     });
     if (!parent || parent.offeringId !== args.offeringId)
-      return { error: "Thread not found", status: 404 };
+      return { error: "Post not found", status: 404 };
     // One reply level: replying to a reply is rejected here so the data
     // shape stays predictable.
     if (parent.parentId !== null)
@@ -242,7 +242,7 @@ async function notifyDiscussionPost(args: {
     message: {
       title: args.parentId
         ? `New reply in ${offering.title}`
-        : `New discussion post in ${offering.title}`,
+        : `New post in ${offering.title}`,
       body: preview,
     },
     recipients: users.map((u) => ({

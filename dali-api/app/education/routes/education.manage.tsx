@@ -6,6 +6,7 @@ import { getUserRoles, isCore } from "~/lib/roles";
 import { listManageable, runOfferingAction } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { buttonClasses } from "~/components/ui/Button";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { FilterPill } from "~/components/ui/filter-panel";
 import { useEffect, useMemo, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
@@ -71,6 +72,7 @@ const SCOPES: [Scope, string][] = [
 
 export default function ManageEducation() {
   const { offerings, isCore, isExternal } = useLoaderData<typeof loader>();
+  const certTemplatesOn = useFeatureFlag("certificate-templates");
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const dialog = useDialog();
   const toast = useToast();
@@ -158,9 +160,19 @@ export default function ManageEducation() {
           </p>
         </div>
         {isCore && (
-          <Link to="/education/manage/new" className={buttonClasses("primary", "sm")}>
-            New offering
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            {certTemplatesOn && (
+              <Link
+                to="/education/certificate-templates"
+                className={buttonClasses("secondary", "sm")}
+              >
+                Certificate templates
+              </Link>
+            )}
+            <Link to="/education/manage/new" className={buttonClasses("primary", "sm")}>
+              New offering
+            </Link>
+          </div>
         )}
       </header>
 
