@@ -16,5 +16,12 @@
 	<false/>
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<false/>
+	<!-- Camera resource access for the WKWebView wallet-pass check-in scanner.
+	     Under the hardened runtime this is what lets the webview reach the
+	     camera once TCC grants it (the NSCameraUsageDescription in Info.plist
+	     drives that one-time prompt). Plain boolean — no $(AppIdentifierPrefix)
+	     expansion, so it's safe under plain codesign. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
 </dict>
 </plist>
