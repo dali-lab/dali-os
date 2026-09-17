@@ -185,6 +185,7 @@ export function buildExternalLayer(
         links: e.links,
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
+        unanswered: e.rsvp === "Pending",
         meeting: e.meeting,
         trackable:
           e.canTrackAsMeeting && e.eventId && e.linkId && e.calendarId
@@ -290,6 +291,7 @@ export function buildAllDayLayer(
       bgColor: e.color ?? undefined,
       borderClassName: e.color ? undefined : "border-accent-coral-light",
       location: e.location,
+      unanswered: e.rsvp === "Pending",
       onEdit: onEdit && e.writable && e.eventId ? (anchor) => onEdit(e, anchor) : undefined,
     }));
   }

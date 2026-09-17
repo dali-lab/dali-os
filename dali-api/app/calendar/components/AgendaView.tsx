@@ -8,6 +8,7 @@
 import { AlertCircle } from "lucide-react";
 
 import { cn } from "~/lib/cn";
+import { eventSkin } from "~/calendar/lib/event-block";
 import type { GridDay } from "~/calendar/lib/layers";
 import type { EventBlock } from "~/calendar/lib/types";
 
@@ -22,6 +23,9 @@ function fmtHour(h: number): string {
 
 function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void }) {
   const dot = block.bgColor ?? undefined;
+  // This list has no coloured surface to hollow out, so the dot carries the
+  // same signal: a ring for an invite you haven't answered, solid otherwise.
+  const skin = eventSkin(block);
   return (
     <button
       type="button"
@@ -39,8 +43,11 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
         {block.allDay ? "All day" : fmtHour(block.startHour)}
       </span>
       <span
-        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-        style={dot ? { backgroundColor: dot } : undefined}
+        className={cn(
+          "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
+          skin.outlined && `border-2 ${skin.className}`,
+        )}
+        style={skin.outlined ? skin.style : dot ? { backgroundColor: dot } : undefined}
         aria-hidden
       />
       <span className="min-w-0 flex-1">
