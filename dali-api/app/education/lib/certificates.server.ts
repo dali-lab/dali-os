@@ -3,6 +3,7 @@ import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requestInstructorExitSurveys } from "./feedback.server";
 import { lockOffering } from "./apply.server";
+import { resolveCertificateTemplateId } from "./certificate-templates.server";
 import { currentTerm } from "~/lib/roles";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
@@ -105,6 +106,10 @@ export async function closeOutOffering(args: {
     applicant: (typeof offering.applications)[number]["applicant"];
   }[] = [];
 
+  // Which template new certificates get stamped with (per-offering binding →
+  // lab-wide default → null = built-in design). Resolved once for the batch.
+  const certificateTemplateId = await resolveCertificateTemplateId(args.offeringId);
+
   for (const application of offering.applications) {
     if (application.certificate) {
       alreadyIssued += 1;
@@ -117,7 +122,11 @@ export async function closeOutOffering(args: {
       continue;
     }
     const certificate = await prisma.educationCertificate.create({
-      data: { applicationId: application.id, issuedById: args.actorId },
+      data: {
+        applicationId: application.id,
+        issuedById: args.actorId,
+        templateId: certificateTemplateId,
+      },
       select: { id: true },
     });
     issued += 1;
@@ -304,6 +313,7 @@ export async function getCertificate(certificateId: string) {
     select: {
       id: true,
       issuedAt: true,
+      templateId: true,
       application: {
         select: {
           id: true,
@@ -333,6 +343,7 @@ export async function getCertificate(certificateId: string) {
   return {
     id: certificate.id,
     issuedAt: certificate.issuedAt,
+    templateId: certificate.templateId,
     applicantUserId: application.applicantUserId,
     studentName:
       `${application.applicant.firstName} ${application.applicant.lastName}`.trim(),

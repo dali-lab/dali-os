@@ -1154,6 +1154,12 @@ model ProjectFile {
   workspaceType WorkspaceType?
   workspaceId   String?
 
+  // Education timeline placement. When workspaceType = EducationOffering, links
+  // this file to a specific EducationSession so it renders under that session on
+  // the student course timeline; null = a whole-offering material. Loose FK (no
+  // DB constraint), matching Page.sessionId / the workspaceId convention.
+  sessionId String?
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -3770,9 +3776,49 @@ model EducationCertificate {
   applicationId String   @unique
   issuedAt      DateTime @default(now())
   issuedById    String
+  // The CertificateTemplate resolved for this offering at issue time (loose FK).
+  // Null = rendered with the built-in design. Certs are regenerated on demand,
+  // so editing the template restyles them; archiving it falls back to built-in.
+  templateId    String?
 
   application EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   issuedBy    User                 @relation("EducationCertificateIssuer", fields: [issuedById], references: [id])
+}
+
+// An operator-designed certificate: a full-bleed background image (PNG/JPG,
+// uploaded to S3) with dynamic fields (student name, offering title, dates,
+// instructors, issued date) placed on top at fractional coordinates. Rendered
+// to PDF by drawing the background full-page and overlaying each field's text.
+// See app/education/lib/certificate-templates.server.ts.
+model CertificateTemplate {
+  id                    String    @id @default(cuid())
+  name                  String
+  // S3 key (under uploads/) of the background image + its MIME type.
+  backgroundKey         String
+  backgroundContentType String
+  // Intrinsic pixel size of the background. The PDF page is sized to match
+  // (1px = 1pt) so a field's fractional x/y maps to the same spot in the editor
+  // preview and the rendered PDF regardless of display scale.
+  bgWidth               Int
+  bgHeight              Int
+  // Placed fields: [{ key, x, y, fontSize, color, align, bold }] — x/y are 0..1
+  // fractions of the page. `key` is one of the CERTIFICATE_FIELD_KEYS registry.
+  fields                Json      @default("[]")
+  // At most one template is the lab-wide default (enforced in the setter).
+  isDefault             Boolean   @default(false)
+  archivedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  createdById           String
+}
+
+// Per-offering certificate template override. The lab-wide default lives on
+// CertificateTemplate.isDefault; a row here points one offering at a specific
+// template instead. Loose FKs (no relations), matching the workspaceId pattern.
+model EducationCertificateBinding {
+  id         String   @id @default(cuid())
+  offeringId String   @unique
+  templateId String
+  createdAt  DateTime @default(now())
 }
 
 // Binds a Form to a named slot on one offering, mirroring

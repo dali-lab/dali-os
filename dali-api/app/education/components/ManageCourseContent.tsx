@@ -52,8 +52,15 @@ export function ManageMaterials({
     children: { id: string; title: string; sessionId: string | null }[];
   }[];
   /** Uploaded S3-backed files for this offering. folderPageId nests them under
-   *  a materials folder (a Page id); null/unmatched = the offering root. */
-  files?: { id: string; title: string; href: string; folderPageId: string | null }[];
+   *  a materials folder (a Page id); null/unmatched = the offering root.
+   *  sessionId places the file on the student timeline (null = whole offering). */
+  files?: {
+    id: string;
+    title: string;
+    href: string;
+    folderPageId: string | null;
+    sessionId: string | null;
+  }[];
   workspaceDocs: { id: string; title: string }[];
   sessions?: { id: string; sequence: number }[];
   /** Page ids the viewer has starred, for the per-row favorite toggle. */
@@ -294,8 +301,8 @@ export function ManageMaterials({
 
       {empty ? (
         <p className="text-sm text-muted-foreground italic">
-          Nothing here yet. Materials show under the course hub's Materials tab; shared docs
-          under Workspace.
+          Nothing here yet. Materials, shared docs, and uploaded files show up for students on
+          the course timeline — attach each to a session or leave it for the whole course.
         </p>
       ) : (
         // One list, because that's how students meet them — the badge and icon
@@ -399,12 +406,27 @@ export function ManageMaterials({
                         dragged?.id === f.id ? "opacity-50" : ""
                       }`}
                     >
-                      <FileRow
-                        href={f.href}
-                        title={f.title}
-                        onRename={() => renameItem("file", f.id, f.title)}
-                        onDelete={() => deleteItem("file", f.id, f.title)}
-                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <FileRow
+                          href={f.href}
+                          title={f.title}
+                          onRename={() => renameItem("file", f.id, f.title)}
+                          onDelete={() => deleteItem("file", f.id, f.title)}
+                        />
+                        {sessions.length > 0 && (
+                          <SessionSelect
+                            pageId={f.id}
+                            sessionId={f.sessionId}
+                            options={sessionOptions}
+                            onSubmit={(fileId, sessionId) =>
+                              sessionFetcher.submit(
+                                { intent: "set-file-session", fileId, sessionId },
+                                { method: "post" },
+                              )
+                            }
+                          />
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -421,12 +443,27 @@ export function ManageMaterials({
                 dragged?.id === f.id ? "opacity-50" : ""
               }`}
             >
-              <FileRow
-                href={f.href}
-                title={f.title}
-                onRename={() => renameItem("file", f.id, f.title)}
-                onDelete={() => deleteItem("file", f.id, f.title)}
-              />
+              <div className="flex items-center justify-between gap-3">
+                <FileRow
+                  href={f.href}
+                  title={f.title}
+                  onRename={() => renameItem("file", f.id, f.title)}
+                  onDelete={() => deleteItem("file", f.id, f.title)}
+                />
+                {sessions.length > 0 && (
+                  <SessionSelect
+                    pageId={f.id}
+                    sessionId={f.sessionId}
+                    options={sessionOptions}
+                    onSubmit={(fileId, sessionId) =>
+                      sessionFetcher.submit(
+                        { intent: "set-file-session", fileId, sessionId },
+                        { method: "post" },
+                      )
+                    }
+                  />
+                )}
+              </div>
             </li>
           ))}
           {workspaceDocs.map((d) => (
@@ -612,7 +649,7 @@ function FileRow({
   onDelete?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-1 items-center gap-2">
       <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
       <a
         href={href}

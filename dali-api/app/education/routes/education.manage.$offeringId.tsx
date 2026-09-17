@@ -65,6 +65,11 @@ import {
   saveAttendance,
 } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
+import {
+  listCertificateTemplates,
+  getOfferingCertificateBinding,
+  bindOfferingCertificateTemplate,
+} from "~/education/lib/certificate-templates.server";
 import { closeOutOffering, reopenOffering, previewCloseOut, certificateEligibility } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
@@ -91,6 +96,7 @@ import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { X } from "lucide-react";
 import { renderEmail } from "~/lib/email";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
 import { DocEditor } from "~/components/doc";
@@ -202,10 +208,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       archivedAt: null,
     },
     orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true, folderPageId: true },
+    select: { id: true, title: true, folderPageId: true, sessionId: true },
   });
 
   const notes = await notesForOffering(params.offeringId!);
+
+  // Certificate template library + this offering's override (Core only; the
+  // section itself is also gated on the certificate-templates flag client-side).
+  const [certificateTemplates, certificateBinding] = core
+    ? await Promise.all([
+        listCertificateTemplates(),
+        getOfferingCertificateBinding(params.offeringId!),
+      ])
+    : [[], null];
 
   // Feedback bindings + results. Instructors see anonymized rows; Core may
   // see identities (moderation escape hatch).
@@ -363,6 +378,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: f.id,
       title: f.title,
       folderPageId: f.folderPageId,
+      sessionId: f.sessionId,
       href: `/documents/file/${f.id}`,
     })),
     workspaceDocs,
@@ -388,6 +404,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       Rejected: builtinDecisionEmail("Rejected", offering.title),
     },
     isCore: core,
+    certificateTemplates: certificateTemplates.map((t) => ({
+      id: t.id,
+      name: t.name,
+      isDefault: t.isDefault,
+    })),
+    certificateBinding,
     instructorCandidates: instructorCandidates.map((u) => ({
       id: u.id,
       name: `${u.firstName} ${u.lastName}`.trim(),
@@ -417,6 +439,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "delete-page",
     "delete-file",
     "set-material-session",
+    "set-file-session",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
@@ -428,6 +451,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "close-out-offering",
     "reopen-offering",
     "set-form-binding",
+    "bind-certificate-template",
   ];
   if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
@@ -555,6 +579,24 @@ export async function action({ request, params }: Route.ActionArgs) {
         await prisma.page.update({ where: { id: pageId }, data: { sessionId } });
         return { ok: true };
       }
+      case "set-file-session": {
+        const fileId = String(formData.get("fileId") ?? "");
+        const sessionId = String(formData.get("sessionId") ?? "") || null;
+        // Guard: file must belong to this offering's workspace.
+        const file = await prisma.projectFile.findUnique({
+          where: { id: fileId },
+          select: { workspaceType: true, workspaceId: true },
+        });
+        if (
+          !file ||
+          file.workspaceType !== "EducationOffering" ||
+          file.workspaceId !== params.offeringId
+        ) {
+          return Response.json({ error: "File not found" }, { status: 404 });
+        }
+        await prisma.projectFile.update({ where: { id: fileId }, data: { sessionId } });
+        return { ok: true };
+      }
       case "create-assignment": {
         const dueAtRaw = String(formData.get("dueAt") ?? "");
         const pointsRaw = String(formData.get("points") ?? "");
@@ -619,6 +661,16 @@ export async function action({ request, params }: Route.ActionArgs) {
           slot: String(formData.get("slot") ?? ""),
           formId: String(formData.get("formId") ?? "") || null,
           actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "bind-certificate-template": {
+        // Template management is Core-only (matches who owns the library).
+        if (!(await isCore(auth.user.sub)))
+          return Response.json({ error: "Forbidden" }, { status: 403 });
+        const result = await bindOfferingCertificateTemplate({
+          offeringId: params.offeringId!,
+          templateId: String(formData.get("templateId") ?? "") || null,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
@@ -748,6 +800,8 @@ export default function ManageOffering() {
     exitFeedback,
     feedbackSessionId,
     isCore: core,
+    certificateTemplates,
+    certificateBinding,
     instructorCandidates,
     memberInstructorIds,
     externalInstructors,
@@ -760,6 +814,7 @@ export default function ManageOffering() {
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
+  const certTemplatesOn = useFeatureFlag("certificate-templates");
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
@@ -1221,6 +1276,53 @@ export default function ManageOffering() {
               ))}
             </div>
           </section>
+
+          {core && certTemplatesOn && (
+            <section className="bg-card border border-border rounded-lg p-5">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold text-foreground">
+                  Completion certificate
+                </h2>
+                <Link
+                  to="/education/certificate-templates"
+                  className="text-xs font-medium text-accent-coral hover:underline"
+                >
+                  Manage templates →
+                </Link>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                The certificate design students get when this course is closed out. Leave it on the
+                lab default, or bind a specific template to this offering.
+              </p>
+              <Form method="post" className="flex items-center gap-3">
+                <input type="hidden" name="intent" value="bind-certificate-template" />
+                <Select
+                  name="templateId"
+                  defaultValue={certificateBinding ?? ""}
+                  options={[
+                    { value: "", label: "Lab default" },
+                    ...certificateTemplates.map((t) => ({
+                      value: t.id,
+                      label: t.isDefault ? `${t.name} (default)` : t.name,
+                    })),
+                  ]}
+                  buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
+                <Button type="submit" variant="secondary" size="sm">
+                  Save
+                </Button>
+              </Form>
+              {certificateTemplates.length === 0 && (
+                <p className="mt-2 text-xs text-muted-foreground italic">
+                  No templates yet —{" "}
+                  <Link to="/education/certificate-templates" className="underline">
+                    create one
+                  </Link>{" "}
+                  to override the built-in design.
+                </p>
+              )}
+            </section>
+          )}
 
           {core && offering.status === "Draft" && (
             <Form

@@ -629,6 +629,21 @@ export const prisma = {
     create: vi.fn(),
     createMany: vi.fn(),
   },
+  certificateTemplate: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  educationCertificateBinding: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+  },
   educationDecisionEmail: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
