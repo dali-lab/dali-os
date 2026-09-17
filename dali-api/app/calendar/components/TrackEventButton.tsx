@@ -2,7 +2,7 @@ import { useFetcher } from "react-router";
 import { CalendarPlus } from "lucide-react";
 import type { EventBlock } from "~/calendar/lib/types";
 
-// "Track in DALI" on the detail popover of an external event with no DALI
+// "Track in DALI OS" on the detail popover of an external event with no DALI
 // meeting behind it.
 //
 // The lab's general calendar is authored in Google Calendar, so its events
@@ -38,7 +38,7 @@ export function TrackEventButton({
         <input type="hidden" name="calendarId" value={trackable.calendarId} />
         <button type="submit" disabled={busy} className={className}>
           <CalendarPlus className="h-3.5 w-3.5 text-os-grey" />
-          {busy ? "Adding…" : "Track in DALI"}
+          {busy ? "Adding…" : "Track in DALI OS"}
         </button>
       </fetcher.Form>
       {fetcher.data?.error && (

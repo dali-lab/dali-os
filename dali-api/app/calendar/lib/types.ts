@@ -402,7 +402,11 @@ export type EventBlock = {
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
    *  top of it. `color` is a CSS colour (the role palette's `dot`). */
-  loggedAccent?: { color: string; hours: number };
+  loggedAccent?: { color: string; hours: number; incomplete?: boolean };
+  /** Timesheet only: this block's logged time can't be submitted as it stands —
+   *  no role to bill it to, or no note saying what the work was. Draws a "!"
+   *  badge on the block; the string is the reason ("Missing a role"). */
+  issue?: string;
   /** Set when this block is a DALI meeting: the detail popover adds its
    *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
   meeting?: EventMeetingDTO;
