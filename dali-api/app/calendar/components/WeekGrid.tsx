@@ -1110,6 +1110,7 @@ export function WeekGrid({
   timezone,
   markPayPeriodBounds = false,
   fillAndScroll = false,
+  stickyHeader = false,
   allDayByDay,
   clickDurationHours,
 }: {
@@ -1148,6 +1149,13 @@ export function WeekGrid({
   // Also makes the day-header row + hour axis sticky. Availability opts in;
   // Schedule/Timesheet keep the page-flow layout.
   fillAndScroll?: boolean;
+  // Pin the weekday-header row to the top of the nearest scrollport via CSS
+  // `sticky`, for callers that place the whole grid inside their own scroll
+  // container (the availability preview scrolls the grid, not the page). This is
+  // the complement to fillAndScroll: there the header sits outside an internal
+  // scrollport, so it needs no sticky; here it lives inside the caller's one.
+  // Inert when there's no scrolling ancestor, so it's safe to leave on.
+  stickyHeader?: boolean;
   // Optional all-day events band. Keyed by day-column index (matching
   // eventsByDay). Only rendered when at least one day has events.
   allDayByDay?: Record<number, AllDayBlock[]>;
@@ -1421,7 +1429,11 @@ export function WeekGrid({
         view in fillAndScroll mode — no sticky needed. Same scrollbar-width
         reservation as the band so its columns line up with the grid's. */}
     <div
-      className="flex border-x border-t border-border rounded-t-md bg-card select-none"
+      className={`flex border-x border-t border-border rounded-t-md bg-card select-none ${
+        // z-40 clears the grid's z-30 event/selection blocks so they scroll
+        // under the (opaque) header rather than over it.
+        stickyHeader ? "sticky top-0 z-40" : ""
+      }`}
       style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
     >
       {/* Left gutter — matches the hour-axis width */}
