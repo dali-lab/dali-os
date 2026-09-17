@@ -24,6 +24,7 @@ import {
   CHECKLIST_MAX_TEXT,
   type ChecklistItem,
 } from "../lib/task-checklist";
+import { localTodayUtcDay } from "../lib/timeline-days";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
 import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
 import { cn } from "~/lib/cn";
@@ -115,11 +116,30 @@ export function TaskModal({
   // form; there is no record yet to read.
   const [editing, setEditing] = useState(false);
   const readOnly = !isCreate && !editing;
+  // What a create form starts out holding. Named once, because `isDirty`
+  // below has to be able to tell an untouched seeded form from an edited one —
+  // otherwise closing a form nobody typed in asks whether to discard it.
+  const seededStatus = defaultStatus ?? "Todo";
+  const seededEpicId = defaultEpicId ?? "";
+  // A new task is work starting now, so it opens dated today rather than
+  // asking for a date that is almost always today. Same UTC-day convention as
+  // the rest of the task dates (see `dateInputValue`), and the same notion of
+  // "today" as the timeline's marker, so the new bar lands under it.
+  const seededStartDate = isCreate ? todayInputValue() : "";
+  // The viewer's own domain on this project, when the loader found exactly
+  // one. Guarded against a domain that isn't in the picker's own options (an
+  // archived one), which would otherwise leave the control reading blank while
+  // holding a value.
+  const seededDomainId =
+    isCreate &&
+    options.viewerDomainId &&
+    options.domains.some((d) => d.id === options.viewerDomainId)
+      ? options.viewerDomainId
+      : "";
+
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [status, setStatus] = useState<TaskStatus>(
-    task?.status ?? defaultStatus ?? "Todo",
-  );
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? seededStatus);
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
   );
@@ -133,12 +153,14 @@ export function TaskModal({
   // Timeline start. Paired with the deadline it gives the task a span on the
   // planning timeline; left blank the bar inherits its story's span.
   const [startDate, setStartDate] = useState<string>(
-    task?.startsAt ? dateInputValue(task.startsAt) : "",
+    task ? (task.startsAt ? dateInputValue(task.startsAt) : "") : seededStartDate,
   );
   const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
-  const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
+  const [domainId, setDomainId] = useState<string>(
+    task ? task.domain?.id ?? "" : seededDomainId,
+  );
   const [epicId, setEpicId] = useState<string>(
-    task ? task.epicId ?? "" : defaultEpicId ?? "",
+    task ? task.epicId ?? "" : seededEpicId,
   );
 
   // Stories always belong to an epic, so with no epic picked there's nothing
@@ -329,15 +351,19 @@ export function TaskModal({
     if (task) {
       return Object.keys(diffPatch(task)).length > 0 || commentDraft.trim() !== "";
     }
-    // Create mode: anything beyond the seeded defaults counts.
+    // Create mode: anything beyond the seeded defaults counts. Each field is
+    // compared against what it was seeded with, not against empty — the start
+    // date and domain now open pre-filled, and the status seed follows the
+    // column the form was opened from.
     return (
       title.trim() !== "" ||
       description.trim() !== "" ||
-      status !== "Todo" ||
+      status !== seededStatus ||
       dueDate !== "" ||
-      domainId !== "" ||
+      startDate !== seededStartDate ||
+      domainId !== seededDomainId ||
       assigneeIds.length > 0 ||
-      epicId !== (defaultEpicId ?? "") ||
+      epicId !== seededEpicId ||
       githubEnabled
     );
   }
@@ -1593,6 +1619,14 @@ function normalizeRepoForDisplay(input: string): string | null {
 // would drift a day for viewers west of UTC.
 function dateInputValue(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
+}
+
+// Today as the date picker spells it. `localTodayUtcDay` is the viewer's own
+// calendar date keyed to UTC midnight — the same day column the timeline puts
+// its "today" marker on — so a task seeded with it lands under that marker
+// instead of a day off it for viewers west of UTC.
+export function todayInputValue(now: Date = new Date()): string {
+  return new Date(localTodayUtcDay(now)).toISOString().slice(0, 10);
 }
 
 function formatCreatedAt(iso: string): string {

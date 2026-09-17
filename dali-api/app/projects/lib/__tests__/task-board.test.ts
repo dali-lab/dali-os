@@ -5,6 +5,7 @@ import {
   moveTaskInBoard,
   nextPositionInColumn,
   resolveTermIdForDate,
+  resolveViewerDomainId,
   isCarriedOverTask,
   termIdsInRange,
   currentSprintBand,
@@ -347,5 +348,47 @@ describe("computed sprint scope", () => {
     for (const o of opts) expect(Number.isFinite(Number(o.value))).toBe(true);
     expect(sprintPickerOptions(TERMS, null, NOW)).toEqual([]);
     expect(sprintPickerOptions(TERMS, "99W", NOW)).toEqual([]);
+  });
+});
+
+describe("resolveViewerDomainId", () => {
+  const ASSIGNMENTS = [
+    { userId: "amy", domainId: "fullstack" },
+    { userId: "ben", domainId: "design" },
+    { userId: "cal", domainId: "design" },
+    { userId: "cal", domainId: "fullstack" },
+  ];
+
+  it("returns the domain the viewer is staffed in on this project", () => {
+    expect(resolveViewerDomainId(ASSIGNMENTS, "amy")).toBe("fullstack");
+    expect(resolveViewerDomainId(ASSIGNMENTS, "ben")).toBe("design");
+  });
+
+  it("returns null for someone cross-assigned to two domains", () => {
+    // Stamping either one on their tasks would be a coin flip they might not
+    // notice, so the picker is left for them.
+    expect(resolveViewerDomainId(ASSIGNMENTS, "cal")).toBeNull();
+  });
+
+  it("returns null for someone not staffed on the project at all", () => {
+    // A lead or Core member creating a task here has no domain to inherit.
+    expect(resolveViewerDomainId(ASSIGNMENTS, "dee")).toBeNull();
+  });
+
+  it("returns the domain when it is listed more than once", () => {
+    // Two rows, same domain (e.g. two levels) is still one unambiguous answer.
+    expect(
+      resolveViewerDomainId(
+        [
+          { userId: "amy", domainId: "fullstack" },
+          { userId: "amy", domainId: "fullstack" },
+        ],
+        "amy",
+      ),
+    ).toBe("fullstack");
+  });
+
+  it("returns null when there are no assignments", () => {
+    expect(resolveViewerDomainId([], "amy")).toBeNull();
   });
 });

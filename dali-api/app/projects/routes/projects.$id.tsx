@@ -84,6 +84,7 @@ import {
 import {
   resolveTermIdForDate,
   termIdsInRange,
+  resolveViewerDomainId,
   type TaskBoardOptions,
   type TaskCardModel,
   type TaskStatus,
@@ -971,6 +972,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startsAt: t.startDate.toISOString(),
       endsAt: t.endDate.toISOString(),
     }));
+  // Read off the same assignments the member picker is built from, so it
+  // follows the board's term the way that list does and costs no extra query.
+  const viewerDomainId = resolveViewerDomainId(assignableAssignments, auth.user.sub);
+
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
       .map(([id, name]) => ({ id, name, photoUrl: photoByUserId.get(id) ?? null }))
@@ -985,6 +990,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termSpans,
     terms: boardTerms,
     currentTermId: boardCurrentTermId,
+    viewerDomainId,
   };
 
   // scopeRows fetched in Stage 2. Keyed by domainId+termId so the UI can

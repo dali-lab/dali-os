@@ -261,7 +261,34 @@ export type TaskBoardOptions = {
   // The lab's current term when it appears in `terms` — the board's default
   // filter selection. Null (project doesn't run this term) defaults to All.
   currentTermId: string | null;
+  // The domain the viewer works in on this project, seeding the new-task
+  // domain picker. Null when they aren't staffed here, or when they're
+  // cross-assigned to more than one domain on it — there's no single answer
+  // then, and guessing one is worse than leaving the field for them.
+  viewerDomainId: string | null;
 };
+
+/**
+ * The domain to seed a new task's domain picker with: the one the viewer is
+ * staffed in on this project, from the same assignment rows the member picker
+ * is built from.
+ *
+ * Returns null unless there is exactly one. A member cross-assigned to two
+ * domains on a project (which the schema allows, and which happens for
+ * cross-training) has no single answer, and silently stamping the wrong domain
+ * on their tasks is worse than leaving the field for them to set. Null is also
+ * the answer for someone creating a task on a project they aren't staffed on —
+ * a lead or Core member, who has no domain *here* to inherit.
+ */
+export function resolveViewerDomainId(
+  assignments: { userId: string; domainId: string }[],
+  viewerId: string,
+): string | null {
+  const domainIds = new Set(
+    assignments.filter((a) => a.userId === viewerId).map((a) => a.domainId),
+  );
+  return domainIds.size === 1 ? [...domainIds][0] : null;
+}
 
 // Minimal Term shape the resolvers need. Callers pass terms sorted
 // chronologically (ascending sortKey/startDate).
