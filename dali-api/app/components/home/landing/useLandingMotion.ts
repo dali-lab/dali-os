@@ -15,6 +15,15 @@ export function useLandingMotion(ref: RefObject<HTMLElement | null>) {
     const el = ref.current
     if (!el) return
 
+    // WebKit — Safari and the Tauri desktop shell's WKWebView — re-runs an
+    // element's SVG Gaussian blur every frame while a transform animates it,
+    // where Chromium caches the blurred raster and just composites the
+    // transform. Mark WebKit so landing.css can promote those blur layers into
+    // cached compositing layers; Chromium is already smooth and keeps its
+    // default path. navigator.vendor is "Apple Computer, Inc." on Safari/
+    // WKWebView and "Google Inc." on Chromium.
+    if (navigator.vendor === 'Apple Computer, Inc.') el.classList.add('landing-webkit')
+
     const nav = navigator as Navigator & {
       connection?: { saveData?: boolean }
     }
