@@ -12,6 +12,8 @@ import {
   Calendar,
   GanttChart,
   List,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -217,6 +219,10 @@ export function EpicSprintManager({
   // Timeline or outline. The two show the same tree; the grid places it in
   // time, the list folds it up so an epic's stories and tasks read at a glance.
   const [view, setView] = useState<EpicView>("timeline");
+  // Fullscreen belongs to the timeline alone: the grid is the one view here
+  // wide enough to be worth the whole viewport, and the outline already reads
+  // fine in the page's column. Switching views drops it (effect below).
+  const [fullscreen, setFullscreen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Second level of the Add menu: "User story" has to be told which epic it
   // belongs to, so picking it lists the epics rather than guessing one.
@@ -226,6 +232,36 @@ export function EpicSprintManager({
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   // Which epic to open with its new-story form already up (Add ▸ User story).
   const [autoNewStoryEpicId, setAutoNewStoryEpicId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (view !== "timeline") setFullscreen(false);
+  }, [view]);
+
+  // Escape leaves fullscreen. A modal over the timeline gets the key first —
+  // both handlers sit on `document`, so the modal's stopPropagation never
+  // reaches this one and Escape would otherwise close the modal and drop
+  // fullscreen in the same press.
+  const modalOpen = newEpicOpen || openEpicId != null;
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !modalOpen) setFullscreen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreen, modalOpen]);
+
+  // Freeze the page under the overlay so a scroll that falls off the grid
+  // doesn't move it. Kept apart from the key handler above: this has to latch
+  // the pre-fullscreen value once, not re-latch whatever a modal left behind.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullscreen]);
 
   useEffect(() => {
     if (!addMenuOpen) return;
@@ -359,6 +395,27 @@ export function EpicSprintManager({
         >
           <Pencil className="h-[15px] w-[15px]" aria-hidden />
           {editMode ? "Done" : "Edit"}
+        </button>
+      )}
+
+      {view === "timeline" && (
+        <button
+          type="button"
+          className="os-edit-btn"
+          aria-pressed={fullscreen}
+          onClick={() => setFullscreen((v) => !v)}
+          title={
+            fullscreen
+              ? "Exit fullscreen (Esc)"
+              : "Fill the screen with the timeline"
+          }
+        >
+          {fullscreen ? (
+            <Minimize2 className="h-[15px] w-[15px]" aria-hidden />
+          ) : (
+            <Maximize2 className="h-[15px] w-[15px]" aria-hidden />
+          )}
+          {fullscreen ? "Exit" : "Fullscreen"}
         </button>
       )}
 
@@ -547,17 +604,28 @@ export function EpicSprintManager({
           The Edit/New controls (os) and the classic "+ Add epic" button ride in
           the timeline's own header row, right of the level legend. */}
       {view === "timeline" ? (
-        <EpicsTimeline
-          epics={timelineEpics}
-          terms={timelineTerms}
-          storyDependencies={storyDependencies}
-          actions={progressActions}
-          editMode={editMode}
-          onReschedule={canManage ? reschedule : undefined}
-          onEpicClick={canManage ? (id) => openEpic(id) : undefined}
-          onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
-          onTaskClick={onTaskClick}
-        />
+        // Fullscreen keeps the same timeline mounted inside a fixed shell, so
+        // the legend toggles, scroll position and any drag in flight survive
+        // the switch. Below the Modals' z-50 on purpose: an epic opened from a
+        // fullscreen bar still draws over the grid.
+        <div
+          className={cn(
+            fullscreen && "fixed inset-0 z-40 flex flex-col bg-background p-4 sm:p-6",
+          )}
+        >
+          <EpicsTimeline
+            epics={timelineEpics}
+            terms={timelineTerms}
+            storyDependencies={storyDependencies}
+            actions={progressActions}
+            editMode={editMode}
+            fillHeight={fullscreen}
+            onReschedule={canManage ? reschedule : undefined}
+            onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+            onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+            onTaskClick={onTaskClick}
+          />
+        </div>
       ) : (
         <EpicList
           epics={timelineEpics}

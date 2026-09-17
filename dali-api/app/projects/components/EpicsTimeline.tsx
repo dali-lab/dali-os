@@ -604,6 +604,7 @@ export function EpicsTimeline({
   storyDependencies = [],
   hiddenLevels,
   compact = false,
+  fillHeight = false,
   actions,
   editMode = false,
   onReschedule,
@@ -633,6 +634,10 @@ export function EpicsTimeline({
   // hub showing one or two epics just gets an empty box out of it — and the
   // card takes the wider radius the brand shells set their sections in.
   compact?: boolean;
+  // Take the whole height the parent offers instead of the built-in clamp —
+  // what the fullscreen view wants, where the card is the only thing on screen
+  // and stopping at 70vh would waste the rest of it.
+  fillHeight?: boolean;
   // Rendered flush right on the level-toggle row, so the page's primary action
   // shares a line with the legend instead of taking a toolbar of its own.
   actions?: ReactNode;
@@ -1213,7 +1218,7 @@ export function EpicsTimeline({
     : 0;
 
   return (
-    <div className="space-y-2.5">
+    <div className={cn("space-y-2.5", fillHeight && "flex h-full min-h-0 flex-col")}>
       <div className="flex flex-wrap items-center gap-2">
         {levels.map((lvl) => {
           const on = visibleLevels[lvl];
@@ -1262,6 +1267,7 @@ export function EpicsTimeline({
         className={cn(
           "overflow-hidden border border-border bg-card",
           "rounded-2xl",
+          fillHeight && "flex min-h-0 flex-1 flex-col",
         )}
       >
         {/* Scrolls in both axes. Giving the box a vertical scrollport is also
@@ -1275,13 +1281,23 @@ export function EpicsTimeline({
         <div
           ref={scrollerRef}
           data-timeline-scroller
-          className="overflow-auto"
-          style={{ maxHeight: MAX_BODY_H, scrollSnapType: "x proximity" }}
+          className={cn("overflow-auto", fillHeight && "min-h-0 flex-1")}
+          style={{
+            maxHeight: fillHeight ? undefined : MAX_BODY_H,
+            scrollSnapType: "x proximity",
+          }}
           onScroll={handleScroll}
         >
           <div
             className="relative bg-os-well min-w-[640px]"
-            style={{ width: bounds ? bounds.width : "100%", height: gridHeight }}
+            style={{
+              width: bounds ? bounds.width : "100%",
+              height: gridHeight,
+              // Short project, tall screen: stretch the grid so the day
+              // columns, sprint dividers and today marker stay ruled the whole
+              // way down instead of stopping mid-card over bare background.
+              minHeight: fillHeight ? "100%" : undefined,
+            }}
           >
             {bounds && (
               <>
