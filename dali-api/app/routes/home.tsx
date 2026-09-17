@@ -12,6 +12,7 @@ import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { termWeekNumber } from "~/lib/terms.shared";
 import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -76,9 +77,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-/* The term week "now" falls in, for the hero's badge: week 0 starts on the
+/* The term week "now" falls in, for the hero's badge: week 1 starts on the
    current term's start date (days counted in the viewer's zone) and each week
-   is labelled with its first five days, e.g. "Week 0 Sep 15 – 19". Null
+   is labelled with its first five days, e.g. "Week 1 Sep 15 – 19". Null
    between terms, where the badge is dropped. */
 async function loadCurrentWeek(tz: string, request: Request) {
   const term = await currentTermStrict(request);
@@ -89,16 +90,15 @@ async function loadCurrentWeek(tz: string, request: Request) {
     term.startDate.getUTCDate(),
   );
   const today = getZonedYMD(new Date(), tz);
-  const days = (Date.UTC(today.year, today.month - 1, today.day) - start) / DAY_MS;
-  const index = Math.floor(days / 7);
-  const first = new Date(start + index * 7 * DAY_MS);
+  const number = termWeekNumber(Date.UTC(today.year, today.month - 1, today.day), start);
+  const first = new Date(start + (number - 1) * 7 * DAY_MS);
   const last = new Date(first.getTime() + 4 * DAY_MS);
   const month = (d: Date) => d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
   const dates =
     month(first) === month(last)
       ? `${month(first)} ${first.getUTCDate()} – ${last.getUTCDate()}`
       : `${month(first)} ${first.getUTCDate()} – ${month(last)} ${last.getUTCDate()}`;
-  return { index, dates };
+  return { index: number, dates };
 }
 
 const DAY_MS = 86_400_000;
@@ -116,8 +116,7 @@ export default function Home() {
   const { user, greeting, week, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
-  const fullName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email.split("@")[0];
+  const firstName = user.firstName || user.email.split("@")[0];
   const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
 
   return (
@@ -126,7 +125,7 @@ export default function Home() {
         weekBadge={week ? `Week ${week.index} ${week.dates}` : undefined}
         milestoneTitle="Lab Kickoff"
         greeting={greeting}
-        userName={fullName}
+        userName={firstName}
         search={<HomeSearch />}
         recentsHeading="Favorites + Recently Visited"
         // A brand-new account (nothing starred, nothing opened) gets no card
