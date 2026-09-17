@@ -6,6 +6,8 @@
 // too — a local startOfDay() shifts bars a day early for viewers west of
 // UTC while the labels stay put.
 
+import { termWeekNumber } from "~/lib/terms.shared";
+
 export const DAY = 86_400_000;
 
 /** UTC midnight (ms) of the UTC calendar day containing the instant. */
@@ -88,7 +90,7 @@ export function sprintBands(
     // the same Monday reads as a different sprint on two timelines whose ranges
     // start in different places.
     const label = term
-      ? `Sprint ${Math.floor((t - term.start) / stepMs) + 1}`
+      ? `Sprint ${termWeekNumber(t, term.start)}`
       : `Wk of ${fmtDay(new Date(t))}`;
     out.push({ key: t, end: Math.min(t + stepMs - DAY, max), label });
   }
