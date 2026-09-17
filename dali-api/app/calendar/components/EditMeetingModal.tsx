@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
 import { Clock, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
@@ -231,7 +232,11 @@ export function EditMeetingModal({
     }
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portaled to <body>: this can open from inside the calendar's event popover,
+  // whose positioned ancestors would otherwise trap the fixed overlay.
+  return createPortal(
     <Modal
       open
       onClose={onClose}
@@ -331,6 +336,7 @@ export function EditMeetingModal({
           </button>
         </ModalFooter>
       )}
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
