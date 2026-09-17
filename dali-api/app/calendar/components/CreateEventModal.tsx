@@ -26,7 +26,7 @@ import {
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import { weekWindow } from "~/calendar/lib/view-window";
+import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -211,7 +211,14 @@ export function CreateEventModal({
   const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
   // ── Week navigation for the left panel ───────────────────────────────────
-  const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
+  const weekStartForDate = (day: string) => weekStartIsoForDay(data.timezone, day);
+  // Opening on a dragged-out slot should show that slot's week, which isn't
+  // necessarily the week the calendar behind the modal was on (a month-view
+  // drag can land outside it).
+  const [weekStartIso, setWeekStartIso] = useState(() => {
+    const day = extractDate(initStart ?? "");
+    return day ? weekStartForDate(day) : data.weekStartIso;
+  });
   // Keep the week start on zoned midnight (like the loader's weekWindow) so the
   // availability fetch covers the whole local week. A bare YYYY-MM-DD from
   // shiftWeekParam parses as UTC midnight, which is hours off in US zones.
@@ -224,10 +231,25 @@ export function CreateEventModal({
   const goToThisWeek = () => setWeekStartIso(weekWindow(data.timezone).start.toISOString());
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
 
+  // Choosing the day to meet on is what moves the preview — otherwise picking a
+  // date in another week leaves you reading this week's availability while the
+  // meeting is somewhere else entirely. The pull is one-directional on purpose:
+  // the week arrows browse freely without rewriting the date, and picking a slot
+  // inside the week already on screen resolves to the same week, so neither can
+  // fight the other.
+  const pickDate = (day: string) => {
+    setDate(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
+  const pickAllDayStart = (day: string) => {
+    setDStart(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
+
   // ── Slot selected from the availability grid ─────────────────────────────
   const handleSelectRange = (s: string, e: string) => {
     // s and e are "YYYY-MM-DDTHH:mm" local strings from the grid
-    setDate(extractDate(s));
+    pickDate(extractDate(s));
     setStartTime(extractTime(s));
     setEndTime(extractTime(e));
   };
@@ -595,7 +617,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={dStart}
-                      onChange={setDStart}
+                      onChange={pickAllDayStart}
                       ariaLabel="Start date"
                       className="min-w-0 flex-1"
                     />
@@ -614,7 +636,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={date}
-                      onChange={(v) => setDate(v)}
+                      onChange={pickDate}
                       ariaLabel="Date"
                       className="min-w-[150px]"
                     />
@@ -766,7 +788,7 @@ export function CreateEventModal({
                   <DateField
                     mode="date"
                     value={date}
-                    onChange={(v) => setDate(v)}
+                    onChange={pickDate}
                     ariaLabel="Date"
                     className="min-w-[130px]"
                   />
