@@ -42,9 +42,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const { users, groups } = await loadParticipantOptions(request);
 
+  // Per-guest RSVP, from this meeting's invite notifications — shown as a dot on
+  // each chip in the editor's guest picker. Latest response per user wins.
+  const rsvpRows = await prisma.notification.findMany({
+    where: { scheduledMeetingId: params.id!, rsvp: { not: null } },
+    select: { recipientUserId: true, rsvp: true },
+    orderBy: { rsvpAt: "desc" },
+  });
+  const responsesByUserId: Record<string, "Accepted" | "Declined" | "Tentative"> = {};
+  for (const r of rsvpRows) {
+    if (r.rsvp && !(r.recipientUserId in responsesByUserId)) {
+      responsesByUserId[r.recipientUserId] = r.rsvp;
+    }
+  }
+
   return withCors(
     request,
     Response.json({
+      responsesByUserId,
       meeting: {
         id: meeting.id,
         title: meeting.title,
