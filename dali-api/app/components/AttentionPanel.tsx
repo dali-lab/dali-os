@@ -199,7 +199,7 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     "block bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2.5";
 
   const meta = t.dueAt ? (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground mt-1">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground mt-1">
       <CalendarClock className="w-3 h-3" />
       {formatDeadline(t.dueAt)}
     </span>
