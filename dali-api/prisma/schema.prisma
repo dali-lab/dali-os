@@ -59,6 +59,17 @@ model User {
   emailVerified Boolean  @default(false)
   name          String   @default("")
 
+  // ─── BetterAuth admin plugin (Phase 3 — impersonation) ────────────────────
+  // `role` exists only to satisfy the admin plugin's impersonate gate — the
+  // /admin/impersonate route JIT-sets it to "admin" for the acting admin;
+  // authorization otherwise stays in the role tables (AdminMembership et al.).
+  // The ban* columns are unused (we don't use the ban feature) but the plugin's
+  // session hook references user.banned, so they must exist.
+  role        String?
+  banned      Boolean?  @default(false)
+  banReason   String?
+  banExpires  DateTime?
+
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
 
@@ -1452,6 +1463,9 @@ model AuthSession {
   updatedAt DateTime @updatedAt
   ipAddress String?
   userAgent String?
+  // BetterAuth admin plugin: set to the impersonating admin's userId while an
+  // impersonation session is active (null for normal sessions).
+  impersonatedBy String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
