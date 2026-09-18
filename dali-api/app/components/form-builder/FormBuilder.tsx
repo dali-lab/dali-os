@@ -1,14 +1,41 @@
-import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
+import { useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
-import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye, Undo2, Redo2 } from 'lucide-react'
+import {
+  GripVertical,
+  Pencil,
+  Trash2,
+  Save,
+  Check,
+  Loader2,
+  Undo2,
+  Redo2,
+  Type,
+  AlignLeft,
+  SquareChevronDown,
+  ListChecks,
+  Star,
+  Github,
+  Figma,
+  HardDrive,
+  Paperclip,
+  Database,
+  SeparatorHorizontal,
+  type LucideIcon,
+} from 'lucide-react'
 import {
   DndContext,
+  DragOverlay,
   MouseSensor,
   TouchSensor,
   closestCenter,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
 } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -19,6 +46,62 @@ import { Checkbox } from '~/components/ui/Checkbox'
 import { isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
+import { SearchInput } from '~/components/ui/SearchInput'
+import { useOsChrome } from '~/components/os-chrome'
+
+type QuestionType = Question['type']
+
+// The component library: every type an author can drop onto the canvas, in
+// display order. Also the source of the edit form's type picker and the type
+// badge on each row. `info` isn't authorable here, so it's absent.
+const COMPONENT_GROUPS: {
+  title: string
+  items: { type: QuestionType; label: string; icon: LucideIcon }[]
+}[] = [
+  {
+    title: 'Text',
+    items: [
+      { type: 'text', label: 'Short answer', icon: Type },
+      { type: 'textarea', label: 'Long answer', icon: AlignLeft },
+    ],
+  },
+  {
+    title: 'Choices',
+    items: [
+      { type: 'select', label: 'Dropdown', icon: SquareChevronDown },
+      { type: 'checkbox', label: 'Checkboxes', icon: ListChecks },
+      { type: 'skills_rating', label: 'Skills rating', icon: Star },
+      { type: 'reference', label: 'Database list', icon: Database },
+    ],
+  },
+  {
+    title: 'Links & files',
+    items: [
+      { type: 'github_url', label: 'GitHub link', icon: Github },
+      { type: 'figma_url', label: 'Figma link', icon: Figma },
+      { type: 'drive_url', label: 'Drive link', icon: HardDrive },
+      { type: 'file', label: 'File upload', icon: Paperclip },
+    ],
+  },
+  {
+    title: 'Layout',
+    items: [{ type: 'pageBreak', label: 'Page break', icon: SeparatorHorizontal }],
+  },
+]
+
+const COMPONENTS = COMPONENT_GROUPS.flatMap((g) => g.items)
+const componentLabel = (type: QuestionType) =>
+  COMPONENTS.find((c) => c.type === type)?.label ?? type
+
+// The one pill shape every question/version badge wears, in two tones: the
+// accent for what needs attention (Required, Live), neutral for metadata.
+export const BADGE = {
+  accent: 'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-os-accent/15 text-os-accent',
+  neutral: 'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-os-container text-os-grey',
+}
+
+const PALETTE_PREFIX = 'palette:'
+const CANVAS_ID = 'canvas'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -120,18 +203,11 @@ export function buildQuestion(input: BuildQuestionInput): Question {
 interface FormBuilderTabProps {
   initialQuestions?: Question[]
   initialDescription?: unknown
+  // "Save" — persists the in-progress questions. Publishing (freezing them
+  // into a version) is the host's own control, read via snapshotRef.
   onSave?: (payload: { questions: Question[]; description: unknown }) => void
-  // Optional secondary "Save" (draft) action. When provided, a secondary
-  // button is rendered alongside the primary one; the primary then becomes the
-  // freeze-to-version action. Forms use this; hiring doesn't pass it.
-  onSaveDraft?: (payload: { questions: Question[]; description: unknown }) => void
-  // Label for the primary save button. Defaults to "Save Version" (hiring's
-  // wording); Forms passes "Save as version".
-  saveLabel?: string
-  // Live save feedback for the two save buttons. The owner drives this from its
-  // request state so the buttons can show "Saving…"/"Saved ✓" and disable while
-  // a save is in flight. Omitted by hiring (buttons stay plain).
-  saveStatus?: 'idle' | 'saving-draft' | 'saving-version' | 'saved-draft' | 'saved-version'
+  // Live feedback for Save, driven by the host's request state.
+  saveStatus?: 'idle' | 'saving' | 'saved'
   onCancel?: () => void
   isGeneralForm?: boolean
   // Offer the checkbox (multi-select) question type. Only the Forms feature
@@ -141,13 +217,9 @@ interface FormBuilderTabProps {
   // Terms offered for term-scoped reference sources (e.g. projects active in a
   // chosen term). Empty/omitted when no term picker is needed.
   terms?: { id: string; code: string }[]
-  // When provided, renders a "Preview" button that hands back the current
-  // in-progress questions/description (live builder state, not yet saved).
-  // Omitted by hiring's challenge builder — only Forms wires this up.
-  onPreview?: (payload: { questions: Question[]; description: unknown }) => void
-  // Preview resolution (reference-question option cards) is in flight —
-  // spins the Preview button and blocks re-clicks. Ignored if onPreview isn't.
-  previewPending?: boolean
+  // Filled with a reader of the live, unsaved builder state so the host's own
+  // controls (the page's Preview button) can act on in-progress edits.
+  snapshotRef?: MutableRefObject<(() => { questions: Question[]; description: unknown }) | null>
   // Collab substrate. When both are provided the question list is backed by a
   // Hocuspocus Y.Array room (`form:{formId}:draft`) instead of local state,
   // giving multiplayer + UndoManager support. Omitted by the hiring challenge
@@ -159,15 +231,12 @@ export function FormBuilderTab({
   initialQuestions = [],
   initialDescription,
   onSave,
-  onSaveDraft,
-  saveLabel = 'Save Version',
   saveStatus = 'idle',
   onCancel,
   isGeneralForm = false,
   allowCheckbox = false,
   terms = [],
-  onPreview,
-  previewPending = false,
+  snapshotRef,
   formId,
   collabToken,
 }: FormBuilderTabProps) {
@@ -233,6 +302,8 @@ export function FormBuilderTab({
   }
 
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
+  const { formTrigger } = useOsChrome()
+  if (snapshotRef) snapshotRef.current = () => ({ questions, description })
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
   const [optionsText, setOptionsText] = useState('')
@@ -249,9 +320,52 @@ export function FormBuilderTab({
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   )
+  // Where a dragged library component would land: before/after a row, or at
+  // the end of the canvas. Drives the insertion line while dragging.
+  const [dropTarget, setDropTarget] = useState<{ key: string; after: boolean } | 'end' | null>(null)
+  const draggingComponent = activeId?.startsWith(PALETTE_PREFIX)
+    ? (activeId.slice(PALETTE_PREFIX.length) as QuestionType)
+    : null
+  // Library drags hit-test by pointer (so the canvas itself is a target when
+  // it's empty or below the last row); row reorders ignore the canvas zone.
+  const collisionDetection: CollisionDetection = (args) => {
+    if (String(args.active.id).startsWith(PALETTE_PREFIX)) {
+      const hits = pointerWithin(args)
+      const row = hits.find((h) => h.id !== CANVAS_ID)
+      return row ? [row] : hits
+    }
+    return closestCenter({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((c) => c.id !== CANVAS_ID),
+    })
+  }
+  const resolveDropTarget = ({ active, over }: DragOverEvent | DragEndEvent) => {
+    if (!over) return null
+    if (over.id === CANVAS_ID) return 'end' as const
+    const top = active.rect.current.translated?.top ?? 0
+    return { key: String(over.id), after: top > over.rect.top + over.rect.height / 2 }
+  }
+  const handleDragOver = (event: DragOverEvent) => {
+    if (String(event.active.id).startsWith(PALETTE_PREFIX)) {
+      setDropTarget(resolveDropTarget(event))
+    }
+  }
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null)
+    setDropTarget(null)
     const { active, over } = event
+    if (String(active.id).startsWith(PALETTE_PREFIX)) {
+      const target = resolveDropTarget(event)
+      if (!target) return
+      const type = String(active.id).slice(PALETTE_PREFIX.length) as QuestionType
+      if (target === 'end') {
+        addComponent(type)
+        return
+      }
+      const idx = questions.findIndex((q) => q.key === target.key)
+      addComponent(type, idx === -1 ? undefined : idx + (target.after ? 1 : 0))
+      return
+    }
     if (!over || active.id === over.id) return
     const from = questions.findIndex((q) => q.key === active.id)
     const to = questions.findIndex((q) => q.key === over.id)
@@ -293,10 +407,6 @@ export function FormBuilderTab({
   // Page breaks are ordinary array items (so dnd reorder + delete already work)
   // but layout-only: edited inline via their own title/subtitle inputs rather
   // than the question edit buffer.
-  const handleAddPageBreak = () => {
-    const key = `q-${Date.now()}`
-    pushQuestion({ key, type: 'pageBreak', required: false, data: { label: '', description: '' } })
-  }
   const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
     setQuestions(
       questions.map((q) =>
@@ -339,19 +449,20 @@ export function FormBuilderTab({
     resetEditState()
   }
 
-  const handleAddQuestion = () => {
+  // Add a component from the library — appended, or inserted at `index` when
+  // dropped between rows. Questions open for inline editing straight away.
+  const addComponent = (type: QuestionType, index?: number) => {
     const key = `q-${Date.now()}`
-    const newQuestion = buildQuestion({
-      key,
-      type: 'text',
-      required: true,
-      label: '',
-      isGeneralForm,
-    })
-    // Append immediately and open it for inline editing — no staging step.
-    pushQuestion(newQuestion)
+    const item: Question =
+      type === 'pageBreak'
+        ? { key, type, required: false, data: { label: '', description: '' } }
+        : buildQuestion({ key, type, required: true, label: '', isGeneralForm })
+    const end = questions.length
+    pushQuestion(item)
+    if (index !== undefined && index < end) moveQuestion(end, index)
+    if (type === 'pageBreak') return
     setEditingKey(key)
-    setEditForm({ key, type: 'text', required: true, data: { label: '' } })
+    setEditForm({ key, type, required: true, data: { label: '' } })
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
@@ -360,11 +471,11 @@ export function FormBuilderTab({
   }
   const renderEditForm = () => {
     return (
-      <div className="bg-accent-coral/5 border border-accent-coral/30 rounded-lg p-5 space-y-4">
+      <div className="bg-os-accent/5 border border-os-accent/40 rounded-os-item p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Question Label <span className="text-red-500">*</span>
+              Question Label <span className="text-os-accent">*</span>
             </label>
             <input
               type="text"
@@ -378,7 +489,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
+              className="block w-full"
               placeholder="e.g. What is your major?"
             />
           </div>
@@ -395,21 +506,12 @@ export function FormBuilderTab({
                   type: v as any,
                 })
               }
-              options={[
-                { value: 'text', label: 'Short Text' },
-                { value: 'textarea', label: 'Long Text' },
-                { value: 'select', label: 'Dropdown Select' },
-                ...((allowCheckbox || editForm.type === 'checkbox')
-                  ? [{ value: 'checkbox', label: 'Checkboxes (multi-select)' }]
-                  : []),
-                { value: 'github_url', label: 'GitHub URL' },
-                { value: 'figma_url', label: 'Figma URL' },
-                { value: 'drive_url', label: 'Google Drive URL' },
-                { value: 'file', label: 'File Upload' },
-                { value: 'skills_rating', label: 'Skills Rating' },
-                { value: 'reference', label: 'Reference (from database)' },
-              ]}
-              buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              options={COMPONENTS.filter(
+                (c) =>
+                  c.type !== 'pageBreak' &&
+                  (c.type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'),
+              ).map((c) => ({ value: c.type, label: c.label }))}
+              buttonClassName={formTrigger}
             />
           </div>
 
@@ -460,7 +562,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
+              className="block w-full"
               placeholder="e.g. Keep it under 200 words."
             />
           </div>
@@ -479,7 +581,7 @@ export function FormBuilderTab({
                 disabled={!maxWordsEnabled}
                 value={maxWordsValue}
                 onChange={(e) => setMaxWordsValue(e.target.value)}
-                className="w-28 rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
+                className="w-28 disabled:opacity-50"
                 placeholder="e.g. 200"
               />
               <span className="text-xs text-muted-foreground">words</span>
@@ -495,7 +597,7 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
+                className="block w-full"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
             </div>
@@ -510,10 +612,9 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
+                className="block w-full"
                 placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
               />
-              <p className="text-xs text-muted-foreground mt-1">Applicants will rate each skill from 0-5.</p>
             </div>
           )}
 
@@ -535,10 +636,10 @@ export function FormBuilderTab({
                 }
                 placeholder="Select a source…"
                 options={referenceSourceChoices().map((s) => ({ value: s.key, label: s.label }))}
-                buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={formTrigger}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Choices are pulled live when the form is filled — e.g. projects
+                Choices are pulled live when the form is filled, e.g. projects
                 open for staffing this term.
               </p>
 
@@ -560,7 +661,7 @@ export function FormBuilderTab({
                     }
                     placeholder="Select a term…"
                     options={terms.map((t) => ({ value: t.id, label: t.code }))}
-                    buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                    buttonClassName={formTrigger}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Projects whose term set includes this term will be listed.
@@ -590,8 +691,8 @@ export function FormBuilderTab({
                     }
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                       acceptPresets.has(value)
-                        ? 'bg-accent-coral/15 text-accent-coral border-accent-coral/30'
-                        : 'bg-card text-foreground/80 border-border hover:border-accent-coral/50 hover:bg-muted/50'
+                        ? 'bg-os-accent/15 text-os-accent border-os-accent/30'
+                        : 'bg-os-well text-os-grey border-os-container hover:border-os-container-hi'
                     }`}
                   >
                     {label}
@@ -602,7 +703,7 @@ export function FormBuilderTab({
                 type="text"
                 value={acceptCustom}
                 onChange={(e) => setAcceptCustom(e.target.value)}
-                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
+                className="block w-full"
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
               <p className="text-xs text-muted-foreground mt-1">
@@ -618,14 +719,14 @@ export function FormBuilderTab({
               type="button"
               onClick={() => editForm.key && handleDelete(editForm.key)}
               aria-label="Remove question"
-              className="inline-flex items-center justify-center p-1.5 rounded-md text-red-600 hover:bg-red-50"
+              className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </Tooltip>
           <button
             onClick={handleDoneEditing}
-            className="px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
+            className="os-btn-primary os-btn-primary--sm"
           >
             Done
           </button>
@@ -633,293 +734,352 @@ export function FormBuilderTab({
       </div>
     )
   }
+  const busy = saveStatus === 'saving'
+  const insertionLine = <div className="h-0.5 rounded-full bg-os-accent" />
   return (
-    <div className="space-y-6">
-      <div>
-        <label className="block text-sm font-medium text-foreground/80 mb-1">
-          Description (Optional)
-        </label>
-        <p className="text-xs text-muted-foreground mb-2">
-          Shown to applicants and reviewers above the question list.
-        </p>
-        {/* Block JSON from here on: onChange hands back the BlockNote block
-            tree, and that's what drafts/versions persist. Callers pass
-            loader-normalized blocks as initialDescription. */}
-        <DocEditor
-          features="notes"
-          density="compact"
-          aiEnabled
-          initialContent={initialDescription ?? undefined}
-          onChange={setDescription}
-          placeholder="Describe this challenge for applicants…"
-          className="rounded-md border border-border bg-card py-2 focus-within:border-accent-coral/50"
-        />
-      </div>
-      <div className="space-y-2">
-        <DndContext
-          sensors={dragSensors}
-          collisionDetection={closestCenter}
-          onDragStart={(e) => setActiveId(String(e.active.id))}
-          onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveId(null)}
-        >
-          <SortableContext
-            items={questions.map((q) => q.key)}
-            strategy={verticalListSortingStrategy}
-          >
-            {questions.map((q, index) => (
-              <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
-                {(dragHandleProps, isDragging) => (
-                  <div className={`rounded-xl ${isDragging ? 'opacity-40' : ''}`}>
-                    {q.type === 'pageBreak' ? (
-                      <div
-                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
-                      >
-                        <div
-                          {...dragHandleProps}
-                          aria-label="Reorder page break"
-                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
-                        >
-                          <GripVertical className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            <span className="flex-1 border-t border-dashed border-border" />
-                            <span className="flex items-center gap-1">
-                              Page break
-                              <InfoTip content="Splits the form into multiple pages at this point. Layout only — not counted as a question and not included in responses." />
-                            </span>
-                            <span className="flex-1 border-t border-dashed border-border" />
-                          </div>
-                          <input
-                            type="text"
-                            value={q.data.label || ''}
-                            onChange={(e) => updatePageBreak(q.key, { label: e.target.value })}
-                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
-                            placeholder="Section title (optional)"
-                          />
-                          <input
-                            type="text"
-                            value={q.data.description || ''}
-                            onChange={(e) => updatePageBreak(q.key, { description: e.target.value })}
-                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
-                            placeholder="Subtitle (optional)"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleDelete(q.key)}
-                            aria-label="Remove page break"
-                            className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : editingKey === q.key ? (
-                      renderEditForm()
-                    ) : (
-                      <div
-                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
-                      >
-                        <div
-                          {...dragHandleProps}
-                          aria-label={`Reorder ${q.data.label || 'question'}`}
-                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
-                        >
-                          <GripVertical className="w-5 h-5" />
-                        </div>
+    <DndContext
+      sensors={dragSensors}
+      collisionDetection={collisionDetection}
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => {
+        setActiveId(null)
+        setDropTarget(null)
+      }}
+    >
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <ComponentLibrary allowCheckbox={allowCheckbox} onAdd={addComponent} />
 
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="text-sm font-medium text-muted-foreground">
-                              Q{questions.slice(0, index + 1).filter((qq) => !isLayoutOnly(qq.type)).length}
-                            </span>
-                            <h4 className="text-base font-medium text-foreground">
-                              {q.data.label}
-                            </h4>
-                            {q.required && (
-                              <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                                Required
-                              </span>
-                            )}
-                            {q.data.afterDomains && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-                                After Domains
-                              </span>
-                            )}
-                            {q.type === 'textarea' && q.data.maxWords !== undefined && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
-                                Max {q.data.maxWords} words
-                              </span>
-                            )}
-                            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
-                              {q.type}
-                            </span>
-                          </div>
-
-                          {q.data.description && (
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {q.data.description}
-                            </p>
-                          )}
-
-                          {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {q.data.options.map((opt) => (
-                                <span
-                                  key={opt}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border"
-                                >
-                                  {opt}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {q.type === 'file' && q.data.accept && (
-                            <p className="text-xs text-muted-foreground mt-1">Accepts: {q.data.accept}</p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleEdit(q)}
-                            className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-muted"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(q.key)}
-                            className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </SortableQuestionRow>
-            ))}
-          </SortableContext>
-        </DndContext>
-
-        <div className="flex gap-3">
-          <button
-            onClick={handleAddQuestion}
-            className="flex-1 py-4 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
-          >
-            <Plus className="w-5 h-5" />
-            Add Question
-          </button>
-          <Tooltip
-            content="A page break splits the form into multiple pages. It's a layout divider — not a question — so it doesn't appear in responses."
-            variant="rich"
-            placement="top"
-          >
-            <button
-              onClick={handleAddPageBreak}
-              className="py-4 px-5 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+        <CanvasDropZone>
+          {/* Block JSON from here on: onChange hands back the BlockNote block
+              tree, and that's what drafts/versions persist. Callers pass
+              loader-normalized blocks as initialDescription. */}
+          <DocEditor
+            features="notes"
+            density="compact"
+            aiEnabled
+            initialContent={initialDescription ?? undefined}
+            onChange={setDescription}
+            placeholder="Describe this form…"
+            className="rounded-os-item bg-os-well py-2"
+          />
+          <div className="space-y-2">
+            <SortableContext
+              items={questions.map((q) => q.key)}
+              strategy={verticalListSortingStrategy}
             >
-              <Plus className="w-5 h-5" />
-              Add Page Break
-            </button>
-          </Tooltip>
-        </div>
+              {questions.map((q, index) => (
+                <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
+                  {(dragHandleProps, isDragging) => (
+                    <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
+                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && !dropTarget.after && insertionLine}
+                      {q.type === 'pageBreak' ? (
+                        <div
+                          className={`flex items-start gap-4 p-4 rounded-os-item border border-dashed group transition-colors duration-150 ${activeId ? 'border-os-container' : 'border-os-container-hi'}`}
+                        >
+                          <div
+                            {...dragHandleProps}
+                            aria-label="Reorder page break"
+                            className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
+                          >
+                            <GripVertical className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              <span className="flex-1 border-t border-dashed border-os-container-hi" />
+                              <span className="flex items-center gap-1">
+                                Page break
+                                <InfoTip content="Splits the form into multiple pages at this point. Layout only. Not counted as a question or included in responses." />
+                              </span>
+                              <span className="flex-1 border-t border-dashed border-os-container-hi" />
+                            </div>
+                            <input
+                              type="text"
+                              value={q.data.label || ''}
+                              onChange={(e) => updatePageBreak(q.key, { label: e.target.value })}
+                              className="block w-full"
+                              placeholder="Section title (optional)"
+                            />
+                            <input
+                              type="text"
+                              value={q.data.description || ''}
+                              onChange={(e) => updatePageBreak(q.key, { description: e.target.value })}
+                              className="block w-full"
+                              placeholder="Subtitle (optional)"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleDelete(q.key)}
+                              aria-label="Remove page break"
+                              className="p-1.5 text-muted-foreground/70 hover:text-destructive rounded-md hover:bg-destructive/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : editingKey === q.key ? (
+                        renderEditForm()
+                      ) : (
+                        <div
+                          onClick={() => handleEdit(q)}
+                          className={`flex items-start gap-4 p-4 rounded-os-item border cursor-pointer group transition-colors duration-150 hover:border-os-container-hi ${activeId ? 'border-os-container/60' : 'border-os-container'}`}
+                        >
+                          <div
+                            {...dragHandleProps}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Reorder ${q.data.label || 'question'}`}
+                            className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
+                          >
+                            <GripVertical className="w-5 h-5" />
+                          </div>
+
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-1 flex-wrap">
+                              <span className="text-sm font-medium text-muted-foreground">
+                                Q{questions.slice(0, index + 1).filter((qq) => !isLayoutOnly(qq.type)).length}
+                              </span>
+                              <h4 className="text-base font-medium text-foreground">
+                                {q.data.label || <span className="text-muted-foreground">Untitled question</span>}
+                              </h4>
+                              {q.required && (
+                                <span className={BADGE.accent}>
+                                  Required
+                                </span>
+                              )}
+                              {q.data.afterDomains && (
+                                <span className={BADGE.neutral}>
+                                  After Domains
+                                </span>
+                              )}
+                              {q.type === 'textarea' && q.data.maxWords !== undefined && (
+                                <span className={BADGE.neutral}>
+                                  Max {q.data.maxWords} words
+                                </span>
+                              )}
+                              <span className={BADGE.neutral}>
+                                {componentLabel(q.type)}
+                              </span>
+                            </div>
+
+                            {q.data.description && (
+                              <p className="text-sm text-muted-foreground mb-2">
+                                {q.data.description}
+                              </p>
+                            )}
+
+                            {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {q.data.options.map((opt) => (
+                                  <span
+                                    key={opt}
+                                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
+                                  >
+                                    {opt}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {q.type === 'file' && q.data.accept && (
+                              <p className="text-xs text-muted-foreground mt-1">Accepts: {q.data.accept}</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEdit(q)
+                              }}
+                              aria-label="Edit question"
+                              className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-os-container"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDelete(q.key)
+                              }}
+                              aria-label="Remove question"
+                              className="p-1.5 text-muted-foreground/70 hover:text-destructive rounded-md hover:bg-destructive/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && dropTarget.after && insertionLine}
+                    </div>
+                  )}
+                </SortableQuestionRow>
+              ))}
+            </SortableContext>
+            {dropTarget === 'end' && questions.length > 0 && insertionLine}
+            {questions.length === 0 && (
+              <div
+                className={`py-12 rounded-os-item border-2 border-dashed text-center text-sm transition-colors ${
+                  dropTarget === 'end'
+                    ? 'border-os-accent text-os-accent bg-os-accent/5'
+                    : 'border-os-container text-os-grey'
+                }`}
+              >
+                Drag a component here, or click one to add it
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end items-center gap-3 pt-4 border-t border-os-container">
+            {/* Undo / Redo — only shown when backed by the collab room (formId +
+                collabToken), where the Y.UndoManager provides history. */}
+            {formId && collabToken && (
+              <div className="flex items-center gap-1 mr-auto">
+                <Tooltip content="Undo (⌘Z)">
+                  <button
+                    type="button"
+                    onClick={undo}
+                    disabled={!canUndo}
+                    aria-label="Undo"
+                    className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-os-container disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Undo2 className="w-4 h-4" />
+                  </button>
+                </Tooltip>
+                <Tooltip content="Redo (⌘⇧Z)">
+                  <button
+                    type="button"
+                    onClick={redo}
+                    disabled={!canRedo}
+                    aria-label="Redo"
+                    className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-os-container disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Redo2 className="w-4 h-4" />
+                  </button>
+                </Tooltip>
+              </div>
+            )}
+            {onCancel && (
+              <button onClick={onCancel} disabled={busy} className="os-btn-ghost disabled:opacity-50">
+                Cancel
+              </button>
+            )}
+            {onSave && (
+              <button
+                onClick={() => onSave({ questions, description })}
+                disabled={busy}
+                className="os-btn-primary disabled:opacity-60"
+              >
+                {saveStatus === 'saving' ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                ) : saveStatus === 'saved' ? (
+                  <><Check className="w-4 h-4" /> Saved</>
+                ) : (
+                  <><Save className="w-4 h-4" /> Save</>
+                )}
+              </button>
+            )}
+          </div>
+        </CanvasDropZone>
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        {(() => {
-          const busy = saveStatus === 'saving-draft' || saveStatus === 'saving-version'
-          return (
-            <>
-              {/* Undo / Redo — only shown when backed by the collab room (formId +
-                  collabToken), where the Y.UndoManager provides history. */}
-              {formId && collabToken && (
-                <div className="flex items-center gap-1 mr-auto">
-                  <Tooltip content="Undo (⌘Z)">
-                    <button
-                      type="button"
-                      onClick={undo}
-                      disabled={!canUndo}
-                      aria-label="Undo"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Undo2 className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
-                  <Tooltip content="Redo (⌘⇧Z)">
-                    <button
-                      type="button"
-                      onClick={redo}
-                      disabled={!canRedo}
-                      aria-label="Redo"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Redo2 className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-              {onPreview && (
-                <button
-                  type="button"
-                  onClick={() => onPreview({ questions, description })}
-                  disabled={previewPending}
-                  className={`inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 disabled:opacity-60 ${!(formId && collabToken) ? 'mr-auto' : ''}`}
-                >
-                  {previewPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Eye className="w-4 h-4 mr-2" />
-                  )}
-                  Preview
-                </button>
-              )}
-              {onCancel && (
-                <button
-                  onClick={onCancel}
-                  disabled={busy}
-                  className="px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              )}
-              {onSaveDraft && (
-                <button
-                  onClick={() => onSaveDraft({ questions, description })}
-                  disabled={busy}
-                  className="inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-lg text-foreground bg-card hover:bg-muted/50 shadow-sm disabled:opacity-60"
-                >
-                  {saveStatus === 'saving-draft' ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
-                  ) : saveStatus === 'saved-draft' ? (
-                    <><Check className="w-4 h-4 mr-2 text-green-600" /> Saved</>
-                  ) : (
-                    <><Save className="w-4 h-4 mr-2" /> Save</>
-                  )}
-                </button>
-              )}
-              {onSave && (
-                <button
-                  onClick={() => onSave({ questions, description })}
-                  disabled={busy}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm disabled:opacity-60"
-                >
-                  {saveStatus === 'saving-version' ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
-                  ) : saveStatus === 'saved-version' ? (
-                    <><Check className="w-4 h-4 mr-2" /> Saved</>
-                  ) : (
-                    <><Save className="w-4 h-4 mr-2" /> {saveLabel}</>
-                  )}
-                </button>
-              )}
-            </>
-          )
-        })()}
-      </div>
+      <DragOverlay dropAnimation={null}>
+        {draggingComponent && <ComponentTile type={draggingComponent} overlay />}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+// The left rail: a searchable library of components. Click a tile to append
+// it, or drag it onto the canvas to drop it at a position.
+function ComponentLibrary({
+  allowCheckbox,
+  onAdd,
+}: {
+  allowCheckbox: boolean
+  onAdd: (type: QuestionType) => void
+}) {
+  const { heading } = useOsChrome()
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const groups = COMPONENT_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter(
+      (c) =>
+        (c.type !== 'checkbox' || allowCheckbox) &&
+        (!q || c.label.toLowerCase().includes(q)),
+    ),
+  })).filter((g) => g.items.length > 0)
+
+  return (
+    <aside className="w-full lg:w-72 flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rounded-os-card bg-os-card p-4 space-y-5">
+      <SearchInput
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search components"
+        aria-label="Search components"
+        size="sm"
+      />
+      {groups.map((g) => (
+        <div key={g.title} className="space-y-2">
+          <span className={heading}>{g.title}</span>
+          <div className="grid grid-cols-3 lg:grid-cols-2 gap-2">
+            {g.items.map((c) => (
+              <ComponentTile key={c.type} type={c.type} onAdd={onAdd} />
+            ))}
+          </div>
+        </div>
+      ))}
+      {groups.length === 0 && (
+        <p className="text-sm text-os-grey text-center py-4">No matching components.</p>
+      )}
+    </aside>
+  )
+}
+
+function ComponentTile({
+  type,
+  onAdd,
+  overlay = false,
+}: {
+  type: QuestionType
+  onAdd?: (type: QuestionType) => void
+  overlay?: boolean
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${PALETTE_PREFIX}${type}`,
+    disabled: overlay,
+  })
+  const item = COMPONENTS.find((c) => c.type === type)!
+  const Icon = item.icon
+  return (
+    <button
+      type="button"
+      ref={overlay ? undefined : setNodeRef}
+      {...(overlay ? {} : { ...attributes, ...listeners })}
+      onClick={() => onAdd?.(type)}
+      className={`flex flex-col items-center justify-center gap-2 px-2 py-3 rounded-os-item border text-center text-xs font-medium text-foreground transition-colors touch-none ${
+        overlay
+          ? 'bg-os-card border-os-accent shadow-[0_12px_32px_var(--color-os-shadow)] cursor-grabbing'
+          : `bg-os-well border-os-container hover:border-os-accent/60 hover:bg-os-accent/5 cursor-grab ${isDragging ? 'opacity-40' : ''}`
+      }`}
+    >
+      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-os-accent/15 text-os-accent">
+        <Icon className="w-4 h-4" />
+      </span>
+      {item.label}
+    </button>
+  )
+}
+
+// The canvas surface. Also a drop target, so a library component dropped
+// below the last row (or onto an empty form) lands at the end.
+function CanvasDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef } = useDroppable({ id: CANVAS_ID })
+  return (
+    <div ref={setNodeRef} className="os-form flex-1 min-w-0 w-full rounded-os-card bg-os-card p-6 space-y-4">
+      {children}
     </div>
   )
 }

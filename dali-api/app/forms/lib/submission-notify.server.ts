@@ -43,7 +43,7 @@ export async function notifyFormSubmission(args: {
       message: {
         title: `New response: ${form.name}`,
         body: `From ${name || "Anonymous"}`,
-        link: `/forms/responses/${form.id}`,
+        link: `/forms/edit/${form.id}?view=results`,
       },
       recipients: [{ userId: form.createdById }],
     });

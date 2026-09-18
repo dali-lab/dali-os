@@ -43,7 +43,7 @@ describe("notifyFormSubmission", () => {
       message: {
         title: "New response: Lab Survey",
         body: "From Ada Lovelace",
-        link: "/forms/responses/form-1",
+        link: "/forms/edit/form-1?view=results",
       },
       recipients: [{ userId: "creator-1" }],
     });
