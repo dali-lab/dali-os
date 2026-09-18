@@ -761,21 +761,23 @@ export function LayoutOS({
                   closeBellPanel()
                   openInWorkspace({ url, label })
                 }}
+                headerAction={
+                  // Close after opening, in the same handler. Closing on
+                  // capture flushed the state update before the bubble phase,
+                  // unmounting this button so its navigation never ran.
+                  <button
+                    type="button"
+                    {...seeAllProps}
+                    onClick={(e) => {
+                      seeAllProps.onClick(e)
+                      closeBellPanel()
+                    }}
+                    className="shrink-0 text-xs font-medium text-os-grey hover:text-foreground"
+                  >
+                    See all →
+                  </button>
+                }
               />
-              {/* Close after opening, in the same handler. Closing on
-                  capture flushed the state update before the bubble phase,
-                  unmounting this button so its navigation never ran. */}
-              <button
-                type="button"
-                {...seeAllProps}
-                onClick={(e) => {
-                  seeAllProps.onClick(e)
-                  closeBellPanel()
-                }}
-                className={cn(osMenuItemClass, 'text-os-grey')}
-              >
-                <span className="truncate">See all →</span>
-              </button>
             </div>
           )}
         </div>
