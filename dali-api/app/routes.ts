@@ -558,6 +558,7 @@ export default [
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
+  route("api/page-templates/:id/blocks", "routes/api.page-templates.$id.blocks.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
