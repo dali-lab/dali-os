@@ -154,6 +154,12 @@ export const auth = betterAuth({
     // deprovisioned user would continue to pass session checks until the cookie
     // expires) and also bypasses the per-request membership check the MCP
     // provider relies on (Phase 4 / §7 of the spec).
+    additionalFields: {
+      // Phase 4: populated by mintBetterAuthSession when issuing an MCP token.
+      // Null for normal browser sessions. `input: false` prevents clients from
+      // setting grantId via the BetterAuth session API.
+      grantId: { type: "string", required: false, input: false },
+    },
   },
 
   trustedOrigins: buildTrustedOrigins(),
