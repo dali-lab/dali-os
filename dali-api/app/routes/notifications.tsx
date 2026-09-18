@@ -9,6 +9,8 @@ import {
   X,
 } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { IconButton } from "~/components/ui/IconButton";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -170,7 +172,6 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
           key={t.id}
           className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3"
         >
-          <ListTodo className="w-4 h-4 mt-0.5 text-accent-coral flex-shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground truncate">
               {t.title}
@@ -181,51 +182,32 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
               </p>
             )}
             {t.source === "meeting" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <RsvpButtons notificationId={t.id} />
-                {t.link && (
-                  <button
-                    type="button"
-                    onClick={() => openLink(t.link!, t.title)}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground mt-2"
-                  >
-                    Open calendar <ExternalLink className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+              <RsvpButtons notificationId={t.id} />
             ) : null}
           </div>
-          {t.source !== "meeting" && (
-            <div className="flex flex-shrink-0 items-center gap-3">
-              {t.link && (
-                <button
-                  type="button"
-                  onClick={() => openLink(t.link!, t.title)}
-                  className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
-                >
-                  Open <ExternalLink className="w-3 h-3" />
-                </button>
-              )}
-              {!t.hasAction && (
-                <button
-                  type="button"
-                  onClick={() => void markRead(t.id)}
-                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                >
-                  <Check className="w-3 h-3" /> Mark as read
-                </button>
-              )}
-              {t.formTodo && (
-                <button
-                  type="button"
-                  onClick={() => void dismiss(t.id)}
-                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-3 h-3" /> Dismiss
-                </button>
-              )}
-            </div>
-          )}
+          <div className="flex flex-shrink-0 items-center gap-1 -mr-1.5 -mt-1">
+            {t.link && (
+              <IconButton
+                label={t.source === "meeting" ? "Open calendar" : "Open"}
+                icon={ExternalLink}
+                onClick={() => openLink(t.link!, t.title)}
+              />
+            )}
+            {t.source !== "meeting" && !t.hasAction && (
+              <IconButton
+                label="Mark as read"
+                icon={Check}
+                onClick={() => void markRead(t.id)}
+              />
+            )}
+            {t.source !== "meeting" && t.formTodo && (
+              <IconButton
+                label="Dismiss"
+                icon={X}
+                onClick={() => void dismiss(t.id)}
+              />
+            )}
+          </div>
         </li>
       ))}
     </ul>
@@ -346,29 +328,20 @@ function HistoryTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setStatus(t.key)}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                status === t.key
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <SegmentedTabButtons
+          label="Status"
+          items={tabs.map((t) => ({
+            label: t.label,
+            active: status === t.key,
+            onClick: () => setStatus(t.key),
+          }))}
+        />
         <SearchInput
-          size="sm"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search notifications…"
-          containerClassName="flex-1 min-w-[180px]"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
       </div>
 
@@ -408,29 +381,24 @@ function HistoryTab({
                       </p>
                       {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
                     </div>
-                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <div className="flex flex-shrink-0 items-center gap-1 -mr-1.5 -mt-1">
                       {/* RSVP-able notifications (meeting invites) already
                           have inline RSVP buttons, so the extra "Open calendar"
                           link is redundant — it just dumps you on the calendar.
                           Keep the link only for non-RSVP notifications. */}
                       {n.link && !n.canRsvp && (
-                        <button
-                          type="button"
+                        <IconButton
+                          label={n.state === "Submitted" ? "View" : "Open"}
+                          icon={ExternalLink}
                           onClick={() => openLink(n.link!, n.title)}
-                          className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
-                        >
-                          {n.state === "Submitted" ? "View" : "Open"}{" "}
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
+                        />
                       )}
                       {n.clearedAt && (
-                        <button
-                          type="button"
+                        <IconButton
+                          label="Mark unread"
+                          icon={RotateCcw}
                           onClick={() => void markUnread(n.id)}
-                          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                        >
-                          <RotateCcw className="w-3 h-3" /> Mark unread
-                        </button>
+                        />
                       )}
                     </div>
                   </li>

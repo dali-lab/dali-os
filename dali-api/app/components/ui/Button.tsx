@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "~/lib/cn";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "xs" | "sm" | "md";
 
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
@@ -19,6 +19,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
+  xs: "px-2.5 py-1 text-xs",
   sm: "px-3 py-1.5 text-xs",
   md: "px-4 py-2 text-sm",
 };
