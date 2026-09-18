@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
+import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
@@ -559,6 +560,21 @@ function resolveWorkspaceId(items: DriveItem[], folderId: string | null): string
   return null;
 }
 
+// Education materials are a two-level tree (createMaterialPage): folders sit
+// only at an offering's top level and hold documents, never other folders.
+// Returns why the Education drive would refuse this create, or null if allowed.
+function educationCreateBlock(
+  items: DriveItem[],
+  folderId: string | null,
+  pageKind: "FreeForm" | "Folder",
+): string | null {
+  if (!resolveWorkspaceId(items, folderId)) return "Open an offering first";
+  if (pageKind === "Folder" && items.find((it) => it.id === folderId)?.parentFolderId !== null) {
+    return "Folders can't go inside folders";
+  }
+  return null;
+}
+
 function makeScopeActions({
   scope,
   currentFolderId,
@@ -884,6 +900,24 @@ function makeScopeActions({
 // The New ▾ button in the header. Creates into the current scope + folder via
 // the scope's action factory; Lab adds form/agreement/template extras. Hidden
 // at the Drive root (you pick a drive first).
+// Disabled menu items can't show a tooltip, so the reason renders inline.
+function CreateLabel({
+  testId,
+  blockedReason,
+  children,
+}: {
+  testId: string;
+  blockedReason: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <span data-testid={testId} className={blockedReason ? "flex flex-col opacity-60" : undefined}>
+      {children}
+      {blockedReason && <span className="text-xs text-muted-foreground">{blockedReason}</span>}
+    </span>
+  );
+}
+
 function NewMenu({
   scope,
   actions,
@@ -907,6 +941,9 @@ function NewMenu({
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
   const toast = useToast();
+  const isEducation = scopeKindOf(scope.id) === "education-group";
+  const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
+  const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
 
   // Create a form into the current Drive folder, then navigate to its editor.
   // Prompts for a name first (like New document/folder).
@@ -975,11 +1012,23 @@ function NewMenu({
         </button>
       }
     >
-      <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void actions.createDoc()}>
-        <span data-testid={`drive-new-doc-${scope.id}`}>New document</span>
+      <Menu.Item
+        icon={<FileText className="w-3.5 h-3.5" />}
+        disabled={docBlock !== null}
+        onSelect={() => void actions.createDoc()}
+      >
+        <CreateLabel testId={`drive-new-doc-${scope.id}`} blockedReason={docBlock}>
+          New document
+        </CreateLabel>
       </Menu.Item>
-      <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
-        <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
+      <Menu.Item
+        icon={<FolderOpen className="w-3.5 h-3.5" />}
+        disabled={folderBlock !== null}
+        onSelect={() => void actions.createFolder()}
+      >
+        <CreateLabel testId={`drive-new-folder-${scope.id}`} blockedReason={folderBlock}>
+          New folder
+        </CreateLabel>
       </Menu.Item>
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
