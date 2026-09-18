@@ -9,6 +9,8 @@ import { parseJson } from "~/lib/validate";
 import {
   FOLDER_SLOTS,
   CORE_PROCESS_ID,
+  LAB_PROCESS_ID,
+  CERTIFICATE_TEMPLATES_PROCESS_ID,
   listBindings,
   setBinding,
   ensureProcessFolder,
@@ -26,7 +28,7 @@ import {
 // section of a project / offering / cycle / Core settings surface (see
 // app/lib/bindings.server.ts). Authorization is per process type.
 
-const PROCESS_TYPES = ["Project", "EducationOffering", "HiringCycle", "Core"] as const;
+const PROCESS_TYPES = ["Project", "EducationOffering", "HiringCycle", "Core", "Lab", "CertificateTemplates"] as const;
 
 // Can `userId` manage the folder bindings of this process? Mirrors each area's
 // existing "manage settings" gate; Core role is a superset everywhere.
@@ -44,7 +46,11 @@ async function canManageProcess(
       return isOfferingManager(userId, processId);
     case "HiringCycle":
     case "Core":
-      // Hiring + Core governance bindings are Core-only (Core check above).
+    case "Lab":
+    case "CertificateTemplates":
+      // Hiring + Core governance bindings are Core-only (Core check above), and
+      // so is repointing the Lab drive's shared folders and the certificate
+      // backgrounds — deciding where auto-filing lands is a Core decision.
       return false;
   }
 }
@@ -61,12 +67,18 @@ function candidateWhere(processType: ProcessType, processId: string) {
       return { ...base, workspaceType: "EducationOffering" as const, workspaceId: processId };
     case "HiringCycle":
     case "Core":
+    case "Lab":
+    case "CertificateTemplates":
       return { ...base, workspaceType: "Lab" as const, workspaceId: null };
   }
 }
 
+// The singleton process types carry a constant id rather than a real row's.
 function normalizeProcessId(processType: ProcessType, processId: string): string {
-  return processType === "Core" ? CORE_PROCESS_ID : processId;
+  if (processType === "Core") return CORE_PROCESS_ID;
+  if (processType === "Lab") return LAB_PROCESS_ID;
+  if (processType === "CertificateTemplates") return CERTIFICATE_TEMPLATES_PROCESS_ID;
+  return processId;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

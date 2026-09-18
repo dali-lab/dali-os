@@ -97,3 +97,36 @@ export function daliTermCodeFromDartmouth(oracle: string): string {
   const season = DARTMOUTH_MONTH_SEASON[month];
   return season ? `${yy}${season}` : "";
 }
+
+// A "term week" is a fixed 7-day block anchored on the term's start date — the
+// start date itself falls in Week 1 (NOT Monday-aligned, unlike the mentorship
+// ISO-week grid). The home hero labels these blocks "Week N"; the project board
+// labels the very same blocks "Sprint N". Both call this so the numbering — and
+// its 1-indexing — is defined once. Callers that also need to position a block
+// (its first day) derive the 0-based offset as `termWeekNumber(...) - 1`.
+// Inputs are UTC-midnight day timestamps (e.g. localTodayUtcDay(), or Date.UTC
+// of a resolved Y-M-D); both must share that convention or the block edges skew.
+const TERM_WEEK_MS = 7 * 86_400_000;
+
+export function termWeekNumber(dayUtcMs: number, termStartUtcMs: number): number {
+  return Math.floor((dayUtcMs - termStartUtcMs) / TERM_WEEK_MS) + 1;
+}
+
+// The Dartmouth break/interim leading INTO a term of the given season — how the
+// mentorship hub names "now" when the lab is between terms. Written to read
+// mid-sentence ("It's currently Winterim." / "It's currently spring break.").
+// Keyed by the upcoming term's season because that's the break's destination:
+// the long December gap before Winter is Winterim, the March gap before Spring
+// is spring break, and so on.
+export function interimLabel(upcomingSeason: Season): string {
+  switch (upcomingSeason) {
+    case "W":
+      return "Winterim";
+    case "S":
+      return "spring break";
+    case "X":
+      return "summer interim";
+    case "F":
+      return "fall interim";
+  }
+}

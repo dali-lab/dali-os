@@ -10,7 +10,7 @@ import { scavengerHuntClient } from "./scavenger-hunt";
 export type OverlayProps = {
   activityId: string;
   name: string;
-  overlay: unknown; // the server's route-filtered payload
+  overlay: unknown; // the server's safe-to-send payload for this path
 };
 
 export type SurfaceProps = {
@@ -24,7 +24,10 @@ export type SurfaceProps = {
   results: unknown;
   /** Endpoint the surface's forms post to (the /api/activities/:id action). */
   submitAction: string;
-  /** Called after a successful mutation so the host modal reloads its data. */
+  /**
+   * Called after a successful mutation so the host modal reloads its data.
+   * Stable across renders, so a Surface may list it in effect deps.
+   */
   onChanged?: () => void;
 };
 
@@ -35,7 +38,8 @@ export type AdminEditorProps = {
 
 export type MechanicClient = {
   kind: string;
-  Overlay: ComponentType<OverlayProps>;
+  /** Omitted by mechanics with nothing to render on the page itself. */
+  Overlay?: ComponentType<OverlayProps>;
   Surface: ComponentType<SurfaceProps>;
   AdminEditor: ComponentType<AdminEditorProps>;
   defaultConfig: () => unknown;

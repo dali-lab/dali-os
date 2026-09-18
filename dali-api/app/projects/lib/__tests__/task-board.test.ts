@@ -5,6 +5,7 @@ import {
   moveTaskInBoard,
   nextPositionInColumn,
   resolveTermIdForDate,
+  isCarriedOverTask,
   termIdsInRange,
   currentSprintBand,
   defaultSprintScope,
@@ -159,6 +160,51 @@ describe("resolveTermIdForDate", () => {
 
   it("treats the endDate boundary as still in-term", () => {
     expect(resolveTermIdForDate(TERMS, TERMS[0].endDate)).toBe("spring");
+  });
+});
+
+describe("isCarriedOverTask", () => {
+  const dated = (
+    over: Partial<Pick<TaskCardModel, "status" | "startsAt" | "dueAt">>,
+  ): TaskCardModel => ({ ...task("t", "Todo", 0), ...over });
+  // The current sprint band starts here; anything unfinished before it carries.
+  const BOUNDARY = new Date("2026-10-15T00:00:00Z").getTime();
+
+  it("rolls unfinished past-term work forward (a past term is just an earlier cycle)", () => {
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
+    ).toBe(true);
+  });
+
+  it("also rolls forward work overdue from an earlier sprint this term (one rule, every zoom level)", () => {
+    expect(
+      isCarriedOverTask(dated({ dueAt: "2026-10-01T00:00:00Z" }), BOUNDARY),
+    ).toBe(true);
+  });
+
+  it("falls back to startsAt when dueAt is null", () => {
+    expect(
+      isCarriedOverTask(dated({ startsAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
+    ).toBe(true);
+  });
+
+  it("leaves Done and Cancelled work where it happened", () => {
+    expect(
+      isCarriedOverTask(dated({ status: "Done", dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
+    ).toBe(false);
+    expect(
+      isCarriedOverTask(dated({ status: "Cancelled", dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
+    ).toBe(false);
+  });
+
+  it("ignores work dated on or after the boundary (current or future cycle)", () => {
+    expect(isCarriedOverTask(dated({ dueAt: "2026-10-15T00:00:00Z" }), BOUNDARY)).toBe(false);
+    expect(isCarriedOverTask(dated({ dueAt: "2026-10-20T00:00:00Z" }), BOUNDARY)).toBe(false);
+  });
+
+  it("returns false for undated work and a null boundary (no current term/sprint)", () => {
+    expect(isCarriedOverTask(dated({}), BOUNDARY)).toBe(false);
+    expect(isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), null)).toBe(false);
   });
 });
 

@@ -1,11 +1,12 @@
-// Scavenger-hunt mechanic — client half (specs/activities.md §8): the on-page
-// clue Overlay, the Surface (submit + progress + leaderboard, shown in the
-// shell's activity modal), and the admin config editor (the code list).
+// Scavenger-hunt mechanic — client half (specs/activities.md §8): the Surface
+// (submit + progress + leaderboard, shown in the shell's activity modal) and
+// the admin config editor (the code list). Codes are submitted from the modal,
+// which is reachable from any page, so the hunt renders no on-page overlay.
 // Client-safe; no server imports.
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useFetcher } from "react-router";
-import { CheckCircle2, ExternalLink, Lightbulb, Lock, Plus, Search, Trash2, Trophy } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Lightbulb, Lock, Plus, Trash2, Trophy, Users } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { buttonClasses } from "~/components/ui/Button";
 import { DEFAULT_HINT_POLICY } from "~/lib/activities";
@@ -16,18 +17,13 @@ import type {
   HuntHintPolicy,
   HuntLeaderboard,
 } from "~/lib/activities";
-import type {
-  AdminEditorProps,
-  MechanicClient,
-  OverlayProps,
-  SurfaceProps,
-} from "./registry";
+import type { AdminEditorProps, MechanicClient, SurfaceProps } from "./registry";
 
-type OverlayData = { codes: { id: string; value: string; label: string }[] } | null;
-
-type HuntHint = {
+type HuntClue = {
   id: string;
-  label: string;
+  label: string; // never the code value itself
+  found: boolean; // this member (or, in team mode, their team) has entered it
+  foundByUserId: string | null; // team mode: the partner who entered it
   hint: string | null; // present when the policy allows showing it now
   cost: number | null; // points mode: cost to reveal (not yet revealed)
   unlocksAt: number | null; // delay mode: epoch ms until it unlocks
@@ -40,35 +36,27 @@ type HuntProgress = {
   foundCodeIds: string[];
   instructionsUrl: string | null;
   hintMode: HuntHintMode;
-  hints: HuntHint[];
+  clues: HuntClue[];
+  team: { name: string; memberIds: string[] } | null;
+  teamless: boolean; // team activity, member not paired up yet
 };
 
-type HuntResultRow = { userId: string; points: number; found: number; lastAt: number };
-type HuntResults = { visibility: HuntLeaderboard; total: number; rows: HuntResultRow[] } | null;
-
-// ─── Overlay: the codes hidden on the current route ──────────────────────────
-
-function Overlay({ overlay }: OverlayProps) {
-  const data = overlay as OverlayData;
-  if (!data || !data.codes.length) return null;
-  return (
-    <div className="fixed bottom-4 left-4 z-40 flex max-w-[18rem] flex-col gap-2">
-      {data.codes.map((c) => (
-        <div
-          key={c.id}
-          className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur"
-          title={c.label || "You found a clue"}
-        >
-          <Search className="h-3.5 w-3.5 shrink-0 text-accent-coral" />
-          <span className="text-muted-foreground">
-            {c.label ? `${c.label}:` : "Clue:"}
-          </span>
-          <code className="truncate font-semibold text-foreground">{c.value}</code>
-        </div>
-      ))}
-    </div>
-  );
-}
+// One competitor: a member (individual scoring) or a team (team scoring).
+type HuntResultRow = {
+  id: string;
+  userId: string | null;
+  teamName: string | null;
+  memberIds: string[];
+  points: number;
+  found: number;
+  lastAt: number;
+};
+type HuntResults = {
+  visibility: HuntLeaderboard;
+  total: number;
+  mode: "individual" | "team";
+  rows: HuntResultRow[];
+} | null;
 
 // ─── Surface: the hunt's submit + progress + leaderboard (in the modal) ──────
 
@@ -100,38 +88,6 @@ function Surface({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Progress */}
-      <section className="rounded-xl border border-border bg-card p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Your progress</h2>
-          {p.complete ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent-coral/10 px-2.5 py-1 text-xs font-medium text-accent-coral">
-              <CheckCircle2 className="h-3.5 w-3.5" /> All found!
-            </span>
-          ) : (
-            <span className="text-sm text-muted-foreground">
-              {p.found} of {p.total} found
-            </span>
-          )}
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-accent-coral transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        {p.instructionsUrl && (
-          <a
-            href={p.instructionsUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-accent-coral hover:underline"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> Open the instructions
-          </a>
-        )}
-      </section>
-
       {/* Submit a code */}
       <section className="rounded-xl border border-border bg-card p-5">
         <h2 className="mb-1 text-sm font-semibold text-foreground">Enter a code</h2>
@@ -156,48 +112,119 @@ function Surface({
             {busy ? "Checking…" : "Submit"}
           </button>
         </fetcher.Form>
-        {fetcher.data?.message && (
-          <p
-            className={cn(
-              "mt-2 text-sm",
-              fetcher.data.ok ? "text-accent-coral" : "text-destructive",
-            )}
-          >
-            {fetcher.data.message}
-          </p>
-        )}
+        {fetcher.data?.message &&
+          (fetcher.data.ok ? (
+            <p className="mt-3 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              {fetcher.data.message}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-destructive">{fetcher.data.message}</p>
+          ))}
       </section>
 
-      {/* Hints (only when the hunt has any) */}
-      <HintList hints={p.hints} submitAction={submitAction} onChanged={onChanged} active={active} />
+      {/* Progress */}
+      <section className="rounded-xl border border-border bg-card p-5">
+        {p.team && (
+          <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            <Users className="h-3.5 w-3.5 shrink-0 text-accent-coral" />
+            <span>
+              You're hunting with{" "}
+              <span className="font-medium text-foreground">{p.team.name}</span>
+            </span>
+            <span className="text-muted-foreground">
+              ·{" "}
+              {p.team.memberIds
+                .filter((id) => id !== currentUserId)
+                .map((id) => nameByUserId[id] ?? "a teammate")
+                .join(", ") || "just you, for now"}
+            </span>
+          </p>
+        )}
+        {p.teamless && (
+          <p className="mb-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            This hunt is scored by team and you're not on one yet — ask Core to
+            pair you up. Codes you enter now still count once you are.
+          </p>
+        )}
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">
+            {p.team ? "Your team's progress" : "Your progress"}
+          </h2>
+          {p.complete ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent-coral/10 px-2.5 py-1 text-xs font-medium text-accent-coral">
+              <CheckCircle2 className="h-3.5 w-3.5" /> All found!
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {p.found} of {p.total} found
+            </span>
+          )}
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-accent-coral transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <ClueList
+          clues={p.clues}
+          nameByUserId={nameByUserId}
+          submitAction={submitAction}
+          onChanged={onChanged}
+          active={active}
+        />
+        {p.instructionsUrl && (
+          <a
+            href={p.instructionsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-accent-coral hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Open the instructions
+          </a>
+        )}
+      </section>
 
       {/* Leaderboard */}
       {board && board.rows.length > 0 && (
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Trophy className="h-4 w-4 text-accent-coral" /> Leaderboard
+            <Trophy className="h-4 w-4 text-accent-coral" />{" "}
+            {board.mode === "team" ? "Team leaderboard" : "Leaderboard"}
           </h2>
           <ol className="flex flex-col divide-y divide-border">
             {board.rows.map((r, i) => {
-              const isMe = r.userId === currentUserId;
+              const isMe = r.memberIds.includes(currentUserId);
+              const roster =
+                r.teamName === null
+                  ? null
+                  : r.memberIds.map((id) => nameByUserId[id] ?? "Member").join(", ");
               return (
                 <li
-                  key={r.userId}
+                  key={r.id}
                   className={cn(
-                    "flex items-center justify-between py-2 text-sm",
+                    "flex items-start justify-between gap-3 py-2 text-sm",
                     isMe && "font-semibold text-accent-coral",
                   )}
                 >
-                  <span className="flex items-center gap-3">
-                    <span className="w-5 text-right tabular-nums text-muted-foreground">
+                  <span className="flex min-w-0 items-start gap-3">
+                    <span className="w-5 shrink-0 text-right tabular-nums text-muted-foreground">
                       {i + 1}
                     </span>
-                    <span>
-                      {nameByUserId[r.userId] ?? "Member"}
-                      {isMe ? " (you)" : ""}
+                    <span className="min-w-0">
+                      <span className="block break-words">
+                        {r.teamName ?? nameByUserId[r.userId ?? ""] ?? "Member"}
+                        {isMe ? " (you)" : ""}
+                      </span>
+                      {roster && (
+                        <span className="block break-words text-xs font-normal text-muted-foreground">
+                          {roster}
+                        </span>
+                      )}
                     </span>
                   </span>
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
                     {r.found}/{board.total} · {r.points} pts
                   </span>
                 </li>
@@ -210,7 +237,9 @@ function Surface({
   );
 }
 
-// ─── Hints: per-clue nudges, revealed per the activity's hint policy ─────────
+// ─── Clue checklist: every clue, struck through once its code is entered ─────
+// Shows labels and (per the hint policy) hints — never the code values, which
+// members have to find out in the world.
 
 function formatUnlock(ms: number): string {
   return new Date(ms).toLocaleString([], {
@@ -221,45 +250,45 @@ function formatUnlock(ms: number): string {
   });
 }
 
-function HintList({
-  hints,
+function ClueList({
+  clues,
+  nameByUserId,
   submitAction,
   onChanged,
   active,
 }: {
-  hints: HuntHint[];
+  clues: HuntClue[];
+  nameByUserId: Record<string, string>;
   submitAction: string;
   onChanged?: () => void;
   active: boolean;
 }) {
-  if (!hints.length) return null;
+  if (!clues.length) return null;
   return (
-    <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-        <Lightbulb className="h-4 w-4 text-accent-coral" /> Hints
-      </h2>
-      <ul className="flex flex-col divide-y divide-border">
-        {hints.map((h) => (
-          <HintRow
-            key={h.id}
-            hint={h}
-            submitAction={submitAction}
-            onChanged={onChanged}
-            active={active}
-          />
-        ))}
-      </ul>
-    </section>
+    <ul className="mt-4 flex flex-col divide-y divide-border border-t border-border">
+      {clues.map((c) => (
+        <ClueRow
+          key={c.id}
+          clue={c}
+          nameByUserId={nameByUserId}
+          submitAction={submitAction}
+          onChanged={onChanged}
+          active={active}
+        />
+      ))}
+    </ul>
   );
 }
 
-function HintRow({
-  hint,
+function ClueRow({
+  clue,
+  nameByUserId,
   submitAction,
   onChanged,
   active,
 }: {
-  hint: HuntHint;
+  clue: HuntClue;
+  nameByUserId: Record<string, string>;
   submitAction: string;
   onChanged?: () => void;
   active: boolean;
@@ -270,7 +299,7 @@ function HintRow({
 
   // Available when the policy already permits it (free / delay-unlocked /
   // previously revealed) or when this reveal just succeeded.
-  const text = hint.hint ?? (fetcher.data?.ok ? fetcher.data.data?.hint ?? null : null);
+  const text = clue.hint ?? (fetcher.data?.ok ? fetcher.data.data?.hint ?? null : null);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) {
@@ -281,34 +310,59 @@ function HintRow({
 
   return (
     <li className="py-2 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-medium text-foreground">{hint.label || "Clue"}</span>
-        {text ? (
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 items-start gap-2">
+          {clue.found ? (
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-coral" />
+          ) : (
+            <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <span
+            className={cn(
+              "min-w-0 break-words font-medium text-foreground",
+              clue.found && "text-muted-foreground line-through",
+            )}
+          >
+            {clue.label}
+          </span>
+        </span>
+        {clue.found ? (
+          clue.foundByUserId ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              found by {nameByUserId[clue.foundByUserId] ?? "a teammate"}
+            </span>
+          ) : null
+        ) : text ? (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="shrink-0 text-xs font-medium text-accent-coral hover:underline"
           >
-            {open ? "Hide" : "Show hint"}
+            {open ? "Hide hint" : "Show hint"}
           </button>
-        ) : hint.unlocksAt != null ? (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <Lock className="h-3 w-3" /> Unlocks {formatUnlock(hint.unlocksAt)}
+        ) : clue.unlocksAt != null ? (
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            <Lock className="h-3 w-3" /> Unlocks {formatUnlock(clue.unlocksAt)}
           </span>
-        ) : hint.cost != null ? (
-          <fetcher.Form method="post" action={submitAction}>
-            <input type="hidden" name="reveal" value={hint.id} />
+        ) : clue.cost != null ? (
+          <fetcher.Form method="post" action={submitAction} className="shrink-0">
+            <input type="hidden" name="reveal" value={clue.id} />
             <button
               type="submit"
               disabled={busy || !active}
               className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-50"
             >
-              {busy ? "Revealing…" : hint.cost > 0 ? `Reveal hint (−${hint.cost} pts)` : "Reveal hint"}
+              {busy ? "Revealing…" : clue.cost > 0 ? `Reveal hint (−${clue.cost} pts)` : "Reveal hint"}
             </button>
           </fetcher.Form>
         ) : null}
       </div>
-      {open && text && <p className="mt-1 text-muted-foreground">{text}</p>}
+      {!clue.found && open && text && (
+        <p className="mt-1 flex items-start gap-1.5 text-muted-foreground">
+          <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-coral" />
+          {text}
+        </p>
+      )}
       {fetcher.data && !fetcher.data.ok && fetcher.data.message && (
         <p className="mt-1 text-xs text-destructive">{fetcher.data.message}</p>
       )}
@@ -343,7 +397,7 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
     update({
       codes: [
         ...cfg.codes,
-        { id: crypto.randomUUID(), value: "", label: "", location: "", points: 1, hint: "" },
+        { id: crypto.randomUUID(), value: "", label: "", points: 1, hint: "" },
       ],
     });
   const removeCode = (i: number) =>
@@ -452,7 +506,7 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
                 key={c.id}
                 className="flex flex-col gap-2 rounded-md border border-border bg-background p-2"
               >
-                <div className="grid grid-cols-[1fr_1fr_1fr_4rem_auto] items-end gap-2">
+                <div className="grid grid-cols-[1fr_1fr_4rem_auto] items-end gap-2">
                   <Field label="Code">
                     <input
                       value={c.value}
@@ -466,14 +520,6 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
                       value={c.label}
                       onChange={(e) => updateCode(i, { label: e.target.value })}
                       placeholder="Projects clue"
-                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
-                    />
-                  </Field>
-                  <Field label="Route">
-                    <input
-                      value={c.location}
-                      onChange={(e) => updateCode(i, { location: e.target.value })}
-                      placeholder="/projects"
                       className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm"
                     />
                   </Field>
@@ -508,11 +554,10 @@ function AdminEditor({ value, onChange }: AdminEditorProps) {
           </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          The <strong>Route</strong> is the page path where the code appears as a
-          clue while the hunt is live — e.g. <code>/projects</code> or{" "}
-          <code>/calendar</code>. It’s matched against the page you’re on, so it
-          needs the leading slash (spaces and trailing slashes are cleaned up for
-          you). Leave it blank to keep a code off-site (clued only by the doc).
+          Members can enter any of these codes from the activity modal on any
+          page — nothing is tied to a particular part of the site. They see the{" "}
+          <strong>Label</strong> (never the code) in their clue checklist, struck
+          through once they’ve entered it.
         </p>
       </div>
     </div>
@@ -532,7 +577,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 export const scavengerHuntClient: MechanicClient = {
   kind: "scavenger_hunt",
-  Overlay,
   Surface,
   AdminEditor,
   defaultConfig: (): HuntConfig => ({

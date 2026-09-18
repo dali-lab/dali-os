@@ -185,7 +185,7 @@ export default function MentorNoteEditor() {
         <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
         <p className={cn(bodyText, "inline-flex items-center gap-1")}>
           Author: {fullName(data.mentor)}
-          <InfoTip content="Mentor notes are visible to the assigned mentor and Core members only — not to the mentee." />
+          <InfoTip content="Mentor notes are visible to all lab mentors and Core members — not to the mentee. Only the author or Core can edit a note." />
         </p>
       </header>
 

@@ -183,9 +183,14 @@ describe("Core area", () => {
         "/core/access/roles",
         "/core/access/domains",
         "/core/communications",
-        "/core/attendance",
       ]),
     );
+  });
+
+  it("no longer owns Attendance — it moved to the lab-wide surface under General", () => {
+    expect(core().subtabs.map((t) => t.href)).not.toContain("/core/attendance");
+    const general = areasFor(REGROUP).find((a) => a.key === "projects")!;
+    expect(general.subtabs.map((t) => t.href)).toContain("/attendance");
   });
 
   it("never offers Forms as a Core sub-tab — forms live in the Drive", () => {

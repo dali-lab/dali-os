@@ -1,6 +1,6 @@
 import React from "react";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
-import type { EventAttendeeDTO, TimeEntryDTO } from "~/calendar/lib/types";
+import type { EventAttendeeDTO, EventBlock, TimeEntryDTO } from "~/calendar/lib/types";
 
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
@@ -132,6 +132,20 @@ export function timeEntryRoleKey(t: TimeEntryDTO): string {
   return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
 }
 
+// Payroll can't process an entry that doesn't say which role the hours go
+// against or what the work was, and both are easy to end up without: a
+// meeting-sourced entry is written with neither, and the drag-out form can be
+// abandoned mid-fill. Returns the reason such an entry is incomplete (for the
+// warning icon on its Timesheet block), or null when it's fine.
+export function timeEntryIssue(t: TimeEntryDTO): string | null {
+  const noRole = timeEntryRoleKey(t) === UNASSIGNED_ROLE_KEY;
+  const noNote = !t.note || t.note.trim() === "";
+  if (noRole && noNote) return "Missing a role and a note";
+  if (noRole) return "Missing a role";
+  if (noNote) return "Missing a note";
+  return null;
+}
+
 // Pick dark or light ink for a solid fill by its perceived luminance, so
 // custom event colors (which arrive as arbitrary hex — light Google "Banana"
 // through dark "Blueberry") stay readable instead of always getting white text.
@@ -146,6 +160,43 @@ export function readableTextColor(bg: string): string {
   // Rec. 601 luma; above ~0.6 the fill reads as light → switch to dark ink.
   const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luma > 0.6 ? "#1e2733" : "#ffffff";
+}
+
+/** How to paint an event's coloured surface, in whichever view is drawing it.
+ *  An invitation the viewer hasn't answered draws hollow — the event's colour
+ *  moves to the border and the body takes the page surface — instead of as a
+ *  solid block. That's Google Calendar's convention, and it's what keeps a pile
+ *  of unanswered holds distinguishable at a glance from the meetings you've
+ *  actually committed to.
+ *  The caller supplies the border *width* (a month chip wants `border`, a grid
+ *  block `border-2`) because only the colour varies here — and because Tailwind
+ *  can't generate a class name that was assembled at runtime, which is also why
+ *  a non-hex event has to carry its outline colour as `borderClassName` rather
+ *  than have one derived from its fill. */
+export function eventSkin(block: EventBlock): {
+  outlined: boolean;
+  className: string;
+  style: React.CSSProperties;
+} {
+  if (!block.unanswered) {
+    return {
+      outlined: false,
+      className: block.className,
+      style: block.bgColor
+        ? { backgroundColor: block.bgColor, color: readableTextColor(block.bgColor) }
+        : {},
+    };
+  }
+  return {
+    outlined: true,
+    // Ink comes from the theme rather than the event colour: the light end of
+    // the palette (a Google "Banana", our own -light accents) is unreadable as
+    // text on the card surface, and the border carries the colour anyway.
+    className: `bg-card text-foreground ${
+      block.bgColor ? "" : (block.borderClassName ?? "border-border")
+    }`,
+    style: block.bgColor ? { borderColor: block.bgColor } : {},
+  };
 }
 
 // Given a calendar day (any value whose UTC Y/M/D is the intended day — a

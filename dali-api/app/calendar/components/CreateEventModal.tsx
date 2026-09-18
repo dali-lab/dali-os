@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useFetcher } from "react-router";
-import { AlignLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { useFetcher, useRevalidator } from "react-router";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -18,14 +18,22 @@ import {
   repeatSpecToRRule,
   type RepeatSpec,
 } from "~/calendar/components/RepeatField";
-import { eventDestinations, addDaysToDate } from "~/calendar/components/composer";
-import { shiftWeekParam, durationMinutesBetween } from "~/calendar/lib/event-block";
+import {
+  eventDestinations,
+  inviteDestinations,
+  inviteOrganizerFields,
+  addDaysToDate,
+} from "~/calendar/components/composer";
+import { durationMinutesBetween } from "~/calendar/lib/event-block";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
   useMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
+import { TimesheetFields } from "~/calendar/components/TimesheetFields";
 import type { LoaderData } from "~/calendar/lib/types";
 
 // ── Props ──────────────────────────────────────────────────────────────────
@@ -41,20 +49,6 @@ export type CreateEventModalProps = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function weekLabel(weekStartIso: string, timezone: string): string {
-  const start = new Date(weekStartIso);
-  // Display the 7-day range Sun – Sat
-  const end = new Date(start.getTime() + 6 * 86_400_000);
-  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, ...opts }).format(d);
-  const startMonth = fmt(start, { month: "short" });
-  const endMonth = fmt(end, { month: "short" });
-  const startDay = fmt(start, { day: "numeric" });
-  const endDay = fmt(end, { day: "numeric" });
-  if (startMonth === endMonth) return `${startMonth} ${startDay} – ${endDay}`;
-  return `${startMonth} ${startDay} – ${endMonth} ${endDay}`;
-}
 
 // Compose "YYYY-MM-DDTHH:mm" from separate date + time strings.
 function composeDateTimeLocal(date: string, time: string): string {
@@ -201,9 +195,12 @@ export function CreateEventModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroupIds, isCoreMeeting]);
 
-  const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
-    googleLinks[0]?.id ?? "",
+  // Send the invite from a specific calendar, not just an account — the same
+  // sub-calendars the event destination offers. Starts on the event default
+  // (last-used calendar) when it's in the list.
+  const inviteDests = inviteDestinations(data.calendarLinks);
+  const [inviteFrom, setInviteFrom] = useState<string>(() =>
+    inviteDests.some((d) => d.value === defaultDest) ? defaultDest : inviteDests[0]?.value ?? "",
   );
 
   // ── Google Meet ──────────────────────────────────────────────────────────
@@ -211,16 +208,48 @@ export function CreateEventModal({
   // makes sense with a Google destination and real guests.
   const meetEnabled = useFeatureFlag("google-meet");
   const [addMeet, setAddMeet] = useState(false);
-  const canAddMeet = meetEnabled && !!organizerCalendarLinkId && hasGuests;
+  const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
   // ── Week navigation for the left panel ───────────────────────────────────
-  const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
+  const weekStartForDate = (day: string) => weekStartIsoForDay(data.timezone, day);
+  // Opening on a dragged-out slot should show that slot's week, which isn't
+  // necessarily the week the calendar behind the modal was on (a month-view
+  // drag can land outside it).
+  const [weekStartIso, setWeekStartIso] = useState(() => {
+    const day = extractDate(initStart ?? "");
+    return day ? weekStartForDate(day) : data.weekStartIso;
+  });
+  // Keep the week start on zoned midnight (like the loader's weekWindow) so the
+  // availability fetch covers the whole local week. A bare YYYY-MM-DD from
+  // shiftWeekParam parses as UTC midnight, which is hours off in US zones.
+  const shiftWeek = (weeks: number) => {
+    const ymd = getZonedYMD(new Date(weekStartIso), data.timezone);
+    setWeekStartIso(
+      zonedDayStartUtc(ymd.year, ymd.month, ymd.day + weeks * 7, data.timezone).toISOString(),
+    );
+  };
+  const goToThisWeek = () => setWeekStartIso(weekWindow(data.timezone).start.toISOString());
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
+
+  // Choosing the day to meet on is what moves the preview — otherwise picking a
+  // date in another week leaves you reading this week's availability while the
+  // meeting is somewhere else entirely. The pull is one-directional on purpose:
+  // the week arrows browse freely without rewriting the date, and picking a slot
+  // inside the week already on screen resolves to the same week, so neither can
+  // fight the other.
+  const pickDate = (day: string) => {
+    setDate(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
+  const pickAllDayStart = (day: string) => {
+    setDStart(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
 
   // ── Slot selected from the availability grid ─────────────────────────────
   const handleSelectRange = (s: string, e: string) => {
     // s and e are "YYYY-MM-DDTHH:mm" local strings from the grid
-    setDate(extractDate(s));
+    pickDate(extractDate(s));
     setStartTime(extractTime(s));
     setEndTime(extractTime(e));
   };
@@ -255,6 +284,7 @@ export function CreateEventModal({
   // ── Submission state ─────────────────────────────────────────────────────
   const eventFetcher = useFetcher<{ error?: string }>();
   const timeFetcher = useFetcher();
+  const revalidator = useRevalidator();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
     | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
@@ -317,7 +347,7 @@ export function CreateEventModal({
         const d = new Date(selectedStartLocal);
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
       }
-      if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+      Object.assign(payload, inviteOrganizerFields(inviteFrom));
       const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
       if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
@@ -374,6 +404,14 @@ export function CreateEventModal({
             );
           }
         }
+        // The meeting POST goes out through plain fetch(), which the router
+        // knows nothing about — so nothing revalidates and the grid keeps
+        // painting the pre-create window until the next navigation or window
+        // focus. Ask for it by hand, the way CreateCoreEventModal does, and the
+        // new block is already on screen behind the success message by the time
+        // the modal closes. (calendar.tsx's shouldRevalidate deliberately lets a
+        // same-URL revalidate through for exactly this case.)
+        revalidator.revalidate();
         setTimeout(() => onClose(), 1200);
       }
     } catch (err) {
@@ -411,72 +449,36 @@ export function CreateEventModal({
   };
 
   // ── Shared timesheet section ──────────────────────────────────────────────
-  // Rendered identically in both Event and Meeting modes. Extracted to avoid
-  // duplication and to keep the toggle/role/workNote wiring in one place.
-  const timesheetSection = (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
-      <Toggle
-        checked={isWork}
-        onChange={(e) => {
-          setIsWork(e.target.checked);
-          if (!e.target.checked) {
+  // The same TimesheetFields block in both Event and Meeting modes; the helper
+  // line adapts to whether a repeating meeting is being scheduled. Hidden only
+  // when the viewer has no roles to log against (the toggle would dead-end).
+  const timesheetSection =
+    data.myRoles.length > 0 ? (
+      <TimesheetFields
+        isWork={isWork}
+        onIsWorkChange={(next) => {
+          setIsWork(next);
+          if (!next) {
             setRoleKey("");
             setWorkNote("");
           }
         }}
-        label="Count this as work"
+        roleKey={roleKey}
+        onRoleKeyChange={setRoleKey}
+        roleOptions={data.myRoles.map((r) => ({
+          value: `${r.assignmentType}::${r.roleRefId}`,
+          label: r.label,
+        }))}
+        workNote={workNote}
+        onWorkNoteChange={setWorkNote}
         description={
           type === "Meeting" && meetingRepeats
-            ? "Logs the first occurrence to your Timesheet once the meeting is created."
-            : "Automatically logs this event to your Timesheet once it's created."
+            ? "Logs the first occurrence to your timesheet once the meeting is created."
+            : "Automatically logs this event to your timesheet once it's created."
         }
+        fieldClass={fieldClass}
       />
-      {isWork && (
-        <div className="mt-3 space-y-3">
-          {data.myRoles.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                Role
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {data.myRoles.map((r) => {
-                  const key = `${r.assignmentType}::${r.roleRefId}`;
-                  const active = roleKey === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setRoleKey(active ? "" : key)}
-                      className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
-                        active
-                          ? "bg-os-accent text-os-bg border-os-accent"
-                          : "border-border bg-background text-foreground hover:bg-muted",
-                      )}
-                    >
-                      {r.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">
-              What did you work on? <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={workNote}
-              onChange={(e) => setWorkNote(e.target.value)}
-              placeholder="Briefly describe what you worked on…"
-              rows={2}
-              className={cn(fieldClass, "resize-y")}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    ) : null;
 
   return (
     <div
@@ -494,29 +496,6 @@ export function CreateEventModal({
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
         <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
-          {/* Week nav */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Previous week"
-              onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, -1))}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="flex-1 text-center text-sm font-medium text-foreground">
-              {weekLabel(weekStartIso, data.timezone)}
-            </span>
-            <button
-              type="button"
-              aria-label="Next week"
-              onClick={() => setWeekStartIso(shiftWeekParam(weekStartIso, 1))}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
           {/* Availability grid — compact + no self-only tint when no guests */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleWeekGrid
@@ -538,6 +517,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
+              weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
           </div>
 
@@ -637,7 +617,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={dStart}
-                      onChange={setDStart}
+                      onChange={pickAllDayStart}
                       ariaLabel="Start date"
                       className="min-w-0 flex-1"
                     />
@@ -656,7 +636,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={date}
-                      onChange={(v) => setDate(v)}
+                      onChange={pickDate}
                       ariaLabel="Date"
                       className="min-w-[150px]"
                     />
@@ -759,7 +739,7 @@ export function CreateEventModal({
                   disabled={!canSubmitEvent || eventFetcher.state !== "idle"}
                   className="inline-flex items-center gap-1.5 rounded-full bg-os-accent px-6 py-2 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {eventFetcher.state !== "idle" ? "Saving…" : "Save"}
+                  {eventFetcher.state !== "idle" ? "Creating…" : "Create event"}
                 </button>
               </div>
             </eventFetcher.Form>
@@ -808,7 +788,7 @@ export function CreateEventModal({
                   <DateField
                     mode="date"
                     value={date}
-                    onChange={(v) => setDate(v)}
+                    onChange={pickDate}
                     ariaLabel="Date"
                     className="min-w-[130px]"
                   />
@@ -842,23 +822,20 @@ export function CreateEventModal({
               />
 
               {/* Send invite from */}
-              {googleLinks.length > 0 && (
+              {inviteDests.length > 0 && (
                 <div>
                   <label className={labelClass}>Send invite from</label>
                   <Select
-                    value={organizerCalendarLinkId}
-                    onChange={(v) => setOrganizerCalendarLinkId(v)}
-                    options={googleLinks.map((l) => ({
-                      value: l.id,
-                      label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
-                    }))}
+                    value={inviteFrom}
+                    onChange={(v) => setInviteFrom(v)}
+                    options={inviteDests}
                     buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1`}
                   />
                 </div>
               )}
 
               {/* Google Meet */}
-              {meetEnabled && googleLinks.length > 0 && (
+              {meetEnabled && inviteDests.length > 0 && (
                 <div className="rounded-md border border-border bg-muted/20 p-3">
                   <Toggle
                     checked={canAddMeet && addMeet}
@@ -934,8 +911,8 @@ export function CreateEventModal({
                 <Toggle
                   checked={note.state.enabled}
                   onChange={(e) => note.setEnabled(e.target.checked)}
-                  label="Create meeting notes"
-                  description="Starts a shared notes doc linked to this meeting."
+                  label="Create meeting note"
+                  description="Starts a shared note doc linked to this meeting."
                 />
                 {note.state.enabled && (
                   <div className="mt-3 pt-1">
@@ -973,11 +950,18 @@ export function CreateEventModal({
               )}
 
               {/* Submit */}
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
                   disabled={!canSubmitMeeting}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-os-accent px-6 py-2 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? "Creating…" : "Create meeting"}
                 </button>

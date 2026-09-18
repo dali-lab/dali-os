@@ -10,7 +10,7 @@ import { Folder, ExternalLink, Plus, X, AlertTriangle } from "lucide-react";
 // plumbing). "Binding" here = which folder auto-files land in; a folder's ACCESS
 // is a separate control (open the folder → Share).
 
-type ProcessType = "Project" | "EducationOffering" | "HiringCycle" | "Core";
+type ProcessType = "Project" | "EducationOffering" | "HiringCycle" | "Core" | "CertificateTemplates";
 
 type Row = {
   purpose: string;
@@ -27,6 +27,7 @@ const NOUN: Record<ProcessType, string> = {
   EducationOffering: "offering",
   HiringCycle: "hiring cycle",
   Core: "Core area",
+  CertificateTemplates: "certificate templates",
 };
 
 export function DriveFolderBindings({

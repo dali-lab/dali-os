@@ -6,8 +6,9 @@ the surface from a dedicated `/activities/:id` page to a **shell modal** over th
 `DesktopBanner`-style **top-bar bar**. Review pass 2026-09-11: authored code **routes normalized**
 (the exact-match bug — §8); admin editor uses the real **breadcrumb trail** instead of a hand-rolled
 path; the leaderboard is now **live via SSE** (§7.6); and codes take an optional **hint** with an
-operator-chosen reveal policy (free / points / delay — §8). Deferred: the lifecycle job +
-notifications (§7.9) and MCP tools (§7.10).
+operator-chosen reveal policy (free / points / delay — §8). Review pass 2026-09-15: an activity now
+picks its **scoring** — individuals, or **teams** with pooled points and a team leaderboard (§4.1).
+Deferred: the lifecycle job + notifications (§7.9) and MCP tools (§7.10).
 **Author:** planning session, 2026-09
 **Rollout flag:** `activities` (default off)
 
@@ -31,7 +32,8 @@ This is deliberately its own layer, **not** an extension of feature flags. See �
   selected by `Activity.kind`. Defined in code; adding one needs no migration.
 - **Spine** — everything every activity shares: window, term, audience, status, the
   "active-for-me" gate, the shell bar, the surface. Generic; lives in the 3 tables below.
-- **Overlay** — the mechanic's scattered on-page elements (the hunt's hidden codes).
+- **Overlay** — a mechanic's optional on-page elements (e.g. a theme's chrome). The scavenger
+  hunt renders none: its codes are found out in the world and entered from the modal.
 - **Surface** — the mechanic's own UI (submit + progress + results), rendered in a **modal**
   over whatever page the member is on (the activity's point is to explore the site, so a
   dedicated page would force constant back-and-forth). Data comes from the `/api/activities/:id`
@@ -56,7 +58,8 @@ through this layer. That's out of scope here; noted so we don't conflate the two
 
 ## 4. Data model
 
-Three new tables. `FeatureFlag` is untouched. `kind` is a **plain `String` validated against the
+Four tables (three at v1; `ActivityTeam` landed with team scoring — §4.1). `FeatureFlag` is
+untouched. `kind` is a **plain `String` validated against the
 mechanic registry (§5), not a Prisma enum** — so a new mechanic never touches the schema. `userId`
 is a plain indexed string (mirrors `FeatureFlag.userIds` — no hard FK, so a departed user just stops
 matching), not a relation, to avoid cascade coupling.
@@ -76,6 +79,9 @@ model Activity {
   audienceRoles    String[]       // subset of ROLE_TARGETS
   assignedGroupId  String?        // reuses the Group system
   assignedGroup    Group?         @relation(fields: [assignedGroupId], references: [id])
+  // Scoring (§4.1): per member, or pooled per ActivityTeam
+  scoring          ActivityScoring @default(Individual)
+  teamSize         Int            @default(2)   // target headcount when auto-assigning
   // Mechanic content, validated by a per-kind zod schema. A doc URL/id lives here
   // if a mechanic wants one — NO first-class document FK (docs are informal, optional).
   config           Json
@@ -84,6 +90,7 @@ model Activity {
   updatedAt        DateTime       @updatedAt
 
   participants     ActivityParticipant[]
+  teams            ActivityTeam[]
   events           ActivityEvent[]
 
   @@index([status, startsAt, endsAt])
@@ -94,8 +101,21 @@ model ActivityParticipant {       // explicit adds, unioned with group/role/ever
   activityId String
   activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
   userId     String
+  teamId     String?                 // null = Individual activity, or not paired up yet
+  team       ActivityTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
   @@id([activityId, userId])
   @@index([userId])
+  @@index([teamId])
+}
+
+model ActivityTeam {                 // one pair/group inside a Team-scoped activity
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name       String
+  createdAt  DateTime @default(now())
+  members    ActivityParticipant[]
+  @@index([activityId])
 }
 
 model ActivityEvent {             // the ONE generic per-user participation primitive
@@ -113,12 +133,49 @@ model ActivityEvent {             // the ONE generic per-user participation prim
 }
 
 enum ActivityStatus { Draft Published Archived }
+enum ActivityScoring { Individual Team }
 ```
 
 Progress and leaderboards are **derived** from `ActivityEvent` — no progress/leaderboard tables.
 Mechanic *content* (the hunt's code list, a theme's palette) lives in `config` JSON; if a future
 mechanic's content grows relational, it may add its own typed table keyed by `activityId` without
 disturbing the spine.
+
+### 4.1 Scoring: individuals or teams
+
+An activity is scored one of two ways, chosen per activity in the admin editor (Scoring panel):
+
+- **Individual** (default) — points and the leaderboard are per member, exactly as before.
+- **Team** — members are grouped into `ActivityTeam`s (pairs by default). Points are **pooled per
+  team**, the leaderboard ranks teams, and a partner's find is the member's find: progress, the
+  struck-through clue rows, and an already-revealed hint are all the team's.
+
+This is **spine**, not mechanic config, so any mechanic that scores gets group play for free — a
+future bingo or voting mechanic reads the same `teams` / `viewerTeam` in `summarize` (§5).
+
+- **Team membership implies participation.** Putting someone on a team writes their
+  `ActivityParticipant` row, so the audience picks them up (`isAssigned`). Taking them off deletes
+  only the row the teams editor created (`teamId` non-null).
+- **Dedup is per team, not per member.** The `(activityId, userId, type, refId)` unique index stops
+  one member scoring a code twice; it can't stop two partners both entering it. `summarize`
+  therefore counts each `refId` once per team, crediting whichever event landed first.
+- **Assignment.** *Auto-assign* draws from the activity's resolved audience
+  (`resolveActivityRoster`: everyone / roles / group / explicit participants), shuffles, and fills
+  teams of `teamSize` — topping up under-filled teams first, so hand-made pairings survive, and
+  spreading a lone remainder over earlier teams rather than leaving a team of one. *By hand*, a
+  `Combobox` over the roster adds people to a team; the list offers only unassigned members, so
+  nobody is ever on two teams. The pure half (`autoAssignTeams`) lives in the client-safe
+  `app/lib/activities.ts` and is unit-tested.
+- **Unpaired members** can still play; their finds sit out of the leaderboard until they join a
+  team, at which point the pooling picks them up (events are per-user and grouped at read time).
+  The surface tells them so.
+- **Switching back to Individual keeps the teams** on the row — nothing reads them — so flipping
+  the setting doesn't destroy an operator's pairings. A **Clone** copies `scoring` + `teamSize` but
+  not the teams: next term's pairings are next term's.
+
+**Naming.** These are `Team`s, not "partners" or "groups": `Partner` already means a corporate
+partner in this codebase (`app/partners/`), and `Group`/`GroupDefinition` is the audience system
+`Activity.assignedGroupId` already points at. The UI copy still talks about pairing people up.
 
 ## 5. The mechanic contract
 
@@ -134,7 +191,7 @@ registries**, keyed by `kind`.
   (`everyone || roles∩audienceRoles || assignedGroupId∈groupIds || explicit participant`).
 
 **Client mechanic registry** — `app/activities/mechanics/registry.ts` — `kind → React pieces`:
-- `Overlay(overlay)` — the scattered on-page elements for the current route.
+- `Overlay?(overlay)` — optional on-page elements for the current route.
 - `Surface({ active, progress, results, submitAction, onChanged, … })` — the submit + progress +
   results UI the shell renders **in the activity modal**. Its forms post to `submitAction`
   (`/api/activities/:id`); after a successful mutation it calls `onChanged()` so the modal reloads.
@@ -143,11 +200,13 @@ registries**, keyed by `kind`.
 
 **Server mechanic registry** — `app/activities/mechanics/registry.server.ts` — `kind → handlers`:
 - `parseConfig(input)` (zod) — validates + normalizes `config` on author.
-- `overlayPayload(activity, pathname)` — route-filtered, safe-to-send on-page payload.
+- `overlayPayload?(activity, pathname)` — optional safe-to-send on-page payload.
 - `onAction(activity, userId, input)` — handle an action, write `ActivityEvent`(s), return a result.
-- `summarize({ activity, userEvents, allEvents, viewerIsCore })` — `{ progress, results }`.
-- `bannerSummary?(activity, userEvents)` — optional short shell-bar label (e.g. `"3/8 found"`);
-  return `null` for mechanics with nothing to count (e.g. a theme).
+- `summarize({ activity, userEvents, allEvents, viewerIsCore, teams, viewerTeam })` —
+  `{ progress, results }`. `teams`/`viewerTeam` are empty/null unless the activity is Team-scoped.
+- `bannerSummary?(activity, events)` — optional short shell-bar label (e.g. `"3/8 found"`); the
+  events that count for this member (their own, or their team's in a Team activity). Return `null`
+  for mechanics with nothing to count (e.g. a theme).
 
 Adding a mechanic = one client module + one server module + a `kind` value. Nothing in the spine
 or schema changes.
@@ -197,10 +256,10 @@ Line refs are against the tree at spec time; treat as anchors.
      (`fixed inset-0`) cleanly covers the iframe. The embedded branch never renders `LayoutOS`, so
      the bar/modal correctly stay out of the iframe. The bar opens the modal (one live activity →
      straight to its surface; several → a small picker).
-   - **`<ActivityOverlay>`** (scattered per-route code elements) → mount **inside `pageContent`**,
-     because that's what renders in the iframe where actual pages live. It reads the active list and
-     renders each mechanic's `Overlay` for the current route. In tabless mode both live in the same
-     document — still correct.
+   - **`<ActivityOverlay>`** (a mechanic's on-page elements, if it has any) → mount **inside
+     `pageContent`**, because that's what renders in the iframe where actual pages live. It reads
+     the active list and renders each mechanic's `Overlay` for the current route. In tabless mode
+     both live in the same document — still correct.
    - Wrap the trees in `ActivitiesProvider` (the same spots that already re-supply
      `FeatureFlagsProvider`). Each iframe runs the loader, so the data is present in every document.
 
@@ -221,7 +280,8 @@ Line refs are against the tree at spec time; treat as anchors.
 
 8. **Admin authoring** — `app/admin/routes/admin.activities*.tsx` (+ an `api.activities.$id` write
    route). CRUD: pick `kind`, set name/term/window, set audience (group + explicit list +
-   role/everyone), edit `config` via the mechanic's `AdminEditor`. A **Clone** action (copy a prior
+   role/everyone), pick scoring and build teams via `ActivityTeamsEditor` (§4.1), edit `config` via
+   the mechanic's `AdminEditor`. A **Clone** action (copy a prior
    activity, bump term + window) is what makes per-term reuse real — no deploy. Place under the
    Admin cluster that fits; Core-scoped.
 
@@ -239,21 +299,22 @@ Line refs are against the tree at spec time; treat as anchors.
 - `config` (zod-validated):
   ```ts
   {
-    codes: { id; value; label; location; points?; hint? }[]
+    codes: { id; value; label; points?; hint? }[]
     leaderboard: "public" | "core" | "off"
     instructionsUrl?: string          // informal link to the Drive clue doc, if any
     hintPolicy: { mode: "free" | "points" | "delay"; penalty: number; delayMinutes: number }
   }
   ```
-- **Overlay:** for each code whose `location` matches the current path, render a discoverable
-  element that reveals `code.value`. The match is via `routesMatch` (both sides normalized — leading
-  slash, no trailing slash, query/hash stripped) so an authored route like `projects` or
-  `/projects/` still lands on `/projects`; `location` is also normalized on save. Precise placement
-  via optional `data-activity-anchor` hooks is a later, additive enhancement.
-- **Surface (in the modal):** progress ("3 / 10 found"), a code-submit form, an optional **Hints**
-  section, and (per `leaderboard`) the leaderboard. `bannerSummary` returns `"N/total found"` for
-  the shell bar.
-- **Hints (optional, per code + one policy).** Any code may carry a `hint`. How a member reveals it
+- **No overlay.** A code isn't bound to a page: members find them wherever Core hid them (the clue
+  doc, the space, a poster) and enter them from the modal, which is reachable from anywhere. The
+  mechanic therefore omits `overlayPayload`/`Overlay` entirely.
+- **Surface (in the modal):** the code-submit form first, then progress ("3 / 10 found") with a
+  **clue checklist** under the bar — one row per code showing its `label` (never the value) and,
+  per the hint policy, its hint; a row is struck through once that member has entered its code —
+  and (per `leaderboard`) the leaderboard. `bannerSummary` returns `"N/total found"` for the shell
+  bar.
+- **Hints (optional, per code + one policy).** Any code may carry a `hint`, revealed from its row
+  in the clue checklist. How a member reveals it
   is operator-chosen per activity (`hintPolicy.mode`): **free** (reveal anytime), **points** (costs
   `penalty` points — recorded as a `hint_revealed` event so the leaderboard reflects it), or
   **delay** (locked until `delayMinutes` after the activity's start, then free). The server sends a
@@ -269,7 +330,7 @@ Line refs are against the tree at spec time; treat as anchors.
 
 **End-to-end:** Core creates a `scavenger_hunt` activity for term 26F, window Sep 15–22, audience =
 "New members 26F" group, adds codes, links the clue doc, Publishes → assigned members see the
-shell bar + on-page codes, open the modal to submit codes and watch the leaderboard while they keep
+shell bar, open the modal to submit codes and watch the leaderboard while they keep
 exploring, → Sep 22 the window closes and the shell drops it, everything reverts → next term Core
 clones it, bumps to 27W, edits codes, Publishes. No developer in the loop.
 
@@ -291,8 +352,8 @@ clones it, bumps to 27W, edits codes, Publishes. No developer in the loop.
   *components* in client modules. Never import a server handler into a client module (the
   node-import-crashes-the-client-bundle trap that's bitten this repo before).
 - **Tab-mode iframe** — the launcher (bar + modal) in the shell (`LayoutOS`), overlay in
-  `pageContent` (§7.5). Getting this wrong puts codes in the wrong document or the bar inside every
-  tab.
+  `pageContent` (§7.5). Getting this wrong puts a mechanic's on-page chrome in the wrong document
+  or the bar inside every tab.
 - **Surface is a modal, not a page** — the activity is about roaming the site, so a dedicated
   `/activities/:id` page would force constant navigation away and back. The surface floats over the
   current page; `/api/activities/:id` is a resource endpoint (data + submit), not a route you visit.
@@ -300,14 +361,13 @@ clones it, bumps to 27W, edits codes, Publishes. No developer in the loop.
   nullable `refId` would defeat the dedup unique index for single-action mechanics (e.g. `rsvp`).
 - **`kind` carries one value until mechanic #2 ships** — accepted cost of building the layer before
   the second user exists; it pays off the moment theme/event lands (no schema change).
-- **Overlay route-match is coarse** — `data-activity-anchor` hooks are the later precision path.
 
 ## 11. Rollout / phasing
 
 1. Schema migration + `activities` flag (off) + spine (`Activity`/`ActivityParticipant`/
    `ActivityEvent`) + client/server registries with no mechanics.
-2. Scavenger-hunt mechanic (config, overlay, surface, handlers) + `/api/activities/:id` endpoint.
-3. Shell wiring (loader resolve, provider, launcher bar + modal, overlay, revalidation).
+2. Scavenger-hunt mechanic (config, surface, handlers) + `/api/activities/:id` endpoint.
+3. Shell wiring (loader resolve, provider, launcher bar + modal, overlay slot, revalidation).
 4. Admin authoring + Clone.
 5. Optional: lifecycle job + notifications; MCP tools.
 6. Flag to Core, run the first hunt, then widen.

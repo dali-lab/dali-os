@@ -5,8 +5,8 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewMentorship, mentorNoteWhere } from "../lib/visibility";
 import { startOfWeekUTC } from "../lib/week";
 
-// GET  /api/mentorship/notes — filterable note list. Lab mentors see their own
-//      notes plus notes in domains they mentor in; Core/Admin see everything.
+// GET  /api/mentorship/notes — filterable note list. Every lab mentor (and
+//      Core/Admin) sees all mentor notes lab-wide.
 //      Mentees are not granted access. Filters (all optional, AND-combined):
 //        mentorId, menteeId, projectId, termId, domainId, weekOf (yyyy-mm-dd)
 //      Returns notes ordered by weekOf desc, with denormalized labels.

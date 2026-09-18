@@ -6,9 +6,9 @@ import { getUserRoles, isCore } from "~/lib/roles";
 import { listManageable, runOfferingAction } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { buttonClasses } from "~/components/ui/Button";
-import { TermFilter } from "~/components/TermFilter";
-import { resolveTermFilter } from "~/lib/terms";
-import { useEffect } from "react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { FilterPill } from "~/components/ui/filter-panel";
+import { useEffect, useMemo, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 
@@ -25,21 +25,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // their /portal home — not /education, which bounces non-members straight back.
   if (!roles.isCore && !roles.isInstructor) return redirect("/portal");
 
-  const [offerings, termFilter] = await Promise.all([
-    listManageable(auth.user.sub),
-    // Instructors/Core plan offerings ahead of the term, so default to the
-    // current term plus upcoming ones (history a click away under "All terms").
-    resolveTermFilter(request, { default: "upcoming" }),
-  ]);
-
   return {
-    offerings,
+    offerings: await listManageable(auth.user.sub),
     isCore: roles.isCore,
     isExternal: !roles.isLabMember,
-    terms: termFilter.terms,
-    selected: termFilter.selected,
-    termIds: termFilter.termIds,
-    isAll: termFilter.isAll,
   };
 }
 
@@ -71,9 +60,19 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ ok: true });
 }
 
+// Offerings are sliced by their own dates, not by a term: an offering has
+// finished once its last session has ended.
+type Scope = "upcoming" | "past" | "all";
+
+const SCOPES: [Scope, string][] = [
+  ["upcoming", "Upcoming"],
+  ["past", "Past"],
+  ["all", "All"],
+];
+
 export default function ManageEducation() {
-  const { offerings, isCore, isExternal, terms, selected, termIds, isAll } =
-    useLoaderData<typeof loader>();
+  const { offerings, isCore, isExternal } = useLoaderData<typeof loader>();
+  const certTemplatesOn = useFeatureFlag("certificate-templates");
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const dialog = useDialog();
   const toast = useToast();
@@ -85,12 +84,17 @@ export default function ManageEducation() {
     }
   }, [fetcher.data, toast]);
 
-  // termIds is the resolved scope: null for "All terms", [id] for one term, or
-  // the current+upcoming set. Offerings carry a termId, so one membership check
-  // covers all three cases.
-  const filtered = termIds
-    ? offerings.filter((o) => o.termId && termIds.includes(o.termId))
-    : offerings;
+  // Instructors/Core plan ahead, so default to what hasn't finished — history
+  // is a click away. A draft with no sessions yet has no endsAt and counts as
+  // upcoming rather than vanishing from the default view.
+  const [scope, setScope] = useState<Scope>("upcoming");
+  const filtered = useMemo(() => {
+    if (scope === "all") return offerings;
+    const now = Date.now();
+    const hasEnded = (o: (typeof offerings)[number]) =>
+      o.endsAt != null && new Date(o.endsAt).getTime() < now;
+    return offerings.filter((o) => (scope === "past" ? hasEnded(o) : !hasEnded(o)));
+  }, [offerings, scope]);
 
   async function handleDuplicate(offeringId: string, offeringTitle: string) {
     const raw = await dialog.prompt({
@@ -156,16 +160,33 @@ export default function ManageEducation() {
           </p>
         </div>
         {isCore && (
-          <Link to="/education/manage/new" className={buttonClasses("primary", "sm")}>
-            New offering
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            {certTemplatesOn && (
+              <Link
+                to="/education/certificate-templates"
+                className={buttonClasses("secondary", "sm")}
+              >
+                Certificate templates
+              </Link>
+            )}
+            <Link to="/education/manage/new" className={buttonClasses("primary", "sm")}>
+              New offering
+            </Link>
+          </div>
         )}
       </header>
 
-      {/* Term filter */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground shrink-0">Term</span>
-        <TermFilter terms={terms} selected={selected} includeUpcoming />
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by date">
+        {SCOPES.map(([value, label]) => (
+          <FilterPill
+            key={value}
+            os
+            selected={scope === value}
+            onClick={() => setScope(value)}
+          >
+            {label}
+          </FilterPill>
+        ))}
       </div>
 
       {filtered.length === 0 ? (
@@ -174,8 +195,8 @@ export default function ManageEducation() {
             No offerings yet
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            {!isAll
-              ? 'No offerings in this term range. Try "All terms" or create a new one.'
+            {scope !== "all"
+              ? `No ${scope} offerings. Try "All" or create a new one.`
               : isCore
                 ? 'Create the first miniseries or workshop with "New offering".'
                 : "You'll see offerings here once Core assigns you as an instructor."}

@@ -3,6 +3,7 @@ import { requireAuth } from "~/lib/auth";
 import { getCertificate } from "~/education/lib/certificates.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { renderCertificatePdf } from "~/education/lib/certificate-pdf.server";
+import { getCertificateRenderTemplate } from "~/education/lib/certificate-templates.server";
 
 // Resource route (outside the app layout so the Response streams as a bare
 // PDF body). Same access gate as the certificate page.
@@ -18,7 +19,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return new Response("Not found", { status: 404 });
   }
 
-  const pdf = await renderCertificatePdf(certificate);
+  // A cert stamped with a template renders from it; if the template is gone or
+  // its image can't be fetched, getCertificateRenderTemplate returns null and we
+  // fall back to the built-in design.
+  const template = certificate.templateId
+    ? await getCertificateRenderTemplate(certificate.templateId)
+    : null;
+  const pdf = await renderCertificatePdf(certificate, template);
   const safeTitle =
     certificate.offeringTitle.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") ||
     "certificate";

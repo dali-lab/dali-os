@@ -256,6 +256,101 @@ function plainTextFromGoogleHtml(html: string): string {
     .trim();
 }
 
+/**
+ * Error from a Google Calendar REST call, carrying the HTTP status so callers
+ * can branch on it — notably a 404 on ONE sub-calendar (deleted or unshared on
+ * Google's side), which we prune rather than let fail the whole link's sync.
+ * The message keeps the "Google events.list failed (…)" shape the sync-error
+ * UI (`app/calendar/lib/sync-error.ts`) reads.
+ */
+export class GoogleCalendarApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "GoogleCalendarApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Read each sub-calendar independently so one dead calendar can't drop events
+ * from the others. A 404 means that calendar no longer exists on Google
+ * (deleted or unshared) — its id is collected into `deadCalendarIds` for the
+ * caller to prune, NOT treated as a link-level failure. Any other error
+ * (auth/scope/transient) surfaces as `fatalError` (first one wins) so the
+ * sync-error notice and reconnect prompt still fire. A 404 on the "primary"
+ * fallback is treated as fatal, not prunable — there's nothing to remove.
+ */
+async function readSubCalendars<T>(
+  calendarIds: string[],
+  fetchOne: (calendarId: string) => Promise<T[]>,
+): Promise<{ events: T[]; deadCalendarIds: string[]; fatalError?: Error }> {
+  const settled = await Promise.allSettled(calendarIds.map((id) => fetchOne(id)));
+  const events: T[] = [];
+  const deadCalendarIds: string[] = [];
+  let fatalError: Error | undefined;
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      events.push(...r.value);
+      return;
+    }
+    const err = r.reason instanceof Error ? r.reason : new Error(String(r.reason));
+    if (
+      err instanceof GoogleCalendarApiError &&
+      err.status === 404 &&
+      calendarIds[i] !== "primary"
+    ) {
+      deadCalendarIds.push(calendarIds[i]);
+    } else if (!fatalError) {
+      fatalError = err;
+    }
+  });
+  return { events, deadCalendarIds, fatalError };
+}
+
+/**
+ * Which of a link's calendars a read covers.
+ * - "availability" (default): the link's `subCalendarIds` — the calendars that
+ *   count toward busy/free (the "Availability" toggle). Falls back to the
+ *   primary calendar when none are chosen.
+ * - "all": every calendar on the account's calendar list. The calendar page
+ *   reads this way because its per-calendar "Show" toggle is a client-side
+ *   filter over what the loader returns — reading only availability calendars
+ *   made a calendar with Show on but Availability off draw nothing.
+ */
+export type CalendarReadScope = "availability" | "all";
+
+function calendarIdsForScope(
+  subCalendarIds: string[],
+  calendarList: GoogleCalendarListEntry[] | undefined,
+  scope: CalendarReadScope,
+): string[] {
+  // Without the account's list (calendarList failed) "all" degrades to the
+  // availability set rather than showing nothing.
+  if (scope === "all" && calendarList && calendarList.length > 0) {
+    return calendarList.map((c) => c.id);
+  }
+  return subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
+}
+
+/**
+ * Drop sub-calendar ids Google 404'd (deleted/unshared) so they stop breaking
+ * every future sync. Best-effort read-modify-write off the ids we just read; a
+ * concurrent settings edit simply gets re-pruned on the next sync.
+ */
+async function pruneDeadSubCalendars(
+  linkId: string,
+  current: string[],
+  dead: string[],
+): Promise<void> {
+  const deadSet = new Set(dead);
+  const remaining = current.filter((id) => !deadSet.has(id));
+  if (remaining.length === current.length) return;
+  await prisma.userCalendarLink
+    .update({ where: { id: linkId }, data: { subCalendarIds: remaining } })
+    .catch(() => {});
+}
+
 // One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
 // window. Uses events.list (not freeBusy) so we get the real title; freeBusy
 // returns only opaque time ranges. `color` is the calendar's backgroundColor,
@@ -285,7 +380,7 @@ async function fetchEventsForCalendar(
   );
   if (!res.ok) {
     const detail = await extractGoogleErrorDetail(res);
-    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
   }
   const data = (await res.json()) as { items?: GoogleEvent[] };
   const out: BusyEvent[] = [];
@@ -331,6 +426,7 @@ async function fetchEventsForCalendar(
 async function fetchBusyForLink(
   linkId: string,
   subCalendarIds: string[],
+  calendarIds: string[],
   start: Date,
   end: Date,
   prefetchedToken?: string,
@@ -350,13 +446,15 @@ async function fetchBusyForLink(
       // Colour is best-effort; events still render (untinted) without it.
     }
   }
-  const calendarIds = subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
-  const perCalendar = await Promise.all(
-    calendarIds.map((id) =>
-      fetchEventsForCalendar(token, id, colorById.get(id), start, end),
-    ),
+  const { events, deadCalendarIds, fatalError } = await readSubCalendars(
+    calendarIds,
+    (id) => fetchEventsForCalendar(token, id, colorById.get(id), start, end),
   );
-  return perCalendar.flat();
+  // Self-heal deleted/unshared sub-calendars; only a real (auth/scope/transient)
+  // failure should mark the whole link as errored.
+  await pruneDeadSubCalendars(linkId, subCalendarIds, deadCalendarIds);
+  if (fatalError) throw fatalError;
+  return events;
 }
 
 /**
@@ -380,6 +478,7 @@ export async function fetchBusyEvents(
   end: Date,
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
+  scope: CalendarReadScope = "availability",
 ): Promise<BusyEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -395,22 +494,22 @@ export async function fetchBusyEvents(
 
         // Build the color map: prefer a pre-fetched list from the caller,
         // then fall back to fetching ourselves (best-effort; untinted on fail).
-        let colorById = new Map<string, string | undefined>();
-        const prefetchedList = prefetchedCalendarLists?.get(l.id);
-        if (prefetchedList) {
-          colorById = new Map(prefetchedList.map((c) => [c.id, c.backgroundColor]));
-        } else {
+        let calendarList = prefetchedCalendarLists?.get(l.id);
+        if (!calendarList) {
           try {
-            const list = await listCalendarsForLink(l.id, token);
-            colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
+            calendarList = await listCalendarsForLink(l.id, token);
           } catch {
             // Colour is best-effort; events still render (untinted).
           }
         }
+        const colorById = new Map<string, string | undefined>(
+          (calendarList ?? []).map((c) => [c.id, c.backgroundColor]),
+        );
 
         const events = await fetchBusyForLink(
           l.id,
           l.subCalendarIds,
+          calendarIdsForScope(l.subCalendarIds, calendarList, scope),
           start,
           end,
           token,
@@ -497,7 +596,7 @@ async function fetchAllEventsForCalendar(
   );
   if (!res.ok) {
     const detail = await extractGoogleErrorDetail(res);
-    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
   }
   const data = (await res.json()) as { items?: (GoogleEvent & { recurringEventId?: string })[] };
   const color = calendarMeta?.backgroundColor;
@@ -572,6 +671,7 @@ export async function fetchCalendarEvents(
   end: Date,
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
+  scope: CalendarReadScope = "availability",
 ): Promise<CalendarEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -584,30 +684,30 @@ export async function fetchCalendarEvents(
         const token = prefetchedTokens?.get(l.id) ?? await getValidAccessTokenForLink(l.id);
 
         // Build a map of calendarId → entry (has both backgroundColor + accessRole).
-        let entryById = new Map<string, GoogleCalendarListEntry>();
-        const prefetchedList = prefetchedCalendarLists?.get(l.id);
-        if (prefetchedList) {
-          entryById = new Map(prefetchedList.map((c) => [c.id, c]));
-        } else {
+        let calendarList = prefetchedCalendarLists?.get(l.id);
+        if (!calendarList) {
           try {
-            const list = await listCalendarsForLink(l.id, token);
-            entryById = new Map(list.map((c) => [c.id, c]));
+            calendarList = await listCalendarsForLink(l.id, token);
           } catch {
             // Best-effort; events still load without color/writable metadata.
           }
         }
-
-        const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
-        const perCalendar = await Promise.all(
-          calendarIds.map((id) =>
-            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
-          ),
+        const entryById = new Map<string, GoogleCalendarListEntry>(
+          (calendarList ?? []).map((c) => [c.id, c]),
         );
+
+        const calendarIds = calendarIdsForScope(l.subCalendarIds, calendarList, scope);
+        const { events, deadCalendarIds, fatalError } = await readSubCalendars(
+          calendarIds,
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
+        );
+        await pruneDeadSubCalendars(l.id, l.subCalendarIds, deadCalendarIds);
+        if (fatalError) throw fatalError;
         await prisma.userCalendarLink.update({
           where: { id: l.id },
           data: { lastSyncedAt: new Date(), syncError: null },
         });
-        return perCalendar.flat();
+        return events;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         await prisma.userCalendarLink
@@ -652,12 +752,13 @@ export async function searchCalendarEvents(
           // Best-effort colour/writable metadata; matches still return.
         }
         const calendarIds = l.subCalendarIds.length > 0 ? l.subCalendarIds : ["primary"];
-        const perCalendar = await Promise.all(
-          calendarIds.map((id) =>
-            fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
-          ),
+        // Read-only: isolate per-calendar failures (a dead one shouldn't drop
+        // the rest) but don't prune or record sync errors here.
+        const { events } = await readSubCalendars(
+          calendarIds,
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
         );
-        return perCalendar.flat();
+        return events;
       } catch {
         return [] as CalendarEvent[];
       }
@@ -970,10 +1071,24 @@ export async function getGoogleEvent(opts: {
   linkId: string;
   calendarId?: string;
   eventId: string;
-}): Promise<{ id: string; recurrence: string[]; startIso: string | null; startDate: string | null }> {
+}): Promise<{
+  id: string;
+  recurrence: string[];
+  startIso: string | null;
+  startDate: string | null;
+  /** Title/end/attendees are read alongside so a caller that needs to mirror
+   *  the event (rather than just re-read its recurrence) doesn't need a second
+   *  round-trip. `null`/empty when Google omits them. */
+  summary: string | null;
+  endIso: string | null;
+  endDate: string | null;
+  attendeeEmails: string[];
+}> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
-  const params = new URLSearchParams({ fields: "id,recurrence,start(dateTime,date)" });
+  const params = new URLSearchParams({
+    fields: "id,summary,recurrence,start(dateTime,date),end(dateTime,date),attendees(email)",
+  });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -984,14 +1099,23 @@ export async function getGoogleEvent(opts: {
   }
   const data = (await res.json()) as {
     id?: string;
+    summary?: string;
     recurrence?: string[];
     start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    attendees?: { email?: string }[];
   };
   return {
     id: data.id ?? opts.eventId,
     recurrence: data.recurrence ?? [],
     startIso: data.start?.dateTime ?? null,
     startDate: data.start?.date ?? null,
+    summary: data.summary ?? null,
+    endIso: data.end?.dateTime ?? null,
+    endDate: data.end?.date ?? null,
+    attendeeEmails: (data.attendees ?? [])
+      .map((a) => a.email)
+      .filter((e): e is string => typeof e === "string" && e.length > 0),
   };
 }
 

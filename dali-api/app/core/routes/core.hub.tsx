@@ -289,6 +289,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Everything on this calendar is here *because* it's a Core meeting, so
       // clearing the flag from here would delete the block you clicked.
       canMarkCoreMeeting: false,
+      // This page is Core-gated, so every viewer may add a note (the organizer
+      // and Core are exactly who attachMeetingNote allows).
+      canAddNote: true,
+      canInvite: true,
+      guestEditOnly: false,
+      hideGuestList: false,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",
     };
@@ -463,6 +469,11 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
   const allDayByDay: Record<number, AllDayBlock[]> = {};
   for (const ev of events) {
     const fill = ev.kind === "meeting" ? EVENT_CORAL : GENERAL_FILL;
+    // Outlining an unanswered invite needs a border colour to move the fill's
+    // hue onto; Tailwind only emits classes it can see, so each fill names its
+    // twin here rather than having one derived from `fill` at runtime.
+    const outline = ev.kind === "meeting" ? "border-accent-coral-light" : "border-accent-teal-light";
+    const unanswered = ev.rsvp?.status === "Pending";
     // Month draws everything as a chip, so an all-day entry belongs in the same
     // map there. Week and day have a band above the hour grid for it instead,
     // and agenda lists timed events only — the Events page reads the same way.
@@ -472,7 +483,7 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
       days.forEach((d, idx) => {
         const dayMs = d.dateUtc.getTime();
         if (start < dayMs + 86_400_000 && end > dayMs) {
-          (allDayByDay[idx] ??= []).push({ label: ev.title });
+          (allDayByDay[idx] ??= []).push({ label: ev.title, unanswered });
         }
       });
       continue;
@@ -485,6 +496,8 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
       {
         label: ev.title,
         className: fill,
+        borderClassName: unanswered ? outline : undefined,
+        unanswered,
         location: ev.location ?? undefined,
         description: ev.description ?? undefined,
         organizerName: ev.organizerName ?? undefined,

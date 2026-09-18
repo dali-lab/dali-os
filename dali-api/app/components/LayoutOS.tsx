@@ -22,12 +22,18 @@ import type { FavoritePage } from '~/lib/user-pages.server'
 import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace } from '~/components/TabWorkspace'
-import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
+import { useAttentionFeed } from '~/components/NotificationBell'
+import { AttentionPanel, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
-import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
+import {
+  TablessHistoryNav,
+  useRecordTablessHistory,
+  useShowTablessHistoryNav,
+  useTablessHistoryShortcuts,
+} from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -36,7 +42,6 @@ import {
   areaForPath,
   pinnedNavItems,
   activeSubtabHref,
-  hasSubnavRow,
   isPinnedActive,
   visibleAreas,
   visibleSubtabs,
@@ -133,10 +138,8 @@ export function LayoutOS({
   const location = useLocation()
   const matches = useMatches()
   useRecordTablessHistory()
+  useTablessHistoryShortcuts(useShowTablessHistoryNav())
   const tabless = children !== undefined
-  // This shell owns the sub-tabs in its rail; only areaSubnav pages (calendar)
-  // render their own in-page row.
-  const ownsSubnavRow = hasSubnavRow(matches)
   useOsShellRoot(true)
 
   const {
@@ -245,9 +248,6 @@ export function LayoutOS({
     })
   }
 
-  // The nav-regroup flag was retired; the nav-areas registry no longer branches
-  // on any flag, so an empty map is all the helpers need.
-  const navFlags = {}
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -260,9 +260,9 @@ export function LayoutOS({
     isLabMentor,
     isInstructor,
   }
-  const areas = visibleAreas(roleFlags, navFlags)
-  const routeArea = areaForPath(path, navFlags)
-  const pinned = pinnedNavItems(navFlags)
+  const areas = visibleAreas(roleFlags)
+  const routeArea = areaForPath(path)
+  const pinned = pinnedNavItems()
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -281,7 +281,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -293,110 +293,58 @@ export function LayoutOS({
           : (pinnedLabel ?? routeArea?.label)
 
   const initials = userInitials(user)
-  const openTasks = useOpenTasks()
-  const taskCount = openTasks.length
+  const { tasks: openTasks, items: feedItems } = useAttentionFeed()
+  // The badge counts what the panel says needs attention — open tasks plus
+  // unread feed rows that aren't already a task — so the two can't disagree.
+  const taskCount = attentionCount(openTasks, feedItems)
 
-  /* ---------------- Task bell flyout (top bar) ---------------- */
-  // The bell replaces the rail's My Tasks row, so it has to carry that row's
-  // hover list too — otherwise the open tasks are one navigation further away
-  // than they are today. Fixed-positioned and pinned under the bell.
+  /* ---------------- Attention panel (bell, top bar) ---------------- */
+  // The bell owns the attention stack that used to be a banner on Home: open
+  // tasks and unanswered invites, with their RSVP / Confirm / Dismiss controls
+  // rendered inline (see AttentionPanel). Click-to-open rather than hover —
+  // the cards carry buttons, and a hover panel closes under the pointer on the
+  // way to one. Fixed-positioned so the top bar's overflow can't clip it.
   const bellRef = useRef<HTMLDivElement | null>(null)
-  const bellCloseTimer = useRef<number | null>(null)
-  const [bellFlyout, setBellFlyout] = useState<{ top: number; right: number } | null>(null)
+  const [bellPanel, setBellPanel] = useState<{ top: number; right: number } | null>(null)
 
-  const showBellFlyout = useCallback(() => {
-    if (bellCloseTimer.current !== null) {
-      window.clearTimeout(bellCloseTimer.current)
-      bellCloseTimer.current = null
-    }
+  // Pinned under the bell's box rather than laid out beneath it, so the
+  // coordinates are measured — on open, and again on resize while open.
+  const bellAnchor = useCallback(() => {
     const rect = bellRef.current?.getBoundingClientRect()
-    if (rect) {
-      setBellFlyout({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
-    }
+    return rect
+      ? { top: rect.bottom + 8, right: window.innerWidth - rect.right }
+      : null
   }, [])
 
-  const hideBellFlyout = useCallback(() => {
-    if (bellCloseTimer.current !== null) window.clearTimeout(bellCloseTimer.current)
-    bellCloseTimer.current = window.setTimeout(() => {
-      bellCloseTimer.current = null
-      setBellFlyout(null)
-    }, 140)
-  }, [])
-
-  const closeBellFlyoutNow = useCallback(() => {
-    if (bellCloseTimer.current !== null) {
-      window.clearTimeout(bellCloseTimer.current)
-      bellCloseTimer.current = null
-    }
-    setBellFlyout(null)
-  }, [])
-
-  useEffect(
-    () => () => {
-      if (bellCloseTimer.current !== null) window.clearTimeout(bellCloseTimer.current)
-    },
-    [],
+  const placeBellPanel = useCallback(() => setBellPanel(bellAnchor()), [bellAnchor])
+  const closeBellPanel = useCallback(() => setBellPanel(null), [])
+  const seeAllProps = tabClickProps({ url: '/notifications', label: 'My Tasks' })
+  const toggleBellPanel = useCallback(
+    () => setBellPanel((open) => (open ? null : bellAnchor())),
+    [bellAnchor],
   )
 
+  // Escape or an outside click closes it, on document listeners like the rail
+  // menus above. The panel is fixed-positioned but still a DOM child of
+  // bellRef, so `contains` covers clicks on the cards — acting on one (Accept,
+  // Confirm, Dismiss) must not dismiss the panel out from under the click.
   useEffect(() => {
-    if (!bellFlyout) return
-    window.addEventListener('resize', showBellFlyout)
-    return () => window.removeEventListener('resize', showBellFlyout)
-  }, [bellFlyout, showBellFlyout])
-
-  // The flyout is one of the panels above, so its rows are menu rows.
-  const taskRowClass = osMenuItemClass
-
-  const renderTaskRow = (t: ReturnType<typeof useOpenTasks>[number]) => {
-    // Meeting invites clear only via RSVP — open My Tasks so
-    // Accept/Maybe/Decline are available (same as Home).
-    if (t.source === 'meeting') {
-      return (
-        <Tooltip key={t.id} content={t.title}>
-          <button
-            type="button"
-            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-            onClickCapture={closeBellFlyoutNow}
-            className={taskRowClass}
-          >
-            <span className="truncate">{t.title}</span>
-          </button>
-        </Tooltip>
-      )
+    if (!bellPanel) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeBellPanel()
     }
-    return t.link ? (
-      <Tooltip key={t.id} content={t.title}>
-        <button
-          type="button"
-          onClick={() => {
-            closeBellFlyoutNow()
-            // Tasks are notification rows — POST /read clears the tile + drops
-            // the count once the user acts. Self-clearing tasks (a form to
-            // submit, the onboarding checklist) are the exception: opening the
-            // link isn't acting on them, so they clear only when their own
-            // action completes.
-            if (!t.hasAction) {
-              fetch(`/api/notifications/${t.id}/read`, {
-                method: 'POST',
-                credentials: 'include',
-                keepalive: true,
-              }).then(() => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)))
-            }
-            openInWorkspace({ url: t.link!, label: t.title })
-          }}
-          className={taskRowClass}
-        >
-          <span className="truncate">{t.title}</span>
-        </button>
-      </Tooltip>
-    ) : (
-      <Tooltip key={t.id} content={t.title}>
-        <div className={cn(taskRowClass, 'text-os-muted hover:bg-transparent')}>
-          <span className="truncate">{t.title}</span>
-        </div>
-      </Tooltip>
-    )
-  }
+    const onDown = (e: MouseEvent) => {
+      if (!bellRef.current?.contains(e.target as Node)) closeBellPanel()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('resize', placeBellPanel)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('resize', placeBellPanel)
+    }
+  }, [bellPanel, closeBellPanel, placeBellPanel])
 
   /* ---------------- Rail ---------------- */
 
@@ -514,7 +462,7 @@ export function LayoutOS({
           </Tooltip>
           {pinned.map((item) => {
             const Icon = item.icon
-            const active = isPinnedActive(path, item.href, navFlags)
+            const active = isPinnedActive(path, item.href)
             return (
               <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
                 <button
@@ -733,47 +681,48 @@ export function LayoutOS({
 
   const topBar = (
     <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
-      {favorites.length === 0 ? (
-        <div className="flex items-center gap-3 text-base text-os-muted">
-          <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
-          Favorited pages will appear here.
-        </div>
-      ) : (
-        <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
-          <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
-          <div className="flex items-center gap-2">
-            {favorites.map((p) => (
-              <Tooltip key={p.id} content={p.title || 'Untitled'}>
-                <button
-                  type="button"
-                  {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                  className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-                >
-                  <FavoriteIcon page={p} glyphClassName="text-os-accent" />
-                  <span className="truncate">{p.title || 'Untitled'}</span>
-                </button>
-              </Tooltip>
-            ))}
+      <div className="flex min-w-0 items-center gap-3">
+        {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
+        <TablessHistoryNav />
+        {favorites.length === 0 ? (
+          <div className="flex items-center gap-3 text-base text-os-muted">
+            <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
+            Favorited pages will appear here.
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
+            <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
+            <div className="flex items-center gap-2">
+              {favorites.map((p) => (
+                <Tooltip key={p.id} content={p.title || 'Untitled'}>
+                  <button
+                    type="button"
+                    {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+                    className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                  >
+                    <FavoriteIcon page={p} glyphClassName="text-os-accent" />
+                    <span className="truncate">{p.title || 'Untitled'}</span>
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
         {/* The page's guide, on the same plate as the bell beside it. Renders
             only where the shell knows the route (tabless); in tab mode the
             iframe carries its own copy, since the docKey lives in there. */}
         <PageDocButton variant="topbar" />
-        <div
-          ref={bellRef}
-          className="relative"
-          onMouseEnter={taskCount > 0 ? showBellFlyout : undefined}
-          onMouseLeave={hideBellFlyout}
-        >
-          <Tooltip content={`My Tasks — ${taskCount} open task${taskCount === 1 ? '' : 's'}`}>
+        <div ref={bellRef} className="relative">
+          <Tooltip content={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
             <button
               type="button"
-              {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-              aria-label={`My Tasks — ${taskCount} open task${taskCount === 1 ? '' : 's'}`}
+              onClick={toggleBellPanel}
+              aria-haspopup="dialog"
+              aria-expanded={!!bellPanel}
+              aria-label={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}
               className="os-topbar-btn pl-3"
             >
               <Bell className="h-5 w-5" />
@@ -787,6 +736,48 @@ export function LayoutOS({
               </span>
             </button>
           </Tooltip>
+
+          {/* The attention stack. Fixed rather than absolute so the top bar's
+              overflow can't clip it, but still a DOM child of the bell so the
+              outside-click handler treats the cards as inside. */}
+          {bellPanel && (
+            <div
+              role="dialog"
+              aria-label="Notifications"
+              style={{
+                top: bellPanel.top,
+                right: bellPanel.right,
+                maxHeight: `calc(100vh - ${Math.round(bellPanel.top) + 16}px)`,
+              }}
+              className={cn(
+                'fixed z-50 hidden w-[22rem] flex-col overflow-y-auto md:flex motion-safe:animate-area-menu',
+                osMenuClass,
+              )}
+            >
+              <AttentionPanel
+                tasks={openTasks}
+                notifications={feedItems}
+                onOpen={(url, label) => {
+                  closeBellPanel()
+                  openInWorkspace({ url, label })
+                }}
+              />
+              {/* Close after opening, in the same handler. Closing on
+                  capture flushed the state update before the bubble phase,
+                  unmounting this button so its navigation never ran. */}
+              <button
+                type="button"
+                {...seeAllProps}
+                onClick={(e) => {
+                  seeAllProps.onClick(e)
+                  closeBellPanel()
+                }}
+                className={cn(osMenuItemClass, 'text-os-grey')}
+              >
+                <span className="truncate">See all →</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -903,7 +894,6 @@ export function LayoutOS({
         {tabless ? (
           <ShellGuideProvider>
             <div className="flex min-h-0 flex-1 flex-col">
-              {!ownsSubnavRow && <TablessHistoryNav />}
               {children}
             </div>
           </ShellGuideProvider>
@@ -921,39 +911,6 @@ export function LayoutOS({
           />
         )}
       </main>
-
-      {/* Open tasks, hung off the bell. Fixed rather than absolute so the top
-          bar's overflow can't clip it. */}
-      {bellFlyout && taskCount > 0 && (
-        <div
-          role="group"
-          aria-label="Open tasks"
-          onMouseEnter={showBellFlyout}
-          onMouseLeave={hideBellFlyout}
-          style={{
-            top: bellFlyout.top,
-            right: bellFlyout.right,
-            maxHeight: `calc(100vh - ${Math.round(bellFlyout.top) + 16}px)`,
-          }}
-          className={cn(
-            'fixed z-50 hidden w-72 flex-col overflow-y-auto md:flex motion-safe:animate-area-menu',
-            osMenuClass,
-          )}
-        >
-          <div className="px-3 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-wide text-os-muted">
-            Open tasks
-          </div>
-          {openTasks.map(renderTaskRow)}
-          <button
-            type="button"
-            {...tabClickProps({ url: '/notifications?tab=history', label: 'My Tasks' })}
-            onClickCapture={closeBellFlyoutNow}
-            className={cn(taskRowClass, 'text-os-grey')}
-          >
-            <span className="truncate">See all →</span>
-          </button>
-        </div>
-      )}
 
       {/* Focus mode: with the rail hidden, keep search + a way back. */}
       {focusMode && (

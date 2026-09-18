@@ -14,7 +14,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
-import { isGroupArchived } from "~/lib/groups";
+import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -699,19 +699,22 @@ export async function runFormsAction(
         if (ids.length === 0) {
           return { error: "Select at least one group.", status: 400 };
         }
-        const [groups, terms] = await Promise.all([
+        const [groups, archiveContext] = await Promise.all([
           prisma.groupDefinition.findMany({
             where: { id: { in: ids } },
-            select: { id: true, archivedAt: true, boundTermIds: true },
+            // dynamicQuery so a finished term's / archived project's auto group
+            // is rejected here too, not just hidden in the picker.
+            select: {
+              id: true,
+              archivedAt: true,
+              boundTermIds: true,
+              dynamicQuery: true,
+            },
           }),
-          prisma.term.findMany({ select: { id: true, endDate: true } }),
+          loadGroupArchiveContext(),
         ]);
-        const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
-        const now = new Date();
         const usable = new Set(
-          groups
-            .filter((g) => !isGroupArchived(g, termEndById, now))
-            .map((g) => g.id),
+          groups.filter((g) => !isGroupArchived(g, archiveContext)).map((g) => g.id),
         );
         if (ids.some((id) => !usable.has(id))) {
           return {

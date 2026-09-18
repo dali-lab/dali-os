@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 export function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
@@ -126,12 +127,18 @@ export function instructorRoleLabel(type: OfferingType, title: string): string {
 
 /**
  * How a project assignment reads to a person, rather than as a level code.
- * The ladder (schema.prisma `ProjectLevel`) is P1 Learner / P2 Doer / P3 Mentor,
- * so P3 mentors and P1–P2 do the building — "DALI OS Developer Mentor" instead
- * of "DALI OS (P3)".
+ * Names the domain the person was staffed in on that assignment row — a
+ * designer reads "Evergreen UI/UX Design", not "Evergreen Developer" — which
+ * also tells apart the rows of someone staffed in several domains on one
+ * project. The ladder (schema.prisma `Level`) is P1 Learner / P2 Doer /
+ * P3 Mentor, so P3 appends "Mentor" instead of showing "(P3)".
  */
-export function projectRoleLabel(projectName: string, level: string): string {
-  return `${projectName} ${level === "P3" ? "Developer Mentor" : "Developer"}`;
+export function projectRoleLabel(
+  projectName: string,
+  domainName: string,
+  level: string,
+): string {
+  return `${projectName} ${domainName}${level === "P3" ? " Mentor" : ""}`;
 }
 
 /**
@@ -181,7 +188,13 @@ export async function getUserRoleInstances(
       term
         ? prisma.projectAssignment.findMany({
             where: { userId, termId: term.id },
-            select: { id: true, projectId: true, level: true, project: { select: { name: true } } },
+            select: {
+              id: true,
+              projectId: true,
+              level: true,
+              project: { select: { name: true } },
+              domain: { select: { displayName: true } },
+            },
           })
         : Promise.resolve([]),
       term
@@ -215,7 +228,7 @@ export async function getUserRoleInstances(
     roles.push({
       assignmentType: "Project",
       roleRefId: pa.id,
-      label: projectRoleLabel(pa.project.name, pa.level),
+      label: projectRoleLabel(pa.project.name, pa.domain.displayName, pa.level),
       projectId: pa.projectId,
     });
   }
@@ -330,9 +343,13 @@ export async function getRoleLabel(
     case "Project": {
       const row = await prisma.projectAssignment.findUnique({
         where: { id: roleRefId },
-        select: { level: true, project: { select: { name: true } } },
+        select: {
+          level: true,
+          project: { select: { name: true } },
+          domain: { select: { displayName: true } },
+        },
       });
-      return row ? projectRoleLabel(row.project.name, row.level) : null;
+      return row ? projectRoleLabel(row.project.name, row.domain.displayName, row.level) : null;
     }
     case "Core": {
       const row = await prisma.coreAssignment.findUnique({
@@ -651,22 +668,77 @@ async function computeCurrentTermStrict() {
   });
 }
 
+// A resolved Term row (whatever shape `findFirst` returns for the Term model).
+type TermRow = NonNullable<Awaited<ReturnType<typeof computeCurrentTermStrict>>>;
+
+/**
+ * Where "now" sits relative to the term calendar:
+ * - `in-term`  — inside some term's [startDate, endDate] window.
+ * - `break`    — between terms; `previous` just ended and/or `next` hasn't
+ *                started (either may be null at the very edges of history).
+ * - `no-terms` — the Term table is empty (v0 seed hasn't run).
+ *
+ * Unlike `currentTerm()` (which rolls forward to the next term so role-checks
+ * don't drop members to Alumni), this distinguishes a real break so surfaces
+ * like the mentorship hub can pause "you owe a note" nudges instead of
+ * reporting them against a term that hasn't begun.
+ */
+export type TermPhase =
+  | { state: "in-term"; term: TermRow }
+  | { state: "break"; previous: TermRow | null; next: TermRow | null }
+  | { state: "no-terms" };
+
+async function computeCurrentTermPhase(): Promise<TermPhase> {
+  const now = new Date();
+  const active = await prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
+  });
+  if (active) return { state: "in-term", term: active };
+  const [previous, next] = await Promise.all([
+    prisma.term.findFirst({
+      where: { endDate: { lt: now } },
+      orderBy: { sortKey: "desc" },
+    }),
+    prisma.term.findFirst({
+      where: { startDate: { gt: now } },
+      orderBy: { sortKey: "asc" },
+    }),
+  ]);
+  if (!previous && !next) return { state: "no-terms" };
+  return { state: "break", previous, next };
+}
+
+export async function currentTermPhase(request?: Request): Promise<TermPhase> {
+  if (!request) return computeCurrentTermPhase();
+  return cachedForRequest(request, "currentTermPhase", () =>
+    computeCurrentTermPhase(),
+  );
+}
+
 /**
  * Prisma `where` predicate for "current lab members" — Users with a DALIMember
- * row who are active in the current term. Use this in directory / picker
- * endpoints that should exclude alumni and applicants (e.g. calendar attendee
- * picker, announcements recipient picker, hiring reviewer/interviewer picker).
+ * row who have not graduated and are active in the current term. Use this in
+ * directory / picker endpoints that should exclude alumni and applicants (e.g.
+ * calendar attendee picker, announcements recipient picker, hiring
+ * reviewer/interviewer picker).
+ *
+ * Alumni are excluded by the stored membershipStatus, not by the term clause.
+ * Term activity alone was never enough: assignment rows are never deleted, so
+ * a member who graduates mid-term keeps this term's rows (and with no current
+ * term the clause disappears entirely, admitting every alumnus the lab ever
+ * had).
  *
  * "Active this term" matches the canonical Members page (`members.tsx`): a
  * CoreAssignment OR a project assignment for the current term. If there is no
- * current term at all (empty Term table), the predicate degrades to "any lab
- * member" rather than returning nothing.
+ * current term at all (empty Term table), the predicate degrades to "any
+ * current lab member" rather than returning nothing.
  */
 export async function currentTermMemberWhere(request?: Request) {
   const term = await currentTerm(request);
-  if (!term) return { daliMember: { isNot: null } };
+  if (!term) return { ...ACTIVE_LAB_MEMBER_WHERE };
   return {
-    daliMember: { isNot: null },
+    ...ACTIVE_LAB_MEMBER_WHERE,
     OR: [
       { coreAssignments: { some: { termId: term.id } } },
       { projectAssignments: { some: { termId: term.id } } },
@@ -727,9 +799,9 @@ export async function canManageStaffing(userId: string, request?: Request): Prom
 /**
  * Lab-mentor gate: true if the user is an active mentor anywhere in the lab
  * for the given term. Used as the area gate for `/mentorship` (hub, browse,
- * notes) — mentees are excluded. Per-note / per-pair reads are further scoped
- * by domain in `mentorship/lib/visibility` (own notes + own-domain mentee
- * notes; Core/Admin see everything).
+ * notes) — mentees are excluded. Past this gate every lab mentor reads all
+ * notes/pairs lab-wide; see `mentorship/lib/visibility`. Editing stays narrow
+ * (a note's author or Core; pairs are Core-only).
  *
  * Returns true if the user has, for the given term, ANY of:
  *   - a P3-level ProjectAssignment

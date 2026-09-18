@@ -241,9 +241,12 @@ export const prisma = {
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   project: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
   },
@@ -355,8 +358,12 @@ export const prisma = {
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+  },
+  meetingTimeProposal: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
   meetingAttendance: {
     findUnique: vi.fn(),
@@ -364,6 +371,7 @@ export const prisma = {
     create: vi.fn(),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   meetingReminderLog: {
@@ -462,6 +470,7 @@ export const prisma = {
   staffingAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   staffingBoardMember: {
@@ -622,6 +631,21 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     createMany: vi.fn(),
+  },
+  certificateTemplate: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  educationCertificateBinding: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   educationDecisionEmail: {
     findUnique: vi.fn(),

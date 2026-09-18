@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Form } from "react-router";
-import { Megaphone, MessageSquare, Reply } from "lucide-react";
+import { Megaphone, MessageSquare, Reply, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { AddFormModal } from "./AddFormModal";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -10,10 +11,10 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 // The offering's discussion, shared by the manage page and the course hub.
 //
 // Two kinds of post: an Announcement, which notifies every enrollee in-app and
-// by email, and a Message, which doesn't. Instructors can send either; students
-// send Messages. Anyone in the offering can reply to any top-level post, and
-// replies never notify — a thread that emails the whole course on every reply
-// stops being a thread.
+// by email, and a regular post, which doesn't. Instructors can send either;
+// students send regular posts. Anyone in the offering can reply to any
+// top-level post, and replies never notify — a thread that emails the whole
+// course on every reply stops being a thread.
 //
 // `canAnnounce` is the only difference between the two surfaces: it's the
 // server's isOfferingManager answer, and the server re-checks it on every post,
@@ -35,6 +36,35 @@ export type DiscussionPost = DiscussionReply & {
 const name = (a: { firstName: string; lastName: string }) =>
   `${a.firstName} ${a.lastName}`.trim();
 
+/** Delete control for a post or reply — the author sees it on their own posts,
+ *  managers on any. Deleting a top-level post also removes its replies. */
+function DeletePost({ id, canDelete }: { id: string; canDelete: boolean }) {
+  const confirmSubmit = useConfirmSubmit();
+  if (!canDelete) return null;
+  return (
+    <Form
+      method="post"
+      className="ml-auto"
+      onSubmit={confirmSubmit({
+        title: "Delete this post?",
+        description: "This removes it for everyone, along with any replies.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      })}
+    >
+      <input type="hidden" name="intent" value="delete-announcement" />
+      <input type="hidden" name="postId" value={id} />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 className="h-3 w-3" aria-hidden />
+        Delete
+      </button>
+    </Form>
+  );
+}
+
 export function OfferingDiscussion({
   posts,
   currentUserId,
@@ -54,12 +84,12 @@ export function OfferingDiscussion({
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs text-muted-foreground">
           {canAnnounce
-            ? "Announcements notify every enrollee. Messages stay here."
+            ? "Announcements email every enrollee. Regular posts just appear here."
             : "Ask a question or reply to a post — your instructors will see it."}
         </p>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" variant="secondary" onClick={() => setComposeKind("Message")}>
-            New message
+            New post
           </Button>
           {canAnnounce && (
             <Button type="button" size="sm" onClick={() => setComposeKind("Announcement")}>
@@ -71,7 +101,7 @@ export function OfferingDiscussion({
 
       {posts.length === 0 && (
         <p className="text-sm text-muted-foreground italic">
-          Nothing posted yet — start the conversation above.
+          No posts yet — start the discussion above.
         </p>
       )}
 
@@ -100,6 +130,10 @@ export function OfferingDiscussion({
               <span className="text-xs text-muted-foreground">
                 {formatDateTime(p.sentAt as never, tz)}
               </span>
+              <DeletePost
+                id={p.id}
+                canDelete={p.authorId === currentUserId || canAnnounce}
+              />
             </header>
 
             <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{p.body}</p>
@@ -121,6 +155,10 @@ export function OfferingDiscussion({
                       <span className="text-xs text-muted-foreground">
                         {formatDateTime(r.sentAt as never, tz)}
                       </span>
+                      <DeletePost
+                        id={r.id}
+                        canDelete={r.authorId === currentUserId || canAnnounce}
+                      />
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{r.body}</p>
                   </li>
@@ -181,14 +219,14 @@ export function OfferingDiscussion({
       <AddFormModal
         open={composeKind !== null}
         onClose={() => setComposeKind(null)}
-        title={composeKind === "Announcement" ? "New announcement" : "New message"}
+        title={composeKind === "Announcement" ? "New announcement" : "New post"}
         subtitle={
           composeKind === "Announcement"
             ? "Goes to every approved enrollee — in-app and by email."
-            : "Posted to the discussion. Nobody is emailed."
+            : "Posted to the class discussion. No email is sent."
         }
         intent="post-announcement"
-        submitLabel={composeKind === "Announcement" ? "Send announcement" : "Post message"}
+        submitLabel={composeKind === "Announcement" ? "Send announcement" : "Post"}
         hiddenFields={{ kind: composeKind ?? "Message" }}
       >
         <label className="block">
@@ -198,7 +236,7 @@ export function OfferingDiscussion({
             ) : (
               <MessageSquare className="h-3.5 w-3.5" />
             )}
-            Message
+            {composeKind === "Announcement" ? "Announcement" : "Post"}
           </span>
           <textarea
             name="body"

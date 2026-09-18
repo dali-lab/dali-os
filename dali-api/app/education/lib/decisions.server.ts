@@ -85,12 +85,19 @@ export async function decideApplication(args: {
         await decrementRanksAbove(tx, application.offeringId, previousRank);
       }
 
-      // A freed seat pulls the front of the waitlist in, atomically.
-      if (
-        previous === "Approved" &&
-        (args.status === "Withdrawn" || args.status === "Rejected")
-      ) {
-        return promoteFromWaitlist(tx, application.offeringId, application.offering.capacity);
+      // Any move off an approved seat frees it — pull the front of the waitlist
+      // in, atomically. That covers Rejected/Withdrawn and a demotion back to
+      // Waitlisted. On a demotion we exclude the just-demoted applicant (who was
+      // appended to the back above) so they can't immediately bounce into the
+      // seat they were moved out of; the person who's been waiting longest
+      // takes it instead. If they're the only one waiting, nobody is promoted.
+      if (previous === "Approved" && args.status !== "Approved") {
+        return promoteFromWaitlist(
+          tx,
+          application.offeringId,
+          application.offering.capacity,
+          application.id,
+        );
       }
       return null;
     });
@@ -165,17 +172,24 @@ async function decrementRanksAbove(
 
 /**
  * Promote the front of the waitlist into a freed seat. Caller must hold the
- * offering row lock. Returns the promoted application id, or null when the
- * waitlist is empty or the offering is still full.
+ * offering row lock. `excludeApplicationId` skips a specific application — used
+ * on a demotion so the just-demoted applicant isn't re-promoted into the seat
+ * they were moved out of. Returns the promoted application id, or null when the
+ * waitlist is empty (after the exclusion) or the offering is still full.
  */
 export async function promoteFromWaitlist(
   tx: Prisma.TransactionClient,
   offeringId: string,
   capacity: number,
+  excludeApplicationId?: string,
 ): Promise<string | null> {
   if ((await approvedCount(tx, offeringId)) >= capacity) return null;
   const next = await tx.educationApplication.findFirst({
-    where: { offeringId, status: "Waitlisted" },
+    where: {
+      offeringId,
+      status: "Waitlisted",
+      ...(excludeApplicationId ? { id: { not: excludeApplicationId } } : {}),
+    },
     orderBy: [{ waitlistRank: "asc" }, { submittedAt: "asc" }],
     select: { id: true, waitlistRank: true },
   });
@@ -188,6 +202,73 @@ export async function promoteFromWaitlist(
     await decrementRanksAbove(tx, offeringId, next.waitlistRank);
   }
   return next.id;
+}
+
+/**
+ * Manually reorder the waitlist by swapping an application with its neighbour
+ * in the given direction. Auto-promotion always pulls the lowest rank first, so
+ * moving someone up means they're enrolled sooner when a seat frees. A no-op
+ * (still ok) at the ends of the list. Not a status change — no notification.
+ */
+export async function moveWaitlistEntry(args: {
+  applicationId: string;
+  offeringId: string;
+  direction: "up" | "down";
+  actorId: string;
+}): Promise<DecisionResult> {
+  const application = await prisma.educationApplication.findUnique({
+    where: { id: args.applicationId },
+    select: { id: true, status: true, offeringId: true },
+  });
+  if (!application || application.offeringId !== args.offeringId) {
+    return { error: "Application not found.", status: 404 };
+  }
+  if (application.status !== "Waitlisted") {
+    return { error: "Only waitlisted applicants can be reordered.", status: 400 };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await lockOffering(tx, args.offeringId);
+    // Re-read the rank under the lock — it shifts as others are promoted/removed.
+    const self = await tx.educationApplication.findUnique({
+      where: { id: application.id },
+      select: { status: true, waitlistRank: true },
+    });
+    if (!self || self.status !== "Waitlisted" || self.waitlistRank == null) return;
+
+    const neighbour = await tx.educationApplication.findFirst({
+      where: {
+        offeringId: args.offeringId,
+        status: "Waitlisted",
+        waitlistRank:
+          args.direction === "up"
+            ? { lt: self.waitlistRank }
+            : { gt: self.waitlistRank },
+      },
+      orderBy: { waitlistRank: args.direction === "up" ? "desc" : "asc" },
+      select: { id: true, waitlistRank: true },
+    });
+    if (!neighbour || neighbour.waitlistRank == null) return; // already at the end
+
+    // Swap the two ranks. No unique constraint on waitlistRank, so the direct
+    // two-step swap needs no scratch value.
+    await tx.educationApplication.update({
+      where: { id: application.id },
+      data: { waitlistRank: neighbour.waitlistRank },
+    });
+    await tx.educationApplication.update({
+      where: { id: neighbour.id },
+      data: { waitlistRank: self.waitlistRank },
+    });
+  });
+
+  await logAuditEvent({
+    action: "education.waitlist.reorder",
+    userId: args.actorId,
+    targetId: args.applicationId,
+    metadata: { offeringId: args.offeringId, direction: args.direction },
+  });
+  return { ok: true, status: "Waitlisted", promotedApplicationId: null };
 }
 
 /** Applicant self-withdrawal — the only decision an applicant may make. */

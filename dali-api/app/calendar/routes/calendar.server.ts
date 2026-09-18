@@ -5,6 +5,7 @@ import { listAllGroups } from "~/lib/groups";
 import {
   canViewForms,
   isCore,
+  isLabMember,
   currentTerm,
   currentTermMemberWhere,
   getUserRoleInstances,
@@ -12,6 +13,7 @@ import {
   resolveRoleRef,
   type RoleInstance,
 } from "~/lib/roles";
+import type { ScopeType } from "~/generated/prisma/client";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -50,9 +52,18 @@ import {
 } from "~/lib/google-calendar";
 import {
   generalCalendarId,
+  isGeneralCalendarEvent,
   generalCalendarState,
 } from "~/lib/general-calendar";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
+import {
+  attachMeetingNote,
+  cancelScheduledMeeting,
+  trackExternalEventAsMeeting,
+  updateScheduledMeeting,
+  type ScheduledMeetingScope,
+} from "~/lib/scheduled-meeting";
+import { rruleWithUntil, bareRrule } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -124,30 +135,60 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
  * expanded instance carries — so each occurrence of a weekly team meeting finds
  * the same meeting (and the same notes doc).
  *
- * Only meetings the viewer is part of are returned: seeing an event on a shared
- * calendar isn't grounds for reaching its attendance page.
+ * Normally only meetings the viewer is part of are returned: seeing an event on
+ * someone's shared calendar isn't grounds for reaching its attendance page.
+ *
+ * The DALI general calendar is the exception, and the reason this used to look
+ * broken. It is the lab's own calendar — an event on it is addressed to the
+ * whole lab by construction, whoever happens to be listed as a Google attendee
+ * — so a lab member looking at one gets its note and attendance the same way
+ * they would for a meeting they were invited to individually. Without this, a
+ * lab-wide event showed a popover with no note and no attendance while every
+ * other meeting on the grid had both.
  */
 async function meetingsForExternalEvents(
   events: CalendarEvent[],
   userId: string,
   canMarkCoreMeeting: boolean,
+  viewerIsLabMember: boolean,
 ): Promise<Map<string, EventMeetingDTO>> {
   const seriesIds = new Set<string>();
+  // Ids that reach the viewer through the general calendar, which admits any
+  // lab member rather than only the invited.
+  const labWideIds = new Set<string>();
   for (const e of events) {
-    if (e.eventId) seriesIds.add(e.eventId);
-    if (e.recurringEventId) seriesIds.add(e.recurringEventId);
+    const labWide = viewerIsLabMember && isGeneralCalendarEvent(e.calendarId);
+    if (e.eventId) {
+      seriesIds.add(e.eventId);
+      if (labWide) labWideIds.add(e.eventId);
+    }
+    if (e.recurringEventId) {
+      seriesIds.add(e.recurringEventId);
+      if (labWide) labWideIds.add(e.recurringEventId);
+    }
   }
   if (seriesIds.size === 0) return new Map();
+  const invited = [
+    { organizerId: userId },
+    { participantUserIds: { has: userId } },
+  ];
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       externalEventId: { in: [...seriesIds] },
       status: { not: "Cancelled" },
-      OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }],
+      OR: labWideIds.size > 0
+        ? [...invited, { externalEventId: { in: [...labWideIds] } }]
+        : invited,
     },
     select: {
       id: true,
+      organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
+      participantUserIds: true,
+      guestsCanModify: true,
+      guestsCanInviteOthers: true,
+      guestsCanSeeGuestList: true,
       notePage: { select: { id: true } },
       timeEntries: { where: { userId }, select: { id: true }, take: 1 },
     },
@@ -155,12 +196,28 @@ async function meetingsForExternalEvents(
   const byExternalId = new Map<string, EventMeetingDTO>();
   for (const m of meetings) {
     if (!m.externalEventId) continue;
+    const isOrganizer = m.organizerId === userId;
+    const isParticipant = m.participantUserIds.includes(userId);
+    const canFullEdit =
+      isOrganizer ||
+      canMarkCoreMeeting ||
+      (m.guestsCanModify && isParticipant);
+    const canGuestEdit =
+      canFullEdit ||
+      (m.guestsCanInviteOthers && isParticipant);
     byExternalId.set(m.externalEventId, {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
       onTimesheet: m.timeEntries.length > 0,
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
+      // Adding notes after the fact is the organizer's or Core's call — the same
+      // authority attachMeetingNote re-checks server-side.
+      canAddNote: isOrganizer || canMarkCoreMeeting,
+      // Widened to canGuestEdit: guests with invite-others permission can invite.
+      canInvite: canGuestEdit,
+      guestEditOnly: canGuestEdit && !canFullEdit,
+      hideGuestList: !m.guestsCanSeeGuestList && !isOrganizer && !canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -174,6 +231,27 @@ async function meetingsForExternalEvents(
     if (hit) byEventId.set(e.eventId, hit);
   }
   return byEventId;
+}
+
+/**
+ * Who may act on a meeting from its detail popover — logging it to their
+ * timesheet, or marking it a Core meeting.
+ *
+ * The organizer and the invited, as before, plus any lab member on a
+ * "None"-scoped meeting: that is the lab-wide kind, which is what an event on
+ * the general calendar becomes once it's tracked. Those members can now see
+ * such a meeting in the popover, so without this last clause the popover would
+ * hand them controls that 403.
+ */
+async function canActOnMeeting(
+  meeting: { organizerId: string; participantUserIds: string[]; scopeType: ScopeType },
+  userId: string,
+  request: Request,
+): Promise<boolean> {
+  if (meeting.organizerId === userId) return true;
+  if (meeting.participantUserIds.includes(userId)) return true;
+  if (meeting.scopeType !== "None") return false;
+  return isLabMember(userId, request);
 }
 
 /**
@@ -352,24 +430,6 @@ async function assertLinkOwned(userId: string, linkId: string): Promise<void> {
     select: { id: true },
   });
   if (!link) throw new Error("That calendar isn't connected to your account.");
-}
-
-/** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
-function rruleUntilBasic(d: Date): string {
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-/** Take a recurring master's `recurrence` array and return one RRULE string with
- *  UNTIL set (existing UNTIL/COUNT stripped) — for splitting/truncating a series. */
-function rruleWithUntil(recurrence: string[], until: Date): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  if (!rule) return null;
-  const parts = rule.split(";").filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
-  parts.push(`UNTIL=${rruleUntilBasic(until)}`);
-  return parts.join(";");
-}
-function bareRrule(recurrence: string[]): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
 }
 
 type EventScope = "this" | "following" | "all";
@@ -581,6 +641,149 @@ async function handleEventRsvp(opts: {
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
 // the series.
+/** Parse the composer's guest scope (JSON) back into a ScheduledMeetingScope,
+ *  normalizing anything unexpected to "None" (no guests) rather than trusting the
+ *  wire shape. */
+function parseMeetingScope(raw: string): ScheduledMeetingScope {
+  const p = JSON.parse(raw) as {
+    type?: string;
+    groupId?: unknown;
+    extraUserIds?: unknown;
+    participantUserIds?: unknown;
+  };
+  if (p?.type === "Group" && typeof p.groupId === "string") {
+    return {
+      type: "Group",
+      groupId: p.groupId,
+      extraUserIds: Array.isArray(p.extraUserIds) ? (p.extraUserIds as string[]) : undefined,
+    };
+  }
+  if (p?.type === "UserList" && Array.isArray(p.participantUserIds)) {
+    return { type: "UserList", participantUserIds: p.participantUserIds as string[] };
+  }
+  return { type: "None" };
+}
+
+/**
+ * When the event being edited from the composer is a DALI meeting, edit it
+ * through updateScheduledMeeting instead of a raw Google patch: that reconciles
+ * the attendance roster, notifies added/removed guests, and re-syncs the Google
+ * event — all under organizer-or-Core auth, which also lets Core edit a meeting
+ * on a calendar they don't own. So this runs before the link-ownership gate.
+ * Returns "passthrough" when the event isn't a manageable meeting.
+ */
+async function maybeUpdateMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true, recurrenceRule: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const title = get("title").trim();
+  if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+  const startIso = get("startIso");
+  const endIso = get("endIso");
+  if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+  const durationMinutes = Math.round(
+    (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000,
+  );
+  if (!(durationMinutes > 0)) return Response.json({ error: "End must be after start." }, { status: 400 });
+
+  let scope: ScheduledMeetingScope;
+  try {
+    scope = parseMeetingScope(get("meetingScope") || '{"type":"None"}');
+  } catch {
+    return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+  }
+
+  const editScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+  const occurrenceEventId = get("eventId") || undefined;
+
+  // For "all" we pass the recurrenceRule from the master (cadence unchanged).
+  // For "this"/"following" the handlers in updateScheduledMeeting manage the rule.
+  const recurrenceRule = editScope === "all" ? meeting.recurrenceRule : undefined;
+
+  const guestsCanModifyRaw = get("guestsCanModify");
+  const guestsCanInviteOthersRaw = get("guestsCanInviteOthers");
+  const guestsCanSeeGuestListRaw = get("guestsCanSeeGuestList");
+
+  const result = await updateScheduledMeeting(meeting.id, userId, {
+    title,
+    durationMinutes,
+    scope,
+    startTime: startIso,
+    recurrenceRule,
+    location: get("location").trim(),
+    description: get("description").trim(),
+    editScope,
+    occurrenceStart,
+    occurrenceEventId,
+    ...(guestsCanModifyRaw !== "" ? { guestsCanModify: guestsCanModifyRaw === "1" } : {}),
+    ...(guestsCanInviteOthersRaw !== "" ? { guestsCanInviteOthers: guestsCanInviteOthersRaw === "1" } : {}),
+    ...(guestsCanSeeGuestListRaw !== "" ? { guestsCanSeeGuestList: guestsCanSeeGuestListRaw === "1" } : {}),
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+
+  // "Count this as work" logs the viewer's own hours against the event.
+  // Skip for any scoped edit that isn't a plain single-event save.
+  if (!recurringEventId && editScope === "all") {
+    const [linkId] = get("destination").split(":");
+    const ownsLink = linkId
+      ? Boolean(
+          await prisma.userCalendarLink.findFirst({
+            where: { id: linkId, userId },
+            select: { id: true },
+          }),
+        )
+      : false;
+    if (ownsLink) {
+      const work = await resolveEventWorkLog(userId, get);
+      if (work.error) return work.error;
+      if (work.work.kind === "write") {
+        const shapeError = workLogShapeError(null, get("allDay") === "1");
+        if (shapeError) return shapeError;
+      }
+      await writeEventWorkLog({ userId, eventId, linkId, title, startIso, endIso, work: work.work });
+    }
+  }
+  return null;
+}
+
+async function maybeCancelMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const deleteScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+
+  const result = await cancelScheduledMeeting(meeting.id, userId, {
+    allowCore: true,
+    scope: deleteScope,
+    occurrenceStart,
+    occurrenceEventId: eventId,
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+  return null;
+}
+
 async function handleEventAction(
   intent: string,
   raw: Record<string, FormDataEntryValue>,
@@ -591,6 +794,16 @@ async function handleEventAction(
   const roles = await getUserRoles(userId, request);
   if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
+  }
+  // A meeting-backed event is edited through its own DALI update path (roster +
+  // notifications + Google sync), before the link-ownership gate below.
+  if (intent === "event-update") {
+    const handled = await maybeUpdateMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
+  }
+  if (intent === "event-delete") {
+    const handled = await maybeCancelMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
   }
   const dest = get("destination");
   const [linkId, calRaw] = dest.split(":");
@@ -880,11 +1093,74 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
+    case "add-meeting-note": {
+      // noteLocation is a nested object, so it rides across as a JSON string
+      // (same pattern as seed-working-hours' `days`).
+      let noteLocation: unknown = undefined;
+      const locRaw = get("noteLocation");
+      if (locRaw) {
+        try {
+          noteLocation = JSON.parse(locRaw);
+        } catch {
+          // Leave undefined; the note falls back to its default destination.
+        }
+      }
+      return {
+        intent,
+        meetingId: get("meetingId"),
+        meetingType: get("meetingType"),
+        meetingTypeLabel: get("meetingTypeLabel") || undefined,
+        projectId: get("projectId") || undefined,
+        noteLocation,
+      };
+    }
     case "set-timesheet-sync":
       return { intent, enabled: asBool(get("enabled")) };
     default:
       return raw;
   }
+}
+
+// Members + groups for a participant picker: current lab members (no applicants,
+// partners, or non-active alumni) plus every non-archived group. Group rosters
+// can name members outside the current-term set (alumni, inactive), so display
+// names for those are fetched and merged in — otherwise the picker renders a raw
+// user id. Shared by the calendar loader and the meeting edit-context endpoint.
+export async function loadParticipantOptions(
+  request: Request,
+): Promise<{ groups: GroupOption[]; users: UserOption[] }> {
+  const memberWhere = await currentTermMemberWhere(request);
+  const [groups, users] = await Promise.all([
+    listAllGroups().then((rows) =>
+      rows
+        .filter((r) => !r.archived)
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          memberIds: r.memberIds,
+          projectId: r.dynamicQuery?.startsWith("project:")
+            ? r.dynamicQuery.slice("project:".length)
+            : null,
+          systemKey: r.systemKey ?? null,
+        })),
+    ),
+    prisma.user.findMany({
+      where: memberWhere,
+      select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    }),
+  ]);
+  const knownUserIds = new Set(users.map((u) => u.id));
+  const missingMemberIds = Array.from(
+    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
+  );
+  const extraGroupMembers = missingMemberIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: missingMemberIds } },
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      })
+    : [];
+  return { groups, users: [...users, ...extraGroupMembers] };
 }
 
 export async function loadCalendarData(request: Request) {
@@ -900,18 +1176,16 @@ export async function loadCalendarData(request: Request) {
   const term = await currentTerm(request);
   const termId = term?.id;
 
-  // Participant picker is for scheduling with current lab members — exclude
-  // applicants, partners, and alumni who happen to still have a User row.
-  // Pass the already-resolved termId to avoid a second currentTerm() call.
-  const memberWhere = await currentTermMemberWhere(request);
+  // Members + groups for the participant picker (shared with the meeting
+  // edit-context endpoint). Kicked off here so it runs alongside the fan-out
+  // below; awaited once the rest resolves.
+  const participantOptionsP = loadParticipantOptions(request);
 
   const [
     settings,
     userRow,
     whRows,
     links,
-    groups,
-    users,
     myProjects,
     myRoles,
     canSetSelfCheckIn,
@@ -941,29 +1215,6 @@ export async function loadCalendarData(request: Request) {
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      // Every active group is schedulable — the picker is intentionally not
-      // limited to groups the organizer belongs to, so staff/Core can schedule
-      // a meeting with any team (and the project hub's "Schedule meeting" button
-      // pre-fills a project's group even for non-members). Group rosters aren't
-      // sensitive here — they're already shown on hubs, the directory, etc.
-      listAllGroups().then((rows) =>
-        rows
-          .filter((r) => !r.archived)
-          .map((r) => ({
-            id: r.id,
-            name: r.name,
-            memberIds: r.memberIds,
-            projectId: r.dynamicQuery?.startsWith("project:")
-              ? r.dynamicQuery.slice("project:".length)
-              : null,
-            systemKey: r.systemKey ?? null,
-          })),
-      ),
-      prisma.user.findMany({
-        where: memberWhere,
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      }),
       prisma.project.findMany({
         where: { assignments: { some: { userId } } },
         select: { id: true, name: true },
@@ -975,22 +1226,7 @@ export async function loadCalendarData(request: Request) {
       isCore(userId, request),
     ]);
 
-  // Group rosters can include members outside the current-term member set
-  // (alumni, users inactive this term, etc.), so those ids aren't in `users`
-  // above. Without names, the scheduling grid falls back to rendering a raw
-  // user id (a cuid). Fetch display names for any such member and merge them
-  // in so every resolvable participant renders as a person, not an id.
-  const knownUserIds = new Set(users.map((u) => u.id));
-  const missingMemberIds = Array.from(
-    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownUserIds.has(id))),
-  );
-  const extraGroupMembers = missingMemberIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: missingMemberIds } },
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-      })
-    : [];
-  const allUsers = [...users, ...extraGroupMembers];
+  const { groups, users: allUsers } = await participantOptionsP;
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
@@ -1144,12 +1380,15 @@ export async function loadCalendarData(request: Request) {
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${crudEnabled ? "crud" : "busy"}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
   const [externalRaw, calendarLinks] = await Promise.all([
+    // Read every calendar on each account ("all"), not just the ones counting
+    // toward availability: the grid's per-calendar Show toggle filters this
+    // client-side, so a calendar missing here can never be shown.
     cachedExternalRead<CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>>>(
       externalCacheKey,
       () =>
         crudEnabled
-          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens)
-          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens),
+          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all")
+          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
     ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
       return [];
@@ -1210,8 +1449,14 @@ export async function loadCalendarData(request: Request) {
     : [];
   // One query for the whole window, not one per event.
   const eventMeetings = crudEnabled
-    ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting)
+    ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting, roles.isLabMember)
     : new Map<string, EventMeetingDTO>();
+
+  // "Track in DALI" is offered only on the lab's own general calendar. Any
+  // external event *could* be given a meeting, but offering it on someone's
+  // dentist appointment is noise — the general calendar is where the lab's
+  // untracked events actually are.
+  const canTrackEvents = crudEnabled && canMarkCoreMeeting;
 
   const externalEvents: ExternalEventDTO[] = crudEnabled
     ? crudEvents.map((e) => ({
@@ -1228,23 +1473,33 @@ export async function loadCalendarData(request: Request) {
         description: e.description,
         location: e.location,
         organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
+        attendees: (() => {
+          const m = e.eventId ? eventMeetings.get(e.eventId) : undefined;
+          return m?.hideGuestList ? undefined : externalAttendees(e.attendees);
+        })(),
         links: externalLinks(e.meetingUrl, e.htmlLink),
         rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
         meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
+        canTrackAsMeeting:
+          canTrackEvents &&
+          isGeneralCalendarEvent(e.calendarId) &&
+          Boolean(e.eventId) &&
+          !eventMeetings.has(e.eventId),
       }))
-    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
-        startIso: e.start,
-        endIso: e.end,
-        title: e.title ?? "Busy",
-        color: e.color ?? null,
-        calendarId: e.calendarId ?? null,
-        description: e.description,
-        location: e.location,
-        organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
-        links: externalLinks(e.meetingUrl, e.htmlLink),
-      }));
+    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>)
+        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
+        .map((e) => ({
+          startIso: e.start,
+          endIso: e.end,
+          title: e.title ?? "Busy",
+          color: e.color ?? null,
+          calendarId: e.calendarId ?? null,
+          description: e.description,
+          location: e.location,
+          organizerName: e.organizerName,
+          attendees: externalAttendees(e.attendees),
+          links: externalLinks(e.meetingUrl, e.htmlLink),
+        }));
 
   // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
   // terms for the modal picker.
@@ -1653,12 +1908,13 @@ export async function submitCalendarAction(request: Request) {
           createdAt: true,
           organizerId: true,
           participantUserIds: true,
+          scopeType: true,
         },
       });
       if (!meeting || meeting.status === "Cancelled") {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
+      if (!(await canActOnMeeting(meeting, userId, request))) {
         return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
       }
       if (!input.onTimesheet) {
@@ -1710,10 +1966,10 @@ export async function submitCalendarAction(request: Request) {
       if (!(await isCore(userId, request))) return forbidden(request);
       const meeting = await prisma.scheduledMeeting.findUnique({
         where: { id: input.meetingId },
-        select: { id: true, organizerId: true, participantUserIds: true },
+        select: { id: true, organizerId: true, participantUserIds: true, scopeType: true },
       });
       if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
-      if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
+      if (!(await canActOnMeeting(meeting, userId, request))) {
         return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
       }
       await prisma.scheduledMeeting.update({
@@ -1721,6 +1977,37 @@ export async function submitCalendarAction(request: Request) {
         data: { isCoreMeeting: input.isCoreMeeting },
       });
       return null;
+    }
+
+    case "add-meeting-note": {
+      const result = await attachMeetingNote({
+        meetingId: input.meetingId,
+        actorId: userId,
+        meetingType: input.meetingType,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+        projectId: input.projectId ?? null,
+        noteLocation: input.noteLocation ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true, notePageId: result.notePageId });
+    }
+
+    case "track-event-as-meeting": {
+      // Core-only, re-checked inside — the popover only offers the button to
+      // Core, but the form is a hint and the server decides.
+      const result = await trackExternalEventAsMeeting({
+        actorId: userId,
+        eventId: input.eventId,
+        recurringEventId: input.recurringEventId ?? null,
+        linkId: input.linkId,
+        calendarId: input.calendarId,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true, meetingId: result.meeting.id });
     }
   }
 }

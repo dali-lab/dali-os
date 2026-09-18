@@ -108,13 +108,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin/routes/api.members.ts for the canonical shape.
-  // The Alumni view layers the stored membership status onto the same base set
-  // (still requires a DALIMember row; drops the term filter) and sorts by class
-  // year. membershipStatus is authoritative — no derivation here.
-  const alumniCondition =
-    status === "alumni" ? { membershipStatus: "Alumni" as const } : {};
+  // Each view pins the stored membership status onto the same base set (both
+  // still require a DALIMember row). Alumni drops the term filter and sorts by
+  // class year; Active excludes alumni outright rather than leaning on the term
+  // filter to hide them — assignment rows are never deleted, so a member who
+  // graduated mid-term still matches this term, and "All terms" dropped the
+  // clause entirely and listed every alumnus the lab ever had under Active.
+  // membershipStatus is authoritative — no derivation here.
+  const statusCondition =
+    status === "alumni"
+      ? { membershipStatus: "Alumni" as const }
+      : { membershipStatus: "Active" as const };
   const users = await prisma.user.findMany({
-    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...alumniCondition },
+    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...statusCondition },
     orderBy:
       status === "alumni"
         ? [{ classYear: "desc" as const }, ...MEMBER_LIST_ORDER_BY]

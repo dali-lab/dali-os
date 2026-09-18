@@ -233,8 +233,10 @@ describe("scopes", () => {
   it("upsert_education_student_note requires mcp:write", () => {
     expect(UPSERT_EDUCATION_STUDENT_NOTE_TOOL.requiredScope).toBe("mcp:write");
   });
-  it("close_out_education_offering requires mcp:admin", () => {
-    expect(CLOSE_OUT_EDUCATION_OFFERING_TOOL.requiredScope).toBe("mcp:admin");
+  it("close_out_education_offering requires mcp:write", () => {
+    // Web gate is isOfferingManager (instructor or Core) — mcp:write, not
+    // mcp:admin, so an instructor who owns the offering can close it (A12).
+    expect(CLOSE_OUT_EDUCATION_OFFERING_TOOL.requiredScope).toBe("mcp:write");
   });
 });
 
@@ -733,6 +735,23 @@ describe("close_out_education_offering", () => {
     });
     const result = await runCloseOutEducationOffering(ctx(), { offeringId: "o1" });
     expect(result).toMatchObject({ preview: false, issued: 5, alreadyIssued: 2 });
+    expect(closeOutOffering).toHaveBeenCalledWith(
+      expect.objectContaining({ offeringId: "o1", allowEarly: false }),
+    );
+  });
+
+  it("forwards allowEarly to close out an unfinished offering", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    vi.mocked(closeOutOffering).mockResolvedValue({
+      ok: true,
+      issued: 0,
+      alreadyIssued: 0,
+      ineligible: 0,
+    });
+    await runCloseOutEducationOffering(ctx(), { offeringId: "o1", allowEarly: true });
+    expect(closeOutOffering).toHaveBeenCalledWith(
+      expect.objectContaining({ allowEarly: true }),
+    );
   });
 
   it("throws not-found for missing offering in preview", async () => {

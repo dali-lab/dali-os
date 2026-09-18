@@ -128,10 +128,34 @@ export const FEATURE_FLAGS = [
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
   },
   {
+    key: "mentorship-manage",
+    label: "Manage mentorship pairs",
+    description:
+      "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
+  },
+  {
     key: "activities",
     label: "Activities",
     description:
       "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a top-bar bar, its on-page codes, and a surface modal (submit + progress + leaderboard) that floats over whatever page they're on; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+  },
+  {
+    key: "education-redesign-v2",
+    label: "Education redesign",
+    description:
+      "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
+  },
+  {
+    key: "education-student-hub",
+    label: "Education student hub",
+    description:
+      "Reworks the enrolled student's course hub (member + portal). Adds a Canvas-style People tab (instructors + classmates) and drops that roster from Overview. Removes the separate Workspace tab: shared co-edited docs and uploaded files now attach to a session (or the whole course) and render inline on the session Timeline alongside read-only materials — one place for every resource. Ships off.",
+  },
+  {
+    key: "certificate-templates",
+    label: "Certificate templates",
+    description:
+      "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

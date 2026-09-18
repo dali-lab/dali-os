@@ -18,6 +18,7 @@ import {
   nominalDayRange,
   roleColor,
   timeEntryRoleKey,
+  timeEntryIssue,
 } from "./event-block";
 
 /** One column of the grid — a single calendar day, in UTC-anchored form. */
@@ -184,7 +185,17 @@ export function buildExternalLayer(
         links: e.links,
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
+        unanswered: e.rsvp === "Pending",
         meeting: e.meeting,
+        trackable:
+          e.canTrackAsMeeting && e.eventId && e.linkId && e.calendarId
+            ? {
+                eventId: e.eventId,
+                recurringEventId: e.recurringEventId ?? null,
+                linkId: e.linkId,
+                calendarId: e.calendarId,
+              }
+            : undefined,
         // The RSVP control needs the event's identity to write back to Google;
         // an event the viewer isn't a guest on carries no rsvp and gets none.
         rsvp:
@@ -199,9 +210,19 @@ export function buildExternalLayer(
               }
             : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
+        issue:
+          e.eventId && loggedAccents?.get(e.eventId)?.incomplete
+            ? "Logged time is missing a role or a note"
+            : undefined,
         // Editable Google events (writable + flag on) get Edit / Duplicate /
-        // Delete affordances in the detail popover and can be dragged.
-        onEdit: onEdit && editable ? (anchor) => onEdit(e, anchor) : undefined,
+        // Delete affordances in the detail popover and can be dragged. A meeting
+        // the viewer manages is also editable even when its Google copy isn't
+        // theirs to write (Core, or an invitee-organizer): the edit routes
+        // through the DALI update path, which patches Google via the organizer.
+        onEdit:
+          onEdit && (editable || e.meeting?.canInvite)
+            ? (anchor) => onEdit(e, anchor)
+            : undefined,
         onMoveResize: onMoveResize && editable ? (s, en, di) => onMoveResize(e, s, en, di) : undefined,
         onDuplicate: onDuplicate && editable ? (anchor) => onDuplicate(e, anchor) : undefined,
         onDelete: onDelete && editable ? () => onDelete(e) : undefined,
@@ -270,6 +291,7 @@ export function buildAllDayLayer(
       bgColor: e.color ?? undefined,
       borderClassName: e.color ? undefined : "border-accent-coral-light",
       location: e.location,
+      unanswered: e.rsvp === "Pending",
       onEdit: onEdit && e.writable && e.eventId ? (anchor) => onEdit(e, anchor) : undefined,
     }));
   }
@@ -279,7 +301,7 @@ export function buildAllDayLayer(
 /** A role accent for an event that's also logged as work — the colour + total
  *  logged hours, keyed by the source event so the block can show it in place of
  *  a duplicate logged-time block. */
-export type LoggedAccent = { color: string; hours: number };
+export type LoggedAccent = { color: string; hours: number; incomplete?: boolean };
 
 /** Logged work grouped by the on-grid thing it came from — a meeting, or the
  *  calendar event it was logged against — so something that is *also* logged
@@ -304,7 +326,13 @@ export function buildLoggedSourceIndex(
     if (!into || !id) continue;
     const prev = into.get(id);
     const color = prev?.color ?? roleColors?.[roleKey] ?? roleColor(roleKey).dot;
-    into.set(id, { color, hours: (prev?.hours ?? 0) + t.hours });
+    into.set(id, {
+      color,
+      hours: (prev?.hours ?? 0) + t.hours,
+      // The source block draws no entry block of its own, so it has to carry
+      // the warning for the hours it stands in for.
+      incomplete: Boolean(prev?.incomplete) || timeEntryIssue(t) !== null,
+    });
   }
   return { byMeeting, byEvent };
 }
@@ -370,6 +398,7 @@ export function buildLoggedTimeLayer(
         className: custom ? "" : color.className,
         bgColor: custom,
         borderClassName: custom ? undefined : color.borderClassName,
+        issue: timeEntryIssue(t) ?? undefined,
         onClick: opts.onEntryClick ? () => opts.onEntryClick!(t, startIso, endIso) : undefined,
       },
       into,

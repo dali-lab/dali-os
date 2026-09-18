@@ -31,6 +31,15 @@ export const CORE_PROCESS_ID = "core";
 // this sentinel, so the two never collide.
 export const HIRING_PROCESS_ID = "hiring";
 
+// Singleton processId for the lab-wide, everyone-can-see folder set — the open
+// counterpart of CORE_PROCESS_ID. There is exactly one Lab, so all its bindings
+// share this constant.
+export const LAB_PROCESS_ID = "lab";
+
+// Singleton processId for certificate-template background images — one lab-wide,
+// Core-scoped folder that every uploaded template background auto-files into.
+export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
+
 // A named slot a process type exposes. `purpose` is the stable key stored on the
 // binding; `label` is shown in settings; `defaultTitle` names the folder we
 // create when auto-provisioning. Slots are system-defined (they map to what
@@ -59,6 +68,17 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "email-templates", label: "Email templates", defaultTitle: "Templates" },
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },
   ],
+  // Lab is Core's open twin (processId = LAB_PROCESS_ID): the same Lab
+  // workspace, but no Core-group scope, so these folders are the communal shelf
+  // every member can see and edit.
+  Lab: [
+    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
+  ],
+  // Lab-wide singleton (processId = CERTIFICATE_TEMPLATES_PROCESS_ID): the one
+  // Core-scoped folder every uploaded certificate-template background files into.
+  CertificateTemplates: [
+    { purpose: "background", label: "Certificate backgrounds", defaultTitle: "Certificate Backgrounds" },
+  ],
 };
 
 export function slotFor(processType: ProcessType, purpose: string): FolderSlot | undefined {
@@ -69,7 +89,8 @@ export function slotFor(processType: ProcessType, purpose: string): FolderSlot |
 // and offerings nest inside their own workspace (access follows the workspace).
 // HiringCycle + Core folders live in the Lab workspace but default to a Group
 // scope on the Core group — confidential, mirroring the old Core/Hiring roots,
-// but now an ordinary editable share rather than a systemKey root.
+// but now an ordinary editable share rather than a systemKey root. Lab folders
+// live there too but take no scope at all: they're the communal shelf.
 function workspaceFor(
   processType: ProcessType,
   processId: string,
@@ -81,7 +102,13 @@ function workspaceFor(
       return { workspaceType: "EducationOffering", workspaceId: processId, coreScoped: false };
     case "HiringCycle":
     case "Core":
+    case "CertificateTemplates":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
+    case "Lab":
+      // Same workspace as Core, deliberately unscoped: a Lab folder inherits the
+      // Lab drive's own "everyone in the lab" access rather than narrowing to a
+      // group. Core's meeting notes stay on the Core path.
+      return { workspaceType: "Lab", workspaceId: null, coreScoped: false };
   }
 }
 

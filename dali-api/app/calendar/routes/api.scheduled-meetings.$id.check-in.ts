@@ -29,7 +29,23 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.id },
-    select: { id: true, attendanceMode: true, selectedAt: true, durationMinutes: true },
+    select: {
+      id: true,
+      attendanceMode: true,
+      selectedAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      // The window is per-occurrence, so a rescheduled or cancelled sitting has
+      // to be judged at its override time. See isWithinCheckInWindow.
+      exceptions: {
+        select: {
+          originalStart: true,
+          overrideStart: true,
+          overrideDurationMin: true,
+          cancelled: true,
+        },
+      },
+    },
   });
   if (!meeting || meeting.attendanceMode !== "SelfCheckIn") {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
@@ -41,7 +57,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  if (!isWithinCheckInWindow(meeting.selectedAt, meeting.durationMinutes)) {
+  if (!isWithinCheckInWindow(meeting, meeting.exceptions)) {
     return withCors(request, Response.json({ error: "Check-in window has closed" }, { status: 403 }));
   }
 

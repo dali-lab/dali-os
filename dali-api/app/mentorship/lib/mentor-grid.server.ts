@@ -30,6 +30,10 @@ export type GridCell = {
 
 export type GridMenteeRow = {
   key: string;
+  // The MentorshipPair id backing this row — the handle for inline editing.
+  pairId: string;
+  // Hand-created/reassigned (vs. auto-derived from staffing).
+  manual: boolean;
   mentee: GridPerson;
   menteeId: string;
   projectId: string;
@@ -108,6 +112,8 @@ export async function buildGrid({
     prisma.mentorshipPair.findMany({
       where: pairWhere,
       select: {
+        id: true,
+        manual: true,
         mentorUserId: true,
         menteeUserId: true,
         projectId: true,
@@ -213,6 +219,8 @@ export async function buildGrid({
     });
     group.rows.push({
       key: `${p.mentorUserId}|${p.menteeUserId}|${p.projectId}|${p.domainId}`,
+      pairId: p.id,
+      manual: p.manual,
       mentee: toPerson(p.mentee),
       menteeId: p.menteeUserId,
       projectId: p.projectId,

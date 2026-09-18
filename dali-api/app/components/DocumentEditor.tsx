@@ -501,7 +501,7 @@ export function DocumentEditor({
     <div className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
       {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
       {editedLabel && (
-        <span className="shrink-0">{editedLabel}</span>
+        <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
       )}
       {savingTitle && <span className="shrink-0 italic">Saving…</span>}
       {syncState && (
@@ -519,17 +519,20 @@ export function DocumentEditor({
         >
           {syncState === "saving" && (
             <>
-              <Loader2 className={cn(actionIcon, "animate-spin")} /> Saving…
+              <Loader2 className={cn(actionIcon, "animate-spin")} />{" "}
+              <span className="hidden sm:inline">Saving…</span>
             </>
           )}
           {syncState === "saved" && (
             <>
-              <Check className={actionIcon} /> Saved
+              <Check className={actionIcon} />{" "}
+              <span className="hidden sm:inline">Saved</span>
             </>
           )}
           {syncState === "offline" && (
             <>
-              <CloudOff className={actionIcon} /> Offline
+              <CloudOff className={actionIcon} />{" "}
+              <span className="hidden sm:inline">Offline</span>
             </>
           )}
         </span>
@@ -560,7 +563,7 @@ export function DocumentEditor({
             </button>
           </Tooltip>
           {typoOpen && (
-            <div className={cn("absolute right-0 z-30 mt-1 w-56 p-2 text-sm", popover)}>
+            <div className={cn("absolute right-0 z-30 mt-1 w-56 max-w-[calc(100vw-1rem)] p-2 text-sm", popover)}>
               <div className="grid grid-cols-3 gap-1">
                 {(
                   [
@@ -659,7 +662,7 @@ export function DocumentEditor({
             className={actionBtn()}
           >
             <Users className={actionIcon} />
-            Share
+            <span className="hidden sm:inline">Share</span>
           </button>
         </Tooltip>
       )}
@@ -677,7 +680,7 @@ export function DocumentEditor({
           <MoreHorizontal className={actionIcon} />
         </button>
         {moreMenuOpen && (
-          <div className={cn("absolute right-0 z-30 mt-1 w-52 p-1 text-sm", popover)}>
+          <div className={cn("absolute right-0 z-30 mt-1 w-52 max-w-[calc(100vw-1rem)] p-1 text-sm", popover)}>
             <button
               type="button"
               onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
@@ -813,13 +816,13 @@ export function DocumentEditor({
           />
         )}
 
-        <div className="px-[54px] pt-12 pb-6">
+        <div className="px-4 sm:px-[54px] pt-12 pb-6">
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
               The header/title block adds an extra pl-[54px] to match the body
               text, which sits at the 54px outer padding PLUS BlockNote's own
               54px .bn-editor drag-handle gutter (padding-inline:54px in core
               CSS). Together that puts both at 108px from the card edge (±0). */}
-          <div className="group/header relative mb-1 pl-[54px]">
+          <div className="group/header relative mb-1 pl-3 sm:pl-[54px]">
             {/* FIX 6: One source of truth for the icon + cover affordances.
                 - When icon IS set: show it always (not in the hover row).
                 - When icon is NOT set: show "Add icon" only in the hover row.

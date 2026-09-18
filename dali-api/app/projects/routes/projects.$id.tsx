@@ -91,6 +91,7 @@ import {
 } from "../lib/task-board";
 import {
   computeProjectStatus,
+  computeStatusBreakdown,
   factsFingerprint,
   type ProjectWorkStatus,
 } from "../lib/project-status";
@@ -1124,6 +1125,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // costs no extra query. aiTldrStale compares the current facts fingerprint
   // against the one the cached summary was written from; the client regenerates
   // when it differs (see ProjectStatusBar).
+  const statusNow = new Date();
   const statusFacts = computeProjectStatus(
     {
       projectStatus: project.status as ProjectWorkStatus,
@@ -1136,7 +1138,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })),
       terms: termSpans,
     },
-    new Date(),
+    statusNow,
+  );
+  // The named-task detail behind each chip — surfaced only in the bar's hover
+  // tooltips, so it rides alongside the facts rather than in them (keeps the AI
+  // fingerprint keyed on counts, not titles).
+  const statusBreakdown = computeStatusBreakdown(
+    project.tasks.map((t) => ({
+      id: t.id,
+      status: t.status as TaskStatus,
+      title: t.title,
+      priority: t.priority as Priority,
+      startsAt: t.startsAt,
+      dueAt: t.dueAt,
+      activityAt: t.activityAt,
+    })),
+    statusNow,
   );
   const aiLineEnabled =
     isAiEnabled() &&
@@ -1208,6 +1225,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tasks,
     boardOptions,
     statusFacts,
+    statusBreakdown,
     aiTldr: project.aiTldr,
     aiTldrGeneratedAt: project.aiTldrGeneratedAt
       ? project.aiTldrGeneratedAt.toISOString()
@@ -1616,6 +1634,7 @@ export default function ProjectDetail() {
     tasks,
     boardOptions,
     statusFacts,
+    statusBreakdown,
     aiTldr,
     aiTldrStale,
     aiLineEnabled,
@@ -1911,6 +1930,7 @@ export default function ProjectDetail() {
             {showStatusBar && (
               <ProjectStatusBar
                 facts={statusFacts}
+                breakdown={statusBreakdown}
                 projectId={project.id}
                 aiTldr={aiTldr}
                 aiTldrStale={aiTldrStale}
@@ -1943,6 +1963,7 @@ export default function ProjectDetail() {
           <ProjectMentorshipTab
             projectId={project.id}
             currentTermId={currentTerm?.id ?? null}
+            isCore={canEditAssignmentLevel}
           />
         )}
       </div>
