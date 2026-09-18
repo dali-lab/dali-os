@@ -16,8 +16,9 @@ import type { Question } from "~/types";
 // around it; registering the download under its own non-layout path keeps it
 // a pure byte stream.
 //
-// Unlike the responses page (newest 200), this exports EVERY submission —
-// it's the full-export escape hatch behind the page cap.
+// Unlike the results view (newest 200), this exports EVERY submission —
+// it's the full-export escape hatch behind the view cap. `?version=N` limits
+// the export to one version.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -32,8 +33,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!form) return redirect("/forms");
 
+  const version = Number(new URL(request.url).searchParams.get("version"));
   const submissions = await prisma.formSubmission.findMany({
-    where: { formId: form.id },
+    where: {
+      formId: form.id,
+      ...(Number.isInteger(version) && version > 0
+        ? { formVersion: { versionNumber: version } }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
     select: {
       createdAt: true,
