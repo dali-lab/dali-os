@@ -100,3 +100,15 @@ export function insertItemIntoGroup<T extends { group?: string }>(items: T[], it
   else out.splice(lastIdx + 1, 0, item);
   return out;
 }
+
+/**
+ * Drop `id` from every block in the tree so the blocks can be inserted into
+ * another document (BlockNote mints fresh ids). Copying ids across would let a
+ * template applied twice put the same block id in one doc twice.
+ */
+export function stripBlockIds<T>(blocks: T[]): T[] {
+  return blocks.map((block) => {
+    const { id: _id, children, ...rest } = block as AnyBlock & { id?: unknown };
+    return { ...rest, children: stripBlockIds(children ?? []) } as T;
+  });
+}

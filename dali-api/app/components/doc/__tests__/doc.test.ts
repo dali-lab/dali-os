@@ -8,6 +8,7 @@ import {
   insertItemIntoGroup,
   looksLikeProseMirrorDoc,
   normalizeInitialContent,
+  stripBlockIds,
 } from "../blocks-util";
 import { EDITOR_PRESETS, hasSigning, resolveFeatures } from "../features";
 import { blocksToPlainText } from "../schema/configs";
@@ -152,5 +153,27 @@ describe("blocksToPlainText (shared contract)", () => {
     expect(blocksToPlainText(sampleBlocks as never)).toBe(
       "Title\nHello @ada world\nSection\nNested\nTooDeep\na b",
     );
+  });
+});
+
+describe("stripBlockIds", () => {
+  it("drops ids through the whole tree and keeps everything else", () => {
+    const blocks = [
+      {
+        id: "a",
+        type: "heading",
+        props: { level: 2 },
+        content: [{ type: "text", text: "Agenda", styles: {} }],
+        children: [{ id: "b", type: "paragraph", content: [], children: [] }],
+      },
+    ];
+    expect(stripBlockIds(blocks)).toEqual([
+      {
+        type: "heading",
+        props: { level: 2 },
+        content: [{ type: "text", text: "Agenda", styles: {} }],
+        children: [{ type: "paragraph", content: [], children: [] }],
+      },
+    ]);
   });
 });

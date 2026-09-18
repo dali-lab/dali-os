@@ -168,8 +168,8 @@ export function readableTextColor(bg: string): string {
  *  solid block. That's Google Calendar's convention, and it's what keeps a pile
  *  of unanswered holds distinguishable at a glance from the meetings you've
  *  actually committed to.
- *  The caller supplies the border *width* (a month chip wants `border`, a grid
- *  block `border-2`) because only the colour varies here — and because Tailwind
+ *  The caller supplies the border *width* (a hairline on grid blocks and chips,
+ *  Google-thin; a heavier ring on the agenda's tiny dot) because only the colour varies here — and because Tailwind
  *  can't generate a class name that was assembled at runtime, which is also why
  *  a non-hex event has to carry its outline colour as `borderClassName` rather
  *  than have one derived from its fill. */

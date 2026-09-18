@@ -47,6 +47,7 @@ export {
   extractHeadings,
   looksLikeProseMirrorDoc,
   normalizeInitialContent,
+  stripBlockIds,
   type TocHeading,
 } from "./blocks-util";
 

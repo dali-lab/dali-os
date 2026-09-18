@@ -423,8 +423,10 @@ export function CalendarSidebar(props: CalendarSidebarProps) {
       {/* Desktop rail — hidden below lg, same as before. */}
       {/* pr-4 on top of the row's gap: the rail scrolls, so its own right edge is
           where a scrollbar lands, and the mini-month's cells ran up against the
-          grid without it. */}
-      <aside className="hidden w-64 min-h-0 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto pr-4 lg:flex">
+          grid without it. -ml-1 pl-1 (and the extra 0.25rem of width) give the
+          left edge the same room: the rail clips at its padding box, so a
+          focused field's ring lost its left side. */}
+      <aside className="hidden w-[16.25rem] min-h-0 min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto -ml-1 pl-1 pr-4 lg:flex">
         <CalendarSidebarContent {...props} />
       </aside>
 

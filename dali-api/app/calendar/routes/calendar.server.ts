@@ -185,10 +185,6 @@ async function meetingsForExternalEvents(
       organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
-      participantUserIds: true,
-      guestsCanModify: true,
-      guestsCanInviteOthers: true,
-      guestsCanSeeGuestList: true,
       notePage: { select: { id: true } },
       timeEntries: { where: { userId }, select: { id: true }, take: 1 },
     },
@@ -197,14 +193,6 @@ async function meetingsForExternalEvents(
   for (const m of meetings) {
     if (!m.externalEventId) continue;
     const isOrganizer = m.organizerId === userId;
-    const isParticipant = m.participantUserIds.includes(userId);
-    const canFullEdit =
-      isOrganizer ||
-      canMarkCoreMeeting ||
-      (m.guestsCanModify && isParticipant);
-    const canGuestEdit =
-      canFullEdit ||
-      (m.guestsCanInviteOthers && isParticipant);
     byExternalId.set(m.externalEventId, {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
@@ -214,10 +202,7 @@ async function meetingsForExternalEvents(
       // Adding notes after the fact is the organizer's or Core's call — the same
       // authority attachMeetingNote re-checks server-side.
       canAddNote: isOrganizer || canMarkCoreMeeting,
-      // Widened to canGuestEdit: guests with invite-others permission can invite.
-      canInvite: canGuestEdit,
-      guestEditOnly: canGuestEdit && !canFullEdit,
-      hideGuestList: !m.guestsCanSeeGuestList && !isOrganizer && !canMarkCoreMeeting,
+      canInvite: isOrganizer || canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -711,10 +696,6 @@ async function maybeUpdateMeetingFromComposer(
   // For "this"/"following" the handlers in updateScheduledMeeting manage the rule.
   const recurrenceRule = editScope === "all" ? meeting.recurrenceRule : undefined;
 
-  const guestsCanModifyRaw = get("guestsCanModify");
-  const guestsCanInviteOthersRaw = get("guestsCanInviteOthers");
-  const guestsCanSeeGuestListRaw = get("guestsCanSeeGuestList");
-
   const result = await updateScheduledMeeting(meeting.id, userId, {
     title,
     durationMinutes,
@@ -726,9 +707,6 @@ async function maybeUpdateMeetingFromComposer(
     editScope,
     occurrenceStart,
     occurrenceEventId,
-    ...(guestsCanModifyRaw !== "" ? { guestsCanModify: guestsCanModifyRaw === "1" } : {}),
-    ...(guestsCanInviteOthersRaw !== "" ? { guestsCanInviteOthers: guestsCanInviteOthersRaw === "1" } : {}),
-    ...(guestsCanSeeGuestListRaw !== "" ? { guestsCanSeeGuestList: guestsCanSeeGuestListRaw === "1" } : {}),
   });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
@@ -1473,10 +1451,7 @@ export async function loadCalendarData(request: Request) {
         description: e.description,
         location: e.location,
         organizerName: e.organizerName,
-        attendees: (() => {
-          const m = e.eventId ? eventMeetings.get(e.eventId) : undefined;
-          return m?.hideGuestList ? undefined : externalAttendees(e.attendees);
-        })(),
+        attendees: externalAttendees(e.attendees),
         links: externalLinks(e.meetingUrl, e.htmlLink),
         rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
         meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,

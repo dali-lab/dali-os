@@ -30,25 +30,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       scopeType: true,
       scopeId: true,
       participantUserIds: true,
-      guestsCanModify: true,
-      guestsCanInviteOthers: true,
-      guestsCanSeeGuestList: true,
     },
   });
   if (!meeting || meeting.status === "Cancelled") {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
-  // Widen to canGuestEdit: organizer, Core, or a participant with at least invite-others permission.
-  const viewerIsCore = await isCore(auth.user.sub, request);
-  const canFullEdit =
-    meeting.organizerId === auth.user.sub ||
-    viewerIsCore ||
-    (meeting.guestsCanModify && meeting.participantUserIds.includes(auth.user.sub));
-  const canGuestEdit =
-    canFullEdit ||
-    (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(auth.user.sub));
-  const guestEditOnly = canGuestEdit && !canFullEdit;
-  if (!canGuestEdit) {
+  if (meeting.organizerId !== auth.user.sub && !(await isCore(auth.user.sub, request))) {
     return forbidden(request);
   }
 
@@ -85,12 +72,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         // Inviting to a finished meeting adds to the roster without sending an
         // invite; the invite modal says so.
         upcoming: meetingIsUpcoming(meeting, new Date()),
-        guestsCanModify: meeting.guestsCanModify,
-        guestsCanInviteOthers: meeting.guestsCanInviteOthers,
-        guestsCanSeeGuestList: meeting.guestsCanSeeGuestList,
-        guestEditOnly,
-        // Only the organizer (or Core) may change the permission flags.
-        canSetPermissions: meeting.organizerId === auth.user.sub || viewerIsCore,
       },
       options: { users, groups },
     }),

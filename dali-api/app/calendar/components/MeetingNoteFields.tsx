@@ -39,7 +39,7 @@ export function useMeetingNote() {
     state,
     setEnabled: (enabled: boolean) => patch({ enabled }),
     setAbout: (about: string) => patch({ about }),
-    setSubtype: (subtype: "Team" | "Partner") => patch({ subtype }),
+    setSubtype: (subtype: MeetingNoteState["subtype"]) => patch({ subtype }),
     setLabel: (label: string) => patch({ label }),
     setLocation: (location: MeetingNoteLocation | null) => patch({ location }),
     // Prefill "About" from a single invited project group — a default, not a lock:
@@ -173,7 +173,25 @@ export function MeetingNoteFields({
               onChange={() => note.setSubtype("Partner")}
               label="Partner meeting"
             />
+            <Radio
+              name="meeting-subtype"
+              checked={state.subtype === "Other"}
+              onChange={() => note.setSubtype("Other")}
+              label="Other"
+            />
           </div>
+          {state.subtype === "Other" && (
+            <input
+              aria-label="Meeting type name"
+              type="text"
+              value={state.label}
+              onChange={(e) => note.setLabel(e.target.value)}
+              placeholder="e.g. Design review"
+              maxLength={80}
+              required
+              className={`${fieldClass} mt-2`}
+            />
+          )}
         </div>
       ) : (
         <>

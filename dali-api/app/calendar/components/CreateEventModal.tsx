@@ -489,13 +489,13 @@ export function CreateEventModal({
       <div
         className={cn(
           "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
-          hasGuests ? "max-w-6xl" : "max-w-lg",
+          hasGuests ? "max-w-[88rem]" : "max-w-lg",
         )}
       >
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
+        <div className="flex w-full sm:w-[58%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
           {/* Availability grid — compact + no self-only tint when no guests */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleWeekGrid
@@ -530,17 +530,7 @@ export function CreateEventModal({
         {/* ── Right panel: form ──────────────────────────────────────────── */}
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <span
-              className={cn(
-                "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                type === "Meeting"
-                  ? "bg-accent-teal/10 text-accent-teal"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              {type}
-            </span>
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={onClose}
