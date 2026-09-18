@@ -44,6 +44,8 @@ export interface MintBetterAuthSessionResult {
   /** Raw bearer token (un-hashed). Return as `access_token` to the MCP client. */
   token: string;
   expiresAt: Date;
+  /** The created session's `id` (cuid). Store in DevicePairing.desktopSessionId as the audit link. */
+  sessionId: string;
 }
 
 export async function mintBetterAuthSession(
@@ -82,5 +84,6 @@ export async function mintBetterAuthSession(
   return {
     token: session.token as string,
     expiresAt: new Date(session.expiresAt as string | Date),
+    sessionId: session.id as string,
   };
 }
