@@ -23,8 +23,13 @@ describe("meetingNoteValid", () => {
     expect(meetingNoteValid(base({ enabled: true, about: "", label: "All-hands" }))).toBe(true);
   });
 
-  it("is always valid on the project path (no name needed)", () => {
+  it("needs no name for a Team/Partner project note", () => {
     expect(meetingNoteValid(base({ enabled: true, about: "proj_1", label: "" }))).toBe(true);
+  });
+
+  it("requires a name for an Other project note", () => {
+    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", subtype: "Other", label: " " }))).toBe(false);
+    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", subtype: "Other", label: "Review" }))).toBe(true);
   });
 });
 
@@ -41,6 +46,12 @@ describe("meetingNotePayload", () => {
     expect(
       meetingNotePayload(base({ enabled: true, about: "proj_9", subtype: "Partner" })),
     ).toEqual({ meetingType: "Partner", projectId: "proj_9" });
+  });
+
+  it("project Other → Other + trimmed label + projectId", () => {
+    expect(
+      meetingNotePayload(base({ enabled: true, about: "proj_1", subtype: "Other", label: " Review " })),
+    ).toEqual({ meetingType: "Other", meetingTypeLabel: "Review", projectId: "proj_1" });
   });
 
   it("General path → Other + trimmed label, no projectId", () => {

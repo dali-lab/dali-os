@@ -3,12 +3,13 @@
 // MeetingNoteFields.tsx and re-exports these.
 //
 // The single question is "what is this meeting about?":
-//   • a project → project meeting; sub-type Team (default) or Partner. The note
-//     is filed in that project's meeting-notes folder (server-side).
+//   • a project → project meeting; sub-type Team (default), Partner, or Other
+//     with an organizer-typed name. Team/Partner notes are filed in the
+//     project's meeting-notes folders; Other notes at the project's top level
+//     (server-side).
 //   • General   → no project; needs a short name, and the note can be filed at any
 //     Drive location the organizer can write to (default: Lab-wide).
-// Type is derived from the project choice, so the old illegal combos ("Other + a
-// project", "Team + no project") are unreachable.
+// Team/Partner require a project, so "Team + no project" is unreachable.
 //
 // A Core meeting is a third shape of the same "General" case: Core isn't a
 // project, so its note has no project to file under and no Team/Partner
@@ -27,8 +28,8 @@ export type MeetingNoteState = {
   /** "" = General (no project); otherwise a projectId. */
   about: string;
   /** Only meaningful when `about` is a project. */
-  subtype: "Team" | "Partner";
-  /** General meeting name (persisted as meetingTypeLabel). */
+  subtype: "Team" | "Partner" | "Other";
+  /** General or project-"Other" meeting name (persisted as meetingTypeLabel). */
   label: string;
   /** General note destination; null → Lab-wide top level (the default/fallback). */
   location: MeetingNoteLocation | null;
@@ -55,15 +56,17 @@ export const emptyMeetingNote: MeetingNoteState = {
 /** Whether the note fields are complete enough to submit. */
 export function meetingNoteValid(s: MeetingNoteState): boolean {
   if (!s.enabled) return true;
-  if (s.about === "") return s.label.trim().length > 0; // General needs a name
-  return true; // project path is always valid (Team/Partner + project)
+  if (s.about === "" || s.subtype === "Other") return s.label.trim().length > 0;
+  return true;
 }
 
 /** The note-related fields to merge into the /api/scheduled-meetings payload. */
 export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown> {
   if (!s.enabled) return {};
   if (s.about !== "") {
-    return { meetingType: s.subtype, projectId: s.about };
+    return s.subtype === "Other"
+      ? { meetingType: "Other", meetingTypeLabel: s.label.trim(), projectId: s.about }
+      : { meetingType: s.subtype, projectId: s.about };
   }
   const out: Record<string, unknown> = {
     meetingType: "Other",
