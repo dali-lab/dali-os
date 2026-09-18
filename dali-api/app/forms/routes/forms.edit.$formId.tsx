@@ -17,6 +17,7 @@ import {
 } from "~/hiring/lib/form-links.server";
 import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
+import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { parseSessionCookie } from "~/lib/cookies";
 
@@ -79,7 +80,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // offering, staffing, partner), the generic publish/audience settings are
   // hidden — access is governed by that feature, not the Form.
   const managing = managingUsage(usages);
+
+  // Results are per version: `?view=results&version=N` loads that version's
+  // responses (the latest when N is omitted).
+  const url = new URL(request.url);
+  const resultsVersion =
+    url.searchParams.get("view") === "results"
+      ? (form.versions.find(
+          (v) => String(v.versionNumber) === url.searchParams.get("version"),
+        ) ?? form.versions[form.versions.length - 1])
+      : undefined;
+  const results = resultsVersion
+    ? await loadVersionResponses(form.id, resultsVersion.id)
+    : null;
+
   return {
+    results,
     form,
     terms,
     usages,

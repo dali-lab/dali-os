@@ -288,10 +288,14 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     description: z.string().optional(), // JSON-encoded ProseMirror doc
   }),
   z.object({
+    // "Publish" — freeze the working copy into a new version and publish the
+    // form in one step (publishing is skipped for managed forms, whose
+    // feature serves the latest version itself).
     intent: z.literal("save-version"),
     id: z.string().min(1),
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
+    publish: z.literal("true").optional(),
   }),
   z.object({
     // Edit a not-yet-used version in place (same content rules as
@@ -302,6 +306,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     versionId: z.string().min(1),
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
+    publish: z.literal("true").optional(),
   }),
   z.object({
     // Remove a not-yet-used version (accidental-versioning cleanup). Rejected
@@ -340,6 +345,14 @@ export function newPublicToken(): string {
   // 24 bytes of URL-safe randomness — collision-resistant, not enumerable.
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Published-flag update for save-version/update-version's `publish`. Mints the
+// link token on first publish and reuses it after, like publish-form. Null
+// when the form is managed — its feature owns distribution.
+async function publishData(formId: string, publicToken: string | null) {
+  if (managingUsage(await formUsages(formId))) return null;
+  return { published: true, publicToken: publicToken ?? newPublicToken() };
 }
 
 function parseWindowBoundary(raw: string | undefined): Date | null | "invalid" {
@@ -509,9 +522,12 @@ export async function runFormsAction(
     case "save-version": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
-        select: { id: true },
+        select: { id: true, publicToken: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      const publish = input.publish
+        ? await publishData(input.id, exists.publicToken)
+        : null;
 
       const validated = validateVersionQuestions(input.questions);
       if (!("ok" in validated)) return validated;
@@ -537,7 +553,7 @@ export async function runFormsAction(
         }),
         prisma.form.update({
           where: { id: input.id },
-          data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+          data: { draftQuestions: Prisma.DbNull, draftIntro: null, ...publish },
         }),
       ]);
       return { ok: true };
@@ -545,10 +561,13 @@ export async function runFormsAction(
     case "update-version": {
       const version = await prisma.formVersion.findUnique({
         where: { id: input.versionId },
-        select: { id: true, formId: true },
+        select: { id: true, formId: true, form: { select: { publicToken: true } } },
       });
       if (!version || version.formId !== input.id)
         return { error: "Version not found", status: 404 };
+      const publish = input.publish
+        ? await publishData(input.id, version.form.publicToken)
+        : null;
 
       const validated = validateVersionQuestions(input.questions);
       if (!("ok" in validated)) return validated;
@@ -569,6 +588,9 @@ export async function runFormsAction(
               intro: input.description?.trim() || null,
             },
           });
+          if (publish) {
+            await tx.form.update({ where: { id: input.id }, data: publish });
+          }
         });
       } catch (e) {
         if (e instanceof VersionLockedError) {

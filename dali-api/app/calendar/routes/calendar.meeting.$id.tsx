@@ -61,10 +61,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
-      participantUserIds: true,
-      guestsCanModify: true,
-      guestsCanInviteOthers: true,
-      guestsCanSeeGuestList: true,
       organizer: { select: { firstName: true, lastName: true } },
       notePage: { select: { id: true } },
       attendance: {
@@ -94,14 +90,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Attendance link that 404s.
   const labWide = meeting.scopeType === "None" && roles.isLabMember;
   if (!canManage && !viewerRow && !labWide) throw new Response("Not found", { status: 404 });
-
-  // Whether this viewer may see the guest list (the attendance roster). Mirrors
-  // the calendar popover's rule: the organizer and Core always can; everyone
-  // else only when the organizer left "guests can see guest list" on. A project
-  // member who manages the meeting is still subject to it — a hidden guest list
-  // is hidden from everyone but the organizer and Core.
-  const canSeeGuestList =
-    auth.user.sub === meeting.organizerId || roles.isCore || meeting.guestsCanSeeGuestList;
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
@@ -147,13 +135,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canAddNote,
     meetingUrl: meeting.meetingUrl,
     canManage,
-    canSeeGuestList,
-    // Widened to canGuestEdit: a participant with invite-others permission can also invite.
-    canInvite:
-      auth.user.sub === meeting.organizerId ||
-      roles.isCore ||
-      (meeting.guestsCanModify && meeting.participantUserIds.includes(auth.user.sub)) ||
-      (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(auth.user.sub)),
+    // Narrower than canManage: editing the event is the organizer's or Core's
+    // call, as updateScheduledMeeting enforces.
+    canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
       userId: a.userId,
@@ -279,9 +263,7 @@ export default function CalendarMeetingPage() {
   // scanning a passholder into a meeting with no MeetingAttendance rows only ever
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
-  // Scanning reveals guests as they're marked, so it's gated on seeing the list.
-  const canScan =
-    d.canManage && d.canSeeGuestList && walletCheckin && d.walletConfigured && d.rows.length > 0;
+  const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
   const [editing, setEditing] = useState(false);
 
   return (
@@ -346,7 +328,7 @@ export default function CalendarMeetingPage() {
             <Users className="h-4 w-4 text-muted-foreground" /> Attendance
           </h2>
           <div className="flex items-center gap-3">
-            {d.canManage && d.canSeeGuestList && d.rows.length > 0 && (
+            {d.canManage && d.rows.length > 0 && (
               <span className="text-sm text-muted-foreground">
                 {present}/{d.rows.length} present
               </span>
@@ -377,7 +359,7 @@ export default function CalendarMeetingPage() {
           />
         )}
 
-        {d.canManage && d.canSeeGuestList && d.rows.length > 0 && (
+        {d.canManage && d.rows.length > 0 && (
           <AttendanceChecklist
             meetingId={d.meetingId}
             meetingLabel={d.meetingLabel}
@@ -385,12 +367,6 @@ export default function CalendarMeetingPage() {
             canNote={d.canManage}
             attendees={d.rows}
           />
-        )}
-
-        {d.canManage && !d.canSeeGuestList && (
-          <p className="text-sm text-muted-foreground">
-            The organizer has hidden this meeting's guest list.
-          </p>
         )}
 
         {/* The scanner is the point of opening this page during an event, so the

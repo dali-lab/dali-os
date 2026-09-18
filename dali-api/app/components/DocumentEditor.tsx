@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
-import { DocEditor, type DocSyncState, type TocHeading } from "~/components/doc";
+import { DocEditor, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
@@ -26,6 +26,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
@@ -138,6 +139,7 @@ export function DocumentEditor({
   // A bookmark that lags behind the click feels broken.
   const [favorited, setFavorited] = useState(initialFavorited);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [templateImportOpen, setTemplateImportOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
@@ -438,17 +440,14 @@ export function DocumentEditor({
     }
   }
 
-  // Import Markdown: reads the picked .md/.markdown/.txt file client-side,
-  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
-  // synchronous), then replaces an empty doc or appends to an existing one.
-  // Both replaceBlocks/insertBlocks are single ProseMirror transactions so the
-  // entire import is one undo step.
-  async function handleMarkdownImport(file: File) {
+  // Imports (Markdown file, template) replace an empty doc or append to an
+  // existing one. Both replaceBlocks/insertBlocks are single ProseMirror
+  // transactions so the entire import is one undo step.
+  function insertImportedBlocks(
+    newBlocks: Parameters<DocEditorInstance["replaceBlocks"]>[1],
+  ) {
     const editor = editorRef.current;
-    if (!editor) return;
-    const text = await file.text();
-    const newBlocks = editor.tryParseMarkdownToBlocks(text);
-    if (!newBlocks.length) return;
+    if (!editor || !newBlocks.length) return;
 
     const doc = editor.document;
     const isEmpty =
@@ -464,6 +463,15 @@ export function DocumentEditor({
       const lastBlock = doc[doc.length - 1];
       editor.insertBlocks(newBlocks, lastBlock, "after");
     }
+  }
+
+  // Import Markdown: reads the picked .md/.markdown/.txt file client-side and
+  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
+  // synchronous).
+  async function handleMarkdownImport(file: File) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    insertImportedBlocks(editor.tryParseMarkdownToBlocks(await file.text()));
   }
 
   // ⋯ More menu dismiss on outside click.
@@ -746,6 +754,16 @@ export function DocumentEditor({
               >
                 <Upload className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 Import Markdown
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { setTemplateImportOpen(true); setMoreMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Import template
               </button>
             )}
             <div className="my-1 border-t border-border" />
@@ -1077,6 +1095,18 @@ export function DocumentEditor({
           open={moveOpen}
           onClose={() => setMoveOpen(false)}
           onMoved={() => revalidator.revalidate()}
+        />
+      )}
+      {canEdit && (
+        <ImportTemplateDialog
+          open={templateImportOpen}
+          onClose={() => setTemplateImportOpen(false)}
+          pageId={pageId}
+          workspaceType={workspaceType}
+          workspaceId={workspaceId}
+          onImport={(blocks) =>
+            insertImportedBlocks(stripBlockIds(blocks) as Parameters<typeof insertImportedBlocks>[0])
+          }
         />
       )}
     </div>

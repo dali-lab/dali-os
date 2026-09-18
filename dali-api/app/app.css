@@ -548,6 +548,10 @@ input[type="range"] {
 html {
   background-color: var(--color-background);
   color-scheme: light dark;
+  /* Reserve the scrollbar's width even when the page doesn't scroll, so the
+     layout doesn't jump sideways when content height crosses the viewport or
+     a modal locks body scroll. */
+  scrollbar-gutter: stable;
 }
 
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
