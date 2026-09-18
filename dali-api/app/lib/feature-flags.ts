@@ -157,6 +157,12 @@ export const FEATURE_FLAGS = [
     description:
       "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
   },
+  {
+    key: "betterauth",
+    label: "BetterAuth login",
+    description:
+      "Route sign-in through the new BetterAuth substrate (email/password, one-time verification links, optional Google) across the member / Dartmouth / partner doors, and let requireAuth accept a BetterAuth session alongside a legacy one. This is a login-mechanism switch, so it's read as a GLOBAL toggle (enabled + everyone) — role/user targeting does not apply. Ships off; flipping it on is the Phase-1 cutover and forces a global re-login.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

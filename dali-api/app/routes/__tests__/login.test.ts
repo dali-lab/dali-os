@@ -54,7 +54,7 @@ beforeEach(() => {
 describe("POST /login rate limiting", () => {
   it("allows requests under the limit", async () => {
     for (let i = 0; i < 5; i++) {
-      const res = await action({ request: makeRequest() } as any);
+      const res = (await action({ request: makeRequest() } as any)) as Response;
       expect(res.status).toBe(302);
     }
   });
@@ -63,7 +63,7 @@ describe("POST /login rate limiting", () => {
     for (let i = 0; i < 5; i++) {
       await action({ request: makeRequest() } as any);
     }
-    const res = await action({ request: makeRequest() } as any);
+    const res = (await action({ request: makeRequest() } as any)) as Response;
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBeTruthy();
   });
@@ -72,10 +72,14 @@ describe("POST /login rate limiting", () => {
     for (let i = 0; i < 5; i++) {
       await action({ request: makeRequest("1.2.3.4") } as any);
     }
-    const limited = await action({ request: makeRequest("1.2.3.4") } as any);
+    const limited = (await action({
+      request: makeRequest("1.2.3.4"),
+    } as any)) as Response;
     expect(limited.status).toBe(429);
 
-    const ok = await action({ request: makeRequest("5.6.7.8") } as any);
+    const ok = (await action({
+      request: makeRequest("5.6.7.8"),
+    } as any)) as Response;
     expect(ok.status).toBe(302);
   });
 });
@@ -84,8 +88,9 @@ describe("GET /login loader routing", () => {
   it("renders the login page for an unauthenticated visitor", async () => {
     mockRequireAuth.mockResolvedValue({ ok: false } as any);
     const result = await loader({ request: loaderRequest() } as any);
-    // No redirect — the loader returns plain data so the page renders.
-    expect(result).toEqual({});
+    // No redirect — the loader returns plain data so the page renders. The
+    // loader now also surfaces the betterauth flag state (off by default here).
+    expect(result).toEqual({ betterAuthOn: false });
     expect(mockMemberFind).not.toHaveBeenCalled();
   });
 
@@ -193,15 +198,15 @@ describe("GET /login loader routing", () => {
 
 describe("POST /login next cookie", () => {
   it("stores a safe next in __dali_login_next", async () => {
-    const res = await action({
+    const res = (await action({
       request: makeRequest("9.9.9.9", "/calendar/check-in/m1"),
-    } as any);
+    } as any)) as Response;
     expect(res.status).toBe(302);
     const cookies = res.headers.getSetCookie?.() ?? [
       res.headers.get("Set-Cookie")!,
     ];
     expect(
-      cookies.some((c) =>
+      cookies.some((c: string) =>
         c.includes(
           `__dali_login_next=${encodeURIComponent("/calendar/check-in/m1")}`,
         ),
@@ -210,13 +215,15 @@ describe("POST /login next cookie", () => {
   });
 
   it("does not store an unsafe next", async () => {
-    const res = await action({
+    const res = (await action({
       request: makeRequest("8.8.8.8", "//evil.com"),
-    } as any);
+    } as any)) as Response;
     expect(res.status).toBe(302);
     const cookies = res.headers.getSetCookie?.() ?? [
       res.headers.get("Set-Cookie")!,
     ];
-    expect(cookies.some((c) => c.includes("__dali_login_next="))).toBe(false);
+    expect(cookies.some((c: string) => c.includes("__dali_login_next="))).toBe(
+      false,
+    );
   });
 });

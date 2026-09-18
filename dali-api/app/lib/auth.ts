@@ -95,7 +95,30 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
   return cachedForRequest(request, "requireAuth", () => computeAuth(request));
 }
 
+// Resolve auth for a request. Tries the legacy DB-backed session first; if that
+// fails AND the global `betterauth` switch is on (Phase 1 coexistence / cutover),
+// accepts a BetterAuth session instead. Flag off (the default) → byte-for-byte
+// the legacy behavior. The BetterAuth path is lazy-imported so its module graph
+// (and the auth instance) stays out of requests — and unit tests — while the
+// flag is off, and wrapped so a fault there can't break the already-failed
+// legacy path.
 async function computeAuth(request: Request): Promise<AuthResult> {
+  const legacy = await computeLegacyAuth(request);
+  if (legacy.ok) return legacy;
+  try {
+    const { isFeatureEnabledForEveryone } = await import("~/lib/feature-flags.server");
+    if (await isFeatureEnabledForEveryone("betterauth", request)) {
+      const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
+      const ba = await resolveBetterAuthAuth(request);
+      if (ba) return { ok: true, user: ba.user, sessionId: ba.sessionId };
+    }
+  } catch {
+    // The BetterAuth fallback must never turn a clean legacy failure into a 500.
+  }
+  return legacy;
+}
+
+async function computeLegacyAuth(request: Request): Promise<AuthResult> {
   const credential = parseSessionIdWithSource(request);
   if (!credential) {
     return { ok: false, response: unauthorizedJson(), reason: "no_session" };

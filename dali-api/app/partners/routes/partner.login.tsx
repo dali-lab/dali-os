@@ -10,7 +10,11 @@ import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
   issuePartnerMagicLink,
   normalizeEmail,
+  classifyPartnerEmail,
 } from "~/partners/lib/magic-link.server";
+import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
+import { auth } from "~/lib/betterauth.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
@@ -23,12 +27,13 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return {};
-  if (auth.user.type === "member") return redirect("/");
-  if (auth.user.type === "dartmouth") return redirect("/portal");
+  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
+  const existingAuth = await requireAuth(request);
+  if (!existingAuth.ok) return { betterAuthOn };
+  if (existingAuth.user.type === "member") return redirect("/");
+  if (existingAuth.user.type === "dartmouth") return redirect("/portal");
   const partnerContact = await prisma.partnerContact.findUnique({
-    where: { userId: auth.user.sub },
+    where: { userId: existingAuth.user.sub },
     select: { id: true },
   });
   // A contact row means they've been through at least one auth flow previously;
@@ -37,6 +42,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const formData = await request.formData();
 
   // Google sign-in — works for returning partners AND first-timers (the
@@ -46,6 +52,18 @@ export async function action({ request }: Route.ActionArgs) {
   if (formData.get("provider") === "google") {
     const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
     if (limited) return limited;
+
+    if (betterAuthOn) {
+      // BetterAuth handles the OAuth redirect. Partners are not provisioned as
+      // DALI members — the create.after @dali hook only fires for @dali.dartmouth.edu
+      // addresses, so a partner Google account becomes a non-member account.
+      const result = await auth.api.signInSocial({
+        body: { provider: "google", callbackURL: "/partner" },
+        headers: request.headers,
+      });
+      return redirect(result.url!);
+    }
+
     const state = randomBytes(32).toString("base64url");
     const secure = getAppEnv() !== "dev";
     const stateCookie = [
@@ -74,6 +92,29 @@ export async function action({ request }: Route.ActionArgs) {
   if (!email.includes("@")) {
     return { error: "Enter a valid email address" };
   }
+
+  if (betterAuthOn) {
+    // Member-conflict guard: a @dali/member email must NOT get a partner magic
+    // link — it gets the redirect-to-/login conflict email + neutral response.
+    const identity = await classifyPartnerEmail(normalizeEmail(email));
+    if (identity.kind === "member-conflict") {
+      await sendMemberEmailConflictEmail(normalizeEmail(email));
+      return { sent: true, email: normalizeEmail(email) };
+    }
+    // BetterAuth magic-link: callbackURL points to the partner set-password page
+    // so first-time partners can set a password after verifying their email.
+    try {
+      await auth.api.signInMagicLink({
+        body: { email: normalizeEmail(email), callbackURL: "/partner/set-password" },
+        headers: request.headers,
+      });
+    } catch {
+      // Treat send errors as a neutral outcome — never reveal whether the address
+      // is in the system. The member-conflict branch above already handled that case.
+    }
+    return { sent: true, email: normalizeEmail(email) };
+  }
+
   const result = await issuePartnerMagicLink(email, request);
   if ("rateLimited" in result) return result.rateLimited;
   // Identical response whether or not the address maps to an account. Every
