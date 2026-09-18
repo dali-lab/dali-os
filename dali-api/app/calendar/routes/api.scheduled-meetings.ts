@@ -66,14 +66,9 @@ const CreateSchema = z
     message: "A project is required for Team and Partner meetings",
     path: ["projectId"],
   })
-  // "Other" is a General meeting — it must not be attached to a project.
-  .refine((v) => (v.meetingType === "Other" ? !v.projectId : true), {
-    message: "General meetings cannot be attached to a project",
-    path: ["projectId"],
-  })
-  // A custom note location only makes sense for General meetings (project meetings
-  // file into the project's own meeting-notes folder).
-  .refine((v) => (v.noteLocation ? v.meetingType === "Other" : true), {
+  // A custom note location only makes sense for General meetings (Other with no
+  // project) — project meetings file into the project itself.
+  .refine((v) => (v.noteLocation ? v.meetingType === "Other" && !v.projectId : true), {
     message: "noteLocation is only allowed for General meetings",
     path: ["noteLocation"],
   })

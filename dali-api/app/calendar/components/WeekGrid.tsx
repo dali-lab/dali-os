@@ -1006,7 +1006,7 @@ export function WeekGridEvent({
           // The inset left bar reads as a stray grey stripe on a hollow block,
           // and a white hover ring is invisible on one — both swap out.
           skin.outlined
-            ? "border-2 shadow-[0_1px_2px_-1px_rgba(0,0,0,0.15)]"
+            ? "border shadow-[0_1px_2px_-1px_rgba(0,0,0,0.15)]"
             : "shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)]",
           skin.className,
           (clickable || movable) &&
@@ -1567,7 +1567,7 @@ export function WeekGrid({
     >
       {/* Left gutter — matches the hour-axis width */}
       <div
-        className={`w-14 shrink-0 border-r border-b border-border flex items-center justify-center ${showProviderRow ? "h-20" : "h-12"}`}
+        className={`sticky left-0 z-[45] bg-card w-14 shrink-0 border-r border-b border-border flex items-center justify-center ${showProviderRow ? "h-20" : "h-12"}`}
       >
         {timezone && (
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">
@@ -1635,7 +1635,7 @@ export function WeekGrid({
         style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
       >
         {/* Left gutter — matches the hour-axis width */}
-        <div className="w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
+        <div className="sticky left-0 z-[45] bg-card w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
           <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground leading-none">
             all-day
           </span>
@@ -1697,7 +1697,10 @@ export function WeekGrid({
     )}
     <div
       ref={scrollRef}
-      className={`flex border-x border-b border-border rounded-b-md overflow-hidden select-none ${
+      // overflow-clip rather than hidden when not self-scrolling: hidden would make
+      // this row its own scroll container and pin the sticky hour axis to it, so
+      // the axis would slide away when an outer container scrolls sideways.
+      className={`flex border-x border-b border-border rounded-b-md select-none ${fillAndScroll ? "overflow-hidden" : "overflow-clip"} ${
         // items-start: size the hour-axis + day columns to their full 24h
         // content height and scroll, instead of stretching (align-items:stretch)
         // them to the shorter viewport. Stretch clipped each column's box to the
@@ -1710,7 +1713,7 @@ export function WeekGrid({
       }`}
     >
       {/* Hour axis */}
-      <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
+      <div className="sticky left-0 z-[45] flex flex-col w-14 shrink-0 border-r border-border bg-card text-[11px] text-muted-foreground">
         {HOURS.map((h) => (
           <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
             {formatHour(h)}
