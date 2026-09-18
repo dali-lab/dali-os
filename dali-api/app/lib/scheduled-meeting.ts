@@ -313,6 +313,8 @@ async function buildMeetingNotePage(input: {
       if (project) {
         title = `${project.name} ${input.meetingType} meeting note (${dateLabel})`;
       }
+    } else if (input.meetingTypeLabel) {
+      title = `${input.meetingTypeLabel} (${dateLabel})`;
     }
     const page = await createProjectPage({
       projectId: input.projectId,
@@ -376,14 +378,11 @@ async function buildMeetingNotePage(input: {
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
-  // Hard constraint (defense in depth alongside the route schema): a meeting is
-  // either a project meeting (Team/Partner + project) or a General one (Other,
-  // no project). No "Team without a team", no "Other pinned to a project".
+  // Hard constraint (defense in depth alongside the route schema): Team/Partner
+  // are project meetings. "Other" may be General (no project) or a custom-named
+  // project meeting.
   if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
     return { ok: false, error: "A project is required for Team and Partner meetings" };
-  }
-  if (input.meetingType === "Other" && input.projectId) {
-    return { ok: false, error: "General meetings cannot be attached to a project" };
   }
 
   const { participantUserIds, scopeId } = await resolveScope(input.scope);
@@ -585,12 +584,9 @@ export async function attachMeetingNote(
   }
 
   // Same hard constraint as createScheduledMeeting: a project meeting
-  // (Team/Partner) needs a project; a General ("Other") one must not have one.
+  // (Team/Partner) needs a project.
   if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
     return { ok: false, error: "A project is required for Team and Partner meetings", status: 400 };
-  }
-  if (input.meetingType === "Other" && input.projectId) {
-    return { ok: false, error: "General meetings cannot be attached to a project", status: 400 };
   }
   // Filing under a project requires membership (or Core) — mirrors the note
   // destinations the create form offers via /api/move-destinations.
@@ -990,10 +986,6 @@ export type UpdateScheduledMeetingInput = {
   editScope?: "this" | "following" | "all";
   occurrenceStart?: string;   // ISO of this occurrence's ORIGINAL start
   occurrenceEventId?: string; // Google instance event id (for "this" patch)
-  // Guest permission flags — only applied when canFullEdit; ignored for guestEditOnly actors.
-  guestsCanModify?: boolean;
-  guestsCanInviteOthers?: boolean;
-  guestsCanSeeGuestList?: boolean;
 };
 
 export type UpdateScheduledMeetingResult =
@@ -1037,9 +1029,6 @@ export async function updateScheduledMeeting(
       isCoreMeeting: true,
       meetingTypeLabel: true,
       projectId: true,
-      guestsCanModify: true,
-      guestsCanInviteOthers: true,
-      guestsCanSeeGuestList: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -1047,43 +1036,8 @@ export async function updateScheduledMeeting(
     return { ok: false, error: "This meeting has been cancelled", status: 400 };
   }
 
-  const core = await isCore(actorUserId);
-  const canFullEdit =
-    meeting.organizerId === actorUserId ||
-    core ||
-    (meeting.guestsCanModify && meeting.participantUserIds.includes(actorUserId));
-  const canGuestEdit =
-    canFullEdit ||
-    (meeting.guestsCanInviteOthers && meeting.participantUserIds.includes(actorUserId));
-  const guestEditOnly = canGuestEdit && !canFullEdit;
-
-  if (!canGuestEdit) {
+  if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
     return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
-  }
-
-  if (guestEditOnly) {
-    const editScope = input.editScope ?? "all";
-    if (editScope !== "all") {
-      return { ok: false, error: "Only the organizer can change the schedule", status: 403 };
-    }
-    // Force back all non-guest-list fields so only the participant list can change.
-    input.title = meeting.title;
-    input.durationMinutes = meeting.durationMinutes;
-    input.startTime = meeting.selectedAt?.toISOString() ?? null;
-    input.recurrenceRule = meeting.recurrenceRule;
-    input.location = undefined;
-    input.description = undefined;
-    input.guestsCanModify = undefined;
-    input.guestsCanInviteOthers = undefined;
-    input.guestsCanSeeGuestList = undefined;
-  }
-
-  // Only the organizer (or Core) sets the guest-permission flags — a guest with
-  // edit access can change the event but not who else may edit it.
-  if (meeting.organizerId !== actorUserId && !core) {
-    input.guestsCanModify = undefined;
-    input.guestsCanInviteOthers = undefined;
-    input.guestsCanSeeGuestList = undefined;
   }
 
   const editScope = input.editScope ?? "all";
@@ -1230,9 +1184,6 @@ export async function updateScheduledMeeting(
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
-      ...(input.guestsCanModify !== undefined ? { guestsCanModify: input.guestsCanModify } : {}),
-      ...(input.guestsCanInviteOthers !== undefined ? { guestsCanInviteOthers: input.guestsCanInviteOthers } : {}),
-      ...(input.guestsCanSeeGuestList !== undefined ? { guestsCanSeeGuestList: input.guestsCanSeeGuestList } : {}),
     },
   });
 

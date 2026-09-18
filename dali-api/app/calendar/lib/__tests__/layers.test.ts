@@ -10,6 +10,7 @@ import {
   mergeLayers,
   externalCalendarLegend,
   perCalendarLegend,
+  visibleExternalEvents,
 } from "../layers";
 import { EVENT_CORAL } from "../event-block";
 import type { LoaderData } from "../types";
@@ -157,6 +158,47 @@ describe("buildExternalLayer", () => {
     const layer = buildExternalLayer(data, days, new Set(["cal-a"]));
     expect(layer[0]).toHaveLength(1);
     expect(layer[0][0].label).toBe("Class");
+  });
+});
+
+describe("visibleExternalEvents", () => {
+  const at = { startIso: "2026-08-16T09:00:00.000Z", endIso: "2026-08-16T10:00:00.000Z", color: null };
+
+  it("collapses the same event on several calendars into one, preferring the editable copy", () => {
+    const events = [
+      { ...at, title: "Standup", calendarId: "a", eventId: "e1", writable: false },
+      { ...at, title: "Standup", calendarId: "b", eventId: "e2", writable: true },
+      { ...at, title: "Other", calendarId: "a", eventId: "e3" },
+    ] as LoaderData["externalEvents"];
+    const out = visibleExternalEvents(events);
+    expect(out.map((e) => e.eventId)).toEqual(["e2", "e3"]);
+  });
+
+  it("keeps the copy from a visible calendar when the other is hidden", () => {
+    const events = [
+      { ...at, title: "Standup", calendarId: "a", eventId: "e1", writable: true },
+      { ...at, title: "Standup", calendarId: "b", eventId: "e2" },
+    ] as LoaderData["externalEvents"];
+    expect(visibleExternalEvents(events, new Set(["a"])).map((e) => e.eventId)).toEqual(["e2"]);
+  });
+
+  it("keeps same-titled events at different times, and never merges DALI blocks", () => {
+    const events = [
+      { ...at, title: "Standup", eventId: "e1" },
+      { ...at, endIso: "2026-08-16T11:00:00.000Z", title: "Standup", eventId: "e2" },
+      { ...at, title: "Standup", manualBlockId: "b1" },
+    ] as LoaderData["externalEvents"];
+    expect(visibleExternalEvents(events)).toHaveLength(3);
+  });
+
+  it("draws one block per event on the grid", () => {
+    const data = fixture({
+      externalEvents: [
+        { ...at, title: "Standup", calendarId: "a", eventId: "e1" },
+        { ...at, title: "Standup", calendarId: "b", eventId: "e2" },
+      ] as LoaderData["externalEvents"],
+    });
+    expect(buildExternalLayer(data, buildGridDays(WEEK, 7))[0]).toHaveLength(1);
   });
 });
 

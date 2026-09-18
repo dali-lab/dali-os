@@ -1864,14 +1864,6 @@ model ScheduledMeeting {
   // shows up there next to the meetings scoped to the Core group itself.
   isCoreMeeting Boolean @default(false)
 
-  // Google-Calendar-style per-event guest permissions, set by the organizer.
-  // Defaults preserve today's behavior: only the organizer (and Core) may
-  // edit/invite; everyone invited can already see the guest list. Core always
-  // bypasses these regardless.
-  guestsCanModify       Boolean @default(false)
-  guestsCanInviteOthers Boolean @default(false)
-  guestsCanSeeGuestList Boolean @default(true)
-
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]

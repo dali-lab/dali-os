@@ -39,9 +39,6 @@ function meeting(over: Record<string, unknown> = {}) {
     isCoreMeeting: false,
     meetingUrl: null,
     participantUserIds: ["member-1"],
-    guestsCanModify: false,
-    guestsCanInviteOthers: false,
-    guestsCanSeeGuestList: true,
     organizer: { firstName: "Ada", lastName: "Lovelace" },
     // The case this is all about: a meeting that predates meeting notes.
     notePage: null,

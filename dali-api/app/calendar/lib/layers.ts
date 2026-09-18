@@ -135,6 +135,37 @@ export function toGridRange(
   return { dayIdx, startHour, endHour };
 }
 
+/** The external events to draw: hidden calendars dropped, then one copy per
+ *  event. The same event on several linked calendars (an invite on two
+ *  accounts, a shared calendar) arrives once per calendar — collapse copies
+ *  with the same title and time, keeping the most actionable one (editable,
+ *  then one carrying an RSVP). Filtering first means hiding one calendar still
+ *  leaves the event visible from another. DALI blocks are never merged. */
+export function visibleExternalEvents(
+  events: ExternalEventDTO[],
+  hiddenCalendarIds?: Set<string>,
+): ExternalEventDTO[] {
+  const rank = (e: ExternalEventDTO) => (e.writable && e.eventId ? 2 : 0) + (e.rsvp ? 1 : 0);
+  const out: ExternalEventDTO[] = [];
+  const slot = new Map<string, number>();
+  for (const e of events) {
+    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
+    if (e.manualBlockId) {
+      out.push(e);
+      continue;
+    }
+    const key = `${e.allDay ? 1 : 0}|${e.startIso}|${e.endIso}|${e.title.trim().toLowerCase()}`;
+    const at = slot.get(key);
+    if (at === undefined) {
+      slot.set(key, out.length);
+      out.push(e);
+    } else if (rank(e) > rank(out[at])) {
+      out[at] = e;
+    }
+  }
+  return out;
+}
+
 /** External (Google/Outlook) events — real titles + per-calendar colour.
  *  `hiddenCalendarIds` hides individual calendars on the grid (display only —
  *  the events are still fetched; disabling a calendar entirely is a Settings
@@ -164,9 +195,8 @@ export function buildExternalLayer(
     }
   }
   const into: Record<number, EventBlock[]> = {};
-  for (const e of data.externalEvents) {
+  for (const e of visibleExternalEvents(data.externalEvents, hiddenCalendarIds)) {
     if (e.allDay) continue; // all-day events render in the band, not the grid
-    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
     const editable = e.writable && Boolean(e.eventId);
     placeBlock(
       days,
@@ -242,9 +272,8 @@ export function buildAllDayItems(
   hiddenCalendarIds?: Set<string>,
 ): Record<number, ExternalEventDTO[]> {
   const into: Record<number, ExternalEventDTO[]> = {};
-  for (const e of data.externalEvents) {
+  for (const e of visibleExternalEvents(data.externalEvents, hiddenCalendarIds)) {
     if (!e.allDay) continue;
-    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
     const start = new Date(e.startIso).getTime();
     const end = new Date(e.endIso).getTime(); // exclusive
     days.forEach((d, idx) => {
