@@ -554,6 +554,12 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* The tabbed shell never scrolls its own document (each tab's iframe does), so
+   a reserved gutter there is just an empty strip beside the workspace. */
+html:has([data-tab-workspace]) {
+  scrollbar-gutter: auto;
+}
+
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
    for its scroll area so the (light-mode) browser scrollbar track doesn't paint
    a pale strip against the dark nav. `color-scheme: dark` covers WebKit/Blink;

@@ -1765,7 +1765,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
   }
 
   return (
-    <div className="flex-1 flex min-h-0">
+    <div data-tab-workspace className="flex-1 flex min-h-0">
       <DndContext
         id="tab-workspace"
         sensors={sensors}
@@ -1840,7 +1840,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                   const canBack = !!activeTab && activeTab.backStack.length > 0
                   const canFwd = !!activeTab && activeTab.forwardStack.length > 0
                   const navBtn = (enabled: boolean) =>
-                    `px-2.5 ${
+                    `flex items-center px-2.5 ${
                       enabled
                         ? 'text-muted-foreground hover:text-foreground hover:bg-muted'
                         : 'text-muted-foreground/30 cursor-default'
@@ -1848,7 +1848,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                   return (
                     <>
                       <Tooltip content={canBack ? 'Back (right-click for history)' : 'Back'}>
-                        <span>
+                        <span className="flex">
                           <button
                             type="button"
                             disabled={!canBack}
@@ -1877,7 +1877,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                         </span>
                       </Tooltip>
                       <Tooltip content={canFwd ? 'Forward (right-click for history)' : 'Forward'}>
-                        <span>
+                        <span className="flex">
                           <button
                             type="button"
                             disabled={!canFwd}
