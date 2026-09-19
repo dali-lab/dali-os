@@ -498,12 +498,7 @@ export function FormDetail() {
               v{selectedVersion.versionNumber} · {selectedVersion.createdByName} ·{" "}
               {formatDateTime(selectedVersion.createdAt, tz)}
             </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="ml-auto"
-              onClick={() => startEditing()}
-            >
+            <Button variant="secondary" className="ml-auto" onClick={() => startEditing()}>
               {hasDraft ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               {hasDraft ? "Continue editing draft" : "New version"}
             </Button>
@@ -537,49 +532,59 @@ export function FormDetail() {
                 </div>
               )}
               {selectedVersion.questions.map((q, index) => (
-                <div
-                  key={q.key}
-                  className="p-4 rounded-os-item border border-os-container"
-                >
-                  <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Q{index + 1}
-                    </span>
-                    <h4 className="text-base font-medium text-foreground">
-                      {q.data.label}
-                    </h4>
-                    {q.required && (
-                      <span className={BADGE.accent}>
-                        Required
+                <Tooltip key={q.key} content={hasDraft ? "Continue editing draft" : "Edit in a new version"}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => startEditing()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        startEditing();
+                      }
+                    }}
+                    className="p-4 rounded-os-item border border-os-container cursor-pointer transition-colors hover:border-os-container-hi hover:bg-os-well/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+                  >
+                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Q{index + 1}
                       </span>
+                      <h4 className="text-base font-medium text-foreground">
+                        {q.data.label}
+                      </h4>
+                      {q.required && (
+                        <span className={BADGE.accent}>
+                          Required
+                        </span>
+                      )}
+                    </div>
+                    {q.data.description && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {q.data.description}
+                      </p>
+                    )}
+                    {(q.type === "select" ||
+                      q.type === "skills_rating" ||
+                      q.type === "checkbox") &&
+                      q.data.options && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {q.data.options.map((opt) => (
+                            <span
+                              key={opt}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
+                            >
+                              {opt}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    {q.type === "file" && q.data.accept && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Accepts: {q.data.accept}
+                      </p>
                     )}
                   </div>
-                  {q.data.description && (
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {q.data.description}
-                    </p>
-                  )}
-                  {(q.type === "select" ||
-                    q.type === "skills_rating" ||
-                    q.type === "checkbox") &&
-                    q.data.options && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {q.data.options.map((opt) => (
-                          <span
-                            key={opt}
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
-                          >
-                            {opt}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  {q.type === "file" && q.data.accept && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Accepts: {q.data.accept}
-                    </p>
-                  )}
-                </div>
+                </Tooltip>
               ))}
             </div>
           )}
@@ -855,10 +860,10 @@ function FormShareButton({
         popover,
       )}
       trigger={
-        <button type="button" className="os-edit-btn">
+        <Button variant="secondary">
           <Share2 className="w-4 h-4" />
           Share
-        </button>
+        </Button>
       }
     >
       <div className="flex items-center gap-2">
