@@ -1,7 +1,7 @@
 import type { Route } from "./+types/documents.$pageId.export";
 import { prisma } from "~/lib/db";
 import { requireAuth, isPartnerAccount } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { buildExportHtml } from "~/collab/export";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToHtml, blocksToMarkdown } from "~/collab/blocknote-server";
@@ -12,8 +12,8 @@ import { renderBlocksToPdf } from "~/collab/export-pdf";
 // Server-renders the document to PDF (pdfkit — pure JS, runs under --omit=dev
 // on the Alpine runtime), Word .docx (html-to-docx), or Markdown. The body is
 // decoded from the persisted Yjs snapshot as BlockNote blocks (see
-// app/collab/read.ts). Same read gate as the document page (live Project page
-// + isCore).
+// app/collab/read.ts). Same read gate as the document page: any workspace
+// type the viewer can open, archived meeting notes included.
 
 function safeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "document";
@@ -31,14 +31,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
-    select: { id: true, title: true, workspaceType: true, archivedAt: true },
+    select: { id: true, title: true, archivedAt: true, meetingNoteId: true },
   });
-  if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+  if (!page || (page.archivedAt !== null && !page.meetingNoteId)) {
     return new Response("Not found", { status: 404 });
   }
-  if (!(await isCore(auth.user.sub))) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  const access = await getPageAccess(auth.user.sub, page.id, request);
+  if (!access.canView) return new Response("Not found", { status: 404 });
 
   const filename = safeFilename(page.title);
   const blocks = await readDocAsBlocks(`doc:${page.id}:body`);
