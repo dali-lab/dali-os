@@ -4118,7 +4118,6 @@ async function main() {
               title: e.title,
               status: e.status,
               position: ei,
-              targetTermId: term26S.id,
               startsAt: e.start != null ? at(e.start) : null,
               endsAt: e.end != null ? at(e.end) : null,
             },

@@ -12,6 +12,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Link2,
+  Lock,
   MessageSquare,
   MoreHorizontal,
   Paperclip,
@@ -49,11 +50,12 @@ import {
   type TaskCardModel,
   type TaskStatus,
   currentSprintBand,
-  defaultSprintScope,
   resolveSprintScope,
   taskInSprintScope,
   sprintPickerOptions,
-  resolveTermIdForDate,
+  taskTermIds,
+  openDependencies,
+  isTaskFinished,
   isCarriedOverTask,
   type SprintScope,
   type TermWindow,
@@ -364,7 +366,7 @@ export function TaskBoard({
 
   // Sprint is a drill-down under Term (sprint numbers reset each term): it only
   // applies once a specific term is chosen, and lists that term's sprints. The
-  // board opens on the current sprint when the current term is showing.
+  // board opens on the whole term; the current sprint is one pick away.
   const sprintEnabled = effectiveTerm !== ALL_TERMS;
   const selectedTermCode = useMemo(
     () => (sprintEnabled ? options.terms.find((t) => t.id === effectiveTerm)?.code ?? null : null),
@@ -374,14 +376,13 @@ export function TaskBoard({
     sprintEnabled &&
     effectiveTerm === options.currentTermId &&
     currentSprintBand(options.termSpans, now) !== null;
-  const defaultScope: SprintScope = termHasToday ? "current" : "all";
   const sprintScope: SprintScope = useMemo(() => {
     if (!sprintEnabled) return "all";
     const resolved = resolveSprintScope(sprintFilter, options.termSpans, now);
     // `current` is today's sprint, which lives in the current term only.
-    return resolved === "current" && !termHasToday ? defaultScope : resolved;
-  }, [sprintEnabled, sprintFilter, options.termSpans, now, termHasToday, defaultScope]);
-  const sprintDeviates = sprintEnabled && sprintScope !== defaultScope;
+    return resolved === "current" && !termHasToday ? "all" : resolved;
+  }, [sprintEnabled, sprintFilter, options.termSpans, now, termHasToday]);
+  const sprintDeviates = sprintEnabled && sprintScope !== "all";
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -465,16 +466,16 @@ export function TaskBoard({
     }
     if (effectiveTerm !== ALL_TERMS) {
       ts = ts.filter((t) => {
-        // A task's term comes from its own dates. Undated (backlog) work is
-        // term-less — always visible so it stays the pool you plan from.
-        const d = t.dueAt ?? t.startsAt;
-        if (d === null) return true;
+        // A task's terms come from its own dates: every term its span touches.
+        // Undated (backlog) work is term-less — always visible so it stays the
+        // pool you plan from.
+        if (t.dueAt === null && t.startsAt === null) return true;
         // Unfinished work dated before the current sprint rolls forward onto the
         // current term's board — a past term is just an earlier cycle, so it
         // carries the same way rather than vanishing at rollover.
         if (effectiveTerm === options.currentTermId && isCarriedOverTask(t, carryoverBoundaryMs))
           return true;
-        return resolveTermIdForDate(termWindows, new Date(d)) === effectiveTerm;
+        return taskTermIds(termWindows, t).includes(effectiveTerm);
       });
     }
     if (onlyMine) {
@@ -503,6 +504,13 @@ export function TaskBoard({
   ]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
+  // Over the whole board, not the filtered slice: a task is blocked by what it
+  // waits on even when that work is filtered out of view.
+  const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const blockersOf = useCallback(
+    (t: TaskCardModel) => openDependencies(t.dependsOn, tasksById, isTaskFinished),
+    [tasksById],
+  );
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
   // Clear the unread dot the moment a task is opened: optimistically locally
@@ -533,31 +541,52 @@ export function TaskBoard({
     taskId: string,
     patch: Partial<TaskCardModel>,
   ): Promise<{ ok: boolean; error?: string }> {
+    // Status isn't a PATCH field: it goes through the move endpoint, which
+    // owns column ordering. The card lands at the end of its new column.
+    const current = tasks.find((t) => t.id === taskId);
+    const toStatus =
+      patch.status && current && patch.status !== current.status ? patch.status : null;
+    const { status: _status, ...fields } = patch;
     return new Promise((resolve) => {
       move(
-        (cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+        (cur) => {
+          const moved = toStatus ? moveTaskInBoard(cur, taskId, toStatus, -1).tasks : cur;
+          return moved.map((t) => (t.id === taskId ? { ...t, ...fields } : t));
+        },
         async () => {
           const body: Record<string, unknown> = {};
           if ("dueAt" in patch) body.dueAt = patch.dueAt;
+          if ("startsAt" in patch) body.startsAt = patch.startsAt;
           if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
           if ("assignees" in patch)
             body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
           if ("title" in patch) body.title = patch.title;
           if ("description" in patch) body.description = patch.description;
-          if ("status" in patch) body.status = patch.status;
           if ("epicId" in patch) body.epicId = patch.epicId ?? null;
+          if ("storyId" in patch) body.storyId = patch.storyId ?? null;
+          if ("dependsOn" in patch) body.dependsOn = patch.dependsOn ?? [];
           if ("checklist" in patch) body.checklist = patch.checklist ?? null;
-          const res = await fetch(`/api/tasks/${taskId}`, {
-            method: "PATCH",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!res.ok) {
-            const j = (await res.json().catch(() => ({}))) as { error?: string };
-            const message = j.error ?? `Request failed: ${res.status}`;
+          try {
+            if (Object.keys(body).length > 0) {
+              const res = await fetch(`/api/tasks/${taskId}`, {
+                method: "PATCH",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              });
+              if (!res.ok) {
+                const j = (await res.json().catch(() => ({}))) as { error?: string };
+                throw new Error(j.error ?? `Request failed: ${res.status}`);
+              }
+            }
+            if (toStatus) {
+              const { orderedIds } = moveTaskInBoard(tasks, taskId, toStatus, -1);
+              await persistMove(taskId, toStatus, orderedIds);
+            }
+          } catch (e) {
+            const message = e instanceof Error ? e.message : "Save failed";
             resolve({ ok: false, error: message });
-            throw new Error(message);
+            throw e;
           }
           refresh();
           resolve({ ok: true });
@@ -674,6 +703,7 @@ export function TaskBoard({
         startsAt: values.startsAt,
         epicId: values.epicId,
         storyId: values.storyId,
+        dependsOn: [],
         checklist: values.checklist ?? null,
         assignees,
         domain,
@@ -696,6 +726,7 @@ export function TaskBoard({
     const patch: Partial<TaskCardModel> = {};
     if (domain) patch.domain = domain;
     if (assignees.length > 0) patch.assignees = assignees;
+    if (values.dependsOn.length > 0) patch.dependsOn = values.dependsOn;
     if (Object.keys(patch).length > 0) {
       await patchTask(id, patch);
     } else {
@@ -853,7 +884,7 @@ export function TaskBoard({
 
   // What the Customize badge counts: every active slice bar the search box,
   // which has its own visible field. The term and sprint filters count only
-  // when they aren't sitting on their default (this term / the current sprint).
+  // when they aren't sitting on their default (this term / all its sprints).
   const defaultTerm = options.currentTermId ?? ALL_TERMS;
   const activeFilterCount =
     (epicFilter ? 1 : 0) +
@@ -872,24 +903,19 @@ export function TaskBoard({
     [visibleEpics],
   );
   // The sprint combobox lists the selected term's computed sprints
-  // (`Sprint N · Current|Past|Upcoming`, current-first). Its default scope is
-  // the neutral (`null`) row, so sitting on the default reads as "no filter"
+  // (`Sprint N · Current|Past|Upcoming`, current-first). Its default, the whole
+  // term, is the neutral (`null`) row, so sitting on it reads as "no filter"
   // and doesn't light the Customize badge — the same convention the term filter
   // uses for the current term.
   const sprintScopeOptions: ComboOption[] = useMemo(() => {
-    const opts: ComboOption[] = [
-      { value: null, label: defaultScope === "current" ? "Current sprint" : "All sprints" },
-    ];
-    if (defaultScope !== "all") opts.push({ value: "all", label: "All sprints" });
-    if (defaultScope !== "current" && termHasToday) {
-      opts.push({ value: "current", label: "Current sprint" });
-    }
+    const opts: ComboOption[] = [{ value: null, label: "All sprints" }];
+    if (termHasToday) opts.push({ value: "current", label: "Current sprint" });
     opts.push({ value: "backlog", label: "Backlog (no sprint)" });
     for (const o of sprintPickerOptions(options.termSpans, selectedTermCode, now)) {
       opts.push({ value: o.value, label: o.label });
     }
     return opts;
-  }, [defaultScope, termHasToday, options.termSpans, selectedTermCode, now]);
+  }, [termHasToday, options.termSpans, selectedTermCode, now]);
 
   const resetFilters = useCallback(() => {
     setSearchParams(
@@ -968,7 +994,7 @@ export function TaskBoard({
                     placeholder={sprintEnabled ? "Search sprints…" : "Select a term first"}
                     os={os}
                     options={sprintScopeOptions}
-                    value={sprintScope === defaultScope ? null : sprintScope}
+                    value={sprintScope === "all" ? null : sprintScope}
                     onChange={(next) => setParam("sprint", next)}
                     disabled={!sprintEnabled}
                   />
@@ -1118,13 +1144,14 @@ export function TaskBoard({
           const t = activeId ? tasks.find((x) => x.id === activeId) : null;
           return t ? (
             <div className="w-60 rotate-1 shadow-xl">
-              <TaskCard card={t} isDragging={false} onOpen={() => {}} />
+              <TaskCard card={t} blockedBy={blockersOf(t)} isDragging={false} onOpen={() => {}} />
             </div>
           ) : null;
         }}
         renderCard={(card, { isDragging, dragHandleProps }) => (
           <TaskCard
             card={card}
+            blockedBy={blockersOf(card)}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
             onOpen={() => setOpenTaskId(card.id)}
@@ -1137,6 +1164,8 @@ export function TaskBoard({
           task={openTask}
           projectId={projectId}
           options={options}
+          allTasks={tasks}
+          onOpenTask={setOpenTaskId}
           canManage={canManage}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
@@ -1156,6 +1185,7 @@ export function TaskBoard({
         <TaskModal
           projectId={projectId}
           options={options}
+          allTasks={tasks}
           canManage={canManage}
           defaultEpicId={
             epicFilter && epicFilter !== NO_EPIC ? epicFilter : null
@@ -1533,11 +1563,14 @@ function ArchivedTasksModal({
 // pointer.
 function TaskCard({
   card,
+  blockedBy,
   dragHandleProps = {},
   isDragging,
   onOpen,
 }: {
   card: TaskCardModel;
+  // Unfinished tasks this one waits on. Non-empty shows the Blocked chip.
+  blockedBy: TaskCardModel[];
   dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
@@ -1625,6 +1658,21 @@ function TaskCard({
             META_TEXT(os),
           )}
         >
+          {blockedBy.length > 0 && (
+            <Tooltip content={`Waiting on ${blockedBy.map((b) => b.title).join(", ")}`}>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 border font-medium",
+                  os
+                    ? "rounded-full border-transparent bg-os-amber/15 text-os-amber"
+                    : "rounded-md border-amber-200 bg-amber-50 text-amber-800",
+                )}
+              >
+                <Lock aria-hidden className="w-3 h-3" />
+                Blocked
+              </span>
+            </Tooltip>
+          )}
           {/* Overdue tints the icon, not the date. Recolouring the text made
               the one meta item you always read sit in a different ink from the
               counts beside it, so the row read as broken rather than as a
