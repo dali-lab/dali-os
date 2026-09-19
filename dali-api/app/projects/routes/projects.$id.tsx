@@ -26,6 +26,7 @@ import {
   OsTabBar,
 } from "~/components/os-page";
 import { cn } from "~/lib/cn";
+import { redactCoreOnlyProjectFields } from "~/lib/project-field-visibility";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -1179,39 +1180,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     infra,
-    project: {
-      id: project.id,
-      name: project.name,
-      iconEmoji: project.iconEmoji,
-      description: project.description,
-      status: project.status,
-      calendarEmail: project.calendarEmail,
-      teamGroupEmail: project.teamGroupEmail,
-      imageUrl: project.imageUrl,
-      imageUrlResolved,
-      repoUrls: project.repoUrls,
-      deploymentUrl: project.deploymentUrl,
-      githubTeamSlug: project.githubTeamSlug,
-      slackChannelName: project.slackChannelName,
-      slackChannelId: project.slackChannelId,
-      chartStringType: project.chartStringType,
-      chartString: project.chartString,
-      isPrivate: project.isPrivate,
-      overviewPageId: project.overviewPageId,
-      prdPageId: project.prdPageId,
-      startTerm,
-      // Full term set, chronological (earliest first) so the header can list
-      // every term the project runs rather than just the start term.
-      terms: [...plannedTerms]
-        .reverse()
-        .map((t) => ({ id: t.id, code: t.code })),
-      isActiveThisTerm,
-      actualTermCount: plannedTerms.length,
-      termCount: project.termCount,
-      partners: partnerships,
-      domains: declaredDomains,
-      derivedDomains,
-    },
+    // Redacted server-side, not just hidden in JSX: this payload goes to
+    // every viewer who can open the project, so gating only the edit form
+    // would still ship the chart string to any lab member.
+    project: redactCoreOnlyProjectFields(
+      {
+        id: project.id,
+        name: project.name,
+        iconEmoji: project.iconEmoji,
+        description: project.description,
+        status: project.status,
+        calendarEmail: project.calendarEmail,
+        teamGroupEmail: project.teamGroupEmail,
+        imageUrl: project.imageUrl,
+        imageUrlResolved,
+        repoUrls: project.repoUrls,
+        deploymentUrl: project.deploymentUrl,
+        githubTeamSlug: project.githubTeamSlug,
+        slackChannelName: project.slackChannelName,
+        slackChannelId: project.slackChannelId,
+        chartStringType: project.chartStringType,
+        chartString: project.chartString,
+        isPrivate: project.isPrivate,
+        overviewPageId: project.overviewPageId,
+        prdPageId: project.prdPageId,
+        startTerm,
+        // Full term set, chronological (earliest first) so the header can list
+        // every term the project runs rather than just the start term.
+        terms: [...plannedTerms]
+          .reverse()
+          .map((t) => ({ id: t.id, code: t.code })),
+        isActiveThisTerm,
+        actualTermCount: plannedTerms.length,
+        termCount: project.termCount,
+        partners: partnerships,
+        domains: declaredDomains,
+        derivedDomains,
+      },
+      canEditScope,
+    ),
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     // sortKey rides along so the Overview challenge section can split the
     // grid into current vs future terms client-side.
