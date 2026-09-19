@@ -227,8 +227,17 @@ interface FormBuilderTabProps {
   formId?: string
   collabToken?: string | null
 }
+// A draft can hold malformed entries: an earlier collab bug stored empty
+// objects (nothing to keep, so they're dropped) and questions can lack a key
+// (given a fresh one; drafts have no answers keyed to it yet).
+function repairQuestions(questions: Question[]): Question[] {
+  return questions
+    .filter((q) => !!q && !!q.data && typeof q.data === 'object')
+    .map((q, i) => (typeof q.key === 'string' && q.key ? q : { ...q, key: `q-${Date.now()}-${i}` }))
+}
+
 export function FormBuilderTab({
-  initialQuestions = [],
+  initialQuestions: rawInitialQuestions = [],
   initialDescription,
   onSave,
   saveStatus = 'idle',
@@ -240,6 +249,7 @@ export function FormBuilderTab({
   formId,
   collabToken,
 }: FormBuilderTabProps) {
+  const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
   // builder, version-edit without formId/collabToken). Always declared so the
   // hook call count is stable. When collab is active we read/write through the
