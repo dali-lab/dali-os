@@ -5,6 +5,26 @@ import { getCollabUrl } from "./util";
 
 // ─── useSharedArray ──────────────────────────────────────────────────────────
 
+/**
+ * Move one item of a Y.Array<Y.Map> so it ends up at index `to` (the same
+ * result as splicing it out and back in). The item is copied into a fresh map:
+ * a Y type can't be re-inserted once deleted — Yjs integrates it as an empty
+ * map and the item's content is lost.
+ */
+export function moveYArrayItem(
+  yarray: Y.Array<Y.Map<unknown>>,
+  from: number,
+  to: number,
+): void {
+  if (from === to) return;
+  yarray.doc!.transact(() => {
+    const copy = new Y.Map<unknown>();
+    for (const [k, v] of yarray.get(from).entries()) copy.set(k, v);
+    yarray.delete(from, 1);
+    yarray.insert(to, [copy]);
+  });
+}
+
 export interface UseSharedArrayResult<T> {
   items: T[];
   /** Replace the full list. */
@@ -83,22 +103,37 @@ export function useSharedArray<T extends object>(
     um.on("stack-item-added", syncUndoState);
     um.on("stack-item-popped", syncUndoState);
 
-    const readItems = () => yarray.toArray().map((m) => Object.fromEntries(m.entries()) as T);
+    // An empty map is never a real item. Earlier versions of `move` left one
+    // behind (see there), so skip any on read and delete them once synced.
+    const readItems = () =>
+      yarray
+        .toArray()
+        .filter((m) => m.size > 0)
+        .map((m) => Object.fromEntries(m.entries()) as T);
 
     const handleSynced = () => {
       if (yarray.length > 0) {
+        const empties = yarray
+          .toArray()
+          .flatMap((m, i) => (m.size === 0 ? [i] : []));
+        if (empties.length > 0) {
+          ydoc.transact(() => {
+            for (const i of empties.reverse()) yarray.delete(i, 1);
+          });
+        }
         setLocalItems(readItems());
-      } else if (initialRef.current.length > 0) {
+      } else if (initialRef.current.some((item) => Object.keys(item).length > 0)) {
         // Seed empty room from the Postgres snapshot (mirrors useSharedString's
         // initialValue bootstrap: write once, then defer to CRDT state).
         ydoc.transact(() => {
           for (const item of initialRef.current) {
+            if (Object.keys(item).length === 0) continue;
             const m = new Y.Map<unknown>();
             for (const [k, v] of Object.entries(item)) m.set(k, v);
             yarray.push([m]);
           }
         });
-        setLocalItems(initialRef.current);
+        setLocalItems(initialRef.current.filter((item) => Object.keys(item).length > 0));
       }
       setSynced(true);
     };
@@ -174,13 +209,7 @@ export function useSharedArray<T extends object>(
       });
       return;
     }
-    yarray.doc!.transact(() => {
-      const [item] = yarray.slice(from, from + 1);
-      yarray.delete(from, 1);
-      // Adjust target index if the item was removed before the destination.
-      const insertAt = from < to ? to - 1 : to;
-      yarray.insert(insertAt, [item]);
-    });
+    moveYArrayItem(yarray, from, to);
   }, []);
 
   const undo = useCallback(() => {

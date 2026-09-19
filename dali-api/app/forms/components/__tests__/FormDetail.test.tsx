@@ -135,6 +135,16 @@ describe("FormDetail", () => {
     expect(container.textContent).not.toContain("Unexpected Application Error");
   });
 
+  // Regression: an earlier collab bug stored empty `{}` questions in drafts,
+  // which crashed the builder ("reading 'label'").
+  it("renders the builder when the draft holds an empty question", async () => {
+    const data = loaderData();
+    data.form.draft = { questions: [{}, question], description: null } as never;
+    await mount(data);
+    expect(container.textContent).toContain("Name");
+    expect(container.textContent).not.toContain("Unexpected Application Error");
+  });
+
   it("renders the builder for a brand-new form", async () => {
     const data = loaderData();
     data.form.versions = [];
