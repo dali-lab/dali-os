@@ -75,6 +75,10 @@ export type StoryDependencyEdge = { storyId: string; dependsOnStoryId: string };
 
 export type EpicDependencyEdge = { epicId: string; dependsOnEpicId: string };
 
+// `open`: the blocking task is still unfinished. Carried on the edge because a
+// blocker needn't be on the timeline at all (a task outside any story).
+export type TaskDependencyEdge = { taskId: string; dependsOnTaskId: string; open: boolean };
+
 type Level = "epic" | "story" | "task";
 
 function findBarSpan(
@@ -718,6 +722,7 @@ export function EpicsTimeline({
   terms = [],
   storyDependencies = [],
   epicDependencies = [],
+  taskDependencies = [],
   hiddenLevels,
   compact = false,
   fillHeight = false,
@@ -741,6 +746,8 @@ export function EpicsTimeline({
   // The same edges one level up (epicId waits on dependsOnEpicId), drawn
   // between epic bars in the epic hue.
   epicDependencies?: EpicDependencyEdge[];
+  // And one level down (taskId waits on dependsOnTaskId), between task bars.
+  taskDependencies?: TaskDependencyEdge[];
   // Levels this timeline doesn't have at all — dropped from the legend, from
   // the bars, and from the hover rows that count them. Distinct from the
   // legend's own on/off toggles: those are the viewer's choice, this is the
@@ -1104,9 +1111,10 @@ export function EpicsTimeline({
     }[] = [];
     const storyRects = new Map<string, { sx: number; ex: number; cy: number }>();
     const epicRects = new Map<string, { sx: number; ex: number; cy: number }>();
+    const taskRects = new Map<string, { sx: number; ex: number; cy: number }>();
 
     if (!bounds)
-      return { epicBars, storyBars, taskBars, storyRects, epicRects, height: 0 };
+      return { epicBars, storyBars, taskBars, storyRects, epicRects, taskRects, height: 0 };
 
     const left = (iso: string) => dayOffset(iso, bounds.min) * PX_PER_DAY;
     const width = (a: string, b: string) =>
@@ -1231,12 +1239,20 @@ export function EpicsTimeline({
 
         let taskTop = storyTop + STORY_TOP_PAD;
         for (const t of st.tasks) {
+          const tLeft = left(t.startsAt);
+          const tWidth = width(t.startsAt, t.endsAt);
           taskBars.push({
             task: t,
-            left: left(t.startsAt),
-            width: width(t.startsAt, t.endsAt),
+            left: tLeft,
+            width: tWidth,
             top: taskTop,
             height: TASK_H,
+          });
+          const tx = barX("task", tLeft, tWidth);
+          taskRects.set(t.id, {
+            sx: tx.left,
+            ex: tx.left + tx.width,
+            cy: taskTop + TASK_H / 2,
           });
           taskTop += TASK_H + TASK_GAP;
         }
@@ -1248,7 +1264,7 @@ export function EpicsTimeline({
         ? cursor - EPIC_GAP + BODY_BOTTOM_PAD
         : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
 
-    return { epicBars, storyBars, taskBars, storyRects, epicRects, height };
+    return { epicBars, storyBars, taskBars, storyRects, epicRects, taskRects, height };
   }, [epics, bounds]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
@@ -1630,8 +1646,8 @@ export function EpicsTimeline({
                   </div>
                 </div>
 
-                {/* Dependency arrows, one layer per level. Epics first so a
-                    story edge paints over an epic one where they cross. */}
+                {/* Dependency arrows, one layer per level. Outermost first so a
+                    finer edge paints over a coarser one where they cross. */}
                 {shown("epic") && (
                   <DependencyArrows
                     level="epic"
@@ -1652,6 +1668,18 @@ export function EpicsTimeline({
                       to: d.storyId,
                     }))}
                     rects={layout.storyRects}
+                    width={bounds.width}
+                    height={gridHeight}
+                  />
+                )}
+                {shown("task") && (
+                  <DependencyArrows
+                    level="task"
+                    edges={taskDependencies.map((d) => ({
+                      from: d.dependsOnTaskId,
+                      to: d.taskId,
+                    }))}
+                    rects={layout.taskRects}
                     width={bounds.width}
                     height={gridHeight}
                   />

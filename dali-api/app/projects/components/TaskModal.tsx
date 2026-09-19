@@ -17,7 +17,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -25,7 +25,8 @@ import {
   type ChecklistItem,
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
-import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
+import { TASK_STATUSES, TASK_STATUS_LABELS, isTaskFinished } from "../lib/task-board";
+import { DependencyLinks } from "./DependencyLinks";
 import { cn } from "~/lib/cn";
 
 // Borderless control for the Details property panel — the row supplies the
@@ -60,6 +61,8 @@ export type NewTaskValues = {
   // dates, not chosen here.)
   epicId: string | null;
   storyId: string | null;
+  // Tasks the new one waits on. Applied with a follow-up PATCH, like assignees.
+  dependsOn: string[];
   // Not collected in create mode today (the create endpoint doesn't accept a
   // checklist); present so the board's optimistic card mapping can read it.
   checklist?: ChecklistItem[] | null;
@@ -74,6 +77,8 @@ export function TaskModal({
   task,
   projectId,
   options,
+  allTasks,
+  onOpenTask,
   canManage,
   onClose,
   onPatch,
@@ -88,6 +93,11 @@ export function TaskModal({
   task?: TaskCardModel;
   projectId: string;
   options: TaskBoardOptions;
+  // Every task on the board: the "Blocked by" choices, and the source of the
+  // reverse "Blocks" list.
+  allTasks: TaskCardModel[];
+  // Edit mode: opens another task from a dependency link.
+  onOpenTask?: (taskId: string) => void;
   canManage: boolean;
   onClose: () => void;
   // Resolves with the save outcome; on failure the modal stays open and
@@ -136,9 +146,29 @@ export function TaskModal({
     task?.startsAt ? dateInputValue(task.startsAt) : "",
   );
   const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
+  const [dependsOn, setDependsOn] = useState<string[]>(task?.dependsOn ?? []);
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [epicId, setEpicId] = useState<string>(
     task ? task.epicId ?? "" : defaultEpicId ?? "",
+  );
+
+  // Dependency choices are every other task on the board. "Blocks" is the
+  // reverse edge: tasks that list this one in their own Blocked by.
+  const dependencyOptions = useMemo(
+    () =>
+      allTasks
+        .filter((t) => t.id !== task?.id)
+        .map((t) => ({ value: t.id, label: t.title })),
+    [allTasks, task?.id],
+  );
+  const blocksLinks = useMemo(
+    () =>
+      task
+        ? allTasks
+            .filter((t) => t.dependsOn.includes(task.id))
+            .map((t) => ({ id: t.id, label: t.title, open: !isTaskFinished(t) }))
+        : [],
+    [allTasks, task],
   );
 
   // Stories always belong to an epic, so with no epic picked there's nothing
@@ -238,6 +268,7 @@ export function TaskModal({
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
     setStartDate(task.startsAt ? dateInputValue(task.startsAt) : "");
     setStoryId(task.storyId ?? "");
+    setDependsOn(task.dependsOn);
     setDomainId(task.domain?.id ?? "");
     setEpicId(task.epicId ?? "");
     setChecklist(task.checklist ?? []);
@@ -306,6 +337,9 @@ export function TaskModal({
     if (nextEpicId !== current.epicId) patch.epicId = nextEpicId;
     const nextStoryId = storyId === "" ? null : storyId;
     if (nextStoryId !== current.storyId) patch.storyId = nextStoryId;
+    if ([...dependsOn].sort().join() !== [...current.dependsOn].sort().join()) {
+      patch.dependsOn = dependsOn;
+    }
     const nextChecklist = normalizeChecklist(checklist);
     const currentChecklist = normalizeChecklist(current.checklist ?? []);
     if (JSON.stringify(nextChecklist) !== JSON.stringify(currentChecklist)) {
@@ -337,6 +371,7 @@ export function TaskModal({
       dueDate !== "" ||
       domainId !== "" ||
       assigneeIds.length > 0 ||
+      dependsOn.length > 0 ||
       epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
@@ -365,6 +400,7 @@ export function TaskModal({
     setDueDate(current.dueAt ? dateInputValue(current.dueAt) : "");
     setStartDate(current.startsAt ? dateInputValue(current.startsAt) : "");
     setStoryId(current.storyId ?? "");
+    setDependsOn(current.dependsOn);
     setDomainId(current.domain?.id ?? "");
     setEpicId(current.epicId ?? "");
     setChecklist(current.checklist ?? []);
@@ -435,6 +471,7 @@ export function TaskModal({
         assigneeIds,
         epicId: epicId === "" ? null : epicId,
         storyId: storyId === "" ? null : storyId,
+        dependsOn,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
@@ -1011,6 +1048,24 @@ export function TaskModal({
               </span>
             </Tooltip>
           </PropRow>
+
+          <PropRow label="Blocked by" align="start">
+            <MultiSelect
+              values={dependsOn}
+              options={dependencyOptions}
+              disabled={!canManage || readOnly}
+              onChange={setDependsOn}
+              ariaLabel="Tasks this one waits on"
+              placeholder="Nothing"
+              emptyLabel="No other tasks on this board"
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+          {!isCreate && (
+            <PropRow label="Blocks" align="start">
+              <DependencyLinks items={blocksLinks} onSelect={onOpenTask} />
+            </PropRow>
+          )}
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (

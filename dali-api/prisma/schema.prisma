@@ -3089,8 +3089,6 @@ model Epic {
   // its stories' (and their tasks') dates (see buildTimelineEpics).
   startsAt         DateTime?
   endsAt           DateTime?
-  // Optional target term for cross-term epics that span multiple terms.
-  targetTermId     String?
   position         Int        @default(0)
 
   project Project     @relation(fields: [projectId], references: [id])
@@ -3276,6 +3274,12 @@ model Task {
   files     TaskFileLink[]
   views     TaskView[]
 
+  // Dependency edges, the same two-sided shape epics and stories carry.
+  // `dependencies` are rows where this task waits on another; `blocking` are
+  // rows where it is the predecessor.
+  dependencies TaskDependency[] @relation("TaskDependent")
+  blocking     TaskDependency[] @relation("TaskBlocker")
+
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -3284,6 +3288,23 @@ model Task {
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
   @@index([storyId])
+}
+
+// Directed edge: `task` waits on `dependsOnTask`. Both sides belong to the
+// same project — enforced in the API, not the schema, as the story edge is.
+// A task is "blocked" while any task it waits on is unfinished.
+model TaskDependency {
+  id              String @id @default(cuid())
+  taskId          String
+  dependsOnTaskId String
+
+  task          Task @relation("TaskDependent", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("TaskBlocker", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
 }
 
 enum TaskStatus {

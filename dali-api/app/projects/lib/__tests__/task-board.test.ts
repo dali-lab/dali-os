@@ -8,10 +8,12 @@ import {
   isCarriedOverTask,
   termIdsInRange,
   currentSprintBand,
-  defaultSprintScope,
   resolveSprintScope,
   taskInSprintScope,
   sprintPickerOptions,
+  taskTermIds,
+  openDependencies,
+  isTaskFinished,
   type TaskCardModel,
   type TermWindow,
 } from "../task-board";
@@ -33,6 +35,7 @@ function task(
     startsAt: null,
     epicId: null,
     storyId: null,
+    dependsOn: [],
     checklist: null,
     assignees: [],
     domain: null,
@@ -297,23 +300,18 @@ describe("computed sprint scope", () => {
     expect(currentSprintBand([], NOW)).toBeNull();
   });
 
-  it("defaults to current when a sprint is running, else all", () => {
-    expect(defaultSprintScope(TERMS, NOW)).toBe("current");
-    expect(defaultSprintScope(TERMS, OUTSIDE)).toBe("all");
-    expect(defaultSprintScope([], NOW)).toBe("all");
-  });
-
   it("resolves an explicit, still-valid param and falls back otherwise", () => {
     const key = String(currentSprintBand(TERMS, NOW)!.key);
     expect(resolveSprintScope("all", TERMS, NOW)).toBe("all");
     expect(resolveSprintScope("backlog", TERMS, NOW)).toBe("backlog");
     expect(resolveSprintScope("current", TERMS, NOW)).toBe("current");
     expect(resolveSprintScope(key, TERMS, NOW)).toBe(key);
-    // No param → default (current here).
-    expect(resolveSprintScope(null, TERMS, NOW)).toBe("current");
+    // No param → the whole term, even while a sprint is running: a one-week
+    // default hid the rest of the term's work.
+    expect(resolveSprintScope(null, TERMS, NOW)).toBe("all");
     // A key not aligned to any term's sprint grid → default.
-    expect(resolveSprintScope("123", TERMS, NOW)).toBe("current");
-    // `current` with nothing running → default (all here).
+    expect(resolveSprintScope("123", TERMS, NOW)).toBe("all");
+    // `current` with nothing running → default.
     expect(resolveSprintScope("current", TERMS, OUTSIDE)).toBe("all");
   });
 
@@ -347,5 +345,64 @@ describe("computed sprint scope", () => {
     for (const o of opts) expect(Number.isFinite(Number(o.value))).toBe(true);
     expect(sprintPickerOptions(TERMS, null, NOW)).toEqual([]);
     expect(sprintPickerOptions(TERMS, "99W", NOW)).toEqual([]);
+  });
+});
+
+describe("taskTermIds", () => {
+  const span = (startsAt: string | null, dueAt: string | null) => ({ startsAt, dueAt });
+
+  it("returns the term a single-day task falls in", () => {
+    expect(taskTermIds(TERMS, span(null, "2026-07-15T00:00:00.000Z"))).toEqual(["summer"]);
+  });
+
+  it("counts a task toward every term its span touches", () => {
+    // Started late summer, due early fall: on both boards.
+    expect(
+      taskTermIds(TERMS, span("2026-08-20T00:00:00.000Z", "2026-09-20T00:00:00.000Z")),
+    ).toEqual(["summer", "fall"]);
+  });
+
+  it("rolls a break-week task forward to the next term", () => {
+    expect(taskTermIds(TERMS, span(null, "2026-09-05T00:00:00.000Z"))).toEqual(["fall"]);
+  });
+
+  it("puts a task due on a term's first day in that term despite a local-midnight offset", () => {
+    const offset: TermWindow[] = [
+      {
+        id: "summer",
+        startDate: new Date("2026-06-22T04:00:00.000Z"),
+        endDate: new Date("2026-08-31T04:00:00.000Z"),
+      },
+      {
+        id: "fall",
+        startDate: new Date("2026-09-14T04:00:00.000Z"),
+        endDate: new Date("2026-12-01T05:00:00.000Z"),
+      },
+    ];
+    expect(taskTermIds(offset, span(null, "2026-09-14T00:00:00.000Z"))).toEqual(["fall"]);
+    expect(taskTermIds(offset, span(null, "2026-08-31T00:00:00.000Z"))).toEqual(["summer"]);
+  });
+
+  it("gives backdated work its past term", () => {
+    expect(taskTermIds(TERMS, span("2026-04-01T00:00:00.000Z", "2026-04-10T00:00:00.000Z"))).toEqual([
+      "spring",
+    ]);
+  });
+
+  it("returns nothing for an undated task", () => {
+    expect(taskTermIds(TERMS, span(null, null))).toEqual([]);
+  });
+});
+
+describe("openDependencies", () => {
+  it("returns only loaded, unfinished blockers", () => {
+    const byId = new Map([
+      ["a", task("a", "InProgress", 0)],
+      ["b", task("b", "Done", 0)],
+      ["c", task("c", "Cancelled", 0)],
+    ]);
+    // "gone" isn't loaded (archived work is always finished), so it doesn't block.
+    const open = openDependencies(["a", "b", "c", "gone"], byId, isTaskFinished);
+    expect(open.map((t) => t.id)).toEqual(["a"]);
   });
 });
