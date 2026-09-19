@@ -3406,12 +3406,12 @@ model EducationOffering {
   startsAt             DateTime?
   endsAt               DateTime?
   status               OfferingStatus @default(Draft)
-  // True for typical miniseries (instructor-reviewed), false for typical
+  // True for typical miniseries and fellowships (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
   requiresReview       Boolean
   // Fraction of sessions a student must attend (Present + Excused) to earn a
-  // completion certificate. Miniseries only; workshops need one Present mark.
+  // completion certificate. Miniseries and fellowships; workshops need one Present mark.
   completionThreshold  Float          @default(0.8)
 
   // Optional per-offering Google Workspace identity. Falls back to a shared
@@ -3449,6 +3449,7 @@ model EducationOffering {
 enum OfferingType {
   Miniseries
   Workshop
+  Fellowship
 }
 
 enum OfferingStatus {

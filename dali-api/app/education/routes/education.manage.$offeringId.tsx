@@ -94,6 +94,7 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { X } from "lucide-react";
+import { isMultiSession } from "~/education/lib/offering-type";
 import { renderEmail } from "~/lib/email";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -364,7 +365,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         return [
           st.applicationId,
           certificateEligibility({
-            type: offering.type as "Miniseries" | "Workshop",
+            type: offering.type,
             totalSessions: attendanceMatrix.sessions.length,
             present,
             excused,
@@ -1348,8 +1349,8 @@ export default function ManageOffering() {
           {offering.sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No sessions yet.{" "}
-              {offering.type === "Miniseries"
-                ? "A miniseries needs at least one session before it can publish."
+              {isMultiSession(offering.type)
+                ? `A ${offering.type.toLowerCase()} needs at least one session before it can publish.`
                 : "Add the workshop's session below."}
             </p>
           ) : (
