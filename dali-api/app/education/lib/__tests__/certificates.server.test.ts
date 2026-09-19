@@ -38,6 +38,15 @@ describe("certificateEligibility", () => {
     ).toBe(true);
   });
 
+  it("holds a fellowship to the attendance threshold, like a miniseries", () => {
+    expect(
+      certificateEligibility({ type: "Fellowship", totalSessions: 10, present: 8, excused: 0 }),
+    ).toBe(true);
+    expect(
+      certificateEligibility({ type: "Fellowship", totalSessions: 10, present: 1, excused: 0 }),
+    ).toBe(false);
+  });
+
   it("workshops need a single Present mark", () => {
     expect(
       certificateEligibility({ type: "Workshop", totalSessions: 1, present: 1, excused: 0 }),

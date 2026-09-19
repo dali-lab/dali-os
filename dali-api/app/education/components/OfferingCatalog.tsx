@@ -11,7 +11,8 @@
 // and card structure are what carry the project-hub look across the theme line.
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { GraduationCap, Presentation } from "lucide-react";
+import { Award, GraduationCap, Presentation } from "lucide-react";
+import { OFFERING_TYPE_TINT, type OfferingType } from "~/education/lib/offering-type";
 import { OfferingDetailPanel } from "./OfferingDetailPanel";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { MetaList, type MetaTone } from "~/components/ui/MetaList";
@@ -34,7 +35,7 @@ export type CatalogOffering = OfferingCardData & {
   closedOutAt: string | Date | null;
 };
 
-type TypeFilter = "all" | "Miniseries" | "Workshop";
+type TypeFilter = "all" | OfferingType;
 
 // Cards hold their size and the row count changes instead: with a 1fr max the
 // tracks stretch, so opening the detail pane made every remaining card wider —
@@ -44,11 +45,18 @@ const GRID =
   "grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(260px,320px))]";
 
 // A small type-tinted tile carrying the offering's emoji — or a type glyph
-// (mortarboard for a miniseries, easel for a workshop) when none is set, since
+// (mortarboard for a miniseries, award for a fellowship, easel for a workshop)
+// when none is set, since
 // a real icon reads as intentional where a bare initial reads as a placeholder.
-// The tint is the offering's identity: teal for miniseries, coral for workshops,
-// the same split the TypeBadge uses. Replaces the old full-bleed gradient cover,
+// The tint is the offering's identity (OFFERING_TYPE_TINT), the same split the
+// TypeBadge uses. Replaces the old full-bleed gradient cover,
 // whose one pastel wash made every offering look identical.
+const TYPE_GLYPH = {
+  Miniseries: GraduationCap,
+  Fellowship: Award,
+  Workshop: Presentation,
+} satisfies Record<OfferingType, unknown>;
+
 export function OfferingTypeTile({
   type,
   iconEmoji,
@@ -58,15 +66,13 @@ export function OfferingTypeTile({
   iconEmoji?: string | null;
   size?: "md" | "lg";
 }) {
-  const Glyph = type === "Miniseries" ? GraduationCap : Presentation;
+  const Glyph = TYPE_GLYPH[type];
   return (
     <div
       className={cn(
         "flex shrink-0 items-center justify-center leading-none",
         size === "lg" ? "h-14 w-14 rounded-2xl text-3xl" : "h-11 w-11 rounded-xl text-2xl",
-        type === "Miniseries"
-          ? "bg-accent-teal/10 text-accent-teal"
-          : "bg-accent-coral/10 text-accent-coral",
+        OFFERING_TYPE_TINT[type],
       )}
       aria-hidden
     >
@@ -262,6 +268,15 @@ export function OfferingCatalog({
               os={false}
               size="md"
               tone="blue"
+              selected={typeFilter === "Fellowship"}
+              onClick={() => setTypeFilter("Fellowship")}
+            >
+              Fellowships
+            </FilterPill>
+            <FilterPill
+              os={false}
+              size="md"
+              tone="blue"
               selected={typeFilter === "Workshop"}
               onClick={() => setTypeFilter("Workshop")}
             >
@@ -277,7 +292,7 @@ export function OfferingCatalog({
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {upcoming.length === 0
-                ? "Upcoming miniseries and workshops will show up here."
+                ? "Upcoming workshops, miniseries, and fellowships will show up here."
                 : "Try a different search or filter."}
             </p>
           </div>

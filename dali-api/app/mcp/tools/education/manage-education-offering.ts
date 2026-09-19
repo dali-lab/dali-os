@@ -51,7 +51,7 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
       },
       type: {
         type: "string",
-        enum: ["Miniseries", "Workshop"],
+        enum: ["Miniseries", "Fellowship", "Workshop"],
         description: "Offering type (create only).",
       },
       title: { type: "string", description: "Offering title." },

@@ -209,7 +209,7 @@ export function OfferingDetailPanel({
           ) : (
             <p className="text-sm italic text-muted-foreground">
               No description has been added for this{" "}
-              {offering.type === "Workshop" ? "workshop" : "miniseries"} yet.
+              {offering.type.toLowerCase()} yet.
             </p>
           )
         ) : detail.offering.sessions.length === 0 ? (

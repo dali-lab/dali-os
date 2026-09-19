@@ -6,9 +6,14 @@ import { DateField } from "~/components/ui/DateField";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
+import {
+  OFFERING_TYPE_DESCRIPTIONS,
+  isMultiSession,
+  type OfferingType,
+} from "~/education/lib/offering-type";
 
 type Values = {
-  type?: "Miniseries" | "Workshop";
+  type?: OfferingType;
   title?: string;
   iconEmoji?: string | null;
   capacity?: number;
@@ -41,10 +46,10 @@ export function OfferingFields({
 }) {
   // Track type locally so the threshold field can show/hide reactively when
   // the type selector changes on the create form (edit locks the type).
-  const [selectedType, setSelectedType] = useState<"Miniseries" | "Workshop">(
+  const [selectedType, setSelectedType] = useState<OfferingType>(
     values.type ?? "Workshop",
   );
-  const isMiniseries = selectedType === "Miniseries";
+  const multiSession = isMultiSession(selectedType);
   // The catalog-card icon. Held in state and posted as a hidden field, since
   // ProjectIconPicker is a controlled popover (no native input of its own).
   const [iconEmoji, setIconEmoji] = useState<string | null>(values.iconEmoji ?? null);
@@ -56,7 +61,9 @@ export function OfferingFields({
           <span className={LABEL}>
             <span className="inline-flex items-center gap-1">
               Type
-              <InfoTip content="Workshop: a single-session event with RSVP-style approval (no multi-session attendance). Miniseries: a multi-session course with reviewed applications and attendance tracking." />
+              <InfoTip
+                content={`${OFFERING_TYPE_DESCRIPTIONS.Workshop} ${OFFERING_TYPE_DESCRIPTIONS.Miniseries} ${OFFERING_TYPE_DESCRIPTIONS.Fellowship}`}
+              />
             </span>
           </span>
           <Tooltip
@@ -69,10 +76,11 @@ export function OfferingFields({
                 name="type"
                 defaultValue={values.type ?? "Workshop"}
                 disabled={typeLocked}
-                onChange={(v) => setSelectedType(v as "Miniseries" | "Workshop")}
+                onChange={(v) => setSelectedType(v as OfferingType)}
                 options={[
                   { value: "Workshop", label: "Workshop (single session, RSVP)" },
                   { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
+                  { value: "Fellowship", label: "Fellowship (multi-term, reviewed)" },
                 ]}
                 buttonClassName={INPUT}
               />
@@ -146,15 +154,18 @@ export function OfferingFields({
         Course start and end dates are set automatically from the sessions you add.
       </p>
 
+      {/* Keyed on type so a new offering's default follows the chosen type:
+          multi-session offerings are reviewed, workshops auto-approve. */}
       <Checkbox
+        key={selectedType}
         name="requiresReview"
         value="true"
-        defaultChecked={values.requiresReview ?? false}
+        defaultChecked={values.requiresReview ?? multiSession}
         label="Applications need instructor review (uncheck for RSVP auto-approval up to capacity)"
         className="text-sm text-foreground"
       />
 
-      {isMiniseries && (
+      {multiSession && (
         <label className="block">
           <span className={LABEL}>
             <span className="inline-flex items-center gap-1">
