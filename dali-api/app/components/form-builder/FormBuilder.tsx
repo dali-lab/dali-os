@@ -323,6 +323,13 @@ export function FormBuilderTab({
   // Where a dragged library component would land: before/after a row, or at
   // the end of the canvas. Drives the insertion line while dragging.
   const [dropTarget, setDropTarget] = useState<{ key: string; after: boolean } | 'end' | null>(null)
+  // Explicit null/'end' checks: `typeof null` is 'object', and a question
+  // saved without a key would otherwise match a null target's `?.key`.
+  const dropsAt = (key: string, after: boolean) =>
+    dropTarget !== null &&
+    dropTarget !== 'end' &&
+    dropTarget.key === key &&
+    dropTarget.after === after
   const draggingComponent = activeId?.startsWith(PALETTE_PREFIX)
     ? (activeId.slice(PALETTE_PREFIX.length) as QuestionType)
     : null
@@ -773,7 +780,7 @@ export function FormBuilderTab({
                 <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
                   {(dragHandleProps, isDragging) => (
                     <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
-                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && !dropTarget.after && insertionLine}
+                      {dropsAt(q.key, false) && insertionLine}
                       {q.type === 'pageBreak' ? (
                         <div
                           className={`flex items-start gap-4 p-4 rounded-os-item border border-dashed group transition-colors duration-150 ${activeId ? 'border-os-container' : 'border-os-container-hi'}`}
@@ -911,7 +918,7 @@ export function FormBuilderTab({
                           </div>
                         </div>
                       )}
-                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && dropTarget.after && insertionLine}
+                      {dropsAt(q.key, true) && insertionLine}
                     </div>
                   )}
                 </SortableQuestionRow>
