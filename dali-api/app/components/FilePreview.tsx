@@ -1,5 +1,8 @@
-import { Download, FileText, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, FileText, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import { categorize, type FileCategory } from "~/lib/file-type";
+import { cn } from "~/lib/cn";
+import { IconButton } from "~/components/ui/IconButton";
 
 // Shared in-app file rendering. Two shapes:
 //   - <FilePreview>    a large single-file preview (images/video/audio/pdf/text
@@ -16,44 +19,57 @@ type ViewerProps = {
   previewUrl: string;
   fileName: string;
   reloadKey?: string;
+  fullscreen: boolean;
 };
 
 // Category → inline renderer. Adding a new inline viewer (e.g. 3D, office) is a
 // one-line entry here plus the category in file-type's PREVIEWABLE_INLINE — no
 // call-site edits. Categories absent from this map fall back to download.
 const VIEWERS: Partial<Record<FileCategory, (p: ViewerProps) => React.ReactElement>> = {
-  image: ({ previewUrl, fileName }) => (
+  image: ({ previewUrl, fileName, fullscreen }) => (
     <img
       src={previewUrl}
       alt={fileName}
-      className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
+      className={cn(
+        "max-w-full rounded-lg border border-border object-contain bg-muted/20",
+        fullscreen ? "max-h-full mx-auto" : "max-h-[70vh]",
+      )}
     />
   ),
-  video: ({ previewUrl, reloadKey }) => (
+  video: ({ previewUrl, reloadKey, fullscreen }) => (
     <video
       key={reloadKey}
       src={previewUrl}
       controls
-      className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
+      className={cn(
+        "max-w-full rounded-lg border border-border bg-black",
+        fullscreen ? "max-h-full mx-auto" : "max-h-[70vh]",
+      )}
     />
   ),
   audio: ({ previewUrl, reloadKey }) => (
     <audio key={reloadKey} src={previewUrl} controls className="w-full" />
   ),
-  pdf: ({ previewUrl, fileName, reloadKey }) => (
+  pdf: ({ previewUrl, fileName, reloadKey, fullscreen }) => (
     <iframe
       key={reloadKey}
       src={previewUrl}
       title={fileName}
-      className="w-full h-[70vh] rounded-lg border border-border bg-white"
+      className={cn(
+        "w-full rounded-lg border border-border bg-white",
+        fullscreen ? "h-full" : "h-[70vh]",
+      )}
     />
   ),
-  text: ({ previewUrl, fileName, reloadKey }) => (
+  text: ({ previewUrl, fileName, reloadKey, fullscreen }) => (
     <iframe
       key={reloadKey}
       src={previewUrl}
       title={fileName}
-      className="w-full h-[70vh] rounded-lg border border-border bg-white"
+      className={cn(
+        "w-full rounded-lg border border-border bg-white",
+        fullscreen ? "h-full" : "h-[70vh]",
+      )}
     />
   ),
 };
@@ -76,10 +92,57 @@ export function FilePreview({
   fileName: string;
   reloadKey?: string;
 }) {
-  const Viewer = VIEWERS[categorize({ fileName, contentType })];
+  const category = categorize({ fileName, contentType });
+  const Viewer = VIEWERS[category];
+  // Audio is just a control bar, nothing to gain from the whole viewport.
+  const canFullscreen = Viewer != null && category !== "audio";
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
 
   if (Viewer) {
-    return <Viewer previewUrl={previewUrl} fileName={fileName} reloadKey={reloadKey} />;
+    return (
+      <div
+        className={cn(
+          fullscreen && "fixed inset-0 z-40 flex flex-col gap-3 bg-background p-4 sm:p-6",
+        )}
+      >
+        {canFullscreen && (
+          <div className={cn("flex items-center justify-end gap-2", !fullscreen && "mb-2")}>
+            {fullscreen && (
+              <span className="flex-1 truncate text-sm font-medium text-foreground">
+                {fileName}
+              </span>
+            )}
+            <IconButton
+              label={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+              icon={fullscreen ? Minimize2 : Maximize2}
+              onClick={() => setFullscreen((f) => !f)}
+            />
+          </div>
+        )}
+        <div className={cn(fullscreen && "flex-1 min-h-0 flex items-center justify-center")}>
+          <Viewer
+            previewUrl={previewUrl}
+            fileName={fileName}
+            reloadKey={reloadKey}
+            fullscreen={fullscreen}
+          />
+        </div>
+      </div>
+    );
   }
   return (
     <div className="rounded-lg border border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
