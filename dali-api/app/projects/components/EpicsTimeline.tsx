@@ -66,6 +66,9 @@ export type TimelineEpic = {
   endsAt: string | null;
   // Stories under this epic, drawn as bars nested inside the epic bar.
   stories: TimelineStory[];
+  // Tasks linked straight to the epic (no story), drawn as task bars directly
+  // under the epic, below its story rows. Empty on task-free surfaces.
+  tasks: TimelineTask[];
 };
 
 /** A term's span, used to anchor and label the fixed one-week sprint grid. */
@@ -89,6 +92,11 @@ function findBarSpan(
   for (const e of epics) {
     if (kind === "epic" && e.id === id) {
       return e.startsAt && e.endsAt ? { startsAt: e.startsAt, endsAt: e.endsAt } : null;
+    }
+    for (const t of e.tasks) {
+      if (kind === "task" && t.id === id) {
+        return { startsAt: t.startsAt, endsAt: t.endsAt };
+      }
     }
     for (const st of e.stories) {
       if (kind === "story" && st.id === id) {
@@ -1162,10 +1170,18 @@ export function EpicsTimeline({
       }
       storyRowHeights.set(e.id, heights);
       const inner = heights.reduce((a, h) => a + h, 0);
+      const storyInner =
+        heights.length > 0 ? inner + (heights.length - 1) * STORY_GAP : 0;
+      // Epic-direct tasks stack below the story rows; a story-gap separates the
+      // two blocks when both are present, so loose tasks don't butt against the
+      // last story.
+      const dn = e.tasks.length;
+      const directH = dn > 0 ? dn * TASK_H + (dn - 1) * TASK_GAP : 0;
+      const separator = heights.length > 0 && dn > 0 ? STORY_GAP : 0;
       epicH.set(
         e.id,
-        heights.length > 0
-          ? EPIC_TOP_PAD + inner + (heights.length - 1) * STORY_GAP + EPIC_BOTTOM_PAD
+        heights.length > 0 || dn > 0
+          ? EPIC_TOP_PAD + storyInner + separator + directH + EPIC_BOTTOM_PAD
           : EPIC_MIN_H,
       );
     }
@@ -1256,6 +1272,29 @@ export function EpicsTimeline({
           });
           taskTop += TASK_H + TASK_GAP;
         }
+      }
+
+      // Epic-direct tasks pick up right where the story rows leave off —
+      // `rowCursor` already carries the trailing story-gap as their separator
+      // (or the epic's top pad when the epic has no stories at all).
+      let directTop = rowCursor;
+      for (const t of e.tasks) {
+        const tLeft = left(t.startsAt);
+        const tWidth = width(t.startsAt, t.endsAt);
+        taskBars.push({
+          task: t,
+          left: tLeft,
+          width: tWidth,
+          top: directTop,
+          height: TASK_H,
+        });
+        const tx = barX("task", tLeft, tWidth);
+        taskRects.set(t.id, {
+          sx: tx.left,
+          ex: tx.left + tx.width,
+          cy: directTop + TASK_H / 2,
+        });
+        directTop += TASK_H + TASK_GAP;
       }
     }
 
