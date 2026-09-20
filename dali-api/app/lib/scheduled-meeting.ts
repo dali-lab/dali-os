@@ -47,6 +47,8 @@ async function buildPerRecipientIcs(args: {
   durationMinutes: number;
   organizerEmail: string;
   recurrenceRule: string | null;
+  location?: string | null;
+  description?: string | null;
   userIds: string[];
 }): Promise<Map<string, string>> {
   const users = await prisma.user.findMany({
@@ -72,6 +74,8 @@ async function buildPerRecipientIcs(args: {
         summary: args.title,
         startTime: args.startTime,
         endTime,
+        location: args.location ?? null,
+        description: args.description ?? undefined,
         organizer: { email: args.organizerEmail, name: "DALI OS" },
         attendees: [{ email, name: `${u.firstName} ${u.lastName}`.trim() || email }],
         sequence: args.method === "CANCEL" ? ICS_SEQ_CANCEL : ICS_SEQ_INVITE,
@@ -102,6 +106,23 @@ async function googleAttendeesFor(userIds: string[]): Promise<GoogleAttendee[]> 
   return attendees;
 }
 
+// The invite's body across all three channels. The ICS (and, for a Google-hosted
+// meeting, Google's own invite) carries these fields too, but the in-app feed and
+// the Slack DM have no attachment to open — so where and what the meeting is has
+// to be in the message itself.
+function inviteBody(
+  startDate: Date | null,
+  location: string | null,
+  description: string | null,
+): string | null {
+  const lines = [
+    startDate ? `Starts ${startDate.toISOString()}` : null,
+    location ? `Location: ${location}` : null,
+    description || null,
+  ].filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 // The in-app/email/Slack invite for newly added guests. An ICS rides along only
 // when we manage the invite ourselves — a Google-hosted meeting already gets a
 // real invite from Google.
@@ -115,6 +136,8 @@ async function sendMeetingInvites(args: {
   ownerCalendarEmail: string;
   googleManaged: boolean;
   sourceGroupId: string | null;
+  location: string | null;
+  description: string | null;
   recipientIds: string[];
 }): Promise<{ inApp: number }> {
   const icsByUser =
@@ -127,6 +150,8 @@ async function sendMeetingInvites(args: {
           durationMinutes: args.durationMinutes,
           organizerEmail: args.ownerCalendarEmail,
           recurrenceRule: args.recurrenceRule,
+          location: args.location,
+          description: args.description,
           userIds: args.recipientIds,
         })
       : null;
@@ -135,7 +160,7 @@ async function sendMeetingInvites(args: {
     createdByUserId: args.actorUserId,
     message: {
       title: `Meeting invite: ${args.title}`,
-      body: args.startDate ? `Starts ${args.startDate.toISOString()}` : null,
+      body: inviteBody(args.startDate, args.location, args.description),
       link: `/calendar?meeting=${args.meetingId}`,
       sourceGroupId: args.sourceGroupId,
       scheduledMeetingId: args.meetingId,
@@ -182,6 +207,9 @@ export type CreateScheduledMeetingInput = {
   organizerCalendarLinkId?: string | null;
   /** A calendar inside that link. Omitted = the account's primary calendar. */
   organizerCalendarId?: string | null;
+  /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
+  location?: string | null;
+  description?: string | null;
   // Meeting-note fields. When both are set, a "<label> meeting note (<date>)"
   // Page is auto-created under the project's shared documents, and a
   // MeetingAttendance row is fanned out per participant (including the
@@ -407,11 +435,17 @@ export async function createScheduledMeeting(
 
   const attendanceMode = input.attendanceMode ?? "Roster";
 
+  // Blank is the same as unset here: an untouched field shouldn't persist as "".
+  const location = input.location?.trim() || null;
+  const description = input.description?.trim() || null;
+
   const meeting = await prisma.scheduledMeeting.create({
     data: {
       organizerId: input.organizerId,
       title: input.title,
       durationMinutes: input.durationMinutes,
+      location,
+      description,
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
@@ -446,6 +480,8 @@ export async function createScheduledMeeting(
         const result = await createGoogleCalendarEvent({
           linkId: organizerLink.id,
           summary: input.title,
+          location: location ?? undefined,
+          description: description ?? undefined,
           startIso: startDate.toISOString(),
           endIso: endDate.toISOString(),
           recurrenceRule: input.recurrenceRule ?? null,
@@ -516,6 +552,8 @@ export async function createScheduledMeeting(
       ownerCalendarEmail: meeting.ownerCalendarEmail,
       googleManaged: externalEventId !== null,
       sourceGroupId: scopeId,
+      location,
+      description,
       recipientIds: notifyIds,
     });
     notifiedCount = result.inApp;
@@ -977,9 +1015,10 @@ export type UpdateScheduledMeetingInput = {
   scope: ScheduledMeetingScope;
   startTime?: string | null;
   recurrenceRule?: string | null;
-  // Google-only fields (not stored on ScheduledMeeting) — passed straight through
-  // to the linked event's patch. Omitted (undefined) leaves them unchanged; a set
-  // value, including "", is written (so clearing a location clears it on Google).
+  // Omitted (undefined) leaves them unchanged; a set value, including "", is
+  // written (so clearing a location clears it both here and on Google). A
+  // scope="this" edit only writes them to that occurrence's Google event —
+  // MeetingException carries no per-occurrence copy of either field.
   location?: string;
   description?: string;
   // Scoped edit fields (optional, default "all"):
@@ -1029,6 +1068,8 @@ export async function updateScheduledMeeting(
       isCoreMeeting: true,
       meetingTypeLabel: true,
       projectId: true,
+      location: true,
+      description: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -1160,6 +1201,8 @@ export async function updateScheduledMeeting(
       meetingTypeLabel: meeting.meetingTypeLabel,
       projectId: meeting.projectId,
       isCoreMeeting: meeting.isCoreMeeting,
+      location: input.location ?? meeting.location,
+      description: input.description ?? meeting.description,
     });
 
     if (!newMeetingResult.ok) {
@@ -1184,6 +1227,8 @@ export async function updateScheduledMeeting(
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
+      ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
+      ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
     },
   });
 
@@ -1277,6 +1322,8 @@ export async function updateScheduledMeeting(
         ownerCalendarEmail: meeting.ownerCalendarEmail,
         googleManaged: meeting.externalEventId !== null,
         sourceGroupId: scopeId,
+        location: updated.location,
+        description: updated.description,
         recipientIds: addedRecipients,
       });
     }
@@ -1441,6 +1488,8 @@ export async function trackExternalEventAsMeeting(
       organizerId: input.actorId,
       title: event.summary?.trim() || "Untitled event",
       durationMinutes,
+      location: event.location,
+      description: event.description,
       // "None" — not scoped to a group or a hand-picked list. It is the marker
       // the meeting page reads to let any lab member see a lab-wide meeting.
       scopeType: "None",

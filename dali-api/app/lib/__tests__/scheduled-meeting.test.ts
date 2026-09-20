@@ -432,6 +432,96 @@ describe("createScheduledMeeting — attendance roster", () => {
   });
 });
 
+// The regression this covers: the invite form collected a location and a
+// description and the create path dropped both, so they reached neither the
+// meeting, the Google event, nor the invite that went out to guests.
+describe("createScheduledMeeting — location and description", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+    userCalendarLink: { findUnique: ReturnType<typeof vi.fn> };
+    user: { findMany: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
+  };
+
+  const base = {
+    organizerId: "org-1",
+    organizerEmail: "org@dali.dartmouth.edu",
+    title: "Design review",
+    durationMinutes: 45,
+    startTime: "2026-09-22T17:00:00.000Z",
+    scope: { type: "UserList" as const, participantUserIds: ["u2"] },
+    location: "Baker 101",
+    description: "Bring the latest mocks.",
+  };
+
+  beforeEach(() => {
+    p.scheduledMeeting.create.mockResolvedValue({
+      id: "m1",
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+    });
+    p.scheduledMeeting.update.mockResolvedValue({});
+    p.meetingAttendance.createMany.mockResolvedValue({});
+    p.user.findMany.mockResolvedValue([
+      { id: "u2", firstName: "Ally", lastName: "Kim", daliEmail: "ally@dali.dartmouth.edu" },
+    ]);
+    p.user.findUnique.mockResolvedValue({ timeZone: "America/New_York" });
+    mockNotify.mockResolvedValue({ inApp: 1 });
+  });
+
+  it("stores both on the meeting and mirrors them onto the Google event", async () => {
+    p.userCalendarLink.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "org-1",
+      externalEmail: "org@dali.dartmouth.edu",
+      enabled: true,
+    });
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue({
+      eventId: "gcal-1",
+      htmlLink: null,
+      meetUrl: null,
+    });
+
+    const res = await createScheduledMeeting({ ...base, organizerCalendarLinkId: "link-1" });
+
+    expect(res.ok).toBe(true);
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          location: "Baker 101",
+          description: "Bring the latest mocks.",
+        }),
+      }),
+    );
+    expect(createGoogleCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: "Baker 101",
+        description: "Bring the latest mocks.",
+      }),
+    );
+  });
+
+  it("carries both into the ICS and the invite body when we send the invite ourselves", async () => {
+    const res = await createScheduledMeeting(base);
+
+    expect(res.ok).toBe(true);
+    const call = mockNotify.mock.calls[0]![0];
+    expect(call.message.body).toContain("Location: Baker 101");
+    expect(call.message.body).toContain("Bring the latest mocks.");
+    expect(call.recipients[0].ics).toContain("LOCATION:Baker 101");
+    expect(call.recipients[0].ics).toContain("DESCRIPTION:Bring the latest mocks.");
+  });
+
+  it("stores null rather than an empty string for a field left blank", async () => {
+    await createScheduledMeeting({ ...base, location: "", description: "   " });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ location: null, description: null }),
+      }),
+    );
+  });
+});
+
 describe("updateScheduledMeeting", () => {
   const p = prisma as unknown as {
     scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -525,7 +615,7 @@ describe("updateScheduledMeeting", () => {
     expect(events).toContain("meeting.cancelled");
   });
 
-  it("passes location and description through to the Google patch", async () => {
+  it("stores location and description and passes them through to the Google patch", async () => {
     p.scheduledMeeting.findUnique.mockResolvedValue(
       meetingRow({
         externalEventId: "gcal-1",
@@ -554,6 +644,30 @@ describe("updateScheduledMeeting", () => {
       location: "Room 5",
       description: "Bring laptops",
     });
+    // Also persisted, so reopening the meeting shows what was typed.
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ location: "Room 5", description: "Bring laptops" }),
+      }),
+    );
+  });
+
+  it("leaves a stored location alone when the edit omits it, and clears it on \"\"", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ location: "Room 5" }));
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "org-1" }, { userId: "u2" }]);
+
+    const edit = {
+      title: "Synced",
+      durationMinutes: 30,
+      scope: { type: "UserList" as const, participantUserIds: ["u2"] },
+      startTime: "2026-09-11T16:00:00.000Z",
+    };
+
+    await updateScheduledMeeting("m1", "org-1", edit);
+    expect(p.scheduledMeeting.update.mock.calls[0]![0].data).not.toHaveProperty("location");
+
+    await updateScheduledMeeting("m1", "org-1", { ...edit, location: "" });
+    expect(p.scheduledMeeting.update.mock.calls[1]![0].data).toMatchObject({ location: null });
   });
 
   it("lets Core edit a meeting they don't organize", async () => {
@@ -934,6 +1048,8 @@ describe("trackExternalEventAsMeeting", () => {
     startDate: null,
     endIso: "2026-09-15T19:30:00.000Z",
     endDate: null,
+    location: "Baker 101",
+    description: "Weekly all-hands",
     attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
   };
 
