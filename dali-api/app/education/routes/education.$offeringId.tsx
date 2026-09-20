@@ -13,13 +13,21 @@ import {
   TypeBadge,
   StatusBadge,
   MyStatusChip,
-  registrationWindowLabel,
+  registrationMeta,
 } from "~/education/components/OfferingCard";
+import {
+  OfferingTypeTile,
+  runsValue,
+  seatsMeta,
+} from "~/education/components/OfferingCatalog";
+import { META_TONE_CLASS, type MetaTone } from "~/components/ui/MetaList";
+import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { cn } from "~/lib/cn";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
-import { formatDateTime, formatDateShort } from "~/lib/display";
+import { formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -27,6 +35,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
@@ -75,7 +86,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       sessions: offering.sessions.map((s) => ({
         id: s.id,
         sequence: s.sequence,
+        title: s.title,
         datetime: s.datetime,
+        endsAt: s.endsAt,
         location: s.location,
       })),
     },
@@ -105,30 +118,69 @@ export async function action({ request, params }: Route.ActionArgs) {
   return { ok: true };
 }
 
+// One labelled fact in the header summary. Same tone vocabulary the catalog
+// cards use, so a closing deadline or a full offering reads the same here.
+function Fact({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: MetaTone;
+}) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className={cn("mt-0.5 text-sm", META_TONE_CLASS[tone])}>{value}</dd>
+    </div>
+  );
+}
+
 export default function OfferingDetail() {
   const { offering, descriptionHtml, myStatus, isManager, canApply } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
-  const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
+  const reg = registrationMeta(offering, tz);
+  const seats = seatsMeta(offering);
+  const now = Date.now();
+
+  const withdrawable =
+    myStatus === "Submitted" || myStatus === "Approved" || myStatus === "Waitlisted";
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header matches the manage page: full width, title first, badges under
-          it as qualifiers rather than an eyebrow. */}
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {offering.title}
-          </h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <TypeBadge type={offering.type} />
-            {offering.status !== "Published" && <StatusBadge status={offering.status} />}
-            <MyStatusChip status={myStatus} />
+      {/* The title stays on the page background, like any page header. The two
+          things that are objects rather than prose — the summary facts and the
+          schedule — sit on their own surfaces, so the page reads as header,
+          summary, then body instead of one continuous sheet. */}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start gap-4">
+          <OfferingTypeTile
+            type={offering.type}
+            iconEmoji={offering.iconEmoji}
+            size="lg"
+          />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              {offering.title}
+            </h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <TypeBadge type={offering.type} />
+              {offering.status !== "Published" && (
+                <StatusBadge status={offering.status} />
+              )}
+              <MyStatusChip status={myStatus} />
+              <span className="text-xs text-muted-foreground">
+                {offering.sessions.length} session
+                {offering.sessions.length === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="flex items-start gap-4">
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {myStatus === "Approved" && (
               <Link
                 to={`/education/${offering.id}/hub`}
@@ -140,7 +192,10 @@ export default function OfferingDetail() {
             {canApply && (
               <Link
                 to={`/education/${offering.id}/apply`}
-                className={buttonClasses(myStatus === "Approved" ? "secondary" : "primary", "sm")}
+                className={buttonClasses(
+                  myStatus === "Approved" ? "secondary" : "primary",
+                  "sm",
+                )}
               >
                 {myStatus === "Submitted"
                   ? "Edit application"
@@ -157,9 +212,7 @@ export default function OfferingDetail() {
                 Manage
               </Link>
             )}
-            {(myStatus === "Submitted" ||
-              myStatus === "Approved" ||
-              myStatus === "Waitlisted") && (
+            {withdrawable && (
               <Form
                 method="post"
                 onSubmit={confirmSubmit({
@@ -173,70 +226,102 @@ export default function OfferingDetail() {
                 })}
               >
                 <input type="hidden" name="intent" value="withdraw" />
-                <button
-                  type="submit"
-                  className={buttonClasses("ghost", "sm")}
-                >
+                <button type="submit" className={buttonClasses("ghost", "sm")}>
                   Withdraw
                 </button>
               </Form>
             )}
           </div>
         </div>
-      </header>
-      <div className="-mt-4">
-        <p className="text-sm text-muted-foreground">
-          {offering.startsAt && offering.endsAt
-            ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
-            : "Sessions TBD"}
-          {" · "}
-          {registrationWindowLabel(offering, tz)}
-          {" · "}
-          {seatsLeft > 0
-            ? `${seatsLeft} of ${offering.capacity} seats left`
-            : "Full — new applications join the waitlist"}
-        </p>
-        {offering.instructors.length > 0 && (
-          <p className="text-sm text-foreground mt-1">
-            Taught by{" "}
-            {offering.instructors.map((i) => i.name).join(", ")}
-          </p>
-        )}
-      </div>
 
-      {descriptionHtml && (
-        <section
-          className="bg-card border border-border rounded-lg p-5 prose prose-sm dark:prose-invert max-w-none"
-          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-        />
-      )}
-
-      <section>
-        <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          Sessions
-        </h2>
-        {offering.sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">
-            No sessions scheduled yet.
-          </p>
-        ) : (
-          <ul className="bg-card border border-border rounded-lg divide-y divide-border">
-            {offering.sessions.map((s) => (
-              <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    Session {s.sequence}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDateTime(s.datetime, tz)}
-                    {s.location ? ` · ${s.location}` : ""}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <dl className="grid gap-4 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Fact label="Runs" value={runsValue(offering, tz)} />
+          <Fact label="Registration" value={reg.value} tone={reg.tone} />
+          <Fact label="Seats" value={seats.value} tone={seats.tone} />
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Taught by
+            </dt>
+            <dd className="mt-1 flex flex-wrap items-center gap-2">
+              {offering.instructors.length === 0 ? (
+                <span className="text-sm text-muted-foreground">
+                  Not assigned yet
+                </span>
+              ) : (
+                offering.instructors.map((i) => (
+                  <span key={i.userId} className="flex items-center gap-1.5">
+                    <Avatar photoUrl={i.photoUrl} name={i.name} size="xs" />
+                    <span className="text-sm text-foreground">{i.name}</span>
+                  </span>
+                ))
+              )}
+            </dd>
+          </div>
+        </dl>
       </section>
+
+      {/* Reading column and schedule side by side once there's room; the
+          schedule takes the full width when there's no description to pair
+          it with. */}
+      <div
+        className={cn(
+          "grid gap-6 items-start",
+          descriptionHtml && "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]",
+        )}
+      >
+        {descriptionHtml && (
+          <section>
+            <h2 className="mb-3 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              About
+            </h2>
+            <div
+              className="prose prose-sm dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+            />
+          </section>
+        )}
+
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <h2 className="mb-3 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Schedule
+          </h2>
+          {offering.sessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Session times will be posted here.
+            </p>
+          ) : (
+            <ol className="flex flex-col divide-y divide-border">
+              {offering.sessions.map((s) => {
+                // A session that has already run stays listed but steps back,
+                // so the next one is what the eye lands on.
+                const past = new Date(s.endsAt ?? s.datetime).getTime() < now;
+                return (
+                  <li
+                    key={s.id}
+                    className={cn(
+                      "flex gap-3 py-2.5 first:pt-0 last:pb-0",
+                      past && "opacity-60",
+                    )}
+                  >
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                      {s.sequence}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {s.title ?? `Session ${s.sequence}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatSessionWhen(s.datetime, s.endsAt, tz)}
+                        {s.location ? ` · ${s.location}` : ""}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

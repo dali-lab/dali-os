@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { seedEducationDemo } from "./seeds/education-demo.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -4575,6 +4576,13 @@ async function main() {
       await createOfferingApplicationForm(offering.id, admin.id);
       await createOfferingApplicationForm(workshop.id, admin.id);
 
+      // Fills the miniseries out into a running course — roster, attendance,
+      // assignments, materials, discussion. See prisma/seeds/education-demo.ts.
+      const eduDemo = await seedEducationDemo(prisma, {
+        adminId: admin.id,
+        termId: term26S.id,
+      });
+
       // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({
         where: { workspaceType: "Lab", title: "Lab Handbook" },
@@ -4676,6 +4684,10 @@ async function main() {
           `+ term-status / role-requests / staffing-assignments / essentiality / ` +
           `epic-sprint-task / mentorship / partner-user / partner-portal-demo / templates / offering / ` +
           `page / notifications / job-codes`,
+      );
+      console.log(
+        `  Intro to React demo: ${eduDemo.enrolled} enrolled, ${eduDemo.waitlisted} waitlisted, ` +
+          `${eduDemo.sessions} sessions, ${eduDemo.assignments} assignments, ${eduDemo.materials} material pages`,
       );
     }
   }

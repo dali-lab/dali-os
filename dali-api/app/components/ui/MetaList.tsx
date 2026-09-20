@@ -7,7 +7,9 @@ import { cn } from "~/lib/cn";
 // healthy signal, `muted` for what's inactive (closed, not yet open).
 export type MetaTone = "default" | "muted" | "urgent" | "positive";
 
-const TONE_CLASS: Record<MetaTone, string> = {
+// Exported so page-level summaries (the offering detail header) can tint their
+// own fact rows the same way a card's MetaList does.
+export const META_TONE_CLASS: Record<MetaTone, string> = {
   default: "text-foreground",
   muted: "text-muted-foreground",
   urgent: "font-semibold text-accent-coral",
@@ -41,7 +43,7 @@ export function MetaList({
       {rows.map((r) => (
         <Fragment key={r.label}>
           <dt className="font-medium text-muted-foreground">{r.label}</dt>
-          <dd className={TONE_CLASS[r.tone ?? "default"]}>{r.value}</dd>
+          <dd className={META_TONE_CLASS[r.tone ?? "default"]}>{r.value}</dd>
         </Fragment>
       ))}
     </dl>

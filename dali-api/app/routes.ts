@@ -188,6 +188,8 @@ export default [
     // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
     route("education/compliance", "education/routes/education.compliance.tsx"),
+    // Browse-and-manage card list. Literal, so it must precede education/:offeringId.
+    route("education/offerings", "education/routes/education.offerings.tsx"),
     route("education/manage", "education/routes/education.manage.tsx"),
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),

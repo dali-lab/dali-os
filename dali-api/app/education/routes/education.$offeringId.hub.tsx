@@ -13,6 +13,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   // Flat routes drop the opaque :offeringId, so the offering's own landing page
   // (/education/:id) can't appear from the segment walk — declare the trail so
   // the hub links back up to it (replacing the old inline "Offering details").

@@ -18,6 +18,10 @@ test.describe('education catalog', () => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
     await page.goto('/education?embed=1');
     await expect(page.getByRole('heading', { name: 'Education' })).toBeVisible();
+
+    // Browsing lives on the Offerings tab; the hub is the viewer's own courses.
+    await page.goto('/education/offerings?embed=1');
+    await expect(page.getByRole('heading', { name: 'Offerings' })).toBeVisible();
     await expect(page.getByText('Figma Crash Course')).toBeVisible();
 
     // Detail pages render standalone via ?embed=1 (client-side navigation
@@ -26,7 +30,7 @@ test.describe('education catalog', () => {
     await expect(
       page.getByRole('heading', { name: 'Figma Crash Course' }),
     ).toBeVisible();
-    await expect(page.getByText(/seats left|waitlist/i).first()).toBeVisible();
+    await expect(page.getByText(/\d+ of \d+ left|waitlist/i).first()).toBeVisible();
   });
 
   test('instructor sees the manage surface with builder tabs', async ({
@@ -34,10 +38,10 @@ test.describe('education catalog', () => {
     loginAs,
   }) => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+    // The old manage list redirects to the renamed Offerings tab.
     await page.goto('/education/manage?embed=1');
-    await expect(
-      page.getByRole('heading', { name: 'Manage education' }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/\/education\/offerings/);
+    await expect(page.getByRole('heading', { name: 'Offerings' })).toBeVisible();
     await expect(page.getByText('Figma Crash Course')).toBeVisible();
 
     await page.goto(`/education/manage/${WORKSHOP_ID}?embed=1`);

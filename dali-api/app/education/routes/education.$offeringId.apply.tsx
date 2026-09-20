@@ -21,6 +21,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   // /education/:offeringId/apply — the opaque :offeringId drops from the segment
   // walk, so declare the trail to keep the offering in the path.
   breadcrumbTrail: (data: unknown) => {

@@ -13,7 +13,6 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Award, GraduationCap, Presentation } from "lucide-react";
 import { OFFERING_TYPE_TINT, type OfferingType } from "~/education/lib/offering-type";
-import { OfferingDetailPanel } from "./OfferingDetailPanel";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { MetaList, type MetaTone } from "~/components/ui/MetaList";
 import { FilterPill } from "~/components/ui/filter-panel";
@@ -22,6 +21,7 @@ import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
   TypeBadge,
+  StatusBadge,
   MyStatusChip,
   registrationMeta,
   type OfferingCardData,
@@ -38,9 +38,9 @@ export type CatalogOffering = OfferingCardData & {
 type TypeFilter = "all" | OfferingType;
 
 // Cards hold their size and the row count changes instead: with a 1fr max the
-// tracks stretch, so opening the detail pane made every remaining card wider —
-// the grid visibly reflowing under the thing you just clicked. Capped tracks
-// reflow quietly. Phones keep 1fr so a single column still fills the screen.
+// tracks stretch, so a filter that drops a card visibly widens every remaining
+// one. Capped tracks reflow quietly. Phones keep 1fr so a single column still
+// fills the screen.
 const GRID =
   "grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(260px,320px))]";
 
@@ -105,7 +105,7 @@ export function seatsMeta(offering: {
   approvedCount: number;
 }): { value: string; tone: MetaTone } {
   const left = Math.max(0, offering.capacity - offering.approvedCount);
-  if (left === 0) return { value: "Full — waitlist open", tone: "urgent" };
+  if (left === 0) return { value: "Full, waitlist open", tone: "urgent" };
   const scarce = offering.capacity > 0 && left / offering.capacity <= 0.25;
   return {
     value: `${left} of ${offering.capacity} left`,
@@ -117,14 +117,10 @@ export function OfferingCatalogCard({
   offering,
   to,
   myStatus,
-  selected,
-  onSelect,
 }: {
   offering: CatalogOffering;
   to: string;
   myStatus?: string | null;
-  selected?: boolean;
-  onSelect?: () => void;
 }) {
   const tz = useUserTimeZone();
   const reg = registrationMeta(offering, tz);
@@ -132,24 +128,12 @@ export function OfferingCatalogCard({
   return (
     // A flat, info-led card: type tile + title up top, the facts a browser
     // scans for below a hairline, with the dynamic ones (a closing deadline,
-    // scarce seats) tinted for urgency. Still a real link even when it opens the
-    // side pane, so ⌘-click / middle-click / "open in new tab" keep reaching the
-    // offering's own page.
+    // scarce seats) tinted for urgency. The whole tile navigates to the
+    // offering's own detail page.
     <Link
       to={to}
-      aria-current={selected ? "true" : undefined}
-      onClick={(e) => {
-        if (!onSelect) return;
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
-          return;
-        e.preventDefault();
-        onSelect();
-      }}
       className={cn(
-        "group flex flex-col gap-3.5 rounded-2xl border bg-card p-4 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5",
-        selected
-          ? "border-accent-coral ring-2 ring-accent-coral/40"
-          : "border-border hover:border-accent-coral/40",
+        "group flex flex-col gap-3.5 rounded-2xl border border-border bg-card p-4 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:border-accent-coral/40 hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5",
       )}
     >
       <div className="flex items-start gap-3">
@@ -158,8 +142,11 @@ export function OfferingCatalogCard({
           <h3 className="truncate font-heading text-base font-bold text-foreground transition-colors group-hover:text-accent-coral">
             {offering.title}
           </h3>
-          <span className="mt-0.5 flex items-center gap-2">
+          <span className="mt-0.5 flex flex-wrap items-center gap-2">
             <TypeBadge type={offering.type} />
+            {offering.status !== "Published" && (
+              <StatusBadge status={offering.status} />
+            )}
             <span className="text-xs text-muted-foreground">
               {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
             </span>
@@ -205,9 +192,10 @@ export function OfferingCatalog({
       o.closedOutAt != null ||
       (o.endsAt != null && new Date(o.endsAt).getTime() < now);
     return {
-      // Enrolled offerings live in the "My courses" dashboard above the catalog;
-      // this grid is for offerings the viewer can still apply to or RSVP for.
-      upcoming: offerings.filter((o) => !isPast(o) && o.myStatus !== "Approved"),
+      // Enrolled offerings stay in the grid (chipped "Enrolled") rather than
+      // disappearing from it: this is the only place the whole catalog is
+      // listed, so a course you are in must still be findable here.
+      upcoming: offerings.filter((o) => !isPast(o)),
       past: offerings.filter(isPast),
     };
   }, [offerings, now]);
@@ -219,23 +207,9 @@ export function OfferingCatalog({
       (q === "" || o.title.toLowerCase().includes(q)),
   );
 
-  // Selecting a card opens the detail pane beside the grid instead of
-  // navigating. Resolved against every offering rather than the filtered
-  // `shown`: a type filter or search term that hides the selected card must not
-  // take the pane down with it. Deriving it from `shown` closed the pane when
-  // you switched filters and then *reopened* it when you switched back, since
-  // selectedId was still set — the pane appeared to come back from the dead.
-  // The pane closes when it is closed, and only then.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = offerings.find((o) => o.id === selectedId) ?? null;
-
   return (
-    <section className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
-      {/* The grid column. On a phone there is no room for two panes, so the
-          open pane replaces the list rather than shrinking beside it. */}
-      <div
-        className={`min-w-0 flex-1 flex-col gap-5 ${selected ? "hidden lg:flex" : "flex"}`}
-      >
+    <section className="flex flex-col gap-5">
+      <div className="flex min-w-0 flex-1 flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SearchInput
             value={query}
@@ -304,8 +278,6 @@ export function OfferingCatalog({
                 offering={o}
                 to={to(o.id)}
                 myStatus={o.myStatus}
-                selected={o.id === selectedId}
-                onSelect={() => setSelectedId(o.id)}
               />
             ))}
           </div>
@@ -323,25 +295,12 @@ export function OfferingCatalog({
                   offering={o}
                   to={to(o.id)}
                   myStatus={o.myStatus}
-                  selected={o.id === selectedId}
-                  onSelect={() => setSelectedId(o.id)}
                 />
               ))}
             </div>
           </details>
         )}
       </div>
-
-      {selected && (
-        <OfferingDetailPanel
-          // Keyed so switching cards remounts the pane: the fetch, the scroll
-          // position and the focus move all restart for the new offering.
-          key={selected.id}
-          offering={selected}
-          href={to(selected.id)}
-          onClose={() => setSelectedId(null)}
-        />
-      )}
     </section>
   );
 }

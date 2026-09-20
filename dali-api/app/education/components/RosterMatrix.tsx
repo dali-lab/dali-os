@@ -88,17 +88,19 @@ export function RosterMatrix({
       {/* View toggle + session picker + actions */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Attendance | Performance toggle */}
-        <div className="flex rounded-md border border-border overflow-hidden text-sm shrink-0">
+        {/* A toggle, not navigation — so this one stays a filled segmented
+            control while the page's sections are underlined tabs. */}
+        <div className="flex shrink-0 gap-1 rounded-xl bg-muted p-1 text-sm">
           {(["attendance", "performance"] as const).map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => switchView(v)}
               className={cn(
-                "px-3 py-1.5 font-medium capitalize",
+                "rounded-lg px-3 py-1.5 font-semibold transition",
                 view === v
-                  ? "bg-accent-coral text-white"
-                  : "text-muted-foreground hover:bg-muted/40",
+                  ? "bg-os-accent text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {v === "attendance" ? "Attendance" : "Performance"}

@@ -11,12 +11,18 @@ export const meta: Route.MetaFunction = () => [
   { title: "New Offering · DALI OS" },
 ];
 
+export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
+};
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   // Creating an offering is Core-only — an instructor (member or external) lands
   // back on their manageable list.
-  if (!(await isCore(auth.user.sub))) return redirect("/education/manage");
+  if (!(await isCore(auth.user.sub))) return redirect("/education/offerings");
   return null;
 }
 

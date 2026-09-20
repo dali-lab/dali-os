@@ -113,6 +113,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
@@ -748,7 +751,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const result = await runOfferingAction(formData, auth.user.sub);
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
-  if (formData.get("intent") === "delete-offering") return redirect("/education/manage");
+  if (formData.get("intent") === "delete-offering") return redirect("/education/offerings");
   if (formData.get("intent") === "duplicate-offering" && "id" in result && result.id)
     return redirect(`/education/manage/${result.id}`);
   return result;
@@ -956,12 +959,12 @@ export default function ManageOffering() {
       </header>
 
       {actionData?.error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">
           {actionData.error}
         </p>
       )}
       {actionData?.closeOut && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           Close-out complete: {actionData.closeOut.issued} certificate
           {actionData.closeOut.issued === 1 ? "" : "s"} issued
           {actionData.closeOut.alreadyIssued > 0 &&
@@ -972,12 +975,12 @@ export default function ManageOffering() {
         </p>
       )}
       {actionData?.reopened && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           Course reopened — it's back in the active catalog and can be edited.
         </p>
       )}
       {actionData?.closeOutPreview && (
-        <div className="text-sm bg-card border border-border rounded-md px-3 py-2.5 flex flex-col gap-1">
+        <div className="text-sm bg-card border border-border rounded-xl px-4 py-3 flex flex-col gap-1">
           <p className="font-semibold text-foreground">
             Close-out preview — {actionData.closeOutPreview.eligible.length} would get a
             certificate
@@ -995,7 +998,7 @@ export default function ManageOffering() {
         </div>
       )}
       {actionData?.bulkApprove && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           Approved {actionData.bulkApprove.approved} pending application
           {actionData.bulkApprove.approved === 1 ? "" : "s"}
           {actionData.bulkApprove.skipped > 0 &&
@@ -1004,28 +1007,44 @@ export default function ManageOffering() {
         </p>
       )}
 
-      <nav className="flex gap-1 border-b border-border">
+      {/* Underlined tabs on the page ground: eight sections is too many for a
+          filled segmented track, which stretches each one into a wide chip. */}
+      {/* Every tab draws its own 2px rule and a trailing spacer carries it to
+          the edge, so the underline is one continuous line. Laying the rule on
+          a wrapper and pulling the row over it leaves the line half-covered
+          under each tab and full-strength in the gaps between them.
+          The active colour is inline because app.css sets `* { border-color }`
+          outside any layer, and an unlayered rule outranks every Tailwind
+          border-colour utility — see the note in the PR/summary. Inactive tabs
+          take that same global default, which is the grey we want. */}
+      <nav className="flex overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
-            className={cn(
-              "px-4 py-2 text-sm font-semibold rounded-t-md",
+            style={
               tab === t.key
-                ? "text-accent-coral border-b-2 border-accent-coral"
+                ? { borderBottomColor: "var(--color-os-accent)" }
+                : undefined
+            }
+            className={cn(
+              "shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition",
+              tab === t.key
+                ? "text-os-accent"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             {t.label}
           </button>
         ))}
+        <span aria-hidden className="flex-1 border-b-2" />
       </nav>
 
       {tab === "details" && (
         <div className="flex flex-col gap-6">
           {offering.applicationFormId && (
-            <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+            <div className="bg-brand-tint rounded-2xl px-5 py-4 flex items-center justify-between gap-4">
               <p className="text-sm text-foreground">
                 Applicants answer this offering&apos;s application form.
                 Fillers always see the latest saved version.
@@ -1041,9 +1060,17 @@ export default function ManageOffering() {
 
           <Form
             method="post"
-            className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4"
+            className="bg-card border border-border rounded-2xl p-6 flex flex-col gap-4"
           >
             <input type="hidden" name="intent" value="update-offering" />
+            <div>
+              <h2 className="font-heading text-base font-bold text-foreground mb-1">
+                Course details
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Type, title, capacity, and the registration window.
+              </p>
+            </div>
             <OfferingFields values={offering} typeLocked />
             <div className="flex justify-end">
               <Button type="submit" size="sm">
@@ -1055,11 +1082,11 @@ export default function ManageOffering() {
           <DriveFolderBindings
             processType="EducationOffering"
             processId={offering.id}
-            className="bg-card border border-border rounded-lg p-5"
+            className="bg-card border border-border rounded-2xl p-6"
           />
 
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
+          <section className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="font-heading text-base font-bold text-foreground mb-1">
               Description
             </h2>
             <p className="text-xs text-muted-foreground mb-3">
@@ -1094,10 +1121,10 @@ export default function ManageOffering() {
             <>
               <Form
                 method="post"
-                className="bg-card border border-border rounded-lg p-5"
+                className="bg-card border border-border rounded-2xl p-6"
               >
                 <input type="hidden" name="intent" value="set-instructors" />
-                <h2 className="text-sm font-semibold text-foreground mb-1">
+                <h2 className="font-heading text-base font-bold text-foreground mb-1">
                   Instructors
                 </h2>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -1115,8 +1142,8 @@ export default function ManageOffering() {
                 </div>
               </Form>
 
-              <section className="bg-card border border-border rounded-lg p-5">
-                <h2 className="text-sm font-semibold text-foreground mb-1">
+              <section className="bg-card border border-border rounded-2xl p-6">
+                <h2 className="font-heading text-base font-bold text-foreground mb-1">
                   External instructors
                 </h2>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -1196,8 +1223,8 @@ export default function ManageOffering() {
             </>
           )}
 
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
+          <section className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="font-heading text-base font-bold text-foreground mb-1">
               Decision emails
             </h2>
             <p className="text-xs text-muted-foreground mb-3">
@@ -1227,8 +1254,8 @@ export default function ManageOffering() {
             </div>
           </section>
 
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
+          <section className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="font-heading text-base font-bold text-foreground mb-1">
               Feedback forms
             </h2>
             <p className="text-xs text-muted-foreground mb-3">
@@ -1279,9 +1306,9 @@ export default function ManageOffering() {
           </section>
 
           {core && certTemplatesOn && (
-            <section className="bg-card border border-border rounded-lg p-5">
+            <section className="bg-card border border-border rounded-2xl p-6">
               <div className="mb-1 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-foreground">
+                <h2 className="font-heading text-base font-bold text-foreground">
                   Completion certificate
                 </h2>
                 <Link
@@ -1356,7 +1383,7 @@ export default function ManageOffering() {
           ) : (
             <ul className="flex flex-col gap-3">
               {offering.sessions.map((s) => (
-                <li key={s.id} className="bg-card border border-border rounded-lg p-4">
+                <li key={s.id} className="bg-card border border-border rounded-xl p-4">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <p className="text-sm font-semibold text-foreground">
                       {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
@@ -1730,14 +1757,15 @@ export default function ManageOffering() {
       {tab === "roster" && (
         <div className="flex flex-col gap-4">
           {sessionCheckIn && (
-            <section className="bg-card border border-border rounded-lg p-4">
+            <section className="bg-card border border-border rounded-xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="font-heading font-semibold text-foreground">Self check-in</h2>
+                  <h2 className="font-heading text-base font-bold text-foreground">
+                    Self check-in
+                  </h2>
                   <p className="mt-0.5 text-xs text-muted-foreground max-w-md">
-                    Open check-in and project the QR — enrolled students scan it to mark
-                    themselves present, instead of you calling the roll. You can still mark anyone
-                    by hand below.
+                    Open check-in and project the QR. Students scan it to mark
+                    themselves present. You can still mark anyone by hand below.
                   </p>
                 </div>
                 <Form method="post" className="shrink-0">
@@ -1894,9 +1922,9 @@ function FeedbackResults({
       ? Math.round((results.responded / results.eligible) * 100)
       : null;
   return (
-    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
+    <section className="bg-card border border-border rounded-2xl p-6 flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <h2 className="font-heading text-base font-bold text-foreground">{title}</h2>
         {rate !== null && (
           <p className="text-xs font-medium text-muted-foreground mt-0.5">
             {results.responded} of {results.eligible} responded ({rate}%)
