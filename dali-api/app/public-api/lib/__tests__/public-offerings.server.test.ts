@@ -115,11 +115,12 @@ describe("parseOfferingsFilter", () => {
   it("maps type to the DB enum, case-insensitively", () => {
     expect(parse("type=workshop")).toEqual({ filter: { scope: undefined, type: "Workshop" } });
     expect(parse("type=Miniseries")).toEqual({ filter: { scope: undefined, type: "Miniseries" } });
+    expect(parse("type=fellowship")).toEqual({ filter: { scope: undefined, type: "Fellowship" } });
   });
 
   it("rejects an unknown type", () => {
     expect(parse("type=seminar")).toEqual({
-      error: "Invalid 'type' (use miniseries or workshop)",
+      error: "Invalid 'type' (use miniseries, fellowship, or workshop)",
     });
   });
 

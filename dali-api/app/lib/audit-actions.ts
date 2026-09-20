@@ -59,6 +59,7 @@ export const AUDIT_ACTIONS = [
   "staffing.externalMentor.remove",
   "staffing.eligibility.set",
   "project.assignment.level",
+  "project.chart-string.set",
   "project.delete",
   "slack.connect",
   "slack.disconnect",

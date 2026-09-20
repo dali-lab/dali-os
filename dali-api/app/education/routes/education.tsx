@@ -68,7 +68,7 @@ export default function EducationCatalog() {
           Education
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Miniseries and workshops run by the lab. Apply or RSVP to a
+          Workshops, miniseries, and fellowships run by the lab. Apply or RSVP to a
           published offering; once you&apos;re in, the course hub has
           sessions, materials, and assignments.
         </p>

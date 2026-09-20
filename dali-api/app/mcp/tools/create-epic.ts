@@ -23,10 +23,6 @@ export const CREATE_EPIC_TOOL = {
       },
       startsAt: { type: "string", description: "Optional ISO timestamp." },
       endsAt: { type: "string", description: "Optional ISO timestamp." },
-      targetTermId: {
-        type: "string",
-        description: "Optional Term.id; empty string = unset.",
-      },
     },
     required: ["projectId", "title"],
     additionalProperties: false,
@@ -41,7 +37,6 @@ type Input = {
   status?: EpicStatus;
   startsAt?: string;
   endsAt?: string;
-  targetTermId?: string;
 };
 
 export class CreateEpicError extends Error {
@@ -97,8 +92,6 @@ export async function runCreateEpic(callerId: string, input: Input) {
       position,
       startsAt,
       endsAt,
-      targetTermId:
-        input.targetTermId && input.targetTermId !== "" ? input.targetTermId : null,
     },
     select: { id: true },
   });

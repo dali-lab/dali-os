@@ -66,6 +66,9 @@ export type TimelineEpic = {
   endsAt: string | null;
   // Stories under this epic, drawn as bars nested inside the epic bar.
   stories: TimelineStory[];
+  // Tasks linked straight to the epic (no story), drawn as task bars directly
+  // under the epic, below its story rows. Empty on task-free surfaces.
+  tasks: TimelineTask[];
 };
 
 /** A term's span, used to anchor and label the fixed one-week sprint grid. */
@@ -74,6 +77,10 @@ export type TimelineTerm = { code: string; startsAt: string; endsAt: string };
 export type StoryDependencyEdge = { storyId: string; dependsOnStoryId: string };
 
 export type EpicDependencyEdge = { epicId: string; dependsOnEpicId: string };
+
+// `open`: the blocking task is still unfinished. Carried on the edge because a
+// blocker needn't be on the timeline at all (a task outside any story).
+export type TaskDependencyEdge = { taskId: string; dependsOnTaskId: string; open: boolean };
 
 type Level = "epic" | "story" | "task";
 
@@ -85,6 +92,11 @@ function findBarSpan(
   for (const e of epics) {
     if (kind === "epic" && e.id === id) {
       return e.startsAt && e.endsAt ? { startsAt: e.startsAt, endsAt: e.endsAt } : null;
+    }
+    for (const t of e.tasks) {
+      if (kind === "task" && t.id === id) {
+        return { startsAt: t.startsAt, endsAt: t.endsAt };
+      }
     }
     for (const st of e.stories) {
       if (kind === "story" && st.id === id) {
@@ -718,6 +730,7 @@ export function EpicsTimeline({
   terms = [],
   storyDependencies = [],
   epicDependencies = [],
+  taskDependencies = [],
   hiddenLevels,
   compact = false,
   fillHeight = false,
@@ -741,6 +754,8 @@ export function EpicsTimeline({
   // The same edges one level up (epicId waits on dependsOnEpicId), drawn
   // between epic bars in the epic hue.
   epicDependencies?: EpicDependencyEdge[];
+  // And one level down (taskId waits on dependsOnTaskId), between task bars.
+  taskDependencies?: TaskDependencyEdge[];
   // Levels this timeline doesn't have at all — dropped from the legend, from
   // the bars, and from the hover rows that count them. Distinct from the
   // legend's own on/off toggles: those are the viewer's choice, this is the
@@ -1104,9 +1119,10 @@ export function EpicsTimeline({
     }[] = [];
     const storyRects = new Map<string, { sx: number; ex: number; cy: number }>();
     const epicRects = new Map<string, { sx: number; ex: number; cy: number }>();
+    const taskRects = new Map<string, { sx: number; ex: number; cy: number }>();
 
     if (!bounds)
-      return { epicBars, storyBars, taskBars, storyRects, epicRects, height: 0 };
+      return { epicBars, storyBars, taskBars, storyRects, epicRects, taskRects, height: 0 };
 
     const left = (iso: string) => dayOffset(iso, bounds.min) * PX_PER_DAY;
     const width = (a: string, b: string) =>
@@ -1154,10 +1170,18 @@ export function EpicsTimeline({
       }
       storyRowHeights.set(e.id, heights);
       const inner = heights.reduce((a, h) => a + h, 0);
+      const storyInner =
+        heights.length > 0 ? inner + (heights.length - 1) * STORY_GAP : 0;
+      // Epic-direct tasks stack below the story rows; a story-gap separates the
+      // two blocks when both are present, so loose tasks don't butt against the
+      // last story.
+      const dn = e.tasks.length;
+      const directH = dn > 0 ? dn * TASK_H + (dn - 1) * TASK_GAP : 0;
+      const separator = heights.length > 0 && dn > 0 ? STORY_GAP : 0;
       epicH.set(
         e.id,
-        heights.length > 0
-          ? EPIC_TOP_PAD + inner + (heights.length - 1) * STORY_GAP + EPIC_BOTTOM_PAD
+        heights.length > 0 || dn > 0
+          ? EPIC_TOP_PAD + storyInner + separator + directH + EPIC_BOTTOM_PAD
           : EPIC_MIN_H,
       );
     }
@@ -1231,15 +1255,46 @@ export function EpicsTimeline({
 
         let taskTop = storyTop + STORY_TOP_PAD;
         for (const t of st.tasks) {
+          const tLeft = left(t.startsAt);
+          const tWidth = width(t.startsAt, t.endsAt);
           taskBars.push({
             task: t,
-            left: left(t.startsAt),
-            width: width(t.startsAt, t.endsAt),
+            left: tLeft,
+            width: tWidth,
             top: taskTop,
             height: TASK_H,
           });
+          const tx = barX("task", tLeft, tWidth);
+          taskRects.set(t.id, {
+            sx: tx.left,
+            ex: tx.left + tx.width,
+            cy: taskTop + TASK_H / 2,
+          });
           taskTop += TASK_H + TASK_GAP;
         }
+      }
+
+      // Epic-direct tasks pick up right where the story rows leave off —
+      // `rowCursor` already carries the trailing story-gap as their separator
+      // (or the epic's top pad when the epic has no stories at all).
+      let directTop = rowCursor;
+      for (const t of e.tasks) {
+        const tLeft = left(t.startsAt);
+        const tWidth = width(t.startsAt, t.endsAt);
+        taskBars.push({
+          task: t,
+          left: tLeft,
+          width: tWidth,
+          top: directTop,
+          height: TASK_H,
+        });
+        const tx = barX("task", tLeft, tWidth);
+        taskRects.set(t.id, {
+          sx: tx.left,
+          ex: tx.left + tx.width,
+          cy: directTop + TASK_H / 2,
+        });
+        directTop += TASK_H + TASK_GAP;
       }
     }
 
@@ -1248,7 +1303,7 @@ export function EpicsTimeline({
         ? cursor - EPIC_GAP + BODY_BOTTOM_PAD
         : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
 
-    return { epicBars, storyBars, taskBars, storyRects, epicRects, height };
+    return { epicBars, storyBars, taskBars, storyRects, epicRects, taskRects, height };
   }, [epics, bounds]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
@@ -1630,8 +1685,8 @@ export function EpicsTimeline({
                   </div>
                 </div>
 
-                {/* Dependency arrows, one layer per level. Epics first so a
-                    story edge paints over an epic one where they cross. */}
+                {/* Dependency arrows, one layer per level. Outermost first so a
+                    finer edge paints over a coarser one where they cross. */}
                 {shown("epic") && (
                   <DependencyArrows
                     level="epic"
@@ -1652,6 +1707,18 @@ export function EpicsTimeline({
                       to: d.storyId,
                     }))}
                     rects={layout.storyRects}
+                    width={bounds.width}
+                    height={gridHeight}
+                  />
+                )}
+                {shown("task") && (
+                  <DependencyArrows
+                    level="task"
+                    edges={taskDependencies.map((d) => ({
+                      from: d.dependsOnTaskId,
+                      to: d.taskId,
+                    }))}
+                    rects={layout.taskRects}
                     width={bounds.width}
                     height={gridHeight}
                   />

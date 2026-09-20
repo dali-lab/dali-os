@@ -53,6 +53,7 @@ import {
   mentorshipPairWhere,
   mentorNoteWhere,
 } from "~/mentorship/lib/visibility";
+import type { OfferingType } from "~/education/lib/offering-type";
 
 export type ProfileMember = {
   id: string;
@@ -176,7 +177,7 @@ export type ProfilePageData = {
     attended: Array<{
       offeringId: string;
       title: string;
-      type: "Miniseries" | "Workshop";
+      type: OfferingType;
       startsAt: Date | null;
       endsAt: Date | null;
       status: string;
@@ -186,7 +187,7 @@ export type ProfilePageData = {
     taught: Array<{
       offeringId: string;
       title: string;
-      type: "Miniseries" | "Workshop";
+      type: OfferingType;
       termCode: string;
     }>;
     ceCredits: Array<{ termCode: string; count: number }>;

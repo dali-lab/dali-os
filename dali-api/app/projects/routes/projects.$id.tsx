@@ -26,6 +26,7 @@ import {
   OsTabBar,
 } from "~/components/os-page";
 import { cn } from "~/lib/cn";
+import { redactCoreOnlyProjectFields } from "~/lib/project-field-visibility";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -75,6 +76,7 @@ import {
   type TimelineTerm,
   type StoryDependencyEdge,
   type EpicDependencyEdge,
+  type TaskDependencyEdge,
 } from "../components/EpicsTimeline";
 import { buildTimelineEpics } from "../lib/timeline-epics";
 import {
@@ -82,8 +84,9 @@ import {
   type EditableEpic,
 } from "../components/EpicSprintManager";
 import {
-  resolveTermIdForDate,
+  taskTermIds,
   termIdsInRange,
+  isTaskFinished,
   type TaskBoardOptions,
   type TaskCardModel,
   type TaskStatus,
@@ -386,7 +389,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           status: true,
           startsAt: true,
           endsAt: true,
-          targetTermId: true,
           descriptionDocId: true,
           // Edges where this epic is the dependent (waits on another).
           dependencies: { select: { dependsOnEpicId: true } },
@@ -452,6 +454,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             },
           },
           _count: { select: { comments: true } },
+          // Edges where this task is the dependent (waits on another).
+          dependencies: { select: { dependsOnTaskId: true } },
         },
       },
       // Declared domains for this project — editable from the Overview tab.
@@ -719,6 +723,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     epics: project.epics,
     tasks: project.tasks.map((t) => ({
       id: t.id,
+      epicId: t.epicId,
       storyId: t.storyId,
       startsAt: t.startsAt,
       dueAt: t.dueAt,
@@ -737,7 +742,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     status: e.status as EditableEpic["status"],
     startsAt: e.startsAt ? e.startsAt.toISOString() : null,
     endsAt: e.endsAt ? e.endsAt.toISOString() : null,
-    targetTermId: e.targetTermId,
     descriptionDocId: e.descriptionDocId,
     dependsOn: e.dependencies.map((d) => d.dependsOnEpicId),
     stories: e.stories.map((s) => ({
@@ -774,6 +778,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
+  // And one level down: taskId waits on dependsOnTaskId. `open` says whether
+  // the blocker is unfinished; a blocker missing from the live set was
+  // archived, which only happens to Done/Cancelled work.
+  const liveTaskById = new Map(project.tasks.map((t) => [t.id, t]));
+  const taskDependencies: TaskDependencyEdge[] = project.tasks.flatMap((t) =>
+    t.dependencies.map((d) => {
+      const blocker = liveTaskById.get(d.dependsOnTaskId);
+      return {
+        taskId: t.id,
+        dependsOnTaskId: d.dependsOnTaskId,
+        open: !!blocker && !isTaskFinished(blocker),
+      };
+    }),
+  );
+
   // Viewer's "last opened" stamp per task — fetched in Stage 2, now indexed.
   const viewedAtByTaskId = new Map(taskViews.map((v) => [v.taskId, v.viewedAt]));
 
@@ -788,6 +807,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     epicId: t.epicId,
     storyId: t.storyId,
+    dependsOn: t.dependencies.map((d) => d.dependsOnTaskId),
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
@@ -891,12 +911,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     current !== null && plannedTerms.some((t) => t.id === current.id);
 
   // ─── Board term derivation ───────────────────────────────────────────────
-  // Term-ness on the board is derived, not stored: a task's term is the one its
-  // date falls in (roll-forward through break weeks, mirroring currentTerm()),
-  // and an epic's term footprint is the terms its effective span (widened to
-  // cover its stories/tasks by buildTimelineEpics) overlaps, plus its explicit
-  // target term. Term.startDate/endDate stays the single source of truth.
-  // `allTerms` is ascending here, which resolveTermIdForDate/termIdsInRange rely on.
+  // Term-ness on the board is derived from dates, never stored: a task counts
+  // toward every term its span overlaps (roll-forward through break weeks,
+  // mirroring currentTerm()), and an epic toward the terms its effective span
+  // (widened to cover its stories/tasks by buildTimelineEpics) overlaps. So
+  // moving work into a past term is just giving it that term's dates.
+  // Term.startDate/endDate stays the single source of truth.
+  // `allTerms` is ascending here, which taskTermIds/termIdsInRange rely on.
   const epicSpanById = new Map(
     epics.map((e) => [e.id, { startsAt: e.startsAt, endsAt: e.endsAt }]),
   );
@@ -906,19 +927,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const start = span?.startsAt ? new Date(span.startsAt) : null;
     const end = span?.endsAt ? new Date(span.endsAt) : null;
     for (const tid of termIdsInRange(allTerms, start, end)) ids.add(tid);
-    if (e.targetTermId) ids.add(e.targetTermId);
     return { id: e.id, title: e.title, termIds: [...ids] };
   });
-  // Term filter options: the project's planned terms plus any term a task
-  // actually lands in (a task may be dated in a term outside the planned set).
+  // Term filter options: the project's planned terms (settings) always appear.
+  // Work *derived* into an unplanned term earns that term a filter option too —
+  // but only looking backward. A task or epic dated into a *future* term must
+  // not silently grow the board's term set past what was planned (that inflated
+  // the filter with future terms nobody selected); plan ahead by adding the
+  // term in settings, which lands it in `plannedTerms` and keeps it here.
+  const sortKeyById = new Map(allTerms.map((t) => [t.id, t.sortKey]));
+  const currentSortKey =
+    current && sortKeyById.has(current.id) ? sortKeyById.get(current.id)! : null;
+  const isFutureTerm = (termId: string) =>
+    currentSortKey !== null && (sortKeyById.get(termId) ?? -Infinity) > currentSortKey;
   const boardTermIds = new Set<string>();
   for (const t of plannedTerms) boardTermIds.add(t.id);
-  for (const t of tasks) {
-    const d = t.dueAt ?? t.startsAt;
-    if (!d) continue;
-    const tid = resolveTermIdForDate(allTerms, new Date(d));
-    if (tid) boardTermIds.add(tid);
-  }
+  for (const e of boardEpics)
+    for (const tid of e.termIds) if (!isFutureTerm(tid)) boardTermIds.add(tid);
+  for (const t of tasks)
+    for (const tid of taskTermIds(allTerms, t)) if (!isFutureTerm(tid)) boardTermIds.add(tid);
   const boardTermList = allTerms.filter((t) => boardTermIds.has(t.id));
   const boardTerms = [...boardTermList]
     .sort((a, b) => b.sortKey - a.sortKey)
@@ -954,10 +981,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
 
   const memberMap = new Map<string, string>();
+  // Each member's staffed domain on this project, for the modal's "assign →
+  // autofill Domain" step. First staffing row wins if someone spans domains.
+  const domainByUserId = new Map<string, string>();
   for (const a of assignableAssignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
+    }
+    if (!domainByUserId.has(id)) {
+      domainByUserId.set(id, a.domainId);
     }
   }
   // Term spans anchor the fixed one-week sprint grid (Sprint 1..N per term).
@@ -973,7 +1006,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }));
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
-      .map(([id, name]) => ({ id, name, photoUrl: photoByUserId.get(id) ?? null }))
+      .map(([id, name]) => ({
+        id,
+        name,
+        photoUrl: photoByUserId.get(id) ?? null,
+        domainId: domainByUserId.get(id) ?? null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
@@ -1164,39 +1202,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     infra,
-    project: {
-      id: project.id,
-      name: project.name,
-      iconEmoji: project.iconEmoji,
-      description: project.description,
-      status: project.status,
-      calendarEmail: project.calendarEmail,
-      teamGroupEmail: project.teamGroupEmail,
-      imageUrl: project.imageUrl,
-      imageUrlResolved,
-      repoUrls: project.repoUrls,
-      deploymentUrl: project.deploymentUrl,
-      githubTeamSlug: project.githubTeamSlug,
-      slackChannelName: project.slackChannelName,
-      slackChannelId: project.slackChannelId,
-      chartStringType: project.chartStringType,
-      chartString: project.chartString,
-      isPrivate: project.isPrivate,
-      overviewPageId: project.overviewPageId,
-      prdPageId: project.prdPageId,
-      startTerm,
-      // Full term set, chronological (earliest first) so the header can list
-      // every term the project runs rather than just the start term.
-      terms: [...plannedTerms]
-        .reverse()
-        .map((t) => ({ id: t.id, code: t.code })),
-      isActiveThisTerm,
-      actualTermCount: plannedTerms.length,
-      termCount: project.termCount,
-      partners: partnerships,
-      domains: declaredDomains,
-      derivedDomains,
-    },
+    // Redacted server-side, not just hidden in JSX: this payload goes to
+    // every viewer who can open the project, so gating only the edit form
+    // would still ship the chart string to any lab member.
+    project: redactCoreOnlyProjectFields(
+      {
+        id: project.id,
+        name: project.name,
+        iconEmoji: project.iconEmoji,
+        description: project.description,
+        status: project.status,
+        calendarEmail: project.calendarEmail,
+        teamGroupEmail: project.teamGroupEmail,
+        imageUrl: project.imageUrl,
+        imageUrlResolved,
+        repoUrls: project.repoUrls,
+        deploymentUrl: project.deploymentUrl,
+        githubTeamSlug: project.githubTeamSlug,
+        slackChannelName: project.slackChannelName,
+        slackChannelId: project.slackChannelId,
+        chartStringType: project.chartStringType,
+        chartString: project.chartString,
+        isPrivate: project.isPrivate,
+        overviewPageId: project.overviewPageId,
+        prdPageId: project.prdPageId,
+        startTerm,
+        // Full term set, chronological (earliest first) so the header can list
+        // every term the project runs rather than just the start term.
+        terms: [...plannedTerms]
+          .reverse()
+          .map((t) => ({ id: t.id, code: t.code })),
+        isActiveThisTerm,
+        actualTermCount: plannedTerms.length,
+        termCount: project.termCount,
+        partners: partnerships,
+        domains: declaredDomains,
+        derivedDomains,
+      },
+      canEditScope,
+    ),
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     // sortKey rides along so the Overview challenge section can split the
     // grid into current vs future terms client-side.
@@ -1221,6 +1265,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     editableEpics,
     storyDependencies,
     epicDependencies,
+    taskDependencies,
     timelineTerms: termSpans,
     tasks,
     boardOptions,
@@ -1630,6 +1675,7 @@ export default function ProjectDetail() {
     editableEpics,
     storyDependencies,
     epicDependencies,
+    taskDependencies,
     timelineTerms,
     tasks,
     boardOptions,
@@ -1680,12 +1726,13 @@ export default function ProjectDetail() {
   // the URL (?people=<id,id>) like the board's other filters, so a person-sliced
   // view is a link worth sending. Options are only people who hold tasks.
   const peopleOptions = useMemo(() => {
+    const photoById = new Map(boardOptions.members.map((m) => [m.id, m.photoUrl]));
     const byId = new Map<string, string>();
     for (const t of tasks) for (const a of t.assignees) byId.set(a.id, a.name);
     return [...byId]
-      .map(([id, name]) => ({ id, name }))
+      .map(([id, name]) => ({ id, name, photoUrl: photoById.get(id) ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
+  }, [tasks, boardOptions.members]);
   const selectedPeopleIds = useMemo(
     () => (searchParams.get("people") ?? "").split(",").filter(Boolean),
     [searchParams],
@@ -1760,8 +1807,11 @@ export default function ProjectDetail() {
       editableEpics={editableEpics}
       storyDependencies={storyDependencies}
       epicDependencies={epicDependencies}
+      taskDependencies={taskDependencies}
       timelineTerms={timelineTerms}
-      terms={plannedTerms}
+      // The same date-derived term set the board filters by, so a term that
+      // only backdated work falls in is still pickable.
+      terms={boardOptions.terms}
       // The list view's term filter reads the same per-epic term footprint the
       // board's does, rather than deriving a second one from the same dates.
       epicTermIds={epicTermIds}
@@ -5397,6 +5447,7 @@ function PlanningTab({
   editableEpics,
   storyDependencies,
   epicDependencies,
+  taskDependencies,
   timelineTerms,
   terms,
   epicTermIds,
@@ -5412,6 +5463,7 @@ function PlanningTab({
   editableEpics: EditableEpic[];
   storyDependencies: StoryDependencyEdge[];
   epicDependencies: EpicDependencyEdge[];
+  taskDependencies: TaskDependencyEdge[];
   timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
   epicTermIds: Record<string, string[]>;
@@ -5434,6 +5486,7 @@ function PlanningTab({
         timelineEpics={epics}
         storyDependencies={storyDependencies}
         epicDependencies={epicDependencies}
+        taskDependencies={taskDependencies}
         timelineTerms={timelineTerms}
         epicTermIds={epicTermIds}
         currentTermId={currentTermId}

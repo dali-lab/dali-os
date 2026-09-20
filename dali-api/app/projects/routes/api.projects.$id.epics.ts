@@ -6,7 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // POST /api/projects/:id/epics
 //
 // Create an epic on a project. Body:
-//   { title, status?, targetTermId?, startsAt?, endsAt? }
+//   { title, status?, startsAt?, endsAt? }
 // status defaults to "Open"; position is appended after the current max.
 // startsAt/endsAt are optional ISO strings (nullable on the model); if both
 // are given, endsAt must be after startsAt.
@@ -21,7 +21,6 @@ function isEpicStatus(x: unknown): x is EpicStatus {
 type Body = {
   title: string;
   status?: string;
-  targetTermId?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
 };
@@ -31,7 +30,6 @@ function isBody(x: unknown): x is Body {
   const o = x as Record<string, unknown>;
   if (typeof o.title !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (o.targetTermId != null && typeof o.targetTermId !== "string") return false;
   if (o.startsAt != null && typeof o.startsAt !== "string") return false;
   if (o.endsAt != null && typeof o.endsAt !== "string") return false;
   return true;
@@ -108,7 +106,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       title,
       status,
       position,
-      targetTermId: body.targetTermId ?? null,
       startsAt: startsAt ?? null,
       endsAt: endsAt ?? null,
     },

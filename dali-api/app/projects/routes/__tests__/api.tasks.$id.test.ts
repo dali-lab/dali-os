@@ -23,6 +23,11 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
+  };
+  taskDependency: {
+    deleteMany: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
   };
   epic: { findUnique: ReturnType<typeof vi.fn> };
   userStory: { findUnique: ReturnType<typeof vi.fn> };
@@ -58,6 +63,11 @@ beforeEach(() => {
     }),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockReturnValue("task-delete-op"),
+    count: vi.fn(),
+  };
+  mockPrisma.taskDependency = {
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
   mockPrisma.epic = { findUnique: vi.fn() };
   mockPrisma.userStory = { findUnique: vi.fn() };
@@ -254,5 +264,46 @@ describe("DELETE /api/tasks/:id", () => {
     const res = await call("DELETE");
     expect(res.status).toBe(403);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/tasks/:id dependsOn", () => {
+  it("replaces the blocked-by set with same-project tasks", async () => {
+    mockPrisma.task.count.mockResolvedValue(2);
+    const res = await call("PATCH", { dependsOn: ["t-a", "t-b", "t-a", TASK_ID] });
+    expect(res.status).toBe(200);
+    // Deduped, and a self-edge is dropped before validating.
+    expect(mockPrisma.task.count).toHaveBeenCalledWith({
+      where: { id: { in: ["t-a", "t-b"] }, projectId: PROJECT_ID },
+    });
+    expect(mockPrisma.taskDependency.deleteMany).toHaveBeenCalledWith({
+      where: { taskId: TASK_ID },
+    });
+    expect(mockPrisma.taskDependency.createMany).toHaveBeenCalledWith({
+      data: [
+        { taskId: TASK_ID, dependsOnTaskId: "t-a" },
+        { taskId: TASK_ID, dependsOnTaskId: "t-b" },
+      ],
+    });
+  });
+
+  it("rejects a dependency on a task outside the project", async () => {
+    mockPrisma.task.count.mockResolvedValue(0);
+    const res = await call("PATCH", { dependsOn: ["foreign"] });
+    expect(res.status).toBe(400);
+    expect(mockPrisma.taskDependency.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("clears the set with an empty array", async () => {
+    const res = await call("PATCH", { dependsOn: [] });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.task.count).not.toHaveBeenCalled();
+    expect(mockPrisma.taskDependency.deleteMany).toHaveBeenCalled();
+    expect(mockPrisma.taskDependency.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-array dependsOn", async () => {
+    const res = await call("PATCH", { dependsOn: "t-a" });
+    expect(res.status).toBe(400);
   });
 });

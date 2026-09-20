@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { formatDateShort } from "~/lib/display";
 import { certificateFieldValue, type PlacedField } from "./certificate-fields";
+import type { OfferingType } from "~/education/lib/offering-type";
 
 // A one-page certificate. Two render paths: the built-in DALI design (fixed
 // pdfkit layout — a designed artifact, not a document render), and a
@@ -11,7 +12,7 @@ import { certificateFieldValue, type PlacedField } from "./certificate-fields";
 export type CertificateData = {
   studentName: string;
   offeringTitle: string;
-  offeringType: "Miniseries" | "Workshop";
+  offeringType: OfferingType;
   startsAt: Date | null;
   endsAt: Date | null;
   instructorNames: string[];
