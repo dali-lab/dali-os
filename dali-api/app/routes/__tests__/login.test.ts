@@ -270,47 +270,54 @@ function makeFlagOnRequest(ip: string, body: Record<string, string>) {
   });
 }
 
-describe("POST /login email-link-login (flag-ON)", () => {
-  it("sends a magic link and returns sent=true", async () => {
+// Magic links are account-creation only (/signup) — /login offers Google +
+// email/password, so there is no magic-link branch to test here.
+
+describe("POST /login password + forgot (flag-ON)", () => {
+  it("signs in with email + password and forwards the session cookie", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const result = await action({
+    const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
+    mockSignInEmail.mockResolvedValue({ headers: baHeaders });
+    const res = (await action({
       request: makeFlagOnRequest("1.2.3.4", {
-        provider: "email-link-login",
+        provider: "password",
         email: "ada@dartmouth.edu",
+        password: "secretpass",
       }),
-    } as any);
-    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(mockSignInEmail).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ email: "ada@dartmouth.edu", callbackURL: "/" }),
+        body: expect.objectContaining({ email: "ada@dartmouth.edu", password: "secretpass" }),
       }),
     );
-    expect(result).toMatchObject({ sent: true, email: "ada@dartmouth.edu" });
+    const cookies = res.headers.getSetCookie?.() ?? [res.headers.get("Set-Cookie")!];
+    expect(cookies.some((c: string) => c.includes("dali.session_token="))).toBe(true);
   });
 
-  it("swallows signInMagicLink errors and still returns sent=true (anti-enumeration)", async () => {
+  it("returns a neutral error on bad credentials", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    mockSignInMagicLink.mockRejectedValue(new Error("network error"));
+    mockSignInEmail.mockRejectedValue(new Error("invalid"));
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
-        provider: "email-link-login",
+        provider: "password",
+        email: "ada@dartmouth.edu",
+        password: "wrong",
+      }),
+    } as any);
+    expect(result).toMatchObject({ error: expect.stringContaining("Incorrect") });
+  });
+
+  it("forgot-password returns a neutral resetSent response (anti-enumeration)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "forgot",
         email: "nobody@example.com",
       }),
     } as any);
-    expect(result).toMatchObject({ sent: true });
-  });
-
-  it("flag-OFF: email-link-login falls through without sending a magic link", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const result = await action({
-      request: makeFlagOnRequest("1.2.3.4", {
-        provider: "email-link-login",
-        email: "ada@dartmouth.edu",
-      }),
-    } as any);
-    expect(mockSignInMagicLink).not.toHaveBeenCalled();
-    // Falls through to legacy Google handler (provider not matched) which tries
-    // to build a Google auth URL — the result will be a redirect (302).
-    expect(result instanceof Response).toBe(true);
+    expect(mockRequestPasswordReset).toHaveBeenCalled();
+    expect(result).toMatchObject({ resetSent: true });
   });
 });
 
