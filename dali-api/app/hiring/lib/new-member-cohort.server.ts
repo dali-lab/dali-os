@@ -1,15 +1,19 @@
 // "New member" cohort for signing audiences. A member is new when they were
-// accepted (a Released Accepted decision) in the most recent General (Standard)
-// hiring cycle OR the most recent Fellowship cycle — i.e. the incoming cohort.
+// accepted (a Released Accepted decision) in the current Students or Interns
+// cohort: per group, the most recent cycle that produced a hire, plus any other
+// still-active cycle of that group that has (several cycles can overlap).
 //
-// We anchor on the most recent cycle *of each type that actually produced a
-// hire* (not merely the newest cycle), so a freshly-opened, not-yet-decided
-// cycle doesn't blank the cohort mid-term. Callers intersect this with the
-// active-member set (see app/signing/lib/audiences.ts).
+// We anchor on cycles that actually produced a hire (not merely the newest
+// cycle), so a freshly-opened, not-yet-decided cycle doesn't blank the cohort
+// mid-term. Callers intersect this with the active-member set (see
+// app/signing/lib/audiences.ts).
 
 import { prisma } from "~/lib/db";
+import type { CycleApplicants } from "~/generated/prisma/enums";
+import { getActiveCycles } from "./cycles";
 
-const NEW_MEMBER_CYCLE_TYPES = ["Standard", "Fellowship"] as const;
+// Lab members cycles promote existing members into Core, so they add no one new.
+const NEW_MEMBER_GROUPS: CycleApplicants[] = ["Students", "Interns"];
 
 // A DomainApplication that reached an accepted outcome the applicant still holds.
 const ACCEPTED_DOMAIN_APP = {
@@ -18,23 +22,40 @@ const ACCEPTED_DOMAIN_APP = {
 } as const;
 
 async function latestCycleIdsWithAccepts(): Promise<string[]> {
-  const cycles = await Promise.all(
-    NEW_MEMBER_CYCLE_TYPES.map((cycleType) =>
-      prisma.applicationCycle.findFirst({
-        where: {
-          cycleType,
-          applications: { some: { domainApplications: { some: ACCEPTED_DOMAIN_APP } } },
-        },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
-      }),
+  const withAccepts = {
+    applications: { some: { domainApplications: { some: ACCEPTED_DOMAIN_APP } } },
+  };
+  const [latest, active] = await Promise.all([
+    Promise.all(
+      NEW_MEMBER_GROUPS.map((applicants) =>
+        prisma.applicationCycle.findFirst({
+          where: { applicants, ...withAccepts },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        }),
+      ),
     ),
-  );
-  return cycles.filter((c): c is { id: string } => c !== null).map((c) => c.id);
+    getActiveCycles(),
+  ]);
+  const activeIds = active
+    .filter((c) => NEW_MEMBER_GROUPS.includes(c.applicants))
+    .map((c) => c.id);
+  const activeWithAccepts = activeIds.length
+    ? await prisma.applicationCycle.findMany({
+        where: { id: { in: activeIds }, ...withAccepts },
+        select: { id: true },
+      })
+    : [];
+  return [
+    ...new Set([
+      ...latest.filter((c): c is { id: string } => c !== null).map((c) => c.id),
+      ...activeWithAccepts.map((c) => c.id),
+    ]),
+  ];
 }
 
 // The set of userIds accepted in the current incoming cohort. Empty when no
-// General/Fellowship cycle has produced a hire yet.
+// Students/Interns cycle has produced a hire yet.
 export async function getNewMemberCohortIds(): Promise<Set<string>> {
   const cycleIds = await latestCycleIdsWithAccepts();
   if (cycleIds.length === 0) return new Set();

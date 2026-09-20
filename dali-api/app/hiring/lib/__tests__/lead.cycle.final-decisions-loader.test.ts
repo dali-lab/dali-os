@@ -5,10 +5,20 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+// Phase progress and the term picker have their own tests; stub them here.
+vi.mock("~/hiring/lib/hiring-emails.server", () => ({ listHiringEmails: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/hiring/lib/cycle-phases.server", () => ({
+  getCycleProgress: vi.fn().mockResolvedValue({ term: null, done: {} }),
+}));
+vi.mock("~/hiring/lib/cycle-setup.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/cycle-setup.server")>()),
+  loadTermOptions: vi.fn().mockResolvedValue([]),
+  loadPhaseStatusByDomain: vi.fn().mockResolvedValue({}),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCycleAdmin } from "~/lib/roles";
 import { loader } from "~/hiring/routes/lead.cycle.$id";
 
 const USER_ID = "user-hl";
@@ -24,19 +34,15 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   decision: { findMany: ReturnType<typeof vi.fn> };
-  emailTemplate: { findMany: ReturnType<typeof vi.fn> };
-  cycleDecisionEmail: { findMany: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(isCycleAdmin).mockResolvedValue(true);
 
   (mockPrisma as any).applicationCycle = {
     findUniqueOrThrow: vi.fn(),
-    // Loader does a cycleType early-redirect lookup before everything else.
-    findUnique: vi.fn().mockResolvedValue({ cycleType: "Standard" }),
   };
   (mockPrisma as any).application = { findMany: vi.fn().mockResolvedValue([]) };
   (mockPrisma as any).domain = { findMany: vi.fn() };
@@ -44,11 +50,8 @@ beforeEach(() => {
   (mockPrisma as any).rubricVersion = { findMany: vi.fn() };
   (mockPrisma as any).applicationReview = { count: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).decision = { findMany: vi.fn() };
-  (mockPrisma as any).emailTemplate = { findMany: vi.fn() };
-  (mockPrisma as any).cycleDecisionEmail = { findMany: vi.fn() };
-  (mockPrisma as any).cycleNotificationEmail = { findMany: vi.fn().mockResolvedValue([]) };
   // Default the gate to "signed" so the loader keeps calling decision.findMany
-  // for finalDecisions — the assertion below depends on that query firing. The
+  // for pendingDecisions — the assertions below depend on that query firing. The
   // confidentiality gating itself is exercised in dedicated tests.
   // Confidentiality now reads the generalized signing tables (SigningBinding +
   // SigningSignature); findFirst returning a matching version = "signed".
@@ -68,6 +71,10 @@ beforeEach(() => {
   mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
     id: CYCLE_ID,
     name: "Test Cycle",
+    applicants: "Students",
+    hasChallenges: true,
+    hasInitialDelibs: true,
+    hasInterviews: true,
     domains: [],
     statusUpdates: [],
     challengeVersions: [],
@@ -79,11 +86,9 @@ beforeEach(() => {
   mockPrisma.applicationReview.count.mockResolvedValue(0);
   mockPrisma.applicationReview.findMany.mockResolvedValue([]);
   mockPrisma.decision.findMany.mockResolvedValue([]);
-  mockPrisma.emailTemplate.findMany.mockResolvedValue([]);
-  mockPrisma.cycleDecisionEmail.findMany.mockResolvedValue([]);
 });
 
-describe("admin.cycle.$id loader — finalDecisions filter", () => {
+describe("lead.cycle.$id loader — pending decisions filter", () => {
   it("excludes Final decisions that already have a Released child", async () => {
     const req = new Request(`http://localhost/hiring-lead-admin/cycle/${CYCLE_ID}`);
     await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
@@ -97,5 +102,46 @@ describe("admin.cycle.$id loader — finalDecisions filter", () => {
       children: { none: { stage: "Released" } },
       domainApplication: { application: { applicationCycleId: CYCLE_ID } },
     });
+  });
+});
+
+describe("lead.cycle.$id loader — member cycles", () => {
+  it("includes Draft decisions (the lead finalizes) and loads the reviewer pool", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
+      id: CYCLE_ID,
+      name: "Fellowship",
+      applicants: "Interns",
+      hasChallenges: false,
+      hasInitialDelibs: false,
+      hasInterviews: false,
+      domains: [],
+      statusUpdates: [],
+      applications: [],
+    });
+    (mockPrisma as any).cycleReviewer = {
+      findMany: vi.fn().mockResolvedValue([
+        { userId: "u1", user: { firstName: "Ada", lastName: "L", daliEmail: null } },
+        { userId: "u1", user: { firstName: "Ada", lastName: "L", daliEmail: null } },
+      ]),
+    };
+    (mockPrisma as any).dALIMember = { findMany: vi.fn().mockResolvedValue([]) };
+
+    const req = new Request(`http://localhost/hiring/lead/cycle/${CYCLE_ID}`);
+    const data: any = await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
+
+    const pendingCall = mockPrisma.decision.findMany.mock.calls.find(
+      (c: any[]) => c[0]?.where?.children,
+    );
+    expect(pendingCall![0].where.stage).toEqual({ in: ["Draft", "Final"] });
+    // One CycleReviewer row per domain collapses to one pool member.
+    expect(data.memberSetup.reviewerPool).toEqual([{ userId: "u1", displayName: "Ada L" }]);
+  });
+
+  it("redirects non-admins away (Lab members cycles are Admin-only)", async () => {
+    vi.mocked(isCycleAdmin).mockResolvedValueOnce(false);
+    const req = new Request(`http://localhost/hiring/lead/cycle/${CYCLE_ID}`);
+    const res = await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
+    expect((res as Response).status).toBe(302);
+    expect((res as Response).headers.get("Location")).toBe("/");
   });
 });

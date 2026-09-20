@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useFetcher, Link } from "react-router";
+import { useFetcher, useRevalidator, Link } from "react-router";
 import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
 import { useFormPager, FormPageHeading } from "~/forms/components/FormPager";
@@ -7,6 +7,7 @@ import { paginateQuestions } from "~/lib/form-pages";
 import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
 import type { PortalLoaderData, PortalDomain } from "~/hiring/lib/internal-cycle-portal.server";
+import { DomainApplicationCard } from "~/hiring/components/ApplicationTracker";
 
 // Per-cycle copy for the shared internal-cycle applicant portal.
 export interface PortalCopy {
@@ -15,6 +16,7 @@ export interface PortalCopy {
   notEligible: string;
   noActiveCycleTitle: string;
   noActiveCycleBody: string;
+  chooseCycleTitle: string;
   submittedBody: string;
   withdrawnBody: string;
   contextHint?: (domains: PortalDomain[]) => React.ReactNode;
@@ -37,8 +39,32 @@ export function InternalCyclePortalView({
   if (data.reason === "no-active-cycle") {
     return <Message title={copy.noActiveCycleTitle}>{copy.noActiveCycleBody}</Message>;
   }
+  if (data.reason === "choose-cycle") {
+    return (
+      <div className="max-w-3xl mx-auto py-10 px-6">
+        <h1 className="font-heading text-2xl font-bold text-dark-blue mb-6">{copy.chooseCycleTitle}</h1>
+        <ul className="flex flex-col gap-3">
+          {data.cycles.map((c) => (
+            <li key={c.id}>
+              <Link
+                to={c.href}
+                className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
+              >
+                <span className="font-medium text-dark-blue">{c.name}</span>
+                {c.closeDate && (
+                  <span className="text-sm text-muted-foreground">
+                    Closes {formatInstantWithZoneLabel(c.closeDate, data.viewerTimeZone)}
+                  </span>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
-  const { cycle, contextDomains, draft, viewerTimeZone, showDomainPicker } = data;
+  const { cycle, contextDomains, draft, viewerTimeZone, showDomainPicker, portalPath } = data;
   const submitted = draft?.status === "Submitted";
   const withdrawn = draft?.status === "Withdrawn";
 
@@ -58,10 +84,21 @@ export function InternalCyclePortalView({
       {withdrawn ? (
         <Message title="Application withdrawn">{copy.withdrawnBody}</Message>
       ) : submitted ? (
-        <SubmittedView submittedBody={copy.submittedBody} />
+        <>
+          <SubmittedView submittedBody={copy.submittedBody} portalPath={portalPath} />
+          {data.tracker && data.tracker.domainApplications.length > 0 && (
+            <Tracker
+              cycleId={cycle.id}
+              cycleName={cycle.name}
+              viewerTimeZone={viewerTimeZone}
+              tracker={data.tracker}
+            />
+          )}
+        </>
       ) : (
         <FormView
           cycle={cycle}
+          portalPath={portalPath}
           showDomainPicker={showDomainPicker}
           domainSectionHint={copy.domainSectionHint}
           submittedBody={copy.submittedBody}
@@ -69,6 +106,39 @@ export function InternalCyclePortalView({
         />
       )}
     </div>
+  );
+}
+
+// Per-domain stages after submitting: review, interview booking when the cycle
+// has interviews, and the decision. Same cards as the student tracker.
+function Tracker({
+  cycleId,
+  cycleName,
+  viewerTimeZone,
+  tracker,
+}: {
+  cycleId: string;
+  cycleName: string;
+  viewerTimeZone: string;
+  tracker: NonNullable<Extract<PortalLoaderData, { reason: "ok" }>["tracker"]>;
+}) {
+  const revalidator = useRevalidator();
+  return (
+    <section className="mt-8 space-y-4">
+      {tracker.domainApplications.map((da) => (
+        <DomainApplicationCard
+          key={da.id}
+          da={da}
+          cycleId={cycleId}
+          cycleName={cycleName}
+          hasInterviews={tracker.hasInterviews}
+          slotDurationMinutes={tracker.slotDurationMinutes}
+          viewerTimeZone={viewerTimeZone}
+          onRevalidate={() => revalidator.revalidate()}
+          forMembers
+        />
+      ))}
+    </section>
   );
 }
 
@@ -86,6 +156,7 @@ function Message({ title, children }: { title: string; children: React.ReactNode
 
 function FormView({
   cycle,
+  portalPath,
   showDomainPicker,
   domainSectionHint,
   submittedBody,
@@ -96,6 +167,9 @@ function FormView({
     questions: Question[];
     targetDomains: PortalDomain[];
   };
+  // Posting to the cycle's own URL keeps writes on this cycle even when the
+  // page was opened without an id.
+  portalPath: string;
   showDomainPicker: boolean;
   domainSectionHint?: string;
   submittedBody: string;
@@ -120,7 +194,7 @@ function FormView({
         answers: JSON.stringify(answers),
         selectedDomainIds: JSON.stringify(selectedDomainIds),
       },
-      { method: "post" },
+      { method: "post", action: portalPath },
     );
   }
 
@@ -129,7 +203,7 @@ function FormView({
     setError(fetcher.data.error as string);
   }
   if (submitted) {
-    return <SubmittedView submittedBody={submittedBody} />;
+    return <SubmittedView submittedBody={submittedBody} portalPath={portalPath} />;
   }
 
   function toggleDomain(id: string) {
@@ -250,7 +324,7 @@ function FormView({
   );
 }
 
-function SubmittedView({ submittedBody }: { submittedBody: string }) {
+function SubmittedView({ submittedBody, portalPath }: { submittedBody: string; portalPath: string }) {
   const fetcher = useFetcher();
   const [confirming, setConfirming] = useState(false);
   const busy = fetcher.state !== "idle";
@@ -267,7 +341,7 @@ function SubmittedView({ submittedBody }: { submittedBody: string }) {
             <p className="text-xs text-red-600/80">You can't reopen it without contacting the hiring lead.</p>
             <div className="flex gap-3">
               <button
-                onClick={() => fetcher.submit({ intent: "withdraw" }, { method: "post" })}
+                onClick={() => fetcher.submit({ intent: "withdraw" }, { method: "post", action: portalPath })}
                 disabled={busy}
                 className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold disabled:opacity-50"
               >

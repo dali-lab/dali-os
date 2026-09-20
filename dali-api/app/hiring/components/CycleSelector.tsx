@@ -1,13 +1,10 @@
 import { useSearchParams } from "react-router";
-import { CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
-
-export { CYCLE_TYPE_LABELS };
 
 export function CycleSelector({
   cycles,
   activeId,
 }: {
-  cycles: Array<{ id: string; name: string; cycleType: string }>;
+  cycles: Array<{ id: string; name: string }>;
   activeId: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -30,9 +27,8 @@ export function CycleSelector({
                 ? "bg-accent-coral/15 text-accent-coral"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            title={c.name}
           >
-            {CYCLE_TYPE_LABELS[c.cycleType as keyof typeof CYCLE_TYPE_LABELS] ?? c.cycleType}
+            {c.name}
           </button>
         );
       })}

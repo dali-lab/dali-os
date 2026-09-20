@@ -57,7 +57,7 @@ beforeEach(() => {
   // Default cycle is Standard so the domain-lead blanket grant applies; Core
   // cycle tests override this.
   (mockPrisma as any).applicationCycle = {
-    findUnique: vi.fn().mockResolvedValue({ cycleType: "Standard" }),
+    findUnique: vi.fn().mockResolvedValue({ applicants: "Students" }),
   };
   (mockPrisma as any).projectAssignment = { findFirst: vi.fn().mockResolvedValue(null) };
   (mockPrisma as any).domainEligibility = { findFirst: vi.fn().mockResolvedValue(null) };
@@ -119,7 +119,7 @@ describe("hasCycleAccess", () => {
 
   it("denies a domain lead on a Core cycle unless they're a reviewer/interviewer", async () => {
     setRoleFlags({ member: true, domainLead: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
     mockPrisma.cycleReviewer.findFirst.mockResolvedValue(null);
     mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
 
@@ -131,7 +131,7 @@ describe("hasCycleAccess", () => {
 
   it("allows a domain lead on a Core cycle when they are also a reviewer", async () => {
     setRoleFlags({ member: true, domainLead: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
     mockPrisma.cycleReviewer.findFirst.mockResolvedValue({ id: "cr-core" });
     mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
 
@@ -140,7 +140,7 @@ describe("hasCycleAccess", () => {
 
   it("denies a plain (non-admin) Core member on a Core cycle", async () => {
     setRoleFlags({ member: true, core: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
     mockPrisma.cycleReviewer.findFirst.mockResolvedValue(null);
     mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
 
@@ -151,7 +151,7 @@ describe("hasCycleAccess", () => {
 
   it("allows an admin on a Core cycle", async () => {
     setRoleFlags({ member: true, admin: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
 
     expect(await hasCycleAccess("user-admin", CYCLE_ID)).toBe(true);
     expect(mockPrisma.cycleReviewer.findFirst).not.toHaveBeenCalled();
@@ -202,21 +202,21 @@ describe("hasCycleAccess", () => {
 describe("isCycleAdmin (hiring-lead tier — Admin-only on Core cycles)", () => {
   it("returns true for an admin on any cycle type", async () => {
     setRoleFlags({ member: true, admin: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
 
     expect(await isCycleAdmin("user-admin", CYCLE_ID)).toBe(true);
   });
 
   it("returns true for a Core member on a Standard/Fellowship cycle", async () => {
     setRoleFlags({ member: true, core: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Standard" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "Students" });
 
     expect(await isCycleAdmin("user-core", CYCLE_ID)).toBe(true);
   });
 
   it("returns false for a non-admin Core member on a Core cycle", async () => {
     setRoleFlags({ member: true, core: true });
-    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ cycleType: "Core" });
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ applicants: "LabMembers" });
 
     expect(await isCycleAdmin("user-core", CYCLE_ID)).toBe(false);
   });

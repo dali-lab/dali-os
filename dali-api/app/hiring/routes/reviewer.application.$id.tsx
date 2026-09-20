@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
+import { useOsChrome } from '~/components/os-chrome'
+import { buttonClasses } from '~/components/ui/Button'
+import { cn } from '~/lib/cn'
 import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -30,15 +32,6 @@ export const meta: Route.MetaFunction = ({ data }) => {
   const user = data?.application?.user
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
   return [{ title: `${name || 'Application'} · Reviews · DALI OS` }]
-}
-
-export const handle = {
-  breadcrumb: (data: unknown) => {
-    const user = (
-      data as { application?: { user?: { firstName?: string; lastName?: string } } } | undefined
-    )?.application?.user
-    return [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || undefined
-  },
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -112,14 +105,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ])
 
   // Blind review: hide applicant identity behind a stable pseudonym while this
-  // applicant is still under review (Standard cycle, anonymizeReview on, and no
+  // applicant is still under review (anonymizeReview on, and no
   // released decision on the reviewer's assigned domain application). The
-  // pseudonym flows through the H1, page <title>, breadcrumb, and recents because
+  // pseudonym flows through the H1, page <title>, and recents because
   // they all render `${firstName} ${lastName}`. Capture the real user id first —
   // education engagement below still keys off it, server-side.
   const applicantUserId = applicationBase.user.id
   const cycle = applicationBase.applicationCycle
-  if (cycle.cycleType === 'Standard' && cycle.anonymizeReview) {
+  if (cycle.anonymizeReview) {
     const daIds = domainApplications.map((d) => d.id)
     const released = await releasedDaIds(daIds)
     const blinded = daIds.length === 0 || daIds.some((id) => !released.has(id))
@@ -151,9 +144,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Presign file-type answers so the viewer can render real download links
-  // instead of raw S3 keys. For Fellowship cycles, the application's
-  // "general" questions live on applicationFormVersion, and per-domain
-  // entries carry no challenge content.
+  // instead of raw S3 keys. The application's "general" questions live on
+  // applicationFormVersion; per-domain entries carry challenge content only
+  // on cycles with challenges.
   const generalQuestionsForPresign =
     (applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? []
   const presignedGeneralAnswers = await presignAnswers(
@@ -273,7 +266,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainApplication: {
           select: {
             domainId: true,
-            application: { select: { applicationCycleId: true } },
+            application: { select: { applicationCycleId: true, applicationCycle: { select: { hasChallenges: true } } } },
           },
         },
       },
@@ -287,7 +280,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       const da = existing.domainApplication
       const domainId = da.domainId ?? null
       let rubricVersionId: string | null = existing.rubricVersionId ?? null
-      if (domainId) {
+      if (domainId && da.application.applicationCycle.hasChallenges) {
         const dac = await prisma.domainApplicationCycle.findUnique({
           where: {
             domainId_applicationCycleId: {
@@ -332,22 +325,20 @@ export default function ReviewerApplicationReview() {
     presenceSubtitle,
   } = useLoaderData<typeof loader>()
   const submit = useSubmit()
+  const { pageTitle, bodyText, panel, popover, sectionTitle, heading, headingIcon } = useOsChrome()
 
   const cycle = application.applicationCycle
-  const isInternalCycle = isInternalCycleType(cycle.cycleType)
-  const generalCv = application.generalChallengeVersion
-  const formQuestions = isInternalCycle
-    ? ((application.applicationFormVersion?.questions as unknown as Question[]) ?? [])
-    : ((generalCv?.questions as unknown as Question[]) ?? [])
+  const formQuestions = (application.applicationFormVersion?.questions as unknown as Question[]) ?? []
 
-  // Collect all rubric criteria: general form rubric + per-domain-application rubrics
+  // Collect all rubric criteria: general form rubric + per-domain-application
+  // rubrics. A domain rubric scores the challenge, so it's skipped without one.
   const allCriteria: { sectionLabel: string; criteria: RubricCriterion[] }[] = []
   const generalRubricVersion = cycle.generalRubricVersion
   if (generalRubricVersion) {
     const criteria = generalRubricVersion.criteria as unknown as RubricCriterion[]
     if (criteria.length > 0) allCriteria.push({ sectionLabel: 'General Application', criteria })
   }
-  for (const da of application.domainApplications) {
+  for (const da of cycle.hasChallenges ? application.domainApplications : []) {
     const dDomainId = (da as any).domainId ?? null
     const dDomain = (da as any).domain ?? (da as any).challengeVersion?.domain ?? null
     if (!dDomainId || !dDomain) continue
@@ -443,20 +434,16 @@ export default function ReviewerApplicationReview() {
       photoUrl={presencePhotoUrl}
       subtitle={presenceSubtitle}
     >
-    <div className="space-y-6 pb-12 relative">
-      <div>
-        <div className="flex items-center justify-end mb-4">
-          <PresenceBar />
+    <div className="flex flex-col gap-6 pb-12 relative">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className={pageTitle}>
+            {application.user.firstName} {application.user.lastName}
+          </h1>
+          <p className={bodyText}>Review · {cycle.name}</p>
         </div>
-        <div className="flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Review: {application.user.firstName} {application.user.lastName}
-            </h1>
-            <p className="mt-1 text-muted-foreground">{cycle.name}</p>
-          </div>
-        </div>
-      </div>
+        <PresenceBar />
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application Content */}
@@ -470,48 +457,56 @@ export default function ReviewerApplicationReview() {
           />
         </div>
 
-        {/* Right: Review Form */}
-        <div className="space-y-6">
-          <div className="bg-card rounded-xl border border-border shadow-sm sticky top-24">
-            <div className="px-6 py-4 border-b border-border bg-blue-50 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-blue-900">Your Review</h2>
+        {/* Right: Review Form. Pinned beside the application on wide screens,
+            scrolling on its own when it's taller than the window, so only the
+            application scrolls with the page. */}
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto">
+          <div className={panel}>
+            <div className="px-6 pt-5 flex items-center justify-between gap-3">
+              <h2 className={sectionTitle}>Your review</h2>
               {!isSubmitted && (
                 <SaveStatusIndicator saving={isSaving} lastSaved={lastSaved} />
               )}
             </div>
-            <div className="p-6 space-y-6">
+            <div className="px-6 pb-6 pt-4 space-y-6">
 
               {/* Scoring */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4">Scoring</h3>
+                <h3 className={cn(heading, "mb-4")}>Scoring</h3>
                 {flatCriteria.length === 0 ? (
-                  <p className="text-sm text-muted-foreground/70 italic">No rubric attached to this application.</p>
+                  <p className="text-sm text-os-grey">No rubric attached to this application.</p>
                 ) : (
                   <div className="space-y-6">
                     {allCriteria.map((section) => (
                       <div key={section.sectionLabel}>
                         {allCriteria.length > 1 && (
-                          <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider mb-3">{section.sectionLabel}</p>
+                          <p className="text-xs text-os-grey mb-3">{section.sectionLabel}</p>
                         )}
                         <div className="space-y-4">
                           {section.criteria.map((criterion) => (
                             <div key={criterion.key}>
                               <div className="flex justify-between items-center mb-1">
                                 <label className="text-sm font-medium text-foreground">{criterion.label}</label>
-                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                <span className="text-xs font-semibold tabular-nums text-os-accent bg-os-accent/15 px-2 py-0.5 rounded-full">
                                   {scores[criterion.key] ?? 0} / {criterion.maxScore}
                                 </span>
                               </div>
                               {criterion.description && (
-                                <p className="text-xs text-muted-foreground mb-1">{criterion.description}</p>
+                                <p className="text-xs text-os-grey mb-1">{criterion.description}</p>
                               )}
                               <input
                                 type="range" min="0" max={criterion.maxScore}
                                 value={scores[criterion.key] ?? 0}
                                 onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: parseInt(e.target.value) }))}
-                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-accent-coral"
+                                // The track is painted here, not left to the
+                                // browser: accent up to the score, then a
+                                // visible gray, so it reads in both themes.
+                                style={{
+                                  background: `linear-gradient(to right, var(--color-os-accent) ${((scores[criterion.key] ?? 0) / criterion.maxScore) * 100}%, var(--color-os-container-hi) ${((scores[criterion.key] ?? 0) / criterion.maxScore) * 100}%)`,
+                                }}
+                                className="w-full h-2 rounded-full appearance-none cursor-pointer accent-[var(--color-os-accent)]"
                               />
-                              <div className="flex justify-between text-xs text-muted-foreground/70 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
+                              <div className="flex justify-between text-xs text-os-grey mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
                             </div>
                           ))}
                         </div>
@@ -523,8 +518,8 @@ export default function ReviewerApplicationReview() {
 
               {/* Feedback — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">Internal Feedback</h3>
-                <p className="text-xs text-muted-foreground mb-2">Notes for other reviewers. Not visible to applicant.</p>
+                <h3 className={cn(heading, "mb-2")}>Internal feedback</h3>
+                <p className="text-xs text-os-grey mb-2">For other reviewers. The applicant never sees this.</p>
                 {existingReview && collabToken ? (
                   <DocEditor
                     features="notes"
@@ -533,8 +528,8 @@ export default function ReviewerApplicationReview() {
                     placeholder="Strengths, weaknesses, areas to probe in interview..."
                     className={`rounded-lg border ${
                       isSubmitted
-                        ? 'border-border bg-muted/50 opacity-75'
-                        : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+                        ? 'border-transparent bg-os-well opacity-75'
+                        : 'border-transparent bg-os-well focus-within:ring-2 focus-within:ring-os-accent/40'
                     }`}
                     collab={{
                       documentName: `review:${existingReview.id}:feedback`,
@@ -547,7 +542,7 @@ export default function ReviewerApplicationReview() {
                   <textarea
                     rows={4}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
+                    className="block w-full rounded-os-item border-0 sm:text-sm p-2 text-foreground bg-os-well"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
@@ -555,8 +550,8 @@ export default function ReviewerApplicationReview() {
 
               {/* Rejection Rationale — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">
-                  Rejection Rationale <span className="text-xs font-normal text-muted-foreground normal-case">(Optional)</span>
+                <h3 className={cn(heading, "mb-2")}>
+                  Rejection rationale <span className="font-normal normal-case tracking-normal">(optional)</span>
                 </h3>
                 {existingReview && collabToken ? (
                   <DocEditor
@@ -566,8 +561,8 @@ export default function ReviewerApplicationReview() {
                     placeholder="If we reject this candidate, what feedback should we provide?"
                     className={`rounded-lg border ${
                       isSubmitted
-                        ? 'border-border bg-muted/50 opacity-75'
-                        : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+                        ? 'border-transparent bg-os-well opacity-75'
+                        : 'border-transparent bg-os-well focus-within:ring-2 focus-within:ring-os-accent/40'
                     }`}
                     collab={{
                       documentName: `review:${existingReview.id}:rejectionRationale`,
@@ -580,17 +575,17 @@ export default function ReviewerApplicationReview() {
                   <textarea
                     rows={3}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
+                    className="block w-full rounded-os-item border-0 sm:text-sm p-2 text-foreground bg-os-well"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
               </div>
 
               {/* Overall Recommendation */}
-              <div className="pt-4 border-t border-border">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3 inline-flex items-center gap-1">
-                  Overall Recommendation
-                  <InfoTip content="Reviewer's overall hiring signal — Strong Hire means definitely bring in, Strong No Hire means clear pass; used in deliberations to calibrate decisions across reviewers." />
+              <div className="pt-4 border-t border-os-container">
+                <h3 className={cn(heading, "mb-3")}>
+                  Overall recommendation
+                  <InfoTip content="Your overall hiring signal. Strong Hire means bring them in, Strong No Hire means a clear pass. Used in delibs to compare reviewers." />
                 </h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (
@@ -601,7 +596,7 @@ export default function ReviewerApplicationReview() {
                       checked={overallRecommendation === rec}
                       onChange={() => setOverallRecommendation(rec)}
                       label={rec}
-                      className={`p-3 border rounded-lg transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'}`}
+                      className={`p-3 rounded-os-item transition-colors ${overallRecommendation === rec ? 'bg-os-accent/15 text-foreground' : 'bg-os-well hover:bg-os-container'}`}
                     />
                   ))}
                 </div>
@@ -620,17 +615,17 @@ export default function ReviewerApplicationReview() {
                           })
                           if (res.ok) window.location.reload()
                         }}
-                        className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
+                        className={buttonClasses('primary', 'md', 'w-full')}
                       >
-                        Submit Review
+                        Submit review
                       </button>
                     )}
                   </>
                 ) : (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-center gap-2 py-3 bg-green-50 border border-green-200 rounded-lg">
-                      <Check className="w-4 h-4 text-green-600" />
-                      <span className="text-sm font-medium text-green-800">Review Submitted</span>
+                    <div className="flex items-center justify-center gap-2 py-3 rounded-os-item bg-os-well">
+                      <Check className="w-4 h-4 text-os-accent" />
+                      <span className="text-sm font-medium text-foreground">Review submitted</span>
                     </div>
                     <button
                       onClick={async () => {
@@ -639,9 +634,9 @@ export default function ReviewerApplicationReview() {
                         })
                         if (res.ok) window.location.reload()
                       }}
-                      className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-foreground/80 bg-card border border-gray-300 hover:bg-muted/50"
+                      className={buttonClasses('secondary', 'md', 'w-full')}
                     >
-                      Unsubmit & Edit
+                      Unsubmit and edit
                     </button>
                   </div>
                 )}
@@ -653,11 +648,11 @@ export default function ReviewerApplicationReview() {
 
       {/* Floating rubric toggle */}
       <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-8 flex flex-col gap-4 z-50">
-        <Tooltip content="Scoring Guide" placement="left">
+        <Tooltip content="Scoring guide" placement="left">
           <button
             onClick={() => setShowRubric(!showRubric)}
-            aria-label="Scoring Guide"
-            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
+            aria-label="Scoring guide"
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-os-accent text-os-bg' : 'bg-os-card text-os-accent hover:bg-os-container'}`}
           >
             {showRubric ? <X className="w-6 h-6" /> : <HelpCircle className="w-6 h-6" />}
           </button>
@@ -665,20 +660,20 @@ export default function ReviewerApplicationReview() {
       </div>
 
       {showRubric && (
-        <div className="fixed bottom-20 right-4 sm:bottom-24 sm:right-8 w-80 max-w-[calc(100vw-2rem)] bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
-          <div className="bg-blue-600 px-4 py-3 flex justify-between items-center">
-            <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
+        <div className={cn(popover, "fixed bottom-20 right-4 sm:bottom-24 sm:right-8 w-80 max-w-[calc(100vw-2rem)] overflow-hidden z-50")}>
+          <div className="px-4 pt-4 pb-2">
+            <h3 className={heading}><HelpCircle className={headingIcon} />Scoring guide</h3>
           </div>
-          <ul className="divide-y divide-gray-100 max-h-[50vh] overflow-y-auto">
+          <ul className="divide-y divide-os-container max-h-[50vh] overflow-y-auto">
             {flatCriteria.length === 0 ? (
-              <li className="p-4 text-sm text-muted-foreground/70 italic">No rubric attached.</li>
+              <li className="p-4 text-sm text-os-grey">No rubric attached.</li>
             ) : flatCriteria.map((c) => (
-              <li key={c.key} className="p-4 hover:bg-muted/50">
+              <li key={c.key} className="p-4">
                 <div className="flex justify-between items-start mb-1">
                   <h4 className="font-bold text-foreground">{c.label}</h4>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Max: {c.maxScore}</span>
+                  <span className="text-xs font-semibold tabular-nums text-os-accent bg-os-accent/15 px-2 py-0.5 rounded-full">Max {c.maxScore}</span>
                 </div>
-                {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+                {c.description && <p className="text-xs text-os-grey">{c.description}</p>}
               </li>
             ))}
           </ul>

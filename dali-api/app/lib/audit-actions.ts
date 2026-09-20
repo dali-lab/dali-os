@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "decision.release",
   "waitlist.accept",
   "waitlist.remove",
+  "waitlist.reorder",
   "interview.invite-reminder.sent",
   "interview.complete",
   "interview.reopen",

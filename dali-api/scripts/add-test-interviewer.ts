@@ -76,36 +76,12 @@ async function main() {
     },
   });
 
-  // Add availability blocks — next 5 weekdays, 2pm-5pm ET (18:00-21:00 UTC)
-  await prisma.interviewerAvailability.deleteMany({
-    where: { cycleInterviewerId: ci.id },
+  // Interview scheduling reads DALI OS calendar availability: working hours
+  // (weekdays 2pm-5pm) with no linked calendar means those hours are free.
+  await prisma.workingHoursDay.deleteMany({ where: { userId: user.id } });
+  await prisma.workingHoursDay.createMany({
+    data: [1, 2, 3, 4, 5].map((dayOfWeek) => ({ userId: user.id, dayOfWeek, startMinute: 14 * 60, endMinute: 17 * 60 })),
   });
-
-  const now = new Date();
-  let added = 0;
-  const cursor = new Date(now);
-  cursor.setUTCHours(0, 0, 0, 0);
-  cursor.setUTCDate(cursor.getUTCDate() + 1); // start tomorrow
-
-  while (added < 5) {
-    const dow = cursor.getUTCDay();
-    if (dow !== 0 && dow !== 6) {
-      const start = new Date(cursor);
-      start.setUTCHours(18, 0, 0, 0); // 2pm ET
-      const end = new Date(cursor);
-      end.setUTCHours(21, 0, 0, 0); // 5pm ET
-
-      await prisma.interviewerAvailability.create({
-        data: {
-          cycleInterviewerId: ci.id,
-          startTime: start,
-          endTime: end,
-        },
-      });
-      added++;
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
 
   console.log("Test cross-domain interviewer created:");
   console.log(`  Name: ${user.firstName} ${user.lastName}`);

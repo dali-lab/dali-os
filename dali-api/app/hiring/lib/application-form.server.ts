@@ -11,7 +11,7 @@ import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
-import type { ApplicationCycleType } from "~/generated/prisma/client";
+import type { CycleApplicants } from "~/generated/prisma/client";
 
 const TEMPLATE_NAME = "Internal Application Template";
 
@@ -90,9 +90,10 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
   return created.id;
 }
 
-const CYCLE_LABEL: Partial<Record<ApplicationCycleType, string>> = {
-  Fellowship: "Fellowship",
-  Core: "Core",
+const APPLICANTS_FORM_LABEL: Record<CycleApplicants, string> = {
+  Students: "Application",
+  Interns: "Fellowship",
+  LabMembers: "Core",
 };
 
 /**
@@ -106,7 +107,7 @@ export async function createCycleApplicationForm(
 ): Promise<string | null> {
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: cycleId },
-    select: { id: true, name: true, cycleType: true, applicationFormId: true },
+    select: { id: true, name: true, applicants: true, applicationFormId: true },
   });
   if (!cycle) return null;
   if (cycle.applicationFormId) return cycle.applicationFormId;
@@ -131,7 +132,7 @@ export async function createCycleApplicationForm(
     purpose: "hiring-forms",
     createdById: actorId,
   });
-  const label = CYCLE_LABEL[cycle.cycleType] ?? "Application";
+  const label = APPLICANTS_FORM_LABEL[cycle.applicants];
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — ${label} application`,
@@ -205,6 +206,48 @@ export async function createDomainChallengeForm(
     data: { applicationCycleId: cycleId, domainId, formId: form.id },
   });
   return form.id;
+}
+
+async function cycleIsDraft(cycleId: string): Promise<boolean> {
+  const latest = await prisma.applicationCycleStatusUpdate.findFirst({
+    where: { applicationCycleId: cycleId },
+    orderBy: { createdAt: "desc" },
+    select: { newStatus: true },
+  });
+  return (latest?.newStatus ?? "Draft") === "Draft";
+}
+
+/** Add a challenge to a domain while the cycle is still being set up. */
+export async function addDomainChallenge(
+  cycleId: string,
+  domainId: string,
+  actorId: string,
+): Promise<"not-draft" | null> {
+  if (!(await cycleIsDraft(cycleId))) return "not-draft";
+  await createDomainChallengeForm(cycleId, domainId, actorId);
+  return null;
+}
+
+/**
+ * Unlink a domain's challenge form, in Draft only, and never once an applicant
+ * has picked it. `cycleId`, when given, must be the link's cycle.
+ */
+export async function removeDomainChallenge(
+  cdfId: string,
+  cycleId?: string,
+): Promise<"not-found" | "not-draft" | "in-use" | null> {
+  const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
+  if (!cdf || (cycleId && cdf.applicationCycleId !== cycleId)) return "not-found";
+  if (!(await cycleIsDraft(cdf.applicationCycleId))) return "not-draft";
+  const inUse = await prisma.domainApplication.count({
+    where: {
+      challengeFormVersion: { formId: cdf.formId },
+      application: { applicationCycleId: cdf.applicationCycleId },
+    },
+  });
+  if (inUse > 0) return "in-use";
+  await prisma.cycleDomainForm.delete({ where: { id: cdfId } });
+  return null;
 }
 
 export type HiringApplicationForm = {

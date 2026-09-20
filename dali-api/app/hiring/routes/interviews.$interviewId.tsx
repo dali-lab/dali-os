@@ -30,7 +30,8 @@ import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
-import { INTERVIEW_STATUS_COLORS } from '~/hiring/lib/labels'
+import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
+import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { Select, type SelectOption } from "~/components/ui/floating";
 
 const RECOMMENDATION_OPTIONS = [
@@ -60,7 +61,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: auth.user.sub },
     select: { id: true, firstName: true, lastName: true, daliMember: { select: { id: true } } },
   })
-  if (!member?.daliMember) throw redirect('/hiring/reviewer')
+  if (!member?.daliMember) throw redirect('/hiring?view=interviews')
 
   const interview = await prisma.interview.findUnique({
     where: { id: params.interviewId },
@@ -94,13 +95,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  if (!interview) throw redirect('/hiring/reviewer')
+  if (!interview) throw redirect('/hiring?view=interviews')
 
   const myAssignment = interview.assignments.find(
     (a: any) => a.cycleInterviewer.userId === auth.user.sub,
   )
 
-  if (!myAssignment) throw redirect('/hiring/reviewer')
+  if (!myAssignment) throw redirect('/hiring?view=interviews')
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,
@@ -110,7 +111,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (confRedirect) throw confRedirect
 
   // Rubric criteria for the applicant's domain. DomainApplication.domainId is
-  // always set for Standard cycles (the only cycleType that schedules interviews).
+  // always set, for every applicant group.
   const domainId = interview.domainApplication.domainId ?? null
   let domainRubricVersionId: string | null = null
   if (domainId) {
@@ -204,17 +205,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       presencePhotoUrl: presenceUser?.photoUrl ?? null,
       presenceSubtitle: presenceUser?.subtitle ?? null,
     }
-}
-
-export const handle = {
-  breadcrumb: (data: unknown) => {
-    const user = (
-      data as
-        | { interview?: { domainApplication?: { application?: { user?: { firstName?: string; lastName?: string } } } } }
-        | undefined
-    )?.interview?.domainApplication?.application?.user
-    return [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || undefined
-  },
 }
 
 export default function InterviewDetailPage() {
@@ -399,9 +389,7 @@ export default function InterviewDetailPage() {
                 })}
               </span>
               {domain && (
-                <span className="px-2 py-0.5 bg-muted text-foreground/80 rounded text-xs font-medium">
-                  {domain}
-                </span>
+                <Pill>{domain}</Pill>
               )}
               {interview.location && (
                 <span className="flex items-center">
@@ -420,16 +408,9 @@ export default function InterviewDetailPage() {
                   Join Google Meet
                 </a>
               )}
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  isCompleted
-                    ? 'bg-green-100 text-green-700'
-                    : INTERVIEW_STATUS_COLORS[interview.status] ??
-                      'bg-muted text-foreground/80'
-                }`}
-              >
+              <Pill dot={isCompleted ? 'success' : INTERVIEW_STATUS_TONES[interview.status] ?? 'neutral'}>
                 {isCompleted ? 'Completed' : interview.status}
-              </span>
+              </Pill>
               <span className="flex items-center">
                 <Users className="w-4 h-4 mr-1 text-muted-foreground/70" />
                 {coInterviewers.length > 0 ? (

@@ -22,27 +22,18 @@ beforeEach(() => {
 });
 
 describe("isApplicantBlinded", () => {
-  const on = { cycleType: "Standard", anonymizeReview: true };
+  const on = { anonymizeReview: true };
 
-  it("blinds a Standard cycle with the toggle on and no released decision", () => {
+  it("blinds a cycle with the toggle on and no released decision", () => {
     expect(isApplicantBlinded(on, false)).toBe(true);
   });
 
-  it("does not blind once a decision is released (moved into interviews)", () => {
+  it("does not blind once a decision is released", () => {
     expect(isApplicantBlinded(on, true)).toBe(false);
   });
 
   it("does not blind when the toggle is off", () => {
-    expect(isApplicantBlinded({ cycleType: "Standard", anonymizeReview: false }, false)).toBe(
-      false,
-    );
-  });
-
-  it("does not blind internal (Fellowship/Core) cycles", () => {
-    expect(isApplicantBlinded({ cycleType: "Fellowship", anonymizeReview: true }, false)).toBe(
-      false,
-    );
-    expect(isApplicantBlinded({ cycleType: "Core", anonymizeReview: true }, false)).toBe(false);
+    expect(isApplicantBlinded({ anonymizeReview: false }, false)).toBe(false);
   });
 });
 

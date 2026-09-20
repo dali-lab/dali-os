@@ -3,11 +3,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { autoCloseIfExpired, getActiveCycle } from "~/hiring/lib/cycles";
+import {
+  autoCloseIfExpired,
+  getActiveCycleById,
+  getActiveCycles,
+  getOpenCycles,
+} from "~/hiring/lib/cycles";
 
 const mockPrisma = prisma as unknown as {
   applicationCycle: {
     findUnique: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
   };
   applicationCycleStatusUpdate: {
     findFirst: ReturnType<typeof vi.fn>;
@@ -20,7 +26,7 @@ const CYCLE_ID = "cycle-1";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).applicationCycle = { findUnique: vi.fn() };
+  (mockPrisma as any).applicationCycle = { findUnique: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).applicationCycleStatusUpdate = {
     findFirst: vi.fn(),
     create: vi.fn().mockResolvedValue({}),
@@ -31,98 +37,84 @@ beforeEach(() => {
   );
 });
 
-function makeActiveUpdate(opts: {
-  cycleId?: string;
-  newStatus: "Open" | "UnderReview";
-  latestStatus?: "Open" | "UnderReview" | "Completed" | "Draft";
+function cycleRow(opts: {
+  id?: string;
+  latestStatus: "Open" | "UnderReview" | "Completed" | "Draft";
   closeDate?: Date | null;
-  name?: string;
+  applicants?: "Students" | "Interns" | "LabMembers";
 }) {
-  const cycleId = opts.cycleId ?? CYCLE_ID;
   return {
-    id: "upd-1",
-    createdAt: new Date(),
-    newStatus: opts.newStatus,
-    applicationCycleId: cycleId,
-    userId: null,
-    applicationCycle: {
-      id: cycleId,
-      name: opts.name ?? "Test Cycle",
-      closeDate: opts.closeDate ?? null,
-      statusUpdates: [
-        { newStatus: opts.latestStatus ?? opts.newStatus },
-      ],
-    },
+    id: opts.id ?? CYCLE_ID,
+    name: "Fall 2026",
+    applicants: opts.applicants ?? "Students",
+    closeDate: opts.closeDate ?? null,
+    statusUpdates: [{ newStatus: opts.latestStatus }],
   };
 }
 
-describe("getActiveCycle()", () => {
-  it("returns null when no cycle has ever been Open or UnderReview", async () => {
-    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(null);
-
-    const result = await getActiveCycle();
-
-    expect(result).toBeNull();
-    expect(mockPrisma.applicationCycleStatusUpdate.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          newStatus: { in: ["Open", "UnderReview"] },
-          applicationCycle: { cycleType: "Standard" },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-    );
+describe("getActiveCycles()", () => {
+  it("returns [] when no cycle has ever been Open or UnderReview", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    expect(await getActiveCycles()).toEqual([]);
   });
 
-  it("returns the cycle with currentStatus=Open when it is Open and not past closeDate", async () => {
-    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(
-      makeActiveUpdate({ newStatus: "Open", closeDate: future }),
-    );
+  it("returns every active cycle, not just one", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ id: "a", latestStatus: "Open" }),
+      cycleRow({ id: "b", latestStatus: "UnderReview" }),
+    ]);
+    const res = await getActiveCycles();
+    expect(res.map((c) => [c.id, c.currentStatus])).toEqual([
+      ["a", "Open"],
+      ["b", "UnderReview"],
+    ]);
+  });
 
-    const result = await getActiveCycle();
-
-    expect(result).not.toBeNull();
-    expect(result!.id).toBe(CYCLE_ID);
-    expect(result!.currentStatus).toBe("Open");
+  it("derives UnderReview for an Open cycle past its closeDate, without writing", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ latestStatus: "Open", closeDate: new Date(Date.now() - 1000) }),
+    ]);
+    const res = await getActiveCycles();
+    expect(res[0].currentStatus).toBe("UnderReview");
     expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
   });
 
-  it("returns currentStatus=UnderReview when an Open cycle is past its closeDate, without writing", async () => {
-    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(
-      makeActiveUpdate({ newStatus: "Open", closeDate: past }),
-    );
-
-    const result = await getActiveCycle();
-
-    expect(result).not.toBeNull();
-    expect(result!.currentStatus).toBe("UnderReview");
-    expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  it("drops a cycle whose latest status moved past active (Completed)", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ latestStatus: "Completed" }),
+    ]);
+    expect(await getActiveCycles()).toEqual([]);
   });
 
-  it("returns currentStatus=UnderReview directly for a cycle in UnderReview", async () => {
-    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(
-      makeActiveUpdate({ newStatus: "UnderReview", latestStatus: "UnderReview" }),
-    );
+  it("filters by applicant group when asked", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    await getActiveCycles({ applicants: "Interns" });
+    expect(mockPrisma.applicationCycle.findMany.mock.calls[0][0].where.applicants).toBe("Interns");
+  });
+});
 
-    const result = await getActiveCycle();
+describe("getOpenCycles()", () => {
+  it("keeps only cycles still taking applications", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ id: "open", latestStatus: "Open" }),
+      cycleRow({ id: "closed-by-date", latestStatus: "Open", closeDate: new Date(Date.now() - 1000) }),
+      cycleRow({ id: "review", latestStatus: "UnderReview" }),
+    ]);
+    expect((await getOpenCycles()).map((c) => c.id)).toEqual(["open"]);
+  });
+});
 
-    expect(result).not.toBeNull();
-    expect(result!.currentStatus).toBe("UnderReview");
+describe("getActiveCycleById()", () => {
+  it("returns the cycle with its derived status when active", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue(cycleRow({ latestStatus: "Open" }));
+    expect((await getActiveCycleById(CYCLE_ID))?.currentStatus).toBe("Open");
   });
 
-  it("returns null when the cycle's most recent active update was superseded by a Completed update", async () => {
-    // findFirst on active updates returns the old Open/UnderReview row, but
-    // the cycle's actual latest status is now Completed.
-    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(
-      makeActiveUpdate({ newStatus: "UnderReview", latestStatus: "Completed" }),
-    );
-
-    const result = await getActiveCycle();
-
-    expect(result).toBeNull();
+  it("returns null for a Draft or missing cycle", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValueOnce(cycleRow({ latestStatus: "Draft" }));
+    expect(await getActiveCycleById(CYCLE_ID)).toBeNull();
+    mockPrisma.applicationCycle.findUnique.mockResolvedValueOnce(null);
+    expect(await getActiveCycleById(CYCLE_ID)).toBeNull();
   });
 });
 

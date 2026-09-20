@@ -30,8 +30,10 @@ vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock("~/hiring/lib/confidentiality", () => ({
-  getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1" }),
+vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
+  // Keep the pure access helpers real; only the DB-backed state is stubbed.
+  ...(await importOriginal<typeof import("~/hiring/lib/confidentiality")>()),
+  getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1", exempt: false }),
 }));
 
 // The doc: branch now delegates to getPageAccess. Mock it so collabAuth tests
@@ -66,7 +68,7 @@ beforeEach(() => {
   (isProjectMember as any).mockResolvedValue(false);
   (isLabMember as any).mockResolvedValue(false);
   (partnerHasProjectAccess as any).mockResolvedValue(false);
-  (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
+  (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1", exempt: false });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
   vi.mocked(getPageAccess).mockResolvedValue({
     canView: false,
@@ -160,6 +162,7 @@ describe("authorizeCollabDoc", () => {
       (getCycleConfidentialityState as any).mockResolvedValue({
         status: "unsigned",
         activeVersionId: "v1",
+        exempt: false,
       });
       (isCore as any).mockResolvedValue(true);
       expect(

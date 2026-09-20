@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
 const DelibsActionSchema = z.object({
@@ -67,9 +68,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
       const session = await prisma.delibsSession.findUnique({
         where: { id: params.id },
+        include: { applicationCycle: { select: { timeline: true } } },
       });
       if (!session) {
         return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const round = findRound(parseTimeline(session.applicationCycle.timeline), session.roundId);
+      if (!round) {
+        return Response.json({ error: "This board's round is no longer in the timeline." }, { status: 409 });
       }
 
       const columnOrder = session.columnOrder as Record<string, string[]>;
@@ -79,7 +85,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         waitlistRank: number | null;
       }> = [];
 
-      if (session.type === "Initial") {
+      if (!round.isFinal) {
+        // "Advance" writes no decision: the closed board itself is what
+        // qualifies those applicants for the next round.
         for (const id of columnOrder["Interview"] ?? []) {
           decisions.push({ domainApplicationId: id, type: "InvitedToInterview", waitlistRank: null });
         }

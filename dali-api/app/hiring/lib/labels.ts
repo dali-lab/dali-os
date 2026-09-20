@@ -1,15 +1,21 @@
-// Shared color + label maps for hiring status/decision/stage pills.
-// Source of truth for adoption (wave 2); see callers in app/hiring/routes
-// and app/hiring/components. Plain (border-less) variants chosen as the
-// majority across sites; bordered/dark-mode variants stay local where used.
+// Shared label + tone maps for hiring status/decision/stage pills. Every
+// status renders through the shared <Pill>: `tone` tints the whole chip (a
+// section's readiness), `dot` keeps the chip neutral and colours a leading dot
+// (one state per row). One vocabulary across the area:
+//   success  finished or good: accepted, submitted, completed, open
+//   accent   in flight: invited, interviewing, scheduled, under review
+//   warning  needs attention: waitlisted, in progress, awaiting, not ready
+//   danger   bad: rejected, cancelled
+//   neutral  nothing yet: draft, unknown
+import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 
 // Cycle / Application cycle status pills.
 // Matches lead.tsx, CycleSelector.tsx, lead.cycle.$id.tsx.
-export const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80",
-  Open: "bg-green-100 text-green-700",
-  UnderReview: "bg-yellow-100 text-yellow-700",
-  Completed: "bg-blue-100 text-blue-700",
+export const STATUS_TONES: Record<string, PillTone> = {
+  Draft: "neutral",
+  Open: "success",
+  UnderReview: "accent",
+  Completed: "success",
 };
 
 // Display labels for the cycle status enum.
@@ -20,14 +26,12 @@ export const STATUS_LABELS: Record<string, string> = {
   Completed: "Completed",
 };
 
-// Decision pill colors. Plain (border-less) majority variant.
-// InvitedToInterview is bg-blue-100 (majority); fixes purple drift at
-// domain-lead.application.$id.tsx:44.
-export const DECISION_COLORS: Record<string, string> = {
-  InvitedToInterview: "bg-blue-100 text-blue-700",
-  Accepted: "bg-green-100 text-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700",
-  Rejected: "bg-red-100 text-red-700",
+// Decision pill tones.
+export const DECISION_TONES: Record<string, PillTone> = {
+  InvitedToInterview: "accent",
+  Accepted: "success",
+  Waitlisted: "warning",
+  Rejected: "danger",
 };
 
 // Short decision labels used on action buttons / compact pills.
@@ -39,13 +43,13 @@ export const DECISION_LABELS: Record<string, string> = {
   Rejected: "Reject",
 };
 
-// Interview status colors. Keys match the InterviewStatus enum used in
+// Interview status tones. Keys match the InterviewStatus enum used in
 // applications.$domainApplicationId.tsx:13 and interviewer.interview.$interviewId.tsx:38.
-export const INTERVIEW_STATUS_COLORS: Record<string, string> = {
-  Scheduled: "bg-blue-100 text-blue-700",
-  Completed: "bg-green-100 text-green-700",
-  CancelledByApplicant: "bg-red-100 text-red-700",
-  CancelledByAdmin: "bg-muted text-foreground/80",
+export const INTERVIEW_STATUS_TONES: Record<string, PillTone> = {
+  Scheduled: "accent",
+  Completed: "success",
+  CancelledByApplicant: "danger",
+  CancelledByAdmin: "danger",
 };
 
 // Display overrides for interview status. Scheduled/Completed render as-is.
@@ -63,17 +67,18 @@ export const STAGE_LABELS: Record<string, string> = {
   Released: "Released",
 };
 
-// Reviewer overall-recommendation pills. Source: ApplicantContextModal.tsx:6
-// and domain-lead.application.$id.tsx:19.
-export const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-yellow-50 text-yellow-700",
-  "Lean No Hire": "bg-orange-50 text-orange-700",
-  "No Hire": "bg-red-100 text-red-700",
+// Reviewer overall-recommendation pills, by how strong the call is.
+export const RECOMMENDATION_TONES: Record<string, PillTone> = {
+  "Strong Hire": "success",
+  Hire: "success",
+  "Lean Hire": "warning",
+  "Lean No Hire": "warning",
+  "No Hire": "danger",
 };
 
-// Shared base classes for the common pill shape. Compose with one of the
-// *_COLORS maps above: `${STATUS_PILL_BASE} ${STATUS_COLORS[s]}`.
-export const STATUS_PILL_BASE =
-  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold";
+// A review's own progress, keyed the same way my-work keys it.
+export const REVIEW_STATUS_TONES: Record<string, PillTone> = {
+  submitted: "success",
+  inProgress: "warning",
+  notStarted: "neutral",
+};

@@ -6,7 +6,7 @@ import type { Route } from "./+types/core.hub";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getOpenCycles } from "~/hiring/lib/cycles";
 import { isCoreCycleEligible } from "~/hiring/lib/core-hiring.server";
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
@@ -91,11 +91,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) {
-    // Non-Core members don't get the Core hub. If a Core hiring cycle is open
-    // and they're eligible to apply, send them to the application (the invite
-    // email links here at /core) instead of bouncing them home.
-    const activeCore = await getActiveCycle("Core");
-    if (activeCore?.currentStatus === "Open" && (await isCoreCycleEligible(auth.user.sub))) {
+    // Non-Core members don't get the Core hub. If a Lab members (Core) cycle
+    // is open and they're eligible to apply, send them to the application (the
+    // invite email links here at /core) instead of bouncing them home. The
+    // portal offers a choice when several are open.
+    const openCore = await getOpenCycles({ applicants: "LabMembers" });
+    if (openCore.length > 0 && (await isCoreCycleEligible(auth.user.sub))) {
       return redirect("/core/apply");
     }
     return redirect("/");

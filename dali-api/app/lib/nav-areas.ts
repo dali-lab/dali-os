@@ -20,7 +20,6 @@ import {
   Heart,
   Kanban,
   LayoutGrid,
-  Mic,
   RotateCw,
   Megaphone,
   Settings,
@@ -171,9 +170,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/hiring",
     gate: (r) => r.hasHiringAccess,
     subtabs: [
-      { label: "Hub", href: "/hiring", icon: LayoutGrid },
-      { label: "Reviews", href: "/hiring/reviewer", icon: ClipboardList },
-      { label: "Interviews", href: "/hiring/interviews", icon: Mic, gate: (r) => r.isInterviewer },
+      { label: "My work", href: "/hiring", icon: ClipboardList },
       { label: "Applications", href: "/hiring/applications", icon: Files },
       { label: "Domain", href: "/hiring/domain-lead", icon: Globe, gate: (r) => r.isDomainLead },
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
@@ -274,9 +271,7 @@ const REGROUPED_AREAS: NavArea[] = [
     // the flag-off gate which admits any-cycle reviewers forever.
     gate: (r) => r.hasActiveHiringAccess,
     subtabs: [
-      { label: "Hub", href: "/hiring", icon: LayoutGrid },
-      { label: "Reviews", href: "/hiring/reviewer", icon: ClipboardList },
-      { label: "Interviews", href: "/hiring/interviews", icon: Mic, gate: (r) => r.isInterviewer },
+      { label: "My work", href: "/hiring", icon: ClipboardList },
       { label: "Applications", href: "/hiring/applications", icon: Files },
       { label: "Domain", href: "/hiring/domain-lead", icon: Globe, gate: (r) => r.isDomainLead },
       { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },

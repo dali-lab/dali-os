@@ -4,7 +4,7 @@ import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -20,23 +20,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
 
-  const active = await getActiveCycle();
-  let cycleId: string;
-
-  if (active) {
-    cycleId = active.id;
-  } else {
-    const recentApp = await prisma.application.findFirst({
-      where: { userId: auth.user.sub },
-      orderBy: { createdAt: "desc" },
-      select: { applicationCycleId: true },
-    });
-    if (!recentApp) return redirect("/portal");
-    cycleId = recentApp.applicationCycleId;
-  }
-
+  // ?cycle=<id> names which of my applications to show (several cycles can be
+  // active at once); without it, my most recent one.
+  const requested = new URL(request.url).searchParams.get("cycle");
   const application = await prisma.application.findFirst({
-    where: { userId: auth.user.sub, applicationCycleId: cycleId },
+    where: { userId: auth.user.sub, ...(requested && { applicationCycleId: requested }) },
+    orderBy: { createdAt: "desc" },
     include: {
       statusUpdates: { orderBy: { createdAt: "asc" } },
       applicationFormVersion: { select: { questions: true } },
@@ -58,6 +47,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const latestUpdate = application.statusUpdates[application.statusUpdates.length - 1];
   const isWithdrawn = latestUpdate?.newStatus === "Withdrawn";
   const withdrawnUpdate = isWithdrawn ? latestUpdate : null;
+  const active = await getActiveCycleById(application.applicationCycleId);
   const canWithdraw = !!active && !isWithdrawn;
 
   const generalQuestions =
@@ -80,6 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 
   return {
+      cycleId: application.applicationCycleId,
       submittedAt: submittedUpdate.createdAt.toISOString(),
       withdrawnAt: withdrawnUpdate?.createdAt.toISOString() ?? null,
       canWithdraw,
@@ -102,7 +93,8 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
 
-  const active = await getActiveCycle();
+  // Withdrawal targets the posted cycle, and only while that cycle is active.
+  const active = await getActiveCycleById(String(formData.get("cycleId") ?? ""));
   if (!active) {
     return Response.json({ error: "No active cycle" }, { status: 400 });
   }
@@ -198,8 +190,9 @@ function DomainSection({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PortalApplication() {
-  const { submittedAt, withdrawnAt, canWithdraw, generalQuestions, generalAnswers, domains } =
+  const { cycleId, submittedAt, withdrawnAt, canWithdraw, generalQuestions, generalAnswers, domains } =
     useLoaderData<typeof loader>() as {
+      cycleId: string;
       submittedAt: string;
       withdrawnAt: string | null;
       canWithdraw: boolean;
@@ -229,6 +222,7 @@ export default function PortalApplication() {
   function confirmWithdraw() {
     const form = new FormData();
     form.set("intent", "withdraw");
+    form.set("cycleId", cycleId);
     withdrawFetcher.submit(form, { method: "post" });
     setShowWithdrawModal(false);
   }
@@ -239,7 +233,7 @@ export default function PortalApplication() {
       <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">
           <Link
-            to="/portal/hiring"
+            to={`/portal/hiring?cycle=${cycleId}`}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral transition mb-4"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
