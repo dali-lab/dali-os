@@ -2259,9 +2259,13 @@ async function main() {
 
   // ── Interviewer availability ──────────────────────────────────────────────
   // Scheduling reads each interviewer's DALI OS calendar. Seeded interviewers
-  // have no linked calendar, so weekday working hours of 10am to noon (the
-  // cycle's timezone) are their free time. The weekday windows are also where
-  // the seeded interviews below get placed.
+  // have no linked calendar, so their weekday working hours are their free
+  // time. Those hours are read in the MEMBER's own zone (User.timeZone, which
+  // the browser sets on first visit) and then intersected with the interview
+  // window's daily hours, which are read in the CYCLE's zone — so a span that
+  // only clears the window in one of the two zones makes the member silently
+  // unbookable. A 9-to-5 span overlaps the cycle's 9am-6pm window whether it
+  // is read as Eastern or as UTC, which is what an e2e login writes.
   const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
   const cursor = new Date(interviewStart);
   while (cursor <= interviewEnd) {
@@ -2283,7 +2287,7 @@ async function main() {
   await prisma.workingHoursDay.deleteMany({ where: { userId: { in: interviewerUserIds } } });
   await prisma.workingHoursDay.createMany({
     data: interviewerUserIds.flatMap((userId) =>
-      [1, 2, 3, 4, 5].map((dayOfWeek) => ({ userId, dayOfWeek, startMinute: 10 * 60, endMinute: 12 * 60 })),
+      [1, 2, 3, 4, 5].map((dayOfWeek) => ({ userId, dayOfWeek, startMinute: 9 * 60, endMinute: 17 * 60 })),
     ),
   });
 
