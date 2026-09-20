@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { bearer, magicLink } from "better-auth/plugins";
+import { bearer, magicLink, admin } from "better-auth/plugins";
 
 import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
@@ -154,6 +154,12 @@ export const auth = betterAuth({
     // deprovisioned user would continue to pass session checks until the cookie
     // expires) and also bypasses the per-request membership check the MCP
     // provider relies on (Phase 4 / §7 of the spec).
+    additionalFields: {
+      // Phase 4: populated by mintBetterAuthSession when issuing an MCP token.
+      // Null for normal browser sessions. `input: false` prevents clients from
+      // setting grantId via the BetterAuth session API.
+      grantId: { type: "string", required: false, input: false },
+    },
   },
 
   trustedOrigins: buildTrustedOrigins(),
@@ -209,8 +215,20 @@ export const auth = betterAuth({
         await drainNow([outboundId]);
       },
     }),
+    // admin: first-class impersonation (Phase 3), replacing the dev-only
+    // dev-login-as hack for prod admins. Our /admin/impersonate route gates on
+    // the real AdminMembership authz (isAdmin) and JIT-sets the acting admin's
+    // user.role="admin" right before calling auth.api.impersonateUser, so the
+    // plugin's own role gate passes WITHOUT a standing role↔AdminMembership
+    // sync. The plugin's ban/role-management endpoints exist but are unused —
+    // authorization stays in the role tables. Adds columns: user.role/banned/
+    // banReason/banExpires + AuthSession.impersonatedBy (see the migration).
+    admin({
+      defaultRole: "user",
+      adminRoles: ["admin"],
+      impersonationSessionDuration: 60 * 60, // 1h (spec §8)
+    }),
     // Deferred plugins (do NOT add these until their schemas are in place):
-    //   admin()            — Phase 3: impersonation + user management
     //   deviceAuthorization() — Phase 2: desktop Tauri device-code flow
     //   apiKey()           — separate @better-auth/api-key package; Phase 3+
     //   organization()     — partner org membership; later phase

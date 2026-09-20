@@ -59,6 +59,17 @@ model User {
   emailVerified Boolean  @default(false)
   name          String   @default("")
 
+  // ─── BetterAuth admin plugin (Phase 3 — impersonation) ────────────────────
+  // `role` exists only to satisfy the admin plugin's impersonate gate — the
+  // /admin/impersonate route JIT-sets it to "admin" for the acting admin;
+  // authorization otherwise stays in the role tables (AdminMembership et al.).
+  // The ban* columns are unused (we don't use the ban feature) but the plugin's
+  // session hook references user.banned, so they must exist.
+  role        String?
+  banned      Boolean?  @default(false)
+  banReason   String?
+  banExpires  DateTime?
+
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
 
@@ -1452,10 +1463,20 @@ model AuthSession {
   updatedAt DateTime @updatedAt
   ipAddress String?
   userAgent String?
+  // BetterAuth admin plugin: set to the impersonating admin's userId while an
+  // impersonation session is active (null for normal sessions).
+  impersonatedBy String?
+  // Phase 4 (MCP/OAuth provider): set when the session was minted for an MCP
+  // client via the OAuth token endpoint. Points to the OAuthGrant that
+  // authorized the session. No FK relation — looked up via prisma.oAuthGrant in
+  // authenticateMcpRequest to keep the same downstream logic as the bespoke
+  // Session path.
+  grantId   String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([grantId])
 }
 
 // One row per linked credential: the "credential" provider (email+password;
