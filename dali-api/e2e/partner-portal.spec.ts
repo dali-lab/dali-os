@@ -326,7 +326,7 @@ test.describe('partner self-signup', () => {
     // (an invite IS a sign-in method); everything else lives after sign-in.
     await expect(page.getByText(/invite email\? It signs you in/)).toBeVisible();
     await expect(
-      page.getByRole('button', { name: 'Email me a sign-in link' }),
+      page.getByRole('button', { name: 'Continue with email' }),
     ).toBeVisible();
   });
 

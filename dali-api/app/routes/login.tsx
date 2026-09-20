@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
@@ -110,24 +109,6 @@ export async function action({ request }: Route.ActionArgs) {
     // Flag off — fall through to legacy google branch below.
   }
 
-  if (provider === "email-link-login") {
-    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-    if (betterAuthOn) {
-      const email = String(formData.get("email") ?? "").trim().toLowerCase();
-      // Anti-enumeration: always return a neutral "sent" response.
-      try {
-        await auth.api.signInMagicLink({
-          body: { email, callbackURL: "/" },
-          headers: request.headers,
-        });
-      } catch {
-        // Swallowed — neutral response in all cases.
-      }
-      return { sent: true, email };
-    }
-    // Flag off — no legacy equivalent.
-  }
-
   if (provider === "password") {
     const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
     if (betterAuthOn) {
@@ -231,35 +212,9 @@ function LoginBetterAuth({ next, actionData }: {
 }) {
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
-  const [mode, setMode] = useState<"link" | "password">("link");
 
-  const sent = actionData && "sent" in actionData ? actionData : null;
   const passwordError = actionData && "error" in actionData ? actionData.error : null;
   const resetSent = actionData && "resetSent" in actionData ? actionData.resetSent : false;
-
-  // A magic link was sent — replace the whole form with a check-email panel.
-  if (sent) {
-    return (
-      <div className="rounded-2xl bg-brand-tint p-6">
-        <p className="font-heading font-semibold text-dark-blue mb-1">
-          Check your email
-        </p>
-        <p className="text-sm text-muted-foreground">
-          We sent a sign-in link to{" "}
-          <span className="font-medium text-dark-blue">{sent.email}</span>. It
-          expires in a few minutes.
-        </p>
-        <div className="mt-4">
-          <a
-            href="/login"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Use a different email
-          </a>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -294,8 +249,10 @@ function LoginBetterAuth({ next, actionData }: {
         </p>
       )}
 
-      {/* One shared email field. The submit button carries the intent, and the
-          password reveals in place under the same email — no duplicate inputs. */}
+      {/* Email + password. Magic links are for account creation only (/signup),
+          not sign-in. "Forgot password?" reuses the same email field via a
+          formNoValidate submit, so there's never a second stray email input —
+          and it doubles as recovery for anyone who skipped setting a password. */}
       <Form method="post" className="flex flex-col gap-3">
         {next && <input type="hidden" name="next" value={next} />}
         <input
@@ -306,61 +263,34 @@ function LoginBetterAuth({ next, actionData }: {
           placeholder="you@email.com"
           className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
         />
-
-        {mode === "password" && (
-          <input
-            type="password"
-            name="password"
-            required
-            autoComplete="current-password"
-            placeholder="Password"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-          />
-        )}
-
+        <input
+          type="password"
+          name="password"
+          required
+          autoComplete="current-password"
+          placeholder="Password"
+          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+        />
         <button
           type="submit"
           name="provider"
-          value={mode === "password" ? "password" : "email-link-login"}
+          value="password"
           disabled={submitting}
           className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
-          {submitting
-            ? mode === "password" ? "Signing in…" : "Sending…"
-            : mode === "password" ? "Sign in" : "Continue with email"}
+          {submitting ? "Signing in…" : "Sign in"}
         </button>
-
-        {/* Secondary options — toggle between link and password, forgot link */}
-        <div className="flex items-center justify-between text-xs">
-          {mode === "link" ? (
-            <button
-              type="button"
-              onClick={() => setMode("password")}
-              className="text-muted-foreground hover:text-foreground underline underline-offset-2"
-            >
-              Sign in with a password
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setMode("link")}
-                className="text-muted-foreground hover:text-foreground underline underline-offset-2"
-              >
-                Email me a link instead
-              </button>
-              <button
-                type="submit"
-                name="provider"
-                value="forgot"
-                formNoValidate
-                disabled={submitting}
-                className="text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
-              >
-                Forgot password?
-              </button>
-            </>
-          )}
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            name="provider"
+            value="forgot"
+            formNoValidate
+            disabled={submitting}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+          >
+            Forgot password?
+          </button>
         </div>
       </Form>
 
