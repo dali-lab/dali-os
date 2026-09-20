@@ -11,21 +11,25 @@ import { cn } from "~/lib/cn";
 // lookup missed and three unrelated domains routinely came out the same
 // colour. Each catalog domain now names its own hue, so a role reads
 // identically on the header, the team cards, and anywhere else it appears.
+//
+// The colours themselves are in app.css, stated once per mode like every other
+// os plate: a chip drawn against the dark shell is a deep ground under pale
+// ink, and on paper it flips to a pale wash under deep ink.
 const OS_ROLE_CHIPS = {
-  amber: "bg-[#3d3a26] text-[#e8dd9a]",
-  teal: "bg-[#1f3a37] text-[#8fd6cb]",
-  violet: "bg-[#31284a] text-[#c3aef2]",
-  pink: "bg-[#3f2530] text-[#f2a8bd]",
-  blue: "bg-[#1e3348] text-[#a2d2fd]",
-  green: "bg-[#263a29] text-[#a6dda6]",
-  orange: "bg-[#43301f] text-[#f0b98a]",
-  magenta: "bg-[#3d2440] text-[#e2a6ee]",
-  slate: "bg-[#2b3340] text-[#aec4de]",
-  cyan: "bg-[#193a3f] text-[#8fd4e0]",
-  red: "bg-[#3f2424] text-[#f0a5a5]",
-  lime: "bg-[#333d1f] text-[#cfe08a]",
-  indigo: "bg-[#2a2c4d] text-[#b0b4f0]",
-  sand: "bg-[#3a3128] text-[#ddc3a3]",
+  amber: "bg-[var(--os-role-amber-fill)] text-[var(--os-role-amber-ink)]",
+  teal: "bg-[var(--os-role-teal-fill)] text-[var(--os-role-teal-ink)]",
+  violet: "bg-[var(--os-role-violet-fill)] text-[var(--os-role-violet-ink)]",
+  pink: "bg-[var(--os-role-pink-fill)] text-[var(--os-role-pink-ink)]",
+  blue: "bg-[var(--os-role-blue-fill)] text-[var(--os-role-blue-ink)]",
+  green: "bg-[var(--os-role-green-fill)] text-[var(--os-role-green-ink)]",
+  orange: "bg-[var(--os-role-orange-fill)] text-[var(--os-role-orange-ink)]",
+  magenta: "bg-[var(--os-role-magenta-fill)] text-[var(--os-role-magenta-ink)]",
+  slate: "bg-[var(--os-role-slate-fill)] text-[var(--os-role-slate-ink)]",
+  cyan: "bg-[var(--os-role-cyan-fill)] text-[var(--os-role-cyan-ink)]",
+  red: "bg-[var(--os-role-red-fill)] text-[var(--os-role-red-ink)]",
+  lime: "bg-[var(--os-role-lime-fill)] text-[var(--os-role-lime-ink)]",
+  indigo: "bg-[var(--os-role-indigo-fill)] text-[var(--os-role-indigo-ink)]",
+  sand: "bg-[var(--os-role-sand-fill)] text-[var(--os-role-sand-ink)]",
 } as const;
 
 // Matched as a prefix of the domain's normalised name, so a domain's catalog

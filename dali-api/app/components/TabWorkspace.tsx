@@ -20,6 +20,11 @@ import { CSS } from '@dnd-kit/utilities'
 // Reuse the board's pointer-first collision so hovering a tab resolves to that
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
+import {
+  GUIDE_OPEN_MESSAGE,
+  readGuideState,
+  type GuideState,
+} from '~/components/page-docs/guide-bridge'
 
 export interface OpenTabRequest {
   url: string
@@ -57,6 +62,10 @@ export interface TabWorkspaceHandle {
    *  sibling iframes that show the same data (e.g. a doc title edit in a
    *  split-screen document tab refreshing the project tab's Documents list). */
   broadcast: (message: Record<string, unknown>) => void
+  /** Ask the focused pane's active tab to open its page guide. The shell's top
+   *  bar draws the CTA (see guide-bridge) but the guide itself renders in the
+   *  frame that owns the route. */
+  openFocusedGuide: () => void
 }
 
 export interface Tab {
@@ -347,6 +356,9 @@ export interface TabWorkspaceProps {
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
   /** Notified when the focused pane's active tab URL changes (null when no tab). */
   onActiveUrlChange?: (url: string | null) => void
+  /** Notified when the focused pane's active tab reports its page guide, so the
+   *  shell's top bar can carry the CTA (null when the tab hasn't reported). */
+  onGuideChange?: (guide: GuideState | null) => void
   /** ⌘/Ctrl+K — open the command palette. Called for keypresses in the shell
    *  window and inside any workspace iframe (the shortcut handler is attached
    *  to both), so the palette opens wherever focus is. */
@@ -519,7 +531,7 @@ function PaneBodyDropZones({ paneId, splittable }: { paneId: string; splittable:
   )
 }
 
-export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPalette }: TabWorkspaceProps) {
+export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideChange, onOpenPalette }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
     | { paneId: string; tabId: string; x: number; y: number }
@@ -552,6 +564,9 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
   // until its iframe's onLoad fires. (In-iframe React Router navigations are
   // covered separately by the root NavigationProgress bar.)
   const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(() => new Set())
+  // Tab id → the page guide that tab's frame last announced. The shell's top
+  // bar draws the CTA for the focused tab's entry.
+  const [guides, setGuides] = useState<Record<string, GuideState>>({})
 
   // Measured inner width of each pane's tab strip (drives how many unpinned tabs
   // fit before the rest collapse into the overflow menu). Keyed by pane id.
@@ -785,6 +800,40 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
     return () => window.removeEventListener('message', handler)
   }, [])
 
+  // Each embedded page announces whether it has a guide (see guide-bridge);
+  // attributed to a tab the same way as `dali:tabNavigated`, since the shell
+  // only draws the CTA for the tab the user is actually looking at.
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const guide = readGuideState(e.data)
+      if (!guide) return
+      let tabId: string | null = null
+      for (const [id, el] of iframeElsRef.current) {
+        if (el.contentWindow === e.source) {
+          tabId = id
+          break
+        }
+      }
+      if (!tabId) return
+      setGuides((prev) => {
+        const cur = prev[tabId]
+        if (cur && cur.hasGuide === guide.hasGuide && cur.open === guide.open) return prev
+        return { ...prev, [tabId]: guide }
+      })
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+
+  // Notify parent when the focused pane's active tab's guide changes.
+  useEffect(() => {
+    if (!onGuideChange) return
+    const pane = state.panes.find((p) => p.id === state.focusedPaneId) ?? state.panes[0]
+    const tab = pane?.tabs.find((t) => t.id === pane.activeTabId) ?? null
+    onGuideChange(tab ? guides[tab.id] ?? null : null)
+  }, [state, guides, onGuideChange])
+
   // Whenever a tab becomes the active tab in any pane, ensure its iframe is
   // mounted. Tabs only mount when actually viewed; persisted-but-unvisited
   // tabs stay dormant until clicked.
@@ -804,6 +853,16 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
   // Drop loaded-state for tabs that have been closed so the set stays bounded.
   useEffect(() => {
     const liveIds = new Set(state.panes.flatMap((p) => p.tabs.map((t) => t.id)))
+    setGuides((prev) => {
+      let next: Record<string, GuideState> | null = null
+      for (const id of Object.keys(prev)) {
+        if (!liveIds.has(id)) {
+          if (!next) next = { ...prev }
+          delete next[id]
+        }
+      }
+      return next ?? prev
+    })
     setLoadedTabIds((prev) => {
       let next: Set<string> | null = null
       for (const id of prev) {
@@ -1017,6 +1076,15 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
         for (const iframe of iframeElsRef.current.values()) {
           iframe.contentWindow?.postMessage(message, window.location.origin)
         }
+      },
+      openFocusedGuide: () => {
+        const s = stateRef.current
+        const pane = s.panes.find((p) => p.id === s.focusedPaneId) ?? s.panes[0]
+        const tabId = pane?.activeTabId
+        if (!tabId) return
+        iframeElsRef.current
+          .get(tabId)
+          ?.contentWindow?.postMessage({ type: GUIDE_OPEN_MESSAGE }, window.location.origin)
       },
     }
   }, [apiRef])
