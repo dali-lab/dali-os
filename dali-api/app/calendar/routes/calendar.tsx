@@ -533,8 +533,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // stays is the logged entries themselves and the events those hours were
   // logged against, which keep drawing here (wearing their role accent) so the
   // one block is still the event's own click target.
+  // Converged first, so a copy of one event on a second account can't draw a
+  // second block here that the Calendar doesn't draw; the accents that come
+  // back are the group's hours rebased onto the copy that wins.
   const workOnly = layers.logged;
-  const eventData = workOnly ? workEventsOnly(layerData, loggedSources.byEvent) : layerData;
+  const timesheet = workOnly
+    ? workEventsOnly(layerData, loggedSources.byEvent, hiddenCals)
+    : null;
+  const eventData = timesheet?.data ?? layerData;
 
   const layerMaps: Record<number, EventBlock[]>[] = [];
   if (layers.external)
@@ -547,7 +553,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         data.crudEnabled ? moveEvent : undefined,
         data.crudEnabled ? duplicateEvent : undefined,
         data.crudEnabled ? deleteEvent : undefined,
-        layers.logged ? loggedSources.byEvent : undefined,
+        timesheet?.accents,
       ),
     );
   // All-day events (crud read) render in the grid's all-day band.
