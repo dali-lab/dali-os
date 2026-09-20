@@ -2,6 +2,7 @@
 export {
   PageDocProvider,
   PageDocButton,
+  GuideTopbarButton,
   PageDocOutlet,
   ShellGuideProvider,
 } from "./PageDocContext";

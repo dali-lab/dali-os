@@ -135,35 +135,67 @@ export function toGridRange(
   return { dayIdx, startHour, endHour };
 }
 
+/** One event as the grid draws it: the copy that wins, plus every copy that
+ *  converged onto it. Anything keyed by event id (logged hours) has to be read
+ *  across the whole group, or it goes missing the moment a different copy wins. */
+export type ConvergedEvent = {
+  event: ExternalEventDTO;
+  /** Every converged copy's Google id, the drawn one included. */
+  eventIds: string[];
+};
+
+/** The instant an event starts/ends, for comparison. Google returns
+ *  `dateTime` verbatim — with each *calendar's* own UTC offset — so two copies
+ *  of one invite come back as different strings for the same moment whenever
+ *  the two accounts' calendars sit in different time zones, or after DALI
+ *  rewrites its copy in the lab zone (see writeEventWorkLog). Comparing the
+ *  strings missed those, which is what drew a marked-as-work event twice on the
+ *  Timesheet grid. Unparseable values fall back to the raw string. */
+function instantKey(iso: string): string {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? iso : String(ms);
+}
+
 /** The external events to draw: hidden calendars dropped, then one copy per
  *  event. The same event on several linked calendars (an invite on two
  *  accounts, a shared calendar) arrives once per calendar — collapse copies
  *  with the same title and time, keeping the most actionable one (editable,
  *  then one carrying an RSVP). Filtering first means hiding one calendar still
  *  leaves the event visible from another. DALI blocks are never merged. */
+export function convergedExternalEvents(
+  events: ExternalEventDTO[],
+  hiddenCalendarIds?: Set<string>,
+): ConvergedEvent[] {
+  const rank = (e: ExternalEventDTO) => (e.writable && e.eventId ? 2 : 0) + (e.rsvp ? 1 : 0);
+  const out: ConvergedEvent[] = [];
+  const slot = new Map<string, number>();
+  for (const e of events) {
+    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
+    const ids = e.eventId ? [e.eventId] : [];
+    if (e.manualBlockId) {
+      out.push({ event: e, eventIds: ids });
+      continue;
+    }
+    const key = `${e.allDay ? 1 : 0}|${instantKey(e.startIso)}|${instantKey(e.endIso)}|${e.title.trim().toLowerCase()}`;
+    const at = slot.get(key);
+    if (at === undefined) {
+      slot.set(key, out.length);
+      out.push({ event: e, eventIds: ids });
+      continue;
+    }
+    const group = out[at];
+    group.eventIds.push(...ids);
+    if (rank(e) > rank(group.event)) group.event = e;
+  }
+  return out;
+}
+
+/** Just the drawn copies — what every layer builder places on the grid. */
 export function visibleExternalEvents(
   events: ExternalEventDTO[],
   hiddenCalendarIds?: Set<string>,
 ): ExternalEventDTO[] {
-  const rank = (e: ExternalEventDTO) => (e.writable && e.eventId ? 2 : 0) + (e.rsvp ? 1 : 0);
-  const out: ExternalEventDTO[] = [];
-  const slot = new Map<string, number>();
-  for (const e of events) {
-    if (hiddenCalendarIds && e.calendarId && hiddenCalendarIds.has(e.calendarId)) continue;
-    if (e.manualBlockId) {
-      out.push(e);
-      continue;
-    }
-    const key = `${e.allDay ? 1 : 0}|${e.startIso}|${e.endIso}|${e.title.trim().toLowerCase()}`;
-    const at = slot.get(key);
-    if (at === undefined) {
-      slot.set(key, out.length);
-      out.push(e);
-    } else if (rank(e) > rank(out[at])) {
-      out[at] = e;
-    }
-  }
-  return out;
+  return convergedExternalEvents(events, hiddenCalendarIds).map((g) => g.event);
 }
 
 /** External (Google/Outlook) events — real titles + per-calendar colour.
@@ -371,12 +403,41 @@ export function buildLoggedSourceIndex(
  *  builders this narrowed data is what makes "View timesheet" a way of looking
  *  at the grid rather than another overlay: an ordinary calendar event (a
  *  class, an appointment, a meeting nobody logged) drops out of the grid and
- *  the all-day band alike, and what's left is work. */
-export function workEventsOnly(data: LoaderData, byEvent: Map<string, LoggedAccent>): LoaderData {
-  return {
-    ...data,
-    externalEvents: data.externalEvents.filter((e) => e.eventId != null && byEvent.has(e.eventId)),
-  };
+ *  the all-day band alike, and what's left is work.
+ *
+ *  Converges first, then narrows, so the Timesheet draws exactly what the
+ *  Calendar draws. Narrowing first read each copy on its own: hours logged
+ *  against one account's copy kept that copy, the other account's copy could
+ *  keep itself through its own entry, and the grid drew the pair the Calendar
+ *  had already collapsed into one. It also returns the accents rebased onto the
+ *  drawn copy — the hours belong to the event, not to whichever copy of it the
+ *  entry happens to name, so a group's hours sum onto the one block. */
+export function workEventsOnly(
+  data: LoaderData,
+  byEvent: Map<string, LoggedAccent>,
+  hiddenCalendarIds?: Set<string>,
+): { data: LoaderData; accents: Map<string, LoggedAccent> } {
+  const externalEvents: ExternalEventDTO[] = [];
+  const accents = new Map<string, LoggedAccent>();
+  for (const { event, eventIds } of convergedExternalEvents(data.externalEvents, hiddenCalendarIds)) {
+    if (!event.eventId) continue;
+    let merged: LoggedAccent | null = null;
+    for (const id of eventIds) {
+      const accent = byEvent.get(id);
+      if (!accent) continue;
+      merged = merged
+        ? {
+            color: merged.color,
+            hours: merged.hours + accent.hours,
+            incomplete: Boolean(merged.incomplete || accent.incomplete),
+          }
+        : accent;
+    }
+    if (!merged) continue;
+    externalEvents.push(event);
+    accents.set(event.eventId, merged);
+  }
+  return { data: { ...data, externalEvents }, accents };
 }
 
 /** A time entry resolved to a concrete ISO range: its real times when set,

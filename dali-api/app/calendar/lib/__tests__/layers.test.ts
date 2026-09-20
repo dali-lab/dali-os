@@ -191,6 +191,24 @@ describe("visibleExternalEvents", () => {
     expect(visibleExternalEvents(events)).toHaveLength(3);
   });
 
+  it("collapses copies whose times are the same instant written with different offsets", () => {
+    // Google returns each calendar's own UTC offset verbatim, and DALI rewrites
+    // its own copy in the lab zone — same moment, different strings.
+    const events = [
+      { ...at, title: "Standup", calendarId: "a", eventId: "e1" },
+      {
+        startIso: "2026-08-16T05:00:00.000-04:00",
+        endIso: "2026-08-16T06:00:00.000-04:00",
+        color: null,
+        title: "Standup",
+        calendarId: "b",
+        eventId: "e2",
+        writable: true,
+      },
+    ] as LoaderData["externalEvents"];
+    expect(visibleExternalEvents(events).map((e) => e.eventId)).toEqual(["e2"]);
+  });
+
   it("draws one block per event on the grid", () => {
     const data = fixture({
       externalEvents: [
@@ -218,7 +236,7 @@ describe("workEventsOnly", () => {
   it("keeps only the events hours were logged against", () => {
     const data = timesheetFixture();
     const { byEvent } = buildLoggedSourceIndex(data);
-    expect(workEventsOnly(data, byEvent).externalEvents.map((e) => e.title)).toEqual(["Studio"]);
+    expect(workEventsOnly(data, byEvent).data.externalEvents.map((e) => e.title)).toEqual(["Studio"]);
   });
 
   it("drops every event when nothing is logged, and leaves the rest of the data alone", () => {
@@ -227,7 +245,7 @@ describe("workEventsOnly", () => {
         { startIso: "2026-08-17T09:00:00.000Z", endIso: "2026-08-17T10:00:00.000Z", title: "Studio", eventId: "ev-work" },
       ] as LoaderData["externalEvents"],
     });
-    const narrowed = workEventsOnly(data, new Map());
+    const { data: narrowed } = workEventsOnly(data, new Map());
     expect(narrowed.externalEvents).toEqual([]);
     expect(narrowed.timezone).toBe(data.timezone);
     expect(data.externalEvents).toHaveLength(1); // input untouched
@@ -237,9 +255,59 @@ describe("workEventsOnly", () => {
     const data = timesheetFixture();
     const days = buildGridDays(WEEK, 7);
     const { byEvent } = buildLoggedSourceIndex(data);
-    const layer = buildExternalLayer(workEventsOnly(data, byEvent), days, undefined, undefined, undefined, undefined, undefined, byEvent);
+    const narrowed = workEventsOnly(data, byEvent);
+    const layer = buildExternalLayer(narrowed.data, days, undefined, undefined, undefined, undefined, undefined, narrowed.accents);
     expect(layer[1].map((b) => b.label)).toEqual(["Studio"]);
     expect(layer[1][0].loggedAccent).toBeDefined();
+  });
+
+  // What narrowing per copy got wrong: the Timesheet drew an event the
+  // Calendar had already converged into one block.
+  it("draws one block for an event logged on two linked calendars, hours summed", () => {
+    const slot = { startIso: "2026-08-17T09:00:00.000Z", endIso: "2026-08-17T10:00:00.000Z", color: null };
+    const data = fixture({
+      externalEvents: [
+        { ...slot, title: "Studio", calendarId: "a", eventId: "ev-a" },
+        { ...slot, title: "Studio", calendarId: "b", eventId: "ev-b", writable: true },
+      ] as LoaderData["externalEvents"],
+      timeEntries: [
+        { id: "t1", sourceEventId: "ev-a", scheduledMeetingId: null, hours: 1, date: "2026-08-17T00:00:00.000Z" },
+        { id: "t2", sourceEventId: "ev-b", scheduledMeetingId: null, hours: 2, date: "2026-08-17T00:00:00.000Z" },
+      ] as LoaderData["timeEntries"],
+    });
+    const { byEvent } = buildLoggedSourceIndex(data);
+    const narrowed = workEventsOnly(data, byEvent);
+    expect(narrowed.data.externalEvents.map((e) => e.eventId)).toEqual(["ev-b"]);
+    expect(narrowed.accents.get("ev-b")?.hours).toBe(3);
+    const layer = buildExternalLayer(
+      narrowed.data,
+      buildGridDays(WEEK, 7),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      narrowed.accents,
+    );
+    expect(layer[1]).toHaveLength(1);
+  });
+
+  it("keeps the hours when the copy they were logged against loses the merge", () => {
+    const slot = { startIso: "2026-08-17T09:00:00.000Z", endIso: "2026-08-17T10:00:00.000Z", color: null };
+    const data = fixture({
+      externalEvents: [
+        { ...slot, title: "Studio", calendarId: "a", eventId: "ev-a" },
+        { ...slot, title: "Studio", calendarId: "b", eventId: "ev-b", writable: true },
+      ] as LoaderData["externalEvents"],
+      timeEntries: [
+        { id: "t1", sourceEventId: "ev-a", scheduledMeetingId: null, hours: 1, date: "2026-08-17T00:00:00.000Z" },
+      ] as LoaderData["timeEntries"],
+    });
+    const { byEvent } = buildLoggedSourceIndex(data);
+    const narrowed = workEventsOnly(data, byEvent);
+    // The editable copy draws, and it carries the other copy's hours.
+    expect(narrowed.data.externalEvents.map((e) => e.eventId)).toEqual(["ev-b"]);
+    expect(narrowed.accents.get("ev-b")?.hours).toBe(1);
   });
 });
 

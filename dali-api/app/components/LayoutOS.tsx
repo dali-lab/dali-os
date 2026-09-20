@@ -27,7 +27,8 @@ import { AttentionPanel, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
-import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import type { GuideState } from '~/components/page-docs/guide-bridge'
 import {
   TablessHistoryNav,
   useRecordTablessHistory,
@@ -153,6 +154,9 @@ export function LayoutOS({
   } = useShellNav(tabless)
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
+  // Tab mode: the focused tab's frame reports its page guide over the guide
+  // bridge, since only that document knows the route's docKey.
+  const [workspaceGuide, setWorkspaceGuide] = useState<GuideState | null>(null)
   // The live url, query included — the nav matchers trim it themselves, but they
   // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
   // from the plain Drive pin. In tab mode the focused-tab url already carries it;
@@ -711,10 +715,15 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
-        {/* The page's guide, on the same plate as the bell beside it. Renders
-            only where the shell knows the route (tabless); in tab mode the
-            iframe carries its own copy, since the docKey lives in there. */}
-        <PageDocButton variant="topbar" />
+        {/* The page's guide, on the same plate as the bell beside it, in both
+            shells. Tabless mode shares this document with the page and reads
+            the route itself; tab mode takes the focused frame's report and
+            posts the click back to it. The open guide draws its own Close. */}
+        {tabless ? (
+          <PageDocButton variant="topbar" />
+        ) : workspaceGuide?.hasGuide && !workspaceGuide.open ? (
+          <GuideTopbarButton onClick={() => workspaceRef.current?.openFocusedGuide()} />
+        ) : null}
         <div ref={bellRef} className="relative">
           <Tooltip content={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
             <button
@@ -910,6 +919,7 @@ export function LayoutOS({
                 : []),
             ]}
             onActiveUrlChange={setFocusedTabUrl}
+            onGuideChange={setWorkspaceGuide}
           />
         )}
       </main>
