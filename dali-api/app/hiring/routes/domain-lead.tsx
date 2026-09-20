@@ -115,13 +115,21 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Cycles eligible for the picker: anything Open/UnderReview/Draft for
-      // this domain. Several cycles can be active for the same domain.
-      const candidateCycles = allCycles.filter((c) => {
-        const status = c.statusUpdates[0]?.newStatus;
-        return status && ["Open", "UnderReview", "Draft"].includes(status);
-      });
-      const availableCycles = candidateCycles.map((c) => ({ id: c.id, name: c.name }));
+      // Cycles eligible for the picker: every cycle this domain has ever run,
+      // in any status. Several can be active at once, and Completed ones are
+      // offered so a lead can reopen a past cycle to read its reviews,
+      // interviews and decisions back. Which one is shown *by default* is a
+      // separate question — see selectActiveCycleForDomainLead, where a
+      // Completed cycle is only ever reached through ?cycle=.
+      // No extra query cost: allCycles above already loads them all.
+      const candidateCycles = allCycles.filter((c) =>
+        Boolean(c.statusUpdates[0]?.newStatus),
+      );
+      const availableCycles = candidateCycles.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.statusUpdates[0]?.newStatus ?? null,
+      }));
 
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
       const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
@@ -624,31 +632,44 @@ function DomainPanel({ entry }: { entry: any }) {
       .catch(() => {});
   }, []);
 
+  // The picker carries every cycle this domain has run, so a name alone no
+  // longer identifies one — two Students cycles a year apart read the same.
+  // The status rides along as the option's description. Rendered whenever
+  // there is a cycle you are not already on, which includes the case where no
+  // cycle is selected at all: a domain whose cycles have all completed has no
+  // default, and without the picker there would be no way to reach them.
+  const cyclePicker = (availableCycles ?? []).some(
+    (c: { id: string }) => c.id !== cycle?.id,
+  ) ? (
+    <div className="w-56">
+      <Select
+        ariaLabel="Cycle"
+        value={cycle?.id}
+        placeholder="Pick a cycle"
+        onChange={setCycle}
+        options={(availableCycles ?? []).map(
+          (c: { id: string; name: string; status?: string | null }) => ({
+            value: c.id,
+            label: c.name,
+            description: c.status ? (STATUS_LABELS[c.status] ?? c.status) : undefined,
+          }),
+        )}
+        buttonClassName={pillTrigger(os.formTrigger)}
+      />
+    </div>
+  ) : null;
+
   const header = (
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h1 className={os.pageTitle}>{assignment.domain.name}</h1>
-      {cycle && (
-        <div className="flex flex-wrap items-center gap-2">
-          {cycle.statusUpdates[0]?.newStatus && (
-            <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>
-              {STATUS_LABELS[cycle.statusUpdates[0].newStatus]}
-            </Pill>
-          )}
-          {(availableCycles ?? []).length > 1 ? (
-            <div className="w-56">
-              <Select
-                ariaLabel="Cycle"
-                value={cycle.id}
-                onChange={setCycle}
-                options={availableCycles.map((c: { id: string; name: string }) => ({ value: c.id, label: c.name }))}
-                buttonClassName={pillTrigger(os.formTrigger)}
-              />
-            </div>
-          ) : (
-            <span className={os.bodyText}>{cycle.name}</span>
-          )}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {cycle?.statusUpdates[0]?.newStatus && (
+          <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>
+            {STATUS_LABELS[cycle.statusUpdates[0].newStatus]}
+          </Pill>
+        )}
+        {cyclePicker ?? (cycle ? <span className={os.bodyText}>{cycle.name}</span> : null)}
+      </div>
     </header>
   );
 
@@ -656,7 +677,11 @@ function DomainPanel({ entry }: { entry: any }) {
     return (
       <div className="flex flex-col gap-6">
         {header}
-        <p className={os.bodyText}>No active cycle for this domain.</p>
+        <p className={os.bodyText}>
+          {cyclePicker
+            ? "No active cycle. Pick a past cycle above to review it."
+            : "No active cycle for this domain."}
+        </p>
       </div>
     );
   }
