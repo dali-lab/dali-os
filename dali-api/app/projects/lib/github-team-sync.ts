@@ -55,6 +55,39 @@ function emptyReport(
   };
 }
 
+// Grant a team `push` on each of a project's repos. Add-only and idempotent
+// (grantTeamRepo PUTs), with per-repo isolation: an unparseable entry is
+// "skipped" (not an error) and a missing repo/team 404 is reported with an
+// actionable message without aborting the rest. Shared by syncProjectTeam and
+// the staffing-finalize GitHub step so both grant repos the same way.
+export async function grantTeamRepos(
+  teamSlug: string,
+  repoUrls: string[] | null | undefined,
+): Promise<RepoSyncResult[]> {
+  const results: RepoSyncResult[] = [];
+  for (const raw of repoUrls ?? []) {
+    const norm = normalizeRepo(raw);
+    if (!norm) {
+      results.push({ repo: raw, status: "skipped", message: "Not a parseable owner/repo." });
+      continue;
+    }
+    const [owner, repo] = norm.split("/");
+    try {
+      await grantTeamRepo(teamSlug, owner, repo, "push");
+      results.push({ repo: norm, status: "granted" });
+    } catch (err) {
+      results.push({
+        repo: norm,
+        status: "error",
+        message: isNotFound(err)
+          ? `${norm}: not found — check the repo exists in the org and the App has access.`
+          : slackErrorMessage(err),
+      });
+    }
+  }
+  return results;
+}
+
 export async function syncProjectTeam(
   projectId: string,
   termId?: string,
@@ -138,26 +171,7 @@ export async function syncProjectTeam(
   }
 
   // Repos — per-repo isolation; unparseable entries are "skipped", not errors.
-  for (const raw of project.repoUrls ?? []) {
-    const norm = normalizeRepo(raw);
-    if (!norm) {
-      report.repos.push({ repo: raw, status: "skipped", message: "Not a parseable owner/repo." });
-      continue;
-    }
-    const [owner, repo] = norm.split("/");
-    try {
-      await grantTeamRepo(team.slug, owner, repo, "push");
-      report.repos.push({ repo: norm, status: "granted" });
-    } catch (err) {
-      report.repos.push({
-        repo: norm,
-        status: "error",
-        message: isNotFound(err)
-          ? `${norm}: not found — check the repo exists in the org and the App has access.`
-          : slackErrorMessage(err),
-      });
-    }
-  }
+  report.repos = await grantTeamRepos(team.slug, project.repoUrls);
 
   const failed = report.memberErrors.length > 0 || report.repos.some((r) => r.status === "error");
   report.status = failed ? "error" : "ok";

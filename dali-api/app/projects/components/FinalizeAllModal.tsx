@@ -39,7 +39,8 @@ const AUTOMATIONS: { id: Automation; label: string; description: string }[] = [
   {
     id: "github",
     label: "Set up GitHub teams",
-    description: "Create each project's GitHub team and add its confirmed roster.",
+    description:
+      "Create each project's GitHub team, add its confirmed roster, and grant it access to each project's repos.",
   },
   {
     id: "gmail",
