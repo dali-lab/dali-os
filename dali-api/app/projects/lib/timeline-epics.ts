@@ -31,6 +31,11 @@ export type TimelineEpicRow = {
 // select dates alone rather than joining assignees it will never draw.
 export type TimelineTaskRow = {
   id: string;
+  // A task hangs under its story when it has one, else directly under its epic.
+  // Optional: a caller that only ever passes story-linked rows (the partner
+  // hub) needn't select it — a row without an epicId is simply never treated as
+  // epic-direct.
+  epicId?: string | null;
   storyId: string | null;
   startsAt: Date | null;
   dueAt: Date | null;
@@ -68,11 +73,21 @@ export function buildTimelineEpics({
   includeTasks?: boolean;
 }): TimelineEpic[] {
   const tasksByStoryId = new Map<string, TimelineTaskRow[]>();
+  // Tasks linked straight to an epic (no story) hang under the epic bar itself,
+  // as peers of its stories — without this bucket they had nowhere to sit and
+  // were dropped from the timeline entirely. A task with neither an epic nor a
+  // story is genuinely unplaceable and stays off.
+  const directTasksByEpicId = new Map<string, TimelineTaskRow[]>();
   for (const t of tasks) {
-    if (!t.storyId) continue;
-    const bucket = tasksByStoryId.get(t.storyId);
-    if (bucket) bucket.push(t);
-    else tasksByStoryId.set(t.storyId, [t]);
+    if (t.storyId) {
+      const bucket = tasksByStoryId.get(t.storyId);
+      if (bucket) bucket.push(t);
+      else tasksByStoryId.set(t.storyId, [t]);
+    } else if (t.epicId) {
+      const bucket = directTasksByEpicId.get(t.epicId);
+      if (bucket) bucket.push(t);
+      else directTasksByEpicId.set(t.epicId, [t]);
+    }
   }
 
   return epics.map((e) => {
@@ -149,6 +164,37 @@ export function buildTimelineEpics({
       endMs = endMs == null ? se : Math.max(endMs, se);
     }
 
+    // Epic-direct tasks (no story) resolve against their own dates, else the
+    // epic's span so far. Each self-dated one widens the epic the way stories
+    // do, so a task dated outside the epic still sits inside its bar. Span
+    // widening runs even when `includeTasks` is off (so an epic carried only by
+    // loose tasks stays placeable for the partner hub); the task bars ship only
+    // when it's on, matching how the story pass leaves task arrays empty there.
+    const tasks: TimelineTask[] = [];
+    for (const t of directTasksByEpicId.get(e.id) ?? []) {
+      const ts = t.startsAt?.getTime() ?? t.dueAt?.getTime() ?? startMs;
+      const te = t.dueAt?.getTime() ?? t.startsAt?.getTime() ?? endMs;
+      if (ts == null || te == null) continue;
+      const s = ts;
+      const en = Math.max(ts, te);
+      startMs = startMs == null ? s : Math.min(startMs, s);
+      endMs = endMs == null ? en : Math.max(endMs, en);
+      if (!includeTasks) continue;
+      tasks.push({
+        id: t.id,
+        title: t.title ?? "",
+        status: (t.status ?? "Todo") as TimelineTask["status"],
+        startsAt: new Date(s).toISOString(),
+        endsAt: new Date(en).toISOString(),
+        assignees: (t.assignees ?? []).map((a) => ({
+          id: a.user.id,
+          name: fullName(a.user),
+        })),
+        commentCount: t.commentCount ?? 0,
+        fileCount: t.fileCount ?? 0,
+      });
+    }
+
     return {
       id: e.id,
       title: e.title,
@@ -157,6 +203,7 @@ export function buildTimelineEpics({
       startsAt: startMs != null ? new Date(startMs).toISOString() : null,
       endsAt: endMs != null ? new Date(endMs).toISOString() : null,
       stories,
+      tasks,
     };
   });
 }
