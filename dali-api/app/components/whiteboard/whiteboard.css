@@ -9,10 +9,10 @@
   font-family: var(--font-os, "Mulish"), var(--font-sans, "Open Sans"), sans-serif;
 }
 
-/* Drop the persistent Help ("?") button, bottom-right — its dialog links out to
-   Excalidraw's docs / blog / GitHub / YouTube. */
-.dali-whiteboard .help-icon,
-.dali-whiteboard .welcome-screen-decor--help {
+/* Keep the Help modal (its keyboard-shortcuts reference is useful) but strip its
+   top row of Excalidraw links (Documentation / blog / GitHub / YouTube). The
+   shortcuts below (.HelpDialog__islands-container) stay. */
+.dali-whiteboard .HelpDialog__header {
   display: none !important;
 }
 

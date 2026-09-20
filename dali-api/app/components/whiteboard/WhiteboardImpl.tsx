@@ -75,15 +75,17 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         onPointerUpdate={(payload) => bindingRef.current?.onPointerUpdate(payload)}
       >
         {/* Trim Excalidraw-specific chrome so the board reads as a DALI surface:
-            a custom menu without the Excalidraw+ upsell / social links / Help
-            (its dialog links out to Excalidraw), and a welcome screen without the
-            Excalidraw logo. The Help "?" button and the community-library button
-            are hidden via whiteboard.css. Theme follows the app (the `theme` prop
-            above), so no theme toggle here. */}
+            a custom menu without the Excalidraw+ upsell / social links, and a
+            welcome screen without the Excalidraw logo. The Help modal stays (for
+            its keyboard-shortcuts reference); its top row of Excalidraw links and
+            the community-library button are hidden via whiteboard.css. Theme
+            follows the app (the `theme` prop above), so no theme toggle here. */}
         <MainMenu>
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
           <MainMenu.DefaultItems.ClearCanvas />
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.Help />
         </MainMenu>
         <WelcomeScreen>
           <WelcomeScreen.Center>
