@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import type { OfferingType } from "~/education/lib/offering-type";
 
 // Education engagement for cross-app surfaces: the hiring reviewer view
 // ("demonstrated interest" — what a hiring applicant attended and how it
@@ -13,7 +14,7 @@ import { prisma } from "~/lib/db";
 export type EngagementEntry = {
   offeringId: string;
   title: string;
-  type: "Miniseries" | "Workshop";
+  type: OfferingType;
   startsAt: Date | null;
   endsAt: Date | null;
   status: string;

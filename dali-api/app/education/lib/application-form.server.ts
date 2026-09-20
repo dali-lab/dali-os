@@ -11,22 +11,23 @@ import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
-import type { OfferingType } from "~/generated/prisma/client";
+import { OFFERING_TYPES, isMultiSession, type OfferingType } from "~/education/lib/offering-type";
 
 const TEMPLATE_NAMES: Record<OfferingType, string> = {
   Miniseries: "Miniseries Application Template",
+  Fellowship: "Fellowship Application Template",
   Workshop: "Workshop RSVP Template",
 };
 
 function defaultQuestions(type: OfferingType): Question[] {
-  if (type === "Miniseries") {
+  if (isMultiSession(type)) {
     return [
       {
         key: randomUUID(),
         type: "textarea",
         required: true,
         data: {
-          label: "Why do you want to take this miniseries?",
+          label: `Why do you want to take this ${type.toLowerCase()}?`,
           maxWords: 200,
         },
       },
@@ -71,7 +72,7 @@ async function ensureTemplatesFolder(actorId: string): Promise<string> {
  */
 export async function ensureEducationTemplates(actorId: string): Promise<void> {
   const folderPageId = await ensureTemplatesFolder(actorId);
-  for (const type of ["Miniseries", "Workshop"] as const) {
+  for (const type of OFFERING_TYPES) {
     const name = TEMPLATE_NAMES[type];
     const existing = await prisma.form.findFirst({
       where: { name, folderPageId },

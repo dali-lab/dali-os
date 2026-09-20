@@ -227,8 +227,17 @@ interface FormBuilderTabProps {
   formId?: string
   collabToken?: string | null
 }
+// A draft can hold malformed entries: an earlier collab bug stored empty
+// objects (nothing to keep, so they're dropped) and questions can lack a key
+// (given a fresh one; drafts have no answers keyed to it yet).
+function repairQuestions(questions: Question[]): Question[] {
+  return questions
+    .filter((q) => !!q && !!q.data && typeof q.data === 'object')
+    .map((q, i) => (typeof q.key === 'string' && q.key ? q : { ...q, key: `q-${Date.now()}-${i}` }))
+}
+
 export function FormBuilderTab({
-  initialQuestions = [],
+  initialQuestions: rawInitialQuestions = [],
   initialDescription,
   onSave,
   saveStatus = 'idle',
@@ -240,6 +249,7 @@ export function FormBuilderTab({
   formId,
   collabToken,
 }: FormBuilderTabProps) {
+  const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
   // builder, version-edit without formId/collabToken). Always declared so the
   // hook call count is stable. When collab is active we read/write through the
@@ -323,6 +333,13 @@ export function FormBuilderTab({
   // Where a dragged library component would land: before/after a row, or at
   // the end of the canvas. Drives the insertion line while dragging.
   const [dropTarget, setDropTarget] = useState<{ key: string; after: boolean } | 'end' | null>(null)
+  // Explicit null/'end' checks: `typeof null` is 'object', and a question
+  // saved without a key would otherwise match a null target's `?.key`.
+  const dropsAt = (key: string, after: boolean) =>
+    dropTarget !== null &&
+    dropTarget !== 'end' &&
+    dropTarget.key === key &&
+    dropTarget.after === after
   const draggingComponent = activeId?.startsWith(PALETTE_PREFIX)
     ? (activeId.slice(PALETTE_PREFIX.length) as QuestionType)
     : null
@@ -773,7 +790,7 @@ export function FormBuilderTab({
                 <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
                   {(dragHandleProps, isDragging) => (
                     <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
-                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && !dropTarget.after && insertionLine}
+                      {dropsAt(q.key, false) && insertionLine}
                       {q.type === 'pageBreak' ? (
                         <div
                           className={`flex items-start gap-4 p-4 rounded-os-item border border-dashed group transition-colors duration-150 ${activeId ? 'border-os-container' : 'border-os-container-hi'}`}
@@ -911,7 +928,7 @@ export function FormBuilderTab({
                           </div>
                         </div>
                       )}
-                      {typeof dropTarget === 'object' && dropTarget?.key === q.key && dropTarget.after && insertionLine}
+                      {dropsAt(q.key, true) && insertionLine}
                     </div>
                   )}
                 </SortableQuestionRow>

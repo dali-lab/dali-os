@@ -15,10 +15,15 @@ import {
   Trash2,
   Folder,
 } from "lucide-react";
+import {
+  OFFERING_TYPE_DESCRIPTIONS,
+  OFFERING_TYPE_TINT,
+  type OfferingType,
+} from "~/education/lib/offering-type";
 
 export type OfferingCardData = {
   id: string;
-  type: "Miniseries" | "Workshop";
+  type: OfferingType;
   title: string;
   iconEmoji?: string | null;
   status: "Draft" | "Published" | "Archived";
@@ -35,18 +40,13 @@ export type OfferingCardData = {
 };
 
 export function TypeBadge({ type }: { type: OfferingCardData["type"] }) {
-  const tip =
-    type === "Miniseries"
-      ? "Miniseries: multi-session course with reviewed applications and attendance tracking."
-      : "Workshop: single-session event with RSVP-style approval — no ongoing attendance.";
+  const tip = OFFERING_TYPE_DESCRIPTIONS[type];
   return (
     <Tooltip content={tip} variant="rich" placement="top">
       <span
         className={cn(
           "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-          type === "Miniseries"
-            ? "bg-accent-teal/10 text-accent-teal"
-            : "bg-accent-coral/10 text-accent-coral",
+          OFFERING_TYPE_TINT[type],
         )}
       >
         {type}

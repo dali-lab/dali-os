@@ -5,6 +5,7 @@ import { requestInstructorExitSurveys } from "./feedback.server";
 import { lockOffering } from "./apply.server";
 import { resolveCertificateTemplateId } from "./certificate-templates.server";
 import { currentTerm } from "~/lib/roles";
+import { isMultiSession, type OfferingType } from "~/education/lib/offering-type";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
 // generated on demand from the EducationCertificate row; nothing is stored in
@@ -14,7 +15,7 @@ import { currentTerm } from "~/lib/roles";
 // certificates.
 
 /**
- * Completion policy: Miniseries — (Present + Excused) / total sessions ≥ threshold
+ * Completion policy: Miniseries and Fellowship — (Present + Excused) / total sessions ≥ threshold
  * (excused absences are forgiven for completion; they still don't earn CE
  * credit). Workshops — at least one Present mark. No sessions → not eligible.
  *
@@ -22,14 +23,14 @@ import { currentTerm } from "~/lib/roles";
  * EducationOffering.completionThreshold.
  */
 export function certificateEligibility(args: {
-  type: "Miniseries" | "Workshop";
+  type: OfferingType;
   totalSessions: number;
   present: number;
   excused: number;
   threshold?: number;
 }): boolean {
   if (args.totalSessions === 0) return false;
-  if (args.type === "Workshop") return args.present >= 1;
+  if (!isMultiSession(args.type)) return args.present >= 1;
   const threshold = args.threshold ?? 0.8;
   return (args.present + args.excused) / args.totalSessions >= threshold;
 }

@@ -2,6 +2,7 @@ import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { TypeBadge, MyStatusChip } from "./OfferingCard";
 import { InfoTip } from "~/components/ui/floating";
+import type { OfferingType } from "~/education/lib/offering-type";
 
 // "Past DALI education" panel on the hiring application views: what this
 // applicant attended, how consistently they showed up, and what instructors
@@ -11,7 +12,7 @@ import { InfoTip } from "~/components/ui/floating";
 export type EngagementRow = {
   offeringId: string;
   title: string;
-  type: "Miniseries" | "Workshop";
+  type: OfferingType;
   startsAt: string | Date | null;
   endsAt: string | Date | null;
   status: string;

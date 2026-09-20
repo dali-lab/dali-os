@@ -3,8 +3,8 @@ import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-// POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId?,
-//                          startsAt?, endsAt?, dependsOn? }
+// POST   /api/epics/:id  — edit. Body: { title?, status?, startsAt?,
+//                          endsAt?, dependsOn? }
 // DELETE /api/epics/:id  — delete. Tasks pointing at this epic have
 //                          their epicId nulled (both are nullable links) so
 //                          nothing is orphaned or cascade-deleted. User
@@ -23,7 +23,6 @@ type EditBody = {
   title?: string;
   description?: string | null;
   status?: string;
-  targetTermId?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
   dependsOn?: string[];
@@ -36,8 +35,6 @@ function isEditBody(x: unknown): x is EditBody {
   if (o.description !== undefined && o.description !== null && typeof o.description !== "string")
     return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (o.targetTermId !== undefined && o.targetTermId !== null && typeof o.targetTermId !== "string")
-    return false;
   if (o.startsAt !== undefined && o.startsAt !== null && typeof o.startsAt !== "string")
     return false;
   if (o.endsAt !== undefined && o.endsAt !== null && typeof o.endsAt !== "string")
@@ -91,7 +88,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     title?: string;
     description?: string | null;
     status?: EpicStatus;
-    targetTermId?: string | null;
     startsAt?: Date | null;
     endsAt?: Date | null;
   } = {};
@@ -113,9 +109,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
     }
     data.status = body.status;
-  }
-  if (body.targetTermId !== undefined) {
-    data.targetTermId = body.targetTermId;
   }
   if (body.startsAt !== undefined) {
     if (body.startsAt === null) {

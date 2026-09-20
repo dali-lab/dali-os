@@ -6,6 +6,7 @@ import {
   DAY,
   SPRINT_DAYS,
   utcDayOf,
+  utcDayStart,
   localTodayUtcDay,
   type SprintBand,
   type TimelineTermSpan,
@@ -53,6 +54,9 @@ export type TaskCardModel = {
   // Optional parent user story. Drives the timeline's task-inside-story
   // nesting; null hangs the task directly off its epic/sprint.
   storyId: string | null;
+  // Ids of tasks this one waits on (TaskDependency). The card shows a Blocked
+  // chip while any of them is unfinished; the modal edits the set.
+  dependsOn: string[];
   // Subtasks checklist (Task.checklist Json). Null when unset; the card shows
   // a done/total chip and the modal owns editing.
   checklist: { text: string; done: boolean }[] | null;
@@ -88,9 +92,9 @@ export type TaskCardModel = {
 };
 
 // The board's sprint scope (the sprint filter, stored in `?sprint=`): which
-// sprint's work the board is showing. `all` is every task, `current` the sprint
-// containing today, `backlog` the undated pool, or a concrete sprint key (the
-// band's UTC-midnight start, stringified). Sprints are the term-anchored 7-day
+// sprint's work the board is showing. `all` (the default) is every task in the
+// selected term, `current` the sprint containing today, `backlog` the undated
+// pool, or a concrete sprint key (the band's UTC-midnight start, stringified). Sprints are the term-anchored 7-day
 // bands the timeline draws — not stored rows. The extra `(string & {})` keeps
 // the three literals in autocomplete while still admitting any band key.
 export type SprintScope = "all" | "current" | "backlog" | (string & {});
@@ -141,28 +145,20 @@ function taskSpanDays(task: {
 }
 
 /**
- * The scope the board opens on when the URL names none: the current sprint if
- * one is running (mirroring the term filter's "open on this term" default),
- * else every task.
- */
-export function defaultSprintScope(
-  terms: TimelineTermSpan[],
-  now: Date,
-): SprintScope {
-  return currentSprintBand(terms, now) ? "current" : "all";
-}
-
-/**
  * Resolve the effective scope from a raw `?sprint=` value: an explicit,
- * still-valid value wins; anything stale (`current` with nothing running, or a
- * band key that isn't a term-aligned sprint start) falls back to the default.
+ * still-valid value wins; no value or a stale one (`current` with nothing
+ * running, or a band key that isn't a term-aligned sprint start) is `all`.
+ *
+ * The default is the whole term, not the current week: a one-week slice hid
+ * every other task in the term (a task added with next week's deadline
+ * vanished on create) while the board still read as "this term".
  */
 export function resolveSprintScope(
   param: string | null,
   terms: TimelineTermSpan[],
   now: Date,
 ): SprintScope {
-  const fallback = defaultSprintScope(terms, now);
+  const fallback: SprintScope = "all";
   if (!param || param === "all" || param === "backlog") return param || fallback;
   if (param === "current") {
     return currentSprintBand(terms, now) ? "current" : fallback;
@@ -231,9 +227,9 @@ export function sprintPickerOptions(
 export type BoardEpic = {
   id: string;
   title: string;
-  // Terms this epic has work in — union of its sprints' resolved terms, terms
-  // overlapping its effective date span, and its explicit target term. The
-  // board's term filter prunes epic pills whose termIds miss the selected term.
+  // Terms this epic has work in — the terms its effective date span (widened
+  // to cover its stories and tasks) overlaps. The board's term filter prunes
+  // epic pills whose termIds miss the selected term.
   termIds: string[];
 };
 
@@ -282,6 +278,62 @@ export function resolveTermIdForDate(
     if (date <= t.endDate) return t.id;
   }
   return null;
+}
+
+/**
+ * Terms a task counts toward: every term its [start, due] span overlaps, plus
+ * the term each end rolls forward to when it lands in a break week. So a task
+ * started this term and due next shows on both boards, and one dated in the
+ * gap before a term counts toward that term. Undated tasks have no term.
+ *
+ * Compared by UTC day: task dates are stored as UTC midnight while term
+ * bounds carry a local-midnight offset, and an instant comparison would push
+ * a task due on a term's first day into the term before.
+ */
+export function taskTermIds(
+  terms: TermWindow[],
+  task: { startsAt: string | null; dueAt: string | null },
+): string[] {
+  const span = taskSpanDays(task);
+  if (!span) return [];
+  const days = terms.map((t) => ({
+    id: t.id,
+    start: utcDayStart(t.startDate.getTime()),
+    end: utcDayStart(t.endDate.getTime()),
+  }));
+  const ids = new Set<string>();
+  for (const t of days) {
+    if (t.end >= span.start && t.start <= span.end) ids.add(t.id);
+  }
+  for (const day of [span.start, span.end]) {
+    const next = days.find((t) => day <= t.end);
+    if (next) ids.add(next.id);
+  }
+  return days.filter((t) => ids.has(t.id)).map((t) => t.id);
+}
+
+/**
+ * The dependencies still holding an item up: the ids in `dependsOn` whose item
+ * is loaded and not finished. An id missing from `byId` (archived work, which
+ * is always Done/Cancelled) doesn't block. Shared by tasks, stories and epics,
+ * which differ only in what counts as finished.
+ */
+export function openDependencies<T>(
+  dependsOn: string[],
+  byId: Map<string, T>,
+  isFinished: (item: T) => boolean,
+): T[] {
+  const open: T[] = [];
+  for (const id of dependsOn) {
+    const item = byId.get(id);
+    if (item && !isFinished(item)) open.push(item);
+  }
+  return open;
+}
+
+/** Done or Cancelled: the task no longer holds up work that waits on it. */
+export function isTaskFinished(task: { status: string }): boolean {
+  return task.status === "Done" || task.status === "Cancelled";
 }
 
 /**

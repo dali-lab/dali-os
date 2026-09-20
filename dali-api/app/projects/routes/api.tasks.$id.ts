@@ -9,7 +9,8 @@ import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 // PATCH  /api/tasks/:id — edit fields not covered by the move endpoint.
 //        Status/position changes still go through /api/tasks/:id/move so its
 //        column-rebalance logic stays unified. Body is a partial — only
-//        present fields are written.
+//        present fields are written. `dependsOn` replaces the task's
+//        "blocked by" set.
 // DELETE /api/tasks/:id — hard-delete. Mirrors MCP delete_task: assignee and
 //        comment rows go first (RESTRICT FKs), reminders cascade via their
 //        FK, and a linked GitHub issue is left untouched on GH.
@@ -41,6 +42,9 @@ type Body = {
   checklist?: unknown;
   // Full replacement set. Empty array clears assignees.
   assigneeIds?: string[];
+  // Full replacement set of tasks this one waits on. Each must be another task
+  // in the same project. Empty array clears.
+  dependsOn?: string[];
 };
 
 function isPriority(x: unknown): x is Priority {
@@ -78,6 +82,11 @@ function isBody(x: unknown): x is Body {
     if (!Array.isArray(o.assigneeIds)) return false;
     if (!o.assigneeIds.every((id) => typeof id === "string")) return false;
   }
+  if (
+    o.dependsOn !== undefined &&
+    (!Array.isArray(o.dependsOn) || o.dependsOn.some((v) => typeof v !== "string"))
+  )
+    return false;
   return true;
 }
 
@@ -253,7 +262,26 @@ export async function action({ request, params }: Route.ActionArgs) {
   // failure leaves the task untouched.
   const wantsAssignees = "assigneeIds" in body && Array.isArray(body.assigneeIds);
 
-  if (Object.keys(data).length === 0 && !wantsAssignees) {
+  // Dependencies are replaced wholesale, as the story edge is: each id must be
+  // another task in this project. (Cycles aren't blocked — the edge is
+  // advisory, and the unique index dedupes repeats.)
+  const dependsOn =
+    body.dependsOn === undefined
+      ? null
+      : [...new Set(body.dependsOn)].filter((x) => x && x !== params.id);
+  if (dependsOn && dependsOn.length > 0) {
+    const valid = await prisma.task.count({
+      where: { id: { in: dependsOn }, projectId: task.projectId },
+    });
+    if (valid !== dependsOn.length) {
+      return withCors(
+        request,
+        Response.json({ error: "Invalid dependency target" }, { status: 400 }),
+      );
+    }
+  }
+
+  if (Object.keys(data).length === 0 && !wantsAssignees && !dependsOn) {
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -277,6 +305,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
       }
       addedAssigneeIds = ids.filter((id) => !priorIds.has(id));
+    }
+    if (dependsOn) {
+      await tx.taskDependency.deleteMany({ where: { taskId: params.id } });
+      if (dependsOn.length > 0) {
+        await tx.taskDependency.createMany({
+          data: dependsOn.map((depId) => ({ taskId: params.id, dependsOnTaskId: depId })),
+        });
+      }
     }
   });
 

@@ -8,6 +8,7 @@ import { manageableOfferingIds, isOfferingManager } from "./access.server";
 import { notifyExternalInstructorInvite } from "./notifications.server";
 import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
+import { isMultiSession, isOfferingType } from "./offering-type";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
@@ -441,7 +442,7 @@ export async function runOfferingAction(
   if (intent === "create-offering") {
     if (!(await isCore(actorId))) return bad("Core only", 403);
     const type = formData.get("type");
-    if (type !== "Miniseries" && type !== "Workshop") return bad("Invalid type");
+    if (!isOfferingType(type)) return bad("Invalid type");
     const title = String(formData.get("title") ?? "").trim();
     if (!title) return bad("Title is required");
     const capacity = Number(formData.get("capacity"));
@@ -460,7 +461,7 @@ export async function runOfferingAction(
 
     const createThresholdPct = Number(formData.get("completionThresholdPct"));
     const createCompletionThreshold =
-      type === "Miniseries" && Number.isFinite(createThresholdPct) && createThresholdPct > 0
+      isMultiSession(type) && Number.isFinite(createThresholdPct) && createThresholdPct > 0
         ? Math.min(100, Math.max(1, createThresholdPct)) / 100
         : undefined;
 
@@ -618,11 +619,11 @@ export async function runOfferingAction(
       });
       if (dateError) return bad(dateError);
 
-      // Parse completion threshold for Miniseries only; Workshops use a fixed
+      // Parse completion threshold for multi-session offerings only; Workshops use a fixed
       // "≥1 Present" rule so the threshold column is irrelevant for them.
       const thresholdPct = Number(formData.get("completionThresholdPct"));
       const completionThreshold =
-        offering.type === "Miniseries" && Number.isFinite(thresholdPct)
+        isMultiSession(offering.type) && Number.isFinite(thresholdPct)
           ? Math.min(100, Math.max(1, thresholdPct)) / 100
           : undefined;
 

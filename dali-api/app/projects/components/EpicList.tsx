@@ -13,6 +13,9 @@ import {
   type EpicStatus,
   type TimelineEpic,
   type TimelineStory,
+  type EpicDependencyEdge,
+  type StoryDependencyEdge,
+  type TaskDependencyEdge,
 } from "./EpicsTimeline";
 
 const EPIC_STATUSES: EpicStatus[] = ["Backlog", "Open", "InProgress", "Done", "Cancelled"];
@@ -43,6 +46,9 @@ export function EpicList({
   terms,
   epicTermIds,
   currentTermId,
+  epicDependencies = [],
+  storyDependencies = [],
+  taskDependencies = [],
   actions,
   onEpicClick,
   onStoryClick,
@@ -54,6 +60,11 @@ export function EpicList({
   /** Terms each epic counts toward, keyed by epic id (see the loader). */
   epicTermIds?: Record<string, string[]>;
   currentTermId?: string | null;
+  /** Dependency edges at each level. A row whose blocker is unfinished is
+   *  marked Blocked. */
+  epicDependencies?: EpicDependencyEdge[];
+  storyDependencies?: StoryDependencyEdge[];
+  taskDependencies?: TaskDependencyEdge[];
   /** The toolbar's right-hand controls (view toggle, New) — this view draws
    *  its own header row, so it takes them the way the timeline does. */
   actions?: ReactNode;
@@ -69,6 +80,26 @@ export function EpicList({
   const [termFilter, setTermFilter] = useState(() =>
     currentTermId && terms.some((t) => t.id === currentTermId) ? currentTermId : ALL_TERMS,
   );
+  // Ids with at least one unfinished blocker, per level.
+  const blocked = useMemo(() => {
+    const epicStatus = new Map(epics.map((e) => [e.id, e.status]));
+    const storyStatus = new Map(
+      epics.flatMap((e) => e.stories.map((st) => [st.id, st.status] as const)),
+    );
+    const epicIds = new Set<string>();
+    for (const d of epicDependencies) {
+      const st = epicStatus.get(d.dependsOnEpicId);
+      if (st && st !== "Done" && st !== "Cancelled") epicIds.add(d.epicId);
+    }
+    const storyIds = new Set<string>();
+    for (const d of storyDependencies) {
+      const st = storyStatus.get(d.dependsOnStoryId);
+      if (st && st !== "Done") storyIds.add(d.storyId);
+    }
+    const taskIds = new Set(taskDependencies.filter((d) => d.open).map((d) => d.taskId));
+    return { epicIds, storyIds, taskIds };
+  }, [epics, epicDependencies, storyDependencies, taskDependencies]);
+
   const [statusFilter, setStatusFilter] = useState<EpicStatus | typeof ALL_STATUSES>(
     ALL_STATUSES,
   );
@@ -144,6 +175,7 @@ export function EpicList({
                     title={epic.title}
                     onTitleClick={onEpicClick && (() => onEpicClick(epic.id))}
                     status={EPIC_STATUS_LABEL[epic.status]}
+                    blocked={blocked.epicIds.has(epic.id)}
                     dates={
                       epic.startsAt && epic.endsAt
                         ? rangeLabel(epic.startsAt, epic.endsAt)
@@ -166,6 +198,7 @@ export function EpicList({
                               onStoryClick && (() => onStoryClick(epic.id))
                             }
                             status={STORY_STATUS_LABEL[story.status]}
+                            blocked={blocked.storyIds.has(story.id)}
                             dates={rangeLabel(story.startsAt, story.endsAt)}
                             counts={
                               story.tasks.length > 0 ? storyCounts(story) : null
@@ -183,6 +216,7 @@ export function EpicList({
                                   onTaskClick && (() => onTaskClick(task.id))
                                 }
                                 status={TASK_STATUS_LABEL[task.status]}
+                                blocked={blocked.taskIds.has(task.id)}
                                 dates={rangeLabel(task.startsAt, task.endsAt)}
                                 meta={
                                   task.assignees.length > 0
@@ -215,6 +249,7 @@ function Row({
   title,
   onTitleClick,
   status,
+  blocked = false,
   dates,
   counts,
   meta,
@@ -227,6 +262,7 @@ function Row({
   title: string;
   onTitleClick?: (() => void) | undefined;
   status: string;
+  blocked?: boolean;
   dates: string;
   counts?: { done: number; total: number } | null;
   meta?: string | null;
@@ -295,6 +331,11 @@ function Row({
       <span className="hidden flex-shrink-0 text-xs tabular-nums text-os-muted sm:inline">
         {dates}
       </span>
+      {blocked && (
+        <span className="flex-shrink-0 rounded-full bg-os-amber/15 px-2 py-0.5 text-[11px] font-semibold text-os-amber">
+          Blocked
+        </span>
+      )}
       <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
         {status}
       </span>

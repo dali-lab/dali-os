@@ -27,7 +27,7 @@ export type PublicOffering = {
   id: string;
   name: string;
   description: string;
-  type: string; // lowercased offering type: "miniseries" | "workshop"
+  type: string; // lowercased offering type: "miniseries" | "fellowship" | "workshop"
   // Term code (e.g. "26F"), derived from the start date; null when the run
   // starts outside every term window.
   term: string | null;
@@ -51,7 +51,7 @@ export type OfferingsFilter = {
   from?: Date; // calendar window lower bound (interval overlap)
   to?: Date; // calendar window upper bound (interval overlap)
   term?: string; // term code (e.g. "26F"); limits to offerings starting in that term's date window
-  type?: "Miniseries" | "Workshop"; // limits to one offering type (DB enum)
+  type?: "Miniseries" | "Fellowship" | "Workshop"; // limits to one offering type (DB enum)
 };
 
 type DateClause = {
@@ -61,7 +61,7 @@ type DateClause = {
 
 type OfferingWhere = {
   status: "Published";
-  type?: "Miniseries" | "Workshop";
+  type?: "Miniseries" | "Fellowship" | "Workshop";
   AND?: DateClause[];
 };
 
@@ -135,8 +135,9 @@ export function parseOfferingsFilter(
   if (typeRaw != null && typeRaw.trim() !== "") {
     const t = typeRaw.trim().toLowerCase();
     if (t === "miniseries") filter.type = "Miniseries";
+    else if (t === "fellowship") filter.type = "Fellowship";
     else if (t === "workshop") filter.type = "Workshop";
-    else return { error: "Invalid 'type' (use miniseries or workshop)" };
+    else return { error: "Invalid 'type' (use miniseries, fellowship, or workshop)" };
   }
 
   for (const key of ["from", "to"] as const) {
