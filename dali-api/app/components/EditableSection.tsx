@@ -45,8 +45,11 @@ export function EditableSection({
   }) => ReactNode;
   /** Called when Save is clicked. The page should submit the section's
    *  existing form; this just closes the section. If `onSave` returns a
-   *  promise the button shows a pending state until it resolves. */
-  onSave: () => void | Promise<void>;
+   *  promise the button shows a pending state until it resolves.
+   *  Optional: a `canEdit={false}` section shows no Edit button, so it never
+   *  has a Save to handle — it is using this component purely as a titled
+   *  container. */
+  onSave?: () => void | Promise<void>;
   /** Overrides the section's own dress. Left unset, the section wears the
    *  shell's default — a bordered card on the brand shell, a bare title over
    *  its content under dali.os. */
@@ -67,7 +70,7 @@ export function EditableSection({
   async function save() {
     setBusy(true);
     try {
-      await Promise.resolve(onSave());
+      await Promise.resolve(onSave?.());
       setEditing(false);
     } finally {
       setBusy(false);

@@ -17,6 +17,7 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
+import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
 import {
   DetailEditRow,
   DetailRow,
@@ -27,6 +28,11 @@ import {
 } from "~/components/os-page";
 import { cn } from "~/lib/cn";
 import { redactCoreOnlyProjectFields } from "~/lib/project-field-visibility";
+import {
+  listProjectChartStrings,
+  recordProjectChartString,
+  ChartStringValidationError,
+} from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -1178,6 +1184,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     !project.aiTldrInputHash ||
     project.aiTldrInputHash !== factsFingerprint(statusFacts);
 
+  // Core-only: the project's chart string history, for the Payroll panel.
+  // Everyone else gets an empty list rather than a filtered one — the rows
+  // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
+  const chartStrings = canEditScope ? await listProjectChartStrings(params.id) : [];
+
   return {
     infra,
     // Redacted server-side, not just hidden in JSX: this payload goes to
@@ -1219,6 +1230,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       canEditScope,
     ),
+    chartStrings,
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     // sortKey rides along so the Overview challenge section can split the
     // grid into current vs future terms client-side.
@@ -1377,7 +1389,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status", "chart-string"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1442,6 +1454,56 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     const result = await unlinkProjectPartner(projectPartnerId, actor);
     return "error" in result ? result : redirect(`/projects/${params.id}`);
+  }
+
+  // Payroll chart string. Core-only and append-only: every save writes a new
+  // row and supersedes the previous one for that term, so the history is the
+  // audit trail. Validation is shared with the MCP tool via the same server
+  // helper, so a string rejected there is rejected here.
+  if (intent === "chart-string") {
+    if (!core) return { error: "Only Core can edit payroll chart strings." };
+
+    const chartString = (form.get("chartString") as string | null)?.trim() ?? "";
+    const termId = (form.get("termId") as string | null)?.trim() ?? "";
+    if (!chartString) return { error: "Chart string is required." };
+    if (!termId) return { error: "Pick a term." };
+
+    const kindRaw = (form.get("kind") as string | null)?.trim() || "FUNDED";
+    const kind = (["ADVANCE", "FUNDED", "DEPARTMENT"] as const).includes(
+      kindRaw as "ADVANCE" | "FUNDED" | "DEPARTMENT",
+    )
+      ? (kindRaw as "ADVANCE" | "FUNDED" | "DEPARTMENT")
+      : "FUNDED";
+
+    const optional = (name: string) =>
+      (form.get(name) as string | null)?.trim() || null;
+
+    try {
+      const result = await recordProjectChartString({
+        projectId: params.id,
+        termId,
+        chartString,
+        kind,
+        fpNumber: optional("fpNumber"),
+        awardId: optional("awardId"),
+        rapportName: optional("rapportName"),
+        supersedeReason: optional("supersedeReason"),
+        note: optional("note"),
+        createdById: auth.user.sub,
+      });
+      // Warnings don't block the write — an unfamiliar subactivity or an
+      // unexpected org may be Dartmouth changing something — but the person
+      // who typed it should see them.
+      return {
+        ok: true,
+        chartStringWarnings: result.warnings.map((w) => w.message),
+      };
+    } catch (err) {
+      if (err instanceof ChartStringValidationError) {
+        return { error: err.message };
+      }
+      throw err;
+    }
   }
 
   // Header form: name + status + icon, and — from the os hero, which edits the
@@ -1614,15 +1676,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   // falls back to 1 rather than erroring the whole form.
   const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
 
-  // Payroll chart string — Core-only. Project members posting these fields
-  // are silently ignored rather than 403'd to keep the form forgiving.
-  const chartStringFields: { chartStringType?: string | null; chartString?: string | null } = {};
-  if (core) {
-    const chartStringTypeRaw = (form.get("chartStringType") as string | null)?.trim() ?? "";
-    const chartStringRaw = (form.get("chartString") as string | null)?.trim() ?? "";
-    chartStringFields.chartStringType = chartStringTypeRaw === "" ? null : chartStringTypeRaw;
-    chartStringFields.chartString = chartStringRaw === "" ? null : chartStringRaw;
-  }
 
   await prisma.project.update({
     where: { id: params.id },
@@ -1633,7 +1686,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       termCount,
       githubTeamSlug,
       slackChannelName,
-      ...chartStringFields,
     },
   });
   return redirect(`/projects/${params.id}`);
@@ -1665,6 +1717,7 @@ export default function ProjectDetail() {
     allDomainOptions,
     plannedTerms,
     allTermOptions,
+    chartStrings,
     domainScopeGrid,
     canEdit,
     canEditScope,
@@ -1895,6 +1948,8 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
+          chartStrings={chartStrings}
+          allTermOptions={allTermOptions}
           infra={infra}
         />
       )}
@@ -2763,15 +2818,6 @@ function DetailsReadOs({
             <DetailRow icon={<CalendarDays className={ic} />} label="Terms required">
               {project.termCount} {project.termCount === 1 ? "term" : "terms"}
             </DetailRow>
-            {canEditFinance && (project.chartStringType || project.chartString) && (
-              <DetailRow icon={<Info className={ic} />} label="Payroll">
-                <span className="break-all font-mono text-xs">
-                  {[project.chartStringType, project.chartString]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              </DetailRow>
-            )}
           </div>
         )}
       </div>
@@ -2874,28 +2920,6 @@ function DetailsEditOs({
         />
       </DetailEditRow>
 
-      {canEditFinance && (
-        <>
-          <DetailEditRow icon={<Info className={ic} />} label="Payroll type">
-            <input
-              name="chartStringType"
-              type="text"
-              defaultValue={project.chartStringType ?? ""}
-              placeholder="e.g. Grant, Department"
-              className={field}
-            />
-          </DetailEditRow>
-          <DetailEditRow icon={<Info className={ic} />} label="Full chart string">
-            <input
-              name="chartString"
-              type="text"
-              defaultValue={project.chartString ?? ""}
-              placeholder="full GL chart string"
-              className={cn(field, "font-mono")}
-            />
-          </DetailEditRow>
-        </>
-      )}
     </div>
   );
 }
@@ -3328,6 +3352,8 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
+  chartStrings,
+  allTermOptions,
   infra,
 }: {
   // The epics & sprints timeline, rendered at the top of the body. Passed in
@@ -3356,6 +3382,8 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
+  chartStrings: LoaderData["chartStrings"];
+  allTermOptions: LoaderData["allTermOptions"];
   infra: LoaderData["infra"];
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
@@ -3476,6 +3504,27 @@ function OverviewTab({
         canEdit={canEdit}
         canEditFinance={canEditFinance}
       />
+
+      {/* Payroll chart strings. Core-only, and its own section rather than a
+          row inside Project details: that section commits as one
+          full-replacement form, while each chart string is an append that
+          supersedes its predecessor. It also carries its own fetcher.Form,
+          which cannot nest inside the details Form. */}
+      {canEditFinance && (
+        <EditableSection
+          title="Payroll chart strings"
+          icon={<Info className="w-4 h-4" />}
+          canEdit={false}
+        >
+          {() => (
+            <ChartStringPanel
+              chartStrings={chartStrings}
+              termOptions={allTermOptions}
+              currentTermId={currentTerm?.id ?? null}
+            />
+          )}
+        </EditableSection>
+      )}
 
       {/* Cloud infrastructure (Fly + Neon): read-only inventory/usage for any
           member; config + change-requests for staffed (core||isProjectMember).
