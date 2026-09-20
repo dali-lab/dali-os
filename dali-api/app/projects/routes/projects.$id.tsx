@@ -729,6 +729,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     epics: project.epics,
     tasks: project.tasks.map((t) => ({
       id: t.id,
+      epicId: t.epicId,
       storyId: t.storyId,
       startsAt: t.startsAt,
       dueAt: t.dueAt,
@@ -934,13 +935,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     for (const tid of termIdsInRange(allTerms, start, end)) ids.add(tid);
     return { id: e.id, title: e.title, termIds: [...ids] };
   });
-  // Term filter options: the project's planned terms plus any term its work is
-  // dated in — work backdated into a term outside the planned set (or before
-  // the project was planned at all) still gets that term to filter by.
+  // Term filter options: the project's planned terms (settings) always appear.
+  // Work *derived* into an unplanned term earns that term a filter option too —
+  // but only looking backward. A task or epic dated into a *future* term must
+  // not silently grow the board's term set past what was planned (that inflated
+  // the filter with future terms nobody selected); plan ahead by adding the
+  // term in settings, which lands it in `plannedTerms` and keeps it here.
+  const sortKeyById = new Map(allTerms.map((t) => [t.id, t.sortKey]));
+  const currentSortKey =
+    current && sortKeyById.has(current.id) ? sortKeyById.get(current.id)! : null;
+  const isFutureTerm = (termId: string) =>
+    currentSortKey !== null && (sortKeyById.get(termId) ?? -Infinity) > currentSortKey;
   const boardTermIds = new Set<string>();
   for (const t of plannedTerms) boardTermIds.add(t.id);
-  for (const e of boardEpics) for (const tid of e.termIds) boardTermIds.add(tid);
-  for (const t of tasks) for (const tid of taskTermIds(allTerms, t)) boardTermIds.add(tid);
+  for (const e of boardEpics)
+    for (const tid of e.termIds) if (!isFutureTerm(tid)) boardTermIds.add(tid);
+  for (const t of tasks)
+    for (const tid of taskTermIds(allTerms, t)) if (!isFutureTerm(tid)) boardTermIds.add(tid);
   const boardTermList = allTerms.filter((t) => boardTermIds.has(t.id));
   const boardTerms = [...boardTermList]
     .sort((a, b) => b.sortKey - a.sortKey)
@@ -976,10 +987,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
 
   const memberMap = new Map<string, string>();
+  // Each member's staffed domain on this project, for the modal's "assign →
+  // autofill Domain" step. First staffing row wins if someone spans domains.
+  const domainByUserId = new Map<string, string>();
   for (const a of assignableAssignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
+    }
+    if (!domainByUserId.has(id)) {
+      domainByUserId.set(id, a.domainId);
     }
   }
   // Term spans anchor the fixed one-week sprint grid (Sprint 1..N per term).
@@ -995,7 +1012,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }));
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
-      .map(([id, name]) => ({ id, name, photoUrl: photoByUserId.get(id) ?? null }))
+      .map(([id, name]) => ({
+        id,
+        name,
+        photoUrl: photoByUserId.get(id) ?? null,
+        domainId: domainByUserId.get(id) ?? null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
@@ -1757,12 +1779,13 @@ export default function ProjectDetail() {
   // the URL (?people=<id,id>) like the board's other filters, so a person-sliced
   // view is a link worth sending. Options are only people who hold tasks.
   const peopleOptions = useMemo(() => {
+    const photoById = new Map(boardOptions.members.map((m) => [m.id, m.photoUrl]));
     const byId = new Map<string, string>();
     for (const t of tasks) for (const a of t.assignees) byId.set(a.id, a.name);
     return [...byId]
-      .map(([id, name]) => ({ id, name }))
+      .map(([id, name]) => ({ id, name, photoUrl: photoById.get(id) ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
+  }, [tasks, boardOptions.members]);
   const selectedPeopleIds = useMemo(
     () => (searchParams.get("people") ?? "").split(",").filter(Boolean),
     [searchParams],
