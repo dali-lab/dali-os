@@ -273,7 +273,7 @@ function makeFlagOnRequest(ip: string, body: Record<string, string>) {
 // Magic links are account-creation only (/signup) — /login offers Google +
 // email/password, so there is no magic-link branch to test here.
 
-describe("POST /login password + forgot (flag-ON)", () => {
+describe("POST /login password (flag-ON)", () => {
   it("signs in with email + password and forwards the session cookie", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
@@ -306,18 +306,6 @@ describe("POST /login password + forgot (flag-ON)", () => {
       }),
     } as any);
     expect(result).toMatchObject({ error: expect.stringContaining("Incorrect") });
-  });
-
-  it("forgot-password returns a neutral resetSent response (anti-enumeration)", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const result = await action({
-      request: makeFlagOnRequest("1.2.3.4", {
-        provider: "forgot",
-        email: "nobody@example.com",
-      }),
-    } as any);
-    expect(mockRequestPasswordReset).toHaveBeenCalled();
-    expect(result).toMatchObject({ resetSent: true });
   });
 });
 

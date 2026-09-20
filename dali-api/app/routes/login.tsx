@@ -139,23 +139,6 @@ export async function action({ request }: Route.ActionArgs) {
     // Flag off — fall through (no legacy equivalent; return nothing meaningful).
   }
 
-  if (provider === "forgot") {
-    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-    if (betterAuthOn) {
-      const email = String(formData.get("email") ?? "").trim().toLowerCase();
-      try {
-        await auth.api.requestPasswordReset({
-          body: { email, redirectTo: "/login/reset-password" },
-          headers: request.headers,
-        });
-      } catch {
-        // Swallowed — anti-enumeration: always return neutral response.
-      }
-      return { resetSent: true };
-    }
-    // Flag off — fall through.
-  }
-
   // --- Legacy (flag-off) branches ---
 
   if (provider === "cas") {
@@ -214,7 +197,6 @@ function LoginBetterAuth({ next, actionData }: {
   const submitting = navigation.state === "submitting";
 
   const passwordError = actionData && "error" in actionData ? actionData.error : null;
-  const resetSent = actionData && "resetSent" in actionData ? actionData.resetSent : false;
 
   return (
     <div className="flex flex-col gap-4">
@@ -238,11 +220,6 @@ function LoginBetterAuth({ next, actionData }: {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      {resetSent && (
-        <p className="text-sm text-dark-blue bg-brand-tint rounded-xl px-4 py-3">
-          If that account exists, we sent a reset link to your inbox.
-        </p>
-      )}
       {passwordError && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
           {passwordError}
@@ -281,16 +258,12 @@ function LoginBetterAuth({ next, actionData }: {
           {submitting ? "Signing in…" : "Sign in"}
         </button>
         <div className="flex justify-end">
-          <button
-            type="submit"
-            name="provider"
-            value="forgot"
-            formNoValidate
-            disabled={submitting}
-            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+          <Link
+            to="/login/forgot-password"
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
       </Form>
 
