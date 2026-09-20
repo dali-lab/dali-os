@@ -6,6 +6,20 @@ import { test, expect } from './fixtures';
 const cyclesFrame = (page: import('@playwright/test').Page) =>
   page.frameLocator('iframe[title="Hiring"]');
 
+// A tab switch is client-side state, so a click that lands before the page
+// hydrates does nothing and the test would sit on the wrong tab. Retry the
+// click until the tab's own content shows up.
+async function openTab(
+  frame: ReturnType<typeof cyclesFrame>,
+  name: string,
+  content: ReturnType<ReturnType<typeof cyclesFrame>['getByRole']>,
+) {
+  await expect(async () => {
+    await frame.getByRole('tab', { name, exact: true }).click();
+    await expect(content.first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 test.describe('hiring lead workflow', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
@@ -45,7 +59,7 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('tab', { name: 'Setup', exact: true }).click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
     await expect(frame.getByText('Engineering').first()).toBeVisible();
     await expect(frame.getByText('Design').first()).toBeVisible();
@@ -56,17 +70,19 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('tab', { name: 'Interviews', exact: true }).click();
+    // The shared Select's trigger is a combobox (floating-ui's listbox role),
+    // not a button.
+    await openTab(frame, 'Interviews', frame.getByRole('combobox', { name: 'Slot length' }));
 
-    await expect(frame.getByRole('button', { name: 'Slot length' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Buffer between interviews' })).toBeVisible();
+    await expect(frame.getByRole('combobox', { name: 'Slot length' })).toBeVisible();
+    await expect(frame.getByRole('combobox', { name: 'Buffer between interviews' })).toBeVisible();
   });
 
   test('setup tab stacks its sections as cards', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('tab', { name: 'Setup', exact: true }).click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
     // Setup owns the term, the audience and the editable timeline. (The side
     // nav beside them only renders at lg and up, so it isn't asserted here —
@@ -80,7 +96,7 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('tab', { name: 'Setup', exact: true }).click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
     // Emails are one shared row per slot; the seed writes a Rejected email, so
     // its row offers Edit rather than Write.
@@ -101,7 +117,7 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('tab', { name: 'Review', exact: true }).click();
+    await openTab(frame, 'Review', frame.getByRole('heading', { name: 'Reviewers', exact: true }));
 
     await expect(frame.getByRole('heading', { name: 'Reviewers', exact: true })).toBeVisible();
     await expect(frame.getByRole('heading', { name: 'Interviewers', exact: true })).toBeVisible();

@@ -58,7 +58,7 @@ test.describe('domain lead workflow', () => {
     // Delibs are no longer their own section: every stage change is one
     // Decisions timeline, and a lead can move a stage without a delib.
     await expect(frame.getByRole('heading', { name: 'Decisions', exact: true })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Move to stage' })).toBeVisible();
+    await expect(frame.getByRole('combobox', { name: 'Move to stage' })).toBeVisible();
   });
 
   // (Removed) "reach Rubrics via the hiring pills" — the Library pill was folded
