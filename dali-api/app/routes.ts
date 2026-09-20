@@ -269,6 +269,10 @@ export default [
     // Combined education + hiring application history (linked from the home).
     route("portal/applications", "routes/portal.applications.tsx"),
     route("portal/settings", "routes/portal.settings.tsx"),
+    // The calendar, mounted for non-members: the same page as /calendar, read
+    // and written without the lab's member/group directory (see
+    // loadCalendarData's `portal` option).
+    route("portal/calendar", "routes/portal.calendar.tsx"),
     // Education mirror for non-member Dartmouth students.
     route("portal/education", "routes/portal.education.tsx"),
     route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),

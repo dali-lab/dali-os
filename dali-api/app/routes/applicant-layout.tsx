@@ -1,8 +1,7 @@
-import { Outlet, useLoaderData, Link } from "react-router";
+import { Outlet, useLoaderData, Link, useMatches } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { userInitials } from "~/lib/display";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getUserRoles } from "~/lib/roles";
@@ -10,7 +9,7 @@ import { resolveFeatureFlags } from "~/lib/feature-flags.server";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { PortalProfileMenu } from "~/components/PortalProfileMenu";
+import { LayoutPortalOS } from "~/components/LayoutPortalOS";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -39,69 +38,35 @@ export default function ApplicantLayout() {
     flags: FeatureFlagMap;
   };
 
-  const displayName = user.firstName
-    ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-    : user.email;
-
-  const initial = userInitials(user);
+  // A page that declares `fitViewport` (the calendar's hour grid) fills the
+  // shell's main column instead of growing past it, so it scrolls inside its
+  // own panes rather than forcing a page scrollbar under the shell chrome.
+  const matches = useMatches();
+  const fitViewport = matches.some(
+    (m) => (m as { handle?: { fitViewport?: boolean } }).handle?.fitViewport,
+  );
 
   return (
-    <div className="min-h-screen bg-page">
-      {/* Navbar */}
-      <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
-        <Link to="/portal" className="flex items-center min-w-0 focus:outline-none" title="DALI home">
-          <img
-            src="/logo-blue.svg"
-            alt="DALI Lab"
-            className="h-9 w-auto flex-shrink-0"
-          />
-        </Link>
-
-        {/* No "Apply" item: the logo already goes to /portal, where applying
-            is the first card. */}
-        <div className="ml-6 flex items-center gap-4 text-sm font-medium">
-          <Link to="/portal/education" className="text-dark-blue hover:text-accent-coral transition">
-            Education
-          </Link>
-        </div>
-
-        <PortalProfileMenu
-          initials={initial}
-          displayName={displayName}
-          subtitle={user.email}
-          settingsTo="/portal/settings"
-          avatarUrl={avatarUrl}
-        />
-      </nav>
-
-      {/* Content */}
-      <div className="pt-16">
-        <FeatureFlagsProvider flags={flags}>
-          <Outlet />
-        </FeatureFlagsProvider>
-      </div>
-    </div>
+    <LayoutPortalOS user={user} photoUrl={avatarUrl} fitViewport={fitViewport}>
+      <FeatureFlagsProvider flags={flags}>
+        <Outlet />
+      </FeatureFlagsProvider>
+    </LayoutPortalOS>
   );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // Layout-level boundary catches errors from this route's own loader
   // (e.g. requireAuth). Auth state is unknown here, so render a minimal
-  // shell without the user-identity navbar to avoid misrepresenting it.
+  // shell without the user-identity rail to avoid misrepresenting it.
   return (
-    <div className="min-h-screen bg-page">
-      <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
-        <Link to="/portal" className="flex items-center min-w-0">
-          <img
-            src="/logo-blue.svg"
-            alt="DALI Lab"
-            className="h-9 w-auto flex-shrink-0"
-          />
+    <div className="os-shell min-h-screen bg-os-bg text-foreground">
+      <nav className="os-nav-edge-b flex h-16 items-center bg-os-nav px-4 sm:px-6">
+        <Link to="/portal" className="font-os-logo text-2xl font-semibold text-os-accent">
+          dali.os
         </Link>
       </nav>
-      <div className="pt-16">
-        <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />
-      </div>
+      <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />
     </div>
   );
 }
