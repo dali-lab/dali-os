@@ -25,6 +25,13 @@ const DOOR_LABELS: Record<Door, string> = {
   partner: "Partner",
 };
 
+// One short line shown on each door's own sign-up page.
+const DOOR_BLURBS: Record<Door, string> = {
+  member: "For current lab members.",
+  dartmouth: "For Dartmouth students.",
+  partner: "For organizations working with the lab.",
+};
+
 const EMAIL_PLACEHOLDERS: Record<Door, string> = {
   member: "you@dali.dartmouth.edu",
   dartmouth: "you@dartmouth.edu",
@@ -169,13 +176,8 @@ function DoorSignup({ door, actionData }: {
 
   return (
     <>
-      <p className="text-sm text-muted-foreground mb-1">
-        <Link to="/signup" className="hover:text-foreground">
-          ← Back
-        </Link>
-      </p>
-      <p className="text-sm font-medium text-dark-blue mb-6">
-        {DOOR_LABELS[door]}
+      <p className="text-muted-foreground mb-6 -mt-2">
+        {DOOR_BLURBS[door]}
       </p>
 
       {sent ? (
@@ -248,12 +250,19 @@ function DoorSignup({ door, actionData }: {
         </>
       )}
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
-        <Link to="/login" className="underline hover:text-foreground">
-          Sign in
-        </Link>
-      </p>
+      <div className="mt-6 text-center text-sm text-muted-foreground space-y-1.5">
+        <p>
+          <Link to="/signup" className="underline hover:text-foreground">
+            Choose a different account type
+          </Link>
+        </p>
+        <p>
+          Already have an account?{" "}
+          <Link to="/login" className="underline hover:text-foreground">
+            Sign in
+          </Link>
+        </p>
+      </div>
     </>
   );
 }
@@ -265,7 +274,9 @@ export default function Signup() {
   const activeDoor = door ?? (isValidDoor(searchParams.get("door")) ? (searchParams.get("door") as Door) : null);
 
   return (
-    <AuthShell heading="Create your account">
+    <AuthShell
+      heading={activeDoor ? DOOR_LABELS[activeDoor] : "Create your account"}
+    >
       {activeDoor ? (
         <DoorSignup door={activeDoor} actionData={actionData} />
       ) : (
