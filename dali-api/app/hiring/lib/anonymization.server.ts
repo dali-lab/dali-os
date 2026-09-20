@@ -1,27 +1,23 @@
 import { prisma } from "~/lib/db";
-import type { ApplicationCycleType } from "~/generated/prisma/enums";
 
 // Blind review hides applicant identity from reviewers during the reading +
-// Initial-delibs stage of a Standard hiring cycle, so a reviewer's read of an
+// Initial-delibs stage of a hiring cycle, so a reviewer's read of an
 // application isn't biased by who the applicant is. It lifts per applicant the
-// moment a decision is Released for them (they move into interviews, where names
-// matter). Only Standard cycles opt in (ApplicationCycle.anonymizeReview,
-// default on); Fellowship/Core are never blinded, and Core/lead cycle-management
-// views are never blinded either — only the reviewer + Initial-delibs surfaces
-// route applicant identity through here.
+// moment a decision is Released for them. Any cycle can opt in
+// (ApplicationCycle.anonymizeReview); Core/lead cycle-management views are never
+// blinded — only the reviewer + Initial-delibs surfaces route applicant
+// identity through here.
 
 /**
  * The blind-review predicate. `hasReleasedDecision` is true when a Decision at
  * stage "Released" exists for the domain application being viewed (the applicant
- * has moved past review into interviews).
+ * has moved past review).
  */
 export function isApplicantBlinded(
-  cycle: { cycleType: ApplicationCycleType | string; anonymizeReview: boolean },
+  cycle: { anonymizeReview: boolean },
   hasReleasedDecision: boolean,
 ): boolean {
-  return (
-    cycle.cycleType === "Standard" && cycle.anonymizeReview && !hasReleasedDecision
-  );
+  return cycle.anonymizeReview && !hasReleasedDecision;
 }
 
 /** Stable pseudonym for a 1-indexed applicant sequence. */

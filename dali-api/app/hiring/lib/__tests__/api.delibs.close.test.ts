@@ -75,7 +75,8 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
   it("creates Draft decisions and assigns waitlist ranks starting at 1 even when Accepts precede them", async () => {
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Final",
+      roundId: "final",
+      applicationCycle: { timeline: null },
       columnOrder: {
         Accept: ["da-accept-1"],
         Waitlist: ["da-wait-1", "da-wait-2"],
@@ -110,7 +111,8 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
   it("sets waitlistRank to null on Accept and Reject decisions", async () => {
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Final",
+      roundId: "final",
+      applicationCycle: { timeline: null },
       columnOrder: {
         Accept: ["da-accept-1", "da-accept-2"],
         Waitlist: [],
@@ -134,10 +136,11 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
     }
   });
 
-  it("creates Draft decisions for Initial sessions with no waitlistRank", async () => {
+  it("creates Draft decisions for first-round boards with no waitlistRank", async () => {
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       columnOrder: {
         Interview: ["da-int-1", "da-int-2"],
         Reject: ["da-rej-1"],

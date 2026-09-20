@@ -10,10 +10,11 @@
 // Two rules worth knowing before reading this file:
 //
 //  1. Decisions are append-only — except `waitlistRank`. When the active
-//     waitlist shifts (someone accepted or removed), we MUTATE the rank field
-//     on the existing Released Waitlisted Decision rows. The append-only
-//     invariant on every other field still holds. See the matching comment on
-//     `decrementHigherRanks` below.
+//     waitlist shifts (someone accepted or removed, or Core reorders it), we
+//     MUTATE the rank field on the existing Released Waitlisted Decision rows.
+//     The append-only invariant on every other field still holds. Ranks form
+//     one order per domain across cycles: each cycle's delibs numbers from #1,
+//     so a new cycle can tie an old one until Core reorders (`reorderWaitlist`).
 //
 //  2. An "active" waitlist entry means the *latest Released Decision* for that
 //     DomainApplication has type=Waitlisted. Once we append a new
@@ -21,6 +22,7 @@
 //     becomes inactive automatically because the latest-released record wins.
 
 import { prisma } from "~/lib/db";
+import type { CycleApplicants } from "~/generated/prisma/enums";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
@@ -38,11 +40,14 @@ import {
   redirectBannerHtml,
 } from "~/lib/candidate-email";
 import type { Prisma } from "~/generated/prisma/client";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { compactRanks } from "~/hiring/lib/waitlist";
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
 export interface WaitlistEntry {
   domainApplicationId: string;
+  decisionId: string;
   rank: number;
   waitlistedAt: Date;
   applicant: {
@@ -59,7 +64,7 @@ export interface WaitlistEntry {
   cycle: {
     id: string;
     name: string;
-    cycleType: string;
+    applicants: CycleApplicants;
     status: string;
   };
 }
@@ -71,6 +76,7 @@ export interface WaitlistEntry {
  */
 export async function listActiveWaitlistEntries(opts?: {
   cycleId?: string;
+  domainId?: string;
 }): Promise<WaitlistEntry[]> {
   // Pull candidates that have *any* released waitlisted decision; then filter
   // app-side to those where the LATEST released decision is still Waitlisted
@@ -81,6 +87,7 @@ export async function listActiveWaitlistEntries(opts?: {
       ...(opts?.cycleId
         ? { application: { applicationCycleId: opts.cycleId } }
         : {}),
+      ...(opts?.domainId ? { domainId: opts.domainId } : {}),
     },
     include: {
       domain: {
@@ -106,7 +113,7 @@ export async function listActiveWaitlistEntries(opts?: {
             select: {
               id: true,
               name: true,
-              cycleType: true,
+              applicants: true,
               statusUpdates: {
                 orderBy: { createdAt: "desc" },
                 take: 1,
@@ -125,6 +132,7 @@ export async function listActiveWaitlistEntries(opts?: {
     if (!latest || latest.type !== "Waitlisted") continue;
     entries.push({
       domainApplicationId: da.id,
+      decisionId: latest.id,
       rank: latest.waitlistRank ?? Number.MAX_SAFE_INTEGER,
       waitlistedAt: latest.createdAt,
       applicant: {
@@ -141,7 +149,7 @@ export async function listActiveWaitlistEntries(opts?: {
       cycle: {
         id: da.application.applicationCycle.id,
         name: da.application.applicationCycle.name,
-        cycleType: da.application.applicationCycle.cycleType,
+        applicants: da.application.applicationCycle.applicants,
         status:
           da.application.applicationCycle.statusUpdates[0]?.newStatus ??
           "Draft",
@@ -161,31 +169,25 @@ export async function listActiveWaitlistEntries(opts?: {
 // ─── Shared rank shift ───────────────────────────────────────────────────────
 
 /**
- * Decrement waitlistRank by 1 on every active Waitlisted Released Decision in
- * the same (cycle, domain) whose rank is strictly greater than `removedRank`.
+ * Close the gap someone left in a domain's waitlist: re-number every active
+ * Waitlisted Released Decision in the domain, across cycles, with
+ * `compactRanks` so the order holds and unresolved ties stay tied.
  *
  * Mutating waitlistRank in place is the one carve-out from the Decision
  * append-only invariant. See file header. We constrain by `id` to the latest
  * Released Decision for each DomainApplication so we don't touch historical
  * superseded rows.
  */
-async function decrementHigherRanks(
+async function compactDomainRanks(
   tx: Prisma.TransactionClient,
-  cycleId: string,
   domainId: string,
-  removedRank: number,
 ): Promise<void> {
-  // Find the latest Released Decision per DomainApplication in this
-  // (cycle, domain). Then update only those that are still Waitlisted with a
-  // higher rank.
   const candidates = await tx.domainApplication.findMany({
     where: {
       domainId,
-      application: { applicationCycleId: cycleId },
       decisions: { some: { stage: "Released", type: "Waitlisted" } },
     },
     select: {
-      id: true,
       decisions: {
         where: { stage: "Released" },
         orderBy: { createdAt: "desc" },
@@ -195,21 +197,21 @@ async function decrementHigherRanks(
     },
   });
 
-  const updates: Array<{ id: string; newRank: number }> = [];
+  const ranked: Array<{ id: string; rank: number }> = [];
   for (const da of candidates) {
     const latest = da.decisions[0];
     if (!latest || latest.type !== "Waitlisted") continue;
     if (latest.waitlistRank == null) continue;
-    if (latest.waitlistRank > removedRank) {
-      updates.push({ id: latest.id, newRank: latest.waitlistRank - 1 });
-    }
+    ranked.push({ id: latest.id, rank: latest.waitlistRank });
   }
 
+  const next = compactRanks(ranked.map((r) => r.rank));
   // updateMany can't do row-specific values, so we batch one-shot updates.
-  for (const u of updates) {
+  for (const [i, r] of ranked.entries()) {
+    if (next[i] === r.rank) continue;
     await tx.decision.update({
-      where: { id: u.id },
-      data: { waitlistRank: u.newRank },
+      where: { id: r.id },
+      data: { waitlistRank: next[i] },
     });
   }
 }
@@ -248,8 +250,7 @@ export type AcceptResult =
  *     DomainApplication. Re-uses the same side-effects as the standard
  *     release flow: promoteToMember, provisionNewMember, sendWelcome,
  *     templated email send.
- *  3. Decrement the rank of every other still-waitlisted entry in the same
- *     (cycle, domain).
+ *  3. Close the gap in the domain's waitlist ranks.
  *  4. Re-complete the cycle if we reopened it in step 1.
  *
  * Per design: this is Core-only. The caller is responsible for permission
@@ -299,21 +300,13 @@ export async function acceptFromWaitlist(args: {
   }
 
   const cycleId = da.application.applicationCycleId;
-  const binding = await prisma.cycleDecisionEmail.findUnique({
-    where: {
-      applicationCycleId_decisionType: {
-        applicationCycleId: cycleId,
-        decisionType: "Accepted",
-      },
-    },
-    include: { emailTemplateVersion: true },
-  });
+  const binding = await getHiringEmail(decisionSlot("Accepted"));
   if (!binding) {
     return {
       ok: false,
       reason: "no-email-binding",
       message:
-        "No email template is bound to Accepted in this cycle. Bind one on the Setup tab before accepting off the waitlist.",
+        "There's no Accepted email yet. Write one on a cycle's Setup tab before accepting off the waitlist.",
     };
   }
 
@@ -345,9 +338,7 @@ export async function acceptFromWaitlist(args: {
       },
     });
 
-    if (latest.waitlistRank != null) {
-      await decrementHigherRanks(tx, cycleId, da.domain.id, latest.waitlistRank);
-    }
+    await compactDomainRanks(tx, da.domain.id);
 
     if (reopened) {
       await tx.applicationCycleStatusUpdate.create({
@@ -419,7 +410,7 @@ export async function acceptFromWaitlist(args: {
     if (to && user) {
       const { subject, html } = renderForSlot(
         decisionSlot("Accepted"),
-        binding.emailTemplateVersion,
+        binding,
         { firstName: user.firstName, domain: domainName },
       );
       const onboarding = onboardingEmailHtml(
@@ -540,9 +531,7 @@ export async function removeFromWaitlist(args: {
         parentDecisionId: latest.id,
       },
     });
-    if (latest.waitlistRank != null) {
-      await decrementHigherRanks(tx, cycleId, da.domain.id, latest.waitlistRank);
-    }
+    await compactDomainRanks(tx, da.domain.id);
     return rel;
   });
 
@@ -562,4 +551,65 @@ export async function removeFromWaitlist(args: {
   });
 
   return { ok: true, releasedDecisionId: released.id };
+}
+
+// ─── Reorder ─────────────────────────────────────────────────────────────────
+
+export type ReorderResult =
+  | { ok: true }
+  | { ok: false; reason: "stale"; message: string };
+
+/**
+ * Set a domain's waitlist order explicitly: `order` lists its active entries
+ * top to bottom and each gets rank 1..N. This is how Core resolves ties
+ * between cycles. `visible` narrows the entries the caller may see (Lab
+ * members cycles are Admin-only); hidden entries keep their ranks.
+ */
+export async function reorderWaitlist(args: {
+  domainId: string;
+  order: string[];
+  visible: (entry: WaitlistEntry) => boolean;
+  actorId: string;
+  request: Request;
+}): Promise<ReorderResult> {
+  const { domainId, order, visible, actorId, request } = args;
+
+  const entries = (await listActiveWaitlistEntries({ domainId })).filter(visible);
+  const byId = new Map(entries.map((e) => [e.domainApplicationId, e]));
+  if (
+    order.length !== entries.length ||
+    new Set(order).size !== order.length ||
+    !order.every((id) => byId.has(id))
+  ) {
+    return {
+      ok: false,
+      reason: "stale",
+      message: "This waitlist changed since you loaded it. Refresh and try again.",
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const [i, id] of order.entries()) {
+      const entry = byId.get(id)!;
+      if (entry.rank === i + 1) continue;
+      await tx.decision.update({
+        where: { id: entry.decisionId },
+        data: { waitlistRank: i + 1 },
+      });
+    }
+  });
+
+  await logAuditEvent({
+    action: "waitlist.reorder",
+    userId: actorId,
+    targetId: domainId,
+    metadata: {
+      domainId,
+      before: entries.map((e) => ({ domainApplicationId: e.domainApplicationId, rank: e.rank })),
+      order,
+    },
+    request,
+  });
+
+  return { ok: true };
 }

@@ -10,12 +10,14 @@ import { prisma } from "~/lib/db";
 import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
 import { APPLICATION_TZ } from "~/lib/timezone";
+import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
+import { blockLabel, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_HIRING_CYCLE_TOOL = {
   name: "get_hiring_cycle",
   description:
-    "Get a hiring cycle's current status, interview configuration, and slot coverage summary. Requires cycle access (Core, domain lead, or reviewer/interviewer on the cycle).",
+    "Get a hiring cycle's current status, timeline (phases and delib rounds with their term weeks), interview configuration, and slot coverage summary. Requires cycle access (Core, domain lead, or reviewer/interviewer on the cycle).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,7 +45,10 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
     select: {
       id: true,
       name: true,
-      cycleType: true,
+      applicants: true,
+      hasChallenges: true,
+      timeline: true,
+      hasInterviews: true,
       closeDate: true,
       createdAt: true,
       statusUpdates: {
@@ -74,7 +79,6 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
     const interviewers = await prisma.cycleInterviewer.findMany({
       where: { applicationCycleId: input.cycleId },
       include: {
-        availabilityBlocks: { select: { startTime: true, endTime: true } },
         interviewAssignments: {
           where: { status: "Active", interview: { status: "Scheduled" } },
           include: { interview: { select: { startTime: true, endTime: true } } },
@@ -91,11 +95,13 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
       memberIntervals.set(r.userId, (memberIntervals.get(r.userId) ?? []).concat(intervals));
     }
 
+    // Availability is each member's DALI OS calendar, same as the scheduler.
+    const calendars = await interviewerCalendars(interviewers.map((r) => r.userId), interviewConfig);
     const checks = interviewers.map((r) => ({
       cycleInterviewerId: r.id,
       userId: r.userId,
       domainId: r.domainId,
-      availability: r.availabilityBlocks,
+      availability: calendars.get(r.userId)?.available ?? [],
       bookedIntervals: memberIntervals.get(r.userId) ?? [],
     }));
 
@@ -139,7 +145,17 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
   return {
     id: cycle.id,
     name: cycle.name,
-    cycleType: cycle.cycleType,
+    applicants: cycle.applicants,
+    stages: {
+      challenges: cycle.hasChallenges,
+      interviews: cycle.hasInterviews,
+    },
+    timeline: parseTimeline(cycle.timeline).map((b) => ({
+      kind: b.kind,
+      label: blockLabel(b),
+      weeks: b.weeks,
+      ...(b.kind === "delib" && { roundId: b.id }),
+    })),
     status: currentStatus,
     closeDate: cycle.closeDate?.toISOString() ?? null,
     createdAt: cycle.createdAt.toISOString(),

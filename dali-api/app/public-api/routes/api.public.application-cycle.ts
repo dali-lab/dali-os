@@ -1,15 +1,16 @@
 import type { Route } from "./+types/api.public.application-cycle";
 import { requireShowcaseSecret } from "../lib/public-auth.server";
-import { getPublicApplicationCycle } from "../lib/public-application-cycle.server";
+import { getPublicApplicationCycleResponse } from "../lib/public-application-cycle.server";
 
-// GET /api/public/application-cycle — whether the public (Standard) hiring
-// cycle is currently accepting applications, and by when. Drives the
-// application-cycle card on dali.website's Apply page. No query params: there
-// is at most one active Standard cycle at a time.
+// GET /api/public/application-cycle — the public (Students) hiring cycles
+// currently accepting applications, and by when. Drives the application-cycle
+// cards on dali.website's Apply page. Several cycles can be open at once:
+// `cycles` lists them all; `cycle` is the soonest-closing one (or the closed
+// shape), kept for one release while the site moves to `cycles`.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const denied = requireShowcaseSecret(request);
   if (denied) return denied;
 
-  return Response.json({ cycle: await getPublicApplicationCycle() });
+  return Response.json(await getPublicApplicationCycleResponse());
 }

@@ -2,32 +2,41 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requireMember } from "~/lib/roles";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getActiveCycleById, getActiveCycles, type ActiveCycle } from "~/hiring/lib/cycles";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { currentInternDomains } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { findMissingRequired } from "~/lib/form-answers";
 import { resolveUserTimeZone } from "~/lib/timezone";
-import { INTERNAL_CYCLES, type InternalCycleType } from "./internal-cycles.server";
+import { APPLICANT_GROUP_CONFIG, applicantGroup, applicantPortalPath } from "./applicant-groups.server";
 import { getCoreDomain } from "./core-hiring.server";
 import { loadHiringForm } from "./application-form.server";
+import { loadApplicationTracker } from "./application-tracker.server";
 
-// Shared loader/action for the member-authed internal-cycle applicant portal
-// (Fellowship and Core). The two routes are thin wrappers that pass their
-// cycleType; everything that differs (eligibility, whether the applicant picks
-// target domains, the "you're currently in…" hint) is driven by the registry.
+// Shared loader/action for the member-authed applicant portals (Interns at
+// /fellowship, Lab members at /core/apply). The two routes are thin wrappers
+// that pass their applicant group and optional :cycleId; everything that
+// differs (eligibility, whether the applicant picks target domains, the
+// "you're currently in…" hint) is driven by the registry. Several cycles for a
+// group may be open at once: without an id the portal renders the only one, or
+// a chooser when there are more.
+
+export type MemberApplicants = "Interns" | "LabMembers";
 
 export type PortalDomain = { id: string; code: string; displayName: string };
 
+export type PortalCycleChoice = { id: string; name: string; closeDate: string | null; href: string };
+
 export type PortalLoaderData =
   | { reason: "not-member" }
-  | { reason: "not-eligible"; cycleType: InternalCycleType }
-  | { reason: "no-active-cycle"; cycleType: InternalCycleType; contextDomains: PortalDomain[] }
+  | { reason: "not-eligible" }
+  | { reason: "no-active-cycle"; contextDomains: PortalDomain[] }
+  | { reason: "choose-cycle"; cycles: PortalCycleChoice[]; viewerTimeZone: string; contextDomains: PortalDomain[] }
   | {
       reason: "ok";
-      cycleType: InternalCycleType;
       showDomainPicker: boolean;
+      portalPath: string;
       viewerTimeZone: string;
       cycle: {
         id: string;
@@ -45,6 +54,12 @@ export type PortalLoaderData =
         answers: Record<string, string>;
         selectedDomainIds: string[];
       } | null;
+      // Per-domain stages once the application is submitted.
+      tracker: {
+        hasInterviews: boolean;
+        slotDurationMinutes: number;
+        domainApplications: Awaited<ReturnType<typeof loadApplicationTracker>>["domainApplications"];
+      } | null;
     };
 
 // The single synthetic CORE domain that Core applications hang off of.
@@ -53,13 +68,28 @@ async function coreTargetDomains(): Promise<PortalDomain[]> {
   return d ? [{ id: d.id, code: d.code, displayName: d.displayName }] : [];
 }
 
+/**
+ * The cycle a portal request is about. With an id: that cycle, if it's active
+ * and for this group. Without one (or an id that doesn't fit): the group's
+ * active cycles, so the caller can render the only one or offer a choice.
+ */
+async function resolvePortalCycle(
+  applicants: MemberApplicants,
+  cycleId: string | undefined,
+): Promise<{ cycle: ActiveCycle } | { choices: ActiveCycle[] }> {
+  if (cycleId) {
+    const cycle = await getActiveCycleById(cycleId);
+    if (cycle && cycle.applicants === applicants) return { cycle };
+  }
+  const active = await getActiveCycles({ applicants });
+  return active.length === 1 ? { cycle: active[0] } : { choices: active };
+}
+
 export async function loadInternalCyclePortal(
   request: Request,
-  cycleType: InternalCycleType,
+  applicants: MemberApplicants,
+  cycleId: string | undefined,
 ): Promise<PortalLoaderData> {
-  const config = INTERNAL_CYCLES[cycleType];
-  const showDomainPicker = config.domainStrategy === "target-domains";
-
   const auth = await requireAuth(request);
   // Not signed in — bounce to login (thrown so the return type stays data-only).
   if (!auth.ok) throw redirectToLogin(request);
@@ -67,17 +97,39 @@ export async function loadInternalCyclePortal(
   const member = await requireMember(auth.user.sub);
   if (!member) return { reason: "not-member" };
 
-  if (!(await config.eligible(auth.user.sub))) {
-    return { reason: "not-eligible", cycleType };
+  if (!(await APPLICANT_GROUP_CONFIG[applicants].eligible!(auth.user.sub))) {
+    return { reason: "not-eligible" };
   }
 
-  // Fellowship shows "you're converting from <intern domain>"; Core has no
+  // Interns see "you're converting from <intern domain>"; Lab members have no
   // such hint.
   const contextDomains: PortalDomain[] =
-    cycleType === "Fellowship" ? await currentInternDomains(auth.user.sub) : [];
+    applicants === "Interns" ? await currentInternDomains(auth.user.sub) : [];
 
-  const active = await getActiveCycle(cycleType);
-  if (!active) return { reason: "no-active-cycle", cycleType, contextDomains };
+  const viewer = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { timeZone: true },
+  });
+  const viewerTimeZone = resolveUserTimeZone(viewer);
+
+  const resolved = await resolvePortalCycle(applicants, cycleId);
+  if ("choices" in resolved) {
+    if (resolved.choices.length === 0) return { reason: "no-active-cycle", contextDomains };
+    return {
+      reason: "choose-cycle",
+      viewerTimeZone,
+      contextDomains,
+      cycles: resolved.choices.map((c) => ({
+        id: c.id,
+        name: c.name,
+        closeDate: c.closeDate ? c.closeDate.toISOString() : null,
+        href: applicantPortalPath(applicants, c.id),
+      })),
+    };
+  }
+  const active = resolved.cycle;
+  const config = applicantGroup(applicants, active.id);
+  const showDomainPicker = config.domainStrategy === "target-domains";
 
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
@@ -86,11 +138,11 @@ export async function loadInternalCyclePortal(
     },
   });
   if (!cycle || !cycle.applicationFormId) {
-    return { reason: "no-active-cycle", cycleType, contextDomains };
+    return { reason: "no-active-cycle", contextDomains };
   }
   // The cycle's application form (a Drive Form) at its latest version.
   const form = await loadHiringForm(cycle.applicationFormId, auth.user.sub);
-  if (!form) return { reason: "no-active-cycle", cycleType, contextDomains };
+  if (!form) return { reason: "no-active-cycle", contextDomains };
 
   // target-domains cycles let the applicant pick from the cycle's real target
   // domains; single-core-domain cycles auto-select the one CORE domain.
@@ -106,17 +158,16 @@ export async function loadInternalCyclePortal(
     },
   });
   const status = draft?.statusUpdates[0]?.newStatus ?? null;
-
-  const viewer = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
-    select: { timeZone: true },
-  });
+  const tracker =
+    status === "Submitted"
+      ? await loadApplicationTracker(auth.user.sub, active.id, active.currentStatus)
+      : null;
 
   return {
     reason: "ok",
-    cycleType,
     showDomainPicker,
-    viewerTimeZone: resolveUserTimeZone(viewer),
+    portalPath: config.portalPath,
+    viewerTimeZone,
     cycle: {
       id: cycle.id,
       name: cycle.name,
@@ -139,31 +190,42 @@ export async function loadInternalCyclePortal(
             .map((da) => da.domainId as string),
         }
       : null,
+    tracker: tracker
+      ? {
+          hasInterviews: cycle.hasInterviews,
+          slotDurationMinutes: tracker.slotDurationMinutes,
+          domainApplications: tracker.domainApplications,
+        }
+      : null,
   };
 }
 
 export async function handleInternalCyclePortalAction(
   request: Request,
-  cycleType: InternalCycleType,
+  applicants: MemberApplicants,
+  cycleId: string | undefined,
 ): Promise<Response | { saved: true } | { submitted: true } | { withdrawn: true }> {
-  const config = INTERNAL_CYCLES[cycleType];
-  const showDomainPicker = config.domainStrategy === "target-domains";
-
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const member = await requireMember(auth.user.sub);
   if (!member) return Response.json({ error: "Not a lab member" }, { status: 403 });
 
-  if (!(await config.eligible(auth.user.sub))) {
+  // The form posts to its cycle's own URL, so a write always names its cycle.
+  const active = cycleId ? await getActiveCycleById(cycleId) : null;
+  if (!active || active.applicants !== applicants) {
+    return Response.json({ error: "No active cycle" }, { status: 404 });
+  }
+  const config = applicantGroup(applicants, active.id);
+  const showDomainPicker = config.domainStrategy === "target-domains";
+
+  if (!(await config.eligible!(auth.user.sub))) {
     return Response.json({ error: "Not eligible" }, { status: 403 });
   }
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
-  const active = await getActiveCycle(cycleType);
-  if (!active) return Response.json({ error: "No active cycle" }, { status: 404 });
   if (active.currentStatus !== "Open" && intent !== "withdraw") {
     return Response.json({ error: "Cycle is not open" }, { status: 409 });
   }
@@ -228,7 +290,7 @@ export async function handleInternalCyclePortalAction(
       create: {
         userId: auth.user.sub,
         applicationCycleId: active.id,
-        applicationType: cycleType,
+        applicationType: config.applicationType,
         applicationFormVersionId: formVersionId,
         answers,
         statusUpdates: { create: { newStatus: "Draft", userId: auth.user.sub } },

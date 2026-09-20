@@ -7,13 +7,10 @@ import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import type { ProvisionResult } from "~/members/lib/provisioning.server";
-import {
-  internalCycleConfig,
-  memberOnAccept,
-  type AcceptContext,
-} from "~/hiring/lib/internal-cycles.server";
+import { applicantGroup, type AcceptContext } from "~/hiring/lib/applicant-groups.server";
 import { notify } from "~/lib/notify.server";
 import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -64,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               netId: true,
             },
           },
-          applicationCycle: { select: { cycleType: true } },
+          applicationCycle: { select: { applicants: true } },
         },
       },
     },
@@ -91,25 +88,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
-  // Internal cycles (Fellowship/Core) each pick how decisions reach the
-  // applicant. Fellowship uses email (binding required); Core notifies in-app
-  // (binding optional). Standard cycles are email-only.
-  const config = internalCycleConfig(domainApp.application.applicationCycle.cycleType);
-  const decisionChannel = config?.decisionChannel ?? "email";
+  // The applicant group picks how decisions reach the applicant: email
+  // (an email required) for Students and Interns, in-app (email optional) for
+  // Lab members.
+  const config = applicantGroup(
+    domainApp.application.applicationCycle.applicants,
+    domainApp.application.applicationCycleId,
+  );
+  const decisionChannel = config.decisionChannel;
 
-  const binding = await prisma.cycleDecisionEmail.findUnique({
-    where: {
-      applicationCycleId_decisionType: {
-        applicationCycleId: domainApp.application.applicationCycleId,
-        decisionType: decision.type,
-      },
-    },
-    include: { emailTemplateVersion: true },
-  });
+  const binding = await getHiringEmail(decisionSlot(decision.type));
   if (!binding && decisionChannel === "email") {
     return Response.json(
           {
-            error: `No email template is bound to ${decision.type} in this cycle. Bind one on the Setup tab before releasing.`,
+            error: `There's no ${decision.type} email yet. Write one on the Setup tab before releasing.`,
           },
           { status: 409 }
         );
@@ -127,16 +119,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  // ── Acceptance side-effect (per cycle type) ──────────────────────────────
-  // Standard + Fellowship promote the applicant to a lab member (grant P1
-  // eligibility in the target domain, provision the account, file the
-  // onboarding todo). Core instead materializes CoreAssignment rows + notifies
-  // admins. The handler comes from the internal-cycle registry; Standard (no
-  // config) falls back to the member path. Idempotent: a re-release is a no-op.
+  // ── Acceptance side-effect (per applicant group) ─────────────────────────
+  // Students and Interns become lab members (grant P1 eligibility in the
+  // target domain, provision the account, file the onboarding todo). Lab
+  // members instead get CoreAssignment rows + an admin notice. Idempotent: a
+  // re-release is a no-op.
   let acceptAuditMeta: Record<string, unknown> = {};
   let provisionResult: ProvisionResult | null = null;
   if (decision.type === "Accepted") {
-    const onAccept = config ? config.onAccept : memberOnAccept;
+    const onAccept = config.onAccept;
     const u = domainApp.application.user;
     const ctx: AcceptContext = {
       userId: domainApp.application.userId,
@@ -166,9 +157,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
-  // ── Send notification email via per-cycle binding ────────────────────────────
+  // ── Send the decision email (hiring's shared email for this decision) ───────
   // Sent whenever a template is bound (always for email-channel cycles;
-  // optional for in-app cycles like Core).
+  // optional for in-app cycles).
   let emailSent = false;
   let _releaseEmailId: string | null = null;
   try {
@@ -185,18 +176,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (binding && to && user) {
       const { subject, html } = renderForSlot(
         decisionSlot(decision.type),
-        binding.emailTemplateVersion,
+        binding,
         {
           firstName: user.firstName,
           domain: domainName,
         },
       );
 
-      // For member-producing acceptances (Standard/Fellowship), append the
+      // For member-producing acceptances (Students/Interns), append the
       // onboarding block (account details + login link + logo) so the new
       // member gets a single email instead of a separate welcome message. The
       // temporary password is rendered ONLY into this email — never logged
-      // (see the audit metadata below, which omits it). Core acceptances don't
+      // (see the audit metadata below, which omits it). Lab members acceptances don't
       // provision an account, so there's no onboarding block.
       const onboarding = provisionResult
         ? onboardingEmailHtml(
@@ -223,14 +214,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     console.error("Failed to send release email:", err);
   }
 
-  // ── In-app decision notification (in-app–channel cycles, e.g. Core) ──────────
+  // ── In-app decision notification (in-app–channel cycles: Lab members) ────────
   // Applicants are current members, so the released decision reaches them in
   // the app rather than by email. Best-effort.
   let inAppNotified = false;
-  if (config?.decisionChannel === "inApp" && config.decisionNotificationEvent) {
+  if (config.decisionChannel === "inApp" && config.decisionNotificationEvent) {
     const accepted = decision.type === "Accepted";
     const message = accepted
-      ? { title: "You've been added to Core", body: "Welcome to Core — your assignment is active for this cycle." }
+      ? { title: "You've been added to Core", body: "Welcome to Core. Your assignment is active for this cycle." }
       : decision.type === "Waitlisted"
         ? { title: "Core application update", body: "You've been placed on the Core waitlist." }
         : { title: "Core application update", body: "A decision on your Core application has been released." };

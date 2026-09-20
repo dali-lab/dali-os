@@ -208,6 +208,39 @@ describe("PATCH /api/hiring/reviews/:id", () => {
     expect(call.data).toEqual({ feedback: "ok" });
   });
 
+  describe("pins the domain rubric only when the cycle has challenges", () => {
+    function reviewIn(hasChallenges: boolean) {
+      mockPrisma.applicationReview.findUnique.mockResolvedValueOnce({
+        id: REVIEW_ID,
+        submittedAt: null,
+        rubricVersionId: null,
+        cycleReviewer: { userId: USER_ID },
+        domainApplication: {
+          domainId: "d1",
+          application: { applicationCycleId: "c1", applicationCycle: { hasChallenges } },
+        },
+      });
+      (mockPrisma as any).domainApplicationCycle = {
+        findUnique: vi.fn().mockResolvedValue({ rubricVersionId: "rv-domain" }),
+      };
+    }
+    const patch = () =>
+      action({ request: makeRequest({ scores: { a: 3 } }), params: { id: REVIEW_ID }, context: {} } as any);
+
+    it("with challenges", async () => {
+      reviewIn(true);
+      await patch();
+      expect(mockPrisma.applicationReview.update.mock.calls[0][0].data.rubricVersionId).toBe("rv-domain");
+    });
+
+    it("without challenges", async () => {
+      reviewIn(false);
+      await patch();
+      expect(mockPrisma.applicationReview.update.mock.calls[0][0].data).not.toHaveProperty("rubricVersionId");
+      expect((mockPrisma as any).domainApplicationCycle.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   it("returns 409 when the review is already submitted", async () => {
     mockPrisma.applicationReview.findUnique.mockResolvedValueOnce({
       id: REVIEW_ID,

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildColumnOrder, INITIAL_COLUMNS } from "~/hiring/lib/delibs";
+import { buildColumnOrder } from "~/hiring/lib/delibs";
+import { INTERVIEW_ROUND_COLUMNS } from "~/hiring/lib/cycle-timeline";
 
-const columns = INITIAL_COLUMNS;
+const columns = INTERVIEW_ROUND_COLUMNS;
 const defaultColumn = columns[0]; // "No Decision"
 
 describe("buildColumnOrder", () => {

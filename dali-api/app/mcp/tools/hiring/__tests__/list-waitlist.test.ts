@@ -41,6 +41,7 @@ const roles = (over: Partial<{ isCore: boolean; isAdmin: boolean }>) =>
 
 const fakeEntry = {
   domainApplicationId: "da1",
+  decisionId: "dec1",
   rank: 1,
   waitlistedAt: new Date("2026-10-01"),
   applicant: {
@@ -50,7 +51,7 @@ const fakeEntry = {
     dartmouthEmail: "bob@dartmouth.edu",
   },
   domain: { id: "dom1", name: "design", displayName: "Design" },
-  cycle: { id: "cy1", name: "Fall 2026", cycleType: "Standard", status: "Completed" },
+  cycle: { id: "cy1", name: "Fall 2026", applicants: "Students" as const, status: "Completed" },
 };
 
 describe("list_waitlist", () => {
@@ -84,17 +85,17 @@ describe("list_waitlist", () => {
 
   it("hides Core-cycle waitlisters from non-Admin Core members (A2)", async () => {
     vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true, isAdmin: false }));
-    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, cycleType: "Core" } };
+    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, applicants: "LabMembers" as const } };
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
 
     const result = (await runListWaitlist("u1", {})) as any[];
     expect(result).toHaveLength(1);
-    expect(result[0].cycle.cycleType).toBe("Standard");
+    expect(result[0].cycle.applicants).toBe("Students");
   });
 
   it("shows Core-cycle waitlisters to Admins (A2)", async () => {
     vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true, isAdmin: true }));
-    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, cycleType: "Core" } };
+    const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, applicants: "LabMembers" as const } };
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
 
     const result = (await runListWaitlist("u1", {})) as any[];

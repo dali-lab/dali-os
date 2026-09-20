@@ -1901,8 +1901,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
               !isFocused && setState((prev) => ({ ...prev, focusedPaneId: pane.id }))
             }
           >
-            {/* Tab bar */}
-            <div className="flex items-stretch h-10 bg-section-bg border-b border-border">
+            {/* Tab bar. The divider under it lives on the pane body, not here:
+                a border-b would eat 1px out of this box's 40px content height,
+                leaving 39px to centre in and pushing every child (the back /
+                forward chevrons most visibly) half a pixel high. */}
+            <div className="flex items-stretch h-10 bg-section-bg">
               <div className="flex items-stretch border-r border-border">
                 {(() => {
                   const canBack = !!activeTab && activeTab.backStack.length > 0
@@ -2038,7 +2041,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
             {/* One iframe per opened tab; non-active tabs hidden via
                 display:none so switching preserves scroll/form/JS state
                 instead of reloading. */}
-            <div className="flex-1 min-h-0 bg-section-bg relative">
+            <div className="flex-1 min-h-0 bg-section-bg relative border-t border-border">
               {pane.tabs.map((tab) => {
                 if (!mountedTabIds.has(tab.id)) return null
                 const isActive = tab.id === pane.activeTabId

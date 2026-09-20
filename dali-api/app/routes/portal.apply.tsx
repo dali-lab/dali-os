@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getActiveCycleById, getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
+import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { loadHiringForm } from "~/hiring/lib/application-form.server";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
@@ -26,6 +27,7 @@ import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
 import { useToast } from "~/components/ui/toast";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { Radio } from "~/components/ui/Radio";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
@@ -33,14 +35,42 @@ export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
-export async function loader({ request }: Route.LoaderArgs) {
+// The Open Students cycle a request is about. An id names one; without one (or
+// with an id that isn't an Open Students cycle) the only open cycle is used, or
+// the caller offers a choice when several are open.
+async function resolveApplyCycle(
+  cycleId: string | undefined,
+): Promise<{ cycle: ActiveCycle } | { choices: ActiveCycle[] }> {
+  if (cycleId) {
+    const cycle = await openStudentsCycle(cycleId);
+    if (cycle) return { cycle };
+  }
+  const open = await getOpenCycles({ applicants: "Students" });
+  return open.length === 1 ? { cycle: open[0] } : { choices: open };
+}
+
+async function openStudentsCycle(cycleId: string): Promise<ActiveCycle | null> {
+  const cycle = await getActiveCycleById(cycleId);
+  return cycle?.applicants === "Students" && cycle.currentStatus === "Open" ? cycle : null;
+}
+
+export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
 
-  const active = await getActiveCycle();
-  if (!active || active.currentStatus !== "Open") {
-    return redirect("/portal");
+  const resolved = await resolveApplyCycle(params.cycleId);
+  if ("choices" in resolved) {
+    if (resolved.choices.length === 0) return redirect("/portal");
+    return {
+      choose: resolved.choices.map((c) => ({
+        id: c.id,
+        name: c.name,
+        closeDate: c.closeDate ? c.closeDate.toISOString() : null,
+        href: applicantPortalPath("Students", c.id),
+      })),
+    };
   }
+  const active = resolved.cycle;
 
   // Load cycle with its hiring domains + per-domain challenge Forms.
   const cycle = await prisma.applicationCycle.findUnique({
@@ -73,9 +103,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const generalDescription = ensureBlocks(form.description);
 
   // Build domain info with each domain's challenge Forms (applicant picks one).
-  // Each option carries an opaque "form:<formId>" id.
+  // Each option carries an opaque "form:<formId>" id. A cycle without
+  // challenges offers bare domains.
   const domains = cycle.domains.map(dac => {
-    const formChallenges = cycle.domainChallengeForms
+    const formChallenges = (cycle.hasChallenges ? cycle.domainChallengeForms : [])
       .filter(cdf => cdf.domainId === dac.domainId && cdf.form.versions[0])
       .map(cdf => ({
         challengeVersionId: `form:${cdf.formId}`,
@@ -113,6 +144,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
       cycleId: active.id,
       cycleName: active.name,
+      hasChallenges: cycle.hasChallenges,
       closeDate: active.closeDate ? active.closeDate.toISOString() : null,
       applicationFormVersionId,
       formQuestions,
@@ -143,12 +175,24 @@ export async function loader({ request }: Route.LoaderArgs) {
 // Resolve + validate applicant challenge selections against the challenge Forms
 // linked to the cycle. Each selection's `challengeVersionId` is an opaque
 // "form:<formId>" id. Returns one pin per valid selection: {domainId,
-// challengeFormVersionId} (the picked Form's latest version).
-type ResolvedPin = { domainId: string; challengeFormVersionId: string };
+// challengeFormVersionId} (the picked Form's latest version). A cycle without
+// challenges pins every selected domain of the cycle with no challenge.
+type ResolvedPin = { domainId: string; challengeFormVersionId: string | null };
 async function resolveChallengeSelections(
-  cycleId: string,
+  cycle: ActiveCycle,
   selections: { domainId: string; challengeVersionId: string }[],
 ): Promise<ResolvedPin[]> {
+  if (!cycle.hasChallenges) {
+    const cycleDomains = await prisma.domainApplicationCycle.findMany({
+      where: { applicationCycleId: cycle.id },
+      select: { domainId: true },
+    });
+    const allowed = new Set(cycleDomains.map(d => d.domainId));
+    return [...new Set(selections.map(s => s.domainId))]
+      .filter(id => allowed.has(id))
+      .map(domainId => ({ domainId, challengeFormVersionId: null }));
+  }
+  const cycleId = cycle.id;
   const cdfs = await prisma.cycleDomainForm.findMany({
     where: { applicationCycleId: cycleId },
     include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
@@ -176,8 +220,26 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
+  // Every write lands on an Open Students cycle. Intents that name an
+  // application must also name one of the caller's own.
+  let cycle: ActiveCycle | null;
+  let applicationId: string | null = null;
   if (intent === "create-draft") {
-    const cycleId = formData.get("cycleId") as string;
+    cycle = await openStudentsCycle(formData.get("cycleId") as string);
+  } else {
+    const owned = await prisma.application.findFirst({
+      where: { id: formData.get("applicationId") as string, userId: auth.user.sub },
+      select: { id: true, applicationCycleId: true },
+    });
+    applicationId = owned?.id ?? null;
+    cycle = owned ? await openStudentsCycle(owned.applicationCycleId) : null;
+  }
+  if (!cycle) {
+    return Response.json({ error: "This cycle isn't open for applications." }, { status: 409 });
+  }
+
+  if (intent === "create-draft") {
+    const cycleId = cycle.id;
     const applicationFormVersionId = (formData.get("applicationFormVersionId") as string) || null;
     const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
       domainId: string;
@@ -186,7 +248,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Validate every chosen challenge Form is linked to this cycle for the
     // claimed domain, and resolve the pinned FormVersion.
-    const resolved = await resolveChallengeSelections(cycleId, selectedDomains);
+    const resolved = await resolveChallengeSelections(cycle, selectedDomains);
 
     // Upsert keyed on the (userId, applicationCycleId) unique constraint so
     // that two concurrent "Start Application" clicks (e.g. from two open tabs)
@@ -212,7 +274,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: {
           create: resolved.map(r => ({
             domainId: r.domainId,
-            challengeFormVersionId: r.challengeFormVersionId,
+            ...(r.challengeFormVersionId && { challengeFormVersionId: r.challengeFormVersionId }),
             answers: {},
           })),
         },
@@ -245,19 +307,17 @@ export async function action({ request }: Route.ActionArgs) {
         };
   }
 
-  if (intent === "update-domains") {
-    const applicationId = formData.get("applicationId") as string;
-    const cycleId = formData.get("cycleId") as string;
+  if (intent === "update-domains" && applicationId) {
     const newSelections = JSON.parse(formData.get("selectedDomains") as string) as {
       domainId: string;
       challengeVersionId: string;
     }[];
 
     // Validate + resolve every chosen challenge (legacy CV or Form).
-    const resolved = await resolveChallengeSelections(cycleId, newSelections);
+    const resolved = await resolveChallengeSelections(cycle, newSelections);
     const newDomainIds = resolved.map(r => r.domainId);
     const desiredFormByDomain = new Map(
-      resolved.map(r => [r.domainId, r.challengeFormVersionId]),
+      resolved.flatMap(r => (r.challengeFormVersionId ? [[r.domainId, r.challengeFormVersionId] as const] : [])),
     );
 
     await reconcileDomainApplications({
@@ -295,8 +355,7 @@ export async function action({ request }: Route.ActionArgs) {
         };
   }
 
-  if (intent === "save-draft") {
-    const applicationId = formData.get("applicationId") as string;
+  if (intent === "save-draft" && applicationId) {
     const answers = JSON.parse(formData.get("answers") as string);
     const domainAnswers = JSON.parse(formData.get("domainAnswers") as string) as {
       domainApplicationId: string;
@@ -310,8 +369,8 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Update domain application answers
     for (const da of domainAnswers) {
-      await prisma.domainApplication.update({
-        where: { id: da.domainApplicationId },
+      await prisma.domainApplication.updateMany({
+        where: { id: da.domainApplicationId, applicationId },
         data: { answers: da.answers },
       });
     }
@@ -319,8 +378,7 @@ export async function action({ request }: Route.ActionArgs) {
     return { saved: true };
   }
 
-  if (intent === "submit") {
-    const applicationId = formData.get("applicationId") as string;
+  if (intent === "submit" && applicationId) {
     const answers = JSON.parse(formData.get("answers") as string);
     const domainAnswers = JSON.parse(formData.get("domainAnswers") as string) as {
       domainApplicationId: string;
@@ -407,8 +465,8 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     for (const da of domainAnswers) {
-      await prisma.domainApplication.update({
-        where: { id: da.domainApplicationId },
+      await prisma.domainApplication.updateMany({
+        where: { id: da.domainApplicationId, applicationId },
         data: { answers: da.answers },
       });
     }
@@ -475,15 +533,7 @@ export async function action({ request }: Route.ActionArgs) {
         if (user) {
           const to = user.dartmouthEmail ?? user.daliEmail ?? "";
           if (to) {
-            const binding = await prisma.cycleNotificationEmail.findUnique({
-              where: {
-                applicationCycleId_notificationType: {
-                  applicationCycleId: application.applicationCycleId,
-                  notificationType: "ApplicationReceived",
-                },
-              },
-              include: { emailTemplateVersion: true },
-            });
+            const binding = await getHiringEmail(notificationSlot("ApplicationReceived"));
             if (binding) {
               // ApplicationReceived isn't tied to a single domain (an applicant
               // may apply to multiple), so {{domain}} is intentionally not passed
@@ -491,7 +541,7 @@ export async function action({ request }: Route.ActionArgs) {
               // try to use {{domain}} in this slot.
               const { subject, html } = renderForSlot(
                 notificationSlot("ApplicationReceived"),
-                binding.emailTemplateVersion,
+                binding,
                 { firstName: user.firstName },
               );
               const { id } = await enqueueOutbound({
@@ -515,7 +565,8 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Signal first-time submission so the tracker can play a one-shot confetti.
     // Subsequent edit-saves keep the plain redirect so the animation does not replay.
-    return redirect(existingSubmitted ? "/portal/hiring" : "/portal/hiring?just-submitted=1");
+    const tracker = `/portal/hiring?cycle=${cycle.id}`;
+    return redirect(existingSubmitted ? tracker : `${tracker}&just-submitted=1`);
   }
 
   return { error: "Unknown intent" };
@@ -778,10 +829,45 @@ function BackToTopButton() {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+type CycleChoice = { id: string; name: string; closeDate: string | null; href: string };
+
 export default function PortalApply() {
+  const loaderData = useLoaderData<typeof loader>() as any;
+  if (loaderData.choose) return <CycleChooser cycles={loaderData.choose as CycleChoice[]} />;
+  return <ApplyForm />;
+}
+
+// Several Students cycles open at once: pick which one to apply to.
+function CycleChooser({ cycles }: { cycles: CycleChoice[] }) {
+  return (
+    <div className="max-w-2xl mx-auto py-10 px-6">
+      <h1 className="font-heading text-2xl font-bold text-dark-blue mb-6">Pick a cycle</h1>
+      <ul className="flex flex-col gap-3">
+        {cycles.map((c) => (
+          <li key={c.id}>
+            <Link
+              to={c.href}
+              className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
+            >
+              <span className="font-medium text-dark-blue">{c.name}</span>
+              {c.closeDate && (
+                <span className="text-sm text-muted-foreground">
+                  Closes{" "}
+                  {new Date(c.closeDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ApplyForm() {
   const toast = useToast();
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted, hasChallenges } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -928,7 +1014,8 @@ export default function PortalApply() {
     const payload: { domainId: string; challengeVersionId: string }[] = [];
     for (const id of ids) {
       const cvId = picks[id];
-      if (cvId) payload.push({ domainId: id, challengeVersionId: cvId });
+      // A cycle without challenges sends bare domains.
+      if (cvId || !hasChallenges) payload.push({ domainId: id, challengeVersionId: cvId ?? "" });
     }
     return payload;
   }
@@ -1000,7 +1087,7 @@ export default function PortalApply() {
       setError("Please select at least one domain.");
       return;
     }
-    const missing = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    const missing = hasChallenges && selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
     if (missing) {
       setError("Please pick a challenge for every selected domain.");
       return;
@@ -1052,7 +1139,7 @@ export default function PortalApply() {
     if (selectedDomainIds.length === 0) {
       return "Please select at least one domain.";
     }
-    const missingPick = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    const missingPick = hasChallenges && selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
     if (missingPick) {
       return "Please pick a challenge for every selected domain.";
     }
@@ -1431,7 +1518,8 @@ export default function PortalApply() {
         {selectedDomainIds.map(domainId => {
           const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
           const domain = (domains as DomainShape[])[domainIndex];
-          if (!domain) return null;
+          // No challenges, no per-domain questions: the domain pick is enough.
+          if (!domain || !hasChallenges) return null;
           const color = getDomainColor(domainIndex);
           const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
           const pickedQuestions = getPickedQuestions(domain, pickedCvId);

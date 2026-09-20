@@ -57,7 +57,7 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
-  cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
+  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
@@ -97,7 +97,7 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
     application: {
       userId: "applicant-user-id",
       applicationCycleId: CYCLE_ID,
-      applicationCycle: { cycleType: "Standard" },
+      applicationCycle: { applicants: "Students" },
       user: {
         firstName: "Ada",
         dartmouthEmail: "ada@dartmouth.edu",
@@ -119,7 +119,7 @@ beforeEach(() => {
     findUnique: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
-  (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
+  (mockPrisma as any).hiringEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
 });
@@ -133,32 +133,18 @@ function makeRequest() {
 }
 
 describe("POST /api/hiring/decisions/:id/release", () => {
-  it("sends email using the cycle-bound template version when a binding exists", async () => {
+  it("sends the shared Accepted email", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: {
-        id: "etv-1",
-        subject: "Welcome, {{firstName}}!",
-        body: "Hi {{firstName}},\n\nYou're in.",
-      },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome, {{firstName}}!", body: "Hi {{firstName}},\n\nYou're in." });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
 
-    expect(mockPrisma.cycleDecisionEmail.findUnique).toHaveBeenCalledWith({
-      where: {
-        applicationCycleId_decisionType: {
-          applicationCycleId: CYCLE_ID,
-          decisionType: "Accepted",
-        },
-      },
-      include: { emailTemplateVersion: true },
+    expect(mockPrisma.hiringEmail.findUnique).toHaveBeenCalledWith({
+      where: { slot: "decision:Accepted" },
+      select: { subject: true, body: true },
     });
 
     const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
@@ -175,16 +161,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: "Design" });
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Rejected",
-      emailTemplateVersionId: "etv-rej",
-      emailTemplateVersion: {
-        id: "etv-rej",
-        subject: "Your {{domain}} application",
-        body: "Hi {{firstName}}, regarding {{domain}}.",
-      },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Your {{domain}} application", body: "Hi {{firstName}}, regarding {{domain}}." });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -200,16 +177,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: null });
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Rejected",
-      emailTemplateVersionId: "etv-rej",
-      emailTemplateVersion: {
-        id: "etv-rej",
-        subject: "About {{domain}}",
-        body: "{{firstName}} / {{domain}}",
-      },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "About {{domain}}", body: "{{firstName}} / {{domain}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(409);
@@ -217,11 +185,11 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 409 and does not create the released decision when no binding exists", async () => {
+  it("returns 409 and does not create the released decision when there's no email for that decision", async () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue(null);
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue(null);
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
 
@@ -269,7 +237,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       application: {
         userId: "applicant-user-id",
         applicationCycleId: CYCLE_ID,
-        applicationCycle: { cycleType: "Standard" },
+        applicationCycle: { applicants: "Students" },
         user: {
           firstName: "Grace",
           dartmouthEmail: null,
@@ -277,16 +245,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
         },
       },
     });
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "InvitedToInterview",
-      emailTemplateVersionId: "etv-2",
-      emailTemplateVersion: {
-        id: "etv-2",
-        subject: "Interview invite",
-        body: "Hi {{firstName}}",
-      },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Interview invite", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -299,12 +258,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Waitlisted");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Waitlisted",
-      emailTemplateVersionId: "etv-3",
-      emailTemplateVersion: { id: "etv-3", subject: "x", body: "y" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "x", body: "y" });
     mockEnqueue.mockRejectedValueOnce(new Error("outbox down"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -322,12 +276,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -346,12 +295,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -384,12 +328,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -410,12 +349,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Rejected",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Update", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Update", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -432,12 +366,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       slack: { status: "skipped", message: "" },
       gmail: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -456,12 +385,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       github: { status: "skipped", message: "" },
       slack: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -483,12 +407,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Rejected",
-      emailTemplateVersionId: "etv-rej",
-      emailTemplateVersion: { id: "etv-rej", subject: "x", body: "y" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "x", body: "y" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -506,12 +425,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("Accepted");
     setupApplicantContext();
     vi.mocked(provisionNewMember).mockRejectedValueOnce(new Error("workspace 500"));
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      applicationCycleId: CYCLE_ID,
-      decisionType: "Accepted",
-      emailTemplateVersionId: "etv-1",
-      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);

@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { COLLAB_SOURCES } from "~/collab/sources";
@@ -72,7 +72,7 @@ export async function authorizeCollabDoc(
     if (!review) return deny;
     const cycleId = review.cycleReviewer.applicationCycleId;
     const confState = await getCycleConfidentialityState(userSub, cycleId);
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     if (review.cycleReviewer.userId === userSub) return allow;
     if (await isDomainLead(userSub)) return allow;
     if (await isCore(userSub)) return allow;
@@ -90,7 +90,7 @@ export async function authorizeCollabDoc(
     if (!da) return deny;
     const cycleId = da.application.applicationCycleId;
     const confState = await getCycleConfidentialityState(userSub, cycleId);
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     if (await isDomainLead(userSub)) return allow;
     if (await isCore(userSub)) return allow;
     return deny;
@@ -106,7 +106,7 @@ export async function authorizeCollabDoc(
       userSub,
       interview.applicationCycleId,
     );
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     const assignment = await prisma.interviewAssignment.findFirst({
       where: {
         interviewId: id,

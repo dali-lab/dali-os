@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 
-// Hiring navigation: the sidebar's Hiring entry lands on the /hiring hub and
-// carries the role-gated tools (Reviews / Interviews / Applications / Domain /
+// Hiring navigation: the sidebar's Hiring entry lands on /hiring (My work) and
+// carries the role-gated tools (My work / Applications / Domain /
 // Cycles / Waitlists / Onboarding / Library) as its children. They used to be
 // an in-page pill row inside the workspace iframe; the new left navigation
 // (sidebar-redesign, on for everyone) suppresses that row and puts the same
@@ -19,7 +19,7 @@ test.describe('navigation for hiring lead', () => {
     await page.goto('/hiring');
     const nav = sidebar(page);
     await expect(nav.getByRole('button', { name: 'Hiring' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'My work' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Cycles' })).toBeVisible();
   });
@@ -28,7 +28,7 @@ test.describe('navigation for hiring lead', () => {
     await page.goto('/hiring/lead');
     await expect(page).toHaveURL(/\/hiring\/lead/);
     const frame = hiringFrame(page);
-    await expect(frame.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Cycles', exact: true })).toBeVisible();
   });
 });
 
@@ -40,7 +40,7 @@ test.describe('navigation for domain lead', () => {
   test('sidebar shows Domain but not Cycles', async ({ page }) => {
     await page.goto('/hiring');
     const nav = sidebar(page);
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'My work' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Cycles' })).toHaveCount(0);
   });
@@ -51,10 +51,10 @@ test.describe('navigation for reviewer', () => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
   });
 
-  test('sidebar shows Reviews but neither Domain nor Cycles', async ({ page }) => {
+  test('sidebar shows My work but neither Domain nor Cycles', async ({ page }) => {
     await page.goto('/hiring');
     const nav = sidebar(page);
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'My work' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Domain' })).toHaveCount(0);
     await expect(nav.getByRole('button', { name: 'Cycles' })).toHaveCount(0);
   });

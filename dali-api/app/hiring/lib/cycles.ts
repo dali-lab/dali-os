@@ -1,53 +1,63 @@
 import { prisma } from "~/lib/db";
-import type { ApplicationCycleStatus, ApplicationCycleType } from "~/generated/prisma/enums";
+import type { ApplicationCycleStatus, CycleApplicants } from "~/generated/prisma/enums";
 
 // A cycle is "active" when its latest status is Open or UnderReview — those are
 // the stages where applicants are submitting and reviewers are reading/interviewing.
-// Draft and Completed are not active. By convention we enforce at most one active
-// cycle per cycleType at a time (see api.cycles.$cycleId.status.ts).
+// Draft and Completed are not active. Any number of cycles may be active at once.
 export const ACTIVE_STATUSES = ["Open", "UnderReview"] as const;
 export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
-/**
- * Find the single currently-active cycle for a given cycleType, or null if
- * none. Default cycleType is `Standard` so legacy callers keep their old
- * behavior. Different cycleTypes may be active concurrently (e.g. a Standard
- * hire cycle running alongside an Fellowship conversion cycle).
- *
- * Pure read — does not write. If an Open cycle is past its `closeDate`, the
- * returned `currentStatus` is derived as `UnderReview`; the DB row is
- * materialized separately via `autoCloseIfExpired`.
- */
-export async function getActiveCycle(cycleType: ApplicationCycleType = "Standard") {
-  const recentActiveUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-    where: {
-      newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] },
-      applicationCycle: { cycleType },
-    },
-    orderBy: { createdAt: "desc" },
-    include: {
-      applicationCycle: {
-        include: {
-          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-        },
-      },
-    },
-  });
-  if (!recentActiveUpdate) return null;
+const withLatestStatus = {
+  statusUpdates: { orderBy: { createdAt: "desc" as const }, take: 1 },
+};
 
-  const cycle = recentActiveUpdate.applicationCycle;
+// Derive UnderReview when an Open cycle is past its close date. The DB write
+// is materialized lazily by autoCloseIfExpired (called from the status loader).
+function withCurrentStatus<C extends { closeDate: Date | null; statusUpdates: { newStatus: string }[] }>(
+  cycle: C,
+): (C & { currentStatus: ActiveStatus }) | null {
   const latest = cycle.statusUpdates[0]?.newStatus;
-  // Defend against a later non-active update (e.g. Completed) on the same cycle.
-  if (!latest || !(ACTIVE_STATUSES as readonly string[]).includes(latest)) {
-    return null;
-  }
-
-  // Derive UnderReview when an Open cycle is past its close date. The DB write
-  // is materialized lazily by autoCloseIfExpired (called from the status loader).
+  if (!latest || !(ACTIVE_STATUSES as readonly string[]).includes(latest)) return null;
   if (latest === "Open" && cycle.closeDate && new Date() > cycle.closeDate) {
-    return { ...cycle, currentStatus: "UnderReview" as ActiveStatus };
+    return { ...cycle, currentStatus: "UnderReview" };
   }
   return { ...cycle, currentStatus: latest as ActiveStatus };
+}
+
+/**
+ * Every currently-active cycle, optionally for one applicant group, newest
+ * first. Pure read: an Open cycle past its `closeDate` comes back with
+ * `currentStatus` UnderReview; the DB row is materialized separately via
+ * `autoCloseIfExpired`.
+ */
+export async function getActiveCycles(filter: { applicants?: CycleApplicants } = {}) {
+  const cycles = await prisma.applicationCycle.findMany({
+    where: {
+      ...(filter.applicants && { applicants: filter.applicants }),
+      statusUpdates: {
+        some: { newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] } },
+      },
+    },
+    include: withLatestStatus,
+    orderBy: { createdAt: "desc" },
+  });
+  return cycles.map(withCurrentStatus).filter((c) => c !== null);
+}
+
+export type ActiveCycle = Awaited<ReturnType<typeof getActiveCycles>>[number];
+
+/** Active cycles still taking applications (Open and before their close date). */
+export async function getOpenCycles(filter: { applicants?: CycleApplicants } = {}) {
+  return (await getActiveCycles(filter)).filter((c) => c.currentStatus === "Open");
+}
+
+/** One cycle, if it's active, with the same derived status. */
+export async function getActiveCycleById(cycleId: string): Promise<ActiveCycle | null> {
+  const cycle = await prisma.applicationCycle.findUnique({
+    where: { id: cycleId },
+    include: withLatestStatus,
+  });
+  return cycle ? withCurrentStatus(cycle) : null;
 }
 
 /**
@@ -76,99 +86,4 @@ export async function autoCloseIfExpired(cycleId: string): Promise<void> {
       });
     }
   });
-}
-
-export type CycleStage =
-  | 'challengeSetup'
-  | 'challengesReady'
-  | 'applicationsOpen'
-  | 'readingApplications'
-  | 'writtenDelibs'
-  | 'collectingAvailability'
-  | 'interviews'
-  | 'finalDelibs'
-
-/** Map DB cycle status → reviewer-facing stage. */
-export function cycleStatusToStage(status: string): CycleStage {
-  switch (status) {
-    case 'Open': return 'applicationsOpen'
-    case 'UnderReview': return 'readingApplications' // refined by inferUnderReviewStage
-    default: return 'challengeSetup'
-  }
-}
-
-/**
- * Infer the sub-stage within UnderReview from actual data.
- * `reviewerIds` are the CycleReviewer IDs for this member in this cycle.
- */
-export async function inferUnderReviewStage(
-  cycleId: string,
-  userId: string,
-  reviewerIds: string[],
-): Promise<CycleStage> {
-  const invitedDecisions = await prisma.decision.count({
-    where: {
-      stage: "Released",
-      type: "InvitedToInterview",
-      domainApplication: { application: { applicationCycleId: cycleId } },
-    },
-  });
-
-  if (invitedDecisions === 0) {
-    return 'readingApplications';
-  }
-
-  // Even after some applicants are invited, reviewers with assigned reviews
-  // should still see the reviews stage so they can access their review work.
-  if (reviewerIds.length > 0) {
-    const hasReviews = await prisma.applicationReview.count({
-      where: { cycleReviewerId: { in: reviewerIds } },
-    });
-    if (hasReviews > 0) return 'readingApplications';
-  }
-
-  const completedInterviews = await prisma.interview.count({
-    where: { applicationCycleId: cycleId, status: "Completed" },
-  });
-
-  const terminalDecisions = await prisma.decision.count({
-    where: {
-      stage: "Released",
-      type: { in: ["Accepted", "Rejected", "Waitlisted"] },
-      domainApplication: { application: { applicationCycleId: cycleId } },
-    },
-  });
-
-  if (terminalDecisions > 0) return 'finalDelibs';
-  if (completedInterviews > 0) return 'finalDelibs';
-
-  const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
-    where: { userId, applicationCycleId: cycleId },
-    select: { id: true },
-  });
-
-  if (myInterviewerRecords.length > 0) {
-    const interviewerIds = myInterviewerRecords.map(r => r.id);
-    const scheduledInterviews = await prisma.interviewAssignment.count({
-      where: { cycleInterviewerId: { in: interviewerIds }, status: "Active" },
-    });
-    if (scheduledInterviews > 0) return 'interviews';
-  }
-
-  return 'collectingAvailability';
-}
-
-/**
- * Returns the id of any *other* cycle of the given cycleType (i.e. not
- * `excludingCycleId`) that is currently active, or null if none. Used to
- * enforce single-active-cycle *per type* when advancing a cycle into Open.
- * Defaults to Standard so existing callers keep their old behavior.
- */
-export async function findOtherActiveCycleId(
-  excludingCycleId: string,
-  cycleType: ApplicationCycleType = "Standard",
-): Promise<string | null> {
-  const active = await getActiveCycle(cycleType);
-  if (!active || active.id === excludingCycleId) return null;
-  return active.id;
 }

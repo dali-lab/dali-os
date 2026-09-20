@@ -3,6 +3,7 @@
 // Optionally scoped to a single cycle via `cycleId`.
 
 import { getUserRoles } from "~/lib/roles";
+import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { listActiveWaitlistEntries } from "~/hiring/lib/waitlist.server";
 import { McpForbiddenError } from "../../registry";
 
@@ -34,9 +35,9 @@ export async function runListWaitlist(userId: string, input: Input): Promise<unk
   }
 
   const entries = await listActiveWaitlistEntries({ cycleId: input.cycleId });
-  // Core-cycle waitlisters are current lab members — Admin-only (mirrors the
-  // waitlists.tsx loader). Hide them from non-admin Core members.
+  // Lab members cycle waitlisters are current lab members, so Admin-only
+  // (mirrors the waitlists.tsx loader). Hide them from non-admin Core members.
   return roles.isAdmin
     ? entries
-    : entries.filter((e) => e.cycle.cycleType !== "Core");
+    : entries.filter((e) => !isAdminOnlyCycle(e.cycle.applicants));
 }

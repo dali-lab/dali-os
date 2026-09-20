@@ -6,6 +6,20 @@ import { test, expect } from './fixtures';
 const cyclesFrame = (page: import('@playwright/test').Page) =>
   page.frameLocator('iframe[title="Hiring"]');
 
+// A tab switch is client-side state, so a click that lands before the page
+// hydrates does nothing and the test would sit on the wrong tab. Retry the
+// click until the tab's own content shows up.
+async function openTab(
+  frame: ReturnType<typeof cyclesFrame>,
+  name: string,
+  content: ReturnType<ReturnType<typeof cyclesFrame>['getByRole']>,
+) {
+  await expect(async () => {
+    await frame.getByRole('tab', { name, exact: true }).click();
+    await expect(content.first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 test.describe('hiring lead workflow', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
@@ -14,8 +28,8 @@ test.describe('hiring lead workflow', () => {
   test('cycles list shows active cycle and controls', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
-    await expect(frame.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: /New Cycle/ })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Cycles', exact: true })).toBeVisible();
+    await expect(frame.getByRole('button', { name: /New cycle/ })).toBeVisible();
     await expect(frame.getByText('Fall 2026').first()).toBeVisible();
     await expect(frame.getByText('Open').first()).toBeVisible();
   });
@@ -26,53 +40,98 @@ test.describe('hiring lead workflow', () => {
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
     // The iframe navigates to the cycle detail; verify by content rather
     // than by the outer page URL (which stays at /hiring/lead).
-    await expect(frame.getByRole('button', { name: 'Setup' })).toBeVisible();
+    await expect(frame.getByRole('tab', { name: 'Setup', exact: true })).toBeVisible();
   });
 
-  test('cycle detail shows management tabs', async ({ page }) => {
+  test('cycle detail shows a tab per timeline block, by name', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
 
-    await expect(frame.getByRole('button', { name: 'Overview' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Setup' })).toBeVisible();
-    // Use .first() for Interviews/Reviewers/Decisions: the overview panel renders count-card
-    // buttons whose accessible names contain these substrings ("Scheduled interviews",
-    // "Reviewers", "Decisions to release"). Tab nav renders before the content, so .first()
-    // reliably selects the tab button.
-    await expect(frame.getByRole('button', { name: 'Interviews' }).first()).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Reviewers' }).first()).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Decisions' }).first()).toBeVisible();
+    // Tabs are the timeline's blocks, by name. The seeded cycle uses the
+    // standard timeline.
+    for (const name of ['Setup', 'Review', 'First delib', 'Interviews', 'Final delib', 'Decisions']) {
+      await expect(frame.getByRole('tab', { name, exact: true })).toBeVisible();
+    }
   });
 
   test('cycle setup tab shows domains', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
     await expect(frame.getByText('Engineering').first()).toBeVisible();
     await expect(frame.getByText('Design').first()).toBeVisible();
     await expect(frame.getByText('Product').first()).toBeVisible();
   });
 
-  test('interview setup tab shows config fields', async ({ page }) => {
+  test('interviews phase shows the interview schedule config', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    // Use .first(): overview count cards include "Scheduled interviews" which also matches.
-    await frame.getByRole('button', { name: 'Interviews' }).first().click();
+    // The shared Select's trigger is a combobox (floating-ui's listbox role),
+    // not a button.
+    await openTab(frame, 'Interviews', frame.getByRole('combobox', { name: 'Slot length' }));
 
-    await expect(frame.getByText('Slot Duration')).toBeVisible();
-    await expect(frame.getByText('Buffer Between Interviews')).toBeVisible();
+    await expect(frame.getByRole('combobox', { name: 'Slot length' })).toBeVisible();
+    await expect(frame.getByRole('combobox', { name: 'Buffer between interviews' })).toBeVisible();
   });
 
-  test('decisions tab shows finalized decisions', async ({ page }) => {
+  test('setup tab stacks its sections as cards', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    // Use .first() because the overview panel also renders a "Decisions to release" count card button.
-    await frame.getByRole('button', { name: 'Decisions' }).first().click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
-    await expect(frame.getByText('Alice Johnson').first()).toBeVisible();
+    // Setup owns the term, the audience and the editable timeline. (The side
+    // nav beside them only renders at lg and up, so it isn't asserted here —
+    // the workspace iframe is narrower than the viewport.)
+    for (const name of ['Term and dates', 'Audience', 'Timeline']) {
+      await expect(frame.getByRole('heading', { name, exact: true })).toBeVisible();
+    }
+  });
+
+  test('a decision email opens in a modal, shared across cycles', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
+
+    // Emails are one shared row per slot; the seed writes a Rejected email, so
+    // its row offers Edit rather than Write.
+    const row = frame.getByText('Sent when a rejection is released.').locator('xpath=../..');
+    await row.getByRole('button', { name: /^(Edit|Write)$/ }).click();
+
+    const dialog = frame.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: 'Rejected email' })).toBeVisible();
+    await expect(dialog.getByLabel('Rejected subject')).toBeVisible();
+    await expect(dialog.getByLabel('Rejected body')).toBeVisible();
+    // Read-only check: saving would rewrite the email every cycle shares.
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await openTab(frame, 'Review', frame.getByRole('heading', { name: 'Reviewers', exact: true }));
+
+    await expect(frame.getByRole('heading', { name: 'Reviewers', exact: true })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Interviewers', exact: true })).toBeVisible();
+    // A Students cycle can fill a domain's roster from its mentors.
+    await expect(frame.getByRole('button', { name: 'Add all mentors' }).first()).toBeVisible();
+  });
+
+  test('decisions tab lists finalized decisions waiting to be sent', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await frame.getByRole('tab', { name: 'Decisions', exact: true }).click();
+
+    // Grace's Final "Rejected" decision is seeded unreleased.
+    await expect(frame.getByText('Grace Okafor').first()).toBeVisible();
   });
 });

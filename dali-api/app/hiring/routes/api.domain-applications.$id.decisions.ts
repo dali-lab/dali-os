@@ -59,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
-    select: { application: { select: { applicationCycleId: true } } },
+    select: { domainId: true, application: { select: { applicationCycleId: true } } },
   });
   if (!da) return Response.json({ error: "Not found" }, { status: 404 });
   const gate = await requireApiSignedOrForbidden(
@@ -84,10 +84,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   } else {
     const hiringLead = await isCycleAdmin(auth.user.sub, da.application.applicationCycleId);
-    const domainLead = await isDomainLeadForCycle(
-      auth.user.sub,
-      da.application.applicationCycleId,
-    );
+    // A domain lead decides for their OWN domain only: leading Design is no
+    // warrant to write a decision on a Web application.
+    const domainLead =
+      (await isDomainLeadForCycle(auth.user.sub, da.application.applicationCycleId)) &&
+      da.domainId != null &&
+      (await prisma.domainLeadAssignment.findFirst({
+        where: { userId: auth.user.sub, domainId: da.domainId },
+        select: { id: true },
+      })) != null;
     if (!hiringLead && !domainLead) {
       return forbidden(request);
     }

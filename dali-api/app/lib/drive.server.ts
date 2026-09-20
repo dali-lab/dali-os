@@ -777,40 +777,6 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
   // Agreements carry their kind on the row itself (loaded in loadAgreements).
   // The label is derived per-row there rather than here — see loadAgreements.
 
-  // ── Email templates: hiring decision bindings ─────────────────────────────
-  const cycleDecisionBindings = await prisma.cycleDecisionEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      applicationCycle: { select: { id: true, name: true } },
-    },
-  });
-  for (const b of cycleDecisionBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: `Hiring – ${b.applicationCycle.name}`,
-        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
-      });
-    }
-  }
-
-  // ── Email templates: hiring notification bindings ─────────────────────────
-  const cycleNotifBindings = await prisma.cycleNotificationEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      applicationCycle: { select: { id: true, name: true } },
-    },
-  });
-  for (const b of cycleNotifBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: `Hiring – ${b.applicationCycle.name}`,
-        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
-      });
-    }
-  }
-
   // ── Email templates: education offering decision bindings ─────────────────
   const eduDecisionBindings = await prisma.educationDecisionEmail.findMany({
     select: {

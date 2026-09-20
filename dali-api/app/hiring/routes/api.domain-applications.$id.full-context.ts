@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           user: { select: { firstName: true, lastName: true } },
           applicationFormVersion: { select: { questions: true } },
-          applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true, anonymizeReview: true } },
+          applicationCycle: { select: { id: true, generalRubricVersionId: true, anonymizeReview: true } },
         },
       },
       reviews: {

@@ -47,7 +47,7 @@ beforeEach(() => vi.clearAllMocks());
 const fakeCycle = {
   id: "cy1",
   name: "Fall 2026",
-  cycleType: "Standard",
+  applicants: "Students", hasChallenges: true, hasInterviews: true,
   closeDate: new Date("2026-10-01"),
   createdAt: new Date("2026-09-01"),
   statusUpdates: [{ newStatus: "Open" }],

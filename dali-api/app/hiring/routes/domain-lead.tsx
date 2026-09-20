@@ -1,22 +1,23 @@
 import { useState, useEffect } from "react";
-import { Form, Link, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator } from "react-router";
+import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
+import { cn } from "~/lib/cn";
+import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, ChevronUp } from "lucide-react";
-import { createDomainChallengeForm } from "~/hiring/lib/application-form.server";
+import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
+import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
 import { buildCriteriaList } from "~/hiring/lib/rubric-criteria";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
-import { CycleSelector } from "~/hiring/components/CycleSelector";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -30,16 +31,26 @@ import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
-import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
-import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
+import {
+  DECISION_LABELS,
+  DECISION_TONES,
+  RECOMMENDATION_TONES,
+  STATUS_LABELS,
+  STATUS_TONES,
+} from "~/hiring/lib/labels";
+import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
+import { delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { SearchInput } from "~/components/ui/SearchInput";
-
-const STATUS_MESSAGES: Record<string, string> = {
-  Draft: "This cycle is still being set up.",
-  Open: "Applications are open. Applicants can submit until the cycle closes.",
-  UnderReview: "Submissions are closed. Review applications below.",
-  Completed: "Decisions have been released to applicants.",
-};
+import { buttonClasses } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
+import { useOsChrome } from "~/components/os-chrome";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
+import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
+import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -105,25 +116,20 @@ export async function loader({ request }: Route.LoaderArgs) {
       });
 
       // Cycles eligible for the picker: anything Open/UnderReview/Draft for
-      // this domain. After cycleType split, a Standard + Fellowship cycle
-      // can both be active for the same domain (target domains overlap).
+      // this domain. Several cycles can be active for the same domain.
       const candidateCycles = allCycles.filter((c) => {
         const status = c.statusUpdates[0]?.newStatus;
         return status && ["Open", "UnderReview", "Draft"].includes(status);
       });
-      const availableCycles = candidateCycles.map((c) => ({
-        id: c.id,
-        name: c.name,
-        cycleType: c.cycleType as string,
-      }));
+      const availableCycles = candidateCycles.map((c) => ({ id: c.id, name: c.name }));
 
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
       const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
 
-      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
+      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], delibRounds: [] as DomainRoundSummary[], rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
       const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
-      const confidentialityRequired = confState.status === "signed" ? null : confState.status;
+      const confidentialityRequired = confidentialityBlock(confState);
 
       return [await (async (cycle) => {
 
@@ -214,43 +220,28 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
 
-      // Count qualifying applications for each delibs type
-      const isFellowship = cycle?.cycleType === "Fellowship";
       const daDomainMatch = { domainId: assignment.domainId };
 
-      // Fellowship cycles skip the Initial→interview round, so the Initial
-      // delibs count is always 0 for them.
-      const initialDelibsCount = cycle && !isFellowship
-        ? await prisma.domainApplication.count({
-            where: {
-              selected: true,
-              ...daDomainMatch,
-              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-              reviews: { every: { submittedAt: { not: null } }, some: {} },
-              decisions: { none: { stage: { in: ["Final", "Released"] } } },
-            },
-          })
-        : 0;
-
-      // Final-delibs qualifier differs by cycle type. Standard: post-interview.
-      // Fellowship: no interview, so "all reviews submitted" is the gate.
-      const finalDelibsCount = cycle
-        ? await prisma.domainApplication.count({
-            where: {
-              selected: true,
-              ...daDomainMatch,
-              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-              ...(isFellowship
-                ? {
-                    reviews: { every: { submittedAt: { not: null } }, some: {} },
-                    decisions: { none: { stage: { in: ["Final", "Released"] } } },
-                  }
-                : {
-                    interviews: { some: { status: "Completed" } },
-                  }),
-            },
-          })
-        : 0;
+      // Each delib round in the cycle's timeline, with how many of this
+      // domain's applicants qualify for its board right now.
+      const delibRoundSummaries: DomainRoundSummary[] = cycle
+        ? await Promise.all(
+            delibRounds(parseTimeline(cycle.timeline)).map(async (r) => ({
+              id: r.id,
+              label: r.label,
+              isFinal: r.isFinal,
+              leadsToInterviews: r.leadsToInterviews,
+              count: await prisma.domainApplication.count({
+                where: {
+                  selected: true,
+                  ...daDomainMatch,
+                  application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
+                  ...(await delibsQualifier(cycle, r.id, assignment.domainId)),
+                },
+              }),
+            })),
+          )
+        : [];
 
       // Compute inferred status for each domain application
       const appsWithStatus = apps.map((app: any) => ({
@@ -326,25 +317,29 @@ export async function loader({ request }: Route.LoaderArgs) {
         pinnedVersionIds: domainReviewVersionIds,
       });
 
-      // Interviewers for this domain in this cycle (with availability blocks —
-      // the component sums their durations to show total hours offered).
+      // Interviewers for this domain in this cycle, with the hours their DALI
+      // OS calendar leaves free inside the interview window.
       const interviewersRaw = cycle
         ? await prisma.cycleInterviewer.findMany({
             where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
             include: {
               user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
-              availabilityBlocks: { select: { startTime: true, endTime: true } },
             },
           })
         : [];
+      const interviewConfig = cycle && cycle.hasInterviews
+        ? await prisma.interviewConfig.findUnique({ where: { applicationCycleId: cycle.id } })
+        : null;
+      const calendars = interviewConfig
+        ? await interviewerCalendars(interviewersRaw.map((i) => i.userId), interviewConfig)
+        : new Map();
       const interviewers = interviewersRaw.map((i) => {
-        const totalMs = i.availabilityBlocks.reduce(
-          (sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()),
-          0,
-        );
+        const blocks: { startTime: Date; endTime: Date }[] = calendars.get(i.userId)?.available ?? [];
+        const totalMs = blocks.reduce((sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()), 0);
         return {
           ...i,
           availabilityHours: totalMs / (1000 * 60 * 60),
+          hasCalendar: calendars.get(i.userId)?.hasCalendar ?? false,
         };
       });
       const hasApplicationReviews = cycle
@@ -378,8 +373,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           delibsSessions: [] as any[],
           draftDecisions: [] as any[],
           cycleReviewersForDomain,
-          initialDelibsCount: 0,
-          finalDelibsCount: 0,
+          delibRounds: [] as DomainRoundSummary[],
           rubricVersionOptions,
           currentRubricVersionId,
           rubricCriteria,
@@ -389,7 +383,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         };
       }
 
-      return { assignment, cycle, availableCycles, apps: appsWithStatus, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
+      return { assignment, cycle, availableCycles, apps: appsWithStatus, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: delibRoundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
       })(activeCycle)];
     })
   );
@@ -398,12 +392,48 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
   const formData = await request.formData();
   const intent = formData.get("intent");
 
+  // Every intent acts on one domain, and only that domain's lead may act.
+  const domainId =
+    intent === "remove-challenge-form"
+      ? (await prisma.cycleDomainForm.findUnique({
+          where: { id: String(formData.get("cdfId") ?? "") },
+          select: { domainId: true },
+        }))?.domainId
+      : String(formData.get("domainId") ?? "");
+  const lead =
+    domainId &&
+    (await prisma.domainLeadAssignment.findFirst({ where: { userId: auth.user.sub, domainId }, select: { id: true } }));
+  if (!domainId || !lead) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  if (intent === "add-domain-mentors") {
+    const cycleId = String(formData.get("cycleId") ?? "");
+    const role = formData.get("role");
+    if (role !== "reviewer" && role !== "interviewer") {
+      return Response.json({ error: "Unknown role" }, { status: 400 });
+    }
+    const linked = await prisma.domainApplicationCycle.findUnique({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
+      select: { domainId: true },
+    });
+    if (!linked) return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
+    const added = await addDomainMentors(cycleId, domainId, role, request);
+    // Nothing added means either no mentors, or all of them already on it.
+    const notice =
+      added > 0
+        ? `Added ${added} mentor${added === 1 ? "" : "s"}.`
+        : (await domainMentorIds(domainId, request)).length
+          ? "Everyone's already on the roster."
+          : "This domain has no mentors yet.";
+    return { notice };
+  }
+
   if (intent === "set-rubric") {
     const cycleId = formData.get("cycleId") as string;
-    const domainId = formData.get("domainId") as string;
     const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
 
     const hasAssignedReviews = await prisma.applicationReview.count({
@@ -427,48 +457,18 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "create-challenge-form") {
     // Auto-create a Drive challenge Form for this domain and link it (Draft only).
-    const auth = await requireAuth(request);
-    if (!auth.ok) return auth.response;
-    const cycleId = formData.get("cycleId") as string;
-    const domainId = formData.get("domainId") as string;
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-    await createDomainChallengeForm(cycleId, domainId, auth.user.sub);
+    await addDomainChallenge(formData.get("cycleId") as string, domainId, auth.user.sub);
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "remove-challenge-form") {
-    const cdfId = formData.get("cdfId") as string;
-    const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
-    if (!cdf) return redirect("/hiring/domain-lead");
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cdf.applicationCycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-    // Refuse if any DomainApplication picked a version of this form.
-    const inUse = await prisma.domainApplication.count({
-      where: {
-        challengeFormVersion: { formId: cdf.formId },
-        application: { applicationCycleId: cdf.applicationCycleId },
-      },
-    });
-    if (inUse === 0) {
-      await prisma.cycleDomainForm.delete({ where: { id: cdfId } });
-    }
+    // Draft only, and refused once an applicant picked a version of the form.
+    await removeDomainChallenge(formData.get("cdfId") as string);
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
-    const domainId = formData.get("domainId") as string;
     const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
       where: { applicationCycleId: cycleId },
       orderBy: { createdAt: "desc" },
@@ -486,36 +486,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return redirect("/hiring/domain-lead");
-}
-
-function Section({ title, subtitle, badge, defaultOpen = true, children }: {
-  title: string;
-  subtitle?: string;
-  badge?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="py-4 first:pt-0">
-      <button
-        onClick={() => setOpen(!open)}
-        className="group w-full flex items-center justify-between gap-3 text-left"
-      >
-        <div className="min-w-0 flex-1">
-          <span className="text-base font-semibold text-foreground group-hover:text-foreground transition">{title}</span>
-          {subtitle && (
-            <p className="text-xs text-muted-foreground/80 mt-0.5 truncate">{subtitle}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {badge}
-          <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
-        </div>
-      </button>
-      {open && <div className="mt-4">{children}</div>}
-    </div>
-  );
 }
 
 function ConfirmDialog({
@@ -562,15 +532,6 @@ function ConfirmDialog({
   );
 }
 
-function StatPill({ label, value, color = "text-foreground" }: { label: string; value: number; color?: string }) {
-  return (
-    <div className="flex items-center gap-1.5 text-sm">
-      <span className={`font-semibold ${color}`}>{value}</span>
-      <span className="text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
 // Find the most-recent Draft decision that hasn't been superseded by a Final
 // or Released sibling of the same type. Mirrors the per-row finalize lookup in
 // `ApplicationsTable` so the Interviews section uses the same definition of
@@ -586,628 +547,641 @@ function findFinalizableDraft(decisions: any[]) {
 
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
-  const navigate = useNavigate();
-  const revalidator = useRevalidator();
+  const actionData = useActionData<typeof action>() as { notice?: string } | undefined;
+  const toast = useToast();
+  const os = useOsChrome();
   const domainData = data?.domainData ?? [];
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (actionData?.notice) toast.success(actionData.notice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per action result
+  }, [actionData]);
 
   if (domainData.length === 0) {
     return (
-      <div className="text-center py-16">
-        <h1 className="font-heading text-2xl font-bold text-foreground mb-2">Domain Lead Dashboard</h1>
-        <p className="text-muted-foreground">You are not assigned as a domain lead for any domain.</p>
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <p className={os.bodyText}>You don't lead a domain yet.</p>
       </div>
     );
   }
 
+  // One domain at a time; leads of several switch between them.
+  const domainParam = searchParams.get("domain");
+  const current = domainData.find((d: any) => d.assignment.domainId === domainParam) ?? domainData[0];
+  const setDomain = (domainId: string) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("domain", domainId);
+        next.delete("cycle");
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+
   return (
-    <div className="space-y-8">
-      <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
+    <div className="flex flex-col gap-6">
+      {domainData.length > 1 && (
+        <SegmentedTabButtons
+          label="Domain"
+          items={domainData.map((d: any) => ({
+            label: d.assignment.domain.name,
+            active: d === current,
+            onClick: () => setDomain(d.assignment.domainId),
+          }))}
+        />
+      )}
+      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} />
+    </div>
+  );
+}
 
-      {domainData.map(({ assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
-        const isFellowship = cycle?.cycleType === "Fellowship";
-        const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
-        const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
+function DomainPanel({ entry }: { entry: any }) {
+  const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
+  const os = useOsChrome();
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const toast = useToast();
+  const dialog = useDialog();
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [, setSearchParams] = useSearchParams();
+  const setCycle = (cycleId: string) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("cycle", cycleId);
+        return next;
+      },
+      { replace: true, preventScrollReset: true },
+    );
 
-        // Compute stats for progress badges
-        const fullyReviewed = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return da?.reviews?.length > 0 && da.reviews.every((r: any) => r.submittedAt);
-        }).length;
-        const needsReviewers = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return !da?.reviews || da.reviews.length === 0;
-        }).length;
-        const withDecisions = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return da?.decisions?.some((d: any) => d.stage === "Final" || d.stage === "Released");
-        }).length;
-        const scheduledInterviews = interviews.filter((i: any) => i.status === "Scheduled").length;
-        const completedInterviews = interviews.filter((i: any) => i.status === "Completed").length;
+  useEffect(() => {
+    // Rosters take current-term members only.
+    fetch("/api/members?scope=current", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: any[]) => setMembers(list.map((m) => ({ id: m.id, name: personName(m) ?? m.id }))))
+      .catch(() => {});
+  }, []);
 
-        return (
-          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-            {!cycle ? (
-              <div className="p-6">
-                <div className="flex items-center gap-3">
-                  <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
+  const header = (
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className={os.pageTitle}>{assignment.domain.name}</h1>
+      {cycle && (
+        <div className="flex flex-wrap items-center gap-2">
+          {cycle.statusUpdates[0]?.newStatus && (
+            <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>
+              {STATUS_LABELS[cycle.statusUpdates[0].newStatus]}
+            </Pill>
+          )}
+          {(availableCycles ?? []).length > 1 ? (
+            <div className="w-56">
+              <Select
+                ariaLabel="Cycle"
+                value={cycle.id}
+                onChange={setCycle}
+                options={availableCycles.map((c: { id: string; name: string }) => ({ value: c.id, label: c.name }))}
+                buttonClassName={pillTrigger(os.formTrigger)}
+              />
+            </div>
+          ) : (
+            <span className={os.bodyText}>{cycle.name}</span>
+          )}
+        </div>
+      )}
+    </header>
+  );
+
+  if (!cycle) {
+    return (
+      <div className="flex flex-col gap-6">
+        {header}
+        <p className={os.bodyText}>No active cycle for this domain.</p>
+      </div>
+    );
+  }
+
+  const currentStatus = cycle.statusUpdates[0]?.newStatus ?? null;
+  const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
+  const fullyReviewed = apps.filter((a: any) => {
+    const da = a.domainApplications?.[0];
+    return da?.reviews?.length > 0 && da.reviews.every((r: any) => r.submittedAt);
+  }).length;
+  const needsReviewers = apps.filter((a: any) => {
+    const da = a.domainApplications?.[0];
+    return !da?.reviews || da.reviews.length === 0;
+  }).length;
+  const withDecisions = apps.filter((a: any) => {
+    const da = a.domainApplications?.[0];
+    return da?.decisions?.some((d: any) => d.stage === "Final" || d.stage === "Released");
+  }).length;
+  const scheduledInterviews = interviews.filter((i: any) => i.status === "Scheduled").length;
+  const completedInterviews = interviews.filter((i: any) => i.status === "Completed").length;
+  const domains = [{ id: assignment.domainId, name: assignment.domain.name }];
+
+  async function addToRoster(kind: "reviewers" | "interviewers", userId: string) {
+    const res = await fetch(`/api/hiring/cycles/${cycle.id}/${kind}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(kind === "reviewers" ? { userId, domainId: assignment.domainId, isLead: false } : { userId, domainId: assignment.domainId }),
+    });
+    if (res.ok) revalidator.revalidate();
+    else toast.error(`Couldn't add ${kind === "reviewers" ? "reviewer" : "interviewer"}.`);
+  }
+
+  async function removeFromRoster(kind: "reviewers" | "interviewers", person: RosterPerson) {
+    const reviewer = kind === "reviewers";
+    const ok = await dialog.confirm({
+      title: `Remove ${person.name} as ${reviewer ? "a reviewer" : "an interviewer"}?`,
+      description: reviewer
+        ? "They will no longer be assignable to applicants in this domain. Any reviews they've already submitted for this cycle will be deleted."
+        : "They will no longer be assignable to interviews for this domain.",
+      confirmLabel: reviewer ? "Remove reviewer" : "Remove interviewer",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    const res = reviewer
+      ? await fetch(`/api/hiring/cycles/${cycle.id}/reviewers/${person.id}`, { method: "DELETE", credentials: "include" })
+      : await fetch(`/api/hiring/cycles/${cycle.id}/interviewers`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ interviewerId: person.id }),
+        });
+    if (res.ok) revalidator.revalidate();
+    else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(`Couldn't remove: ${err.error ?? res.statusText}`);
+    }
+  }
+
+  const gate = (
+    <ConfidentialityGate cycleId={cycle.id} reason={confidentialityRequired} next="/hiring/domain-lead" />
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      {header}
+      {currentStatus !== "Draft" && !confidentialityRequired && (
+        <p className="-mt-4 text-sm text-os-grey">
+          {[`${apps.length} submitted`, fullyReviewed > 0 && `${fullyReviewed} reviewed`, withDecisions > 0 && `${withDecisions} decided`]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+
+      <SectionNavLayout label="Sections">
+        {/* Challenges: editable in Draft, read-only while open or in review. */}
+        {currentStatus === "Draft" && cycle.hasChallenges && (
+          <NavSection id="challenges" title="Challenges">
+            <SetupCard
+              title="Challenges"
+              description="The Drive form applicants answer for this domain."
+              action={isChallengeReady ? <Pill tone="success">Ready</Pill> : <Pill tone="warning">Not ready</Pill>}
+            >
+              <DraftSection
+                cycle={cycle}
+                domainId={assignment.domainId}
+                linkedChallengeForms={linkedChallengeForms ?? []}
+                isChallengeReady={isChallengeReady}
+              />
+            </SetupCard>
+          </NavSection>
+        )}
+        {(currentStatus === "Open" || currentStatus === "UnderReview") && cycle.hasChallenges && (
+          <NavSection id="challenges" title="Challenges">
+            <SetupCard
+              title="Challenges"
+              description={hasApplicationReviews ? "Locked once reviewers are assigned." : "Locked while the cycle is running."}
+              action={!hasLinkedChallenge && <AlertIcon label="No challenge form linked" />}
+            >
+              {hasLinkedChallenge ? (
+                <div className="flex flex-col gap-3">
+                  {linkedChallengeForms.map((cf: any) => (
+                    <HiringFormEmbed key={cf.id} formId={cf.formId} name={cf.name} questions={cf.questions ?? []} />
+                  ))}
                 </div>
-                <div className="mt-3 bg-muted/50 rounded-lg p-6 text-muted-foreground text-sm">
-                  No active cycle for this domain.
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Domain header */}
-                <div className="px-4 sm:px-6 py-4 border-b border-border bg-card">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
-                      <span className="text-muted-foreground/70 hidden sm:inline">·</span>
-                      <span className="text-lg text-muted-foreground">{cycle.name}</span>
-                      {currentStatus && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-current/30 ${STATUS_COLORS[currentStatus]}`}>
-                          {STATUS_LABELS[currentStatus]}
-                        </span>
-                      )}
-                      <CycleSelector cycles={availableCycles ?? []} activeId={cycle.id} />
-                    </div>
-                    {currentStatus !== "Draft" && !confidentialityRequired && (
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <StatPill label="submitted" value={apps.length} />
-                        {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
-                        {withDecisions > 0 && <StatPill label="decided" value={withDecisions} color="text-blue-700" />}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
-                </div>
+              ) : (
+                <p className={os.bodyText}>No challenge form linked for this domain.</p>
+              )}
+            </SetupCard>
+          </NavSection>
+        )}
 
-                <div className="px-4 sm:px-6 py-2 divide-y divide-border">
-                  {/* Setup — Draft only. Hidden on Fellowship (no challenges). */}
-                  {currentStatus === "Draft" && !isFellowship && (
-                    <Section
-                      title="Challenges (setup)"
-                      subtitle="The Drive form applicants answer for this domain — edit it in Drive, preview it inline."
-                      badge={
-                        isChallengeReady
-                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Ready</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Action needed</span>
-                      }
-                      defaultOpen={!isChallengeReady}
-                    >
-                      <DraftSection
-                        cycle={cycle}
-                        domainId={assignment.domainId}
-                        linkedChallengeForms={linkedChallengeForms ?? []}
-                        isChallengeReady={isChallengeReady}
-                      />
-                    </Section>
-                  )}
+        {/* The domain rubric scores the challenge, so a cycle without
+            challenges uses only the hiring lead's general rubric. */}
+        <NavSection id="rubric" title="Rubric">
+          {!cycle.hasChallenges ? (
+            <SetupCard
+              title="Rubric"
+              description="The hiring lead's general rubric applies to every application."
+              action={cycle.generalRubricVersionId ? <Pill tone="success">Set</Pill> : <Pill tone="warning">Not set</Pill>}
+            >
+              {!cycle.generalRubricVersionId && (
+                <p className={os.bodyText}>Reviewers can be assigned once the hiring lead sets it.</p>
+              )}
+            </SetupCard>
+          ) : (
+            <SetupCard
+              title="Rubric"
+              description="What reviewers score this domain's challenge on."
+              action={currentRubricVersionId ? <Pill tone="success">Set</Pill> : <Pill tone="warning">Not set</Pill>}
+            >
+              <RubricPicker
+                cycleId={cycle.id}
+                domainId={assignment.domainId}
+                options={rubricVersionOptions ?? []}
+                selectedId={currentRubricVersionId}
+                locked={hasApplicationReviews}
+              />
+              {!cycle.generalRubricVersionId && (
+                <p className="flex items-center gap-2 text-sm text-os-grey">
+                  <AlertIcon label="General rubric not set" />
+                  Reviewers can be assigned once the hiring lead sets the general rubric.
+                </p>
+              )}
+            </SetupCard>
+          )}
+        </NavSection>
 
-                  {/* Setup — the domain challenge forms (read-only after Draft).
-                      Hidden on Fellowship (no challenges). */}
-                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isFellowship && (
-                    <div className="pt-4">
-                    <Section
-                      title="Challenges (locked)"
-                      subtitle={
-                        hasApplicationReviews
-                          ? "Reviewers assigned — challenges can no longer change."
-                          : currentStatus === "Open"
-                            ? "Cycle is open — challenges are frozen."
-                            : "Cycle under review — challenges are frozen."
-                      }
-                      badge={
-                        hasLinkedChallenge
-                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Configured</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
-                      }
-                      defaultOpen={!hasLinkedChallenge}
-                    >
-                      {hasLinkedChallenge ? (
-                        <div className="space-y-3">
-                          {linkedChallengeForms.map((cf: any) => (
-                            <HiringFormEmbed
-                              key={cf.id}
-                              formId={cf.formId}
-                              name={cf.name}
-                              questions={cf.questions ?? []}
-                            />
+        <NavSection id="reviewers" title="Reviewers">
+          <DomainRosterCard
+            title="Reviewers"
+            description="Who reads this domain's applications."
+            role="reviewer"
+            mentors
+            cycleId={cycle.id}
+            domains={domains}
+            members={members}
+            people={cycleReviewers.map((r: any) => ({
+              id: r.id,
+              userId: r.userId,
+              domainId: assignment.domainId,
+              name: personName(r.user) ?? r.userId,
+            }))}
+            onAdd={(userId) => addToRoster("reviewers", userId)}
+            onRemove={(p) => removeFromRoster("reviewers", p)}
+          />
+        </NavSection>
+
+        {cycle.hasInterviews && (
+          <NavSection id="interviewers" title="Interviewers">
+            <DomainRosterCard
+              title="Interviewers"
+              description={`${(interviewers ?? []).filter((i: any) => i.availabilityHours > 0).length} of ${(interviewers ?? []).length} have free time on their calendar.`}
+              role="interviewer"
+              mentors
+              cycleId={cycle.id}
+              domains={domains}
+              members={members}
+              people={(interviewers ?? []).map((i: any) => ({
+                id: i.id,
+                userId: i.userId,
+                domainId: assignment.domainId,
+                name: personName(i.user) ?? i.userId,
+                detail: <FreeTime hours={i.availabilityHours ?? 0} hasCalendar={i.hasCalendar} />,
+              }))}
+              onAdd={(userId) => addToRoster("interviewers", userId)}
+              onRemove={(p) => removeFromRoster("interviewers", p)}
+            />
+          </NavSection>
+        )}
+
+        {/* Reviews: applicants still in review plus review-stage rejects.
+            Anyone invited to interview moves to Interviews below. */}
+        {currentStatus !== "Draft" && (() => {
+          const reviewApps = apps.filter((a: any) => {
+            const status = a.domainApplications?.[0]?.inferredStatus;
+            return status !== "InvitedToInterview" && status !== "InterviewScheduled" && status !== "PostInterviewPending";
+          });
+          return (
+            <NavSection id="reviews" title="Reviews">
+              <SetupCard
+                title="Reviews"
+                description={
+                  confidentialityRequired
+                    ? undefined
+                    : [`${apps.length} submitted`, `${fullyReviewed} reviewed`, needsReviewers > 0 && `${needsReviewers} need reviewers`]
+                        .filter(Boolean)
+                        .join(" · ")
+                }
+              >
+                {confidentialityRequired ? gate : reviewApps.length > 0 ? (
+                  <ApplicationsTable
+                    apps={reviewApps}
+                    draftDecisions={draftDecisions ?? []}
+                    cycleReviewersForDomain={cycleReviewersForDomain}
+                    cycleId={cycle.id}
+                    domainId={assignment.domainId}
+                    currentStatus={currentStatus}
+                    canAssignReviewers={!!cycle.generalRubricVersionId && (!cycle.hasChallenges || !!currentRubricVersionId)}
+                    rubricCriteria={rubricCriteria ?? []}
+                  />
+                ) : (
+                  <p className={cn(os.bodyText, "py-3 text-center")}>No applicants in review.</p>
+                )}
+              </SetupCard>
+            </NavSection>
+          );
+        })()}
+
+        {currentStatus === "UnderReview" && (
+          <NavSection id="delibs" title="Deliberations">
+            <SetupCard title="Deliberations" description="Decide as a group, one round at a time.">
+              {confidentialityRequired ? gate : (
+                <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} rounds={roundSummaries ?? []} />
+              )}
+            </SetupCard>
+          </NavSection>
+        )}
+
+        {!cycle.hasInterviews ? null : confidentialityRequired && currentStatus === "UnderReview" ? (
+          <NavSection id="interviews" title="Interviews">
+            <SetupCard title="Interviews">{gate}</SetupCard>
+          </NavSection>
+        ) : confidentialityRequired ? null : (() => {
+          const invited = apps.filter((a: any) => {
+            const status = a.domainApplications?.[0]?.inferredStatus;
+            return status === "InvitedToInterview" || status === "InterviewScheduled" || status === "PostInterviewPending";
+          });
+          const awaitingBooking = invited.filter((a: any) => a.domainApplications?.[0]?.inferredStatus === "InvitedToInterview");
+          if (invited.length === 0 && interviews.length === 0) return null;
+          const noAvailability =
+            invited.length > 0 && (interviewers ?? []).every((i: any) => !(i.availabilityHours > 0));
+
+          // Post-interview applicants whose final-round Draft isn't Final yet.
+          // They stay PostInterviewPending (keyed off the latest Released
+          // decision), so finalizing happens here rather than under Reviews.
+          const finalizableByDaId = new Map<string, any>();
+          for (const app of invited) {
+            const da = app.domainApplications?.[0];
+            if (!da) continue;
+            const draft = findFinalizableDraft(da.decisions ?? []);
+            if (draft) finalizableByDaId.set(da.id, draft);
+          }
+          const finalizableCount = finalizableByDaId.size;
+          const canFinalize = currentStatus === "UnderReview";
+          const finalizeOne = async (daId: string | undefined) => {
+            if (!daId) return;
+            const draft = finalizableByDaId.get(daId);
+            if (!draft) return;
+            await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
+            revalidator.revalidate();
+          };
+          const finalizeAll = async () => {
+            for (const draft of finalizableByDaId.values()) {
+              await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
+            }
+            revalidator.revalidate();
+          };
+
+          return (
+            <NavSection id="interviews" title="Interviews">
+              <SetupCard
+                title="Interviews"
+                description={[
+                  awaitingBooking.length > 0 && `${awaitingBooking.length} not booked yet`,
+                  scheduledInterviews > 0 && `${scheduledInterviews} scheduled`,
+                  completedInterviews > 0 && `${completedInterviews} completed`,
+                ].filter(Boolean).join(" · ") || undefined}
+                action={
+                  canFinalize && finalizableCount > 0 ? (
+                    <Tooltip content="Drafts from the final round. Finalizing hands them to the hiring lead to release.">
+                      <button type="button" onClick={finalizeAll} className={buttonClasses("primary", "md")}>
+                        Finalize all ({finalizableCount})
+                      </button>
+                    </Tooltip>
+                  ) : undefined
+                }
+              >
+                {noAvailability && (
+                  <p className="flex items-center gap-2 text-sm text-os-grey">
+                    <AlertIcon label="No free time" />
+                    No interviewer has free time in the interview window, so applicants can't book yet.
+                  </p>
+                )}
+                {(() => {
+                  const fmtAssignment = (a: any) => {
+                    const m = a.cycleInterviewer.user;
+                    return m.firstName && m.lastName
+                      ? `${m.firstName} ${m.lastName}`
+                      : m.daliEmail ?? '?';
+                  };
+                  // Booked rows from interview records.
+                  const bookedRows = interviews.map((interview: any) => {
+                    const start = new Date(interview.startTime);
+                    const end = new Date(interview.endTime);
+                    return {
+                      key: interview.id,
+                      daId: interview.domainApplication?.id as string | undefined,
+                      name: `${interview.domainApplication.application.user.firstName} ${interview.domainApplication.application.user.lastName}`,
+                      booked: true,
+                      status: interview.status as string,
+                      time: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
+                      location:
+                        interview.location === 'PodAppa' ? 'Pod Appa'
+                        : interview.location === 'PodMomo' ? 'Pod Momo'
+                        : 'Online',
+                      zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
+                      videoUrl: interview.location === 'Online' ? interview.videoUrl : null,
+                      inDomain: interview.assignments
+                        .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                        .map(fmtAssignment)
+                        .join(', ') || '—',
+                      crossDomain: interview.assignments
+                        .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                        .map((a: any) => `${fmtAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                        .join(', ') || '—',
+                    };
+                  });
+                  // Invited-but-not-booked applicants become rows too.
+                  const pendingRows = awaitingBooking.map((app: any) => ({
+                    key: `pending-${app.id}`,
+                    daId: app.domainApplications?.[0]?.id as string | undefined,
+                    name: `${app.user.firstName} ${app.user.lastName}`,
+                    booked: false,
+                    status: 'Not booked yet',
+                    time: '—',
+                    location: '—',
+                    zoomJoinUrl: null,
+                    videoUrl: null,
+                    inDomain: '—',
+                    crossDomain: '—',
+                  }));
+                  // Awaiting booking first (needs action), then booked.
+                  const rows = [...pendingRows, ...bookedRows];
+                  // Decisions/pills for each row, looked up via the
+                  // domain application on `invited`. Mirrors the
+                  // Reviews table's Decisions column so the two
+                  // panels read consistently.
+                  const appByDaId = new Map<string, any>();
+                  for (const app of invited) {
+                    const da = app.domainApplications?.[0];
+                    if (da?.id) appByDaId.set(da.id, app);
+                  }
+                  const renderDecisionCell = (daId: string | undefined) => {
+                    if (!daId) return <span className="text-xs text-muted-foreground">—</span>;
+                    const app = appByDaId.get(daId);
+                    const da = app?.domainApplications?.[0];
+                    if (!da) return <span className="text-xs text-muted-foreground">—</span>;
+                    const decisions = da.decisions ?? [];
+                    const pills = summarizeDecisionPills({ decisions });
+                    const currentId = currentDecisionId(decisions);
+                    if (pills.length > 0) {
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {pills.map((pill, i) => (
+                            <DecisionPillBadge key={i} pill={pill} isCurrent={!!pill.id && pill.id === currentId} />
                           ))}
                         </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground/70 italic">
-                          No challenge form linked for this domain.
-                        </p>
-                      )}
-                    </Section>
-                    </div>
-                  )}
-
-                  {/* Rubric — scoring criteria.
-                      Fellowship cycles use only the cycle-level general
-                      rubric (set by the hiring lead), so the per-domain picker
-                      is hidden and replaced with a read-only summary. */}
-                  {isFellowship ? (
-                    <Section
-                      title="Rubric"
-                      subtitle="Cycle-wide rubric set by the hiring lead — applies to every application."
-                      badge={
-                        cycle.generalRubricVersionId
-                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
-                      }
-                      defaultOpen={!cycle.generalRubricVersionId}
-                    >
-                      {!cycle.generalRubricVersionId && (
-                        <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
-                          <Clock className="w-4 h-4 flex-shrink-0" />
-                          <span>Waiting on hiring lead to set the cycle rubric — reviewer assignment is blocked until it's set.</span>
-                        </div>
-                      )}
-                    </Section>
-                  ) : (
-                    <Section
-                      title="Rubric"
-                      subtitle="Scoring criteria reviewers use for this domain."
-                      badge={
-                        currentRubricVersionId
-                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
-                      }
-                      defaultOpen={!currentRubricVersionId}
-                    >
-                      <div>
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
-                        />
-                        {!cycle.generalRubricVersionId && (
-                          <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
-                            <Clock className="w-4 h-4 flex-shrink-0" />
-                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
-                          </div>
-                        )}
-                      </div>
-                    </Section>
-                  )}
-
-                  {/* Team — Reviewers (+ Interviewers for Standard cycles only). */}
-                  <Section
-                    title="Team"
-                    subtitle={
-                      isFellowship
-                        ? "Reviewers assigned to this domain."
-                        : "Reviewers and interviewers assigned to this domain."
-                    }
-                    badge={
-                      <span className="text-xs text-muted-foreground">
-                        {cycleReviewers.length} reviewer{cycleReviewers.length !== 1 ? "s" : ""}
-                        {!isFellowship && (
-                          <>, {(interviewers ?? []).length} interviewer{(interviewers ?? []).length !== 1 ? "s" : ""}</>
-                        )}
-                      </span>
-                    }
-                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
-                  >
-                    <div className={`grid grid-cols-1 ${isFellowship ? "" : "md:grid-cols-2"} gap-4`}>
-                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                      {!isFellowship && (
-                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
-                      )}
-                    </div>
-                  </Section>
-
-                  {/* Reviews — applicants still under review plus those rejected
-                      at the review stage. Anyone invited to interview moves to
-                      the Interviews section below, so the two never duplicate. */}
-                  {currentStatus !== "Draft" && (() => {
-                    const reviewApps = apps.filter((a: any) => {
-                      const status = a.domainApplications?.[0]?.inferredStatus;
-                      return (
-                        status !== "InvitedToInterview" &&
-                        status !== "InterviewScheduled" &&
-                        status !== "PostInterviewPending"
                       );
+                    }
+                    const prePill = synthesizePrePipelinePill({
+                      application: { statusUpdates: app.statusUpdates ?? [] },
+                      interviews: da.interviews ?? [],
+                      decisions,
                     });
-                    return (
-                    <Section
-                      title="Reviews"
-                      badge={
-                        confidentialityRequired ? (
-                          <span className="text-xs text-muted-foreground">hidden</span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            <span>{apps.length} submitted</span>
-                            <span>·</span>
-                            <span>{fullyReviewed} reviewed</span>
-                            {needsReviewers > 0 && <><span>·</span><span className="text-yellow-700">{needsReviewers} need reviewers</span></>}
-                          </div>
-                        )
-                      }
-                      defaultOpen={true}
-                    >
-                      {confidentialityRequired ? (
-                        <ConfidentialityGate
-                          cycleId={cycle.id}
-                          reason={confidentialityRequired}
-                          next="/hiring/domain-lead"
-                        />
-                      ) : reviewApps.length > 0 ? (
-                        <ApplicationsTable
-                          apps={reviewApps}
-                          draftDecisions={draftDecisions ?? []}
-                          cycleReviewersForDomain={cycleReviewersForDomain}
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          currentStatus={currentStatus}
-                          canAssignReviewers={isFellowship ? !!cycle.generalRubricVersionId : !!currentRubricVersionId && !!cycle.generalRubricVersionId}
-                          rubricCriteria={rubricCriteria ?? []}
-                        />
-                      ) : (
-                        <div className="text-center text-muted-foreground text-sm py-6">
-                          No applicants in review. Anyone invited to interview appears under Interviews.
-                        </div>
-                      )}
-                    </Section>
-                    );
-                  })()}
-
-                  {/* Deliberations — UnderReview only */}
-                  {currentStatus === "UnderReview" && (
-                    <Section
-                      title="Deliberations"
-                      badge={
-                        confidentialityRequired ? (
-                          <span className="text-xs text-muted-foreground">hidden</span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            {!isFellowship && (
+                    return prePill
+                      ? <PrePipelinePillBadge pill={prePill} />
+                      : <span className="text-xs text-muted-foreground">—</span>;
+                  };
+                  const statusTone = (row: any): PillTone =>
+                    !row.booked ? "warning" : row.status === "Completed" ? "success" : "accent";
+                  // Clicking a row opens that applicant's review/detail
+                  // page — same target as the Reviews table.
+                  const openReview = (row: any) => {
+                    if (!row.daId) return;
+                    const url = `/hiring/domain-lead/application/${row.daId}`;
+                    const label = row.name || 'Applicant';
+                    if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+                  };
+                  if (rows.length === 0) return null;
+                  return (
+                    <div>
+                      <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
+                        <table className="w-full text-sm min-w-[900px]">
+                          <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            <tr>
+                              <th className="px-6 py-3 text-left">Applicant</th>
+                              <th className="px-6 py-3 text-left">Time</th>
+                              <th className="px-6 py-3 text-left">Location</th>
+                              <th className="px-6 py-3 text-left">Status</th>
+                              <th className="px-6 py-3 text-left">Decisions</th>
+                              <th className="px-6 py-3 text-left">In-Domain</th>
+                              <th className="px-6 py-3 text-left">Cross-Domain</th>
+                              <th className="px-6 py-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {rows.map((row) => (
+                              <tr
+                                key={row.key}
+                                onClick={() => openReview(row)}
+                                className={`hover:bg-muted/50 ${row.daId ? "cursor-pointer" : ""}`}
+                              >
+                                <td className="px-6 py-4 font-medium text-foreground">{row.name}</td>
+                                <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
+                                <td className="px-6 py-4 text-muted-foreground text-xs">
+                                  {row.location}
+                                  {(row.videoUrl ?? row.zoomJoinUrl) && (
+                                    <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
+                                       onClick={(e) => e.stopPropagation()}
+                                       className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <Pill dot={statusTone(row)}>{row.status}</Pill>
+                                </td>
+                                <td className="px-6 py-4">{renderDecisionCell(row.daId)}</td>
+                                <td className="px-6 py-4 text-muted-foreground text-xs">{row.inDomain}</td>
+                                <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
+                                <td className="px-6 py-4 text-right">
+                                  {canFinalize && row.daId && finalizableByDaId.has(row.daId) ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                      className={buttonClasses("secondary", "xs")}
+                                    >
+                                      Finalize
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground/60">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <ul className="sm:hidden space-y-2">
+                        {rows.map((row) => (
+                          <li
+                            key={row.key}
+                            onClick={() => openReview(row)}
+                            className={`border border-border rounded-lg p-3 space-y-2 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
+                              <Pill dot={statusTone(row)}>{row.status}</Pill>
+                            </div>
+                            {row.booked && (
                               <>
-                                <span>{initialDelibsCount ?? 0} ready for initial</span>
-                                <span>·</span>
+                                <div className="text-xs text-muted-foreground">{row.time}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {row.location}
+                                  {(row.videoUrl ?? row.zoomJoinUrl) && (
+                                    <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
+                                       onClick={(e) => e.stopPropagation()}
+                                       className="ml-2 text-blue-600 hover:underline">Join Google Meet</a>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
+                                <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {row.crossDomain}</div>
                               </>
                             )}
-                            <span>{finalDelibsCount ?? 0} ready for final</span>
-                          </div>
-                        )
-                      }
-                      defaultOpen={(initialDelibsCount ?? 0) > 0 || (finalDelibsCount ?? 0) > 0}
-                    >
-                      {confidentialityRequired ? (
-                        <ConfidentialityGate
-                          cycleId={cycle.id}
-                          reason={confidentialityRequired}
-                          next="/hiring/domain-lead"
-                        />
-                      ) : (
-                        <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
-                      )}
-                    </Section>
-                  )}
-
-                  {/* Interviews — Standard cycles only (Fellowship has no
-                      interview round). */}
-                  {isFellowship ? null : confidentialityRequired && currentStatus === "UnderReview" ? (
-                    <Section
-                      title="Interviews"
-                      badge={<span className="text-xs text-muted-foreground">hidden</span>}
-                      defaultOpen={true}
-                    >
-                      <ConfidentialityGate
-                        cycleId={cycle.id}
-                        reason={confidentialityRequired}
-                        next="/hiring/domain-lead"
-                      />
-                    </Section>
-                  ) : confidentialityRequired ? null : (() => {
-                    const invited = apps.filter((a: any) => {
-                      const status = a.domainApplications?.[0]?.inferredStatus;
-                      return status === "InvitedToInterview" || status === "InterviewScheduled" || status === "PostInterviewPending";
-                    });
-                    const awaitingBooking = invited.filter((a: any) => a.domainApplications?.[0]?.inferredStatus === "InvitedToInterview");
-                    const hasAnyInterviewActivity = invited.length > 0 || interviews.length > 0;
-
-                    const interviewersWithAvailability = (interviewers ?? []).filter((i: any) => i.availabilityHours > 0);
-                    const noAvailability = invited.length > 0 && interviewersWithAvailability.length === 0;
-
-                    // Post-interview applicants whose Final-delibs Draft hasn't
-                    // been promoted to Final yet. Their `inferredStatus` is
-                    // still `PostInterviewPending` (which keys off the latest
-                    // *Released* decision), so they live in this section rather
-                    // than Reviews — but the finalize UI on `ApplicationsTable`
-                    // never reached them. Surface the action here instead.
-                    const finalizableByDaId = new Map<string, any>();
-                    for (const app of invited) {
-                      const da = app.domainApplications?.[0];
-                      if (!da) continue;
-                      const draft = findFinalizableDraft(da.decisions ?? []);
-                      if (draft) finalizableByDaId.set(da.id, draft);
-                    }
-                    const finalizableCount = finalizableByDaId.size;
-                    const canFinalize = currentStatus === "UnderReview";
-                    const finalizeOne = async (daId: string | undefined) => {
-                      if (!daId) return;
-                      const draft = finalizableByDaId.get(daId);
-                      if (!draft) return;
-                      await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
-                      revalidator.revalidate();
-                    };
-                    const finalizeAll = async () => {
-                      for (const draft of finalizableByDaId.values()) {
-                        await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
-                      }
-                      revalidator.revalidate();
-                    };
-
-                    return hasAnyInterviewActivity ? (
-                      <Section
-                        title="Interviews"
-                        badge={
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
-                            {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
-                            {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
-                          </div>
-                        }
-                        defaultOpen={true}
-                      >
-                        <div className="space-y-4">
-                          {/* Availability warning */}
-                          {noAvailability && (
-                            <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
-                              <Clock className="w-4 h-4 flex-shrink-0" />
-                              <span>No interviewers have set their availability yet. Applicants can't book interviews until interviewers submit availability blocks.</span>
+                            <div>
+                              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Decisions</div>
+                              {renderDecisionCell(row.daId)}
                             </div>
-                          )}
-
-                          {/* Post-interview finalize banner — appears once Final
-                              delibs have been closed and produced Draft decisions
-                              on these applicants. */}
-                          {canFinalize && finalizableCount > 0 && (
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-accent-coral/5 border border-accent-coral/30 rounded-lg px-4 py-3">
-                              <div className="text-sm flex-1">
-                                <span className="font-medium text-foreground">
-                                  {finalizableCount} post-interview decision{finalizableCount === 1 ? "" : "s"} ready to finalize
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {" "}— drafts from final delibs. Finalizing locks them in for the hiring lead to release.
-                                </span>
+                            {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                  className={buttonClasses("secondary", "xs")}
+                                >
+                                  Finalize
+                                </button>
                               </div>
-                              <button
-                                onClick={finalizeAll}
-                                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition self-start sm:self-auto"
-                              >
-                                Finalize All ({finalizableCount})
-                              </button>
-                            </div>
-                          )}
-
-                          {/* One Interviews table: booked interviews AND
-                              invited-but-not-yet-booked applicants share the same
-                              table, with booking surfaced in the Status column.
-                              Styling mirrors the Reviews table (px-6 padding,
-                              bg-muted/50 head, divide-y rows). */}
-                          {(() => {
-                            const fmtAssignment = (a: any) => {
-                              const m = a.cycleInterviewer.user;
-                              return m.firstName && m.lastName
-                                ? `${m.firstName} ${m.lastName}`
-                                : m.daliEmail ?? '?';
-                            };
-                            // Booked rows from interview records.
-                            const bookedRows = interviews.map((interview: any) => {
-                              const start = new Date(interview.startTime);
-                              const end = new Date(interview.endTime);
-                              return {
-                                key: interview.id,
-                                daId: interview.domainApplication?.id as string | undefined,
-                                name: `${interview.domainApplication.application.user.firstName} ${interview.domainApplication.application.user.lastName}`,
-                                booked: true,
-                                status: interview.status as string,
-                                time: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
-                                location:
-                                  interview.location === 'PodAppa' ? 'Pod Appa'
-                                  : interview.location === 'PodMomo' ? 'Pod Momo'
-                                  : 'Online',
-                                zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
-                                videoUrl: interview.location === 'Online' ? interview.videoUrl : null,
-                                inDomain: interview.assignments
-                                  .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
-                                  .map(fmtAssignment)
-                                  .join(', ') || '—',
-                                crossDomain: interview.assignments
-                                  .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                                  .map((a: any) => `${fmtAssignment(a)} (${a.cycleInterviewer.domain.name})`)
-                                  .join(', ') || '—',
-                              };
-                            });
-                            // Invited-but-not-booked applicants become rows too.
-                            const pendingRows = awaitingBooking.map((app: any) => ({
-                              key: `pending-${app.id}`,
-                              daId: app.domainApplications?.[0]?.id as string | undefined,
-                              name: `${app.user.firstName} ${app.user.lastName}`,
-                              booked: false,
-                              status: 'Invited — not booked',
-                              time: '—',
-                              location: '—',
-                              zoomJoinUrl: null,
-                              videoUrl: null,
-                              inDomain: '—',
-                              crossDomain: '—',
-                            }));
-                            // Awaiting booking first (needs action), then booked.
-                            const rows = [...pendingRows, ...bookedRows];
-                            // Decisions/pills for each row, looked up via the
-                            // domain application on `invited`. Mirrors the
-                            // Reviews table's Decisions column so the two
-                            // panels read consistently.
-                            const appByDaId = new Map<string, any>();
-                            for (const app of invited) {
-                              const da = app.domainApplications?.[0];
-                              if (da?.id) appByDaId.set(da.id, app);
-                            }
-                            const renderDecisionCell = (daId: string | undefined) => {
-                              if (!daId) return <span className="text-xs text-muted-foreground">—</span>;
-                              const app = appByDaId.get(daId);
-                              const da = app?.domainApplications?.[0];
-                              if (!da) return <span className="text-xs text-muted-foreground">—</span>;
-                              const decisions = da.decisions ?? [];
-                              const pills = summarizeDecisionPills({ decisions });
-                              const currentId = currentDecisionId(decisions);
-                              if (pills.length > 0) {
-                                return (
-                                  <div className="flex flex-wrap gap-1">
-                                    {pills.map((pill, i) => (
-                                      <DecisionPillBadge key={i} pill={pill} isCurrent={!!pill.id && pill.id === currentId} />
-                                    ))}
-                                  </div>
-                                );
-                              }
-                              const prePill = synthesizePrePipelinePill({
-                                application: { statusUpdates: app.statusUpdates ?? [] },
-                                interviews: da.interviews ?? [],
-                                decisions,
-                              });
-                              return prePill
-                                ? <PrePipelinePillBadge pill={prePill} />
-                                : <span className="text-xs text-muted-foreground">—</span>;
-                            };
-                            const statusPill = (row: any) =>
-                              !row.booked
-                                ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                                : row.status === 'Completed'
-                                  ? 'bg-green-100 text-green-700 border border-green-200'
-                                  : 'bg-blue-100 text-blue-700 border border-blue-200';
-                            // Clicking a row opens that applicant's review/detail
-                            // page — same target as the Reviews table.
-                            const openReview = (row: any) => {
-                              if (!row.daId) return;
-                              const url = `/hiring/domain-lead/application/${row.daId}`;
-                              const label = row.name || 'Applicant';
-                              if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
-                            };
-                            if (rows.length === 0) return null;
-                            return (
-                              <div>
-                                <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
-                                  <table className="w-full text-sm min-w-[900px]">
-                                    <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                                      <tr>
-                                        <th className="px-6 py-3 text-left">Applicant</th>
-                                        <th className="px-6 py-3 text-left">Time</th>
-                                        <th className="px-6 py-3 text-left">Location</th>
-                                        <th className="px-6 py-3 text-left">Status</th>
-                                        <th className="px-6 py-3 text-left">Decisions</th>
-                                        <th className="px-6 py-3 text-left">In-Domain</th>
-                                        <th className="px-6 py-3 text-left">Cross-Domain</th>
-                                        <th className="px-6 py-3 text-right">Actions</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                      {rows.map((row) => (
-                                        <tr
-                                          key={row.key}
-                                          onClick={() => openReview(row)}
-                                          className={`hover:bg-muted/50 ${row.daId ? "cursor-pointer" : ""}`}
-                                        >
-                                          <td className="px-6 py-4 font-medium text-foreground">{row.name}</td>
-                                          <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
-                                          <td className="px-6 py-4 text-muted-foreground text-xs">
-                                            {row.location}
-                                            {(row.videoUrl ?? row.zoomJoinUrl) && (
-                                              <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
-                                                 onClick={(e) => e.stopPropagation()}
-                                                 className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
-                                            )}
-                                          </td>
-                                          <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
-                                              {row.status}
-                                            </span>
-                                          </td>
-                                          <td className="px-6 py-4">{renderDecisionCell(row.daId)}</td>
-                                          <td className="px-6 py-4 text-muted-foreground text-xs">{row.inDomain}</td>
-                                          <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
-                                          <td className="px-6 py-4 text-right">
-                                            {canFinalize && row.daId && finalizableByDaId.has(row.daId) ? (
-                                              <button
-                                                onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                                className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-                                              >
-                                                Finalize
-                                              </button>
-                                            ) : (
-                                              <span className="text-xs text-muted-foreground/60">—</span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                                <ul className="sm:hidden space-y-2">
-                                  {rows.map((row) => (
-                                    <li
-                                      key={row.key}
-                                      onClick={() => openReview(row)}
-                                      className={`border border-border rounded-lg p-3 space-y-2 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
-                                    >
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${statusPill(row)}`}>
-                                          {row.status}
-                                        </span>
-                                      </div>
-                                      {row.booked && (
-                                        <>
-                                          <div className="text-xs text-muted-foreground">{row.time}</div>
-                                          <div className="text-xs text-muted-foreground">
-                                            {row.location}
-                                            {(row.videoUrl ?? row.zoomJoinUrl) && (
-                                              <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
-                                                 onClick={(e) => e.stopPropagation()}
-                                                 className="ml-2 text-blue-600 hover:underline">Join Google Meet</a>
-                                            )}
-                                          </div>
-                                          <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
-                                          <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {row.crossDomain}</div>
-                                        </>
-                                      )}
-                                      <div>
-                                        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Decisions</div>
-                                        {renderDecisionCell(row.daId)}
-                                      </div>
-                                      {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                            className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-                                          >
-                                            Finalize
-                                          </button>
-                                        </div>
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </Section>
-                    ) : null;
-                  })()}
-                </div>
-              </>
-            )}
-          </section>
-        );
-      })}
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
+              </SetupCard>
+            </NavSection>
+          );
+        })()}
+      </SectionNavLayout>
     </div>
+  );
+}
+
+function personName(u: any): string | undefined {
+  return (u?.firstName && u?.lastName ? `${u.firstName} ${u.lastName}` : u?.daliEmail) ?? undefined;
+}
+
+function FreeTime({ hours, hasCalendar }: { hours: number; hasCalendar?: boolean }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      {hours > 0 ? (
+        <span className="text-sm text-os-grey">{hours.toFixed(1)}h free</span>
+      ) : (
+        <Pill tone="warning">No free time</Pill>
+      )}
+      {hasCalendar === false && <Pill tone="warning">No calendar</Pill>}
+    </span>
   );
 }
 
@@ -1217,57 +1191,46 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
   linkedChallengeForms: any[];
   isChallengeReady: boolean;
 }) {
+  const { bodyText } = useOsChrome();
   const hasLinked = linkedChallengeForms.length > 0;
   const navigation = useNavigation();
-  // Guard against double-submit: creating a challenge form is NOT idempotent —
-  // each submit makes a new form — so disable the button while one is in flight.
+  // Creating a challenge form isn't idempotent (each submit makes a new
+  // form), so the button is disabled while one is in flight.
   const creatingChallenge =
     navigation.state !== "idle" &&
     navigation.formData?.get("intent") === "create-challenge-form" &&
     navigation.formData?.get("domainId") === domainId;
+  const hidden = (intent: string) => (
+    <>
+      <input type="hidden" name="intent" value={intent} />
+      <input type="hidden" name="cycleId" value={cycle.id} />
+      <input type="hidden" name="domainId" value={domainId} />
+    </>
+  );
 
-  // Ready — configuration frozen for applicants, still editable via "Edit challenges".
+  // Ready: frozen for applicants, still reopenable with Edit challenges.
   if (hasLinked && isChallengeReady) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-start gap-3 bg-green-50 border border-green-100 rounded-xl p-4">
-          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-          </div>
-          <div className="flex-1 space-y-1">
-            <h3 className="font-bold text-green-900">Challenge forms finalized</h3>
-            <p className="text-sm text-green-700">
-              {linkedChallengeForms.length === 1
-                ? "Your challenge form is configured and ready for applicants."
-                : `${linkedChallengeForms.length} challenge forms are configured. Applicants will pick one when they apply.`}
-            </p>
-          </div>
-        </div>
-        <div className="space-y-3">
+      <>
+        <div className="flex flex-col gap-3">
           {linkedChallengeForms.map((cf: any) => (
             <HiringFormEmbed key={cf.id} formId={cf.formId} name={cf.name} questions={cf.questions ?? []} />
           ))}
         </div>
         <Form method="post" preventScrollReset>
-          <input type="hidden" name="intent" value="unmark-ready" />
-          <input type="hidden" name="cycleId" value={cycle.id} />
-          <input type="hidden" name="domainId" value={domainId} />
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-lg hover:bg-muted/50"
-          >
+          {hidden("unmark-ready")}
+          <button type="submit" className={buttonClasses("secondary", "md")}>
             Edit challenges
           </button>
         </Form>
-      </div>
+      </>
     );
   }
 
-  // Setup — add/preview/remove challenge forms, then mark ready.
   return (
-    <div className="space-y-4">
+    <>
       {hasLinked ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {linkedChallengeForms.map((cf: any) => (
             <HiringFormEmbed
               key={cf.id}
@@ -1280,177 +1243,28 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
           ))}
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-lg p-6 text-center space-y-1">
-          <h3 className="font-semibold text-foreground">No challenge form yet</h3>
-          <p className="text-sm text-muted-foreground">
-            Add a Drive form for {cycle.name}. Applicants answer it as this domain&apos;s challenge — author it in the Forms builder, where it lives alongside every other form.
-          </p>
-        </div>
+        <p className={cn(bodyText, "py-3 text-center")}>No challenge form yet. Add one to author it in Forms.</p>
       )}
-
-      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
+      <div className="flex flex-wrap items-center gap-2">
         <Form method="post" preventScrollReset>
-          <input type="hidden" name="intent" value="create-challenge-form" />
-          <input type="hidden" name="cycleId" value={cycle.id} />
-          <input type="hidden" name="domainId" value={domainId} />
-          <button
-            type="submit"
-            disabled={creatingChallenge}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-4 h-4" />
-            {creatingChallenge ? "Adding…" : "Add challenge form (Drive)"}
+          {hidden("create-challenge-form")}
+          <button type="submit" disabled={creatingChallenge} className={buttonClasses("secondary", "md")}>
+            <Plus className="h-4 w-4" aria-hidden />
+            {creatingChallenge ? "Adding…" : "Add challenge form"}
           </button>
         </Form>
         {hasLinked && (
-          <Form method="post" preventScrollReset className="inline-flex items-center gap-1">
-            <input type="hidden" name="intent" value="mark-ready" />
-            <input type="hidden" name="cycleId" value={cycle.id} />
-            <input type="hidden" name="domainId" value={domainId} />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-accent-coral text-white text-sm font-semibold rounded-lg hover:bg-accent-coral/90"
-            >
-              <CheckCircle className="w-4 h-4" />
-              Mark as ready
-            </button>
-            <InfoTip content="Confirms this domain's challenge is set and can advance to deliberations — notifies the hiring lead that setup is complete." />
+          <Form method="post" preventScrollReset>
+            {hidden("mark-ready")}
+            <Tooltip content="Tells the hiring lead this domain's challenge is set.">
+              <button type="submit" className={buttonClasses("primary", "md")}>
+                Mark as ready
+              </button>
+            </Tooltip>
           </Form>
         )}
       </div>
-    </div>
-  );
-}
-
-function ReviewerSection({ cycleId, domainId, initialReviewers }: {
-  cycleId: string;
-  domainId: string;
-  initialReviewers: any[];
-}) {
-  const toast = useToast();
-  const [reviewers, setReviewers] = useState(initialReviewers);
-  const [members, setMembers] = useState<any[]>([]);
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
-
-  // Resync from props after the loader revalidates (e.g. bulk auto-assign in
-  // the Applications toolbar). Without this, optimistic local state lingers
-  // and the UI shows the pre-action snapshot until a hard reload.
-  useEffect(() => { setReviewers(initialReviewers); }, [initialReviewers]);
-
-  useEffect(() => {
-    // Reviewer assignment targets current-term members only — alumni shouldn't
-    // surface as options for an active cycle's reviewer pool.
-    fetch('/api/members?scope=current', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setMembers)
-      .catch(() => {});
-  }, []);
-
-  async function addReviewer() {
-    if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: selectedMemberId, domainId, isLead: false }),
-    });
-    if (res.ok) {
-      const reviewer = await res.json();
-      setReviewers(prev => [...prev, reviewer]);
-      setSelectedMemberId('');
-    }
-  }
-
-  async function removeReviewer(reviewerId: string) {
-    try {
-      const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
-        method: 'DELETE', credentials: 'include',
-      });
-      if (res.ok) {
-        setReviewers(prev => prev.filter(r => r.id !== reviewerId));
-      } else {
-        const err = await res.json().catch(() => ({}));
-        console.error("Failed to remove reviewer:", res.status, err);
-        toast.error(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
-      }
-    } catch (e) {
-      console.error("Failed to remove reviewer:", e);
-      toast.error(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  const pendingName = pendingRemove
-    ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
-        ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
-        : pendingRemove.user?.daliEmail ?? "this reviewer")
-    : "";
-
-  // Filter out members already assigned as reviewers for this domain
-  const existingMemberIds = new Set(reviewers.map((r: any) => r.userId));
-  const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
-
-  return (
-    <div className="space-y-3">
-      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reviewers ({reviewers.length})</h4>
-      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
-            <Select
-              value={selectedMemberId}
-              placeholder="Select member..."
-              onChange={(v) => setSelectedMemberId(v)}
-              options={availableMembers.map((m: any) => ({
-                value: m.id as string,
-                label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id,
-              }))}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            onClick={addReviewer}
-            disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" /> Add
-          </button>
-        </div>
-        {reviewers.length > 0 ? (
-          <div className="divide-y divide-gray-100">
-            {reviewers.map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between py-2">
-                <span className="text-sm font-medium text-foreground">
-                  {r.user?.firstName && r.user?.lastName ? `${r.user.firstName} ${r.user.lastName}` : r.user?.daliEmail ?? r.userId}
-                </span>
-                <button
-                  onClick={() => setPendingRemove(r)}
-                  aria-label="Remove reviewer"
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/70 text-center py-3">No reviewers assigned yet.</p>
-        )}
-        <ConfirmDialog
-          open={!!pendingRemove}
-          title={`Remove ${pendingName} as a reviewer?`}
-          body={
-            <p>
-              They will no longer be assignable to applicants in this domain. Any reviews they've already submitted for this cycle will be deleted.
-            </p>
-          }
-          confirmLabel="Remove reviewer"
-          destructive
-          onCancel={() => setPendingRemove(null)}
-          onConfirm={() => {
-            if (pendingRemove) removeReviewer(pendingRemove.id);
-            setPendingRemove(null);
-          }}
-        />
-    </div>
+    </>
   );
 }
 
@@ -1461,232 +1275,77 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   selectedId: string | null;
   locked: boolean;
 }) {
-  const selectedRv = options.find((rv: any) => rv.id === selectedId);
-  const selectedLabel = selectedRv
-    ? formatVersionLabel({
-        name: selectedRv.rubric?.name ?? 'Rubric',
-        versionNumber: selectedRv.versionNumber,
-        createdAt: selectedRv.createdAt,
-        createdBy: selectedRv.createdBy,
-      })
-    : 'Set';
-  return (
-    <>
-      {locked ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle className="w-4 h-4 text-green-600" />
-          <span>{selectedLabel}</span>
-          <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
-        </div>
-      ) : (
-        <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <input type="hidden" name="intent" value="set-rubric" />
-            <input type="hidden" name="cycleId" value={cycleId} />
-            <input type="hidden" name="domainId" value={domainId} />
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Rubric Version</label>
-              <Select
-                name="rubricVersionId"
-                defaultValue={selectedId ?? ""}
-                placeholder="No rubric assigned"
-                options={[
-                  { value: "", label: "No rubric assigned" },
-                  ...options.map((rv: any) => ({
-                    value: rv.id as string,
-                    label: formatVersionLabel({
-                      name: rv.rubric?.name ?? 'Rubric',
-                      versionNumber: rv.versionNumber,
-                      createdAt: rv.createdAt,
-                      createdBy: rv.createdBy,
-                    }),
-                  })),
-                ]}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition"
-            >
-              Save
-            </button>
-        </Form>
-      )}
-    </>
-  );
-}
-
-function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
-  cycleId: string;
-  domainId: string;
-  initialInterviewers: any[];
-}) {
-  const toast = useToast();
-  const [interviewers, setInterviewers] = useState(initialInterviewers);
-  const [members, setMembers] = useState<any[]>([]);
-  const [selectedMemberId, setSelectedMemberId] = useState("");
-  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
-
-  // Resync from props after the loader revalidates.
-  useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
-
-  useEffect(() => {
-    // Interviewer assignment targets current-term members only — alumni
-    // shouldn't surface as options for an active cycle's interviewer pool.
-    fetch("/api/members?scope=current", { credentials: "include" })
-      .then(r => r.ok ? r.json() : [])
-      .then(setMembers)
-      .catch(() => {});
-  }, []);
-
-  async function addInterviewer() {
-    if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: selectedMemberId, domainId }),
+  const { formTrigger } = useOsChrome();
+  const label = (rv: any) =>
+    formatVersionLabel({
+      name: rv.rubric?.name ?? "Rubric",
+      versionNumber: rv.versionNumber,
+      createdAt: rv.createdAt,
+      createdBy: rv.createdBy,
     });
-    if (res.ok) {
-      const interviewer = await res.json();
-      const member = members.find((m: any) => m.id === selectedMemberId);
-      setInterviewers(prev => [...prev, { ...interviewer, user: member, availabilityHours: 0 }]);
-      setSelectedMemberId("");
-    }
+  const selectedRv = options.find((rv: any) => rv.id === selectedId);
+  if (locked) {
+    return (
+      <DomainSubRow
+        label="Rubric"
+        value={selectedRv ? label(selectedRv) : <SubRowEmpty>None</SubRowEmpty>}
+        action={<Pill>Locked</Pill>}
+      />
+    );
   }
-
-  async function removeInterviewer(interviewerId: string) {
-    try {
-      const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
-        method: "DELETE", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interviewerId }),
-      });
-      if (res.ok) {
-        setInterviewers(prev => prev.filter(i => i.id !== interviewerId));
-      } else {
-        const err = await res.json().catch(() => ({}));
-        console.error("Failed to remove interviewer:", res.status, err);
-        toast.error(`Failed to remove interviewer: ${err.error ?? res.statusText}`);
-      }
-    } catch (e) {
-      console.error("Failed to remove interviewer:", e);
-      toast.error(`Failed to remove interviewer: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  const existingMemberIds = new Set(interviewers.map((i: any) => i.userId));
-  const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
-  const pendingName = pendingRemove
-    ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
-        ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
-        : pendingRemove.user?.daliEmail ?? "this interviewer")
-    : "";
-
   return (
-    <div className="space-y-3">
-      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interviewers ({interviewers.length})</h4>
-      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
-            <Select
-              value={selectedMemberId}
-              placeholder="Select member..."
-              onChange={(v) => setSelectedMemberId(v)}
-              options={availableMembers.map((m: any) => ({
-                value: m.id as string,
-                label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id,
-              }))}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            onClick={addInterviewer}
-            disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" /> Add
-          </button>
-        </div>
-        {interviewers.length > 0 ? (
-          <div className="divide-y divide-gray-100">
-            {interviewers.map((i: any) => {
-              const m = i.user;
-              const name = m?.firstName && m?.lastName
-                ? `${m.firstName} ${m.lastName}`
-                : m?.daliEmail ?? i.userId;
-              const hours = i.availabilityHours ?? 0;
-              const hasAvailability = hours > 0;
-              const hoursLabel =
-                Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
-              return (
-                <div key={i.id} className="flex items-center justify-between py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm font-medium text-foreground truncate">{name}</span>
-                    {hasAvailability ? (
-                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                        <CheckCircle className="w-3 h-3" />
-                        {hoursLabel} available
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground bg-muted/50 border border-current/40 px-2 py-0.5 rounded-full">
-                        <Clock className="w-3 h-3" />
-                        No availability
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setPendingRemove(i)}
-                    aria-label="Remove interviewer"
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/70 text-center py-3">No interviewers assigned yet.</p>
-        )}
-        <ConfirmDialog
-          open={!!pendingRemove}
-          title={`Remove ${pendingName} as an interviewer?`}
-          body={
-            <p>
-              They will no longer be assignable to interviews for this domain. Their availability blocks for this cycle will also be removed.
-            </p>
-          }
-          confirmLabel="Remove interviewer"
-          destructive
-          onCancel={() => setPendingRemove(null)}
-          onConfirm={() => {
-            if (pendingRemove) removeInterviewer(pendingRemove.id);
-            setPendingRemove(null);
-          }}
+    <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="intent" value="set-rubric" />
+      <input type="hidden" name="cycleId" value={cycleId} />
+      <input type="hidden" name="domainId" value={domainId} />
+      <div className="min-w-0 flex-1">
+        <Select
+          name="rubricVersionId"
+          ariaLabel="Rubric version"
+          defaultValue={selectedId ?? ""}
+          placeholder="No rubric"
+          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: label(rv) }))]}
+          buttonClassName={rowTrigger(formTrigger)}
         />
-    </div>
+      </div>
+      <button type="submit" className={buttonClasses("primary", "md")}>
+        Save
+      </button>
+    </Form>
   );
 }
 
-function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }: {
+type DomainRoundSummary = {
+  id: string;
+  label: string;
+  isFinal: boolean;
+  leadsToInterviews: boolean;
+  /** This domain's applicants who qualify for the round's board now. */
+  count: number;
+};
+
+// One row per delib round, in timeline order.
+function roundPurpose(r: DomainRoundSummary): string {
+  if (r.isFinal) return "Accept, waitlist, or reject";
+  if (r.leadsToInterviews) return "Decide who interviews";
+  return "Decide who moves on";
+}
+
+function DelibsSection({ cycleId, domainId, sessions, rounds }: {
   cycleId: string;
   domainId: string;
   sessions: any[];
-  initialCount: number;
-  finalCount: number;
+  rounds: DomainRoundSummary[];
 }) {
   const [loading, setLoading] = useState<string | null>(null);
 
-  const initialSession = sessions.find((s: any) => s.type === "Initial");
-  const finalSession = sessions.find((s: any) => s.type === "Final");
-
-  async function openDelibs(type: "Initial" | "Final") {
-    setLoading(type);
+  async function openDelibs(roundId: string) {
+    setLoading(roundId);
     const res = await fetch(`/api/hiring/cycles/${cycleId}/delibs`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainId, type }),
+      body: JSON.stringify({ domainId, roundId }),
     });
     if (res.ok) {
       const session = await res.json();
@@ -1695,64 +1354,40 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
     setLoading(null);
   }
 
-  function renderButton(type: "Initial" | "Final", session: any) {
-    const count = type === "Initial" ? initialCount : finalCount;
-    const countBadge = ` (${count} applicant${count !== 1 ? "s" : ""})`;
-
+  function renderButton(round: DomainRoundSummary, session: any) {
+    const count = round.count;
+    const countLabel = ` (${count})`;
     if (session?.status === "Active") {
       return (
-        <a
-          href={`/hiring/domain-lead/delibs/${session.id}`}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-        >
-          Continue {type} Delibs{countBadge}
+        <a href={`/hiring/domain-lead/delibs/${session.id}`} className={buttonClasses("primary", "sm")}>
+          Continue{countLabel}
         </a>
       );
     }
-    if (session?.status === "Closed") {
-      return (
-        <button
-          onClick={() => openDelibs(type)}
-          disabled={loading === type || count === 0}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white transition disabled:opacity-50"
-        >
-          {loading === type ? "Reopening..." : `Reopen ${type} Delibs${countBadge}`}
-        </button>
-      );
-    }
+    const reopen = session?.status === "Closed";
     return (
       <button
-        onClick={() => openDelibs(type)}
-        disabled={loading === type || count === 0}
-        className="px-4 py-2 text-sm font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
+        type="button"
+        onClick={() => openDelibs(round.id)}
+        disabled={loading === round.id || count === 0}
+        className={buttonClasses("secondary", "sm")}
       >
-        {loading === type ? "Starting..." : `Start ${type} Delibs${countBadge}`}
+        {loading === round.id ? (reopen ? "Reopening…" : "Starting…") : `${reopen ? "Reopen" : "Start"}${countLabel}`}
       </button>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
-            Initial Delibs
-            <InfoTip content="Short for deliberations — the group discussion where domain leads review applications together and decide who advances to interviews." />
-          </p>
-          <p className="text-xs text-muted-foreground">Review applications and decide who advances to interviews</p>
+    <div className="flex flex-col gap-2">
+      {rounds.map((round) => (
+        <div key={round.id} className="flex flex-wrap items-center justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm font-semibold text-foreground">{round.label}</span>
+            <span className="text-sm text-os-grey">{roundPurpose(round)}</span>
+          </div>
+          {renderButton(round, sessions.find((s: any) => s.roundId === round.id))}
         </div>
-        {renderButton("Initial", initialSession)}
-      </div>
-      <div className="border-t border-border pt-3 flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
-            Final Delibs
-            <InfoTip content="Short for deliberations — the post-interview group discussion where domain leads make final accept, waitlist, or reject decisions." />
-          </p>
-          <p className="text-xs text-muted-foreground">Post-interview decisions: accept, waitlist, or reject</p>
-        </div>
-        {renderButton("Final", finalSession)}
-      </div>
+      ))}
     </div>
   );
 }
@@ -1761,7 +1396,7 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
 // always applies. Draft reads as "tentative" (faded + dashed, same hue);
 // Final/Released keep the solid same-hue border.
 const STAGE_TREATMENT: Record<DecisionPill["stage"], string> = {
-  Draft: "opacity-60 border-dashed",
+  Draft: "opacity-60",
   Final: "",
   Released: "",
 };
@@ -1772,13 +1407,6 @@ const DECISION_TOOLTIPS: Record<DecisionPill["stage"], (typeLabel: string) => st
   Released: (t) => `Released ${t} — applicant has been notified.`,
 };
 
-const DECISION_ICONS: Record<DecisionType, React.ComponentType<{ className?: string }>> = {
-  Rejected: X,
-  InvitedToInterview: Send,
-  Accepted: Check,
-  Waitlisted: Clock,
-};
-
 function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; isCurrent?: boolean }) {
   const baseLabel = DECISION_LABELS[pill.type] ?? pill.type;
   const rankSuffix =
@@ -1786,7 +1414,6 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
       ? ` #${pill.waitlistRank}`
       : "";
   const stageSuffix = ` (${pill.stage.toLowerCase()})`;
-  const Icon = DECISION_ICONS[pill.type];
   const tooltip = DECISION_TOOLTIPS[pill.stage](`${baseLabel}${rankSuffix}`);
   // "Current" emphasis ring uses the pill's OWN hue (ring-current = its text
   // color) so it reads as the same color as the border, not a competing gray
@@ -1794,12 +1421,10 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
   const accent = isCurrent ? "ring-2 ring-offset-1 ring-current/60" : "";
   return (
     <Tooltip content={tooltip} variant="rich">
-      <span
-        aria-label={tooltip}
-        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border border-current/40 ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
-      >
-        {Icon && <Icon className="w-3 h-3" />}
-        {baseLabel}{rankSuffix}{stageSuffix}
+      <span aria-label={tooltip} className={cn("inline-flex rounded-full", STAGE_TREATMENT[pill.stage], accent)}>
+        <Pill dot={DECISION_TONES[pill.type] ?? "neutral"}>
+          {baseLabel}{rankSuffix}{stageSuffix}
+        </Pill>
       </span>
     </Tooltip>
   );
@@ -1817,22 +1442,11 @@ const PRE_PIPELINE_TOOLTIPS: Record<PrePipelinePill, string> = {
   PostInterview: "Interview is complete. Waiting on final delibs to decide.",
 };
 
-const PRE_PIPELINE_ICONS: Record<PrePipelinePill, React.ComponentType<{ className?: string }>> = {
-  Reviewing: Eye,
-  InterviewScheduled: Clock,
-  PostInterview: CircleDashed,
-};
-
 function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
-  const Icon = PRE_PIPELINE_ICONS[pill];
   return (
     <Tooltip content={PRE_PIPELINE_TOOLTIPS[pill]} variant="rich">
-      <span
-        aria-label={PRE_PIPELINE_TOOLTIPS[pill]}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-current/40"
-      >
-        <Icon className="w-3 h-3" />
-        {PRE_PIPELINE_LABELS[pill]}
+      <span aria-label={PRE_PIPELINE_TOOLTIPS[pill]} className="inline-flex">
+        <Pill dot="neutral">{PRE_PIPELINE_LABELS[pill]}</Pill>
       </span>
     </Tooltip>
   );
@@ -2389,20 +2003,8 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           ? `${m.firstName} ${m.lastName}`
           : m?.daliEmail ?? "Reviewer";
         const status = getReviewStatus(r);
-        const pillClass =
-          status === "submitted"
-            ? "border-green-300 bg-green-50 text-green-800 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300"
-            : status === "inProgress"
-              ? "border-yellow-300 bg-yellow-50 text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-              : "border-gray-300 bg-muted/50 text-muted-foreground dark:border-gray-700 dark:bg-gray-800 dark:text-muted-foreground/70";
-        const icon =
-          status === "submitted" ? (
-            <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
-          ) : status === "inProgress" ? (
-            <Clock className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
-          ) : (
-            <CircleDashed className="w-3 h-3 text-muted-foreground/70" />
-          );
+        const dot: PillTone =
+          status === "submitted" ? "success" : status === "inProgress" ? "warning" : "neutral";
         const recommendation = r.overallRecommendation ? `, recommends ${r.overallRecommendation.toLowerCase()}` : "";
         const tooltip =
           status === "submitted"
@@ -2423,9 +2025,9 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               }
             }}
             aria-label={tooltip}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border cursor-pointer hover:brightness-95 transition ${pillClass}`}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-full transition hover:brightness-95"
           >
-            {icon}
+            <Pill dot={dot}>
             {name}
             {editable && (
               <button
@@ -2440,6 +2042,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                 <Trash2 className="w-3 h-3" />
               </button>
             )}
+            </Pill>
           </span>
           </Tooltip>
         );
@@ -2568,25 +2171,19 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             <h2 id="reviewer-detail-title" className="text-lg font-semibold text-foreground">{reviewerName}</h2>
             <div className="mt-1 flex items-center gap-2 text-xs">
               {isSubmitted ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200">
-                  <Check className="w-3 h-3" />
+                <Pill dot="success">
                   Submitted
                   {review.submittedAt && (
-                    <span className="text-green-600">
-                      · {new Date(review.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    </span>
+                    <> · {new Date(review.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</>
                   )}
-                </span>
+                </Pill>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
-                  <Clock className="w-3 h-3" />
-                  In progress
-                </span>
+                <Pill dot="warning">In progress</Pill>
               )}
               {review.overallRecommendation && (
-                <span className="px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Pill dot={RECOMMENDATION_TONES[review.overallRecommendation] ?? "neutral"}>
                   {review.overallRecommendation}
-                </span>
+                </Pill>
               )}
             </div>
           </div>
@@ -2612,9 +2209,9 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Recommendation
                   </h3>
-                  <span className="inline-flex px-2.5 py-1 rounded-full text-sm font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <Pill dot={RECOMMENDATION_TONES[review.overallRecommendation] ?? "neutral"}>
                     {review.overallRecommendation}
-                  </span>
+                  </Pill>
                 </div>
               )}
               {scoreEntries.length > 0 && (

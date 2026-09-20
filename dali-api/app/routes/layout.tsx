@@ -13,7 +13,7 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
-import { getActiveCycle } from '~/hiring/lib/cycles'
+import { getActiveCycles } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
@@ -66,14 +66,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Drives the sidebar footer avatar. The loader runs on every shell
   // load/revalidation, so this stays in sync after a profile edit. Also tells
   // the launch tour whether to offer the "connect your calendar" step.
-  const [partnerRedirect, roles, activeCycle, activeInternCycle, sidebarPages, me] = await Promise.all([
+  const [partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
     timed(request, 'roles', () => getUserRoles(auth.user.sub)),
-    timed(request, 'activeCycle', () => getActiveCycle()),
-    // getActiveCycle() only looks at Standard cycles, so an intern on a live
-    // conversion cycle would otherwise read as "on no active cycle" and lose
-    // the Hiring tab under nav-regroup.
-    timed(request, 'activeInternCycle', () => getActiveCycle('Fellowship')),
+    // Every active cycle, whoever it's for: any number can be live at once.
+    timed(request, 'activeCycles', () => getActiveCycles()),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
@@ -139,18 +136,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
 
   // The nav-regroup gate is the same authority list, but the member half is
-  // scoped to cycles that are live RIGHT NOW (either type) rather than any
-  // cycle ever — so a member's Hiring tab appears when their cycle opens and
-  // goes away when it closes, instead of sticking around forever.
-  const liveCycleIds = [activeCycle?.id, activeInternCycle?.id].filter(
-    (id): id is string => typeof id === 'string',
-  )
+  // scoped to cycles that are live RIGHT NOW rather than any cycle ever — so a
+  // member's Hiring tab appears when their cycle opens and goes away when it
+  // closes, instead of sticking around forever.
+  const liveCycleIds = activeCycles.map((c) => c.id)
 
   const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags] = await Promise.all([
     timed(request, 'hiringGate', () =>
-      isLabMember && activeCycle
+      isLabMember && liveCycleIds.length > 0
         ? prisma.cycleInterviewer.findFirst({
-            where: { userId: auth.user.sub, applicationCycleId: activeCycle.id },
+            where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
+            select: { id: true },
           })
         : Promise.resolve(null)),
     !hasHiringAccess && isLabMember
@@ -520,7 +516,10 @@ export default function AppLayoutRoute() {
           <ShellGuideProvider>
           <div
             className={cn(
-              'min-h-dvh overflow-x-hidden',
+              // clip, not hidden: `overflow-x: hidden` turns the wrapper into a
+              // scroll container, which silently breaks `position: sticky` in
+              // every page below it (the window is what actually scrolls).
+              'min-h-dvh overflow-x-clip',
               // A *definite* height, not just a floor: `min-h-dvh` lets a tall
               // child (the calendar's 24-hour grid) grow the document and scroll
               // the pane, which is the one thing `fitViewport` exists to avoid.
@@ -541,7 +540,7 @@ export default function AppLayoutRoute() {
   }
 
   const tablessChild = tabless ? (
-    <div className={cn('flex-1 overflow-x-hidden', fitViewport && 'flex min-h-0 flex-col')}>{pageContent}</div>
+    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>{pageContent}</div>
   ) : undefined
 
   return (

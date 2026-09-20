@@ -11,16 +11,16 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Core Application · DALI OS" }];
 
-// The internal applicant portal for Core cycles — open to all current lab
+// The internal applicant portal for Lab members cycles (Core), open to all current lab
 // members. Shares its loader/action/UI with Fellowship; Core just applies "to
 // Core" (no target-domain picker — the single synthetic CORE domain is linked
 // automatically).
-export async function loader({ request }: Route.LoaderArgs) {
-  return loadInternalCyclePortal(request, "Core");
+export async function loader({ request, params }: Route.LoaderArgs) {
+  return loadInternalCyclePortal(request, "LabMembers", params.cycleId);
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  return handleInternalCyclePortalAction(request, "Core");
+export async function action({ request, params }: Route.ActionArgs) {
+  return handleInternalCyclePortalAction(request, "LabMembers", params.cycleId);
 }
 
 const COPY: PortalCopy = {
@@ -28,6 +28,7 @@ const COPY: PortalCopy = {
   notMember: "This page is only available to current DALI members.",
   notEligible: "Core applications are only open to current, active lab members.",
   noActiveCycleTitle: "No open Core cycle",
+  chooseCycleTitle: "Pick a Core cycle",
   noActiveCycleBody:
     "There's no Core application cycle open right now. Hiring leads will let the lab know when one opens.",
   submittedBody:
