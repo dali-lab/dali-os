@@ -24,6 +24,7 @@ import {
   currentDecisionId,
   type DecisionPill,
   type PrePipelinePill,
+  findFinalizableDraft,
 } from "~/hiring/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType, Question } from "~/types";
@@ -530,19 +531,6 @@ function ConfirmDialog({
       </div>
     </Modal>
   );
-}
-
-// Find the most-recent Draft decision that hasn't been superseded by a Final
-// or Released sibling of the same type. Mirrors the per-row finalize lookup in
-// `ApplicationsTable` so the Interviews section uses the same definition of
-// "needs finalization".
-function findFinalizableDraft(decisions: any[]) {
-  return decisions.find((d: any) => {
-    if (d.stage !== "Draft") return false;
-    return !decisions.some(
-      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
-    );
-  });
 }
 
 export default function DomainLeadDashboard() {
