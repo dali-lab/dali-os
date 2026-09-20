@@ -10,6 +10,28 @@ vi.mock("~/lib/db");
 // standing up a full session.
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 
+// BetterAuth server mock — used by the flag-ON action branches.
+const mockSignInMagicLink = vi.hoisted(() => vi.fn());
+const mockSignInSocial = vi.hoisted(() => vi.fn());
+const mockSignInEmail = vi.hoisted(() => vi.fn());
+const mockRequestPasswordReset = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/betterauth.server", () => ({
+  auth: {
+    api: {
+      signInMagicLink: mockSignInMagicLink,
+      signInSocial: mockSignInSocial,
+      signInEmail: mockSignInEmail,
+      requestPasswordReset: mockRequestPasswordReset,
+    },
+  },
+}));
+
+// Feature flag mock — controls betterauth flag state per test.
+const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/feature-flags.server", () => ({
+  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
+}));
+
 import { _resetForTests } from "~/lib/rate-limit";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -49,6 +71,12 @@ beforeEach(() => {
   _resetForTests();
   vi.clearAllMocks();
   process.env.GOOGLE_CLIENT_ID = "test-client-id";
+  // Default: betterauth flag is OFF for existing legacy tests.
+  mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
+  mockSignInMagicLink.mockResolvedValue(undefined);
+  mockSignInSocial.mockResolvedValue({ url: "https://accounts.google.com/oauth" });
+  mockSignInEmail.mockResolvedValue({ headers: new Headers() });
+  mockRequestPasswordReset.mockResolvedValue(undefined);
 });
 
 describe("POST /login rate limiting", () => {
@@ -224,6 +252,78 @@ describe("POST /login next cookie", () => {
     ];
     expect(cookies.some((c: string) => c.includes("__dali_login_next="))).toBe(
       false,
+    );
+  });
+});
+
+// ── Flag-ON action branches ────────────────────────────────────────────────────
+
+function makeFlagOnRequest(ip: string, body: Record<string, string>) {
+  const form = new URLSearchParams(body);
+  return new Request("http://localhost/login", {
+    method: "POST",
+    headers: {
+      "X-Forwarded-For": ip,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form.toString(),
+  });
+}
+
+describe("POST /login email-link-login (flag-ON)", () => {
+  it("sends a magic link and returns sent=true", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "email-link-login",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ email: "ada@dartmouth.edu", callbackURL: "/" }),
+      }),
+    );
+    expect(result).toMatchObject({ sent: true, email: "ada@dartmouth.edu" });
+  });
+
+  it("swallows signInMagicLink errors and still returns sent=true (anti-enumeration)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockSignInMagicLink.mockRejectedValue(new Error("network error"));
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "email-link-login",
+        email: "nobody@example.com",
+      }),
+    } as any);
+    expect(result).toMatchObject({ sent: true });
+  });
+
+  it("flag-OFF: email-link-login falls through without sending a magic link", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "email-link-login",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
+    // Falls through to legacy Google handler (provider not matched) which tries
+    // to build a Google auth URL — the result will be a redirect (302).
+    expect(result instanceof Response).toBe(true);
+  });
+});
+
+describe("POST /login google-ba (flag-ON)", () => {
+  it("redirects to BetterAuth Google URL", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const res = (await action({
+      request: makeFlagOnRequest("1.2.3.4", { provider: "google-ba" }),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("https://accounts.google.com/oauth");
+    expect(mockSignInSocial).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ provider: "google" }) }),
     );
   });
 });

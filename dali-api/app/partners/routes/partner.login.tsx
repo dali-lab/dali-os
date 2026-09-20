@@ -58,7 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
       // DALI members — the create.after @dali hook only fires for @dali.dartmouth.edu
       // addresses, so a partner Google account becomes a non-member account.
       const result = await auth.api.signInSocial({
-        body: { provider: "google", callbackURL: "/partner" },
+        body: { provider: "google", callbackURL: "/welcome?door=partner" },
         headers: request.headers,
       });
       return redirect(result.url!);
@@ -101,11 +101,11 @@ export async function action({ request }: Route.ActionArgs) {
       await sendMemberEmailConflictEmail(normalizeEmail(email));
       return { sent: true, email: normalizeEmail(email) };
     }
-    // BetterAuth magic-link: callbackURL points to the partner set-password page
-    // so first-time partners can set a password after verifying their email.
+    // BetterAuth magic-link: callbackURL points to /welcome?door=partner so
+    // first-time partners finish setup at the unified welcome page.
     try {
       await auth.api.signInMagicLink({
-        body: { email: normalizeEmail(email), callbackURL: "/partner/set-password" },
+        body: { email: normalizeEmail(email), callbackURL: "/welcome?door=partner" },
         headers: request.headers,
       });
     } catch {
@@ -227,7 +227,7 @@ export default function PartnerLogin() {
                 disabled={submitting}
                 className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
               >
-                {submitting ? "Sending…" : "Email me a sign-in link"}
+                {submitting ? "Sending…" : "Continue with email"}
               </button>
             </Form>
 

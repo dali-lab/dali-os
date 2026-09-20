@@ -317,8 +317,10 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
-  // Login (no layout)
+  // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
+  route("signup", "routes/signup.tsx"),
+  route("welcome", "routes/welcome.tsx"),
   route("login/dartmouth", "routes/login.dartmouth.tsx"),
   route("login/dartmouth/set-password", "routes/login.dartmouth.set-password.tsx"),
   route("login/reset-password", "routes/login.reset-password.tsx"),
