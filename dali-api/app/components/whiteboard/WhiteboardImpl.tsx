@@ -1,6 +1,6 @@
 import "@excalidraw/excalidraw/index.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
@@ -55,7 +55,29 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
           bindingRef.current?.onChange(elements, appState, files)
         }
         onPointerUpdate={(payload) => bindingRef.current?.onPointerUpdate(payload)}
-      />
+      >
+        {/* Trim Excalidraw-specific chrome so the board reads as a DALI surface:
+            a custom menu without the Excalidraw+ upsell / social links, and a
+            welcome screen without the Excalidraw logo. Theme follows the app
+            (the `theme` prop above), so no theme toggle here. */}
+        <MainMenu>
+          <MainMenu.DefaultItems.SaveAsImage />
+          <MainMenu.DefaultItems.ChangeCanvasBackground />
+          <MainMenu.DefaultItems.ClearCanvas />
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.Help />
+        </MainMenu>
+        <WelcomeScreen>
+          <WelcomeScreen.Center>
+            <WelcomeScreen.Center.Heading>
+              Start on the canvas — everyone here sees it live.
+            </WelcomeScreen.Center.Heading>
+            <WelcomeScreen.Center.Menu>
+              <WelcomeScreen.Center.MenuItemHelp />
+            </WelcomeScreen.Center.Menu>
+          </WelcomeScreen.Center>
+        </WelcomeScreen>
+      </Excalidraw>
     </div>
   );
 }
