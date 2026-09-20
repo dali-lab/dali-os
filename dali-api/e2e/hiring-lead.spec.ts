@@ -62,6 +62,53 @@ test.describe('hiring lead workflow', () => {
     await expect(frame.getByRole('button', { name: 'Buffer between interviews' })).toBeVisible();
   });
 
+  test('setup tab stacks its sections as cards', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await frame.getByRole('tab', { name: 'Setup', exact: true }).click();
+
+    // Setup owns the term, the audience and the editable timeline. (The side
+    // nav beside them only renders at lg and up, so it isn't asserted here —
+    // the workspace iframe is narrower than the viewport.)
+    for (const name of ['Term and dates', 'Audience', 'Timeline']) {
+      await expect(frame.getByRole('heading', { name, exact: true })).toBeVisible();
+    }
+  });
+
+  test('a decision email opens in a modal, shared across cycles', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await frame.getByRole('tab', { name: 'Setup', exact: true }).click();
+
+    // Emails are one shared row per slot; the seed writes a Rejected email, so
+    // its row offers Edit rather than Write.
+    const row = frame.getByText('Sent when a rejection is released.').locator('xpath=../..');
+    await row.getByRole('button', { name: /^(Edit|Write)$/ }).click();
+
+    const dialog = frame.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: 'Rejected email' })).toBeVisible();
+    await expect(dialog.getByLabel('Rejected subject')).toBeVisible();
+    await expect(dialog.getByLabel('Rejected body')).toBeVisible();
+    // Read-only check: saving would rewrite the email every cycle shares.
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {
+    await page.goto('/hiring/lead');
+    const frame = cyclesFrame(page);
+    await frame.getByRole('link', { name: /Fall 2026/ }).click();
+    await frame.getByRole('tab', { name: 'Review', exact: true }).click();
+
+    await expect(frame.getByRole('heading', { name: 'Reviewers', exact: true })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Interviewers', exact: true })).toBeVisible();
+    // A Students cycle can fill a domain's roster from its mentors.
+    await expect(frame.getByRole('button', { name: 'Add all mentors' }).first()).toBeVisible();
+  });
+
   test('decisions tab lists finalized decisions waiting to be sent', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);

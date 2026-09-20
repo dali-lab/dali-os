@@ -38,6 +38,9 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/hiring/library', label: 'hiring-library' },
   { path: '/admin/email-templates', label: 'admin-email-templates' },
   { path: '/hiring', label: 'hiring-my-work' },
+  // Core-only hiring boards that the timeline refactor restyled.
+  { path: '/hiring/onboarding', label: 'hiring-onboarding' },
+  { path: '/hiring/waitlists', label: 'hiring-waitlists' },
   { path: '/admin/members', label: 'admin-members' },
   { path: '/admin/domains', label: 'admin-domains' },
   { path: '/projects', label: 'projects-list' },
