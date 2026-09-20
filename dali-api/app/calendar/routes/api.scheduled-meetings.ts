@@ -16,6 +16,9 @@ const Base = {
   durationMinutes: z.number().int().min(5).max(480),
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
+  // Stored on the meeting and mirrored onto the Google event / ICS invite.
+  location: z.string().trim().max(500).optional(),
+  description: z.string().trim().max(5000).optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
   // Which calendar inside that account the invite lands on. Omitted = the
   // account's primary, which is what every caller got before it was askable.
@@ -139,6 +142,8 @@ export async function action({ request }: Route.ActionArgs) {
     scope,
     startTime: body.startTime,
     recurrenceRule: body.recurrenceRule,
+    location: body.location,
+    description: body.description,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
     organizerCalendarId: body.organizerCalendarId,
     meetingType: body.meetingType,

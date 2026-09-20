@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -57,6 +57,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId: true,
       selectedAt: true,
       durationMinutes: true,
+      location: true,
+      description: true,
       status: true,
       scopeType: true,
       isCoreMeeting: true,
@@ -131,6 +133,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isCoreMeeting: meeting.isCoreMeeting,
     organizerName: fullName(meeting.organizer),
     selectedAtIso: meeting.selectedAt ? meeting.selectedAt.toISOString() : null,
+    location: meeting.location,
+    description: meeting.description,
     notePageId: meeting.notePage?.id ?? null,
     canAddNote,
     meetingUrl: meeting.meetingUrl,
@@ -286,6 +290,14 @@ export default function CalendarMeetingPage() {
           {when}
           {d.organizerName ? ` · ${d.organizerName}` : ""}
         </p>
+        {d.location && (
+          <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" /> {d.location}
+          </p>
+        )}
+        {d.description && (
+          <p className="whitespace-pre-wrap text-sm text-foreground">{d.description}</p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {d.meetingUrl && (
             <a
