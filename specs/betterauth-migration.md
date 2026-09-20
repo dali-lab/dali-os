@@ -364,7 +364,12 @@ Pinned **`better-auth@1.7.5`** (exact). Verified compatible with this stack: Pri
 - **Partner door** (`partner.login.tsx` + `/partner/set-password`): `signInSocial` + `signInMagicLink` (member-conflict guard preserved) → `setPassword` (no netID/no member row).
 - **Verification:** typecheck 11 pre-existing baseline / 0 new; full unit suite green (~4729 tests). **Runtime caveat:** the magic-link/Google click-throughs and server-side sign-in need a manual `npm run dev` + DB pass before cutover — not exercisable in the worktree.
 
-**Deferred (separate follow-up PRs):** Phase 2 desktop device-auth, Phase 3 impersonation, Phase 4 MCP re-point, and cleanup (drop legacy `Session`/CAS/`OneTimeToken`, tighten `User.email` to NOT NULL post-backfill).
+**Phases 2 / 3 / 4 BUILT + verified** (2026-09-18, branch `betterauth-phase-2-4`, stacked on the Phase 0+1 PR — a second PR). All flag-gated behind `betterauth`, all needing integration testing before the flag is enabled:
+- **Phase 3 — impersonation** (`admin` plugin): migration `20260918130000` adds `user.role/banned/banReason/banExpires` + `AuthSession.impersonatedBy`. `POST /admin/impersonate` gates on our real `AdminMembership` (`isAdmin`) and JIT-sets the actor's `user.role="admin"` so the plugin gate passes (no standing sync); `POST /admin/stop-impersonating`; both audit-logged; Set-Cookie forwarded. `dev-login-as` left intact. 11 tests.
+- **Phase 4 — MCP (Option A)**: keep our OAuth provider; migration `20260918140000` adds `AuthSession.grantId`. `app/lib/betterauth-session.server.ts` `mintBetterAuthSession()` isolates the one internal-adapter `createSession` call. `/oauth/token` mints a BetterAuth session (grantId) → its token is the `access_token`; `authenticateMcpRequest` tries the legacy path first, then a BetterAuth session (fault-isolated) — in-flight tokens survive the cutover. 18 tests.
+- **Phase 2 — desktop**: **no plugin, no schema change** — keeps DALI's custom pairing flow + native `/auth/pair/*` contract; only the two `issueSession` points swap. Poller → 90-day BetterAuth Bearer session (reuses `mintBetterAuthSession`); handoff → webview session + a signed BetterAuth cookie via `app/lib/betterauth-cookie.server.ts` (reuses better-call's `serializeSignedCookie`). ⚠️ The webview cookie round-trip needs an integration test before enabling. 12 tests. *(Justified deviation from §8: adopting the deviceAuthorization plugin would break the native contract.)*
+
+**Still deferred (post-cutover):** cleanup — drop the legacy `Session`/CAS/`OneTimeToken`, tighten `User.email` to NOT NULL after the backfill. This removes the *live* legacy path, so it only happens once BetterAuth is proven enabled in prod.
 
 ## Appendix: Sources
 
