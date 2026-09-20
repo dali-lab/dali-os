@@ -241,6 +241,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    // My Drive is the Member workspace keyed by the viewer's own id — the
+    // cross-drive move needs it to name the source workspace it's leaving.
+    viewerId: auth.user.sub,
   };
 }
 
@@ -488,18 +491,26 @@ function scopeAudience(scopeId: string): string {
   return "the project team";
 }
 
-// A scope's destination workspace + drive-root parent for a cross-drive move.
+// A scope's workspace + drive-root parent for a cross-drive move.
 // Lab/Core/Hiring are all Lab-workspace pages (Core/Hiring nest under their
-// scoped root folder); a project scope is its own Project workspace.
+// scoped root folder); a project scope is its own Project workspace; My Drive is
+// the viewer's own Member workspace. My Drive only ever appears here as a
+// SOURCE — moveDestinationsFor filters it out of the picker, and the move
+// endpoint refuses it as a destination — but naming it correctly is what makes a
+// move OUT of it register as cross-workspace.
 // The synthetic "projects"/"education" group scopes are not valid move destinations
 // (dropping onto them is disabled in DriveBrowser), so they return a safe Lab
 // default rather than throwing — the hub guards against them via moveDestinationsFor.
-function scopeDest(scope: DriveTreeScope): {
-  workspaceType: "Lab" | "Project";
+function scopeDest(
+  scope: DriveTreeScope,
+  viewerId: string,
+): {
+  workspaceType: "Lab" | "Project" | "Member";
   workspaceId: string | null;
   root: string | null;
 } {
   const kind = scopeKindOf(scope.id);
+  if (kind === "mine") return { workspaceType: "Member", workspaceId: viewerId, root: null };
   if (kind === "project") return { workspaceType: "Project", workspaceId: scope.id, root: scope.rootFolderId ?? null };
   // projects-group / education-group: safe no-op fallback (never a move target).
   if (kind === "projects-group" || kind === "education-group") return { workspaceType: "Lab", workspaceId: null, root: null };
@@ -1067,6 +1078,7 @@ export default function DriveHub() {
     selectedTerm,
     canViewForms,
     canManageAgreements,
+    viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1240,7 +1252,9 @@ export default function DriveHub() {
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       if (!destScope) return;
       const src = driveScopes.find((s) => s.id === sourceScopeId);
-      const srcWs = src ? scopeDest(src) : { workspaceType: "Lab" as const, workspaceId: null, root: null };
+      const srcWs = src
+        ? scopeDest(src, viewerId)
+        : { workspaceType: "Lab" as const, workspaceId: null, root: null };
 
       // For the synthetic group scopes (projects/education), the destFolderPageId
       // IS the project/offering id when the user picks a synthetic top-level folder.
@@ -1273,7 +1287,7 @@ export default function DriveHub() {
         };
         parent = realParent;
       } else {
-        d = scopeDest(destScope) as typeof d;
+        d = scopeDest(destScope, viewerId) as typeof d;
         parent = destFolderPageId ?? d.root;
       }
 
@@ -1310,30 +1324,37 @@ export default function DriveHub() {
         });
       }
       if (res.ok) {
-        // Undo: move back to the original scope + folder.
+        // Undo: move back to the original scope + folder. Nothing can be moved
+        // back INTO My Drive (the move endpoint refuses a Member destination),
+        // so a move off it is one-way and gets a plain confirmation instead of
+        // an Undo that would only fail.
         const prevScopeId = sourceScopeId;
         const prevFolderId = item.parentFolderId;
-        toast.info(
-          <span className="flex items-center gap-2">
-            Moved
-            <button
-              type="button"
-              className="underline font-medium hover:no-underline"
-              onClick={() =>
-                void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
-              }
-            >
-              Undo
-            </button>
-          </span>,
-          { duration: 6000 },
-        );
+        if (scopeKindOf(prevScopeId) === "mine") {
+          toast.success("Moved");
+        } else {
+          toast.info(
+            <span className="flex items-center gap-2">
+              Moved
+              <button
+                type="button"
+                className="underline font-medium hover:no-underline"
+                onClick={() =>
+                  void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
+                }
+              >
+                Undo
+              </button>
+            </span>,
+            { duration: 6000 },
+          );
+        }
       } else {
         toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
       }
       revalidator.revalidate();
     },
-    [driveScopes, dialog, toast, revalidator],
+    [driveScopes, viewerId, dialog, toast, revalidator],
   );
 
   // Open the hybrid destination picker over every drive the item(s) may move to

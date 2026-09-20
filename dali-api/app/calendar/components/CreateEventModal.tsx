@@ -343,6 +343,8 @@ export function CreateEventModal({
         title: title.trim(),
         durationMinutes,
       };
+      if (location.trim()) payload.location = location.trim();
+      if (description.trim()) payload.description = description.trim();
       if (selectedStartLocal) {
         const d = new Date(selectedStartLocal);
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();

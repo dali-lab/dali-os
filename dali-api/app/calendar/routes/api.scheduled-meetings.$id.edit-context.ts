@@ -30,6 +30,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       scopeType: true,
       scopeId: true,
       participantUserIds: true,
+      location: true,
+      description: true,
     },
   });
   if (!meeting || meeting.status === "Cancelled") {
@@ -65,6 +67,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startTime: meeting.selectedAt?.toISOString() ?? null,
         durationMinutes: meeting.durationMinutes,
         recurrenceRule: meeting.recurrenceRule,
+        location: meeting.location,
+        description: meeting.description,
         scopeType: meeting.scopeType,
         groupId: meeting.scopeType === "Group" ? meeting.scopeId : null,
         participantUserIds: meeting.participantUserIds,
