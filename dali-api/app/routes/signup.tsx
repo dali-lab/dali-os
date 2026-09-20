@@ -74,11 +74,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Email / magic-link signup
   if (provider === "email-link") {
-    if (door === "member") {
-      if (!email.endsWith("@dali.dartmouth.edu")) {
-        return { error: "Use your @dali.dartmouth.edu email address.", door, sent: false as const };
-      }
-    } else if (door === "dartmouth") {
+    // Member door is Google-only (@dali emails are Google accounts) — no
+    // magic-link path, even if a request is crafted for it.
+    if (door === "member") return redirect(`/signup?door=member`);
+
+    if (door === "dartmouth") {
       if (!email.endsWith("@dartmouth.edu")) {
         return { error: "Use your @dartmouth.edu email address.", door, sent: false as const };
       }
@@ -173,6 +173,9 @@ function DoorSignup({ door, actionData }: {
 
   const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
   const formError = actionData && "error" in actionData ? actionData.error : null;
+  // @dali.dartmouth.edu emails are Google accounts, so the member door is
+  // Google-only — no magic-link email path.
+  const hasEmail = door !== "member";
 
   return (
     <>
@@ -180,7 +183,7 @@ function DoorSignup({ door, actionData }: {
         {DOOR_BLURBS[door]}
       </p>
 
-      {sent ? (
+      {hasEmail && sent ? (
         <div className="rounded-2xl bg-brand-tint p-6">
           <p className="font-heading font-semibold text-dark-blue mb-1">
             Check your email
@@ -188,8 +191,8 @@ function DoorSignup({ door, actionData }: {
           <p className="text-sm text-muted-foreground">
             We sent an email to{" "}
             <span className="font-medium text-dark-blue">{sent.email}</span>.
-            Open it and follow the link to continue — sign-in links expire
-            in 5 minutes.
+            Open it and follow the link to continue. Sign-in links expire in a
+            few minutes.
           </p>
           <div className="mt-4">
             <Link
@@ -209,7 +212,7 @@ function DoorSignup({ door, actionData }: {
           )}
 
           {/* Continue with Google */}
-          <Form method="post" className="mb-4">
+          <Form method="post" className={hasEmail ? "mb-4" : ""}>
             <input type="hidden" name="door" value={door} />
             <input type="hidden" name="provider" value="google" />
             <button
@@ -221,32 +224,35 @@ function DoorSignup({ door, actionData }: {
             </button>
           </Form>
 
-          {/* or divider */}
-          <div className="flex items-center gap-3 mb-4">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          {/* Email link — omitted on the member door (@dali emails are Google). */}
+          {hasEmail && (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
 
-          {/* Email link */}
-          <Form method="post" className="flex flex-col gap-3">
-            <input type="hidden" name="door" value={door} />
-            <input type="hidden" name="provider" value="email-link" />
-            <input
-              type="email"
-              name="email"
-              required
-              placeholder={EMAIL_PLACEHOLDERS[door]}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-            >
-              {submitting ? "Sending…" : "Continue with email"}
-            </button>
-          </Form>
+              <Form method="post" className="flex flex-col gap-3">
+                <input type="hidden" name="door" value={door} />
+                <input type="hidden" name="provider" value="email-link" />
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder={EMAIL_PLACEHOLDERS[door]}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {submitting ? "Sending…" : "Continue with email"}
+                </button>
+              </Form>
+            </>
+          )}
         </>
       )}
 
