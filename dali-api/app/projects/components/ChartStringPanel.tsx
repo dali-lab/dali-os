@@ -13,7 +13,12 @@ import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Info, Plus, History, AlertTriangle } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { GL_SUBACTIVITIES } from "~/lib/chart-string";
+import {
+  GL_SUBACTIVITIES,
+  PROJECT_FUNDING_TYPES,
+  PROJECT_FUNDING_TYPE_LABELS,
+  type ProjectFundingType,
+} from "~/lib/chart-string";
 
 export type ChartStringRowView = {
   id: string;
@@ -28,18 +33,12 @@ export type ChartStringRowView = {
   fpNumber: string | null;
   awardId: string | null;
   rapportName: string | null;
-  kind: "ADVANCE" | "FUNDED" | "DEPARTMENT";
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedeReason: string | null;
   note: string | null;
   createdAt: string;
   createdBy: string | null;
-};
-
-const KIND_LABEL: Record<ChartStringRowView["kind"], string> = {
-  ADVANCE: "Advance account",
-  FUNDED: "Funded award",
-  DEPARTMENT: "Departmental GL",
 };
 
 const field =
@@ -72,7 +71,7 @@ function RowSummary({ row }: { row: ChartStringRowView }) {
       : row.subactivity;
   const bits = [
     row.type,
-    KIND_LABEL[row.kind],
+    row.fundingType ? PROJECT_FUNDING_TYPE_LABELS[row.fundingType] : null,
     row.awardCode,
     row.fpNumber,
     sub,
@@ -232,11 +231,17 @@ export function ChartStringPanel({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-os-grey">Kind</span>
-            <select name="kind" defaultValue="FUNDED" className={field}>
-              <option value="FUNDED">Funded award</option>
-              <option value="ADVANCE">Advance account</option>
-              <option value="DEPARTMENT">Departmental GL</option>
+            <span className="text-xs text-os-grey">Project type</span>
+            {/* GL vs PTAEO is the string's format and the validator reads it
+                off the shape — asking for it again is how a PTAEO ended up
+                labelled GL. This asks only how the work is paid for. */}
+            <select name="fundingType" defaultValue="" className={field}>
+              <option value="">Not set</option>
+              {PROJECT_FUNDING_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {PROJECT_FUNDING_TYPE_LABELS[t]}
+                </option>
+              ))}
             </select>
           </label>
 

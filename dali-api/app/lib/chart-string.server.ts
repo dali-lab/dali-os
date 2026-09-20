@@ -18,10 +18,17 @@ import {
   parseChartString,
   type ChartStringType,
   type ChartStringIssue,
+  type ProjectFundingType,
 } from "~/lib/chart-string";
 
-export const CHART_STRING_KINDS = ["ADVANCE", "FUNDED", "DEPARTMENT"] as const;
-export type ChartStringKind = (typeof CHART_STRING_KINDS)[number];
+// Re-exported so server callers keep one import; the values themselves live in
+// the client-safe module so the project panel can render the dropdown.
+export {
+  PROJECT_FUNDING_TYPES,
+  PROJECT_FUNDING_TYPE_LABELS,
+  type ProjectFundingType,
+} from "~/lib/chart-string";
+
 
 export class ChartStringValidationError extends Error {
   status = 400;
@@ -37,7 +44,7 @@ export type RecordChartStringInput = {
   projectId: string;
   termId: string;
   chartString: string;
-  kind?: ChartStringKind;
+  fundingType?: ProjectFundingType | null;
   fpNumber?: string | null;
   awardId?: string | null;
   rapportName?: string | null;
@@ -112,7 +119,7 @@ export async function recordProjectChartString(
         rapportName: input.rapportName?.trim() || null,
         awardStart: input.awardStart ?? null,
         awardEnd: input.awardEnd ?? null,
-        kind: input.kind ?? "FUNDED",
+        fundingType: input.fundingType ?? null,
         isCurrent: true,
         supersedesId: previous?.id ?? null,
         supersedeReason: previous ? input.supersedeReason?.trim() || null : null,
@@ -146,7 +153,7 @@ export async function recordProjectChartString(
       termId: input.termId,
       chartString: parsed.normalized,
       type: parsed.type,
-      kind: input.kind ?? "FUNDED",
+      fundingType: input.fundingType ?? null,
       supersededId: created.supersedesId,
       mirrored: isCurrentTerm,
       warnings: parsed.warnings.map((w) => w.code),
@@ -179,7 +186,7 @@ export type ChartStringRow = {
   fpNumber: string | null;
   awardId: string | null;
   rapportName: string | null;
-  kind: ChartStringKind;
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedeReason: string | null;
   note: string | null;
@@ -206,7 +213,7 @@ export async function listProjectChartStrings(
       fpNumber: true,
       awardId: true,
       rapportName: true,
-      kind: true,
+      fundingType: true,
       isCurrent: true,
       supersedeReason: true,
       note: true,
@@ -232,7 +239,7 @@ export async function listProjectChartStrings(
     fpNumber: r.fpNumber,
     awardId: r.awardId,
     rapportName: r.rapportName,
-    kind: r.kind as ChartStringKind,
+    fundingType: r.fundingType as ProjectFundingType | null,
     isCurrent: r.isCurrent,
     supersedeReason: r.supersedeReason,
     note: r.note,

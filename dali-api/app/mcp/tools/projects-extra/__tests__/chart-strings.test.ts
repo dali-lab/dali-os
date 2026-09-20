@@ -67,7 +67,7 @@ function row(over: Record<string, unknown> = {}) {
     rapportName: null,
     awardStart: null,
     awardEnd: null,
-    kind: "FUNDED",
+    fundingType: "DALI_PTAEO",
     isCurrent: true,
     supersedesId: null,
     supersedeReason: null,
@@ -226,7 +226,7 @@ describe("set_project_chart_string", () => {
       projectId: "p1",
       termCode: "26F",
       chartString: "523241.5000.B04662.XXXXX.330",
-      kind: "ADVANCE",
+      fundingType: "DALI_PTAEO",
       fpNumber: "FP00014787",
     });
 
@@ -242,7 +242,7 @@ describe("set_project_chart_string", () => {
     const data = db.projectChartString.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
       isCurrent: true,
-      kind: "ADVANCE",
+      fundingType: "DALI_PTAEO",
       awardCode: "B04662",
       org: "330",
       supersedesId: null,
