@@ -79,10 +79,14 @@ Room parses as `entity="whiteboard"`, `id=pageId`, `field="canvas"` (3 parts, as
   granularity. Excalidraw's own `version`/`versionNonce`/`updated` fields drive
   conflict resolution via its `reconcileElements` helper, so we do **not** need per-property
   nested `Y.Map`s (last-writer-by-version — Excalidraw's native semantics).
-- `ydoc.getMap("files")` — image/asset references. **Do not store base64 image dataURLs in
-  the CRDT** (bloats every peer's state and every snapshot). Upload images to S3 via the
-  existing Drive presigned-URL path and store only `{ fileId → { s3Key, mimeType } }` here.
-  (v1 may inline tiny images to ship faster; S3 offload is Phase 2.)
+- `ydoc.getMap("files")` — image references. **Base64 image dataURLs are NOT stored in the
+  CRDT** (they would bloat every peer's state and every snapshot). Images upload to S3 via the
+  shared presign path (`uploadFileToS3` → `/api/upload/presign`, prefix `whiteboard-images`),
+  and only a stable same-origin URL is stored in the file's `dataURL`. Served by
+  `GET /api/whiteboard/image?key=…` which **streams the bytes same-origin** (not a 302 to a
+  presigned S3 URL like `/api/upload/raw`) so Excalidraw can draw the image onto its canvas
+  without cross-origin taint — which would otherwise break PNG/SVG export. Falls back to
+  inline base64 if the upload fails or no S3 is configured (dev), so images never break.
 - **Yjs gotcha:** never mutate an object after putting it into / reading it from a shared
   type — Yjs does not clone it and peers silently desync. Always write fresh element objects.
 
@@ -211,7 +215,8 @@ could anchor to canvas coords later), templates, export-to-image beyond Excalidr
 ## Risks / flags
 - **Owning the Yjs↔Excalidraw binding** (reconcile, echo-loop origins, undo interaction) is the
   main net-new engineering and the top risk. Budget for it; it is not a drop-in.
-- **Image/asset bloat** if base64 lives in the CRDT → S3 offload (Phase 2).
+- **Image/asset bloat** — DONE: images offload to S3, only URLs live in the CRDT (served
+  same-origin to avoid canvas taint). Base64 fallback when S3 is unavailable.
 - **Excalidraw upgrades** — pin the version; the reconcile/onChange API is stable but watch releases.
 - **Aesthetic mismatch** with the DALI design system (hand-drawn) — partially mitigated by theming.
 - **CRDT schema care (CLAUDE.md):** this adds a *new* room type; it does not touch existing

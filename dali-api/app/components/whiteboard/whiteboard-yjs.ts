@@ -53,14 +53,26 @@ export interface WhiteboardBindingOptions {
   api: ExcalidrawImperativeAPI;
   editable: boolean;
   user: { name: string; color: string; avatarUrl: string | null };
+  /** Offload a new image to storage, returning a URL to store in the CRDT
+   *  instead of its base64 dataURL. Return null to keep the file inline. */
+  uploadFile?: (file: BinaryFileData) => Promise<string | null>;
 }
 
 export function bindExcalidrawToYjs(opts: WhiteboardBindingOptions): WhiteboardBinding {
-  const { ydoc, awareness, api, editable, user } = opts;
+  const { ydoc, awareness, api, editable, user, uploadFile } = opts;
   const yElements = ydoc.getMap<unknown>(ELEMENTS_KEY);
   const yFiles = ydoc.getMap<BinaryFileData>(FILES_KEY);
   // Stable per-binding origin object; identity comparison is the echo guard.
   const LOCAL_ORIGIN = { whiteboard: ydoc.clientID };
+
+  let destroyed = false;
+  // Files currently being uploaded, so onChange (which fires constantly) doesn't
+  // upload the same image twice while its upload is in flight.
+  const uploadingFiles = new Set<string>();
+  const storeFile = (id: string, file: BinaryFileData) => {
+    if (destroyed) return; // upload may resolve after unmount
+    ydoc.transact(() => yFiles.set(id, file), LOCAL_ORIGIN);
+  };
 
   // id -> last-applied version. Shared by the local writer and the remote
   // applier: after a remote updateScene re-fires onChange, the versions already
@@ -153,17 +165,27 @@ export function bindExcalidrawToYjs(opts: WhiteboardBindingOptions): WhiteboardB
       }
       lastKnown = new Map(elements.map((el) => [el.id, el.version]));
 
-      // Images: add-only into the shared files map. NOTE (v1): base64 dataURLs
-      // live in the CRDT — see specs/whiteboard.md; S3 offload is a follow-up to
-      // keep the doc small.
-      const toAddFiles: Array<[string, BinaryFileData]> = [];
+      // Images: add-only into the shared files map. Offload the bytes to S3 and
+      // store only the URL in the CRDT (keeps the doc small); the base64 stays
+      // local until the upload resolves. Falls back to inlining the base64 if
+      // there's no uploader or the upload fails, so images never break.
       for (const id of Object.keys(files)) {
-        if (!yFiles.has(id)) toAddFiles.push([id, files[id]]);
-      }
-      if (toAddFiles.length > 0) {
-        ydoc.transact(() => {
-          for (const [id, f] of toAddFiles) yFiles.set(id, f);
-        }, LOCAL_ORIGIN);
+        if (yFiles.has(id) || uploadingFiles.has(id)) continue;
+        const file = files[id];
+        const isDataUrl =
+          typeof file.dataURL === "string" && file.dataURL.startsWith("data:");
+        if (uploadFile && isDataUrl) {
+          uploadingFiles.add(id);
+          uploadFile(file)
+            .then((url) =>
+              storeFile(id, url ? { ...file, dataURL: url as BinaryFileData["dataURL"] } : file),
+            )
+            .catch(() => storeFile(id, file))
+            .finally(() => uploadingFiles.delete(id));
+        } else {
+          // No uploader (fallback), or the dataURL is already a URL — store as-is.
+          storeFile(id, file);
+        }
       }
     }
 
@@ -184,6 +206,7 @@ export function bindExcalidrawToYjs(opts: WhiteboardBindingOptions): WhiteboardB
   }
 
   function destroy() {
+    destroyed = true;
     yElements.unobserve(elementsObserver);
     yFiles.unobserve(filesObserver);
     awareness?.off("change", awarenessObserver);

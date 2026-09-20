@@ -9,6 +9,11 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
+import { FolderIcon } from "~/components/FolderIcon";
 import { WhiteboardEditor } from "~/components/whiteboard/WhiteboardEditor";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -16,9 +21,67 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Whiteboard · DALI OS" }];
 };
 
-// Fill the shell's main column (no page scroll) — the canvas manages its own
-// pan/zoom, like the calendar surface.
-export const handle = { fitViewport: true };
+export const handle = {
+  // Fill the shell's main column (no page scroll) — the canvas manages its own
+  // pan/zoom, like the calendar surface.
+  fitViewport: true,
+  // Same Drive / hub ancestry as the document viewer, ending at the whiteboard,
+  // so the shell breadcrumb reads e.g. "Drive ▸ Folder ▸ <title>" rather than
+  // the generic "… ▸ Details" fallback.
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as
+      | {
+          title?: string;
+          iconEmoji?: string | null;
+          hubName?: string | null;
+          hubHref?: string | null;
+          hubIconEmoji?: string | null;
+          workspaceType?: string;
+          driveCrumbs?: {
+            scope: string;
+            folders: { id: string; title: string; iconEmoji: string | null }[];
+          } | null;
+        }
+      | undefined;
+    if (!d?.title) return null;
+    // Lab / personal pages root at Drive, then walk the folder path.
+    if (!d.hubName || !d.hubHref) {
+      const scope = d.driveCrumbs?.scope ?? "lab";
+      return [
+        ...driveRootCrumbs(scope),
+        ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+          label: f.title || "Untitled folder",
+          to: `/drive?scope=${scope}&folder=${f.id}`,
+          icon: <FolderIcon iconEmoji={f.iconEmoji} />,
+        })),
+        { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+      ];
+    }
+    // Project / offering pages root at their hub.
+    const root =
+      d.workspaceType === "EducationOffering"
+        ? { label: "Education", to: "/education" }
+        : { label: "Projects", to: "/projects" };
+    const driveScope = d.workspaceType === "EducationOffering" ? "education" : "projects";
+    return [
+      root,
+      {
+        label: d.hubName,
+        to: d.hubHref,
+        icon:
+          d.workspaceType === "EducationOffering" ? undefined : (
+            <ProjectIcon iconEmoji={d.hubIconEmoji} />
+          ),
+      },
+      ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || "Untitled folder",
+        to: `/drive?scope=${driveScope}&folder=${f.id}`,
+        icon: <FolderIcon iconEmoji={f.iconEmoji} />,
+      })),
+      { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+    ];
+  },
+};
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -42,6 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       kind: true,
       archivedAt: true,
       iconEmoji: true,
+      parentPageId: true,
       workspaceType: true,
       workspaceId: true,
       partnerVisible: true,
@@ -74,6 +138,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!access.canView) throw new Response("Not found", { status: 404 });
 
+  // Breadcrumb ancestry (mirrors the document viewer): the owning hub for
+  // project/offering pages, plus the Drive folder path for nesting.
+  let hubName: string | null = null;
+  let hubHref: string | null = null;
+  let hubIconEmoji: string | null = null;
+  if (page.workspaceType === "Project" && page.workspaceId) {
+    const project = await prisma.project.findUnique({
+      where: { id: page.workspaceId },
+      select: { name: true, iconEmoji: true },
+    });
+    if (project) {
+      hubName = project.name;
+      hubHref = `/projects/${page.workspaceId}`;
+      hubIconEmoji = project.iconEmoji;
+    }
+  } else if (page.workspaceType === "EducationOffering" && page.workspaceId) {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id: page.workspaceId },
+      select: { title: true },
+    });
+    if (offering) {
+      hubName = offering.title;
+      hubHref = `/education/${page.workspaceId}/hub`;
+    }
+  }
+  const driveCrumbs = await driveFolderCrumbs(page.parentPageId, auth.user.sub, request);
+
   recordPageVisit(auth.user.sub, page.id, request);
 
   const collabToken = parseSessionCookie(request);
@@ -85,6 +176,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pageId: page.id,
     title: page.title,
     iconEmoji: page.iconEmoji,
+    workspaceType: page.workspaceType,
+    hubName,
+    hubHref,
+    hubIconEmoji,
+    driveCrumbs,
     canEdit: access.canEdit,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,

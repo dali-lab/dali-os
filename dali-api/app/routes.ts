@@ -671,6 +671,7 @@ export default [
   route("api/upload/presign", "routes/api.upload.presign.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
   route("api/upload/raw", "routes/api.upload.raw.ts"),
+  route("api/whiteboard/image", "routes/api.whiteboard.image.ts"),
 
   // Gmail OAuth one-time authorization
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
