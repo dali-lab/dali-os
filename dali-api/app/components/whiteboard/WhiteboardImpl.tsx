@@ -1,6 +1,6 @@
 import "@excalidraw/excalidraw/index.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Excalidraw, MainMenu, WelcomeScreen } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, WelcomeScreen, FONT_FAMILY } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
@@ -19,6 +19,22 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
       typeof document !== "undefined" && document.documentElement.classList.contains("dark")
         ? "dark"
         : "light",
+    [],
+  );
+
+  // Shed most of Excalidraw's hand-drawn aesthetic by defaulting new shapes to
+  // precise lines (roughness 0, not the "artist" wobble), a solid fill (not the
+  // sketchy hachure crosshatch), and a clean sans font (not Excalifont). These
+  // are per-client UI defaults for newly-drawn elements — existing elements keep
+  // their own style, and users can still opt back into a sketchier look.
+  const initialData = useMemo(
+    () => ({
+      appState: {
+        currentItemRoughness: 0,
+        currentItemFillStyle: "solid" as const,
+        currentItemFontFamily: FONT_FAMILY.Nunito,
+      },
+    }),
     [],
   );
 
@@ -48,6 +64,7 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
     <div className="relative min-h-0 flex-1 bg-page">
       <Excalidraw
         excalidrawAPI={(a) => setApi(a)}
+        initialData={initialData}
         viewModeEnabled={!canEdit}
         theme={theme}
         isCollaborating
