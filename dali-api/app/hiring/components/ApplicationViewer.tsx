@@ -1,9 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { cn } from '~/lib/cn'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { isEmptyBlocks } from '~/lib/blocks'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
+
+// The dali.os card dress (see os-chrome.ts): a borderless rounded surface
+// titled on its own, rather than a bordered box with a shaded header band.
+const CARD = 'rounded-os-card bg-os-card overflow-hidden'
+const CARD_HEADER = 'px-6 pt-5'
+const CARD_TITLE = 'font-heading text-[19px] font-semibold text-foreground'
 
 // Question types where the answer is a URL or structured value rather than
 // freeform prose. We render these via AnswerDisplay (download links, etc.)
@@ -422,13 +429,13 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
   return (
     <div className="space-y-6">
       {/* General answers */}
-      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">General Information</h2>
+      <div className={CARD}>
+        <div className={CARD_HEADER}>
+          <h2 className={CARD_TITLE}>General information</h2>
         </div>
-        <div className="p-6 space-y-6">
+        <div className="px-6 pb-6 pt-3 space-y-6">
           {!isEmptyBlocks(application.generalChallengeVersion?.description) && (
-            <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+            <div className="rounded-os-item bg-os-well px-4 py-3">
               <DocEditor
                 key={application.generalChallengeVersion?.id ?? 'general'}
                 features="notes"
@@ -443,7 +450,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
             const label = question?.data.label ?? questionLabels[key] ?? key
             return (
               <div key={key}>
-                <h3 className="text-sm font-medium text-muted-foreground mb-1">{label}</h3>
+                <h3 className="text-sm font-medium text-os-grey mb-1.5">{label}</h3>
                 {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
                   <AnswerDisplay question={question} answer={String(value ?? '')} />
                 ) : (
@@ -463,10 +470,10 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         if (!cv) {
           // Fellowship domain selection — no challenge content to render.
           return (
-            <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-border bg-muted/50">
-                <h2 className="text-lg font-semibold text-foreground">{domainName}</h2>
-                <p className="text-xs text-muted-foreground mt-1">Target domain selected (no challenge for fellowship applications).</p>
+            <div key={dapp.id} className={CARD}>
+              <div className={cn(CARD_HEADER, 'pb-5')}>
+                <h2 className={CARD_TITLE}>{domainName}</h2>
+                <p className="text-sm text-os-grey mt-1">Target domain. This cycle has no challenge.</p>
               </div>
             </div>
           )
@@ -474,13 +481,13 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         const challengeQuestions = cv.questions as unknown as Question[]
         const challengeQuestionsByKey = buildQuestionMap(challengeQuestions)
         return (
-          <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">{domainName} Challenge</h2>
+          <div key={dapp.id} className={CARD}>
+            <div className={CARD_HEADER}>
+              <h2 className={CARD_TITLE}>{domainName} challenge</h2>
             </div>
-            <div className="p-6 space-y-6">
+            <div className="px-6 pb-6 pt-3 space-y-6">
               {!isEmptyBlocks(cv.description) && (
-                <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                <div className="rounded-os-item bg-os-well px-4 py-3">
                   <DocEditor
                     key={dapp.id}
                     features="notes"
@@ -495,7 +502,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
                 const label = question?.data.label ?? questionLabels[key] ?? key
                 return (
                   <div key={key}>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">{label}</h3>
+                    <h3 className="text-sm font-medium text-os-grey mb-1.5">{label}</h3>
                     {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
                       <AnswerDisplay question={question} answer={String(value ?? '')} />
                     ) : (

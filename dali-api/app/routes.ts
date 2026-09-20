@@ -27,9 +27,10 @@ export default [
     route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
     route("sign/:bindingId/pdf", "signing/routes/sign.$bindingId.pdf.ts"),
 
-    // Hiring section. /hiring is the role-aware hub; the tools below are
-    // reached via its pill row (the sidebar carries a single Hiring entry).
+    // Hiring section. /hiring is My work (the viewer's reviews, interviews and
+    // delibs mirror); the tools below are the sidebar's Hiring sub-tabs.
     route("hiring", "hiring/routes/hiring.tsx"),
+    // Redirects into My work, as does hiring/interviews.
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Applications database: list of all submissions for a cycle, scoped by
@@ -60,7 +61,6 @@ export default [
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    // Interviewer surfaces: list (availability + assigned) and detail.
     route("hiring/interviews", "hiring/routes/interviews.tsx"),
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
@@ -224,15 +224,17 @@ export default [
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
 
-    // Internal applicant portal — Fellowship (intern → full-time) and Core
-    // (member → Core). Authenticated member routes (not under /portal) so
-    // members use their existing session rather than the CAS flow built for
-    // external applicants. Both render the shared internal-cycle portal.
+    // Internal applicant portal — Interns cycles (Fellowship, intern →
+    // full-time) and Lab members cycles (member → Core). Authenticated member
+    // routes (not under /portal) so members use their existing session rather
+    // than the CAS flow built for external applicants. Both render the shared
+    // internal-cycle portal. :cycleId is optional: without it the portal shows
+    // the one open cycle, or a chooser when several are open.
     // Core's portal lives at /core/apply, not /core: the nav-regroup Core hub
     // (core/routes/core.hub.tsx) owns /core, so the hub loader redirects
-    // eligible non-Core members here when a Core cycle is open.
-    route("fellowship", "routes/fellowship.tsx"),
-    route("core/apply", "routes/core.tsx"),
+    // eligible non-Core members here when a Lab members cycle is open.
+    route("fellowship/:cycleId?", "routes/fellowship.tsx"),
+    route("core/apply/:cycleId?", "routes/core.tsx"),
     // Legacy path — old notification/task links pointed at /intern-to-full.
     route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
@@ -262,7 +264,7 @@ export default [
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
     route("portal/hiring", "routes/portal.hiring.tsx"),
-    route("portal/apply", "routes/portal.apply.tsx"),
+    route("portal/apply/:cycleId?", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
     // Combined education + hiring application history (linked from the home).
     route("portal/applications", "routes/portal.applications.tsx"),
@@ -618,7 +620,6 @@ export default [
   route("api/hiring/cycles/:cycleId/interview-config", "hiring/routes/api.cycles.$cycleId.interview-config.ts"),
   route("api/hiring/cycles/:cycleId/reviewers", "hiring/routes/api.cycles.$cycleId.reviewers.ts"),
   route("api/hiring/cycles/:cycleId/reviewers/:reviewerId", "hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId.ts"),
-  route("api/hiring/cycles/:cycleId/my-availability", "hiring/routes/api.cycles.$cycleId.my-availability.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews", "hiring/routes/api.cycles.$cycleId.my-interviews.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
@@ -648,6 +649,7 @@ export default [
   route("api/hiring/decisions/:id/release", "hiring/routes/api.decisions.$id.release.ts"),
 
   route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
+  route("api/hiring/waitlist/reorder", "hiring/routes/api.waitlist.reorder.ts"),
   route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
   route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 

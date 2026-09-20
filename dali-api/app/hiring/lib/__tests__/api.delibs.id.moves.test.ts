@@ -85,7 +85,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("moves a card from its current column to the target column", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       status: "Open",
       columnOrder: {
         "No Decision": ["card-a", "card-b"],
@@ -116,7 +117,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("inserts at the requested position when provided", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Final",
+      roundId: "final",
+      applicationCycle: { timeline: null },
       status: "Open",
       columnOrder: {
         Accept: ["a", "b", "c"],
@@ -152,7 +154,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
 
     mockTx.delibsSession.findUnique.mockImplementation(async () => ({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       status: "Open",
       columnOrder: stored,
     }));
@@ -204,7 +207,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("returns 400 when toColumn is not valid for the session type", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       status: "Open",
       columnOrder: { "No Decision": ["card-a"], Interview: [], Reject: [] },
     });
@@ -244,7 +248,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("returns 409 when the session is closed", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       status: "Closed",
       columnOrder: { "No Decision": ["card-a"], Interview: [], Reject: [] },
     });
@@ -289,7 +294,8 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("calls hasCycleAccess with the session's applicationCycleId before proceeding", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
-      type: "Initial",
+      roundId: "first",
+      applicationCycle: { timeline: null },
       status: "Open",
       columnOrder: {
         "No Decision": ["card-a"],

@@ -30,10 +30,10 @@ test.describe.serial('reviewer workflow', () => {
     });
 
     test('dashboard loads', async ({ page }) => {
-      await page.goto('/hiring/reviewer');
+      await page.goto('/hiring');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
-      await expect(frame.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
+      await expect(frame.getByRole('heading', { name: 'My work' })).toBeVisible();
+      await expect(frame.getByText(/^Pending$|assigned applications yet/).first()).toBeVisible({ timeout: 10_000 });
     });
 
   });
@@ -48,15 +48,15 @@ test.describe.serial('reviewer workflow', () => {
     });
 
     test('dashboard shows review columns', async ({ page }) => {
-      await page.goto('/hiring/reviewer');
+      await page.goto('/hiring');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'My work' })).toBeVisible();
       await expect(frame.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
       await expect(frame.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });
 
     test('shows assigned applicant reviews', async ({ page }) => {
-      await page.goto('/hiring/reviewer');
+      await page.goto('/hiring');
       const frame = reviewsFrame(page);
       await expect(frame.getByText('Alice Johnson')).toBeVisible({ timeout: 10_000 });
       await expect(frame.getByText('Diego Rivera')).toBeVisible();
@@ -65,16 +65,16 @@ test.describe.serial('reviewer workflow', () => {
     test('review detail page shows scoring form', async ({ page }) => {
       // Get the review link href and navigate directly to avoid hydration
       // timing issues with client-side router click handling on CI.
-      await page.goto('/hiring/reviewer');
+      await page.goto('/hiring');
       const frame = reviewsFrame(page);
-      const reviewLink = frame.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
+      const reviewLink = frame.getByRole('link', { name: /View review|Continue review|Start review/i }).first();
       await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
       const href = await reviewLink.getAttribute('href');
       expect(href).toMatch(/\/hiring\/reviewer\/application\/.+/);
       await page.goto(href!);
 
       // The application detail also renders inside the Reviews iframe.
-      await expect(frame.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
+      await expect(frame.getByText('Your review')).toBeVisible({ timeout: 10_000 });
 
       // Engineering rubric criteria from seed data
       await expect(frame.getByText('Technical Depth')).toBeVisible();

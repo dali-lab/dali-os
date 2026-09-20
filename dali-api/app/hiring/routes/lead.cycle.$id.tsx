@@ -1,14 +1,41 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
-import { Form, Link, useParams, useLoaderData, useSearchParams, useFetcher, redirect } from 'react-router'
-import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { cn } from "~/lib/cn";
+import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
+import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
-import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
+import { isAdmin, isCycleAdmin } from "~/lib/roles";
+import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
+import { APPLICANT_GROUPS, defaultTimelineFor, isMemberApplicants } from "~/hiring/lib/applicant-groups";
+import type { CycleApplicants } from "~/generated/prisma/enums";
+import {
+  endOfDayInAppTz,
+  handleMemberSetupIntent,
+  loadMemberCycleSetup,
+  loadPhaseStatusByDomain,
+  loadTermOptions,
+  startOfDayInAppTz,
+} from "~/hiring/lib/cycle-setup.server";
+import { getCycleProgress } from "~/hiring/lib/cycle-phases.server";
+import { defaultApplicationWindow } from "~/hiring/lib/cycle-phases";
+import {
+  blockKey,
+  delibRounds,
+  hasInterviews as timelineHasInterviews,
+  parseTimeline,
+  validateTimeline,
+  type Timeline,
+} from "~/hiring/lib/cycle-timeline";
+import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
+import { listHiringEmails, saveHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
+import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
+import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
+import { ReviewerPoolCard } from "~/hiring/components/cycle-setup/ReviewerPoolCard";
+import { addDomainChallenge, createCycleApplicationForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -23,21 +50,33 @@ import {
   type DecisionSlotType,
   type NotificationSlotType,
 } from "~/hiring/lib/email-variables";
-import { Modal, ModalHeader } from "~/components/Modal";
+import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
+import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, Mail, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
+import { useOsChrome } from "~/components/os-chrome";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { buttonClasses } from "~/components/ui/Button";
+import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/OpenApplicationsConfirmModal";
+import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";
+import { AudienceCard } from "~/hiring/components/cycle-setup/AudienceCard";
+import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
+import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { ChallengeLine, NotReadyIcon, type DomainChallenge } from "~/hiring/components/cycle-setup/ChallengeLine";
+import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
+import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
+import { AlertIcon, Pill, SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { DomainStatusList } from "~/hiring/components/cycle-setup/DomainStatusList";
 import { formatVersionLabel } from "~/lib/formatVersion";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
-import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
-import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
+import { STATUS_TONES, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
   zonedDayStartUtc,
   zonedDayEndUtc,
@@ -107,75 +146,16 @@ interface PendingInviteRow {
   }
 }
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
-
-const STATUS_SEQUENCE = [
-  "Draft",
-  "Open",
-  "UnderReview",
-  "Completed",
-] as const;
-
-type CycleStatus = (typeof STATUS_SEQUENCE)[number];
-
-function nextStatus(current: CycleStatus): CycleStatus | null {
-  const idx = STATUS_SEQUENCE.indexOf(current);
-  return idx < STATUS_SEQUENCE.length - 1 ? STATUS_SEQUENCE[idx + 1] : null;
-}
-
-// ─── Tab helpers ───────────────────────────────────────────────────────────────
-
-export const CYCLE_TABS = [
-  "overview",
-  "setup",
-  "reviewers",
-  "interviews",
-  "decisions",
-] as const;
-export type CycleTab = (typeof CYCLE_TABS)[number];
-
-// Pre-reorganization deep-links (and the ConfidentialityGate) used these tab
-// keys; map them onto the current IA so shared/bookmarked URLs keep working.
-const LEGACY_TAB_ALIASES: Record<string, CycleTab> = {
-  config: "interviews",
-  dashboard: "interviews",
-};
-
-export function resolveCycleTab(param: string | null | undefined): CycleTab {
-  if (!param) return "overview";
-  const mapped = LEGACY_TAB_ALIASES[param] ?? param;
-  return (CYCLE_TABS as readonly string[]).includes(mapped)
-    ? (mapped as CycleTab)
-    : "overview";
-}
-
-// ─── Loader ──────────────────────────────────────────────────────────────────
-
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.cycle?.name;
   return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
 };
 
-export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { cycle?: { name: string } } | undefined)?.cycle?.name,
-};
-
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isCore(auth.user.sub))) return redirect("/");
-
-  // Internal cycles (Fellowship/Core) use a separate, simpler setup page (no
-  // challenges, no interview config). Forward there before any of the
-  // Standard-cycle payload is loaded.
-  const cycleTypeRow = await prisma.applicationCycle.findUnique({
-    where: { id: params.id },
-    select: { cycleType: true },
-  });
-  if (cycleTypeRow && isInternalCycleType(cycleTypeRow.cycleType)) {
-    return redirect(`/hiring/lead/internal-cycle/${params.id}`);
-  }
+  // Lab members cycles are Admin-only; everything else is the Core tier.
+  if (!(await isCycleAdmin(auth.user.sub, params.id))) return redirect("/");
 
   // Hiring leads must be able to reach this page to bind a confidentiality
   // agreement to the cycle, so we don't redirect when unsigned. Instead, the
@@ -183,8 +163,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // decisions, review counts — and the UI shows a placeholder where those
   // panels would be.
   const confState = await getCycleConfidentialityState(auth.user.sub, params.id);
-  const confidentialityRequired =
-    confState.status === "signed" ? null : confState.status;
+  const confidentialityRequired = confidentialityBlock(confState);
 
   // Lazy trigger for the deadline-extension notice blast (idempotent,
   // best-effort). Mirrors how autoCloseIfExpired runs from the cycle status
@@ -200,6 +179,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
+      domainChallengeForms: { select: { id: true, domainId: true, formId: true, form: { select: { name: true } } } },
     },
   });
 
@@ -313,15 +293,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
-  // Final decisions ready for release (HiringLead decisions panel).
-  // Exclude Finals that already have a Released child — Decision is append-only,
-  // so released rows still match stage="Final" and would otherwise re-appear here
-  // after the optimistic UI update is undone by a loader refetch.
-  const finalDecisions = confidentialityRequired
+  // Decisions awaiting the hiring lead. Students cycles: Final decisions ready
+  // for release (domain leads finalize on their own page). Member cycles have
+  // no domain-lead step, so the lead finalizes Drafts here too. Exclude rows
+  // that already have a Released child — Decision is append-only, so released
+  // rows still match their stage and would otherwise re-appear here after the
+  // optimistic UI update is undone by a loader refetch.
+  const isMemberCycle = isMemberApplicants(cycleBase.applicants);
+  const pendingDecisions = confidentialityRequired
     ? []
     : await prisma.decision.findMany({
         where: {
-          stage: "Final",
+          stage: isMemberCycle ? { in: ["Draft", "Final"] } : "Final",
           children: { none: { stage: "Released" } },
           domainApplication: {
             application: { applicationCycleId: params.id },
@@ -339,49 +322,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-  // Email-template options + current per-cycle decision bindings + which
-  // DecisionTypes already have a Released decision (used to lock those slots).
-  // All versions are surfaced in the picker so a hiring lead can pin a specific
-  // (older) version per cycle, mirroring how RubricVersion options work.
-  const emailTemplates = await prisma.emailTemplate.findMany({
-    include: {
-      versions: {
-        orderBy: { versionNumber: "desc" },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
+  // Hiring's emails are shared by every cycle, one per slot (decision or
+  // notification). Keyed by slot for the editors, release gating and previews.
+  const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
+    (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
+  );
 
-  const currentDecisionEmails = await prisma.cycleDecisionEmail.findMany({
-    where: { applicationCycleId: params.id },
-    include: {
-      emailTemplateVersion: { include: { template: { select: { name: true } } } },
-    },
-  });
-
-  const currentNotificationEmails = await prisma.cycleNotificationEmail.findMany({
-    where: { applicationCycleId: params.id },
-    include: {
-      emailTemplateVersion: { include: { template: { select: { name: true } } } },
-    },
-  });
-
-  const releasedDecisions = confidentialityRequired
-    ? []
-    : await prisma.decision.findMany({
-        where: {
-          stage: "Released",
-          domainApplication: {
-            application: { applicationCycleId: params.id },
-          },
-        },
-        select: { type: true },
-        distinct: ["type"],
-      });
-  const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
-
-  // Domain leads per cycle domain — used by the Overview Inbox to name who
-  // owes the next setup action. DomainLeadAssignment has no "current" flag;
+  // Domain leads per cycle domain, used to name who owes a missing
+  // challenge. DomainLeadAssignment has no "current" flag;
   // ordering by createdAt desc picks the most-recently-assigned lead first,
   // and we dedupe by user across terms.
   const domainLeadAssignments = domainIds.length > 0
@@ -397,20 +345,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
   }
 
+  const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
+  const [progress, termOptions, phaseStatusByDomain] = await Promise.all([
+    getCycleProgress(params.id),
+    loadTermOptions(request),
+    confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
+  ]);
+
   const collabToken = parseSessionCookie(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
 
   return {
       cycle,
+      memberSetup,
+      progress,
+      roundsWithBoards: [...(await roundsWithBoards(params.id))],
+      termOptions,
+      viewerIsAdmin: await isAdmin(auth.user.sub),
+      phaseStatusByDomain,
       allDomains,
       allForms,
-      finalDecisions,
+      pendingDecisions,
       rubricVersionOptions,
       cycleApplicationReviewCount,
-      emailTemplates,
-      currentDecisionEmails,
-      currentNotificationEmails,
-      releasedDecisionTypes,
+      hiringEmails,
       domainRubricVersions,
       reviewedDomainIds,
       domainLeadsByDomain,
@@ -430,7 +388,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 /**
  * Redirect back to the same cycle page, preserving the active ?tab= so a form
- * submission on (e.g.) Setup doesn't bounce the user to Overview. Extra params
+ * submission on (e.g.) Setup doesn't bounce the user to another phase. Extra params
  * (e.g. notice keys) are appended after.
  */
 function cycleRedirect(
@@ -475,21 +433,91 @@ async function reopenIfNeeded(
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
-
-  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
+  if (!(await isCycleAdmin(auth.user.sub, params.id))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const formData = await request.formData();
-  const intent = formData.get("intent");
+  const intent = formData.get("intent") as string;
+  // Captured after the auth check so the helper closures below see it narrowed.
+  const actorId = auth.user.sub;
 
-  if (intent === "set-close-date") {
-    const closeDate = formData.get("closeDate") as string;
+  const cycleRow = await prisma.applicationCycle.findUnique({
+    where: { id: params.id },
+    select: { applicants: true },
+  });
+  if (!cycleRow) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+  const memberResult = isMemberApplicants(cycleRow.applicants)
+    ? await handleMemberSetupIntent(intent, formData, params.id, cycleRow.applicants)
+    : null;
+  if (memberResult) return memberResult;
+
+  if (intent === "set-stages") {
+    const stage = formData.get("stage") as string;
+    // Delib rounds and Interviews live on the timeline now (set-timeline).
+    if (stage !== "hasChallenges") {
+      return Response.json({ error: "Unknown stage" }, { status: 400 });
+    }
+    const latest = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+      select: { newStatus: true },
+    });
+    if ((latest?.newStatus ?? "Draft") !== "Draft") {
+      return Response.json({ error: "Stages lock once the cycle opens." }, { status: 409 });
+    }
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      data: { [stage]: formData.get("value") === "true" },
+    });
+    return { ok: true };
+  }
+
+  // Term and application dates. Shared by their single-field intents and the
+  // Term and dates card's one Save.
+  async function applyTerm(termId: string | null, fillDefaultWindow: boolean): Promise<Response | null> {
+    const term = termId
+      ? await prisma.term.findUnique({ where: { id: termId }, select: { startDate: true } })
+      : null;
+    if (termId && !term) return Response.json({ error: "Unknown term" }, { status: 400 });
+    const dates = await prisma.applicationCycle.findUnique({
+      where: { id: params.id },
+      select: { openDate: true, closeDate: true },
+    });
+    // A new cycle gets the standard window (Weeks 4 to 5) as a starting point;
+    // dates a lead already chose are never overwritten.
+    const window =
+      fillDefaultWindow && term && !dates?.openDate && !dates?.closeDate
+        ? defaultApplicationWindow(term.startDate)
+        : null;
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      data: {
+        termId,
+        ...(window && {
+          openDate: startOfDayInAppTz(window.open),
+          closeDate: endOfDayInAppTz(window.closeDay),
+        }),
+      },
+    });
+    return null;
+  }
+
+  async function applyOpenDate(raw: string | null): Promise<Date | null> {
+    let openDate: Date | null = null;
+    if (raw) {
+      const [y, m, d] = raw.split("-").map(Number);
+      openDate = zonedDayStartUtc(y, m, d, APPLICATION_TZ);
+    }
+    await prisma.applicationCycle.update({ where: { id: params.id }, data: { openDate } });
+    return openDate;
+  }
+
+  /** Returns the notice to show. */
+  async function applyCloseDate(raw: string | null): Promise<string> {
     let parsedClose: Date | null = null;
-    if (closeDate) {
+    if (raw) {
       // Deadline is 11:59:59 PM Eastern on the selected date so applicants get
       // the full day in the lab's local time (not late evening UTC).
-      const [y, m, d] = closeDate.split("-").map(Number);
+      const [y, m, d] = raw.split("-").map(Number);
       parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
     }
     const cycle = await prisma.applicationCycle.findUnique({
@@ -507,16 +535,138 @@ export async function action({ request, params }: Route.ActionArgs) {
       nextClose = new Date(parsedClose.getTime() + deltaMs);
       nextOriginal = parsedClose;
     }
+    // A past close on an Open cycle would flip it to UnderReview on the next
+    // loader hit (autoCloseIfExpired). That's almost never what a lead means
+    // when editing a live cycle; closing early is the status control's job.
+    if (
+      nextClose &&
+      nextClose.getTime() < Date.now() &&
+      cycle?.statusUpdates[0]?.newStatus === "Open"
+    ) {
+      return "deadline-past";
+    }
     const reopened = await prisma.$transaction(async (tx) => {
       await tx.applicationCycle.update({
         where: { id: params.id },
         data: { closeDate: nextClose, originalCloseDate: nextOriginal },
       });
-      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
+      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, actorId);
     });
-    const notice = parsedClose
-      ? (reopened ? "deadline-set-reopened" : "deadline-set")
-      : "deadline-cleared";
+    return parsedClose ? (reopened ? "deadline-set-reopened" : "deadline-set") : "deadline-cleared";
+  }
+
+  if (intent === "save-term-dates") {
+    const termId = (formData.get("termId") as string) || null;
+    const openRaw = (formData.get("openDate") as string) || null;
+    const closeRaw = (formData.get("closeDate") as string) || null;
+    const before = await prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.id },
+      select: {
+        termId: true,
+        openDate: true,
+        closeDate: true,
+        originalCloseDate: true,
+        statusUpdates: { orderBy: { createdAt: "desc" }, take: 1, select: { newStatus: true } },
+      },
+    });
+    const ymd = (d: Date | null) => {
+      if (!d) return null;
+      const { year, month, day } = getZonedYMD(d, APPLICATION_TZ);
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    };
+    // A fresh term with no dates picked yet gets the default window; dates
+    // entered in the same save win over it.
+    const bad = await applyTerm(termId, !openRaw && !closeRaw);
+    if (bad) return bad;
+    // Only touch a date that actually changed, so saving the term alone never
+    // disturbs an active extension. The open date is fixed once applications open.
+    if (openRaw !== ymd(before.openDate) && (before.statusUpdates[0]?.newStatus ?? "Draft") === "Draft") {
+      await applyOpenDate(openRaw);
+    }
+    if (closeRaw !== ymd(before.originalCloseDate ?? before.closeDate) && (openRaw || closeRaw || before.closeDate)) {
+      const notice = await applyCloseDate(closeRaw);
+      if (notice === "deadline-past") return cycleRedirect(request, params.id!, { notice });
+    }
+    return cycleRedirect(request, params.id!, { notice: "term-dates-saved" });
+  }
+
+  if (intent === "set-applicants") {
+    const next = formData.get("applicants") as CycleApplicants;
+    if (!APPLICANT_GROUPS.includes(next)) {
+      return Response.json({ error: "Unknown applicant group" }, { status: 400 });
+    }
+    const error = await changeApplicants(params.id, next, await isAdmin(auth.user.sub));
+    if (error === "not-draft") {
+      return Response.json({ error: "Applicants lock once the cycle opens." }, { status: 409 });
+    }
+    if (error === "admin-only") {
+      return Response.json({ error: "Only Admins can run Lab members cycles." }, { status: 403 });
+    }
+    return cycleRedirect(request, params.id!, { notice: "applicants-changed" });
+  }
+
+  if (intent === "set-timeline") {
+    const reset = !!formData.get("reset");
+    let next: Timeline;
+    try {
+      next = reset ? defaultTimelineFor(cycleRow.applicants) : JSON.parse(formData.get("timeline") as string);
+    } catch {
+      next = null as unknown as Timeline;
+    }
+    if (!Array.isArray(next) || !next.every((b) => b && typeof b === "object" && Array.isArray(b.weeks))) {
+      return Response.json({ error: "Couldn't read the timeline." }, { status: 400 });
+    }
+    const invalid = validateTimeline(next);
+    if (invalid) return Response.json({ error: invalid }, { status: 400 });
+    // Moving weeks or renaming rounds is fine anytime; adding or removing
+    // blocks changes who gets decided when, so only in Draft.
+    const [stored, latest] = await Promise.all([
+      prisma.applicationCycle.findUnique({ where: { id: params.id }, select: { timeline: true } }),
+      prisma.applicationCycleStatusUpdate.findFirst({
+        where: { applicationCycleId: params.id },
+        orderBy: { createdAt: "desc" },
+        select: { newStatus: true },
+      }),
+    ]);
+    const shape = (t: Timeline) => t.map(blockKey).join(",");
+    if (
+      (latest?.newStatus ?? "Draft") !== "Draft" &&
+      shape(parseTimeline(stored?.timeline)) !== shape(next)
+    ) {
+      return Response.json({ error: "Rounds and Interviews lock once the cycle opens." }, { status: 409 });
+    }
+    const error = await saveCycleTimeline(params.id, next);
+    if (error) return Response.json({ error }, { status: 400 });
+    return cycleRedirect(request, params.id!, { notice: reset ? "timeline-reset" : "timeline-saved" });
+  }
+
+  if (intent === "create-challenge-form" || intent === "remove-challenge-form") {
+    const refused =
+      intent === "create-challenge-form"
+        ? await addDomainChallenge(params.id, formData.get("domainId") as string, auth.user.sub)
+        : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
+    if (refused === "not-draft") {
+      return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
+    }
+    if (refused === "in-use") {
+      return Response.json({ error: "An applicant already picked this challenge." }, { status: 409 });
+    }
+    if (refused === "not-found") return Response.json({ error: "Not found" }, { status: 404 });
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-term") {
+    const bad = await applyTerm((formData.get("termId") as string) || null, true);
+    return bad ?? cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-open-date") {
+    const openDate = await applyOpenDate((formData.get("openDate") as string) || null);
+    return cycleRedirect(request, params.id!, { notice: openDate ? "open-date-set" : "open-date-cleared" });
+  }
+
+  if (intent === "set-close-date") {
+    const notice = await applyCloseDate((formData.get("closeDate") as string) || null);
     return cycleRedirect(request, params.id!, { notice });
   }
 
@@ -667,82 +817,38 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
-  if (intent === "set-decision-email") {
-    const decisionType = formData.get("decisionType") as string;
-    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
-    if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
-      return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  if (intent === "add-domain-mentors") {
+    const role = formData.get("role");
+    if (role !== "reviewer" && role !== "interviewer") {
+      return Response.json({ error: "Unknown roster" }, { status: 400 });
     }
-    // Lock once a Released decision of this type exists for this cycle.
-    const alreadyReleased = await prisma.decision.count({
-      where: {
-        stage: "Released",
-        type: decisionType as (typeof validTypes)[number],
-        domainApplication: { application: { applicationCycleId: params.id } },
-      },
+    const domainId = formData.get("domainId") as string;
+    const inCycle = await prisma.domainApplicationCycle.findUnique({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      select: { domainId: true },
     });
-    if (alreadyReleased > 0) {
-      return cycleRedirect(request, params.id!);
-    }
-    if (emailTemplateVersionId) {
-      await prisma.cycleDecisionEmail.upsert({
-        where: {
-          applicationCycleId_decisionType: {
-            applicationCycleId: params.id,
-            decisionType: decisionType as (typeof validTypes)[number],
-          },
-        },
-        update: { emailTemplateVersionId },
-        create: {
-          applicationCycleId: params.id,
-          decisionType: decisionType as (typeof validTypes)[number],
-          emailTemplateVersionId,
-        },
-      });
-    } else {
-      await prisma.cycleDecisionEmail.deleteMany({
-        where: {
-          applicationCycleId: params.id,
-          decisionType: decisionType as (typeof validTypes)[number],
-        },
-      });
-    }
-    return cycleRedirect(request, params.id!);
+    if (!inCycle) return Response.json({ error: "That domain isn't in this cycle." }, { status: 400 });
+    const added = await addDomainMentors(params.id, domainId, role, request);
+    // Nothing added means either no mentors, or all of them already on it.
+    const notice =
+      added > 0 ? "mentors-added" : (await domainMentorIds(domainId, request)).length ? "mentors-already" : "mentors-none";
+    return cycleRedirect(request, params.id!, { notice, added });
   }
 
-  if (intent === "set-notification-email") {
-    const notificationType = formData.get("notificationType") as string;
-    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged", "InterviewReminderApplicant", "InterviewReminderInterviewer"] as const;
-    if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
-      return new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  if (intent === "save-hiring-email") {
+    // One email per slot, shared by every cycle. Saving it empty turns it off.
+    const slot = formData.get("slot") as string;
+    if (!(slot in TEMPLATE_VARIABLES)) {
+      return Response.json({ error: "Unknown email" }, { status: 400 });
     }
-    if (emailTemplateVersionId) {
-      await prisma.cycleNotificationEmail.upsert({
-        where: {
-          applicationCycleId_notificationType: {
-            applicationCycleId: params.id,
-            notificationType: notificationType as (typeof validTypes)[number],
-          },
-        },
-        update: { emailTemplateVersionId },
-        create: {
-          applicationCycleId: params.id,
-          notificationType: notificationType as (typeof validTypes)[number],
-          emailTemplateVersionId,
-        },
-      });
-    } else {
-      await prisma.cycleNotificationEmail.deleteMany({
-        where: {
-          applicationCycleId: params.id,
-          notificationType: notificationType as (typeof validTypes)[number],
-        },
-      });
-    }
-    return cycleRedirect(request, params.id!);
+    await saveHiringEmail(
+      slot as TemplateSlot,
+      { subject: (formData.get("subject") as string) ?? "", body: (formData.get("body") as string) ?? "" },
+      auth.user.sub,
+    );
+    return { ok: true };
   }
+
 
   if (intent === "create-application-form") {
     // Auto-create + bind a Drive Form as this cycle's general application form
@@ -838,33 +944,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
-  if (intent === "advance-status") {
-    const cycle = await prisma.applicationCycle.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-        domains: true,
-      },
-    });
-
-    const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
-    const next = nextStatus(currentStatus as CycleStatus);
-    if (!next) return null;
-
-    if (currentStatus === "Draft") {
-      const hasCloseDate = !!cycle.closeDate;
-      if (!hasCloseDate || cycle.domains.length === 0) return null;
-    }
-
-    await prisma.applicationCycleStatusUpdate.create({
-      data: {
-        newStatus: next,
-        applicationCycleId: params.id,
-        userId: user.id,
-      },
-    });
-  }
-
   return cycleRedirect(request, params.id!);
 }
 
@@ -909,27 +988,39 @@ type CoverageData = {
   totalInterviewers?: number
 }
 
+// A list filter: "all" plus each value present in the list.
+function FilterSelect({ label, value, onChange, allLabel, values }: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  allLabel: string
+  values: string[]
+}) {
+  const { formTrigger } = useOsChrome()
+  return (
+    <div className="w-48">
+      <Select
+        ariaLabel={label}
+        value={value}
+        onChange={onChange}
+        options={[{ value: 'all', label: allLabel }, ...values.map((v): SelectOption => ({ value: v, label: v }))]}
+        buttonClassName={rowTrigger(formTrigger)}
+      />
+    </div>
+  )
+}
+
 function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
   const [showEmpty, setShowEmpty] = useState(false)
-  if (!coverage) {
+  const { bodyText } = useOsChrome()
+  if (coverage && !coverage.configured) return null
+  if (!coverage || coverage.slots.length === 0) {
     return (
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6 text-sm text-muted-foreground">
-        Loading availability coverage…
-      </div>
-    )
-  }
-  if (!coverage.configured) {
-    return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-        Set an interview window and slot length in <span className="font-semibold">Interview Config</span> to see availability coverage.
-      </div>
-    )
-  }
-  if (coverage.slots.length === 0) {
-    return (
-      <div className="bg-muted/30 border border-border rounded-xl p-4 text-sm text-muted-foreground">
-        No future slots fall inside the configured interview window.
-      </div>
+      <SetupCard title="Availability coverage">
+        <p className={cn(bodyText, 'py-3 text-center')}>
+          {coverage ? 'No future slots in the interview window.' : 'Loading…'}
+        </p>
+      </SetupCard>
     )
   }
 
@@ -995,29 +1086,22 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
   }
 
   return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-4">
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-        <h3 className="text-sm font-bold text-foreground/80">Lab-wide availability coverage</h3>
-        <div className="text-xs text-muted-foreground flex-1">
-          <span className="font-semibold text-foreground">{totalFreeHours.toFixed(0)}</span> interviewer-hours offered ·{' '}
-          <span className="font-semibold text-foreground">{totalBooked}</span> interview{totalBooked === 1 ? '' : 's'} booked ·{' '}
-          {slotHours < 1 ? `${coverage.slotDurationMinutes} min` : `${slotHours} h`} slots
-        </div>
-        {hiddenCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowEmpty((v) => !v)}
-            className="text-xs text-blue-700 hover:text-blue-800 hover:underline"
-          >
+    <SetupCard
+      title="Availability coverage"
+      description={`${totalFreeHours.toFixed(0)} interviewer-hours offered · ${totalBooked} booked · ${slotHours < 1 ? `${coverage.slotDurationMinutes} min` : `${slotHours} h`} slots`}
+      action={
+        hiddenCount > 0 && (
+          <button type="button" onClick={() => setShowEmpty((v) => !v)} className={buttonClasses('ghost', 'sm')}>
             {showEmpty ? `Hide ${hiddenCount} empty slot${hiddenCount === 1 ? '' : 's'}` : `Show ${hiddenCount} empty slot${hiddenCount === 1 ? '' : 's'}`}
           </button>
-        )}
-      </div>
+        )
+      }
+    >
       <div className="overflow-x-auto">
         <table className="text-[11px] border-separate border-spacing-[2px] leading-none">
           <thead>
             <tr>
-              <th className="text-left px-1.5 py-0.5 text-muted-foreground font-medium sticky left-0 bg-card z-10">Time</th>
+              <th className="text-left px-1.5 py-0.5 text-os-grey font-medium sticky left-0 bg-os-card z-10">Time</th>
               {days.map((day) => (
                 <th key={day} className="px-1.5 py-0.5 text-center font-semibold text-foreground/80 whitespace-nowrap">
                   {formatDay(day)}
@@ -1028,7 +1112,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
           <tbody>
             {times.map((time) => (
               <tr key={time}>
-                <td className="px-1.5 py-0.5 text-right text-muted-foreground font-medium sticky left-0 bg-card whitespace-nowrap">
+                <td className="px-1.5 py-0.5 text-right text-os-grey font-medium sticky left-0 bg-os-card whitespace-nowrap">
                   {formatTime(time)}
                 </td>
                 {days.map((day) => {
@@ -1069,7 +1153,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-os-grey">
         <span className="inline-flex items-center gap-1.5">
           <span className="w-3 h-3 rounded bg-muted/40 border border-border" />0
         </span>
@@ -1089,18 +1173,58 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
           <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />booked
         </span>
       </div>
-    </div>
+    </SetupCard>
   )
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
+
+type DecisionSlice = 'invites' | 'finalize' | 'outcomes'
+
+const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; include: (d: any) => boolean }> = {
+  invites: {
+    title: 'Interview invites',
+    empty: 'No invites ready to send.',
+    include: (d) => d.stage === 'Final' && d.type === 'InvitedToInterview',
+  },
+  finalize: {
+    title: 'Draft decisions',
+    empty: 'No drafts to finalize. Close final delibs to create them.',
+    include: (d) => d.stage === 'Draft',
+  },
+  outcomes: {
+    title: 'Decisions ready to release',
+    empty: 'No decisions awaiting release.',
+    include: (d) => d.stage === 'Final' && d.type !== 'InvitedToInterview',
+  },
+}
 
 export default function HiringLeadCycleDetails() {
   const toast = useToast()
   const dialog = useDialog()
   const { id: cycleId } = useParams()
   const loaderData = useLoaderData<typeof loader>() as any
+  const os = useOsChrome()
   const cycle = loaderData?.cycle
+  const memberSetup = loaderData?.memberSetup ?? null
+  const isMemberCycle = memberSetup !== null
+  const domainsTitle =
+    cycle?.applicants === 'LabMembers' ? 'Applicant pool' : isMemberCycle ? 'Target domains' : 'Domains'
+  // A domain's challenges, shown on its row only when the cycle has them.
+  const challengeFor = (domainId: string): DomainChallenge | null => {
+    if (!cycle?.hasChallenges) return null
+    const lead = (loaderData?.domainLeadsByDomain?.[domainId] ?? [])[0]
+    return {
+      forms: (cycle?.domainChallengeForms ?? [])
+        .filter((f: any) => f.domainId === domainId)
+        .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name })),
+      lead: lead ? `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || null : null,
+    }
+  }
+
+  const timeline: Timeline = parseTimeline(loaderData?.progress?.timeline)
+  const rounds = delibRounds(timeline)
+  const hasInterviews = timelineHasInterviews(timeline)
 
   // ── Interview Config state ──
   const [config, setConfig] = useState<InterviewConfig>({
@@ -1120,16 +1244,10 @@ export default function HiringLeadCycleDetails() {
 
   // ── Reviewers state ──
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
-  const [newMemberId, setNewMemberId] = useState('')
-  const [newDomainId, setNewDomainId] = useState('')
   const [allMembers, setAllMembers] = useState<{ id: string; daliEmail: string; firstName?: string | null; lastName?: string | null }[]>([])
-  const [allDomains, setAllDomains] = useState<{ id: string; name: string }[]>([])
 
   // ── Interviewers state ──
   const [interviewers, setInterviewers] = useState<any[]>([])
-  const [newInterviewerMemberId, setNewInterviewerMemberId] = useState('')
-  const [newInterviewerDomainId, setNewInterviewerDomainId] = useState('')
-  const [expandedInterviewers, setExpandedInterviewers] = useState<Set<string>>(new Set())
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
@@ -1170,19 +1288,27 @@ export default function HiringLeadCycleDetails() {
 
   // ── Active tab (URL-synced: deep-links, reload, and back/forward all work) ──
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = resolveCycleTab(searchParams.get('tab'))
-  const setTab = useCallback((next: CycleTab) => {
+  // Tabs are the timeline's blocks; ?tab= holds the block key (a phase key,
+  // or `delib:<id>` for a round).
+  const termStart: Date | null = loaderData?.progress?.term ? new Date(loaderData.progress.term.startDate) : null
+  const phaseTabs = buildPhaseTabs(
+    timeline,
+    { hasChallenges: !!cycle?.hasChallenges },
+    loaderData?.progress?.done ?? {},
+    termStart,
+  )
+  const tab = resolvePhaseTab(searchParams.get('tab'), phaseTabs, timeline)
+  const activeRound = rounds.find(r => `delib:${r.id}` === tab) ?? null
+  const setTab = useCallback((next: string) => {
     setSearchParams(prev => {
       const sp = new URLSearchParams(prev)
-      // Overview is the default landing tab, so keep its URL clean.
-      if (next === 'overview') sp.delete('tab')
-      else sp.set('tab', next)
+      sp.set('tab', next)
       return sp
     }, { preventScrollReset: true })
   }, [setSearchParams])
 
   // ── Decisions state ──
-  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
+  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.pendingDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
   const [releasingAll, setReleasingAll] = useState(false)
 
@@ -1193,7 +1319,7 @@ export default function HiringLeadCycleDetails() {
       !(await dialog.confirm({
         title: `Release this decision to ${d.domainApplication.application.user.firstName}?`,
         description:
-          "This emails the applicant their decision using the bound template. It can't be undone.",
+          "This emails the applicant their decision. It can't be undone.",
         confirmLabel: "Release",
         tone: "destructive",
       }))
@@ -1203,6 +1329,27 @@ export default function HiringLeadCycleDetails() {
     await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
     setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
     setReleasing(null)
+  }
+  // Member cycles have no domain-lead finalize step, so the lead promotes
+  // Draft decisions to Final here before releasing them.
+  const [finalizing, setFinalizing] = useState(false)
+  async function finalizeDecisions(ids: string[]) {
+    if (finalizing || ids.length === 0) return
+    setFinalizing(true)
+    try {
+      for (const id of ids) {
+        const res = await fetch(`/api/hiring/decisions/${id}/finalize`, { method: 'POST', credentials: 'include' })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          toast.error(body.error ?? `Couldn't finalize (HTTP ${res.status}).`)
+          return
+        }
+        const newFinal = await res.json()
+        setPendingDecisions(prev => prev.map(p => (p.id === id ? { ...p, id: newFinal.id, stage: 'Final' } : p)))
+      }
+    } finally {
+      setFinalizing(false)
+    }
   }
   const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
   const [decisionDomainFilter, setDecisionDomainFilter] = useState<string>('all')
@@ -1249,13 +1396,6 @@ export default function HiringLeadCycleDetails() {
       // suggestion can't pick someone who's no longer on the lab roster.
       const r = await fetch('/api/members?scope=current', { credentials: 'include' })
       setAllMembers(r.ok ? await r.json() : [])
-    } catch {}
-  }, [])
-
-  const loadDomains = useCallback(async () => {
-    try {
-      const r = await fetch('/api/domains', { credentials: 'include' })
-      setAllDomains(r.ok ? await r.json() : [])
     } catch {}
   }, [])
 
@@ -1324,17 +1464,32 @@ export default function HiringLeadCycleDetails() {
   }
 
   // ── Load data ──
+  // Member cycles keep their reviewer pool in the loader; the per-domain
+  // roster and everything interview-related only exist for some cycles.
   useEffect(() => {
     if (!cycleId) return
     loadStatus()
-    loadConfig()
-    loadReviewers()
-    loadMembers()
-    loadDomains()
-    loadInterviewers()
-    loadInterviews()
-    loadCoverage()
-  }, [cycleId, loadStatus, loadConfig, loadReviewers, loadMembers, loadDomains, loadInterviewers, loadInterviews, loadCoverage])
+    if (!isMemberCycle) loadReviewers()
+    // Member pickers feed the per-domain reviewer and interviewer rosters.
+    if (!isMemberCycle || hasInterviews) {
+      loadMembers()
+    }
+    if (hasInterviews) {
+      loadConfig()
+      loadInterviewers()
+      loadInterviews()
+      loadCoverage()
+    }
+  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
+
+  // An action on this page (e.g. adding a domain's mentors) revalidates the
+  // loader but not these client-fetched rosters, so refetch them with it.
+  useEffect(() => {
+    if (!cycleId) return
+    if (!isMemberCycle) loadReviewers()
+    if (hasInterviews) loadInterviewers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaderData])
 
   // ── Handlers ──
 
@@ -1371,20 +1526,16 @@ export default function HiringLeadCycleDetails() {
     }
   }
 
-  async function addReviewer() {
-    if (!cycleId || !newMemberId || !newDomainId) return
+  async function addReviewer(userId: string, domainId: string) {
+    if (!cycleId) return
     const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: newMemberId, domainId: newDomainId }),
+      body: JSON.stringify({ userId, domainId }),
     })
-    if (res.ok) {
-      const reviewer = await res.json()
-      setReviewers(prev => [...prev, reviewer])
-      setNewMemberId('')
-      setNewDomainId('')
-    }
+    // The POST row lacks the user/domain relations the list shows; refetch.
+    if (res.ok) await loadReviewers()
   }
 
   async function removeReviewer(reviewerId: string) {
@@ -1413,21 +1564,17 @@ export default function HiringLeadCycleDetails() {
     }
   }
 
-  async function addInterviewer() {
-    if (!cycleId || !newInterviewerMemberId || !newInterviewerDomainId) return
+  async function addInterviewer(userId: string, domainId: string) {
+    if (!cycleId) return
     const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
+      body: JSON.stringify({ userId, domainId }),
     })
-    if (res.ok) {
-      // POST returns the bare cycleInterviewer row without daliMember/domain
-      // relations; refetch so the row matches the server shape exactly.
-      await loadInterviewers()
-      setNewInterviewerMemberId('')
-      setNewInterviewerDomainId('')
-    }
+    // POST returns the bare cycleInterviewer row without user/domain
+    // relations; refetch so the row matches the server shape exactly.
+    if (res.ok) await loadInterviewers()
   }
 
   async function removeInterviewer(interviewerId: string) {
@@ -1441,7 +1588,6 @@ export default function HiringLeadCycleDetails() {
     if (
       !(await dialog.confirm({
         title: `Remove ${name} as an interviewer?`,
-        description: 'Their availability blocks for this cycle will also be removed.',
         confirmLabel: 'Remove interviewer',
         tone: 'destructive',
       }))
@@ -1458,21 +1604,303 @@ export default function HiringLeadCycleDetails() {
     }
   }
 
+  // The pending-decisions list, sliced by phase: invites go out in Review,
+  // member cycles finalize Drafts in Final delibs, outcomes release in
+  // Decisions. Release and finalize behave the same everywhere.
+  function renderDecisions(kind: DecisionSlice) {
+    if (loaderData?.confidentialityRequired) {
+      return (
+        <ConfidentialityGate
+          cycleId={cycleId ?? ''}
+          reason={loaderData.confidentialityRequired}
+          next={`/hiring/lead/cycle/${cycleId}?tab=${tab}`}
+        />
+      )
+    }
+    const scoped = pendingDecisions.filter(DECISION_SLICES[kind].include)
+    // A decision type can be released once it has an email written.
+    const boundTypes = new Set(
+      Object.keys(loaderData?.hiringEmails ?? {})
+        .filter((slot) => slot.startsWith('decision:'))
+        .map((slot) => slot.slice('decision:'.length))
+    )
+    const domainNameOf = (d: any) =>
+      d.domainApplication.domain?.name ?? ''
+    const availableDomains = Array.from(
+      new Set(scoped.map(domainNameOf))
+    ).sort()
+    const availableTypes = Array.from(
+      new Set(scoped.map((d: any) => d.type as string))
+    ).sort()
+    const filtersActive = decisionDomainFilter !== 'all' || decisionTypeFilter !== 'all'
+    const filteredDecisions = scoped.filter((d: any) => {
+      if (decisionDomainFilter !== 'all' && domainNameOf(d) !== decisionDomainFilter) return false
+      if (decisionTypeFilter !== 'all' && d.type !== decisionTypeFilter) return false
+      return true
+    })
+    const drafts = filteredDecisions.filter((d: any) => d.stage === 'Draft')
+    const finals = filteredDecisions.filter((d: any) => d.stage === 'Final')
+    const releasable = finals.filter((d: any) => boundTypes.has(d.type))
+    const skipped = finals.length - releasable.length
+    const releaseAll = async () => {
+      if (releasingAll) return
+      const ids = releasable.map((d: any) => d.id)
+      if (ids.length === 0) return
+      if (
+        !(await dialog.confirm({
+          title: `Release ${ids.length} decision${ids.length === 1 ? '' : 's'}?`,
+          description:
+            `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now. It can't be undone.`,
+          confirmLabel: `Release ${ids.length}`,
+          tone: "destructive",
+        }))
+      )
+        return
+      setReleasingAll(true)
+      for (const id of ids) {
+        await fetch(`/api/hiring/decisions/${id}/release`, { method: 'POST', credentials: 'include' })
+      }
+      const releasedIds = new Set(ids)
+      setPendingDecisions(prev => prev.filter(p => !releasedIds.has(p.id)))
+      setReleasingAll(false)
+    }
+    const rowActions = (d: any) => {
+      if (d.stage === 'Draft') {
+        return (
+          <button
+            type="button"
+            onClick={() => finalizeDecisions([d.id])}
+            disabled={finalizing}
+            className={buttonClasses('secondary', 'sm')}
+          >
+            Finalize
+          </button>
+        )
+      }
+      const hasBinding = boundTypes.has(d.type)
+      return (
+        <>
+          <Tooltip content="Preview email">
+            <button
+              type="button"
+              onClick={() => setPreviewDecisionId(d.id)}
+              className="os-icon-btn"
+              aria-label="Preview email"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+          </Tooltip>
+          <Tooltip content={!hasBinding ? `Write this decision's email on Setup first.` : null} variant="rich">
+            <span>
+              <button
+                type="button"
+                onClick={() => confirmReleaseOne(d)}
+                disabled={releasing === d.id || releasingAll || !hasBinding}
+                className={buttonClasses('primary', 'sm')}
+              >
+                {releasing === d.id ? 'Releasing…' : 'Release'}
+              </button>
+            </span>
+          </Tooltip>
+        </>
+      )
+    }
+    const typeTone = (type: string) =>
+      type === 'Accepted' ? 'success' : type === 'Waitlisted' ? 'warning' : type === 'Rejected' ? 'neutral' : 'accent'
+    const showDomainFilter = availableDomains.length > 1
+    const showTypeFilter = availableTypes.length > 1
+    return (
+    <>
+      <SetupCard
+        title={DECISION_SLICES[kind].title}
+        description={
+          scoped.length === 0
+            ? DECISION_SLICES[kind].empty
+            : filtersActive
+              ? `Showing ${filteredDecisions.length} of ${scoped.length}.`
+              : `${scoped.length} waiting.`
+        }
+        action={
+          <>
+            {drafts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => finalizeDecisions(drafts.map((d: any) => d.id))}
+                disabled={finalizing}
+                className={buttonClasses('secondary', 'md')}
+              >
+                {finalizing ? 'Finalizing…' : `Finalize all (${drafts.length})`}
+              </button>
+            )}
+            {finals.length > 0 && (
+              <Tooltip content={skipped > 0 ? `${skipped} skipped, no email written` : null}>
+                <span>
+                  <button
+                    type="button"
+                    onClick={releaseAll}
+                    disabled={releasable.length === 0 || releasingAll}
+                    className={buttonClasses('primary', 'md')}
+                  >
+                    {releasingAll ? 'Releasing…' : `Release ${filtersActive ? 'shown' : 'all'} (${releasable.length})`}
+                  </button>
+                </span>
+              </Tooltip>
+            )}
+          </>
+        }
+      >
+        {(showDomainFilter || showTypeFilter) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {showDomainFilter &&
+              <FilterSelect label="Domain" value={decisionDomainFilter} onChange={setDecisionDomainFilter} allLabel="All domains" values={availableDomains} />}
+            {showTypeFilter &&
+              <FilterSelect label="Decision" value={decisionTypeFilter} onChange={setDecisionTypeFilter} allLabel="All decisions" values={availableTypes} />}
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={() => { setDecisionDomainFilter('all'); setDecisionTypeFilter('all') }}
+                className={buttonClasses('ghost', 'sm')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+        {scoped.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {filteredDecisions.map((d: any) => (
+              <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-sm font-semibold text-foreground">
+                    {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
+                  </span>
+                  <span className="text-sm text-os-grey">
+                    {[domainNameOf(d), `by ${d.madeBy.firstName} ${d.madeBy.lastName}`].filter(Boolean).join(' · ')}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {kind !== 'invites' && <Pill dot={typeTone(d.type)}>{d.type}</Pill>}
+                  {d.stage === 'Draft' && <Pill>Draft</Pill>}
+                  {rowActions(d)}
+                </div>
+              </div>
+            ))}
+            {filteredDecisions.length === 0 && (
+              <p className={cn(os.bodyText, 'py-3 text-center')}>No decisions match these filters.</p>
+            )}
+          </div>
+        )}
+      </SetupCard>
+      {previewDecisionId && (() => {
+        const d = scoped.find((x: any) => x.id === previewDecisionId)
+        if (!d) return null
+        return (
+          <DecisionEmailPreviewModal
+            decision={d}
+            email={loaderData?.hiringEmails?.[decisionSlot(d.type as DecisionSlotType)] ?? null}
+            onClose={() => setPreviewDecisionId(null)}
+          />
+        )
+      })()}
+    </>
+    )
+  }
+
+  // Free time comes from each interviewer's DALI OS calendar, read inside the
+  // interview window; there's nothing to read until that window is set.
+  const interviewWindowSet = !!config.interviewStartDate && !!config.interviewEndDate
+  function availabilityCell(i: any) {
+    if (!interviewWindowSet) return <span className="text-muted-foreground">Set the interview window</span>
+    const hours = i.availabilityHours ?? 0
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+        {hours > 0 ? (
+          <span className="text-sm text-os-grey">{hours.toFixed(1)}h free</span>
+        ) : (
+          <Pill tone="warning">No free time</Pill>
+        )}
+        {!i.hasCalendar && <Pill tone="warning">No calendar</Pill>}
+      </span>
+    )
+  }
+
+  // Roster pickers: the cycle's own domains, and current lab members by name.
+  const rosterDomains = (cycle?.domains ?? []).map((d: any) => ({
+    id: d.domainId,
+    name: d.domain?.name ?? d.domain?.displayName ?? d.domainId,
+  }))
+  const personName = (u: any, fallback: string) =>
+    (u?.firstName && u?.lastName ? `${u.firstName} ${u.lastName}` : u?.daliEmail) ?? fallback
+  const memberOptions = allMembers.map((m) => ({ id: m.id, name: personName(m, m.daliEmail) }))
+
+  const delibRows = (roundId: string) =>
+    (cycle?.domains ?? []).map((d: any) => {
+      const state = loaderData?.phaseStatusByDomain?.[d.domainId]?.rounds?.[roundId] ?? 'none'
+      return {
+        domainId: d.domainId,
+        name: d.domain?.name ?? d.domain?.displayName ?? d.domainId,
+        done: state === 'closed',
+        detail: state === 'closed' ? 'Closed' : state === 'active' ? 'In progress' : 'Not started',
+      }
+    })
+
+  // Opening is still a status change; the header's action runs the next one.
+  const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
+    const domains = cycle?.domains ?? []
+    const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady)
+    // Without challenges the application form is all there is to fill.
+    const needsForm = isMemberCycle || !cycle?.hasChallenges
+    return !!cycle?.closeDate && allDomainsReady && (!needsForm || !!cycle?.applicationForm)
+  })()
+  const statusIdx = STATUS_FLOW.indexOf(cycleStatus as any)
+  const atTerminal = statusIdx < 0 || statusIdx >= STATUS_FLOW.length - 1
+  async function runNextStatus() {
+    if (cycleStatus === 'UnderReview') return setShowCompleteConfirm(true)
+    if (cycleStatus === 'Draft') return setShowOpenConfirm(true)
+    if (
+      !(await dialog.confirm({
+        title: 'Close applications?',
+        description:
+          "This stops accepting new applications and moves the cycle to Under Review. Applicants who haven't submitted won't be able to submit.",
+        confirmLabel: 'Close applications',
+        tone: 'destructive',
+      }))
+    )
+      return
+    advanceStatus()
+  }
+  const nextStatusLabel =
+    cycleStatus === 'Draft' ? 'Open applications' : cycleStatus === 'Open' ? 'Close applications' : 'Complete cycle'
+  const statusAction = !atTerminal && (
+    <Tooltip
+      content={!draftChecklistMet ? 'Set the close date, get every domain ready, and add the application form first.' : null}
+      variant="rich"
+    >
+      <span>
+        <button
+          type="button"
+          onClick={runNextStatus}
+          disabled={statusUpdating || !draftChecklistMet}
+          className={buttonClasses('primary', 'md')}
+        >
+          {statusUpdating ? 'Updating…' : nextStatusLabel}
+          <ArrowRight className="w-4 h-4" aria-hidden />
+        </button>
+      </span>
+    </Tooltip>
+  )
+  const phaseIcon = { done: CheckCircle2, current: CircleDot, overdue: AlertCircle, upcoming: undefined } as const
+
   const page = (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h1 className="text-2xl font-bold text-foreground">{cycle?.name ?? 'Cycle Management'}</h1>
-        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
-          {STATUS_LABELS[cycleStatus] ?? cycleStatus}
-          <InfoTip content="Lifecycle stage of this hiring cycle — Draft means setup, Open means accepting applications, Under Review means scoring in progress, Completed means decisions released." />
-        </span>
-        <div className="ml-auto">
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className={os.pageTitle}>{cycle?.name ?? 'Cycle'}</h1>
+        <Pill dot={STATUS_TONES[cycleStatus] ?? 'neutral'}>{STATUS_LABELS[cycleStatus] ?? cycleStatus}</Pill>
+        <div className="ml-auto flex items-center gap-3">
           <PresenceBar />
+          {statusAction}
         </div>
-        <p className="w-full text-xs text-muted-foreground">
-          Cycle ID <span className="font-mono bg-muted px-1.5 py-0.5 rounded">{cycleId}</span>
-        </p>
-      </div>
+      </header>
 
       <CloseDateNotice />
 
@@ -1516,464 +1944,178 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
-        {([
-          { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-          { key: 'setup', label: 'Setup', icon: Settings },
-          { key: 'reviewers', label: 'Reviewers', icon: Users },
-          { key: 'interviews', label: 'Interviews', icon: Calendar },
-          { key: 'decisions', label: 'Decisions', icon: CheckCircle, badge: pendingDecisions.length || undefined },
-        ] as { key: CycleTab; label: string; icon: typeof LayoutDashboard; badge?: number }[]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex-shrink-0 md:flex-1 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
-              tab === t.key ? 'bg-accent-coral text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <t.icon className="w-4 h-4" />
-            {t.label}
-            {t.badge ? (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-foreground/10 text-xs font-bold">
-                {t.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabButtons
+        label="Phases"
+        items={phaseTabs.map(p => ({
+          label: p.label,
+          icon: phaseIcon[p.status],
+          active: p.key === tab,
+          onClick: () => setTab(p.key),
+        }))}
+      />
 
-      {/* ── Overview Tab ── */}
-      {tab === 'overview' && (() => {
-        const currentIdx = STATUS_FLOW.indexOf(cycleStatus as any)
-        const atTerminal = currentIdx < 0 || currentIdx >= STATUS_FLOW.length - 1
-        const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
-          const hasCloseDate = !!cycle?.closeDate;
-          const domains = cycle?.domains ?? [];
-          const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-          return hasCloseDate && domains.length > 0 && allDomainsReady;
-        })();
-        const nextStepCopy: Record<string, string> = {
-          Draft: 'Work the inbox below, then open applications to applicants.',
-          Open: 'Applications are open. Close them when ready to begin review.',
-          UnderReview: 'Review is underway. Release decisions, then mark the cycle completed.',
-          Completed: 'This cycle is complete — everything here is read-only history.',
-        };
-
-        // ── Inbox computation ────────────────────────────────────────────
-        // "Your actions": items only the hiring lead can resolve. Folds in
-        // the Draft-checklist conditions owned by the hiring lead.
-        const hasApplicationForm = !!cycle?.applicationForm;
-        const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const boundDecisionTypes = new Set(
-          (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
-        );
-        const pendingByType = new Map<string, number>();
-        for (const d of pendingDecisions) {
-          pendingByType.set(d.type, (pendingByType.get(d.type) ?? 0) + 1);
-        }
-        const unboundPendingTypes = [...pendingByType.keys()].filter((t) => !boundDecisionTypes.has(t));
-
-        type InboxAction = { key: string; label: string; tab: CycleTab };
-        const myActions: InboxAction[] = [];
-        if (cycleStatus === 'Draft' && (cycle?.domains ?? []).length === 0) {
-          myActions.push({ key: 'no-domains', label: 'Add at least one domain to this cycle', tab: 'setup' });
-        }
-        if (cycleStatus === 'Draft' && !cycle?.closeDate) {
-          myActions.push({ key: 'close-date', label: 'Set the application close date', tab: 'setup' });
-        }
-        if (cycleStatus === 'Draft' && !hasApplicationForm) {
-          myActions.push({ key: 'general-form', label: 'Create the application form (Drive)', tab: 'setup' });
-        }
-        if (!hasGeneralRubric && cycleStatus !== 'Completed') {
-          myActions.push({
-            key: 'general-rubric',
-            label: cycleStatus === 'Draft'
-              ? 'Set the general application rubric'
-              : 'Set the general application rubric (blocks reviewer assignment)',
-            tab: 'setup',
-          });
-        }
-        for (const t of unboundPendingTypes) {
-          const n = pendingByType.get(t) ?? 0;
-          myActions.push({
-            key: `email-binding-${t}`,
-            label: `Bind an email template for ${t} (${n} ready to release)`,
-            tab: 'setup',
-          });
-        }
-
-        // "Waiting on domain leads": per-domain blockers with named leads.
-        // Only populated in Draft today — domain leads' work is concentrated
-        // there. Later phases delegate to Reviewers/Interviews/Decisions tabs.
-        type DomainBlocker = {
-          domainId: string;
-          name: string;
-          leads: Array<{ firstName: string | null; lastName: string | null }>;
-          issues: string[];
-        };
-        const domainBlockers: DomainBlocker[] = [];
-        if (cycleStatus === 'Draft') {
-          for (const d of (cycle?.domains ?? [])) {
-            const issues: string[] = [];
-            if (!d.rubricVersionId) issues.push('missing rubric');
-            if (!d.isReady) issues.push('not marked ready');
-            if (issues.length === 0) continue;
-            const leads = (loaderData?.domainLeadsByDomain ?? {})[d.domainId] ?? [];
-            domainBlockers.push({
-              domainId: d.domainId,
-              name: d.domain?.name ?? d.domainId,
-              leads,
-              issues,
-            });
-          }
-        }
-
-        const inboxEmpty = myActions.length === 0 && domainBlockers.length === 0;
-        return (
-          <div className="space-y-6">
-            {/* Lifecycle stepper */}
-            <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-              <h3 className="text-sm font-bold text-foreground/80 mb-4">Cycle progress</h3>
-              <ol className="flex items-center">
-                {STATUS_FLOW.map((s, i) => {
-                  const done = i < currentIdx
-                  const active = i === currentIdx
-                  return (
-                    <Fragment key={s}>
-                      <li className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
-                          active ? 'bg-blue-600 text-white' : done ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {done ? <CheckCircle className="w-4 h-4" /> : i + 1}
-                        </span>
-                        <span className={`text-sm font-medium whitespace-nowrap ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
-                          {STATUS_LABELS[s]}
-                        </span>
-                      </li>
-                      {i < STATUS_FLOW.length - 1 && (
-                        <span className={`flex-1 h-px mx-2 sm:mx-3 ${i < currentIdx ? 'bg-green-300' : 'bg-border'}`} />
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </ol>
-            </div>
-
-            {/* Next step + advance action */}
-            <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1 min-w-0">
-                <h3 className="text-sm font-bold text-foreground">Next step</h3>
-                <p className="text-sm text-muted-foreground">{nextStepCopy[cycleStatus] ?? ''}</p>
-              </div>
-              {!atTerminal && (
-                <Tooltip
-                  content={!draftChecklistMet ? "Complete all checklist items above before advancing this cycle — at minimum a challenge form and rubric must be set." : null}
-                  variant="rich"
-                >
-                  <span>
-                    <button
-                      onClick={
-                        cycleStatus === 'UnderReview'
-                          ? () => setShowCompleteConfirm(true)
-                          : cycleStatus === 'Draft'
-                            ? () => setShowOpenConfirm(true)
-                            : async () => {
-                                if (
-                                  !(await dialog.confirm({
-                                    title: 'Close applications?',
-                                    description:
-                                      "This stops accepting new applications and moves the cycle to Under Review. Applicants who haven't submitted won't be able to submit.",
-                                    confirmLabel: 'Close Applications',
-                                    tone: 'destructive',
-                                  }))
-                                )
-                                  return
-                                advanceStatus()
-                              }
-                      }
-                      disabled={statusUpdating || !draftChecklistMet}
-                      className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
-                    >
-                      {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </span>
-                </Tooltip>
-              )}
-            </div>
-
-            {/* Inbox: actions owed by the hiring lead + per-domain blockers */}
-            {!inboxEmpty && (
-              <div className="space-y-4">
-                {myActions.length > 0 && (
-                  <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-                    <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/50">
-                      <h3 className="text-sm font-bold text-foreground/80">Your actions</h3>
-                    </div>
-                    <ul className="divide-y divide-border">
-                      {myActions.map((a) => (
-                        <li key={a.key} className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <Circle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
-                            <span className="text-sm text-foreground">{a.label}</span>
-                          </div>
-                          <button
-                            onClick={() => setTab(a.tab)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 flex-shrink-0"
-                          >
-                            {a.tab === 'setup' ? 'Setup' : a.tab.charAt(0).toUpperCase() + a.tab.slice(1)}
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {domainBlockers.length > 0 && (
-                  <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-                    <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/50 flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-bold text-foreground/80">Waiting on domain leads</h3>
-                      <span className="text-xs text-muted-foreground">{domainBlockers.length} domain{domainBlockers.length === 1 ? '' : 's'}</span>
-                    </div>
-                    <ul className="divide-y divide-border">
-                      {domainBlockers.map((d) => (
-                        <li
-                          key={d.domainId}
-                          className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0 flex-1">
-                            <div className="font-medium text-foreground sm:w-32 flex-shrink-0">{d.name}</div>
-                            <div className="text-xs text-muted-foreground sm:w-40 sm:flex-shrink-0 truncate">
-                              {d.leads.length > 0
-                                ? d.leads.map((l) => `${l.firstName ?? ''} ${l.lastName ?? ''}`.trim() || 'Unnamed').join(', ')
-                                : <span className="italic">no lead assigned</span>}
-                            </div>
-                            <div className="text-sm text-foreground/90 truncate">{d.issues.join(' · ')}</div>
-                          </div>
-                          <button
-                            onClick={() => setTab('setup')}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 self-start sm:self-auto flex-shrink-0"
-                          >
-                            Setup
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* Keyed by tab so each tab's nav lists only its own sections. */}
+      <SectionNavLayout key={tab} label="Sections">
 
       {/* ── Setup Tab ── */}
       {tab === 'setup' && (
-        <div className="space-y-6">
-          {/* Close Date + Extension + Effective Close */}
-          <CloseDateCard
-            cycle={cycle}
+        <div className="flex flex-col gap-6">
+          <NavSection id="term-dates" title="Term and dates">
+          <TermDatesCard
+            termId={cycle?.termId ?? null}
+            termOptions={loaderData?.termOptions ?? []}
+            openDate={cycle?.openDate ?? null}
+            closeDate={cycle?.originalCloseDate ?? cycle?.closeDate ?? null}
             cycleStatus={cycleStatus}
           />
+          </NavSection>
 
+          <NavSection id="audience" title="Audience">
+          <AudienceCard
+            applicants={cycle.applicants}
+            hasChallenges={cycle.hasChallenges}
+            cycleStatus={cycleStatus}
+            viewerIsAdmin={!!loaderData?.viewerIsAdmin}
+          />
+          </NavSection>
 
-          {/* Domains */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
-            <h3 className="text-sm font-bold text-foreground/80">Domains in this Cycle</h3>
-            <p className="text-xs text-muted-foreground">
-              Hiring leads can override per-domain rubric and ready-state selections set by domain leads.
-            </p>
-            {(cycle?.domains ?? []).length > 0 ? (
-              <div className="space-y-3">
-                {(cycle?.domains ?? []).map((d: any) => {
-                  const rubricOptions = loaderData?.domainRubricVersions ?? [];
-                  const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
-                  const rubricLocked = reviewedDomainIds.includes(d.domainId);
-                  return (
+          {/* Extending the close only makes sense once a close date is set. */}
+          {cycle?.closeDate && (
+            <NavSection id="extension" title="Deadline extension">
+            <CloseDateCard
+              cycle={cycle}
+              cycleStatus={cycleStatus}
+            />
+            </NavSection>
+          )}
+
+          <NavSection id="timeline" title="Timeline">
+          <TimelineCard
+            timeline={timeline}
+            roundsWithBoards={loaderData?.roundsWithBoards ?? []}
+            cycleStatus={cycleStatus}
+            termStart={termStart}
+            isDefault={JSON.stringify(timeline) === JSON.stringify(defaultTimelineFor(cycle.applicants))}
+          />
+          </NavSection>
+
+          {/* Domains: Students cycles are set up per domain by domain leads;
+              Interns cycles pick target domains here; Lab members cycles hang
+              off the single CORE domain linked at creation. */}
+          <NavSection id="domains" title={domainsTitle}>
+          {cycle?.applicants === 'LabMembers' ? (
+            <SetupCard
+              title="Applicant pool"
+              description="Open to all current lab members. Every application goes to Core."
+            />
+          ) : isMemberCycle ? (
+            <TargetDomainsCard
+              cycleDomains={cycle?.domains ?? []}
+              eligibleDomains={memberSetup.eligibleDomains}
+              challengeFor={challengeFor}
+              cycleStatus={cycleStatus}
+            />
+          ) : (
+            <SetupCard
+              title="Domains"
+            >
+              {(cycle?.domains ?? []).length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {(cycle?.domains ?? []).map((d: any) => (
                     <DomainOverridePanel
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
-                      rubricOptions={rubricOptions}
-                      rubricLocked={rubricLocked}
+                      showRubric={!!cycle?.hasChallenges}
+                      challenge={challengeFor(d.domainId)}
+                      rubricOptions={loaderData?.domainRubricVersions ?? []}
+                      rubricLocked={(loaderData?.reviewedDomainIds ?? []).includes(d.domainId)}
                     />
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground/70">No domains added yet.</p>
-            )}
-            {cycleStatus === 'Draft' && (
-              <Form method="post" preventScrollReset className="flex items-end gap-3 pt-2 border-t border-border">
-                <input type="hidden" name="intent" value="add-domain" />
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
-                  <Select
-                    name="domainId"
-                    defaultValue=""
-                    placeholder="Select domain..."
-                    options={(loaderData?.allDomains ?? [])
-                      .filter((d: any) => !(cycle?.domains ?? []).some((cd: any) => cd.domainId === d.id))
-                      .map((d: any): SelectOption => ({ value: d.id, label: d.name }))}
-                    buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
+                  ))}
                 </div>
-                <button
-                  type="submit"
-                  className="flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-                >
-                  <Plus className="w-4 h-4" /> Add
-                </button>
-              </Form>
-            )}
-          </div>
+              ) : (
+                <p className={cn(os.bodyText, 'py-4 text-center')}>No domains added yet.</p>
+              )}
+              {cycleStatus === 'Draft' && (
+                <Form method="post" preventScrollReset className="flex flex-wrap items-end gap-3">
+                  <input type="hidden" name="intent" value="add-domain" />
+                  <div className={cn(os.fieldLabel, 'min-w-[14rem] flex-1')}>
+                    Add domain
+                    <Select
+                      name="domainId"
+                      defaultValue=""
+                      placeholder="Pick a domain"
+                      options={(loaderData?.allDomains ?? [])
+                        .filter((d: any) => !(cycle?.domains ?? []).some((cd: any) => cd.domainId === d.id))
+                        .map((d: any): SelectOption => ({ value: d.id, label: d.name }))}
+                      buttonClassName={rowTrigger(os.formTrigger)}
+                    />
+                  </div>
+                  <button type="submit" className={buttonClasses('primary', 'md', 'h-9')}>
+                    <Plus className="w-4 h-4" aria-hidden /> Add
+                  </button>
+                </Form>
+              )}
+            </SetupCard>
+          )}
+          </NavSection>
 
-          {/* Application form (Drive) */}
-          <ApplicationFormSection
-            cycleStatus={cycleStatus}
-            applicationForm={cycle?.applicationForm ?? null}
-            allForms={loaderData?.allForms ?? []}
-          />
+          <NavSection id="general-application" title="General application">
+            <GeneralApplicationSection
+              cycleStatus={cycleStatus}
+              applicationForm={cycle?.applicationForm ?? null}
+              allForms={loaderData?.allForms ?? []}
+              currentRubricVersionId={cycle?.generalRubricVersionId}
+              rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
+              rubricLocked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
+            />
+          </NavSection>
 
-          {/* General Form Rubric */}
-          <GeneralRubricPicker
-            currentRubricVersionId={cycle?.generalRubricVersionId}
-            rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
-            locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
-          />
+
+
+
 
           {/* Blind review */}
+          <NavSection id="blind-review" title="Blind review">
           <BlindReviewToggle anonymizeReview={cycle?.anonymizeReview ?? true} />
+          </NavSection>
 
           {/* Confidentiality Agreement */}
+          <NavSection id="confidentiality" title="Confidentiality agreement">
           <ConfidentialityAgreementPicker
             currentBinding={loaderData?.currentConfidentialityBinding ?? null}
             agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
             signatures={loaderData?.confidentialitySignatures ?? []}
           />
+          </NavSection>
 
           {/* Decision-release email bindings */}
+          <NavSection id="decision-emails" title="Decision emails">
           <DecisionEmailsSection
-            emailTemplates={loaderData?.emailTemplates ?? []}
-            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
-            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
+            hiringEmails={loaderData?.hiringEmails ?? {}}
+            hasInterviews={hasInterviews}
           />
+          </NavSection>
 
-          {/* Non-decision notification email bindings */}
-          <NotificationEmailsSection
-            emailTemplates={loaderData?.emailTemplates ?? []}
-            currentNotificationEmails={loaderData?.currentNotificationEmails ?? []}
-          />
-        </div>
-      )}
-
-      {/* ── Reviewer Roster Tab ── */}
-      {tab === 'reviewers' && (
-        <div className="space-y-4">
-          {/* Add reviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Add Reviewer
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <Select
-                  value={newMemberId}
-                  onChange={(value) => setNewMemberId(value)}
-                  placeholder="Select member..."
-                  options={allMembers.map((m): SelectOption => ({
-                    value: m.id,
-                    label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail,
-                  }))}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
-                <Select
-                  value={newDomainId}
-                  onChange={(value) => setNewDomainId(value)}
-                  placeholder="Select domain..."
-                  options={allDomains.map((d): SelectOption => ({ value: d.id, label: d.name }))}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              <button
-                onClick={addReviewer}
-                disabled={!newMemberId || !newDomainId}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Roster table */}
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[480px]">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Reviewer</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
-                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {reviewers.map(r => {
-                  const m = r.user
-                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.user.id
-                  return (
-                  <tr key={r.id} className="hover:bg-muted/50 transition">
-                    <td className="px-4 py-3 font-medium text-foreground">{name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.domain.name}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700 transition">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                  )
-                })}
-                {reviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No reviewers assigned yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-            <ul className="sm:hidden divide-y divide-border">
-              {reviewers.map(r => {
-                const m = r.user
-                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.user.id
-                return (
-                <li key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground truncate">{name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{r.domain.name}</div>
-                  </div>
-                  <button
-                    onClick={() => removeReviewer(r.id)}
-                    aria-label="Remove reviewer"
-                    className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </li>
-                )
-              })}
-              {reviewers.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No reviewers assigned yet.</li>
+          {/* Non-decision notification email bindings. Application slots fire
+              from the student portal; interview slots only with interviews. */}
+          {(!isMemberCycle || hasInterviews) && (
+            <NavSection id="notification-emails" title="Notification emails">
+            <NotificationEmailsSection
+              hiringEmails={loaderData?.hiringEmails ?? {}}
+              slots={NOTIFICATION_EMAIL_SLOTS.filter((slot) =>
+                slot.type.startsWith('Interview') ? hasInterviews : !isMemberCycle,
               )}
-            </ul>
-          </div>
+            />
+            </NavSection>
+          )}
         </div>
       )}
+
 
       {/* ── Interviews Tab — schedule, then coverage, then roster, then config ── */}
+      {tab === 'interviews' && (
+      <NavSection id="schedule" title="Schedule">
       {tab === 'interviews' && loaderData?.confidentialityRequired ? (
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
@@ -1997,7 +2139,7 @@ export default function HiringLeadCycleDetails() {
           ...pendingInvites.map(domainFor).filter(Boolean),
         ])).sort()
         const availableStatuses = Array.from(new Set<string>([
-          ...(pendingInvites.length > 0 ? ['Awaiting Schedule'] : []),
+          ...(pendingInvites.length > 0 ? ['Awaiting schedule'] : []),
           ...visibleInterviews.map(i => i.status),
         ]))
         const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
@@ -2008,7 +2150,7 @@ export default function HiringLeadCycleDetails() {
         })
         const filteredPending = pendingInvites.filter(p => {
           if (interviewDomainFilter !== 'all' && domainFor(p) !== interviewDomainFilter) return false
-          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== 'Awaiting Schedule') return false
+          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== 'Awaiting schedule') return false
           return true
         })
         const totalRows = filteredInterviews.length + filteredPending.length
@@ -2017,16 +2159,15 @@ export default function HiringLeadCycleDetails() {
         // interviews that are currently hidden — so the toggle stays reachable.
         const hasAnyRows = interviews.length + pendingInvites.length > 0
         const tableEmpty = totalRows === 0
-        // "Resend invite" needs a CycleNotificationEmail bound to
-        // InterviewInviteReminder. Without one the button has no template
-        // to render, so disable it with a tooltip pointing at Setup.
-        const reminderTemplateBound = (loaderData?.currentNotificationEmails ?? [])
-          .some((b: any) => b.notificationType === 'InterviewInviteReminder')
+        // "Resend invite" needs the InterviewInviteReminder email written.
+        // Without it there's nothing to send, so the button is disabled with a
+        // tooltip pointing at Setup.
+        const reminderTemplateBound = !!loaderData?.hiringEmails?.['notification:InterviewInviteReminder']
         async function resendInvite(daId: string, firstName?: string) {
           if (
             !(await dialog.confirm({
               title: `Resend interview invite to ${firstName ?? 'this applicant'}?`,
-              description: 'Re-emails the applicant the scheduling link using the bound reminder template.',
+              description: 'Re-emails the applicant the scheduling link using the invite reminder email.',
               confirmLabel: 'Resend',
               tone: 'destructive',
             }))
@@ -2046,211 +2187,181 @@ export default function HiringLeadCycleDetails() {
             setResendingInviteId(null)
           }
         }
+        const locationLabel = (loc: string) =>
+          loc === 'PodAppa' ? 'Pod Appa' : loc === 'PodMomo' ? 'Pod Momo' : 'Online'
+        async function changeLocation(interview: any, newLocation: string) {
+          if (
+            !(await dialog.confirm({
+              title: 'Change interview location?',
+              description: 'Emails the applicant and both interviewers a location-change notice.',
+              confirmLabel: 'Change Location',
+              tone: 'destructive',
+            }))
+          )
+            return
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: newLocation }),
+          })
+          if (res.ok) {
+            const updated = await res.json()
+            setInterviews(prev => prev.map(i =>
+              i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
+            ))
+          } else {
+            const body = await res.json().catch(() => ({}))
+            toast.error(body.error ?? 'Failed to update location')
+          }
+        }
+        async function reassign(interview: any, a: any, value: string) {
+          if (!value) return
+          if (
+            !(await dialog.confirm({
+              title: 'Reassign interviewer?',
+              description: `Emails the removed interviewer and the replacement interviewer about the change.`,
+              confirmLabel: 'Reassign',
+              tone: 'destructive',
+            }))
+          )
+            return
+          await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
+          })
+          window.location.reload()
+        }
+        const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
+          <Link
+            to={`/hiring/applications/${daId}`}
+            onClick={(e) => {
+              const url = `/hiring/applications/${daId}`
+              const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
+              if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+            }}
+            className="truncate text-sm font-semibold text-foreground hover:underline"
+          >
+            {u.firstName} {u.lastName}
+          </Link>
+        )
+        const statusTone = (status: string) =>
+          status === 'Scheduled' ? 'success' : status === 'Completed' ? 'accent' : 'neutral'
+        const smallTrigger = cn(rowTrigger(os.formTrigger), 'h-8 w-auto text-xs')
+        const showDomainFilter = availableDomains.length > 1
+        const showStatusFilter = availableStatuses.length > 1
         return (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
-            <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
-            <span>Controls marked with <Mail className="w-3 h-3 inline-block align-middle text-blue-600" /> send an email when committed. Hover the icon to see who receives it.</span>
-          </div>
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex flex-col gap-6">
+          <SetupCard
+            title="Schedule"
+            description={
+              totalAll === 0
+                ? 'No interviews scheduled yet.'
+                : filtersActive
+                  ? `Showing ${totalRows} of ${totalAll}.`
+                  : `${totalAll} applicant${totalAll === 1 ? '' : 's'}.`
+            }
+          >
             {hasAnyRows && (
-              <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium">Domain</span>
-                  <Select
-                    value={interviewDomainFilter}
-                    onChange={(value) => setInterviewDomainFilter(value)}
-                    options={[
-                      { value: "all", label: "All domains" },
-                      ...availableDomains.map((name): SelectOption => ({ value: name, label: name })),
-                    ]}
-                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                </span>
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium">Status</span>
-                  <Select
-                    value={interviewStatusFilter}
-                    onChange={(value) => setInterviewStatusFilter(value)}
-                    options={[
-                      { value: "all", label: "All statuses" },
-                      ...availableStatuses.map((s): SelectOption => ({ value: s, label: s })),
-                    ]}
-                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                </span>
+              <div className="flex flex-wrap items-center gap-3">
+                {showDomainFilter && (
+                  <FilterSelect label="Domain" value={interviewDomainFilter} onChange={setInterviewDomainFilter} allLabel="All domains" values={availableDomains} />
+                )}
+                {showStatusFilter && (
+                  <FilterSelect label="Status" value={interviewStatusFilter} onChange={setInterviewStatusFilter} allLabel="All statuses" values={availableStatuses} />
+                )}
                 {filtersActive && (
                   <button
                     type="button"
                     onClick={() => { setInterviewDomainFilter('all'); setInterviewStatusFilter('all') }}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition"
+                    className={buttonClasses('ghost', 'sm')}
                   >
-                    <X className="w-3 h-3" aria-hidden />
-                    Clear filters
+                    Clear
                   </button>
                 )}
                 <Checkbox
                   checked={showCancelledInterviews}
                   onChange={(e) => setShowCancelledInterviews(e.target.checked)}
                   label={`Show cancelled${hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}`}
-                  className="text-xs text-muted-foreground select-none"
+                  className="text-sm text-os-grey select-none"
                 />
-                <span className="ml-auto text-xs text-muted-foreground">
-                  Showing {totalRows} of {totalAll}
-                </span>
               </div>
             )}
-            <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[820px]">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Time</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Status</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Location</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewers</th>
-                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+            {hasAnyRows && (
+              <div className="flex flex-col gap-2">
                 {filteredPending.map(p => {
                   const u = p.domainApplication.application.user
-                  const domainName = domainFor(p)
                   const invited = new Date(p.invitedAt)
                   return (
-                    <tr key={`pending-${p.id}`} className="bg-amber-50/40 hover:bg-amber-50 transition">
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        <Link
-                          to={`/hiring/applications/${p.domainApplication.id}`}
-                          onClick={(e) => {
-                            const url = `/hiring/applications/${p.domainApplication.id}`
-                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                          }}
-                          className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
-                        >
-                          {u.firstName} {u.lastName}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs italic">
-                        Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                          Awaiting Schedule
+                    <div key={`pending-${p.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        {applicantLink(p.domainApplication.id, u)}
+                        <span className="text-sm text-os-grey">
+                          {[domainFor(p), `Invited ${invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`].filter(Boolean).join(' · ')}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">—</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">—</td>
-                      <td className="px-4 py-3 text-right">
-                        <Tooltip content={!reminderTemplateBound ? 'Bind a reminder email template in cycle settings to enable invitation resends.' : null} variant="rich">
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Pill dot="warning">Awaiting schedule</Pill>
+                        <Tooltip content={!reminderTemplateBound ? 'Write the invite reminder email on Setup to resend invites.' : null} variant="rich">
                           <span>
                             <button
                               type="button"
                               onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
                               disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                              className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={buttonClasses('secondary', 'sm')}
                             >
-                              <Mail className="w-3.5 h-3.5" aria-hidden />
-                              {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
+                              {resendingInviteId === p.domainApplication.id ? 'Sending…' : 'Resend invite'}
                             </button>
                           </span>
                         </Tooltip>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   )
                 })}
                 {filteredInterviews.map(interview => {
-                  const isFuture = new Date(interview.startTime) > new Date()
+                  const editable = new Date(interview.startTime) > new Date() && interview.status === 'Scheduled'
                   const domainName = interview.domainApplication.domain.name
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
-
+                  const when = `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} to ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+                  const meetUrl = interview.location === 'Online' ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
                   return (
-                    <tr key={interview.id} className="hover:bg-muted/50 transition">
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        <Link
-                          to={`/hiring/applications/${interview.domainApplication.id}`}
-                          onClick={(e) => {
-                            const u = interview.domainApplication.application.user
-                            const url = `/hiring/applications/${interview.domainApplication.id}`
-                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                          }}
-                          className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
-                        >
-                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                        {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                        {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                          interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
-                          interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
-                          'bg-muted text-muted-foreground'
-                        }`}>
-                          {interview.status}
+                    <div key={interview.id} className="flex flex-col gap-3 rounded-os-item bg-os-well px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          {applicantLink(interview.domainApplication.id, interview.domainApplication.application.user)}
+                          <span className="text-sm text-os-grey">{[domainName, when].filter(Boolean).join(' · ')}</span>
+                        </div>
+                        <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="text-os-grey">Location</span>
+                          {editable ? (
+                            <>
+                              <Select
+                                ariaLabel="Location"
+                                value={interview.location}
+                                onChange={(value) => changeLocation(interview, value)}
+                                options={[
+                                  { value: "PodAppa", label: "Pod Appa" },
+                                  { value: "PodMomo", label: "Pod Momo" },
+                                  { value: "Online", label: "Online" },
+                                ]}
+                                buttonClassName={smallTrigger}
+                              />
+                              <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
+                            </>
+                          ) : (
+                            <span className="text-foreground">{locationLabel(interview.location)}</span>
+                          )}
+                          {meetUrl && (
+                            <a href={meetUrl} target="_blank" rel="noopener noreferrer" className="text-os-accent hover:underline">
+                              Join Google Meet
+                            </a>
+                          )}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {isFuture && interview.status === 'Scheduled' ? (
-                          <span className="inline-flex items-center gap-1">
-                            <Select
-                              value={interview.location}
-                              onChange={async (newLocation) => {
-                                if (
-                                  !(await dialog.confirm({
-                                    title: 'Change interview location?',
-                                    description: 'Emails the applicant and both interviewers a location-change notice.',
-                                    confirmLabel: 'Change Location',
-                                    tone: 'destructive',
-                                  }))
-                                )
-                                  return
-                                const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
-                                  method: 'PATCH',
-                                  credentials: 'include',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ location: newLocation }),
-                                })
-                                if (res.ok) {
-                                  const updated = await res.json()
-                                  setInterviews(prev => prev.map(i =>
-                                    i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
-                                  ))
-                                } else {
-                                  const body = await res.json().catch(() => ({}))
-                                  toast.error(body.error ?? 'Failed to update location')
-                                }
-                              }}
-                              options={[
-                                { value: "PodAppa", label: "Pod Appa" },
-                                { value: "PodMomo", label: "Pod Momo" },
-                                { value: "Online", label: "Online" },
-                              ]}
-                              buttonClassName="text-xs border border-border rounded px-1.5 py-0.5 bg-card inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                            />
-                            <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {interview.location === 'PodAppa' ? 'Pod Appa' :
-                             interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
-                          </span>
-                        )}
-                        {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
-                          <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
-                             className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.assignments
                           .filter((a: any) => a.status === 'Active')
                           .map((a: any) => {
@@ -2260,259 +2371,46 @@ export default function HiringLeadCycleDetails() {
                               : m.daliEmail ?? '?'
                             const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
                             return (
-                              <div key={a.id} className="flex items-center gap-1">
-                                <span>{name} ({roleLabel})</span>
-                                {isFuture && interview.status === 'Scheduled' && (
-                                  <Select
-                                    value=""
-                                    onChange={async (value) => {
-                                      if (!value) return
-                                      if (
-                                        !(await dialog.confirm({
-                                          title: 'Reassign interviewer?',
-                                          description: `Emails the removed interviewer and the replacement interviewer about the change.`,
-                                          confirmLabel: 'Reassign',
-                                          tone: 'destructive',
-                                        }))
-                                      )
-                                        return
-                                      await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
-                                        method: 'POST', credentials: 'include',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
-                                      })
-                                      window.location.reload()
-                                    }}
-                                    placeholder="Reassign..."
-                                    ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={interviewers
-                                      .filter((i: any) => a.role === 'InDomain'
-                                        ? i.domain?.name === a.cycleInterviewer.domain.name
-                                        : i.domain?.name !== domainName)
-                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
-                                      .map((i: any): SelectOption => {
-                                        const im = i.user
-                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return { value: i.id, label: iName }
-                                      })}
-                                    buttonClassName="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                                  />
+                              <span key={a.id} className="inline-flex items-center gap-2">
+                                <span className="text-foreground">{name}</span>
+                                <span className="text-os-grey">{roleLabel}</span>
+                                {editable && (
+                                  <>
+                                    <Select
+                                      value=""
+                                      onChange={(value) => reassign(interview, a, value)}
+                                      placeholder="Reassign"
+                                      ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                      options={interviewers
+                                        .filter((i: any) => a.role === 'InDomain'
+                                          ? i.domain?.name === a.cycleInterviewer.domain.name
+                                          : i.domain?.name !== domainName)
+                                        .filter((i: any) => i.id !== a.cycleInterviewerId)
+                                        .map((i: any): SelectOption => {
+                                          const im = i.user
+                                          const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                          return { value: i.id, label: iName }
+                                        })}
+                                      buttonClassName={smallTrigger}
+                                    />
+                                    <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
+                                  </>
                                 )}
-                                {isFuture && interview.status === 'Scheduled' && (
-                                  <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
-                                )}
-                              </div>
+                              </span>
                             )
                           })}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {/* placeholder for future actions */}
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   )
                 })}
                 {tableEmpty && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>{totalAll === 0 ? 'No interviews scheduled yet.' : 'No interviews match the current filter.'}</td></tr>
+                  <p className={cn(os.bodyText, 'py-3 text-center')}>
+                    {totalAll === 0 ? 'No interviews scheduled yet.' : 'No interviews match these filters.'}
+                  </p>
                 )}
-              </tbody>
-            </table>
-            </div>
-            <ul className="sm:hidden divide-y divide-border">
-              {filteredPending.map(p => {
-                const u = p.domainApplication.application.user
-                const domainName = domainFor(p)
-                const invited = new Date(p.invitedAt)
-                return (
-                  <li key={`pending-${p.id}`} className="px-4 py-3 space-y-1 bg-amber-50/40">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <Link
-                          to={`/hiring/applications/${p.domainApplication.id}`}
-                          onClick={(e) => {
-                            const url = `/hiring/applications/${p.domainApplication.id}`
-                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                          }}
-                          className="block font-medium text-foreground truncate hover:underline"
-                        >
-                          {u.firstName} {u.lastName}
-                        </Link>
-                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
-                      </div>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 bg-amber-100 text-amber-800">
-                        Awaiting Schedule
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground italic">
-                      Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </div>
-                    <Tooltip content={!reminderTemplateBound ? 'Bind a reminder email template in cycle settings to enable invitation resends.' : null} variant="rich">
-                      <span>
-                        <button
-                          type="button"
-                          onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
-                          disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Mail className="w-3.5 h-3.5" aria-hidden />
-                          {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
-                        </button>
-                      </span>
-                    </Tooltip>
-                  </li>
-                )
-              })}
-              {filteredInterviews.map(interview => {
-                const isFuture = new Date(interview.startTime) > new Date()
-                const domainName = interview.domainApplication.domain.name
-                const start = new Date(interview.startTime)
-                const end = new Date(interview.endTime)
-                const editable = isFuture && interview.status === 'Scheduled'
-                return (
-                  <li key={interview.id} className="px-4 py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <Link
-                          to={`/hiring/applications/${interview.domainApplication.id}`}
-                          onClick={(e) => {
-                            const u = interview.domainApplication.application.user
-                            const url = `/hiring/applications/${interview.domainApplication.id}`
-                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                          }}
-                          className="block font-medium text-foreground truncate hover:underline"
-                        >
-                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                        </Link>
-                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
-                      </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
-                        interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
-                        interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {interview.status}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                      {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Location</div>
-                      {editable ? (
-                        <Select
-                          value={interview.location}
-                          onChange={async (newLocation) => {
-                            if (
-                              !(await dialog.confirm({
-                                title: 'Change interview location?',
-                                description: 'Emails the applicant and both interviewers a location-change notice.',
-                                confirmLabel: 'Change Location',
-                                tone: 'destructive',
-                              }))
-                            )
-                              return
-                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
-                              method: 'PATCH', credentials: 'include',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ location: newLocation }),
-                            })
-                            if (res.ok) {
-                              const updated = await res.json()
-                              setInterviews(prev => prev.map(i =>
-                                i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
-                              ))
-                            } else {
-                              const body = await res.json().catch(() => ({}))
-                              toast.error(body.error ?? 'Failed to update location')
-                            }
-                          }}
-                          options={[
-                            { value: "PodAppa", label: "Pod Appa" },
-                            { value: "PodMomo", label: "Pod Momo" },
-                            { value: "Online", label: "Online" },
-                          ]}
-                          buttonClassName="w-full text-xs border border-border rounded px-1.5 py-1 bg-card inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          {interview.location === 'PodAppa' ? 'Pod Appa' :
-                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
-                        </span>
-                      )}
-                      {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
-                        <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
-                           className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Interviewers</div>
-                      <div className="space-y-1">
-                        {interview.assignments
-                          .filter((a: any) => a.status === 'Active')
-                          .map((a: any) => {
-                            const m = a.cycleInterviewer.user
-                            const name = m.firstName && m.lastName
-                              ? `${m.firstName} ${m.lastName}`
-                              : m.daliEmail ?? '?'
-                            const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
-                            return (
-                              <div key={a.id} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                                <span>{name} ({roleLabel})</span>
-                                {editable && (
-                                  <Select
-                                    value=""
-                                    onChange={async (value) => {
-                                      if (!value) return
-                                      if (
-                                        !(await dialog.confirm({
-                                          title: 'Reassign interviewer?',
-                                          description: `Emails the removed interviewer and the replacement interviewer about the change.`,
-                                          confirmLabel: 'Reassign',
-                                          tone: 'destructive',
-                                        }))
-                                      )
-                                        return
-                                      await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
-                                        method: 'POST', credentials: 'include',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
-                                      })
-                                      window.location.reload()
-                                    }}
-                                    placeholder="Reassign..."
-                                    ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={interviewers
-                                      .filter((i: any) => a.role === 'InDomain'
-                                        ? i.domain?.name === a.cycleInterviewer.domain.name
-                                        : i.domain?.name !== domainName)
-                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
-                                      .map((i: any): SelectOption => {
-                                        const im = i.user
-                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return { value: i.id, label: iName }
-                                      })}
-                                    buttonClassName="text-xs border border-gray-300 rounded px-1.5 py-0.5 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                                  />
-                                )}
-                                {editable && (
-                                  <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
-                                )}
-                              </div>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  </li>
-                )
-              })}
-              {tableEmpty && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">{totalAll === 0 ? 'No interviews scheduled yet.' : 'No interviews match the current filter.'}</li>
-              )}
-            </ul>
-          </div>
+              </div>
+            )}
+          </SetupCard>
           {/* Per-domain availability summary: who has interviewers and how
               many hours each domain has offered. Computed client-side from
               the already-loaded interviewers list. */}
@@ -2528,628 +2426,254 @@ export default function HiringLeadCycleDetails() {
             }
             const rows = Array.from(byDomain.entries()).sort(([a], [b]) => a.localeCompare(b))
             return (
-              <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-                <h3 className="text-sm font-bold text-foreground/80 mb-3">Coverage by domain</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <SetupCard title="Coverage by domain" description="Interviewers and free hours per domain.">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {rows.map(([name, e]) => (
-                    <div key={name} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
-                      <div className="text-sm font-semibold text-foreground">{name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        <span className="font-medium text-foreground">{e.count}</span> interviewer{e.count === 1 ? '' : 's'}
-                        {' · '}
-                        <span className="font-medium text-foreground">{e.hours.toFixed(0)}h</span> offered
-                        {e.submitted < e.count && (
-                          <span className="text-amber-700"> · {e.count - e.submitted} not submitted</span>
-                        )}
-                      </div>
+                    <div key={name} className="flex flex-col gap-0.5 rounded-os-item bg-os-well px-4 py-3">
+                      <span className="text-sm font-semibold text-foreground">{name}</span>
+                      <span className="text-sm text-os-grey">
+                        {e.count} interviewer{e.count === 1 ? '' : 's'} · {e.hours.toFixed(0)}h free
+                      </span>
+                      {e.submitted < e.count && (
+                        <span className="text-sm text-amber-700">{e.count - e.submitted} with no free time</span>
+                      )}
                     </div>
                   ))}
                 </div>
-              </div>
+              </SetupCard>
             )
           })()}
           <CoverageHeatmap coverage={coverage} />
         </div>
         )
       })()}
-
-      {/* ── Interviewers Roster (shown under Interviews) ── */}
-      {tab === 'interviews' && (
-        <div className="space-y-4 mt-4">
-          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
-            <Users className="w-4 h-4" /> Interviewers
-          </h3>
-          {/* Add interviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Add Interviewer
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <Select
-                  value={newInterviewerMemberId}
-                  onChange={(value) => setNewInterviewerMemberId(value)}
-                  placeholder="Select member..."
-                  options={allMembers.map((m): SelectOption => ({
-                    value: m.id,
-                    label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail,
-                  }))}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
-                <Select
-                  value={newInterviewerDomainId}
-                  onChange={(value) => setNewInterviewerDomainId(value)}
-                  placeholder="Select domain..."
-                  options={allDomains.map((d): SelectOption => ({ value: d.id, label: d.name }))}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              <button
-                onClick={addInterviewer}
-                disabled={!newInterviewerMemberId || !newInterviewerDomainId}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Interviewer roster table */}
-          {interviewers.length > 0 && (() => {
-            const submitted = interviewers.filter((i: any) => (i.availabilityBlockCount ?? 0) > 0).length
-            const total = interviewers.length
-            const allSubmitted = submitted === total
-            return (
-              <div className={`rounded-lg px-4 py-3 text-sm border ${
-                allSubmitted
-                  ? 'bg-green-50 border-green-200 text-green-900'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}>
-                <span className="font-semibold">{submitted} of {total}</span> interviewer{total === 1 ? '' : 's'} ha{submitted === 1 ? 's' : 've'} submitted availability
-                {!allSubmitted && total - submitted > 0 && (
-                  <span className="text-amber-800/80"> · {total - submitted} pending</span>
-                )}
-              </div>
-            )
-          })()}
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Availability</th>
-                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {interviewers.map((i: any) => {
-                  const m = i.user
-                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
-                  const hours = i.availabilityHours ?? 0
-                  const blocks = i.availabilityBlockCount ?? 0
-                  const hasAvail = blocks > 0
-                  const isExpanded = expandedInterviewers.has(i.id)
-                  const toggle = () => setExpandedInterviewers(prev => {
-                    const next = new Set(prev)
-                    if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
-                    return next
-                  })
-                  return (
-                    <Fragment key={i.id}>
-                      <tr className="hover:bg-muted/50 transition">
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          {hasAvail ? (
-                            <button onClick={toggle} className="inline-flex items-center gap-1.5 text-left hover:underline">
-                              <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
-                              {name}
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2" />
-                              {name}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
-                        <td className="px-4 py-3">
-                          {hasAvail ? (
-                            <span className="inline-flex items-center gap-1.5 text-green-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              {hours.toFixed(1)}h <span className="text-muted-foreground">({blocks} block{blocks === 1 ? '' : 's'})</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-amber-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              Not submitted
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && hasAvail && (
-                        <tr className="bg-muted/20">
-                          <td colSpan={4} className="px-4 py-3">
-                            <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
-                              {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
-                                const start = new Date(b.startTime)
-                                const end = new Date(b.endTime)
-                                const sameDay = start.toDateString() === end.toDateString()
-                                const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                                return (
-                                  <div key={idx} className="flex items-baseline gap-2">
-                                    <span className="font-medium text-foreground whitespace-nowrap">
-                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                      {' – '}
-                                      {sameDay
-                                        ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-                                        : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
-                                    </span>
-                                    <span className="text-muted-foreground/60">({dur.toFixed(1)}h)</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-                {interviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-            <ul className="sm:hidden divide-y divide-border">
-              {interviewers.map((i: any) => {
-                const m = i.user
-                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
-                const hours = i.availabilityHours ?? 0
-                const blocks = i.availabilityBlockCount ?? 0
-                const hasAvail = blocks > 0
-                const isExpanded = expandedInterviewers.has(i.id)
-                const toggle = () => setExpandedInterviewers(prev => {
-                  const next = new Set(prev)
-                  if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
-                  return next
-                })
-                return (
-                  <li key={i.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <button
-                        onClick={hasAvail ? toggle : undefined}
-                        className="min-w-0 text-left flex-1"
-                        disabled={!hasAvail}
-                      >
-                        <div className="font-medium text-foreground truncate flex items-center gap-1.5">
-                          {hasAvail && <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>}
-                          {name}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
-                        <div className="text-xs mt-1">
-                          {hasAvail ? (
-                            <span className="inline-flex items-center gap-1.5 text-green-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              {hours.toFixed(1)}h · {blocks} block{blocks === 1 ? '' : 's'}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-amber-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              No availability yet
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => removeInterviewer(i.id)}
-                        aria-label="Remove interviewer"
-                        className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {isExpanded && hasAvail && (
-                      <div className="mt-2 pl-4 space-y-1 text-xs">
-                        {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
-                          const start = new Date(b.startTime)
-                          const end = new Date(b.endTime)
-                          const sameDay = start.toDateString() === end.toDateString()
-                          return (
-                            <div key={idx} className="text-muted-foreground">
-                              <span className="font-medium text-foreground">
-                                {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                              </span>{' '}
-                              {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – {sameDay
-                                ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-                                : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
-              {interviewers.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviewers assigned yet.</li>
-              )}
-            </ul>
-          </div>
-        </div>
+      </NavSection>
       )}
 
-      {/* ── Interview Configuration (set-once knobs, kept at the bottom) ── */}
+
+      {/* ── Review: progress, delibs round, interview schedule, invites ── */}
+      {/* ── Review: the review team, then review progress ── */}
+      {tab === 'review' && isMemberCycle && (
+        <NavSection id="reviewers" title="Reviewer pool">
+        <ReviewerPoolCard
+          reviewers={memberSetup.reviewerPool}
+          members={memberSetup.members}
+          hasDomains={(cycle?.domains ?? []).length > 0}
+          canResetToDefault={cycle?.applicants === 'LabMembers'}
+        />
+        </NavSection>
+      )}
+      {tab === 'review' && !isMemberCycle && (
+        <NavSection id="reviewers" title="Reviewers">
+          <DomainRosterCard
+            title="Reviewers"
+            description="Who reads each domain's applications."
+            role="reviewer"
+            mentors
+            domains={rosterDomains}
+            members={memberOptions}
+            people={reviewers.map((r: any) => ({
+              id: r.id,
+              userId: r.userId ?? r.user?.id,
+              domainId: r.domainId ?? r.domain?.id,
+              name: personName(r.user, 'Reviewer'),
+            }))}
+            onAdd={addReviewer}
+            onRemove={(p) => removeReviewer(p.id)}
+          />
+        </NavSection>
+      )}
+      {tab === 'review' && hasInterviews && (
+        <NavSection id="interviewers" title="Interviewers">
+          <DomainRosterCard
+            title="Interviewers"
+            description={
+              interviewWindowSet
+                ? `${interviewers.filter((i: any) => (i.availabilityHours ?? 0) > 0).length} of ${interviewers.length} have free time on their calendar.`
+                : 'Free time shows once the interview window is set.'
+            }
+            role="interviewer"
+            mentors={!isMemberCycle}
+            domains={rosterDomains}
+            members={memberOptions}
+            people={(interviewers as any[]).map((i: any) => ({
+              id: i.id,
+              userId: i.userId,
+              domainId: i.domainId ?? i.domain?.id,
+              name: personName(i.user, 'Interviewer'),
+              detail: availabilityCell(i),
+            }))}
+            onAdd={addInterviewer}
+            onRemove={(p) => removeInterviewer(p.id)}
+          />
+        </NavSection>
+      )}
+      {tab === 'review' && (
+        <NavSection id="review-progress" title="Review progress">
+        <DomainStatusList
+          title="Review progress"
+          rows={(cycle?.domains ?? []).map((d: any) => {
+            const r = loaderData?.phaseStatusByDomain?.[d.domainId]?.reviews ?? { assigned: 0, submitted: 0 }
+            return {
+              domainId: d.domainId,
+              name: d.domain?.name ?? d.domainId,
+              done: r.assigned > 0 && r.submitted === r.assigned,
+              detail: r.assigned === 0 ? 'No reviews assigned' : `${r.submitted} of ${r.assigned} submitted`,
+            }
+          })}
+        />
+        </NavSection>
+      )}
       {tab === 'interviews' && (
-        <div className="space-y-6">
-          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
-            <Settings className="w-4 h-4" /> Interview Configuration
-          </h3>
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
+        <NavSection id="interview-config" title="Interview schedule">
+        <SetupCard title="Interview schedule" description="When applicants can book and how much notice they need.">
+          <div className={cn(os.formClass, 'grid grid-cols-1 gap-4 md:grid-cols-2')}>
+            <label className={os.fieldLabel}>
+              Slot length
               <Select
+                ariaLabel="Slot length"
                 value={String(config.slotDurationMinutes)}
                 onChange={(value) => setConfig(c => ({ ...c, slotDurationMinutes: Number(value) }))}
                 options={DURATION_OPTIONS.map((d): SelectOption => ({ value: String(d), label: `${d} minutes` }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
+            </label>
+            <label className={os.fieldLabel}>
+              Buffer between interviews
               <Select
+                ariaLabel="Buffer between interviews"
                 value={String(config.bufferMinutes)}
                 onChange={(value) => setConfig(c => ({ ...c, bufferMinutes: Number(value) }))}
                 options={BUFFER_OPTIONS.map((b): SelectOption => ({ value: String(b), label: `${b} minutes` }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
+            </label>
+            <label className={os.fieldLabel}>
+              Day start
               <Select
+                ariaLabel="Day start"
                 value={String(config.dayStartHour)}
                 onChange={(value) => setConfig(c => ({ ...c, dayStartHour: Number(value) }))}
                 options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
+            </label>
+            <label className={os.fieldLabel}>
+              Day end
               <Select
+                ariaLabel="Day end"
                 value={String(config.dayEndHour)}
                 onChange={(value) => setConfig(c => ({ ...c, dayEndHour: Number(value) }))}
                 options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
+            </label>
+            <div className={os.fieldLabel}>
+              Interview start date
               <DateField
                 mode="date"
                 value={config.interviewStartDate}
                 onChange={(value) => setConfig(c => ({ ...c, interviewStartDate: value }))}
                 className="w-full"
+                buttonClassName={rowTrigger(os.formTrigger)}
                 ariaLabel="Interview start date"
               />
             </div>
-            <div>
-              <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
+            <div className={os.fieldLabel}>
+              Interview end date
               <DateField
                 mode="date"
                 value={config.interviewEndDate}
                 onChange={(value) => setConfig(c => ({ ...c, interviewEndDate: value }))}
                 className="w-full"
+                buttonClassName={rowTrigger(os.formTrigger)}
                 ariaLabel="Interview end date"
               />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Booking Notice</label>
+            <label className={os.fieldLabel}>
+              Booking notice
               <Select
+                ariaLabel="Booking notice"
                 value={String(config.bookingNoticeHours)}
                 onChange={(value) => setConfig(c => ({ ...c, bookingNoticeHours: Number(value) }))}
                 options={[0, 1, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours ahead` }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
+            </label>
+            <label className={os.fieldLabel}>
+              Reschedule notice
               <Select
+                ariaLabel="Reschedule notice"
                 value={String(config.rescheduleNoticeHours)}
                 onChange={(value) => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(value) }))}
                 options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours before` }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
+            </label>
+            <label className={os.fieldLabel}>
+              Cancel notice
               <Select
+                ariaLabel="Cancel notice"
                 value={String(config.cancelNoticeHours)}
                 onChange={(value) => setConfig(c => ({ ...c, cancelNoticeHours: Number(value) }))}
                 options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'Up until start' : `${h} hours before` }))}
-                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
-            </div>
+            </label>
           </div>
-
-          <div className="flex items-center gap-3 pt-2">
+          <div>
             <button
+              type="button"
               onClick={saveConfig}
               disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
-              className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+              className={buttonClasses('primary', 'md')}
             >
-              {configSaving ? 'Saving...' : configSaved ? 'Saved!' : 'Save Configuration'}
+              {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
             </button>
-            {configSaved && <CheckCircle className="w-4 h-4 text-green-500" />}
           </div>
-        </div>
-        </div>
+        </SetupCard>
+        </NavSection>
       )}
 
-      {/* ── Decisions Tab ── */}
-      {tab === 'decisions' && loaderData?.confidentialityRequired ? (
-        <ConfidentialityGate
-          cycleId={cycleId ?? ''}
-          reason={loaderData.confidentialityRequired}
-          next={`/hiring/lead/cycle/${cycleId}?tab=decisions`}
+      {/* ── A delib round: its boards, then what it hands on ── */}
+      {activeRound && (
+        <NavSection id="round-boards" title={activeRound?.label ?? 'Boards'}>
+        <DomainStatusList
+          title={activeRound.label}
+          description={
+            isMemberCycle && activeRound.isFinal
+              ? undefined
+              : 'Domain leads run delibs from their domain page.'
+          }
+          rows={delibRows(activeRound.id)}
         />
-      ) : tab === 'decisions' && (() => {
-        const boundTypes = new Set(
-          (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
-        )
-        const domainNameOf = (d: any) =>
-          d.domainApplication.domain?.name ?? ''
-        const availableDomains = Array.from(
-          new Set(pendingDecisions.map(domainNameOf))
-        ).sort()
-        const availableTypes = Array.from(
-          new Set(pendingDecisions.map((d: any) => d.type as string))
-        ).sort()
-        const filtersActive = decisionDomainFilter !== 'all' || decisionTypeFilter !== 'all'
-        const filteredDecisions = pendingDecisions.filter((d: any) => {
-          if (decisionDomainFilter !== 'all' && domainNameOf(d) !== decisionDomainFilter) return false
-          if (decisionTypeFilter !== 'all' && d.type !== decisionTypeFilter) return false
-          return true
-        })
-        const releasable = filteredDecisions.filter((d: any) => boundTypes.has(d.type))
-        const skipped = filteredDecisions.length - releasable.length
-        return (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
-            <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
-            <span><span className="font-semibold">Release</span> emails the applicant the decision (using the bound template). It cannot be undone.</span>
+        </NavSection>
+      )}
+      {activeRound?.leadsToInterviews && (
+        <NavSection id="invites" title="Interview invites">{renderDecisions('invites')}</NavSection>
+      )}
+      {activeRound?.isFinal && isMemberCycle && (
+        <NavSection id="finalize" title="Draft decisions">{renderDecisions('finalize')}</NavSection>
+      )}
+
+      {/* ── Decisions ── */}
+      {tab === 'decisions' && (
+        <NavSection id="release" title="Decisions to release">{renderDecisions('outcomes')}</NavSection>
+      )}
+      {tab === 'decisions' && cycleStatus === 'UnderReview' && (
+        <NavSection id="complete" title="Complete the cycle">
+        <section className={`${os.panel} ${os.panelPad} flex flex-wrap items-center justify-between gap-3`}>
+          <div className="flex flex-col gap-1">
+            <h3 className={os.sectionTitle}>Complete the cycle</h3>
+            <p className={os.bodyText}>Once every decision is out, mark the cycle complete.</p>
           </div>
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <h3 className="font-bold text-foreground inline-flex items-center gap-1">Final Decisions Ready for Release<InfoTip content="Draft decisions are visible only to leads, Final marks the decision ready to release, Released sends the decision email to the applicant." /></h3>
-              {pendingDecisions.length > 0 && (
-                <button
-                  onClick={async () => {
-                    if (releasingAll) return
-                    const ids = releasable.map((d: any) => d.id)
-                    if (ids.length === 0) return
-                    if (
-                      !(await dialog.confirm({
-                        title: `Release ${ids.length} decision${ids.length === 1 ? '' : 's'}?`,
-                        description:
-                          `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now, using the bound templates. It can't be undone.`,
-                        confirmLabel: `Release ${ids.length}`,
-                        tone: "destructive",
-                      }))
-                    )
-                      return
-                    setReleasingAll(true)
-                    for (const id of ids) {
-                      await fetch(`/api/hiring/decisions/${id}/release`, { method: 'POST', credentials: 'include' })
-                    }
-                    const releasedIds = new Set(ids)
-                    setPendingDecisions(prev => prev.filter(p => !releasedIds.has(p.id)))
-                    setReleasingAll(false)
-                  }}
-                  disabled={releasable.length === 0 || releasingAll}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                >
-                  <Mail className="w-3.5 h-3.5" aria-hidden />
-                  {releasingAll
-                    ? 'Releasing…'
-                    : `${filtersActive ? 'Release Filtered' : 'Release All'} (${releasable.length})`}
-                  {!releasingAll && skipped > 0 && ` — ${skipped} skipped, no template bound`}
-                </button>
-              )}
-            </div>
-            {pendingDecisions.length > 0 && (
-              <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium">Domain</span>
-                  <Select
-                    value={decisionDomainFilter}
-                    onChange={(value) => setDecisionDomainFilter(value)}
-                    options={[
-                      { value: "all", label: "All domains" },
-                      ...availableDomains.map((name): SelectOption => ({ value: name, label: name })),
-                    ]}
-                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                </span>
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium">Decision</span>
-                  <Select
-                    value={decisionTypeFilter}
-                    onChange={(value) => setDecisionTypeFilter(value)}
-                    options={[
-                      { value: "all", label: "All decisions" },
-                      ...availableTypes.map((t): SelectOption => ({ value: t, label: t })),
-                    ]}
-                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                </span>
-                {filtersActive && (
-                  <button
-                    type="button"
-                    onClick={() => { setDecisionDomainFilter('all'); setDecisionTypeFilter('all') }}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition"
-                  >
-                    <X className="w-3 h-3" aria-hidden />
-                    Clear filters
-                  </button>
-                )}
-                <span className="ml-auto text-xs text-muted-foreground">
-                  Showing {filteredDecisions.length} of {pendingDecisions.length}
-                </span>
-              </div>
-            )}
-            <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Decision</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Made By</th>
-                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredDecisions.map((d: any) => {
-                  const hasBinding = boundTypes.has(d.type)
-                  return (
-                  <tr key={d.id} className="hover:bg-muted/50 transition">
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{domainNameOf(d)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                        d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
-                        d.type === 'Rejected' ? 'bg-red-100 text-red-700' :
-                        d.type === 'Waitlisted' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
-                        {d.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                        <Tooltip content="Preview">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDecisionId(d.id)}
-                            className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
-                            aria-label="Preview"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                        </Tooltip>
-                        <Tooltip content={!hasBinding ? `An email template must be bound to this decision type before it can be released to the applicant.` : null} variant="rich">
-                          <span>
-                            <button
-                              onClick={() => confirmReleaseOne(d)}
-                              disabled={releasing === d.id || releasingAll || !hasBinding}
-                              className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                            >
-                              <Mail className="w-3.5 h-3.5" aria-hidden />
-                              {releasing === d.id ? 'Releasing...' : 'Release'}
-                            </button>
-                          </span>
-                        </Tooltip>
-                      </div>
-                    </td>
-                  </tr>
-                  )
-                })}
-                {filteredDecisions.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>{pendingDecisions.length === 0 ? 'No Final decisions awaiting release.' : 'No decisions match the current filter.'}</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-            <ul className="sm:hidden divide-y divide-border">
-              {filteredDecisions.map((d: any) => {
-                const hasBinding = boundTypes.has(d.type)
-                return (
-                  <li key={d.id} className="px-4 py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-foreground truncate">
-                          {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {domainNameOf(d)}
-                        </div>
-                      </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
-                        d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
-                        d.type === 'Rejected' ? 'bg-red-100 text-red-700' :
-                        d.type === 'Waitlisted' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
-                        {d.type}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Made by {d.madeBy.firstName} {d.madeBy.lastName}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Tooltip content="Preview">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDecisionId(d.id)}
-                          className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
-                          aria-label="Preview"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content={!hasBinding ? `An email template must be bound to this decision type before it can be released to the applicant.` : null} variant="rich">
-                        <span>
-                          <button
-                            onClick={() => confirmReleaseOne(d)}
-                            disabled={releasing === d.id || releasingAll || !hasBinding}
-                            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                          >
-                            <Mail className="w-3.5 h-3.5" aria-hidden />
-                            {releasing === d.id ? 'Releasing...' : 'Release'}
-                          </button>
-                        </span>
-                      </Tooltip>
-                    </div>
-                  </li>
-                )
-              })}
-              {filteredDecisions.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">{pendingDecisions.length === 0 ? 'No Final decisions awaiting release.' : 'No decisions match the current filter.'}</li>
-              )}
-            </ul>
-          </div>
-          {previewDecisionId && (() => {
-            const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
-            if (!d) return null
-            const binding = (loaderData?.currentDecisionEmails ?? []).find((b: any) => b.decisionType === d.type)
-            return (
-              <DecisionEmailPreviewModal
-                decision={d}
-                binding={binding ?? null}
-                onClose={() => setPreviewDecisionId(null)}
-              />
-            )
-          })()}
-        </div>
-        )
-      })()}
+          <button type="button" onClick={() => setShowCompleteConfirm(true)} className={buttonClasses('primary', 'md')}>
+            Complete cycle
+          </button>
+        </section>
+        </NavSection>
+      )}
+      </SectionNavLayout>
     </div>
   )
 
@@ -3209,16 +2733,17 @@ function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled
   );
 }
 
-function DecisionEmailPreviewModal({ decision, binding, onClose }: {
+function DecisionEmailPreviewModal({ decision, email, onClose }: {
   decision: any;
-  binding: any | null;
+  /** The decision's shared email, or null when none is written. */
+  email: { subject: string; body: string } | null;
   onClose: () => void;
 }) {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
   const domain =
     decision.domainApplication.domain?.name ??
     ''
-  const tmpl = binding?.emailTemplateVersion ?? null
+  const tmpl = email
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
   const slot: TemplateSlot | undefined = decision.type ? decisionSlot(decision.type as DecisionSlotType) : undefined
   const lint = tmpl
@@ -3287,15 +2812,11 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
                   dangerouslySetInnerHTML={{ __html: rendered?.html ?? '' }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Template: <span className="font-medium">{binding?.emailTemplateVersion?.template?.name}</span>
-                {' '}— v{binding?.emailTemplateVersion?.versionNumber}
-              </p>
             </>
           ) : (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
-              <p className="font-medium">No template assigned for {decision.type} in this cycle.</p>
-              <p className="mt-1">Releasing this decision will not send an email. Bind a template on the Setup tab under "Decision Emails".</p>
+              <p className="font-medium">No email is written for {decision.type}.</p>
+              <p className="mt-1">Releasing it sends nothing. Write one on Setup under Decision emails.</p>
             </div>
           )}
         </div>
@@ -3421,115 +2942,22 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
   );
 }
 
-export function OpenApplicationsConfirmModal({
-  cycleId,
-  closeDate,
-  onClose,
-  onOpened,
-  onError,
-}: {
-  cycleId: string;
-  closeDate: Date | null;
-  onClose: () => void;
-  onOpened: () => void;
-  onError: (msg: string) => void;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  const headingId = `open-confirm-heading-${cycleId}`;
-
-  async function confirmOpen() {
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/hiring/cycles/${cycleId}/status`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newStatus: 'Open' }),
-      });
-      if (res.ok) {
-        onOpened();
-        return;
-      }
-      const body = await res.json().catch(() => ({}));
-      onError(body.error ?? `Couldn't open applications (HTTP ${res.status}).`);
-    } catch (e: any) {
-      onError(e?.message ?? 'Network error opening applications.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal
-      open
-      onClose={submitting ? () => {} : onClose}
-      disableEscape={submitting}
-      labelledBy={headingId}
-      containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
-    >
-      <div className="space-y-4">
-        <h2 id={headingId} className="text-lg font-bold text-foreground">
-          Open applications for this cycle?
-        </h2>
-        <div className="text-sm text-muted-foreground space-y-2">
-          <p>
-            <span className="font-semibold text-foreground">This is irreversible for the cycle.</span>{' '}
-            Once applications open, you can't return the cycle to Draft.
-          </p>
-          <p>
-            The general challenge and per-domain challenges will no longer be editable while the cycle is open.
-          </p>
-          {closeDate && (
-            <div className="bg-muted/40 rounded-lg p-3 text-xs">
-              <span className="font-medium text-foreground/80">Applications close: </span>
-              <span>
-                {closeDate.toLocaleString("en-US", {
-                  timeZone: APPLICATION_TZ,
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}{" "}
-                {APPLICATION_TZ_LABEL}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={confirmOpen}
-            disabled={submitting}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md disabled:opacity-50"
-          >
-            {submitting ? 'Opening...' : 'Open applications'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 function CloseDateNotice() {
+  const location = useLocation();
   const [notice, setNotice] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+  // Re-read on every navigation: an action's redirect lands on this same page
+  // without remounting it.
   useEffect(() => {
     const url = new URL(window.location.href);
     const n = url.searchParams.get("notice");
     if (!n) return;
     setNotice(n);
+    setAdded(url.searchParams.get("added"));
     url.searchParams.delete("notice");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
+    url.searchParams.delete("added");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [location.search]);
   if (!notice) return null;
   const messages: Record<string, { text: string; tone: "ok" | "warn" }> = {
     "deadline-set": { text: "Close date saved.", tone: "ok" },
@@ -3538,6 +2966,16 @@ function CloseDateNotice() {
       tone: "warn",
     },
     "deadline-cleared": { text: "Close date cleared.", tone: "ok" },
+    "open-date-set": { text: "Open date saved.", tone: "ok" },
+    "applicants-changed": { text: "Applicants changed.", tone: "ok" },
+    "timeline-saved": { text: "Timeline saved.", tone: "ok" },
+    "mentors-added": { text: `Added ${added} mentor${added === "1" ? "" : "s"}.`, tone: "ok" },
+    "mentors-already": { text: "Everyone's already on the roster.", tone: "ok" },
+    "mentors-none": { text: "This domain has no mentors yet.", tone: "warn" },
+    "timeline-reset": { text: "Timeline reset.", tone: "ok" },
+    "term-dates-saved": { text: "Term and dates saved.", tone: "ok" },
+    "open-date-cleared": { text: "Open date cleared.", tone: "ok" },
+    "deadline-past": { text: "That date has passed. Pick a future date, or use Close applications at the top.", tone: "warn" },
     "extended": { text: "Extension saved. Applicants will see an “Extended deadline” notice on the portal during the window.", tone: "ok" },
     "extended-reopened": {
       text: "Extension saved and applications reopened — applicants can submit again until the new effective close.",
@@ -3592,146 +3030,42 @@ function describeExtension(deltaMs: number): { amount: number; unit: "hours" | "
   return { amount: hours, unit: "hours" };
 }
 
-// Rebind picker for the standard-cycle application form (mirroring the
-// ApplicationFormSection in lead.internal-cycle.$id.tsx).
-function ApplicationFormSection({
-  cycleStatus,
-  applicationForm,
-  allForms,
-}: {
-  cycleStatus: string;
-  applicationForm: { id: string; name: string; versions?: any[] } | null;
-  allForms: { id: string; name: string }[];
-}) {
-  const fetcher = useFetcher();
-  const editable = cycleStatus === "Draft";
-  return (
-    <div className="mb-4 space-y-2">
-      <div>
-        <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {applicationForm
-            ? "Applicants fill this Drive form — edit it in Drive, preview it inline."
-            : "Bind a Drive form as the general application form."}
-        </p>
-      </div>
-      {applicationForm ? (
-        <HiringFormEmbed
-          formId={applicationForm.id}
-          name={applicationForm.name}
-          questions={(applicationForm.versions?.[0]?.questions as any) ?? []}
-        />
-      ) : (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <button
-            disabled={fetcher.state !== "idle"}
-            onClick={() =>
-              fetcher.submit(
-                { intent: "create-application-form" },
-                { method: "post" },
-              )
-            }
-            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {fetcher.state !== "idle" ? "Creating…" : "+ Create form"}
-          </button>
-        </div>
-      )}
-      {editable && allForms.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            defaultValue={applicationForm?.id ?? ""}
-            placeholder="— bind a different form —"
-            onChange={(id) => {
-              if (!id || id === applicationForm?.id) return;
-              fetcher.submit(
-                { intent: "set-application-form", formId: id },
-                { method: "post" },
-              );
-            }}
-            options={allForms.map((f) => ({ value: f.id, label: f.name }))}
-            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        </div>
-      )}
-    </div>
-  );
-}
 
+// Extending the close date, and when applications actually stop. The close
+// date itself is set on the Term and dates card; this card only renders once
+// one exists.
 function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string }) {
-  const closeDate = cycle?.closeDate ? new Date(cycle.closeDate) : null;
-  const originalCloseDate = cycle?.originalCloseDate ? new Date(cycle.originalCloseDate) : null;
+  const closeDate = new Date(cycle.closeDate);
+  const originalCloseDate = cycle.originalCloseDate ? new Date(cycle.originalCloseDate) : null;
   const anchor = originalCloseDate ?? closeDate;
-  const extensionMs = originalCloseDate && closeDate
-    ? closeDate.getTime() - originalCloseDate.getTime()
-    : 0;
+  const extensionMs = originalCloseDate ? closeDate.getTime() - originalCloseDate.getTime() : 0;
   const extensionActive = extensionMs > 0;
-  const pickerDateValue = anchor
-    ? (() => {
-        const { year, month, day } = getZonedYMD(anchor, APPLICATION_TZ);
-        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      })()
-    : "";
 
   return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-6">
-      {/* 1. Original close date */}
-      <div>
-        <h3 className="text-sm font-bold text-foreground/80 mb-1">Application Close Date</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          The intended close — applications stop at 11:59 PM {APPLICATION_TZ_LABEL} on this date. If an
-          extension is set below, saving a new date moves the extension along with it.
-        </p>
-        <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
-          <input type="hidden" name="intent" value="set-close-date" />
-          <div className="flex-1">
-            <DateField
-              mode="date"
-              name="closeDate"
-              defaultValue={pickerDateValue}
-              className="w-full"
-              ariaLabel="Application close date"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-        </Form>
+    <SetupCard
+      title="Deadline extension"
+      description="Adds time after the close date. Applicants see a deadline-extended notice."
+      action={extensionActive ? <Pill tone="accent">Active</Pill> : null}
+    >
+      <ExtensionSection
+        cycleId={cycle.id}
+        anchor={anchor}
+        extensionMs={extensionMs}
+        extensionActive={extensionActive}
+        cycleStatus={cycleStatus}
+        extensionNoticeSentAt={cycle.extensionNoticeSentAt ? new Date(cycle.extensionNoticeSentAt) : null}
+      />
+
+      {/* Effective close (read-only) */}
+      <div className="flex flex-col gap-1 rounded-os-item bg-os-well px-4 py-3">
+        <span className="text-sm text-os-grey">Effective close</span>
+        <span className="text-base font-semibold text-foreground">{formatCloseInstant(closeDate)}</span>
+        <span className="text-xs text-os-grey">
+          Applications stop and the cycle moves to Under Review.
+          {extensionActive && originalCloseDate && <> Extended from {formatCloseInstant(originalCloseDate)}.</>}
+        </span>
       </div>
-
-      {/* 2. Extension */}
-      {closeDate && (
-        <div className="border-t border-border pt-4">
-          <ExtensionSection
-            cycleId={cycle.id}
-            anchor={anchor!}
-            extensionMs={extensionMs}
-            extensionActive={extensionActive}
-            cycleStatus={cycleStatus}
-            extensionNoticeSentAt={cycle?.extensionNoticeSentAt ? new Date(cycle.extensionNoticeSentAt) : null}
-          />
-        </div>
-      )}
-
-      {/* 3. Effective close (read-only) */}
-      {closeDate && (
-        <div className="border-t border-border pt-4">
-          <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">Effective Close</h4>
-          <p className="text-base font-semibold text-foreground">
-            {formatCloseInstant(closeDate)}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            When applications actually stop. Auto-closes the cycle (Open → Under Review) at this moment.
-            {extensionActive && originalCloseDate && (
-              <> Applicants see a &ldquo;Deadline extended&rdquo; notice between {formatCloseInstant(originalCloseDate)} and this time.</>
-            )}
-          </p>
-        </div>
-      )}
-    </div>
+    </SetupCard>
   );
 }
 
@@ -3762,16 +3096,10 @@ function ExtensionSection({
   const nextClose = new Date(anchor.getTime() + ms);
   const willReopen = cycleStatus === "UnderReview" && nextClose.getTime() > Date.now();
   const stillInPast = nextClose.getTime() <= Date.now();
+  const os = useOsChrome();
 
   return (
     <>
-      <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">
-        Extension {extensionActive ? "(active)" : "(optional)"}
-      </h4>
-      <p className="text-xs text-muted-foreground mb-3">
-        Adds time after the close date. Applicants see a &ldquo;Deadline extended&rdquo; notice during the
-        extension window.
-      </p>
       <Form
         method="post"
         preventScrollReset
@@ -3780,14 +3108,12 @@ function ExtensionSection({
           e.preventDefault();
           setShowConfirm(true);
         }}
-        className="space-y-2"
+        className={cn(os.formClass, "flex flex-wrap items-end gap-3")}
         aria-label={`Set deadline extension for cycle ${cycleId}`}
       >
         <input type="hidden" name="intent" value="extend-close-date" />
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-          <div className="flex items-end gap-2 flex-1">
-            <div className="w-24">
-              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-amount-${cycleId}`}>Amount</label>
+            <label className={cn(os.fieldLabel, "w-24")} htmlFor={`extend-amount-${cycleId}`}>
+              Amount
               <input
                 id={`extend-amount-${cycleId}`}
                 type="number"
@@ -3796,11 +3122,11 @@ function ExtensionSection({
                 step={1}
                 value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="h-9 w-full"
               />
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Unit</label>
+            </label>
+            <div className={cn(os.fieldLabel, "w-28")}>
+              Unit
               <Select
                 name="unit"
                 value={unit}
@@ -3809,36 +3135,31 @@ function ExtensionSection({
                   { value: "hours", label: "hours" },
                   { value: "days", label: "days" },
                 ]}
-                buttonClassName="rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName={rowTrigger(os.formTrigger)}
               />
             </div>
-          </div>
           <button
             type="submit"
             disabled={!Number.isFinite(amount) || amount <= 0}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 disabled:opacity-50 text-white transition"
+            className={buttonClasses("primary", "md", "h-9")}
           >
             {extensionActive ? "Update extension" : "Set extension"}
           </button>
-        </div>
       </Form>
       {extensionActive && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Form
             method="post"
             preventScrollReset
             aria-label="Resend deadline-extension email to draft applicants"
           >
             <input type="hidden" name="intent" value="resend-extension-notice" />
-            <button
-              type="submit"
-              className="text-xs font-medium text-blue-700 hover:text-blue-900 underline"
-            >
+            <button type="submit" className={buttonClasses("secondary", "sm")}>
               {extensionNoticeSentAt ? "Resend extension notice" : "Send extension notice now"}
             </button>
           </Form>
           {extensionNoticeSentAt && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-os-grey">
               Last sent {formatCloseInstant(extensionNoticeSentAt)}
             </span>
           )}
@@ -3849,10 +3170,7 @@ function ExtensionSection({
             aria-label="Remove deadline extension"
           >
             <input type="hidden" name="intent" value="remove-extension" />
-            <button
-              type="submit"
-              className="text-xs text-red-700 hover:text-red-900 underline"
-            >
+            <button type="submit" className={buttonClasses("ghost", "sm", "text-red-700")}>
               Remove extension
             </button>
           </Form>
@@ -3889,7 +3207,7 @@ function ExtensionSection({
               )}
               {stillInPast && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
-                  The new effective close is still in the past — applications will stay closed.
+                  The new effective close is still in the past, so applications stay closed.
                 </div>
               )}
               <p>
@@ -3898,11 +3216,7 @@ function ExtensionSection({
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirm(false)}
-                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-              >
+              <button type="button" onClick={() => setShowConfirm(false)} className={buttonClasses("secondary")}>
                 Cancel
               </button>
               <button
@@ -3911,7 +3225,7 @@ function ExtensionSection({
                   setShowConfirm(false);
                   formRef.current?.submit();
                 }}
-                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md"
+                className={buttonClasses("primary")}
               >
                 Confirm
               </button>
@@ -3925,124 +3239,199 @@ function ExtensionSection({
 
 function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
   return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-foreground/80">Blind Review</h3>
-      <p className="text-xs text-muted-foreground">
-        Hide applicant names and other identifying details from reviewers during
-        the reading stage and initial deliberations, to reduce bias. Reviewers see
-        a stable pseudonym (&ldquo;Applicant 7&rdquo;); identities reappear once an
-        applicant is invited to interview. Cycle-management views always show real
-        names.
-      </p>
+    <SetupCard
+      title="Blind review"
+    >
       <Form method="post" preventScrollReset>
         <input type="hidden" name="intent" value="set-anonymize-review" />
         <Toggle
           name="anonymizeReview"
+          tone="os"
           defaultChecked={anonymizeReview}
           onChange={(e) => e.currentTarget.form?.requestSubmit()}
-          label={
-            anonymizeReview
-              ? "On — reviewers see “Applicant N”"
-              : "Off — reviewers see real names"
-          }
+          className="w-full rounded-os-item bg-os-well px-4 py-3"
+          label={anonymizeReview ? "On" : "Off"}
+          description={anonymizeReview ? "Reviewers see “Applicant N”." : "Reviewers see real names."}
         />
       </Form>
-    </div>
+    </SetupCard>
   );
 }
 
-function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, locked }: {
+// The general application: the form every applicant fills and the rubric
+// every application is scored on, as two rows shaped like a domain row (label,
+// what's bound, then small actions).
+function GeneralApplicationSection({
+  cycleStatus,
+  applicationForm,
+  allForms,
+  currentRubricVersionId,
+  rubricVersionOptions,
+  rubricLocked,
+}: {
+  cycleStatus: string;
+  applicationForm: { id: string; name: string } | null;
+  allForms: { id: string; name: string }[];
   currentRubricVersionId: string | null;
   rubricVersionOptions: any[];
-  locked: boolean;
+  rubricLocked: boolean;
 }) {
-  const [editing, setEditing] = useState(!currentRubricVersionId);
+  const os = useOsChrome();
+  const formFetcher = useFetcher();
+  const formBusy = formFetcher.state !== "idle";
+  // The form can only be swapped while the cycle is in Draft.
+  const formEditable = cycleStatus === "Draft";
+  const [pickingForm, setPickingForm] = useState(false);
+  // Opens on demand only: an auto-open editor under an empty value repeated
+  // "Rubric" / "No rubric" twice.
+  const [editingRubric, setEditingRubric] = useState(false);
+
+  const versionLabel = (rv: any, fallback: string) =>
+    formatVersionLabel({
+      name: rv.rubric?.name ?? fallback,
+      versionNumber: rv.versionNumber,
+      createdAt: rv.createdAt,
+      createdBy: rv.createdBy,
+    });
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
-  const currentRubricLabel = currentRubric
-    ? formatVersionLabel({
-        name: currentRubric.rubric?.name ?? 'Set',
-        versionNumber: currentRubric.versionNumber,
-        createdAt: currentRubric.createdAt,
-        createdBy: currentRubric.createdBy,
-      })
-    : 'Set';
+  const currentRubricLabel = currentRubric ? versionLabel(currentRubric, "Rubric") : null;
+  const small = buttonClasses("secondary", "sm");
 
   return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-foreground/80">General Application Rubric</h3>
-      <p className="text-xs text-muted-foreground">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
-
-      {locked ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle className="w-4 h-4 text-green-600" />
-          <span>{currentRubricLabel}</span>
-          <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviews have started)</span>
-        </div>
-      ) : currentRubricVersionId && !editing ? (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentRubricLabel}</span>
-          </div>
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-          >
-            Change
-          </button>
-        </div>
-      ) : (
-        <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="set-general-rubric" />
-          <div className="flex-1">
-            <Select
-              name="rubricVersionId"
-              defaultValue={currentRubricVersionId ?? ""}
-              placeholder="No rubric assigned"
-              options={[
-                { value: "", label: "No rubric assigned" },
-                ...rubricVersionOptions.map((rv: any): SelectOption => ({
-                  value: rv.id,
-                  label: formatVersionLabel({
-                    name: rv.rubric?.name ?? 'Rubric',
-                    versionNumber: rv.versionNumber,
-                    createdAt: rv.createdAt,
-                    createdBy: rv.createdBy,
-                  }),
-                })),
-              ]}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-          {currentRubricVersionId && (
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          )}
-        </Form>
-      )}
-    </div>
+    <SetupCard title="General application">
+      {/* Same line anatomy as a domain's Challenge and Rubric lines. */}
+      <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
+        <DomainSubRow
+          label="Form"
+          value={
+            applicationForm ? (
+              <Link to={`/forms/edit/${applicationForm.id}`} className="min-w-0 max-w-full truncate text-os-accent hover:underline" title={applicationForm.name}>
+                {applicationForm.name}
+              </Link>
+            ) : (
+              <SubRowEmpty>None yet</SubRowEmpty>
+            )
+          }
+          action={
+            !pickingForm && (
+              <>
+                {!applicationForm && (
+                  <button
+                    type="button"
+                    disabled={formBusy}
+                    onClick={() => formFetcher.submit({ intent: "create-application-form" }, { method: "post" })}
+                    className={small}
+                  >
+                    <Plus className="w-3.5 h-3.5" aria-hidden /> {formBusy ? "Creating…" : "Create form"}
+                  </button>
+                )}
+                {formEditable && allForms.length > 0 && (
+                  <button type="button" onClick={() => setPickingForm(true)} className={small}>
+                    Use a different form
+                  </button>
+                )}
+              </>
+            )
+          }
+          editor={
+            formEditable &&
+            pickingForm && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-[14rem] flex-1">
+                  <Select
+                    ariaLabel="Application form"
+                    defaultValue={applicationForm?.id ?? ""}
+                    placeholder="Pick a form"
+                    onChange={(id) => {
+                      setPickingForm(false);
+                      if (!id || id === applicationForm?.id) return;
+                      formFetcher.submit({ intent: "set-application-form", formId: id }, { method: "post" });
+                    }}
+                    options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+                    buttonClassName={rowTrigger(os.formTrigger)}
+                  />
+                </div>
+                <button type="button" onClick={() => setPickingForm(false)} className={small}>
+                  Cancel
+                </button>
+              </div>
+            )
+          }
+        />
+        <DomainSubRow
+          label="Rubric"
+          value={
+            currentRubricLabel ? (
+              <span className="min-w-0 max-w-full truncate" title={currentRubricLabel}>
+                {currentRubricLabel}
+              </span>
+            ) : (
+              <SubRowEmpty>None yet</SubRowEmpty>
+            )
+          }
+          action={
+            rubricLocked ? (
+              <Pill>Locked, reviews started</Pill>
+            ) : (
+              !editingRubric && (
+                <button type="button" onClick={() => setEditingRubric(true)} className={small}>
+                  {currentRubric ? "Change" : "Set rubric"}
+                </button>
+              )
+            )
+          }
+          editor={
+            !rubricLocked &&
+            editingRubric && (
+              <Form
+                method="post"
+                preventScrollReset
+                className="flex flex-wrap items-center gap-2"
+                onSubmit={() => setEditingRubric(false)}
+              >
+                <input type="hidden" name="intent" value="set-general-rubric" />
+                <div className="min-w-[14rem] flex-1">
+                  <Select
+                    name="rubricVersionId"
+                    ariaLabel="General application rubric"
+                    defaultValue={currentRubricVersionId ?? ""}
+                    placeholder="Pick a rubric"
+                    options={[
+                      { value: "", label: "No rubric" },
+                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: versionLabel(rv, "Rubric") })),
+                    ]}
+                    buttonClassName={rowTrigger(os.formTrigger)}
+                  />
+                </div>
+                <button type="submit" className={buttonClasses("primary", "sm")}>
+                  Save
+                </button>
+                <button type="button" onClick={() => setEditingRubric(false)} className={small}>
+                  Cancel
+                </button>
+              </Form>
+            )
+          }
+        />
+      </div>
+    </SetupCard>
   );
 }
 
 function DomainOverridePanel({
   domain,
   cycleStatus,
+  showRubric,
+  challenge,
   rubricOptions,
   rubricLocked,
 }: {
   domain: any;
   cycleStatus: string;
+  /** The per-domain rubric scores the challenge; hidden when there is none. */
+  showRubric: boolean;
+  /** This domain's challenges; null when the cycle has none. */
+  challenge: DomainChallenge | null;
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
@@ -4058,6 +3447,8 @@ function DomainOverridePanel({
   useEffect(() => { setShowReadyModal(false); }, [isReady]);
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
+  // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
+  const [editingRubric, setEditingRubric] = useState(false);
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
@@ -4070,129 +3461,126 @@ function DomainOverridePanel({
       })
     : null;
 
+  const os = useOsChrome();
+  const domainName = domain.domain?.name ?? domain.domainId;
+  const previewButton = (
+    <Tooltip content="Preview">
+      <button
+        type="button"
+        onClick={() => setShowRubricPreview(true)}
+        aria-label="Preview"
+        className={buttonClasses('secondary', 'sm', 'px-2')}
+      >
+        <Eye className="w-3.5 h-3.5" />
+      </button>
+    </Tooltip>
+  );
+
   return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          {isReady ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
-              <CheckCircle className="w-3 h-3" /> Domain marked ready
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
-              <Circle className="w-3 h-3" /> Not ready
-            </span>
-          )}
+    <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isReady && <NotReadyIcon />}
+          <span className="text-sm font-semibold text-foreground">{domainName}</span>
         </div>
-        {cycleStatus === 'Draft' && (
-          <button
-            type="button"
-            onClick={() => setShowDeleteModal(true)}
-            className="text-red-500 hover:text-red-700 transition"
-            aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Rubric version {rubricLocked && <span className="text-muted-foreground/70">(locked — reviews assigned)</span>}
-          </label>
-          {rubricLocked ? (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-                {currentRubricLabel ?? 'No rubric set'}
-              </div>
-              {currentRubric && (
-                <Tooltip content="Preview">
-                  <button
-                    type="button"
-                    onClick={() => setShowRubricPreview(true)}
-                    aria-label="Preview"
-                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                  >
-                    <Eye className="w-3 h-3" />
-                  </button>
-                </Tooltip>
-              )}
-            </div>
-          ) : rubricOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-              No rubric versions exist. Create one on the Rubrics page.
-            </p>
-          ) : (
-            <Form method="post" preventScrollReset className="flex items-end gap-2">
-              <input type="hidden" name="intent" value="hl-set-domain-rubric" />
-              <input type="hidden" name="domainId" value={domain.domainId} />
-              <div className="flex-1 min-w-0">
-                <Select
-                  name="rubricVersionId"
-                  value={selectedRubricId}
-                  onChange={(value) => setSelectedRubricId(value)}
-                  placeholder="No rubric assigned"
-                  ariaLabel={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
-                  options={[
-                    { value: "", label: "No rubric assigned" },
-                    ...rubricOptions.map((rv: any): SelectOption => ({
-                      value: rv.id,
-                      label: formatVersionLabel({
-                        name: rv.rubric?.name ?? 'Rubric',
-                        versionNumber: rv.versionNumber,
-                        createdAt: rv.createdAt,
-                        createdBy: rv.createdBy,
-                      }),
-                    })),
-                  ]}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              {selectedRubricId && (
-                <Tooltip content="Preview">
-                  <button
-                    type="button"
-                    onClick={() => setShowRubricPreview(true)}
-                    aria-label="Preview"
-                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                  >
-                    <Eye className="w-3 h-3" />
-                  </button>
-                </Tooltip>
-              )}
-              <button
-                type="submit"
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-              >
-                Save
-              </button>
-            </Form>
-          )}
-        </div>
-
-      {!readyLocked && (
-        <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Force-mark this domain ready to unblock cycle advancement when the domain lead is unavailable.
-          </p>
-          <div className="inline-flex items-center gap-1">
+        <div className="flex items-center gap-1">
+          {!readyLocked && (
             <button
               type="button"
               onClick={() => setShowReadyModal(true)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
-                isReady
-                  ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
-                  : 'bg-amber-600 hover:bg-amber-700 text-white'
-              }`}
+              className={buttonClasses(isReady ? 'ghost' : 'secondary', 'sm')}
             >
-              {isReady ? 'Unmark Ready' : 'Force Mark Ready'}
+              {isReady ? 'Unmark ready' : 'Force ready'}
             </button>
-            {!isReady && (
-              <InfoTip content="Bypasses checklist requirements to manually advance this domain — use when the domain lead is unavailable and setup can't be completed through normal flow." />
-            )}
-          </div>
+          )}
+          {cycleStatus === 'Draft' && (
+            <Tooltip content="Remove domain">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className={os.iconBtn}
+                aria-label={`Remove ${domainName}`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
         </div>
+      </div>
+
+      {challenge && (
+        <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={cycleStatus === 'Draft'} />
+      )}
+
+      {showRubric && (
+        <DomainSubRow
+          label="Rubric"
+          value={
+            currentRubricLabel ? currentRubricLabel : <SubRowEmpty>None yet</SubRowEmpty>
+          }
+          action={
+            <>
+              {rubricLocked && <Pill>Locked, reviews assigned</Pill>}
+              {currentRubric && !editingRubric && previewButton}
+              {!rubricLocked && !editingRubric && rubricOptions.length > 0 && (
+                <button type="button" onClick={() => setEditingRubric(true)} className={buttonClasses('secondary', 'sm')}>
+                  {currentRubricLabel ? 'Change' : 'Set rubric'}
+                </button>
+              )}
+            </>
+          }
+          editor={
+            rubricOptions.length === 0 ? (
+              <p className={os.bodyText}>No rubric versions yet. Create one in the Library.</p>
+            ) : !rubricLocked && editingRubric ? (
+              <Form
+                method="post"
+                preventScrollReset
+                className="flex flex-wrap items-end gap-2"
+                onSubmit={() => setEditingRubric(false)}
+              >
+                <input type="hidden" name="intent" value="hl-set-domain-rubric" />
+                <input type="hidden" name="domainId" value={domain.domainId} />
+                <div className="min-w-[14rem] flex-1">
+                  <Select
+                    name="rubricVersionId"
+                    value={selectedRubricId}
+                    onChange={(value) => setSelectedRubricId(value)}
+                    placeholder="No rubric"
+                    ariaLabel={`Select rubric version for ${domainName}`}
+                    options={[
+                      { value: "", label: "No rubric" },
+                      ...rubricOptions.map((rv: any): SelectOption => ({
+                        value: rv.id,
+                        label: formatVersionLabel({
+                          name: rv.rubric?.name ?? 'Rubric',
+                          versionNumber: rv.versionNumber,
+                          createdAt: rv.createdAt,
+                          createdBy: rv.createdBy,
+                        }),
+                      })),
+                    ]}
+                    buttonClassName={rowTrigger(os.formTrigger)}
+                  />
+                </div>
+                {selectedRubricId && previewButton}
+                <button type="submit" className={buttonClasses('primary', 'md', 'h-9')}>
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRubricId(domain.rubricVersionId ?? '');
+                    setEditingRubric(false);
+                  }}
+                  className={buttonClasses('secondary', 'md', 'h-9')}
+                >
+                  Cancel
+                </button>
+              </Form>
+            ) : null
+          }
+        />
       )}
 
       {showDeleteModal && (
@@ -4338,41 +3726,140 @@ function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
 }
 
 const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: string; description: string }> = [
-  { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
-  { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
-  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
-  { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
+  { type: "Rejected", label: "Rejected", description: "Sent when a rejection is released." },
+  { type: "InvitedToInterview", label: "Invited to interview", description: "Sent when an interview invite is released." },
+  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is waitlisted." },
+  { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
 
-function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
-  emailTemplates: any[];
-  currentDecisionEmails: any[];
-  releasedDecisionTypes: string[];
+function DecisionEmailsSection({ hiringEmails, hasInterviews }: {
+  hiringEmails: Record<string, { subject: string; body: string }>;
+  hasInterviews: boolean;
 }) {
   return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
-      <div>
-        <h3 className="text-sm font-bold text-foreground/80">Decision Emails</h3>
-        <p className="text-xs text-muted-foreground">
-          Pick which template fires when each decision type is released. Slots without a binding will not send an email.
-          Once a decision of a given type has been released, its slot locks for this cycle.
-        </p>
+    <SetupCard title="Decision emails" description="The email each released decision sends. Shared by every cycle.">
+      <div className="flex flex-col gap-2">
+        {DECISION_EMAIL_SLOTS.filter((slot) => hasInterviews || slot.type !== "InvitedToInterview").map((slot) => (
+          <HiringEmailEditor
+            key={slot.type}
+            slot={slot}
+            templateSlot={decisionSlot(slot.type)}
+            email={hiringEmails[decisionSlot(slot.type)] ?? null}
+          />
+        ))}
       </div>
-      <div className="space-y-3">
-        {DECISION_EMAIL_SLOTS.map((slot) => {
-          const binding = currentDecisionEmails.find((b: any) => b.decisionType === slot.type);
-          const locked = releasedDecisionTypes.includes(slot.type);
-          return (
-            <DecisionEmailPicker
-              key={slot.type}
-              slot={slot}
-              binding={binding ?? null}
-              emailTemplates={emailTemplates}
-              locked={locked}
+    </SetupCard>
+  );
+}
+
+const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
+  { type: "ApplicationReceived", label: "Application received", description: "Sent when an applicant first submits." },
+  { type: "ApplicationExtensionNotice", label: "Deadline extension notice", description: "Sent once to unsubmitted applicants after the original close." },
+  { type: "InterviewInviteMentor", label: "Interview invite (interviewer)", description: "Sent when an interview is booked or reassigned." },
+  { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
+  { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },
+  { type: "InterviewCancelledApplicant", label: "Interview cancelled (applicant)", description: "Sent when the interview is cancelled." },
+  { type: "InterviewCancelledInterviewer", label: "Interview cancelled (interviewer)", description: "Sent when an interview is cancelled or reassigned away." },
+  { type: "InterviewLocationChanged", label: "Interview location changed", description: "Sent to everyone when the location changes." },
+  { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },
+  { type: "InterviewReminderInterviewer", label: "Interview reminder (interviewer)", description: "Sent 24 hours and 1 hour before the interview." },
+];
+
+function NotificationEmailsSection({ hiringEmails, slots }: {
+  hiringEmails: Record<string, { subject: string; body: string }>;
+  slots: typeof NOTIFICATION_EMAIL_SLOTS;
+}) {
+  return (
+    <SetupCard title="Notification emails" description="The email each notification sends. Shared by every cycle.">
+      <div className="flex flex-col gap-2">
+        {slots.map((slot) => (
+          <HiringEmailEditor
+            key={slot.type}
+            slot={slot}
+            templateSlot={notificationSlot(slot.type)}
+            email={hiringEmails[notificationSlot(slot.type)] ?? null}
+          />
+        ))}
+      </div>
+    </SetupCard>
+  );
+}
+
+// One email slot as a well row: what it's for (flagged when no email is
+// written yet), with Edit/Write opening the shared subject and body in a modal.
+function HiringEmailEditor({ slot, templateSlot, email }: {
+  slot: { label: string; description: string };
+  templateSlot: TemplateSlot;
+  email: { subject: string; body: string } | null;
+}) {
+  const os = useOsChrome();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(email?.subject ?? "");
+  const [body, setBody] = useState(email?.body ?? "");
+  const busy = fetcher.state !== "idle";
+  // Close once a save lands; the loader brings the new email back.
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
+  }, [fetcher.state, fetcher.data]);
+  const open = () => {
+    setSubject(email?.subject ?? "");
+    setBody(email?.body ?? "");
+    setEditing(true);
+  };
+  const save = () =>
+    fetcher.submit({ intent: "save-hiring-email", slot: templateSlot, subject, body }, { method: "post" });
+  // Soft warnings only: an unknown or never-filled variable still saves.
+  const subjLint = lintTemplate(subject, templateSlot);
+  const bodyLint = lintTemplate(body, templateSlot);
+  const unknown = Array.from(new Set([...subjLint.unknown, ...bodyLint.unknown]));
+  const unfilled = Array.from(new Set([...subjLint.unfilled, ...bodyLint.unfilled]));
+  const titleId = `hiring-email-${templateSlot.replace(/[^a-z0-9]/gi, "-")}`;
+
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          {!email && <AlertIcon label="No email yet" />}
+          {slot.label}
+        </span>
+        <span className="text-sm text-os-grey">{slot.description}</span>
+      </div>
+      <button type="button" onClick={open} className={cn(buttonClasses("secondary", "sm"), "shrink-0")}>
+        {email ? "Edit" : "Write"}
+      </button>
+      <Modal
+        open={editing}
+        onClose={busy ? () => {} : () => setEditing(false)}
+        disableEscape={busy}
+        labelledBy={titleId}
+        containerClassName="w-full max-w-4xl my-auto os-modal-card os-form"
+      >
+        <ModalHeader titleId={titleId} title={`${slot.label} email`} subtitle={slot.description} onClose={() => setEditing(false)} />
+        <div className={cn(os.formClass, "flex flex-col gap-4")}>
+          <label className={os.fieldLabel}>
+            Subject
+            <input value={subject} onChange={(e) => setSubject(e.target.value)} aria-label={`${slot.label} subject`} />
+          </label>
+          <label className={os.fieldLabel}>
+            Body
+            <textarea
+              rows={18}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              aria-label={`${slot.label} body`}
             />
-          );
-        })}
-      </div>
+          </label>
+          <SlotVariableHint slot={templateSlot} />
+          {(unknown.length > 0 || unfilled.length > 0) && <PreviewLintWarning unknown={unknown} unfilled={unfilled} />}
+          {fetcher.data?.error && <p className="text-sm text-red-700">{fetcher.data.error}</p>}
+        </div>
+        <ModalFooter onCancel={() => setEditing(false)}>
+          <button type="button" disabled={busy} onClick={save} className={buttonClasses("primary", "md")}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }
@@ -4380,231 +3867,15 @@ function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, released
 function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
   const vars = TEMPLATE_VARIABLES[slot];
   return (
-    <p className="text-xs text-muted-foreground/80">
+    <p className="text-xs text-os-grey">
       Supports{' '}
       {vars.map((v, i) => (
         <span key={v}>
           {i > 0 && ', '}
-          <code className="font-mono bg-muted px-1 rounded">{`{{${v}}}`}</code>
+          <code className="font-mono rounded bg-os-container px-1">{`{{${v}}}`}</code>
         </span>
       ))}
       .
     </p>
   );
 }
-
-function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
-  slot: { type: DecisionSlotType; label: string; description: string };
-  binding: any | null;
-  emailTemplates: any[];
-  locked: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
-  const currentLabel = binding
-    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
-    : null;
-
-  return (
-    <div className="border border-border rounded-lg p-4 space-y-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
-          <p className="text-xs text-muted-foreground">{slot.description}</p>
-          <SlotVariableHint slot={decisionSlot(slot.type)} />
-        </div>
-        {!editing && !locked && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-          >
-            {currentLabel ? "Change" : "Assign"}
-          </button>
-        )}
-      </div>
-
-      {locked ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle className="w-4 h-4 text-green-600" />
-          <span>{currentLabel ?? "No template assigned"}</span>
-          <span className="text-xs text-muted-foreground/70 ml-2">(locked — decisions of this type already released)</span>
-        </div>
-      ) : !editing ? (
-        currentLabel ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentLabel}</span>
-          </div>
-        ) : (
-          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
-            No template assigned — releasing a {slot.label} decision will not send an email.
-          </div>
-        )
-      ) : (
-        <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="set-decision-email" />
-          <input type="hidden" name="decisionType" value={slot.type} />
-          <div className="flex-1 min-w-[14rem]">
-            <Select
-              name="emailTemplateVersionId"
-              defaultValue={currentVersionId ?? ""}
-              placeholder="No template (skip email)"
-              options={[
-                { value: "", label: "No template (skip email)" },
-                ...emailTemplates
-                  .filter((t: any) => t.versions.length > 0)
-                  .flatMap((t: any) =>
-                    t.versions.map((v: any): SelectOption => ({
-                      value: v.id,
-                      label: `${t.name} — v${v.versionNumber}`,
-                    }))
-                  ),
-              ]}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </Form>
-      )}
-    </div>
-  );
-}
-
-const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
-  { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
-  { type: "ApplicationExtensionNotice", label: "Deadline Extension Notice", description: "Sent once to applicants with a draft (unsubmitted) application after the original close passes, when an extension is in effect." },
-  { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
-  { type: "InterviewInviteReminder", label: "Interview Invite Reminder (Applicant)", description: "Manual nudge fired from the Interviews tab's Resend invite action when an applicant has been invited but hasn't booked yet." },
-  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked." },
-  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
-  { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
-  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated." },
-  { type: "InterviewReminderApplicant", label: "Interview Reminder (Applicant)", description: "Sent automatically 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
-  { type: "InterviewReminderInterviewer", label: "Interview Reminder (Interviewer)", description: "Sent automatically to the interviewer(s) 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
-];
-
-function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
-  emailTemplates: any[];
-  currentNotificationEmails: any[];
-}) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
-      <div>
-        <h3 className="text-sm font-bold text-foreground/80">Notification Emails</h3>
-        <p className="text-xs text-muted-foreground">
-          Pick which template fires for each notification slot. Slots without a binding will not send an email.
-        </p>
-      </div>
-      <div className="space-y-3">
-        {NOTIFICATION_EMAIL_SLOTS.map((slot) => {
-          const binding = currentNotificationEmails.find((b: any) => b.notificationType === slot.type);
-          return (
-            <NotificationEmailPicker
-              key={slot.type}
-              slot={slot}
-              binding={binding ?? null}
-              emailTemplates={emailTemplates}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function NotificationEmailPicker({ slot, binding, emailTemplates }: {
-  slot: { type: NotificationSlotType; label: string; description: string };
-  binding: any | null;
-  emailTemplates: any[];
-}) {
-  const [editing, setEditing] = useState(false);
-  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
-  const currentLabel = binding
-    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
-    : null;
-
-  return (
-    <div className="border border-border rounded-lg p-4 space-y-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
-          <p className="text-xs text-muted-foreground">{slot.description}</p>
-          <SlotVariableHint slot={notificationSlot(slot.type)} />
-        </div>
-        {!editing && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-          >
-            {currentLabel ? "Change" : "Assign"}
-          </button>
-        )}
-      </div>
-
-      {!editing ? (
-        currentLabel ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentLabel}</span>
-          </div>
-        ) : (
-          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
-            No template assigned — this notification will not send an email.
-          </div>
-        )
-      ) : (
-        <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="set-notification-email" />
-          <input type="hidden" name="notificationType" value={slot.type} />
-          <div className="flex-1 min-w-[14rem]">
-            <Select
-              name="emailTemplateVersionId"
-              defaultValue={currentVersionId ?? ""}
-              placeholder="No template (skip email)"
-              options={[
-                { value: "", label: "No template (skip email)" },
-                ...emailTemplates
-                  .filter((t: any) => t.versions.length > 0)
-                  .flatMap((t: any) =>
-                    t.versions.map((v: any): SelectOption => ({
-                      value: v.id,
-                      label: `${t.name} — v${v.versionNumber}`,
-                    }))
-                  ),
-              ]}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </Form>
-      )}
-    </div>
-  );
-}
-

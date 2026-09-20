@@ -30,10 +30,6 @@ export function EducationEngagementPanel({ entries }: { entries: EngagementRow[]
         <h2 className="font-heading font-bold text-foreground">
           Past DALI education
         </h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Workshops and miniseries this applicant engaged with — attendance and
-          instructor comments are internal to hiring.
-        </p>
       </div>
       <ul className="divide-y divide-border">
         {entries.map((e) => (

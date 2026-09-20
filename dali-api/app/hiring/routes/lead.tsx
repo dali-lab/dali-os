@@ -4,16 +4,29 @@ import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin, getUserRoles } from "~/lib/roles";
+import { isCore, isAdmin, getUserRoles, currentTerm } from "~/lib/roles";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
-import { Select, type SelectOption } from "~/components/ui/floating";
-import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
-import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
-import type { ApplicationCycleType } from "~/generated/prisma/client";
+import { buttonClasses } from "~/components/ui/Button";
+import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
+import { STATUS_TONES, STATUS_LABELS } from "~/hiring/lib/labels";
+import { Select } from "~/components/ui/floating";
+import {
+  APPLICANT_GROUPS,
+  APPLICANTS_LABELS,
+  DEFAULT_STAGES,
+  defaultTimelineFor,
+  isAdminOnlyCycle,
+} from "~/hiring/lib/applicant-groups";
+import { linkCoreDomain } from "~/hiring/lib/cycle-applicants.server";
+import { APPLICANT_GROUP_CONFIG } from "~/hiring/lib/applicant-groups.server";
+import { defaultApplicationWindow, termWeek } from "~/hiring/lib/cycle-phases";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { APPLICATION_TZ, zonedDayEndUtc, zonedDayStartUtc } from "~/lib/timezone";
+import type { CycleApplicants } from "~/generated/prisma/client";
 
-export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Cycles · Hiring · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -25,18 +38,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       domains: { include: { domain: true } },
+      term: { select: { code: true, startDate: true } },
       _count: { select: { applications: true } },
     },
     orderBy: { createdAt: "desc" },
   });
-  // Core cycles are Admin-managed only; hide them from non-admin Core members
-  // who otherwise use this dashboard to run Standard/Fellowship cycles.
+  // Lab members cycles are Admin-managed only; hide them from non-admin Core
+  // members who otherwise use this dashboard to run the other cycles.
   const cycles = roles.isAdmin
     ? allCycles
-    : allCycles.filter((c) => c.cycleType !== "Core");
+    : allCycles.filter((c) => !isAdminOnlyCycle(c.applicants));
+
+  // Terms a cycle can run in: the current one and anything later, soonest first.
+  const current = await currentTerm(request);
+  const terms = await prisma.term.findMany({
+    where: current ? { sortKey: { gte: current.sortKey } } : {},
+    orderBy: { sortKey: "asc" },
+    select: { id: true, code: true },
+  });
 
   return {
     cycles,
+    terms,
+    currentTermId: current?.id ?? null,
     pillRoles: {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,
@@ -49,17 +73,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const name = (formData.get("name") as string)?.trim();
-  const cycleTypeRaw = (formData.get("cycleType") as string) ?? "Standard";
-  const cycleType: ApplicationCycleType =
-    cycleTypeRaw === "Fellowship" || cycleTypeRaw === "Core" ? cycleTypeRaw : "Standard";
+  const applicantsRaw = formData.get("applicants") as string;
+  const applicants: CycleApplicants = (APPLICANT_GROUPS as readonly string[]).includes(applicantsRaw)
+    ? (applicantsRaw as CycleApplicants)
+    : "Students";
   if (!name) return { error: "Name is required" };
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  // Core cycles are Admin-only to create; Standard/Fellowship stay at the Core
+  // Lab members cycles are Admin-only to create; the rest stay at the Core
   // (hiring-lead) tier.
   const canCreate =
-    cycleType === "Core"
+    isAdminOnlyCycle(applicants)
       ? await isAdmin(auth.user.sub)
       : await isCore(auth.user.sub);
   if (!canCreate) return redirect("/");
@@ -67,10 +92,24 @@ export async function action({ request }: Route.ActionArgs) {
     where: { id: auth.user.sub },
   });
 
+  // The term dates the phases; its default application window (Week 4 to the
+  // end of Week 5) fills the open and close dates, editable in setup.
+  const termId = (formData.get("termId") as string) || null;
+  const term = termId
+    ? await prisma.term.findUnique({ where: { id: termId }, select: { id: true, startDate: true } })
+    : null;
+  const window = term ? defaultApplicationWindow(term.startDate) : null;
+  const toYmd = (d: Date) => [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()] as const;
+
   const cycle = await prisma.applicationCycle.create({
     data: {
       name,
-      cycleType,
+      applicants,
+      ...DEFAULT_STAGES[applicants],
+      timeline: defaultTimelineFor(applicants),
+      termId: term?.id ?? null,
+      openDate: window ? zonedDayStartUtc(...toYmd(window.open), APPLICATION_TZ) : null,
+      closeDate: window ? zonedDayEndUtc(...toYmd(window.closeDay), APPLICATION_TZ) : null,
       statusUpdates: {
         create: { newStatus: "Draft", userId: adminUser.id },
       },
@@ -81,266 +120,229 @@ export async function action({ request }: Route.ActionArgs) {
   // an operator can reuse an existing Drive Form (bind picker) or create a fresh
   // one on demand — auto-creating one per cycle left unused forms behind.
 
-  // Core cycles aren't domain-scoped: link the single synthetic CORE domain
-  // (auto-ready — there's nothing per-domain to configure) and seed the
-  // reviewer pool with the graduating Core seniors (editable afterward).
-  if (cycleType === "Core") {
-    const coreDomain = await getCoreDomain();
-    if (coreDomain) {
-      await prisma.domainApplicationCycle.upsert({
-        where: {
-          domainId_applicationCycleId: { domainId: coreDomain.id, applicationCycleId: cycle.id },
-        },
-        update: { isReady: true },
-        create: { domainId: coreDomain.id, applicationCycleId: cycle.id, isReady: true },
-      });
-      const reviewerIds = await defaultCoreReviewerIds();
-      if (reviewerIds.length > 0) {
-        await prisma.cycleReviewer.createMany({
-          data: reviewerIds.map((userId) => ({
-            userId,
-            applicationCycleId: cycle.id,
-            domainId: coreDomain.id,
-          })),
-          skipDuplicates: true,
-        });
-      }
-    }
+  // Lab members cycles aren't domain-scoped: link the single CORE domain and
+  // seed the reviewer pool (editable afterward).
+  if (APPLICANT_GROUP_CONFIG[applicants].domainStrategy === "single-core-domain") {
+    await linkCoreDomain(cycle.id, applicants);
   }
 
-  return redirect(
-    isInternalCycleType(cycleType)
-      ? `/hiring/lead/internal-cycle/${cycle.id}`
-      : `/hiring/lead/cycle/${cycle.id}`,
-  );
+  return redirect(`/hiring/lead/cycle/${cycle.id}`);
 }
 
 export default function HiringLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
   const cycles = data?.cycles ?? [];
   const [showModal, setShowModal] = useState(false);
+  const { pageTitle, formClass, fieldLabel, formTrigger } = useOsChrome();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <Plus className="w-4 h-4" />
-            New Cycle
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col gap-8">
+      <header className="flex items-center justify-between gap-4">
+        <h1 className={pageTitle}>Cycles</h1>
+        <button type="button" className="os-add-btn" onClick={() => setShowModal(true)}>
+          <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+          New cycle
+        </button>
+      </header>
 
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
         labelledBy="new-cycle-title"
-        containerClassName="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4 my-auto"
+        containerClassName={modalCardClass("max-w-md")}
       >
-        <>
-          <ModalHeader
-            titleId="new-cycle-title"
-            title="New Hiring Cycle"
-            onClose={() => setShowModal(false)}
-            className="mb-0"
-          />
-          <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
-                <div>
-                  <label htmlFor="cycle-name" className="block text-sm font-medium text-foreground/80 mb-1">
-                    Cycle name
-                  </label>
-                  <input
-                    id="cycle-name"
-                    name="name"
-                    placeholder="e.g. Fall 2027"
-                    required
-                    autoFocus
-                    autoComplete="off"
-                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="cycle-type" className="block text-sm font-medium text-foreground/80 mb-1">
-                    Cycle type
-                  </label>
-                  <Select
-                    name="cycleType"
-                    defaultValue="Standard"
-                    options={[
-                      { value: "Standard", label: "Standard hire" },
-                      { value: "Fellowship", label: "Fellowship" },
-                      // Core cycles are Admin-only to create.
-                      ...(data?.pillRoles?.isAdmin
-                        ? [{ value: "Core", label: "Core" }]
-                        : []),
-                    ]}
-                    buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Fellowship (interns → full-time) and Core (members → Core) cycles use a
-                    shortform (no challenge) and skip interviews.
-                  </p>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-                  >
-                    Create
-                  </button>
-                </div>
-              </Form>
-        </>
+        <ModalHeader
+          titleId="new-cycle-title"
+          title="New cycle"
+          onClose={() => setShowModal(false)}
+        />
+        <Form
+          method="post"
+          onSubmit={() => setShowModal(false)}
+          className={cn(formClass, "flex flex-col gap-4")}
+        >
+          <label className={fieldLabel}>
+            Name
+            <input
+              name="name"
+              placeholder="e.g. Fall 2027"
+              required
+              autoFocus
+              autoComplete="off"
+            />
+          </label>
+          <div className={fieldLabel}>
+            Term
+            <Select
+              name="termId"
+              ariaLabel="Term"
+              defaultValue={data?.currentTermId ?? ""}
+              options={(data?.terms ?? []).map((t: { id: string; code: string }) => ({
+                value: t.id,
+                label: t.id === data?.currentTermId ? `${t.code} · current` : t.code,
+              }))}
+              buttonClassName={formTrigger}
+            />
+            <span className="text-xs">Phase weeks count from this term's start.</span>
+          </div>
+          <div className={fieldLabel}>
+            Applicants
+            <Select
+              name="applicants"
+              ariaLabel="Applicants"
+              defaultValue="Students"
+              options={APPLICANT_GROUPS
+                // Lab members cycles are Admin-only to create.
+                .filter((a) => data?.pillRoles?.isAdmin || !isAdminOnlyCycle(a))
+                .map((a) => ({ value: a, label: APPLICANTS_LABELS[a] }))}
+              buttonClassName={formTrigger}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className={buttonClasses("secondary")}
+            >
+              Cancel
+            </button>
+            <button type="submit" className={buttonClasses("primary")}>
+              Create
+            </button>
+          </div>
+        </Form>
       </Modal>
 
-
-      <ActiveCycleHero cycles={cycles} />
+      <ActiveCycles cycles={cycles} />
       <PastCycles cycles={cycles} />
     </div>
   );
 }
 
-function heroLinkFor(cycle: any): string {
-  return isInternalCycleType(cycle.cycleType)
-    ? `/hiring/lead/internal-cycle/${cycle.id}`
-    : `/hiring/lead/cycle/${cycle.id}`;
+function setupLinkFor(cycle: any): string {
+  return `/hiring/lead/cycle/${cycle.id}`;
 }
 
-// Pick at most one hero per cycleType so Standard, Fellowship, and Core cycles
-// don't fight over the single hero slot when several are active concurrently.
-// Within a type, prefers Open/UnderReview over Draft.
-function selectHeroCycles(cycles: any[]): any[] {
-  const byType = new Map<string, any>();
-  for (const c of cycles) {
-    const status = c.statusUpdates[0]?.newStatus;
-    const isActive = status && ["Open", "UnderReview"].includes(status);
-    const isDraft = status === "Draft";
-    if (!isActive && !isDraft) continue;
-    const existing = byType.get(c.cycleType);
-    if (!existing) {
-      byType.set(c.cycleType, c);
-      continue;
-    }
-    const existingActive =
-      existing.statusUpdates[0]?.newStatus &&
-      ["Open", "UnderReview"].includes(existing.statusUpdates[0].newStatus);
-    if (isActive && !existingActive) byType.set(c.cycleType, c);
-  }
-  // Standard first so it stays visually anchored when internal cycles are also active.
-  const order = ["Standard", "Fellowship", "Core"];
-  return order.flatMap((t) => (byType.has(t) ? [byType.get(t)] : []));
+// Any number of cycles can run at once, so every cycle that isn't finished
+// (Draft, Open, UnderReview) is listed as active, newest first.
+function isCurrentCycle(cycle: any): boolean {
+  const status = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+  return status !== "Completed";
 }
 
-function ActiveCycleHero({ cycles }: { cycles: any[] }) {
-  const heroes = selectHeroCycles(cycles);
+function StatusBadge({ status }: { status: string }) {
+  return <Pill dot={STATUS_TONES[status] ?? "neutral"}>{STATUS_LABELS[status]}</Pill>;
+}
 
-  if (heroes.length === 0) {
-    return (
-      <div className="bg-card border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-        <p className="text-muted-foreground mb-1">No active hiring cycle.</p>
-        <p className="text-sm text-muted-foreground/70">Create a new cycle to get started.</p>
-      </div>
-    );
+function cycleMeta(cycle: any): string {
+  const domains = cycle.domains.map((d: any) => d.domain.name).join(", ") || "No domains";
+  const n = cycle._count.applications;
+  const parts = [domains, `${n} application${n === 1 ? "" : "s"}`];
+  if (cycle.term) {
+    const week = termWeek(new Date(cycle.term.startDate));
+    parts.unshift(week >= 1 && week <= 10 ? `${cycle.term.code} · Week ${week}` : cycle.term.code);
   }
+  return parts.join(" · ");
+}
+
+function ActiveCycles({ cycles }: { cycles: any[] }) {
+  const { panel, sectionShell, sectionTitle, bodyText } = useOsChrome();
+  const current = cycles.filter(isCurrentCycle);
 
   return (
-    <div className="space-y-3">
-      {heroes.map((c) => {
-        const currentStatus = c.statusUpdates[0]?.newStatus ?? "Draft";
-        const domains = c.domains.map((d: any) => d.domain.name);
-        return (
-          <Link
-            key={c.id}
-            to={heroLinkFor(c)}
-            className="block bg-card border border-border rounded-xl p-6 hover:border-blue-300 hover:shadow-md transition-all"
-          >
-            <div className="flex items-start justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {CYCLE_TYPE_LABELS[c.cycleType as ApplicationCycleType] ?? c.cycleType}
-                  </span>
-                  <span className="text-xl font-bold text-foreground">{c.name}</span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                    {STATUS_LABELS[currentStatus]}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{domains.join(", ") || "No domains"}</span>
-                  <span>·</span>
-                  <span>{c._count.applications} application{c._count.applications !== 1 ? "s" : ""}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
-                Manage Cycle
-                <ChevronRight className="w-4 h-4" />
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function PastCycles({ cycles }: { cycles: any[] }) {
-  const [open, setOpen] = useState(false);
-
-  // Exclude every hero (one per cycleType) so we don't double-list active cycles.
-  const heroIds = new Set(selectHeroCycles(cycles).map((c) => c.id));
-  const pastCycles = cycles.filter((c: any) => !heroIds.has(c.id));
-
-  if (pastCycles.length === 0) return null;
-
-  return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full px-5 py-3 flex items-center justify-between bg-muted/50 hover:bg-muted transition text-left"
-      >
-        <span className="text-sm font-semibold text-foreground/80">Past Cycles ({pastCycles.length})</span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="divide-y divide-gray-100">
-          {pastCycles.map((cycle: any) => {
-            const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
-            const domains = cycle.domains.map((d: any) => d.domain.name);
+    <section className={sectionShell}>
+      <h2 className={sectionTitle}>Active</h2>
+      {current.length === 0 ? (
+        <div className={cn(panel, "p-10 text-center")}>
+          <p className="font-heading font-semibold text-foreground">No active cycle</p>
+          <p className={cn(bodyText, "mt-1")}>Create a cycle to get started.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {current.map((c) => {
+            const currentStatus = c.statusUpdates[0]?.newStatus ?? "Draft";
             return (
               <Link
-                key={cycle.id}
-                to={heroLinkFor(cycle)}
-                className="flex items-center justify-between px-5 py-3 hover:bg-muted/50 transition-colors"
+                key={c.id}
+                to={setupLinkFor(c)}
+                className={cn(
+                  panel,
+                  "group flex items-center justify-between gap-4 p-6 transition-colors hover:bg-os-card-hover",
+                )}
               >
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    {CYCLE_TYPE_LABELS[cycle.cycleType as ApplicationCycleType] ?? cycle.cycleType}
+                <div className="flex min-w-0 flex-col gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-os-grey">
+                    {APPLICANTS_LABELS[c.applicants as CycleApplicants]}
                   </span>
-                  <span className="text-sm font-medium text-foreground">{cycle.name}</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                    {STATUS_LABELS[currentStatus]}
-                  </span>
-                  <span className="text-xs text-muted-foreground/70">
-                    {domains.join(", ")} · {cycle._count.applications} app{cycle._count.applications !== 1 ? "s" : ""}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-heading text-2xl font-medium text-foreground">
+                      {c.name}
+                    </span>
+                    <StatusBadge status={currentStatus} />
+                  </div>
+                  <span className={bodyText}>{cycleMeta(c)}</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/70" />
+                <ChevronRight
+                  className="h-5 w-5 shrink-0 text-os-grey transition-colors group-hover:text-os-accent"
+                  aria-hidden
+                />
               </Link>
             );
           })}
         </div>
       )}
-    </div>
+    </section>
+  );
+}
+
+function PastCycles({ cycles }: { cycles: any[] }) {
+  const { panel, sectionShell, sectionTitle, bodyText } = useOsChrome();
+  const [open, setOpen] = useState(false);
+
+  const pastCycles = cycles.filter((c: any) => !isCurrentCycle(c));
+
+  if (pastCycles.length === 0) return null;
+
+  return (
+    <section className={sectionShell}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className={cn(sectionTitle, "inline-flex items-center gap-2 self-start")}
+      >
+        Past
+        <span className="tabular-nums text-os-grey">{pastCycles.length}</span>
+        <ChevronDown
+          className={cn("h-4 w-4 text-os-grey transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <ul className={cn(panel, "overflow-hidden")}>
+          {pastCycles.map((cycle: any) => {
+            const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+            return (
+              <li key={cycle.id} className="border-t border-os-container first:border-t-0">
+                <Link
+                  to={setupLinkFor(cycle)}
+                  className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-os-card-hover"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <span className="font-medium text-foreground">{cycle.name}</span>
+                    <span className="text-xs font-semibold uppercase tracking-widest text-os-grey">
+                      {APPLICANTS_LABELS[cycle.applicants as CycleApplicants]}
+                    </span>
+                    <StatusBadge status={currentStatus} />
+                    <span className={bodyText}>{cycleMeta(cycle)}</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -4,11 +4,14 @@ import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { idSchema, parseJson } from "~/lib/validate";
+import { findRound } from "~/hiring/lib/cycle-timeline";
+import { loadCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
 const CreateDelibsSchema = z.object({
   domainId: idSchema,
-  type: z.enum(["Initial", "Final"]),
+  // A delib round in the cycle's timeline.
+  roundId: z.string().min(1).max(64),
 });
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -50,35 +53,25 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, CreateDelibsSchema);
   if (body instanceof Response) return body;
-  const { domainId, type } = body;
+  const { domainId, roundId } = body;
 
-  // Fellowship cycles skip the Initial → interview → Final pipeline. There's
-  // only one round of deliberation (review → decision), so we hard-block
-  // anyone trying to open an Initial session on these cycles.
-  const cycleType = await prisma.applicationCycle.findUniqueOrThrow({
-    where: { id: params.cycleId },
-    select: { cycleType: true },
-  });
-  if (cycleType.cycleType === "Fellowship" && type === "Initial") {
-    return Response.json(
-      { error: "Fellowship cycles only run a single Final deliberation round." },
-      { status: 400 },
-    );
+  if (!findRound(await loadCycleTimeline(params.cycleId!), roundId)) {
+    return Response.json({ error: "That delib round isn't in this cycle's timeline." }, { status: 400 });
   }
 
   // Upsert: reopen if previously closed, create if new
   const session = await prisma.delibsSession.upsert({
     where: {
-      domainId_applicationCycleId_type: {
+      domainId_applicationCycleId_roundId: {
         domainId,
         applicationCycleId: params.cycleId,
-        type,
+        roundId,
       },
     },
     create: {
       domainId,
       applicationCycleId: params.cycleId,
-      type,
+      roundId,
       status: "Active",
       openedById: auth.user.sub,
     },

@@ -50,9 +50,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!domainCycle) {
     return Response.json({ error: "Domain not part of this cycle" }, { status: 404 });
   }
-  // Fellowship cycles only require the cycle-level general rubric — there
-  // are no per-domain rubrics in that flow.
-  if (cycle.cycleType !== "Fellowship" && !domainCycle.rubricVersionId) {
+  // Per-domain rubrics score challenges; cycles without challenges only need
+  // the cycle-level general rubric.
+  if (cycle.hasChallenges && !domainCycle.rubricVersionId) {
     return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 

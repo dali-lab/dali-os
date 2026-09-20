@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
@@ -515,12 +516,13 @@ export async function isDomainLead(userId: string): Promise<boolean> {
   return row !== null;
 }
 
+/** A Lab members cycle: hires into Core, so it is Admin-run (see isAdminOnlyCycle). */
 export async function isCoreCycle(cycleId: string): Promise<boolean> {
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: cycleId },
-    select: { cycleType: true },
+    select: { applicants: true },
   });
-  return cycle?.cycleType === "Core";
+  return cycle ? isAdminOnlyCycle(cycle.applicants) : false;
 }
 
 /**
@@ -539,7 +541,7 @@ export async function isCycleAdmin(userId: string, cycleId: string): Promise<boo
 
 /**
  * Domain-lead authority scoped to a single cycle. Domain leads have blanket
- * authority over Standard/Fellowship cycles, but NOT over Core cycles — whose
+ * authority over Students/Interns cycles, but NOT over Lab members (Core) cycles — whose
  * applicants are current lab members, so those are restricted to Admins and the
  * cycle's assigned reviewers/interviewers. Use this instead of the bare
  * `isDomainLead` on any surface that reads or acts on a specific cycle's

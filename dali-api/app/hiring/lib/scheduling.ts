@@ -4,6 +4,7 @@ import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { zonedWallTimeUtc } from "~/lib/timezone";
+import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -80,13 +81,12 @@ export async function computeAvailableSlots(
   const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone, bookingNoticeHours } = config;
   const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
 
-  // Load all cycle interviewers with their availability and booked interviews.
-  // The interviewAssignments include filters out assignments whose parent
+  // Load all cycle interviewers with their booked interviews. The
+  // interviewAssignments include filters out assignments whose parent
   // interview has been cancelled or completed — those no longer block slots.
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: cycleId },
     include: {
-      availabilityBlocks: true,
       interviewAssignments: {
         where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
         include: { interview: true },
@@ -99,15 +99,13 @@ export async function computeAvailableSlots(
   // bookedIntervals, so a conflict on one row blocks the other row too.
   const { memberIntervals } = buildMemberAggregations(interviewers, bufferMinutes);
 
-  // Build free-check data per interviewer
+  // Availability comes straight from each member's DALI OS calendar.
+  const calendars = await interviewerCalendars(interviewers.map((r) => r.userId), config);
   const interviewerChecks: InterviewerFreeCheck[] = interviewers.map((r) => ({
     cycleInterviewerId: r.id,
     userId: r.userId,
     domainId: r.domainId,
-    availability: r.availabilityBlocks.map((b) => ({
-      startTime: b.startTime,
-      endTime: b.endTime,
-    })),
+    availability: calendars.get(r.userId)?.available ?? [],
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 
@@ -203,14 +201,27 @@ export async function assignInterviewers(
   tx?: Prisma.TransactionClient,
   mode: "in-person" | "online" = "online",
 ) {
+  // Read calendars before the transaction: they can mean calls to linked
+  // calendar providers, which shouldn't run while interviewer rows are locked.
+  const calendars = await cycleInterviewerCalendars(cycleId);
   if (tx) {
-    return assignInterviewersWithTx(tx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode);
+    return assignInterviewersWithTx(tx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars);
   }
   return prisma.$transaction(
     (innerTx) =>
-      assignInterviewersWithTx(innerTx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode),
+      assignInterviewersWithTx(innerTx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
     { isolationLevel: "Serializable" },
   );
+}
+
+/** Every interviewer on the cycle, read from their DALI OS calendars. */
+async function cycleInterviewerCalendars(cycleId: string): Promise<Map<string, InterviewerCalendar>> {
+  const [config, rows] = await Promise.all([
+    prisma.interviewConfig.findUnique({ where: { applicationCycleId: cycleId } }),
+    prisma.cycleInterviewer.findMany({ where: { applicationCycleId: cycleId }, select: { userId: true } }),
+  ]);
+  if (!config) return new Map();
+  return interviewerCalendars(rows.map((r) => r.userId), config);
 }
 
 async function assignInterviewersWithTx(
@@ -220,7 +231,8 @@ async function assignInterviewersWithTx(
   applicantDomainIds: string[],
   slotStart: Date,
   slotEnd: Date,
-  mode: "in-person" | "online" = "online",
+  mode: "in-person" | "online",
+  calendars: Map<string, InterviewerCalendar>,
 ) {
   const config = await tx.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
@@ -243,7 +255,6 @@ async function assignInterviewersWithTx(
   const interviewers = await tx.cycleInterviewer.findMany({
     where: { applicationCycleId: cycleId },
     include: {
-      availabilityBlocks: true,
       interviewAssignments: {
         where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
         include: { interview: true },
@@ -265,10 +276,7 @@ async function assignInterviewersWithTx(
     cycleInterviewerId: r.id,
     userId: r.userId,
     domainId: r.domainId,
-    availability: r.availabilityBlocks.map((b) => ({
-      startTime: b.startTime,
-      endTime: b.endTime,
-    })),
+    availability: calendars.get(r.userId)?.available ?? [],
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
     activeCount: memberActiveCount.get(r.userId) ?? 0,
   }));
@@ -375,6 +383,12 @@ export async function reassignInterviewer(
   interviewId: string,
   decliningAssignmentId: string,
 ) {
+  // Calendars are read up front, outside the transaction (see assignInterviewers).
+  const cycle = await prisma.interview.findUnique({
+    where: { id: interviewId },
+    select: { applicationCycleId: true },
+  });
+  const calendars = cycle ? await cycleInterviewerCalendars(cycle.applicationCycleId) : new Map();
   const result = await prisma.$transaction(async (tx) => {
     const assignment = await tx.interviewAssignment.findUnique({
       where: { id: decliningAssignmentId },
@@ -402,8 +416,8 @@ export async function reassignInterviewer(
     const role = assignment.role;
 
     // Applicant's domain — used for the in-domain / cross-domain filter.
-    // DomainApplication.domainId is always set for Standard cycles (the only
-    // cycleType that schedules interviews).
+    // DomainApplication.domainId is always set (reconcileDomainApplications
+    // writes it for every applicant group).
     const applicantDomainId = interview.domainApplication.domain!.id;
 
     // Exclude any MEMBER (not just their row) who already holds an active
@@ -423,7 +437,6 @@ export async function reassignInterviewer(
     const allInterviewers = await tx.cycleInterviewer.findMany({
       where: { applicationCycleId: interview.applicationCycleId },
       include: {
-        availabilityBlocks: true,
         interviewAssignments: {
           where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
           include: { interview: true },
@@ -447,10 +460,7 @@ export async function reassignInterviewer(
           cycleInterviewerId: r.id,
           userId: r.userId,
           domainId: r.domainId,
-          availability: r.availabilityBlocks.map((b) => ({
-            startTime: b.startTime,
-            endTime: b.endTime,
-          })),
+          availability: calendars.get(r.userId)?.available ?? [],
           bookedIntervals: memberIntervals.get(r.userId) ?? [],
         };
         return isInterviewerFree(check, interview.startTime, interview.endTime);
@@ -520,7 +530,7 @@ export function isInterviewerFree(
   slotStart: Date,
   slotEnd: Date,
 ): boolean {
-  // Must have at least one availability block covering the entire slot
+  // Must be free on their calendar for the entire slot
   const covered = interviewer.availability.some(
     (a) => a.startTime <= slotStart && a.endTime >= slotEnd,
   );

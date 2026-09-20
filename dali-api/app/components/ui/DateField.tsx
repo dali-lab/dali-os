@@ -14,6 +14,8 @@ import { cn } from "~/lib/cn";
 // Controlled: pass `value` + `onChange`. Form: pass `name` (+ optional
 // `defaultValue`) and a hidden native <input type={mode}> mirrors the value.
 
+const POPOVER_WIDTH = 272;
+
 export type DateFieldMode = "date" | "datetime-local" | "time";
 
 export interface DateFieldProps {
@@ -28,6 +30,9 @@ export interface DateFieldProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  /** Replaces the trigger's look (e.g. a form's field dress), like Select's
+   *  buttonClassName. Layout, icon and behaviour stay the same. */
+  buttonClassName?: string;
   ariaLabel?: string;
 }
 
@@ -155,6 +160,7 @@ export function DateField({
   disabled = false,
   placeholder,
   className,
+  buttonClassName,
   ariaLabel,
 }: DateFieldProps) {
   const isControlled = value !== undefined;
@@ -197,7 +203,9 @@ export function DateField({
   const reposition = useCallback(() => {
     if (!triggerRef.current) return;
     const r = triggerRef.current.getBoundingClientRect();
-    const minWidth = Math.max(r.width, 260);
+    // A fixed width, not the trigger's: the day cells are square, so a popover
+    // stretched to a full-width field grew into a giant calendar.
+    const minWidth = POPOVER_WIDTH;
     const left = Math.min(r.left, window.innerWidth - minWidth - 8);
     // Estimate popover height from the DOM element when available, otherwise
     // use a reasonable fallback (calendar grid ~300px, datetime adds time row).
@@ -281,7 +289,11 @@ export function DateField({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60 disabled:hover:bg-transparent"
+        className={
+          buttonClassName
+            ? cn("inline-flex w-full items-center justify-between gap-2 disabled:opacity-60", buttonClassName)
+            : "inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60 disabled:hover:bg-transparent"
+        }
       >
         <span className={cn("truncate", display ? "" : "text-muted-foreground")}>
           {display ?? placeholder ?? (mode === "time" ? "Pick a time" : "Pick a date")}
@@ -300,7 +312,7 @@ export function DateField({
             ref={popRef}
             role="dialog"
             data-datefield-popover
-            style={{ position: "fixed", top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+            style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.minWidth }}
             className="z-[60] rounded-lg border border-border bg-card p-3 shadow-brand-2"
           >
             {showCalendar && (
@@ -345,6 +357,8 @@ export function DateField({
                     const d = i + 1;
                     const k = dateKey(viewY, viewM, d);
                     const selected = cur && cur.y === viewY && cur.m === viewM && cur.d === d;
+                    const isToday =
+                      today.getFullYear() === viewY && today.getMonth() === viewM && today.getDate() === d;
                     const disabledDay = !!outOfRange(k);
                     return (
                       <button
@@ -352,11 +366,14 @@ export function DateField({
                         type="button"
                         disabled={disabledDay}
                         onClick={() => pickDay(viewY, viewM, d)}
+                        aria-current={isToday ? "date" : undefined}
                         className={cn(
                           "aspect-square rounded text-sm transition-colors",
                           selected
                             ? "bg-accent-coral text-white"
-                            : "text-foreground hover:bg-muted",
+                            : isToday
+                              ? "font-semibold text-accent-coral ring-1 ring-inset ring-accent-coral/60 hover:bg-muted"
+                              : "text-foreground hover:bg-muted",
                           disabledDay && "cursor-not-allowed opacity-30 hover:bg-transparent",
                         )}
                       >

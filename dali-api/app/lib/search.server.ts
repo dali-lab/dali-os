@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import type { UserRoles } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { TASK_STATUS_LABELS } from "~/projects/lib/task-board";
 import {
   buildUrl,
@@ -450,11 +450,11 @@ async function searchApplications(
     : [...new Set(reviewerRows.map((r) => r.applicationCycleId))];
 
   // Leak-proofing: only cycles whose currently-bound confidentiality agreement
-  // this user has signed. Applies to Core too (no-agreement → nobody sees).
+  // this user has access to (signed, or Core/Admin, who are exempt).
   const signedCycleIds = (
     await Promise.all(
       candidateCycleIds.map(async (id) =>
-        (await getCycleConfidentialityState(userId, id)).status === "signed" ? id : null,
+        confidentialityCleared(await getCycleConfidentialityState(userId, id)) ? id : null,
       ),
     )
   ).filter((id): id is string => id !== null);
