@@ -8,7 +8,7 @@ import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import type { Prisma } from "~/generated/prisma/client";
+import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
@@ -17,6 +17,10 @@ import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 //   { parentPageId, beforeId?, workspaceType, workspaceId } → move to another
 //     workspace (Lab ↔ Project, Project ↔ Project). Moving a doc into a project
 //     IS adding it to that project (membership is just these two columns).
+//
+// A personal note (Member workspace, i.e. My Drive) is a valid SOURCE: the
+// owner may hand a note to a shared drive. Member is not a destination — see
+// BodySchema — so this is a one-way trip out of My Drive.
 //
 // Same-workspace reorder is unchanged when the workspace fields are omitted.
 // Docs and folders alike nest under any Folder up to MAX_PAGE_DEPTH, guarded by
@@ -31,7 +35,9 @@ const BodySchema = z.object({
   parentPageId: z.string().min(1).nullable(),
   beforeId: z.string().min(1).nullable().optional(),
   // Destination workspace. Omit both for a same-workspace reorder.
-  // Member is intentionally excluded (privacy — personal notes stay private).
+  // Member is intentionally excluded as a DESTINATION: nothing may be pulled
+  // out of a shared drive into someone's private space. Moving the other way
+  // (a note leaving My Drive) is allowed — see the source guard below.
   // EducationOffering is now a valid destination (Drive-space move into a
   // course workspace). Lab and Project remain as before.
   workspaceType: z.enum(["Lab", "Project", "EducationOffering"]).optional(),
@@ -65,12 +71,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       projectAsPRD: { select: { id: true } },
     },
   });
-  if (
-    !page ||
-    (page.workspaceType !== "Lab" && page.workspaceType !== "Project" && page.workspaceType !== "EducationOffering") ||
-    (page.workspaceType === "Lab" ? page.workspaceId !== null : !page.workspaceId) ||
-    page.archivedAt !== null
-  ) {
+  // A movable source is a live page in one of the four workspaces, carrying the
+  // workspaceId shape that workspace implies: Lab is lab-wide (null), the other
+  // three are scoped to a project / offering / note owner.
+  const sourceShapeOk =
+    page?.workspaceType === "Lab"
+      ? page.workspaceId === null
+      : (page?.workspaceType === "Project" ||
+          page?.workspaceType === "EducationOffering" ||
+          page?.workspaceType === "Member") &&
+        page.workspaceId !== null;
+  if (!page || !sourceShapeOk || page.archivedAt !== null) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
 
@@ -78,12 +89,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
 
   // Destination. Absent workspaceType → reorder in place.
-  let dest: { type: "Lab" | "Project" | "EducationOffering"; id: string | null };
+  let dest: { type: WorkspaceType; id: string | null };
   if (!body.workspaceType) {
-    dest = {
-      type: page.workspaceType as "Lab" | "Project" | "EducationOffering",
-      id: page.workspaceId,
-    };
+    dest = { type: page.workspaceType, id: page.workspaceId };
   } else if (body.workspaceType === "Lab") {
     dest = { type: "Lab", id: null };
   } else {
@@ -190,6 +198,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   else order.push(pageId);
 
   const leavesProject = page.workspaceType === "Project" && dest.type !== "Project";
+  // Leaving My Drive: the personal-note flags (profile visibility and the
+  // lab-listing proposal state) are Member-workspace concepts, so they go with
+  // it — same reasoning as partner/public sharing on the way out of a project.
+  const leavesMember = page.workspaceType === "Member";
+  const personalReset: Prisma.PageUncheckedUpdateInput = leavesMember
+    ? { profileVisible: false, labListing: "None", labListingNote: null }
+    : {};
   // Does the destination sit inside a scoped drive (e.g. Core)? Then the page —
   // and any descendants coming with it — must go Restricted so the scope, not
   // the lab-wide link grant, governs access (otherwise "Everyone in the lab"
@@ -216,12 +231,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         pinnedAt: null,
         // partner/public sharing is Project-only — clear it when leaving.
         ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+        ...personalReset,
         ...destGeneralAccess,
       };
   const childData: Prisma.PageUncheckedUpdateInput = {
     workspaceType: dest.type,
     workspaceId: dest.id,
     ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+    ...personalReset,
     ...destGeneralAccess,
   };
 

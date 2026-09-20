@@ -57,6 +57,10 @@ function labPage(over: Record<string, unknown> = {}) {
 function projectPage(over: Record<string, unknown> = {}) {
   return labPage({ workspaceType: "Project", workspaceId: "projA", ...over });
 }
+/** A personal note in My Drive — the Member workspace is keyed by its owner. */
+function notePage(over: Record<string, unknown> = {}) {
+  return labPage({ workspaceType: "Member", workspaceId: "u1", ...over });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -157,6 +161,47 @@ describe("POST /api/pages/:id/move", () => {
     vi.mocked(isOfferingManager).mockResolvedValue(true);
     const res = await call({ parentPageId: null, workspaceType: "EducationOffering", workspaceId: "off1" });
     expect(res.status).toBe(200);
+  });
+
+  it("moves a personal note out of My Drive into a project", async () => {
+    m.page.findUnique.mockResolvedValue(notePage({ profileVisible: true, labListing: "Listed" }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projA" });
+    expect(res.status).toBe(200);
+    const data = movedUpdateData();
+    expect(data.workspaceType).toBe("Project");
+    expect(data.workspaceId).toBe("projA");
+    // The personal-note flags are Member-workspace concepts — they don't follow.
+    expect(data.profileVisible).toBe(false);
+    expect(data.labListing).toBe("None");
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "page.move-workspace" }),
+    );
+  });
+
+  it("moves a personal note onto the lab shelf", async () => {
+    m.page.findUnique.mockResolvedValue(notePage());
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    const data = movedUpdateData();
+    expect(data.workspaceType).toBe("Lab");
+    expect(data.workspaceId).toBeNull();
+    expect(data.linkAccess).toBe("LabMembers");
+  });
+
+  it("403 when the actor doesn't own the note being moved out of My Drive", async () => {
+    m.page.findUnique.mockResolvedValue(notePage({ workspaceId: "u2" }));
+    vi.mocked(canManageSharing).mockResolvedValue(false);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(403);
+  });
+
+  it("404 for a Member page with no owner (malformed source)", async () => {
+    m.page.findUnique.mockResolvedValue(notePage({ workspaceId: null }));
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(404);
   });
 
   it("cascades a folder's children to the new workspace (keeping their parent)", async () => {

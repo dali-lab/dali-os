@@ -1771,6 +1771,13 @@ model ScheduledMeeting {
   title            String
   durationMinutes  Int
 
+  // What the organizer typed into the invite form. Mirrored onto the linked
+  // Google event (and the ICS we send when no Google event mirrors it), and
+  // kept here so the meeting still carries them when there's nothing to
+  // mirror to — an unlinked organizer, or a meeting with no guests.
+  location         String?
+  description      String?
+
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
   scopeId   String?
