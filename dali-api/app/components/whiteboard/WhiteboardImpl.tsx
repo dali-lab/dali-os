@@ -1,4 +1,5 @@
 import "@excalidraw/excalidraw/index.css";
+import "./whiteboard.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Excalidraw, MainMenu, WelcomeScreen, FONT_FAMILY } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -61,7 +62,7 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   }, [api, roomName, collabToken, canEdit, userName, photoUrl]);
 
   return (
-    <div className="relative min-h-0 flex-1 bg-page">
+    <div className="dali-whiteboard relative min-h-0 flex-1 bg-page">
       <Excalidraw
         excalidrawAPI={(a) => setApi(a)}
         initialData={initialData}
@@ -74,24 +75,21 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         onPointerUpdate={(payload) => bindingRef.current?.onPointerUpdate(payload)}
       >
         {/* Trim Excalidraw-specific chrome so the board reads as a DALI surface:
-            a custom menu without the Excalidraw+ upsell / social links, and a
-            welcome screen without the Excalidraw logo. Theme follows the app
-            (the `theme` prop above), so no theme toggle here. */}
+            a custom menu without the Excalidraw+ upsell / social links / Help
+            (its dialog links out to Excalidraw), and a welcome screen without the
+            Excalidraw logo. The Help "?" button and the community-library button
+            are hidden via whiteboard.css. Theme follows the app (the `theme` prop
+            above), so no theme toggle here. */}
         <MainMenu>
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
           <MainMenu.DefaultItems.ClearCanvas />
-          <MainMenu.Separator />
-          <MainMenu.DefaultItems.Help />
         </MainMenu>
         <WelcomeScreen>
           <WelcomeScreen.Center>
             <WelcomeScreen.Center.Heading>
               Start on the canvas — everyone here sees it live.
             </WelcomeScreen.Center.Heading>
-            <WelcomeScreen.Center.Menu>
-              <WelcomeScreen.Center.MenuItemHelp />
-            </WelcomeScreen.Center.Menu>
           </WelcomeScreen.Center>
         </WelcomeScreen>
       </Excalidraw>

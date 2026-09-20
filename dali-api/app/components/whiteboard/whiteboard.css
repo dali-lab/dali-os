@@ -1,0 +1,23 @@
+/* Scoped tweaks that make the embedded Excalidraw canvas read as a DALI
+   surface. These target Excalidraw's own class names (it exposes no props for
+   them), so revisit if the Excalidraw version is bumped. All rules are scoped to
+   `.dali-whiteboard` so they can't leak into the rest of the app. */
+
+/* Empty-board copy ("Start on the canvas…") in the DALI OS typeface (Mulish),
+   not Excalidraw's UI font. */
+.dali-whiteboard .welcome-screen-center {
+  font-family: var(--font-os, "Mulish"), var(--font-sans, "Open Sans"), sans-serif;
+}
+
+/* Drop the persistent Help ("?") button, bottom-right — its dialog links out to
+   Excalidraw's docs / blog / GitHub / YouTube. */
+.dali-whiteboard .help-icon,
+.dali-whiteboard .welcome-screen-decor--help {
+  display: none !important;
+}
+
+/* Drop the community shape-library button (opens libraries.excalidraw.com). */
+.dali-whiteboard .default-sidebar-trigger,
+.dali-whiteboard .sidebar-trigger {
+  display: none !important;
+}
