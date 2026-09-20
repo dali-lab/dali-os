@@ -63,6 +63,9 @@ export type DriveItem =
     }
   | {
       type: "doc";
+      /** True when the underlying Page.kind is Whiteboard — drives the Drive
+       *  icon and the /whiteboard/:id open href (vs the /documents/:id editor). */
+      isWhiteboard?: boolean;
       id: string;
       title: string;
       parentFolderId: string | null;
@@ -195,7 +198,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       workspaceType: "Lab",
       workspaceId: null,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -241,12 +244,16 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
           }
         : {
             type: "doc",
+            isWhiteboard: row.kind === "Whiteboard",
             id: row.id,
             title: row.title,
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
-            href: `/documents/${row.id}`,
+            href:
+              row.kind === "Whiteboard"
+                ? `/whiteboard/${row.id}`
+                : `/documents/${row.id}`,
           },
     );
   }
@@ -263,7 +270,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
       workspaceType: "Project",
       workspaceId: projectId,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -291,12 +298,16 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
           partnerVisible: row.partnerVisible,
         },
   );
@@ -342,7 +353,7 @@ async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
       workspaceType: "EducationOffering",
       workspaceId: offeringId,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -368,12 +379,16 @@ async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
         },
   );
 }
@@ -387,7 +402,7 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
       workspaceType: "Member",
       workspaceId: userSub,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -413,12 +428,16 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
         },
   );
 }

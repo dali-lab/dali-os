@@ -208,6 +208,12 @@ export async function syncRegistryDocBack(
 
 // Returns true when the named entity has `structured: true` in COLLAB_SOURCES.
 // Used by persistence.ts to choose the JSON serialiser over getPlainText.
+//
+// `whiteboard` is not registered in COLLAB_SOURCES (its auth is an explicit
+// branch in authorizeCollabDoc and its Y.Doc — a Y.Map of Excalidraw elements —
+// is self-sourcing, with no source column to seed from or sync back to), but it
+// IS structured, so it must use the JSON plainText mirror rather than the
+// BlockNote-fragment getPlainText (which returns "" for a Map room).
 export function isStructuredRoom(entity: string): boolean {
-  return !!COLLAB_SOURCES[entity]?.structured;
+  return COLLAB_SOURCES[entity]?.structured === true || entity === "whiteboard";
 }

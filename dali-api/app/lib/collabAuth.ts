@@ -185,6 +185,57 @@ export async function authorizeCollabDoc(
     return deny;
   }
 
+  // whiteboard:{pageId}:canvas — a Page (kind=Whiteboard) whose body is an
+  // Excalidraw scene. Same access model as doc:{pageId}:body: delegate to
+  // getPageAccess so viewer-only users connect read-only (live view) rather
+  // than being denied. Enrolled students co-edit a studentEditable offering
+  // whiteboard while the offering is live, mirroring the doc: branch.
+  if (entity === "whiteboard") {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        archivedAt: true,
+        workspaceType: true,
+        workspaceId: true,
+        partnerVisible: true,
+        createdById: true,
+        studentEditable: true,
+        profileVisible: true,
+        labListing: true,
+        linkAccess: true,
+        linkPermission: true,
+      },
+    });
+    if (!page || page.archivedAt !== null) return deny;
+
+    const access = await getPageAccess(userSub, page);
+    if (access.canView) return { allowed: true, readOnly: !access.canEdit };
+
+    if (
+      page.workspaceType === "EducationOffering" &&
+      page.workspaceId &&
+      page.studentEditable
+    ) {
+      const offering = await prisma.educationOffering.findUnique({
+        where: { id: page.workspaceId },
+        select: { status: true, closedOutAt: true },
+      });
+      if (offering?.status === "Published" && offering.closedOutAt === null) {
+        const enrolled = await prisma.educationApplication.findFirst({
+          where: {
+            applicantUserId: userSub,
+            offeringId: page.workspaceId,
+            status: "Approved",
+          },
+          select: { id: true },
+        });
+        if (enrolled !== null) return { allowed: true, readOnly: false };
+      }
+    }
+    return deny;
+  }
+
   // eduassignment:{assignmentId}:instructions — edit gate = offering manager.
   if (entity === "eduassignment") {
     const assignment = await prisma.educationAssignment.findUnique({

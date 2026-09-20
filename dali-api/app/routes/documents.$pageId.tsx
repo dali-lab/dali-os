@@ -177,6 +177,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/drive?scope=${scope}&folder=${page.id}`);
   }
 
+  // Whiteboards are Excalidraw canvases, not text documents — send any stale
+  // /documents/:id entry point (bookmark, recents, search hit) to the canvas.
+  if (page.kind === "Whiteboard") {
+    return redirect(`/whiteboard/${page.id}`);
+  }
+
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
   recordPageVisit(auth.user.sub, page.id, request);

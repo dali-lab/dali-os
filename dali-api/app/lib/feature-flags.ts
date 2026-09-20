@@ -157,6 +157,12 @@ export const FEATURE_FLAGS = [
     description:
       "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
   },
+  {
+    key: "whiteboard",
+    label: "Whiteboard",
+    description:
+      "Collaborative Excalidraw whiteboards in Drive — an infinite canvas with shapes, arrows, sticky notes, freehand pen, text, and images, synced live (with multiplayer cursors) through the same Yjs collab backend as documents. Create one from the Drive New menu; it shares, nests, versions, and is searchable like any page. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

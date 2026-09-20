@@ -170,6 +170,7 @@ export default [
       "documents/agreement/:id/signature/:sigId",
       "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
     ),
+    route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)

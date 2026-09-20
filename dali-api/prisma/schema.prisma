@@ -4642,6 +4642,9 @@ enum PageKind {
   // up to depth 6; a Folder may carry a scopeKind to govern access for
   // everything inside it.
   Folder
+  // A collaborative Excalidraw canvas. Body lives in a whiteboard:{id}:canvas
+  // collab room (Y.Map of elements), not in contentDocId.
+  Whiteboard
 }
 
 enum ScopeKind {
