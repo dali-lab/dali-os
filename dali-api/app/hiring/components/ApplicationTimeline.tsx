@@ -55,6 +55,68 @@ const STAGE_LABEL = (value: string) =>
   STAGE_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
 /**
+ * Promotes a Draft decision to Final, which is what puts the applicant on the
+ * hiring lead's Decisions list to be released.
+ *
+ * It lives beside the Move control because that control is what creates the
+ * Draft, and a Draft was otherwise a dead end from here: every other Finalize
+ * button is on the domain lead dashboard, inside the Interviews or Reviews
+ * table and gated on the cycle being UnderReview. An applicant moved by hand,
+ * or one whose cycle has since been completed, had no reachable next step.
+ */
+export function FinalizeDraftButton({
+  draft,
+}: {
+  draft: { id: string; type: string };
+}) {
+  const dialog = useDialog();
+  const toast = useToast();
+  const revalidator = useRevalidator();
+  const [busy, setBusy] = useState(false);
+  const label = STAGE_LABEL(draft.type).toLowerCase();
+
+  async function finalize() {
+    if (
+      !(await dialog.confirm({
+        title: `Finalize this ${label} decision?`,
+        description:
+          "This locks the decision in and hands it to the hiring lead to release. Nothing is emailed to the applicant yet.",
+        confirmLabel: "Finalize",
+      }))
+    )
+      return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/hiring/decisions/${draft.id}/finalize`, {
+        method: "POST",
+        credentials: "include",
+      });
+      // 409 means someone else finalized it first, which is the state we
+      // wanted — revalidate and let the timeline show the Final row.
+      if (!res.ok && res.status !== 409) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Couldn't finalize this decision.");
+        return;
+      }
+      revalidator.revalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={finalize}
+      disabled={busy}
+      className={buttonClasses("primary", "md")}
+    >
+      {busy ? "Finalizing…" : "Finalize"}
+    </button>
+  );
+}
+
+/**
  * Leads only: move an applicant to a stage without running a delib. Writes the
  * same Draft decision a closed board would, so the hiring lead still finalizes
  * and releases it. Nothing is emailed.

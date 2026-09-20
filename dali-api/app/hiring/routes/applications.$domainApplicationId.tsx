@@ -21,6 +21,7 @@ import {
 } from "~/hiring/components/InterviewNotesCard";
 import {
   ApplicationTimeline,
+  FinalizeDraftButton,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
 import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
@@ -29,6 +30,7 @@ import {
   visibleTimeline,
   type TimelineEntry,
 } from "~/hiring/lib/application-timeline";
+import { findFinalizableDraft } from "~/hiring/lib/decision-pills";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import type { Question, RubricCriterion } from "~/types";
@@ -373,6 +375,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       [d.madeBy?.firstName, d.madeBy?.lastName].filter(Boolean).join(" ").trim() || null,
   }));
 
+  // The Draft waiting on a Finalize, if there is one. The Move control on this
+  // card records a Draft; until someone promotes it to Final it stays invisible
+  // to the hiring lead's Decisions list, and every other Finalize button lives
+  // on the domain lead dashboard behind an UnderReview gate. So the page that
+  // creates the Draft offers the next step itself.
+  const finalizableDraft = canMoveStage ? findFinalizableDraft(decisions) : null;
+
   // For each delibs session, find which column this DA sits in (if any). Some
   // closed sessions may not contain the DA at all — exclude those.
   type DelibsRef = {
@@ -485,6 +494,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     interviewPrepNote: canSeeDelibs ? da.interviewPrepNote : null,
     canSeePreReleaseDecisions,
     canMoveStage,
+    finalizableDraft: finalizableDraft && {
+      id: finalizableDraft.id,
+      type: finalizableDraft.type,
+    },
     selectedReviewId,
   };
 }
@@ -595,6 +608,7 @@ export default function ApplicationReadOnlyDetail() {
         canSeePreReleaseDecisions={data.canSeePreReleaseDecisions}
         domainApplicationId={data.domainApplicationId}
         canMoveStage={data.canMoveStage}
+        finalizableDraft={data.finalizableDraft ?? null}
       />
     </div>
   );
@@ -681,11 +695,13 @@ function DecisionsSection({
   canSeePreReleaseDecisions,
   domainApplicationId,
   canMoveStage,
+  finalizableDraft,
 }: {
   timeline: TimelineEntry[];
   canSeePreReleaseDecisions: boolean;
   domainApplicationId: string;
   canMoveStage: boolean;
+  finalizableDraft: { id: string; type: string } | null;
 }) {
   return (
     <SetupCard
@@ -695,7 +711,14 @@ function DecisionsSection({
           ? "Every stage change, oldest first: delibs, interviews and decisions."
           : "Released decisions only."
       }
-      action={canMoveStage ? <StageMoveControl domainApplicationId={domainApplicationId} /> : undefined}
+      action={
+        canMoveStage ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {finalizableDraft && <FinalizeDraftButton draft={finalizableDraft} />}
+            <StageMoveControl domainApplicationId={domainApplicationId} />
+          </div>
+        ) : undefined
+      }
     >
       <ApplicationTimeline entries={timeline} />
     </SetupCard>
