@@ -316,9 +316,6 @@ export function TaskBoard({
   const epicFilter = searchParams.get("epic");
   const sprintFilter = searchParams.get("sprint");
   const termParam = searchParams.get("term");
-  // "Only my tasks" is a filter like the others, so it lives in the URL too —
-  // a board sliced to one person is a link worth sending.
-  const onlyMine = searchParams.get("mine") === "1";
 
   // The term filter only makes sense once the project spans more than one term
   // (its options are the project's terms + any term a sprint lands in). With
@@ -478,9 +475,6 @@ export function TaskBoard({
         return taskTermIds(termWindows, t).includes(effectiveTerm);
       });
     }
-    if (onlyMine) {
-      ts = ts.filter((t) => t.assignees.some((a) => a.id === currentUserId));
-    }
     if (filterPeopleIds.length > 0) {
       const want = new Set(filterPeopleIds);
       ts = ts.filter((t) => t.assignees.some((a) => want.has(a.id)));
@@ -497,8 +491,6 @@ export function TaskBoard({
     termWindows,
     options.currentTermId,
     carryoverBoundaryMs,
-    onlyMine,
-    currentUserId,
     filterPeopleIds,
     query,
   ]);
@@ -889,7 +881,6 @@ export function TaskBoard({
   const activeFilterCount =
     (epicFilter ? 1 : 0) +
     (sprintDeviates ? 1 : 0) +
-    (onlyMine ? 1 : 0) +
     (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
 
   // Option lists for the two comboboxes. `null` is the "no filter" row in
@@ -921,7 +912,7 @@ export function TaskBoard({
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["epic", "sprint", "term", "mine"]) next.delete(key);
+        for (const key of ["epic", "sprint", "term"]) next.delete(key);
         return next;
       },
       { replace: true, preventScrollReset: true },
@@ -1029,17 +1020,6 @@ export function TaskBoard({
                     ))}
                   </FilterGroup>
                 )}
-
-                {/* A slice, so it wears the same pills as Term rather than a
-                    switch — switches in this panel mean Layout. */}
-                <FilterGroup label="Assignee" os={os}>
-                  <FilterPill os={os} selected={!onlyMine} onClick={() => setParam("mine", null)}>
-                    Anyone
-                  </FilterPill>
-                  <FilterPill os={os} selected={onlyMine} onClick={() => setParam("mine", "1")}>
-                    Only me
-                  </FilterPill>
-                </FilterGroup>
 
                 {showEpicFilter && (
                   <FilterCombobox

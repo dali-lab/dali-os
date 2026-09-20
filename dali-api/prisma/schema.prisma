@@ -268,6 +268,7 @@ model User {
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
   customHires      CustomHire[]
+  chartStringsAuthored ProjectChartString[] @relation("ChartStringCreatedBy")
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
@@ -1802,6 +1803,13 @@ model ScheduledMeeting {
   title            String
   durationMinutes  Int
 
+  // What the organizer typed into the invite form. Mirrored onto the linked
+  // Google event (and the ICS we send when no Google event mirrors it), and
+  // kept here so the meeting still carries them when there's nothing to
+  // mirror to — an unlinked organizer, or a meeting with no guests.
+  location         String?
+  description      String?
+
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
   scopeId   String?
@@ -2397,6 +2405,7 @@ model Term {
   timelineDomains       TimelineDomain[]
   memberClasses         MemberClass[]
   courseOfferings       CourseOffering[]
+  projectChartStrings   ProjectChartString[]
 
   @@index([sortKey])
 }
@@ -2861,6 +2870,7 @@ model Project {
   files             ProjectFile[]
   budgetEntries     BudgetEntry[]
   budgetNotes       BudgetNote[]
+  chartStrings      ProjectChartString[]
   scheduledMeetings ScheduledMeeting[]
   timeEntries       TimeEntry[]
   // The curated public face of this project, if it has one. Absent until
@@ -5893,4 +5903,89 @@ model LabProcessWeekContent {
   updatedByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// A chart string a project charges against, for one term, with full history.
+// Nothing is ever edited in place: superseding writes a new row and points it
+// at the one it replaces — which is also what OSP does upstream, where Katie
+// reissues a whole new PTAEO rather than amending the old one.
+//
+// `projectId` NULL means the lab-wide default for that term: the string every
+// project inherits unless it has a row of its own. Twenty projects charge the
+// same lab GL string, so storing it per project per term would relocate the
+// transcription problem rather than end it. Defaults carry history too — the
+// 2026-07 org migration from 722 to 330 is a superseded default row, not an
+// edit that erased the old value.
+//
+// `isCurrent` is enforced by two partial unique indexes added in the migration
+// (Prisma can't express them): at most one current row per (project, term), and
+// at most one current default per term. A plain composite unique would not
+// constrain the defaults, because Postgres treats NULLs as distinct — the same
+// trap BudgetEntry documents.
+model ProjectChartString {
+  id        String  @id @default(cuid())
+  /// NULL = the lab-wide default for this term.
+  projectId String?
+  termId    String
+
+  /// Exactly as received. Never rewritten, so the audit trail starts at the source.
+  raw        String
+  /// Trimmed, scheme-stripped, upper-cased. Not a semantic repair.
+  normalized String
+  type       ChartStringType
+
+  /// GL segment 4 (Activity) or PTAEO segment 1 (Project) — what payroll joins on.
+  projectCode String
+  /// GL only: 0000 | 1500 | 2000 | 3000 | 4000 | 5000, and growing.
+  subactivity String?
+  /// GL segment 2, PTAEO segment 5. 330 = DALI Lab since ~2026-07-01.
+  org         String?
+  /// PTAEO segment 3 — the A of PTA.
+  awardCode   String?
+
+  /// Provenance, straight off the RAPPORT mail.
+  fpNumber    String?
+  awardId     String?
+  /// RAPPORT's own title, which is never quite the DALI OS project name.
+  rapportName String?
+  /// Metadata, not scope: OSP forbids spend outside this window.
+  awardStart  DateTime?
+  awardEnd    DateTime?
+  kind        ChartStringKind @default(FUNDED)
+
+  /// False once a later row replaces this one. See the partial unique indexes.
+  isCurrent Boolean @default(true)
+  /// The row this one replaces. Reverse pointer: a replacement records its own
+  /// provenance on insert, so no existing row's history is rewritten.
+  supersedesId    String? @unique
+  supersedeReason String?
+
+  note        String?
+  createdAt   DateTime @default(now())
+  createdById String
+
+  /// Restrict, not Cascade: deleting a project must not take payroll history.
+  project    Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  term       Term                @relation(fields: [termId], references: [id])
+  supersedes ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy ProjectChartString? @relation("ChartStringSupersession")
+  createdBy  User                @relation("ChartStringCreatedBy", fields: [createdById], references: [id])
+
+  @@index([projectId, termId])
+  @@index([projectCode])
+  @@index([termId])
+}
+
+enum ChartStringType {
+  GL
+  PTAEO
+}
+
+enum ChartStringKind {
+  /// Advance account issued while the FP is still routing.
+  ADVANCE
+  /// The funded award that supersedes an advance account.
+  FUNDED
+  /// The lab's own departmental GL line.
+  DEPARTMENT
 }
