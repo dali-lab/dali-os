@@ -242,3 +242,29 @@ export function isValidChartString(
 ): boolean {
   return parseChartString(raw, declaredType).errors.length === 0;
 }
+
+/** How the work on a chart string is paid for — the lab's four project types,
+ *  matching PROJECT_TYPES in app/admin/lib/budget.shared.ts.
+ *
+ *  Not an advance-vs-funded distinction: a RAPPORT advance account and the
+ *  funded award that follows carry the same Project.Task.Award, so that is a
+ *  status of the award in RAPPORT, not a property of the string.
+ *
+ *  Lives here rather than in chart-string.server.ts because the project panel
+ *  renders the dropdown client-side — a constant imported from a server module
+ *  drags Prisma into the browser bundle. Same reason budget.shared.ts exists. */
+export const PROJECT_FUNDING_TYPES = [
+  "DALI_GL",
+  "TRANSFER_GL",
+  "DALI_PTAEO",
+  "OTHER_PTAEO",
+] as const;
+export type ProjectFundingType = (typeof PROJECT_FUNDING_TYPES)[number];
+
+/** Display labels, in the order the dropdown offers them. */
+export const PROJECT_FUNDING_TYPE_LABELS: Record<ProjectFundingType, string> = {
+  DALI_GL: "DALI GL",
+  TRANSFER_GL: "Transfer GL",
+  DALI_PTAEO: "DALI PTAEO",
+  OTHER_PTAEO: "Other PTAEO",
+};

@@ -32,6 +32,7 @@ import {
   listProjectChartStrings,
   recordProjectChartString,
   ChartStringValidationError,
+  PROJECT_FUNDING_TYPES,
 } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -1490,12 +1491,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!chartString) return { error: "Chart string is required." };
     if (!termId) return { error: "Pick a term." };
 
-    const kindRaw = (form.get("kind") as string | null)?.trim() || "FUNDED";
-    const kind = (["ADVANCE", "FUNDED", "DEPARTMENT"] as const).includes(
-      kindRaw as "ADVANCE" | "FUNDED" | "DEPARTMENT",
+    const typeRaw = (form.get("fundingType") as string | null)?.trim() ?? "";
+    const fundingType = PROJECT_FUNDING_TYPES.includes(
+      typeRaw as (typeof PROJECT_FUNDING_TYPES)[number],
     )
-      ? (kindRaw as "ADVANCE" | "FUNDED" | "DEPARTMENT")
-      : "FUNDED";
+      ? (typeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
+      : null;
 
     const optional = (name: string) =>
       (form.get(name) as string | null)?.trim() || null;
@@ -1505,7 +1506,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         projectId: params.id,
         termId,
         chartString,
-        kind,
+        fundingType,
         fpNumber: optional("fpNumber"),
         awardId: optional("awardId"),
         rapportName: optional("rapportName"),

@@ -20,8 +20,8 @@ import { type ChartStringType } from "~/lib/chart-string";
 import {
   recordProjectChartString,
   ChartStringValidationError,
-  CHART_STRING_KINDS,
-  type ChartStringKind,
+  PROJECT_FUNDING_TYPES,
+  type ProjectFundingType,
 } from "~/lib/chart-string.server";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError } from "./errors";
 
@@ -79,7 +79,7 @@ export type ChartStringEntry = {
   rapportName: string | null;
   awardStart: string | null;
   awardEnd: string | null;
-  kind: ChartStringKind;
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedesId: string | null;
   supersedeReason: string | null;
@@ -112,7 +112,7 @@ type Row = {
   rapportName: string | null;
   awardStart: Date | null;
   awardEnd: Date | null;
-  kind: ChartStringKind;
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedesId: string | null;
   supersedeReason: string | null;
@@ -138,7 +138,7 @@ function toEntry(r: Row): ChartStringEntry {
     rapportName: r.rapportName,
     awardStart: r.awardStart?.toISOString() ?? null,
     awardEnd: r.awardEnd?.toISOString() ?? null,
-    kind: r.kind,
+    fundingType: r.fundingType,
     isCurrent: r.isCurrent,
     supersedesId: r.supersedesId,
     supersedeReason: r.supersedeReason,
@@ -182,7 +182,7 @@ export async function runListProjectChartStrings(
     rapportName: true,
     awardStart: true,
     awardEnd: true,
-    kind: true,
+    fundingType: true,
     isCurrent: true,
     supersedesId: true,
     supersedeReason: true,
@@ -279,11 +279,11 @@ export const SET_PROJECT_CHART_STRING_TOOL = {
         description:
           "The chart string as received. GL is entity.org.funding.activity.subactivity; PTAEO is project.task.award.expenditureType.org, where XXXXX in the expenditure type is expected and correct.",
       },
-      kind: {
+      fundingType: {
         type: "string",
-        enum: [...CHART_STRING_KINDS],
+        enum: [...PROJECT_FUNDING_TYPES],
         description:
-          "ADVANCE (advance account while the FP routes), FUNDED (the funded award), or DEPARTMENT (a departmental GL line). Default FUNDED.",
+          "How the work is paid for — the lab's four project types. DALI_GL (lab money on the GL), TRANSFER_GL (DALI fronts it and invoices, revenue transfers back), DALI_PTAEO (our own sponsored award), OTHER_PTAEO (someone else's award). Omit if not known.",
       },
       fpNumber: { type: "string", description: "RAPPORT FP, e.g. FP00014787." },
       awardId: { type: "string", description: "RAPPORT award, e.g. AWD00013615." },
@@ -326,7 +326,7 @@ export async function runSetProjectChartString(
     projectId: string;
     termCode: string;
     chartString: string;
-    kind?: ChartStringKind;
+    fundingType?: ProjectFundingType;
     fpNumber?: string;
     awardId?: string;
     rapportName?: string;
@@ -358,7 +358,7 @@ export async function runSetProjectChartString(
       projectId: project.id,
       termId: term.id,
       chartString: input.chartString,
-      kind: input.kind,
+      fundingType: input.fundingType,
       fpNumber: input.fpNumber,
       awardId: input.awardId,
       rapportName: input.rapportName,

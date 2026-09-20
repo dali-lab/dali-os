@@ -5951,7 +5951,9 @@ model ProjectChartString {
   /// Metadata, not scope: OSP forbids spend outside this window.
   awardStart  DateTime?
   awardEnd    DateTime?
-  kind        ChartStringKind @default(FUNDED)
+  /// Null when not yet known — the four values are a judgement the person
+  /// entering the string makes, not something the format reveals.
+  fundingType ProjectFundingType?
 
   /// False once a later row replaces this one. See the partial unique indexes.
   isCurrent Boolean @default(true)
@@ -5981,11 +5983,24 @@ enum ChartStringType {
   PTAEO
 }
 
-enum ChartStringKind {
-  /// Advance account issued while the FP is still routing.
-  ADVANCE
-  /// The funded award that supersedes an advance account.
-  FUNDED
-  /// The lab's own departmental GL line.
-  DEPARTMENT
+/// How the work on this chart string is paid for. Mirrors the four values the
+/// Budget tab already offers (`PROJECT_TYPES` in app/admin/lib/budget.shared.ts),
+/// which are the lab's real project types.
+///
+/// Deliberately NOT an advance-vs-funded distinction: a RAPPORT advance account
+/// and the funded award that follows carry the same Project.Task.Award, so that
+/// is a status of the award in RAPPORT, not a property of the chart string —
+/// modelling it here would leave every row claiming ADVANCE forever.
+///
+/// Spelled PTAEO per OSP. The legacy `BudgetEntry.projectType` strings still
+/// read "PATEO"; unifying them belongs with the funding-model work.
+enum ProjectFundingType {
+  /// Lab money, charged to the lab's own GL and settled there.
+  DALI_GL
+  /// DALI fronts the cost on the GL, invoices, and the revenue transfers back.
+  TRANSFER_GL
+  /// DALI holds the sponsored award. The only type carrying F&A recovery.
+  DALI_PTAEO
+  /// A PTAEO that belongs to someone else, usually another Dartmouth unit.
+  OTHER_PTAEO
 }
