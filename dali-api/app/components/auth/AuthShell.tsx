@@ -18,7 +18,7 @@ export default function AuthShell({ heading, error, children }: AuthShellProps) 
       <img
         src="/spread-out-blocks.png"
         alt=""
-        className="absolute opacity-20 dark:opacity-10 pointer-events-none z-0"
+        className="hidden md:block absolute opacity-20 dark:opacity-10 pointer-events-none z-0"
         style={{
           top: "50%",
           right: "-30vh",
