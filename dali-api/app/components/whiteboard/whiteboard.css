@@ -25,13 +25,12 @@
   display: none !important;
 }
 
-/* Remove Excalidraw's built-in Mermaid converter (hand-drawn output) from the
-   "more tools" dropdown — our "Insert diagram" replaces it — while keeping the
-   rest of the dropdown (frame, laser). Excalidraw exposes no prop to disable it,
-   and the Mermaid + web-embed items share data-testid="toolbar-embeddable", so
-   both are hidden; web embeds aren't part of this whiteboard anyway. Unscoped
-   because dropdowns can render in a portal (whiteboard.css only loads here). */
-.App-toolbar__extra-tools-dropdown [data-testid="toolbar-embeddable"] {
+/* Remove the "more tools" dropdown entirely. After dropping the web-embed item
+   and the built-in hand-drawn Mermaid, it held only Frame + Laser — both still
+   reachable by keyboard (F / K) — so hiding the one trigger is cleaner and more
+   robust than whitelisting items against Excalidraw's internal DOM. Our "Insert
+   diagram" button replaces the built-in Mermaid. */
+.dali-whiteboard .App-toolbar__extra-tools-trigger {
   display: none !important;
 }
 

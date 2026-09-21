@@ -9,7 +9,7 @@ import {
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { Trash2, Maximize2, Minimize2, Workflow } from "lucide-react";
+import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2 } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
@@ -17,6 +17,11 @@ import { bindExcalidrawToYjs, type WhiteboardBinding } from "./whiteboard-yjs";
 import { uploadWhiteboardImage } from "./upload";
 import { MermaidDialog, type DiagramInsert } from "./MermaidDialog";
 import type { WhiteboardEditorProps } from "./WhiteboardEditor";
+
+// Shared style for our custom top-right buttons so they read like Excalidraw's
+// own islands in light and dark.
+const TOP_BTN_CLASS =
+  "flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]";
 
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   // title/iconEmoji come through props but the shell breadcrumb renders them now.
@@ -118,15 +123,28 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         theme={theme}
         isCollaborating
         renderTopRightUI={() => (
-          <button
-            type="button"
-            onClick={() => setIsFullscreen((v) => !v)}
-            title={isFullscreen ? "Exit full screen" : "Full screen"}
-            aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]"
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => setDiagramOpen(true)}
+                title="Insert diagram"
+                aria-label="Insert diagram"
+                className={TOP_BTN_CLASS}
+              >
+                <Workflow className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((v) => !v)}
+              title={isFullscreen ? "Exit full screen" : "Full screen"}
+              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              className={TOP_BTN_CLASS}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          </div>
         )}
         onChange={(elements, appState, files) =>
           bindingRef.current?.onChange(elements, appState, files)
@@ -140,16 +158,25 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
             the community-library button are hidden via whiteboard.css. Theme
             follows the app (the `theme` prop above), so no theme toggle here. */}
         <MainMenu>
-          <MainMenu.DefaultItems.SaveAsImage />
-          <MainMenu.DefaultItems.ChangeCanvasBackground />
           {canEdit && (
             <MainMenu.Item
-              icon={<Workflow className="h-4 w-4" />}
-              onSelect={() => setDiagramOpen(true)}
+              icon={<Frame className="h-4 w-4" />}
+              shortcut="F"
+              onSelect={() => api?.setActiveTool({ type: "frame" })}
             >
-              Insert diagram
+              Frame tool
             </MainMenu.Item>
           )}
+          <MainMenu.Item
+            icon={<Wand2 className="h-4 w-4" />}
+            shortcut="K"
+            onSelect={() => api?.setActiveTool({ type: "laser" })}
+          >
+            Laser pointer
+          </MainMenu.Item>
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.SaveAsImage />
+          <MainMenu.DefaultItems.ChangeCanvasBackground />
           {canEdit && (
             <MainMenu.Item
               icon={<Trash2 className="h-4 w-4" />}
