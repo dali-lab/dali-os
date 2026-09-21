@@ -5,6 +5,7 @@ import {
   Excalidraw,
   MainMenu,
   WelcomeScreen,
+  Footer,
   FONT_FAMILY,
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
@@ -123,28 +124,15 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         theme={theme}
         isCollaborating
         renderTopRightUI={() => (
-          <div className="flex items-center gap-1.5">
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => setDiagramOpen(true)}
-                title="Insert diagram"
-                aria-label="Insert diagram"
-                className={TOP_BTN_CLASS}
-              >
-                <Workflow className="h-4 w-4" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((v) => !v)}
-              title={isFullscreen ? "Exit full screen" : "Full screen"}
-              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
-              className={TOP_BTN_CLASS}
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            title={isFullscreen ? "Exit full screen" : "Full screen"}
+            aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+            className={TOP_BTN_CLASS}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
         )}
         onChange={(elements, appState, files) =>
           bindingRef.current?.onChange(elements, appState, files)
@@ -195,6 +183,18 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
             </WelcomeScreen.Center.Heading>
           </WelcomeScreen.Center>
         </WelcomeScreen>
+        {canEdit && (
+          <Footer>
+            <button
+              type="button"
+              onClick={() => setDiagramOpen(true)}
+              title="Insert a diagram from Mermaid"
+              className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-sm text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]"
+            >
+              <Workflow className="h-4 w-4" /> Insert diagram
+            </button>
+          </Footer>
+        )}
       </Excalidraw>
       <MermaidDialog
         open={diagramOpen}
