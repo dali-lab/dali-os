@@ -3,7 +3,7 @@ import {
   isLandingBackgroundId,
   LANDING_BACKGROUND_IDS,
   LANDING_BACKGROUND_SCHEDULE,
-  scheduledLandingBackground,
+  scheduledLandingWeek,
 } from '../schedule'
 
 describe('landing background schedule', () => {
@@ -18,9 +18,9 @@ describe('landing background schedule', () => {
 
   it('picks the latest entry that has started', () => {
     const [first, ...rest] = LANDING_BACKGROUND_SCHEDULE
-    expect(scheduledLandingBackground('2000-01-01')).toBe(first.id)
+    expect(scheduledLandingWeek('2000-01-01')).toBe(first)
     for (const entry of rest) {
-      expect(scheduledLandingBackground(entry.from)).toBe(entry.id)
+      expect(scheduledLandingWeek(entry.from)).toBe(entry)
     }
   })
 
