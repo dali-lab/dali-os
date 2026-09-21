@@ -842,6 +842,160 @@ export async function attachMeetingWhiteboard(
   return { ok: true, whiteboardPageId };
 }
 
+// Re-file an existing meeting note / whiteboard into a project's meeting-notes
+// folder — used when a project is added to a meeting after creation, so its
+// artifacts move to where a project meeting's would have been filed. Mirrors
+// buildMeetingArtifactPage's project branch (folder + title) and the page-move
+// route's access reset for a scoped (non-Lab) destination: the project's scope,
+// not a lab-wide link grant, governs who can see it now.
+async function refileMeetingArtifactToProject(input: {
+  pageId: string;
+  isBoard: boolean;
+  projectId: string;
+  projectName: string;
+  meetingType: MeetingType;
+  meetingTypeLabel: string | null;
+  authorId: string;
+  startDate: Date | null;
+}): Promise<void> {
+  const dateLabel = formatDateShort(input.startDate ?? new Date());
+  const noun = input.isBoard ? "whiteboard" : "meeting note";
+  let parentPageId: string | null = null;
+  let title: string;
+  if (input.meetingType === "Team" || input.meetingType === "Partner") {
+    const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
+    parentPageId = folder.id;
+    title = `${input.projectName} ${input.meetingType} ${noun} (${dateLabel})`;
+  } else {
+    // "Other": no default folder for a custom label, so it sits at the project
+    // top level, named for that label — same as the create path.
+    const label = input.meetingTypeLabel ?? "Meeting";
+    title = input.isBoard ? `${label} whiteboard (${dateLabel})` : `${label} (${dateLabel})`;
+  }
+  await prisma.page.update({
+    where: { id: input.pageId },
+    data: {
+      workspaceType: "Project",
+      workspaceId: input.projectId,
+      parentPageId,
+      title,
+      // A pin means "top of THIS view", and partner/public sharing is a
+      // project's own concern — reset on the way in, like the move route.
+      pinnedAt: null,
+      partnerVisible: false,
+      publicVisible: false,
+      linkAccess: "Restricted",
+      linkPermission: "View",
+    },
+  });
+}
+
+export type SetMeetingProjectInput = {
+  meetingId: string;
+  /** Who is setting the project — must be the organizer or Core, and the
+   *  identity project membership is checked against. */
+  actorId: string;
+  projectId: string;
+  meetingType: MeetingType;
+  meetingTypeLabel?: string | null;
+};
+
+export type SetMeetingProjectResult =
+  | { ok: true }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Associate an existing meeting with a project after creation — the inverse of
+ * the create form's About step, which is otherwise frozen once a meeting exists.
+ * Sets meetingType/project and re-files any existing note/whiteboard into the
+ * project's meeting-notes folder. isCoreMeeting is left as-is, so a Core meeting
+ * becomes both. A note-less meeting just records the association (+ its
+ * attendance roster). Reversing it (back to Core/General) is not handled here.
+ */
+export async function setMeetingProject(
+  input: SetMeetingProjectInput,
+): Promise<SetMeetingProjectResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: input.meetingId },
+    select: {
+      id: true,
+      organizerId: true,
+      participantUserIds: true,
+      status: true,
+      selectedAt: true,
+      meetingType: true,
+      notePage: { select: { id: true, kind: true } },
+      whiteboardPage: { select: { id: true, kind: true } },
+    },
+  });
+  if (!meeting || meeting.status === "Cancelled") {
+    return { ok: false, error: "Meeting not found", status: 404 };
+  }
+
+  // Same authority as attachMeetingNote: the organizer owns the meeting, Core
+  // has broad access. The client only shows the affordance to those two.
+  const core = await isCore(input.actorId);
+  if (meeting.organizerId !== input.actorId && !core) {
+    return { ok: false, error: "Only the organizer or Core can set a meeting's project", status: 403 };
+  }
+
+  if (input.meetingType === "Other" && !input.meetingTypeLabel?.trim()) {
+    return { ok: false, error: "A name is required for an \"Other\" meeting", status: 400 };
+  }
+
+  // Filing under a project requires membership (or Core) — mirrors the project
+  // set /api/move-destinations offers and attachMeetingNote's own check.
+  const proj = await prisma.project.findFirst({
+    where: {
+      id: input.projectId,
+      ...(core ? {} : { assignments: { some: { userId: input.actorId } } }),
+    },
+    select: { id: true, name: true },
+  });
+  if (!proj) {
+    return { ok: false, error: "You can't file this meeting under that project", status: 403 };
+  }
+
+  const meetingTypeLabel =
+    input.meetingType === "Other" ? (input.meetingTypeLabel?.trim() || null) : null;
+
+  for (const page of [meeting.notePage, meeting.whiteboardPage]) {
+    if (!page) continue;
+    await refileMeetingArtifactToProject({
+      pageId: page.id,
+      isBoard: page.kind === "Whiteboard",
+      projectId: proj.id,
+      projectName: proj.name,
+      meetingType: input.meetingType,
+      meetingTypeLabel,
+      authorId: input.actorId,
+      startDate: meeting.selectedAt,
+    });
+  }
+
+  await prisma.scheduledMeeting.update({
+    where: { id: meeting.id },
+    data: {
+      meetingType: input.meetingType,
+      meetingTypeLabel,
+      projectId: proj.id,
+    },
+  });
+
+  // A meeting that had no type yet had no attendance roster — back it up now
+  // (idempotent) so the note's checklist has rows. One that already had a type
+  // already has its rows.
+  if (!meeting.meetingType) {
+    const attendeeIds = Array.from(new Set([...meeting.participantUserIds, meeting.organizerId]));
+    await prisma.meetingAttendance.createMany({
+      data: attendeeIds.map((userId) => ({ scheduledMeetingId: meeting.id, userId })),
+      skipDuplicates: true,
+    });
+  }
+
+  return { ok: true };
+}
+
 // Grace on either side of a meeting during which self-check-in / wallet-pass
 // scan is accepted: from CHECK_IN_GRACE_MIN before the scheduled start to
 // CHECK_IN_GRACE_MIN after the scheduled end.
