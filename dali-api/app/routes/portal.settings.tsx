@@ -11,8 +11,8 @@ import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSetting
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 // Applicant settings — same shape as partner settings, student content. CAS
-// hands us legal names, so editable first/last (preferred name), pronouns,
-// and a phone number for interview scheduling are the fields that matter.
+// hands us legal names, so editable first/last (preferred name) and pronouns
+// are the fields that matter.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -22,7 +22,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       firstName: true,
       lastName: true,
       pronouns: true,
-      phoneNumber: true,
       classYear: true,
       major: true,
       timeZone: true,
@@ -60,7 +59,6 @@ export async function action({ request }: Route.ActionArgs) {
       firstName,
       lastName,
       pronouns: (form.get("pronouns") as string | null)?.trim() || null,
-      phoneNumber: (form.get("phoneNumber") as string | null)?.trim() || null,
       classYear,
       major: (form.get("major") as string | null)?.trim() || null,
       timeZone,
@@ -135,19 +133,6 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
               name="pronouns"
               placeholder="e.g. they/them"
               defaultValue={me.pronouns ?? ""}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="phoneNumber" className={labelClass}>
-              Phone number
-            </label>
-            <input
-              id="phoneNumber"
-              name="phoneNumber"
-              type="tel"
-              placeholder="For interview scheduling"
-              defaultValue={me.phoneNumber ?? ""}
               className={inputClass}
             />
           </div>

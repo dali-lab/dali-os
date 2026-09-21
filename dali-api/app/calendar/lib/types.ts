@@ -287,6 +287,11 @@ export type ExternalEventDTO = {
 };
 
 export type LoaderData = {
+  // True on the /portal/calendar mount (a non-member Dartmouth applicant). The
+  // working-hours overlay and its settings section are a lab-availability
+  // concept, so they're hidden for this viewer — see calendar.tsx and
+  // CalendarSettingsModal.
+  portal: boolean;
   timezone: string;
   defaultEventBufferMin: number;
   workingHours: WhDay[];
