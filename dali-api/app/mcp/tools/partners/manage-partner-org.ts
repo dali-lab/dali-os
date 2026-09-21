@@ -2,7 +2,9 @@
 // Scope: mcp:write. Gated to isCore.
 //
 // Actions:
-//   create — create a new PartnerOrg. Requires name.
+//   create — create a new PartnerOrg. Requires name. For an individual partner
+//            (isIndividual:true) also requires email; it sets up the person's
+//            PartnerContact + PartnerMembership + primary contact.
 //   update — update org fields (name, website, logoUrl, isIndividual, primaryContactId).
 //             Requires orgId and name.
 //   delete — delete an empty org. Requires orgId. Blocked if any members, project links,
@@ -11,6 +13,7 @@
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { classifyPartnerEmail, normalizeEmail } from "~/partners/lib/magic-link.server";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -21,7 +24,7 @@ import {
 export const MANAGE_PARTNER_ORG_TOOL = {
   name: "manage_partner_org",
   description:
-    "Create, update, or delete a partner organization. Action 'create' creates a new org (name required). Action 'update' edits org details (orgId + name required). Action 'delete' removes an empty org (orgId required; blocked if members, projects, applications, or pending invites exist). Requires Core access.",
+    "Create, update, or delete a partner organization. Action 'create' creates a new org (name required; for an individual partner pass isIndividual:true + email, which sets up the person's contact). Action 'update' edits org details (orgId + name required). Action 'delete' removes an empty org (orgId required; blocked if members, projects, applications, or pending invites exist). Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,6 +38,11 @@ export const MANAGE_PARTNER_ORG_TOOL = {
       website: { type: "string" },
       logoUrl: { type: "string" },
       isIndividual: { type: "boolean" },
+      email: {
+        type: "string",
+        description:
+          "Required when creating an individual partner: their contact email. Sets up the person's contact + membership.",
+      },
       primaryContactId: {
         type: "string",
         description: "PartnerMembership.id to set as primary contact.",
@@ -67,11 +75,57 @@ export async function runManagePartnerOrg(
     const name = (input.name as string).trim();
     if (!name) throw new McpInvalidError("name cannot be empty");
 
+    const isIndividual = (input.isIndividual as boolean | undefined) ?? false;
+
+    // An individual partner is a person: create their contact + membership +
+    // primary contact up front (matches the web form and the promotion path)
+    // so the org is never an empty husk.
+    if (isIndividual) {
+      const email = normalizeEmail((input.email as string | undefined) ?? "");
+      if (!email.includes("@")) {
+        throw new McpInvalidError("email is required for an individual partner");
+      }
+      const identity = await classifyPartnerEmail(email);
+      if (identity.kind === "member-conflict") {
+        throw new McpInvalidError(
+          "That email belongs to a DALI member or Dartmouth account; partners use a separate work email",
+        );
+      }
+      const org = await prisma.$transaction(async (tx) => {
+        const created = await tx.partnerOrg.create({
+          data: { name, isIndividual: true },
+          select: { id: true, name: true },
+        });
+        const contact = await tx.partnerContact.upsert({
+          where: { email },
+          create: { email, name },
+          update: { name },
+          select: { id: true },
+        });
+        const membership = await tx.partnerMembership.create({
+          data: { contactId: contact.id, orgId: created.id },
+          select: { id: true },
+        });
+        await tx.partnerOrg.update({
+          where: { id: created.id },
+          data: { primaryContactId: membership.id },
+        });
+        return created;
+      });
+      await logAuditEvent({
+        action: "partner.org.create",
+        userId: callerId,
+        targetId: org.id,
+        metadata: { via: "mcp", individual: true },
+      });
+      return { id: org.id, name: org.name };
+    }
+
     const org = await prisma.partnerOrg.create({
       data: {
         name,
         website: (input.website as string | undefined)?.trim() || null,
-        isIndividual: (input.isIndividual as boolean | undefined) ?? false,
+        isIndividual: false,
       },
       select: { id: true, name: true },
     });

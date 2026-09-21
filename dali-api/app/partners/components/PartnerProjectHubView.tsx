@@ -22,6 +22,19 @@ import type {
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Above this many terms, a long-running project would spell out a wall of term
+// names in the header line. Terms arrive sorted, so collapse to the span and a
+// count instead of listing every one.
+const PARTNER_TERMS_THRESHOLD = 8;
+
+function partnerTermsLabel(terms: string[]): string | null {
+  if (terms.length === 0) return null;
+  if (terms.length <= PARTNER_TERMS_THRESHOLD) {
+    return `Terms: ${terms.map(termCodeLabel).join(", ")}`;
+  }
+  return `Terms: ${termCodeLabel(terms[0])} to ${termCodeLabel(terms[terms.length - 1])} (${terms.length} terms)`;
+}
+
 // One shared document. Indented when it sits inside a folder, so the tree
 // reads the same way the project hub's Drive does.
 function DriveDocRow({
@@ -289,9 +302,7 @@ export function PartnerProjectHubView({
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {[
-                project.terms.length > 0
-                  ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
-                  : null,
+                partnerTermsLabel(project.terms),
                 partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
               ]
                 .filter(Boolean)
