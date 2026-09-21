@@ -1,5 +1,7 @@
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
+import { Shapes } from "lucide-react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -244,6 +246,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     | {
         meetingId: string;
         meetingLabel: string;
+        /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
+        whiteboardPageId: string | null;
         canMark: boolean;
         rows: AttendanceRow[];
         selfCheckIn: boolean;
@@ -262,6 +266,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         meetingType: true,
         meetingTypeLabel: true,
         attendanceMode: true,
+        whiteboardPage: { select: { id: true } },
         attendance: {
           select: {
             userId: true,
@@ -293,6 +298,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       attendance = {
         meetingId: meeting.id,
         meetingLabel: label,
+        whiteboardPageId: meeting.whiteboardPage?.id ?? null,
         canMark,
         rows: meeting.attendance.map((a) => ({
           userId: a.userId,
@@ -389,9 +395,20 @@ export default function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
 
   return (
     <div className="flex flex-col gap-4">
+      {whiteboardEnabled && attendance?.whiteboardPageId && (
+        // This meeting also has a whiteboard — link across to it (the board
+        // carries the matching link back).
+        <Link
+          to={`/whiteboard/${attendance.whiteboardPageId}`}
+          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
+        >
+          <Shapes className="h-4 w-4 text-muted-foreground" /> Open meeting whiteboard
+        </Link>
+      )}
       {attendance?.selfCheckIn && (
         <CheckInPanel
           meetingId={attendance.meetingId}

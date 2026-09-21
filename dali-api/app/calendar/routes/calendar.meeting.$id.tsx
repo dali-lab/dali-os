@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin, Shapes } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -14,6 +14,7 @@ import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -65,6 +66,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
       notePage: { select: { id: true } },
+      whiteboardPage: { select: { id: true } },
       attendance: {
         select: {
           userId: true,
@@ -136,6 +138,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     location: meeting.location,
     description: meeting.description,
     notePageId: meeting.notePage?.id ?? null,
+    whiteboardPageId: meeting.whiteboardPage?.id ?? null,
+    // Adding a whiteboard is the same authority as adding a note. hasType lets
+    // the add flow skip the About/type step when the meeting already knows it.
+    canAddWhiteboard: canAddNote,
+    hasType: meeting.meetingType != null,
     canAddNote,
     meetingUrl: meeting.meetingUrl,
     canManage,
@@ -267,6 +274,7 @@ export default function CalendarMeetingPage() {
   // scanning a passholder into a meeting with no MeetingAttendance rows only ever
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
   const [editing, setEditing] = useState(false);
 
@@ -331,6 +339,22 @@ export default function CalendarMeetingPage() {
               />
             )
           )}
+          {whiteboardEnabled &&
+            (d.whiteboardPageId ? (
+              <Link to={`/whiteboard/${d.whiteboardPageId}`} className={noteBtnClass}>
+                <Shapes className="h-4 w-4 text-muted-foreground" /> Open whiteboard
+              </Link>
+            ) : (
+              d.canAddWhiteboard && (
+                <AddMeetingWhiteboardButton
+                  meetingId={d.meetingId}
+                  isCoreMeeting={d.isCoreMeeting}
+                  hasType={d.hasType}
+                  actionPath="/calendar"
+                  className={noteBtnClass}
+                />
+              )
+            ))}
         </div>
       </header>
 

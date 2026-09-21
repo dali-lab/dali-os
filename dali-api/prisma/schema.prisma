@@ -1823,7 +1823,8 @@ model ScheduledMeeting {
   meetingTypeLabel String?
   projectId        String?
   project          Project?     @relation(fields: [projectId], references: [id])
-  notePage         Page?
+  notePage         Page?        @relation("MeetingNotePage")
+  whiteboardPage   Page?        @relation("MeetingWhiteboardPage")
 
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
@@ -4401,7 +4402,13 @@ model Page {
   // note (see ScheduledMeeting.notePage / meetingType). Lets the document
   // route know to render the AttendanceChecklist above the editor.
   meetingNoteId String?           @unique
-  meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
+  meetingNote   ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
+
+  // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
+  // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
+  // each 1:1. See ScheduledMeeting.whiteboardPage.
+  meetingWhiteboardId String?           @unique
+  meetingWhiteboard   ScheduledMeeting? @relation("MeetingWhiteboardPage", fields: [meetingWhiteboardId], references: [id])
 
   // When true, this page acts as a template: it is excluded from the normal
   // document list and offered as a starting point when creating new pages.

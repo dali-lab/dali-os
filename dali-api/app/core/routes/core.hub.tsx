@@ -134,6 +134,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         participantUserIds: true,
         organizer: { select: { firstName: true, lastName: true } },
         notePage: { select: { id: true, title: true } },
+        whiteboardPage: { select: { id: true } },
+        meetingType: true,
         // The guest list and everyone's answer: an invite notification per
         // recipient is where a DALI meeting keeps its RSVPs.
         notifications: {
@@ -285,6 +287,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     const meeting: EventMeetingDTO = {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
+      whiteboardPageId: m.whiteboardPage?.id ?? null,
+      hasType: m.meetingType != null,
       onTimesheet: m.timeEntries.length > 0,
       isCoreMeeting: true,
       // Everything on this calendar is here *because* it's a Core meeting, so
@@ -293,6 +297,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // This page is Core-gated, so every viewer may add a note (the organizer
       // and Core are exactly who attachMeetingNote allows).
       canAddNote: true,
+      canAddWhiteboard: true,
       canInvite: true,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",

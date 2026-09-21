@@ -128,6 +128,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       linkAccess: true,
       linkPermission: true,
       createdById: true,
+      // When this board is a meeting's whiteboard, carry the meeting + its note
+      // so the canvas can show a context bar linking across to them.
+      meetingWhiteboard: {
+        select: { id: true, title: true, notePage: { select: { id: true } } },
+      },
     },
   });
   if (!page || page.archivedAt !== null) {
@@ -200,6 +205,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
     photoUrl: presenceUser?.photoUrl ?? null,
+    meeting: page.meetingWhiteboard
+      ? {
+          id: page.meetingWhiteboard.id,
+          title: page.meetingWhiteboard.title,
+          notePageId: page.meetingWhiteboard.notePage?.id ?? null,
+        }
+      : null,
   };
 }
 
@@ -215,6 +227,7 @@ export default function WhiteboardPage() {
       userName={data.userName}
       currentUserId={data.currentUserId}
       photoUrl={data.photoUrl}
+      meeting={data.meeting}
     />
   );
 }

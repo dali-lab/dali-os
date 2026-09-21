@@ -24,14 +24,19 @@ export type MeetingNoteLocation = {
 };
 
 export type MeetingNoteState = {
+  /** Create a shared note doc for this meeting. */
   enabled: boolean;
+  /** Create a shared whiteboard for this meeting (files alongside the note, uses
+   *  the same About/type). Independent of `enabled` — a meeting can have either,
+   *  both, or neither. */
+  whiteboard: boolean;
   /** "" = General (no project); otherwise a projectId. */
   about: string;
   /** Only meaningful when `about` is a project. */
   subtype: "Team" | "Partner" | "Other";
   /** General or project-"Other" meeting name (persisted as meetingTypeLabel). */
   label: string;
-  /** General note destination; null → Lab-wide top level (the default/fallback). */
+  /** General destination; null → Lab-wide top level (the default/fallback). */
   location: MeetingNoteLocation | null;
 };
 
@@ -40,40 +45,55 @@ export type MeetingNoteState = {
  *  from the moment the Core toggle goes on. */
 export const CORE_NOTE_LABEL = "Core meeting";
 
-/** Where a Core note is filed, for the read-only destination row. Mirrors
- *  ensureCoreMeetingNotesFolder's placement (the Core drive's "Meeting notes"
- *  folder) — the server does the actual filing, so no location is ever sent. */
-export const CORE_NOTE_FOLDER_LABEL = "Core / Meeting notes";
+/** Where a Core meeting's assets are filed, for the read-only destination row.
+ *  Mirrors ensureCoreMeetingNotesFolder's placement (the Core drive's "Meeting
+ *  assets" folder) — the server does the actual filing, so no location is ever
+ *  sent. */
+export const CORE_NOTE_FOLDER_LABEL = "Core / Meeting assets";
 
 export const emptyMeetingNote: MeetingNoteState = {
   enabled: false,
+  whiteboard: false,
   about: "",
   subtype: "Team",
   label: "",
   location: null,
 };
 
-/** Whether the note fields are complete enough to submit. */
+/** Whether at least one asset (note or whiteboard) is requested. */
+export function meetingNoteActive(s: MeetingNoteState): boolean {
+  return s.enabled || s.whiteboard;
+}
+
+/** Whether the shared meeting-asset fields are complete enough to submit. */
 export function meetingNoteValid(s: MeetingNoteState): boolean {
-  if (!s.enabled) return true;
+  if (!meetingNoteActive(s)) return true;
   if (s.about === "" || s.subtype === "Other") return s.label.trim().length > 0;
   return true;
 }
 
-/** The note-related fields to merge into the /api/scheduled-meetings payload. */
+/** The meeting-asset fields to merge into the /api/scheduled-meetings payload.
+ *  When either asset is requested, sends the derived meetingType/project plus the
+ *  `note`/`whiteboard` flags telling the server which artifacts to create. */
 export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown> {
-  if (!s.enabled) return {};
+  if (!meetingNoteActive(s)) return {};
+  const out: Record<string, unknown> = { note: s.enabled, whiteboard: s.whiteboard };
   if (s.about !== "") {
-    return s.subtype === "Other"
-      ? { meetingType: "Other", meetingTypeLabel: s.label.trim(), projectId: s.about }
-      : { meetingType: s.subtype, projectId: s.about };
+    if (s.subtype === "Other") {
+      out.meetingType = "Other";
+      out.meetingTypeLabel = s.label.trim();
+      out.projectId = s.about;
+    } else {
+      out.meetingType = s.subtype;
+      out.projectId = s.about;
+    }
+    return out;
   }
-  const out: Record<string, unknown> = {
-    meetingType: "Other",
-    meetingTypeLabel: s.label.trim(),
-  };
+  out.meetingType = "Other";
+  out.meetingTypeLabel = s.label.trim();
   // Only send a location when it deviates from the Lab-wide default — an omitted
-  // noteLocation lets the server file the note at the Lab root (identical result).
+  // noteLocation lets the server file the assets at the default folder (identical
+  // result).
   if (s.location && !(s.location.workspaceType === "Lab" && s.location.parentPageId === null)) {
     out.noteLocation = {
       workspaceType: s.location.workspaceType,

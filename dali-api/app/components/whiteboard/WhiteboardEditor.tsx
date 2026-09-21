@@ -10,6 +10,9 @@ export interface WhiteboardEditorProps {
   userName: string;
   currentUserId: string;
   photoUrl: string | null;
+  /** Set when this board is a meeting's whiteboard: shows a context bar linking
+   *  back to the meeting and its note. */
+  meeting?: { id: string; title: string; notePageId: string | null } | null;
 }
 
 // Excalidraw touches window/document and must not be server-rendered or even

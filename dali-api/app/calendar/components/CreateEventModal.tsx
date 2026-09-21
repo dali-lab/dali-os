@@ -207,6 +207,7 @@ export function CreateEventModal({
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
   const meetEnabled = useFeatureFlag("google-meet");
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const [addMeet, setAddMeet] = useState(false);
   const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
@@ -287,7 +288,13 @@ export function CreateEventModal({
   const revalidator = useRevalidator();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
-    | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
+    | {
+        ok: true;
+        count: number;
+        gcalError?: string | null;
+        notePageId?: string | null;
+        whiteboardPageId?: string | null;
+      }
     | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
@@ -382,6 +389,7 @@ export function CreateEventModal({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
@@ -898,7 +906,8 @@ export function CreateEventModal({
                 </div>
               )}
 
-              {/* Meeting notes toggle */}
+              {/* Meeting assets: a note doc and/or a whiteboard, sharing the
+                  same About/type. The fields appear once either is enabled. */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
                   checked={note.state.enabled}
@@ -906,7 +915,17 @@ export function CreateEventModal({
                   label="Create meeting note"
                   description="Starts a shared note doc linked to this meeting."
                 />
-                {note.state.enabled && (
+                {whiteboardEnabled && (
+                  <div className="mt-3">
+                    <Toggle
+                      checked={note.state.whiteboard}
+                      onChange={(e) => note.setWhiteboard(e.target.checked)}
+                      label="Create whiteboard"
+                      description="Starts a shared whiteboard canvas linked to this meeting."
+                    />
+                  </div>
+                )}
+                {(note.state.enabled || note.state.whiteboard) && (
                   <div className="mt-3 pt-1">
                     <MeetingNoteFields
                       note={note}
@@ -932,6 +951,17 @@ export function CreateEventModal({
                       {" "}
                       <a href={`/documents/${meetingStatus.notePageId}`} className="underline font-medium">
                         View meeting note
+                      </a>
+                    </>
+                  )}
+                  {meetingStatus.whiteboardPageId && (
+                    <>
+                      {" "}
+                      <a
+                        href={`/whiteboard/${meetingStatus.whiteboardPageId}`}
+                        className="underline font-medium"
+                      >
+                        View whiteboard
                       </a>
                     </>
                   )}
