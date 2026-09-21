@@ -66,15 +66,10 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
     api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   }
 
-  // Insert a Mermaid diagram as native elements, normalized to the board's clean
-  // style (no hand-drawn font / sketchy fill); the binding propagates them to peers.
+  // Insert a diagram (already normalized to the board's clean style by the
+  // dialog) as native elements; the binding propagates them to peers.
   function handleInsertDiagram(payload: DiagramInsert) {
     if (!api) return;
-    for (const el of payload.elements) {
-      (el as { roughness: number }).roughness = 0;
-      (el as { fillStyle: string }).fillStyle = "solid";
-      if (el.type === "text") (el as { fontFamily: number }).fontFamily = FONT_FAMILY.Nunito;
-    }
     if (payload.files) {
       const files = Object.values(payload.files);
       if (files.length) api.addFiles(files);
