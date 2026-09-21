@@ -14,6 +14,7 @@ import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -108,13 +109,62 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const name = (form.get("name") as string | null)?.trim() ?? "";
-  const website = (form.get("website") as string | null)?.trim() || null;
   const isIndividual = form.get("isIndividual") === "on";
 
   if (!name) return { error: "A name is required." };
 
+  // An individual partner is a person, not an org. Capture their email and set
+  // up the contact + membership + primary contact up front (mirrors the
+  // promotion path in partners.applications.$id) so the detail page renders a
+  // person instead of an empty organization.
+  if (isIndividual) {
+    const email = normalizeEmail((form.get("email") as string | null) ?? "");
+    if (!email.includes("@")) {
+      return { error: "An email is required for an individual partner." };
+    }
+    const identity = await classifyPartnerEmail(email);
+    if (identity.kind === "member-conflict") {
+      return {
+        error:
+          "That address belongs to a DALI member or Dartmouth account. Partners use a separate work email.",
+      };
+    }
+    const org = await prisma.$transaction(async (tx) => {
+      const created = await tx.partnerOrg.create({
+        data: { name, isIndividual: true },
+        select: { id: true },
+      });
+      // Reuse an existing contact with this email (they may have applied
+      // before); a fresh org means the membership can't collide.
+      const contact = await tx.partnerContact.upsert({
+        where: { email },
+        create: { email, name },
+        update: { name },
+        select: { id: true },
+      });
+      const membership = await tx.partnerMembership.create({
+        data: { contactId: contact.id, orgId: created.id },
+        select: { id: true },
+      });
+      await tx.partnerOrg.update({
+        where: { id: created.id },
+        data: { primaryContactId: membership.id },
+      });
+      return created;
+    });
+    await logAuditEvent({
+      action: "partner.org.create",
+      userId: auth.user.sub,
+      targetId: org.id,
+      metadata: { via: "core", individual: true },
+      request,
+    });
+    return redirect(`/partners/${org.id}`);
+  }
+
+  const website = (form.get("website") as string | null)?.trim() || null;
   const org = await prisma.partnerOrg.create({
-    data: { name, website, isIndividual },
+    data: { name, website, isIndividual: false },
     select: { id: true },
   });
   await logAuditEvent({
@@ -132,6 +182,7 @@ export default function PartnersOrganizations() {
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  const [individual, setIndividual] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:partners", "list");
   const filtered = useMemo(() => {
@@ -186,11 +237,14 @@ export default function PartnersOrganizations() {
       {creating && canEdit && (
         <Form
           method="post"
-          onSubmit={() => setCreating(false)}
+          onSubmit={() => {
+            setCreating(false);
+            setIndividual(false);
+          }}
           className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
         >
           <h2 className="text-sm font-semibold text-foreground">
-            New organization
+            {individual ? "New individual partner" : "New organization"}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
@@ -201,29 +255,50 @@ export default function PartnersOrganizations() {
                 name="name"
                 autoFocus
                 required
-                placeholder="Organization name"
+                placeholder={individual ? "Full name" : "Organization name"}
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-              <span className="text-muted-foreground">Website</span>
-              <input
-                name="website"
-                type="url"
-                placeholder="https://"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            </label>
+            {individual ? (
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground">
+                  Email<span className="text-destructive"> *</span>
+                </span>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              </label>
+            ) : (
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground">Website</span>
+                <input
+                  name="website"
+                  type="url"
+                  placeholder="https://"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              </label>
+            )}
             <Checkbox
               name="isIndividual"
+              checked={individual}
+              onChange={(e) => setIndividual(e.target.checked)}
               label="Individual"
+              description="A single person, not an organization"
               className="text-sm text-foreground sm:col-span-2"
             />
           </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setCreating(false)}
+              onClick={() => {
+                setCreating(false);
+                setIndividual(false);
+              }}
               className="os-btn-ghost"
             >
               Cancel
@@ -346,9 +421,11 @@ function PartnerCard({ org }: { org: OrgRow }) {
           )}
         </div>
         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-          <div>
-            {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
-          </div>
+          {!org.isIndividual && (
+            <div>
+              {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
+            </div>
+          )}
           <div>
             {org.activeProjectCount} active
             {org.totalProjectCount > org.activeProjectCount
