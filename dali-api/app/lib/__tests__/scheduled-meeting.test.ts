@@ -41,6 +41,7 @@ import {
   createScheduledMeeting,
   isWithinCheckInWindow,
   meetingIsUpcoming,
+  setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
@@ -403,6 +404,115 @@ describe("createScheduledMeeting — where a note is filed", () => {
       expect.objectContaining({ parentPageId: "folder-chosen" }),
     );
     expect(labFolder).not.toHaveBeenCalled();
+  });
+});
+
+describe("setMeetingProject", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    project: { findFirst: ReturnType<typeof vi.fn> };
+    page: { update: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
+
+  const baseMeeting = {
+    id: "m1",
+    organizerId: "org-1",
+    participantUserIds: ["u2"],
+    status: "Confirmed",
+    selectedAt: new Date("2026-09-10T15:00:00.000Z"),
+    meetingType: null as string | null,
+    notePage: null as { id: string; kind: string } | null,
+    whiteboardPage: null as { id: string; kind: string } | null,
+  };
+
+  beforeEach(() => {
+    p.project.findFirst.mockResolvedValue({ id: "proj-7", name: "Cortex" });
+    p.scheduledMeeting.update.mockResolvedValue({});
+  });
+
+  it("re-files an existing note into the project folder and records the project", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({
+      ...baseMeeting,
+      // Already had a type (a Core note), so no attendance backfill.
+      meetingType: "Other",
+      notePage: { id: "note-1", kind: "FreeForm" },
+    });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+      meetingTypeLabel: null,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(p.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "note-1" },
+        data: expect.objectContaining({
+          workspaceType: "Project",
+          workspaceId: "proj-7",
+          parentPageId: "folder-project",
+          linkAccess: "Restricted",
+        }),
+      }),
+    );
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ projectId: "proj-7", meetingType: "Team" }),
+      }),
+    );
+    // Already had a type → no roster backfill.
+    expect(p.meetingAttendance.createMany).not.toHaveBeenCalled();
+  });
+
+  it("records the project and fans out attendance for a note-less, type-less meeting", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(p.page.update).not.toHaveBeenCalled(); // nothing to move
+    expect(p.meetingAttendance.createMany).toHaveBeenCalled(); // roster created now
+  });
+
+  it("rejects a non-organizer who isn't Core", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "stranger",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the actor can't file under the project", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+    // Organizer passes the meeting gate, but the membership query finds nothing.
+    p.project.findFirst.mockResolvedValue(null);
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
   });
 });
 

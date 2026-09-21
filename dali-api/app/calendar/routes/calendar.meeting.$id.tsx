@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin, Shapes } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin, Shapes, FolderKanban } from "lucide-react";
+import { Select } from "~/components/ui/floating";
+import { Radio } from "~/components/ui/Radio";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -56,6 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingTypeLabel: true,
       attendanceMode: true,
       projectId: true,
+      project: { select: { name: true } },
       selectedAt: true,
       durationMinutes: true,
       location: true,
@@ -144,6 +147,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canAddWhiteboard: canAddNote,
     hasType: meeting.meetingType != null,
     canAddNote,
+    // Adding/changing the meeting's project after the fact (behind the
+    // unified-core-project-meetings flag) is the same authority as adding a
+    // note; the action re-checks organizer/Core + project membership.
+    canSetProject: canAddNote,
+    projectId: meeting.projectId,
+    projectName: meeting.project?.name ?? null,
+    meetingType: meeting.meetingType,
     meetingUrl: meeting.meetingUrl,
     canManage,
     // Narrower than canManage: editing the event is the organizer's or Core's
@@ -256,6 +266,152 @@ function ProposedTimesCard({
 const noteBtnClass =
   "inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted";
 
+// Add or change the meeting's project after creation (behind the
+// unified-core-project-meetings flag). Posts `set-meeting-project` to the
+// calendar action, which sets the type/project and re-files the note into the
+// project's meeting-notes folder. Shown only to the organizer or Core.
+function MeetingProjectControl({
+  meetingId,
+  projectId,
+  projectName,
+  meetingType,
+}: {
+  meetingId: string;
+  projectId: string | null;
+  projectName: string | null;
+  meetingType: "Team" | "Partner" | "Other" | null;
+}) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const [open, setOpen] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [selProject, setSelProject] = useState(projectId ?? "");
+  const [subtype, setSubtype] = useState<"Team" | "Partner" | "Other">(
+    meetingType === "Partner" ? "Partner" : meetingType === "Other" ? "Other" : "Team",
+  );
+  const [label, setLabel] = useState("");
+
+  async function openPicker() {
+    setOpen(true);
+    if (projects.length === 0) {
+      try {
+        // Same authorized set the create form's About picker uses (Projects
+        // only) — all projects for Core, own for a member.
+        const res = await fetch("/api/move-destinations", { credentials: "include" });
+        const json = await res.json();
+        const dests = (json.destinations ?? []) as { type: string; id: string | null; label: string }[];
+        setProjects(
+          dests.filter((x) => x.type === "Project" && x.id).map((x) => ({ id: x.id!, name: x.label })),
+        );
+      } catch {
+        // Leave empty — the picker still renders, just with no options to pick.
+      }
+    }
+  }
+
+  const canSubmit =
+    !!selProject && (subtype !== "Other" || label.trim().length > 0) && fetcher.state === "idle";
+
+  function submit() {
+    if (!canSubmit) return;
+    const fields: Record<string, string> = {
+      intent: "set-meeting-project",
+      meetingId,
+      projectId: selProject,
+      meetingType: subtype,
+    };
+    if (subtype === "Other") fields.meetingTypeLabel = label.trim();
+    fetcher.submit(fields, { method: "post", action: "/calendar" });
+    setOpen(false);
+  }
+
+  const fieldClass =
+    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {projectId ? (
+          <>
+            <span className="text-muted-foreground">Project:</span>
+            <Link
+              to={`/projects/${projectId}`}
+              className="font-medium text-foreground hover:underline"
+            >
+              {projectName ?? "Project"}
+            </Link>
+            <button
+              type="button"
+              onClick={openPicker}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Change
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={openPicker}
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Add a project
+          </button>
+        )}
+        {fetcher.data?.error && <span className="text-xs text-red-600">{fetcher.data.error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+      <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        Project
+      </span>
+      <Select
+        value={selProject}
+        onChange={setSelProject}
+        options={[
+          { value: "", label: "Select a project…" },
+          ...projects.map((p) => ({ value: p.id, label: p.name })),
+        ]}
+        buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+      />
+      <div className="flex items-center gap-4 pt-1">
+        <Radio name="mp-subtype" checked={subtype === "Team"} onChange={() => setSubtype("Team")} label="Team" />
+        <Radio name="mp-subtype" checked={subtype === "Partner"} onChange={() => setSubtype("Partner")} label="Partner" />
+        <Radio name="mp-subtype" checked={subtype === "Other"} onChange={() => setSubtype("Other")} label="Other" />
+      </div>
+      {subtype === "Other" && (
+        <input
+          aria-label="Meeting type name"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Design review"
+          maxLength={80}
+          className={fieldClass}
+        />
+      )}
+      <p className="text-xs text-muted-foreground">
+        Files the meeting's note in the project and shows it on the project's calendar. Stays on the
+        Core calendar if it's a Core meeting.
+      </p>
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          disabled={!canSubmit}
+          onClick={submit}
+          className="inline-flex items-center rounded-md bg-os-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {fetcher.state === "idle" ? "Save" : "Saving…"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={noteBtnClass}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
   // Format in the viewer's own timezone (browser locale) — no server tz needed.
@@ -275,6 +431,7 @@ export default function CalendarMeetingPage() {
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
   const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
   const [editing, setEditing] = useState(false);
 
@@ -305,6 +462,14 @@ export default function CalendarMeetingPage() {
         )}
         {d.description && (
           <p className="whitespace-pre-wrap text-sm text-foreground">{d.description}</p>
+        )}
+        {unifiedCoreProject && d.canSetProject && (
+          <MeetingProjectControl
+            meetingId={d.meetingId}
+            projectId={d.projectId}
+            projectName={d.projectName}
+            meetingType={d.meetingType}
+          />
         )}
         <div className="flex flex-wrap items-center gap-2">
           {d.meetingUrl && (
