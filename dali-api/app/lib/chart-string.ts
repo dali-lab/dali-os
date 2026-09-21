@@ -268,3 +268,40 @@ export const PROJECT_FUNDING_TYPE_LABELS: Record<ProjectFundingType, string> = {
   DALI_PTAEO: "DALI PTAEO",
   OTHER_PTAEO: "Other PTAEO",
 };
+
+/** DALI's own project GL line: entity 20 (Arts & Sciences), org 330 (DALI
+ *  Lab), funding 161028, activity 128512 (the lab), subactivity 4000
+ *  (Projects). What a DALI GL or Transfer GL project charges, and so what the
+ *  entry form prefills for those two types. Programs charge `.3000` instead —
+ *  the field stays editable for exactly that. */
+export const DALI_PROJECTS_GL = "20.330.161028.128512.4000";
+
+/** The two project types that charge the lab's own GL. Transfer GL is included
+ *  on purpose: DALI fronts the cost on its GL and the invoice brings revenue
+ *  back, so the expense side is the same string as DALI GL. */
+const GL_FUNDING_TYPES: readonly ProjectFundingType[] = ["DALI_GL", "TRANSFER_GL"];
+
+/**
+ * What the chart-string field should hold after the project type changes.
+ *
+ * Picking a GL type fills the lab default — unless the field already holds a
+ * GL string, so someone who changed the subactivity (a program's `.3000`) and
+ * then flips between DALI GL and Transfer GL keeps their edit. A PTAEO sitting
+ * in the field is replaced, because it is the wrong format for either GL type.
+ *
+ * Picking a PTAEO type clears the field only if it still holds the untouched
+ * default we filled; anything the person typed is theirs and stays.
+ */
+export function chartStringForFundingType(
+  current: string,
+  nextType: ProjectFundingType | null,
+  glDefault: string = DALI_PROJECTS_GL,
+): string {
+  if (nextType && GL_FUNDING_TYPES.includes(nextType)) {
+    return parseChartString(current).type === "GL" ? current : glDefault;
+  }
+  if (nextType === "DALI_PTAEO" || nextType === "OTHER_PTAEO") {
+    return current.trim().toUpperCase() === glDefault ? "" : current;
+  }
+  return current;
+}

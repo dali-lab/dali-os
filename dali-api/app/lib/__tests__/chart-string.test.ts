@@ -5,6 +5,8 @@ import {
   isValidChartString,
   GL_SUBACTIVITIES,
   DALI_ORG,
+  DALI_PROJECTS_GL,
+  chartStringForFundingType,
 } from "~/lib/chart-string";
 
 // Every literal below is a real value: from the FY23-FY27 GL export, from
@@ -148,5 +150,48 @@ describe("rejections", () => {
     ["521765.5000.B04373.XXXXX", "ptaeo_shape"],
   ])("rejects %j", (input, code) => {
     expect(parseChartString(input).errors.map((e) => e.code)).toContain(code);
+  });
+});
+
+describe("chartStringForFundingType", () => {
+  const PTAEO = "523241.5000.B04662.XXXXX.330";
+
+  it("fills the lab GL for DALI GL on an empty field", () => {
+    expect(chartStringForFundingType("", "DALI_GL")).toBe(DALI_PROJECTS_GL);
+    expect(DALI_PROJECTS_GL).toBe("20.330.161028.128512.4000");
+  });
+
+  it("fills the same lab GL for Transfer GL — the expense side is identical", () => {
+    expect(chartStringForFundingType("", "TRANSFER_GL")).toBe(DALI_PROJECTS_GL);
+  });
+
+  it("replaces a PTAEO when switching to a GL type — wrong format for it", () => {
+    // The screenshot case: a PTAEO typed first, then Transfer GL picked.
+    expect(chartStringForFundingType(PTAEO, "TRANSFER_GL")).toBe(DALI_PROJECTS_GL);
+  });
+
+  it("keeps an edited GL string when flipping between the two GL types", () => {
+    // A program edits the subactivity to .3000; switching DALI GL <-> Transfer
+    // GL must not quietly put .4000 back.
+    const program = "20.330.161028.128512.3000";
+    expect(chartStringForFundingType(program, "DALI_GL")).toBe(program);
+    expect(chartStringForFundingType(program, "TRANSFER_GL")).toBe(program);
+  });
+
+  it("clears the untouched default when switching to a PTAEO type", () => {
+    expect(chartStringForFundingType(DALI_PROJECTS_GL, "DALI_PTAEO")).toBe("");
+    expect(chartStringForFundingType(DALI_PROJECTS_GL, "OTHER_PTAEO")).toBe("");
+  });
+
+  it("leaves anything the person typed alone when switching to a PTAEO type", () => {
+    expect(chartStringForFundingType(PTAEO, "DALI_PTAEO")).toBe(PTAEO);
+    // An edited GL is also theirs, even if it's now the wrong format — the
+    // validator will say so on save rather than the form silently discarding it.
+    const edited = "20.330.161028.128512.3000";
+    expect(chartStringForFundingType(edited, "DALI_PTAEO")).toBe(edited);
+  });
+
+  it("does nothing when the type is cleared", () => {
+    expect(chartStringForFundingType(PTAEO, null)).toBe(PTAEO);
   });
 });
