@@ -104,17 +104,22 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Cycles eligible for the picker: anything Open/UnderReview/Draft for
-      // this domain. After cycleType split, a Standard + Fellowship cycle
-      // can both be active for the same domain (target domains overlap).
-      const candidateCycles = allCycles.filter((c) => {
-        const status = c.statusUpdates[0]?.newStatus;
-        return status && ["Open", "UnderReview", "Draft"].includes(status);
-      });
+      // Cycles eligible for the picker: every cycle this domain has ever run,
+      // in any status. After the cycleType split a Standard + Fellowship cycle
+      // can both be active for the same domain (target domains overlap), and
+      // Completed cycles are offered so a lead can reopen a past cycle to read
+      // its reviews, interviews and decisions. Which one is shown *by default*
+      // is a separate question — see selectActiveCycleForDomainLead, where a
+      // Completed cycle is only ever reached through ?cycle=.
+      // No extra query cost: allCycles above already loads them all.
+      const candidateCycles = allCycles.filter((c) =>
+        Boolean(c.statusUpdates[0]?.newStatus),
+      );
       const availableCycles = candidateCycles.map((c) => ({
         id: c.id,
         name: c.name,
         cycleType: c.cycleType as string,
+        status: c.statusUpdates[0]?.newStatus ?? null,
       }));
 
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
@@ -607,6 +612,9 @@ export default function DomainLeadDashboard() {
         const isFellowship = cycle?.cycleType === "Fellowship";
         const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
+        // Opened from the picker rather than because it is this domain's live
+        // cycle. Everything here is then a record to read, not state to change.
+        const isPastCycle = currentStatus === "Completed";
 
         // Compute stats for progress badges
         const fullyReviewed = apps.filter((a: any) => {
@@ -628,11 +636,17 @@ export default function DomainLeadDashboard() {
           <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
             {!cycle ? (
               <div className="p-6">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
+                  {/* The picker belongs here too: a domain whose cycles have all
+                      completed has no default cycle, and without it there is no
+                      way to reach the past ones. */}
+                  <CycleSelector cycles={availableCycles ?? []} activeId={null} />
                 </div>
                 <div className="mt-3 bg-muted/50 rounded-lg p-6 text-muted-foreground text-sm">
-                  No active cycle for this domain.
+                  {(availableCycles ?? []).length > 0
+                    ? "No active cycle. Pick a past cycle above to review it."
+                    : "No active cycle for this domain."}
                 </div>
               </div>
             ) : (
@@ -763,7 +777,8 @@ export default function DomainLeadDashboard() {
                           domainId={assignment.domainId}
                           options={rubricVersionOptions ?? []}
                           selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
+                          locked={hasApplicationReviews || isPastCycle}
+                          lockedReason={isPastCycle ? "this cycle is finished" : undefined}
                         />
                         {!cycle.generalRubricVersionId && (
                           <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
@@ -794,9 +809,12 @@ export default function DomainLeadDashboard() {
                     defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
                   >
                     <div className={`grid grid-cols-1 ${isFellowship ? "" : "md:grid-cols-2"} gap-4`}>
-                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                      {/* A Completed cycle is reachable from the picker so a
+                          lead can read it back. Reading it must not mean editing
+                          it: its roster and rubric are part of the record. */}
+                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} readOnly={isPastCycle} />
                       {!isFellowship && (
-                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} readOnly={isPastCycle} />
                       )}
                     </div>
                   </Section>
@@ -1322,10 +1340,12 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
   );
 }
 
-function ReviewerSection({ cycleId, domainId, initialReviewers }: {
+function ReviewerSection({ cycleId, domainId, initialReviewers, readOnly = false }: {
   cycleId: string;
   domainId: string;
   initialReviewers: any[];
+  /** A finished cycle is a record, not a roster to edit — see the Team section. */
+  readOnly?: boolean;
 }) {
   const toast = useToast();
   const [reviewers, setReviewers] = useState(initialReviewers);
@@ -1392,6 +1412,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reviewers ({reviewers.length})</h4>
+      {!readOnly && (
       <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
@@ -1414,6 +1435,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
             <Plus className="w-4 h-4" /> Add
           </button>
         </div>
+        )}
         {reviewers.length > 0 ? (
           <div className="divide-y divide-gray-100">
             {reviewers.map((r: any) => (
@@ -1421,13 +1443,15 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
                 <span className="text-sm font-medium text-foreground">
                   {r.user?.firstName && r.user?.lastName ? `${r.user.firstName} ${r.user.lastName}` : r.user?.daliEmail ?? r.userId}
                 </span>
-                <button
-                  onClick={() => setPendingRemove(r)}
-                  aria-label="Remove reviewer"
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => setPendingRemove(r)}
+                    aria-label="Remove reviewer"
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1454,12 +1478,14 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   );
 }
 
-function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
+function RubricPicker({ cycleId, domainId, options, selectedId, locked, lockedReason }: {
   cycleId: string;
   domainId: string;
   options: any[];
   selectedId: string | null;
   locked: boolean;
+  /** Why it is locked, so a past cycle doesn't claim reviewers are the reason. */
+  lockedReason?: string;
 }) {
   const selectedRv = options.find((rv: any) => rv.id === selectedId);
   const selectedLabel = selectedRv
@@ -1476,7 +1502,9 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle className="w-4 h-4 text-green-600" />
           <span>{selectedLabel}</span>
-          <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">
+            ({lockedReason ?? "locked, reviewers have been assigned"})
+          </span>
         </div>
       ) : (
         <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -1516,10 +1544,12 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   );
 }
 
-function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
+function InterviewerSection({ cycleId, domainId, initialInterviewers, readOnly = false }: {
   cycleId: string;
   domainId: string;
   initialInterviewers: any[];
+  /** A finished cycle is a record, not a roster to edit — see the Team section. */
+  readOnly?: boolean;
 }) {
   const toast = useToast();
   const [interviewers, setInterviewers] = useState(initialInterviewers);
@@ -1585,6 +1615,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interviewers ({interviewers.length})</h4>
+      {!readOnly && (
       <div className="flex flex-col sm:flex-row sm:items-end gap-2">
         <div className="flex-1">
           <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
@@ -1607,6 +1638,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
             <Plus className="w-4 h-4" /> Add
           </button>
         </div>
+        )}
         {interviewers.length > 0 ? (
           <div className="divide-y divide-gray-100">
             {interviewers.map((i: any) => {
@@ -1634,13 +1666,15 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setPendingRemove(i)}
-                    aria-label="Remove interviewer"
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => setPendingRemove(i)}
+                      aria-label="Remove interviewer"
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               );
             })}

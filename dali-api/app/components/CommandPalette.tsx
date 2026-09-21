@@ -41,6 +41,7 @@ import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
 import { visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import type { PortalNavItem } from "~/lib/portal-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
 export type CommandPaletteRoles = RoleFlags;
@@ -52,9 +53,15 @@ interface CommandPaletteProps {
   tabless: boolean;
   /** Whether the sidebar is hidden — drives the focus-mode command. */
   focusMode: boolean;
-  roles: CommandPaletteRoles;
+  /** Omitted only by the portal shell, where the viewer holds no lab role and
+   *  the member sections are skipped wholesale. */
+  roles?: CommandPaletteRoles;
   /** Feature flags to gate search sections and nav entries. */
   flags?: Partial<FeatureFlagMap>;
+  /** The non-member shell's four rows. When given, "Go to" is exactly these —
+   *  the member registry (areas, Core/Admin tools, workspace and tour commands)
+   *  describes surfaces a student can't reach, so none of it is offered. */
+  portalNav?: PortalNavItem[];
   /** Open a result. `toSide` = ⌘/Ctrl+Enter (split pane in tab mode, new browser tab in tabless). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
 }
@@ -115,7 +122,20 @@ const SECTION_ORDER = [
   "Help",
 ];
 
-export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags = {}, onOpen }: CommandPaletteProps) {
+const NO_ROLES: CommandPaletteRoles = {
+  isCore: false,
+  isAdmin: false,
+  isDomainLead: false,
+  isInterviewer: false,
+  canViewForms: false,
+  canViewStaffing: false,
+  hasHiringAccess: false,
+  hasActiveHiringAccess: false,
+  isLabMentor: false,
+  isInstructor: false,
+};
+
+export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   // The query `results` belong to. Compared against the live query during
@@ -193,6 +213,25 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     // drift from it: each visible area yields its hub plus every visible sub-tab.
     // Admin is the exception — its finer cluster entries live in the dedicated
     // "Admin" section below, so here we emit only its hub.
+    if (portalNav) {
+      const q = query.trim().toLowerCase();
+      const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
+      return {
+        nav: portalNav.map((i) => navItem(i.label, i.href, i.icon)).filter(match),
+        core: [],
+        admin: [],
+        commands: [
+          {
+            id: "cmd-logout",
+            title: "Log out",
+            subtitle: "Command",
+            icon: LogOut,
+            action: { kind: "run" as const, run: () => window.location.assign("/logout") },
+          },
+        ].filter(match),
+      };
+    }
+
     const nav: PaletteItem[] = [
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
@@ -287,7 +326,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
       admin: admin.filter(match),
       commands: commands.filter(match),
     };
-  }, [roles, flags, tabless, focusMode, query]);
+  }, [roles, flags, portalNav, tabless, focusMode, query]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];
